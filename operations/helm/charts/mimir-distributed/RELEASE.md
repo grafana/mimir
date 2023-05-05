@@ -19,20 +19,17 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
 > **Note**: You must precede the week number (such as `196`) with a dot (`.`).
 
-## Release process for a release candidate or final release
-
-The following steps apply to a release candidate or a final release.
+## Release process for a release candidate
 
 1. Determine the Helm chart version number.
 
    [The Chart.yaml file](https://helm.sh/docs/topics/charts/#the-chartyaml-file) requires semantic versioning:
 
    - Release candidates have the version `x.y.z-rc.w`, for example `3.1.0-rc.7`.
-   - The final version has the version `x.y.z`, for example `3.1.0`.
 
    > **Note**: You must precede the release candidate number (such as `7`) with a dot (`.`).
-
-1. If you do not have a release branch, create one:
+ 
+1. Prepare changelog.
 
    a. Create a PR, whose target is `main`, that updates the [Helm chart changelog](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md), and move any `## main / unreleased` items under this release’s version.
 
@@ -42,13 +39,15 @@ The following steps apply to a release candidate or a final release.
 
    c. Merge the PR upon approval.
 
-   d. Create and push a branch starting from the commit created by the previous PR and name it `mimir-distributed-release-x.y`.
+1. Create a release branch.
 
-   For example, `mimir-distributed-release-4.5` for any `4.5.x` release.
+   a. Create, switch to and push a branch starting from the commit created by the prepare changelog PR and name it `mimir-distributed-release-x.y`. For example, `mimir-distributed-release-4.5` for any `4.5.x` release.
 
-1. Switch to the release branch.
+   b. Push the branch to origin without any commit added.
 
-   For example, `mimir-distributed-release-4.5` for any `4.5.x` release.
+   c. Once the branch is pushed, all changes to `mimir-distributed-release-x.y` branch must be done through PR.
+ 
+1. Create a branch to update Mimir/GEM image and helm chart version. For example `user/update-mimir-distributed-release-x.y`. Do the following updates in the next steps from this branch.
 
 1. Set the image versions in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml), as needed:
 
@@ -60,11 +59,11 @@ The following steps apply to a release candidate or a final release.
    - `smoke_test.image.tag` (Smoke test; usually the same as Mimir)
    - `continuous_test.image.tag` (Continuous test; usually the same as Mimir)
 
-1. Set the `version` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the desired version.
+1. Set the `version` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the desired release candidate version.
 
-   For example, `4.5.0`.
+   For example, `4.5.0-rc.0`.
 
-   > **Note:** This is the step that triggers the release process GitHub Action.
+   > **Note:** Once this change is merged to `mimir-distributed-x.y` branch, it will trigger the release process GitHub Action. Unless you want to release final release, make sure to append the correct rc version.
 
 1. Set the `appVersion` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the version of Mimir that the Helm chart deploys.
 
@@ -77,10 +76,56 @@ The following steps apply to a release candidate or a final release.
 1. Update the Mimir and GEM documentation version parameters in [\_index.md](https://github.com/grafana/mimir/blob/main/docs/sources/helm-charts/mimir-distributed/_index.md)
 
    The two parameters are `mimir_docs_version` and `gem_docs_version`. With the exception of the release notes, the Helm chart documentation should refer to the documentation or Mimir and GEM that is actually included in the Helm chart.
+ 
+1. Update the [Mimir Helm Chart Readme template](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md.gotmpl). Update the line that link to Mimir release note to the latest Mimir version.
+
+   Example:
+   ```
+   See the [Grafana Mimir version 2.6 release notes](https://grafana.com/docs/mimir/v2.6.x/release-notes/v2.6/).
+   ```
 
 1. From the root directory of the repository, run `make doc` so a template can update the [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) file.
 
-1. Open a PR, and make sure that your PR targets the release branch.
+1. Open a PR contains all the changes we have so far from `user/update-mimir-distributed-release-x.y` branch and make sure that your PR targets the release branch `mimir-distributed-release-x.y`.
+
+1. Have the PR reviewed by a maintainer.
+
+1. Merge the PR upon approval.
+
+1. Verify that the Helm chart is published; run the following commands:
+
+   `helm repo update && helm search repo grafana/mimir-distributed --devel --version <VERSION>`
+
+   You might have to wait a few minutes.
+
+1. In a browser, go to [https://grafana.com/docs/helm-charts/mimir-distributed](https://grafana.com/docs/helm-charts/mimir-distributed) and refresh the page.
+
+1. After the release tag in Git is created, merge the branch back into `main` by following the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
+
+The [release process](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-release.yaml) checks and creates a Git tag formatted as `mimir-distributed-<version>`, for example `mimir-distributed-4.5.0`, on the merge commit created when the PR is merged. To prevent releasing the same version with different content, the release process fails if the tag already exists. The release is published in the [Grafana helm-charts](https://grafana.github.io/helm-charts/) Helm repository.
+
+When a `mimir-distributed-x.y.z` final version tag is pushed, the Helm chart documentation is [published](https://github.com/grafana/mimir/blob/main/.github/workflows/publish-technical-documentation-release-helm-charts.yml) to [https://grafana.com/docs/helm-charts/mimir-distributed](https://grafana.com/docs/helm-charts/mimir-distributed).
+
+## Release process for a final release
+
+1. Determine the Helm chart version number.
+
+   [The Chart.yaml file](https://helm.sh/docs/topics/charts/#the-chartyaml-file) requires semantic versioning:
+
+   - The final version has the version `x.y.z`, for example `3.1.0`.
+   - Normally we will proceed the same `x.y.z` version value from the release candidate step.
+
+1. Create a branch to update helm chart version. For example `user/update-mimir-distributed-release-x.y`. Do the following updates in the next steps from this branch.
+
+1. Set the `version` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the desired final release version.
+
+   For example, `4.5.0`.
+
+   > **Note:** Once this change is merged to `mimir-distributed-x.y` branch, it will trigger the release process GitHub Action. 
+
+1. There shouldn't be anymore update needed in release notes and documentation because that has been done in the release candidate step above.
+
+1. Open a PR contains all the changes we have so far from `user/update-mimir-distributed-release-x.y` branch and make sure that your PR targets the release branch `mimir-distributed-release-x.y`.
 
 1. Have the PR reviewed by a maintainer.
 
@@ -97,5 +142,3 @@ The following steps apply to a release candidate or a final release.
 1. After the release tag in Git is created, merge the branch back into `main` by following the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
 
 The [release process](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-release.yaml) checks and creates a Git tag formatted as `mimir-distributed-<version>`, for example `mimir-distributed-4.5.0`, on the merge commit created when the PR is merged. To prevent releasing the same version with different content, the release process fails if the tag already exists. The release is published in the [Grafana helm-charts](https://grafana.github.io/helm-charts/) Helm repository.
-
-When a `mimir-distributed-x.y.z` final version tag is pushed, the Helm chart documentation is [published](https://github.com/grafana/mimir/blob/main/.github/workflows/publish-technical-documentation-release-helm-charts.yml) to [https://grafana.com/docs/helm-charts/mimir-distributed](https://grafana.com/docs/helm-charts/mimir-distributed).
