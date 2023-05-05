@@ -251,7 +251,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 	return m
 }
 
-func TestReadersLabelValues(t *testing.T) {
+func TestReadersLabelValuesOffsets(t *testing.T) {
 	tests, blockID, blockDir := labelValuesTestCases(test.NewTB(t))
 	for _, impl := range implementations {
 		t.Run(impl.name, func(t *testing.T) {
