@@ -883,15 +883,6 @@ func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
 	return iir.Reader.LabelNames()
 }
 
-func (iir *interceptedIndexReader) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
-	if iir.onLabelValuesCalled != nil {
-		if err := iir.onLabelValuesCalled(name); err != nil {
-			return nil, err
-		}
-	}
-	return iir.Reader.LabelValues(name, prefix, filter)
-}
-
 func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
 	if iir.onLabelValuesOffsetsCalled != nil {
 		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {

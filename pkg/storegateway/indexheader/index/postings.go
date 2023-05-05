@@ -28,10 +28,6 @@ type PostingOffsetTable interface {
 	// The End might be bigger than the actual posting ending, but not larger than the whole index file.
 	PostingsOffset(name string, value string) (rng index.Range, found bool, err error)
 
-	// LabelValues returns a list of values for the label named name that match filter and have the prefix provided.
-	// The returned label values are sorted lexicographically.
-	LabelValues(name string, prefix string, filter func(string) bool) ([]string, error)
-
 	// LabelValuesOffsets returns all postings lists for the label named name that match filter and have the prefix provided.
 	// The ranges of each posting list are the same as returned by PostingsOffset.
 	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
@@ -258,21 +254,6 @@ func (t *PostingOffsetTableV1) PostingsOffset(name string, value string) (index.
 	return rng, true, nil
 }
 
-func (t *PostingOffsetTableV1) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
-	e, ok := t.postings[name]
-	if !ok {
-		return nil, nil
-	}
-	values := make([]string, 0, len(e))
-	for k := range e {
-		if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
-			values = append(values, k)
-		}
-	}
-	slices.Sort(values)
-	return values, nil
-}
-
 func (t *PostingOffsetTableV1) LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
 	e, ok := t.postings[name]
 	if !ok {
@@ -451,29 +432,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 	return index.Range{}, false, nil
 }
 
-func (t *PostingOffsetTableV2) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
-	values, err := postingOffsets(t, name, prefix, filter, postingListOffsetValue)
-	if err != nil {
-		return nil, errors.Wrap(err, "get label values")
-	}
-	return values, nil
-}
-
-func (t *PostingOffsetTableV2) LabelValuesOffsets(name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
-	offsets, err := postingOffsets(t, name, prefix, filter, postingListOffsetIdentity)
-	if err != nil {
-		return nil, errors.Wrap(err, "get label values offsets")
-	}
-	return offsets, nil
-}
-
-// postingListOffsetIdentity can be used with postingOffsets.
-func postingListOffsetIdentity(offset PostingListOffset) PostingListOffset { return offset }
-
-// postingListOffsetValue can be used with postingOffsets.
-func postingListOffsetValue(offset PostingListOffset) string { return offset.LabelValue }
-
-func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, filter func(string) bool, extract func(PostingListOffset) T) (_ []T, err error) {
+func (t *PostingOffsetTableV2) LabelValuesOffsets(name, prefix string, filter func(string) bool) (_ []PostingListOffset, err error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
@@ -489,7 +448,7 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 			return nil, nil
 		}
 	}
-	result := make([]T, 0, (offsetsEnd-offsetsStart)*t.postingOffsetsInMemSampling)
+	offsets := make([]PostingListOffset, 0, (offsetsEnd-offsetsStart)*t.postingOffsetsInMemSampling)
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
@@ -509,8 +468,13 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		noMoreMatchesMarkerVal = e.offsets[offsetsEnd].value
 	}
 
+	type pEntry struct {
+		PostingListOffset
+		isLast, matches bool
+	}
+
 	var skip int
-	readNextList := func() (val string, startOff int64, isAMatch bool, noMoreMatches bool) {
+	readNextList := func() (e pEntry) {
 		if skip == 0 {
 			// These are always the same number of bytes, since it's the same label name each time.
 			// It's faster to skip than parse.
@@ -525,66 +489,55 @@ func postingOffsets[T any](t *PostingOffsetTableV2, name string, prefix string, 
 		unsafeValue := yoloString(d.UnsafeUvarintBytes())
 
 		prefixMatches := prefix == "" || strings.HasPrefix(unsafeValue, prefix)
-		isAMatch = prefixMatches && (filter == nil || filter(unsafeValue))
-		noMoreMatches = unsafeValue == noMoreMatchesMarkerVal || (!prefixMatches && prefix < unsafeValue)
+		e.matches = prefixMatches && (filter == nil || filter(unsafeValue))
+		e.isLast = unsafeValue == noMoreMatchesMarkerVal || (!prefixMatches && prefix < unsafeValue)
 		// Clone the yolo string since its bytes will be invalidated as soon as
 		// any other reads against the decoding buffer are performed.
 		// We'll only need the string if it matches our filter.
-		if isAMatch {
-			val = strings.Clone(unsafeValue)
-		} else {
-			val = ""
+		if e.matches {
+			e.LabelValue = strings.Clone(unsafeValue)
 		}
 		// In the postings section of the index the information in each posting list for length and number
 		// of entries is redundant, because every entry in the list is a fixed number of bytes (4).
 		// So we can omit the first one - length - and return
 		// the offset of the number_of_entries field.
-		startOff = int64(d.Uvarint64()) + postingLengthFieldSize
+		e.Off.Start = int64(d.Uvarint64()) + postingLengthFieldSize
 		return
 	}
 
 	var (
-		currList            PostingListOffset
-		currentValueIsLast  bool
-		currentValueMatches bool
-		nextIsPopulated     bool
-		nextValueSafe       string
-		nextValueMatches    bool
-		nextOffset          int64
-		nextValueIsLast     bool
+		currEntry pEntry
+		nextEntry pEntry
 	)
 
-	for d.Err() == nil {
+	for d.Err() == nil && !currEntry.isLast {
 		// Populate the current list either reading it from the pre-populated "next" or reading it from the index.
-		if nextIsPopulated {
-			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast
-			nextIsPopulated = false
+		if nextEntry != (pEntry{}) {
+			currEntry = nextEntry
+			nextEntry = pEntry{}
 		} else {
-			currList.LabelValue, currList.Off.Start, currentValueMatches, currentValueIsLast = readNextList()
+			currEntry = readNextList()
 		}
 
 		// If the current value matches, we need to also populate its end offset and then call the visitor.
-		if currentValueMatches {
-			// We peek at the next list, so we can use its offset as the end offset of the current one.
-			if currList.LabelValue == noMoreMatchesMarkerVal && lastValMatches {
-				// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
-				currList.Off.End = e.lastValOffset
-			} else {
-				nextValueSafe, nextOffset, nextValueMatches, nextValueIsLast = readNextList()
-				nextIsPopulated = true
+		if !currEntry.matches {
+			continue
+		}
+		// We peek at the next list, so we can use its offset as the end offset of the current one.
+		if currEntry.LabelValue == noMoreMatchesMarkerVal && lastValMatches {
+			// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
+			currEntry.Off.End = e.lastValOffset
+		} else {
+			nextEntry = readNextList()
 
-				// The end we want for the current posting list should be the byte offset of the CRC32 field.
-				// The start of the next posting list is the byte offset of the number_of_entries field.
-				// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
-				currList.Off.End = nextOffset - crc32.Size - postingLengthFieldSize
-			}
-			result = append(result, extract(currList))
+			// The end we want for the current posting list should be the byte offset of the CRC32 field.
+			// The start of the next posting list is the byte offset of the number_of_entries field.
+			// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
+			currEntry.Off.End = nextEntry.Off.Start - crc32.Size - postingLengthFieldSize
 		}
-		if currentValueIsLast {
-			break
-		}
+		offsets = append(offsets, currEntry.PostingListOffset)
 	}
-	return result, d.Err()
+	return offsets, d.Err()
 }
 
 func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {

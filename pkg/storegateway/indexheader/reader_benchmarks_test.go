@@ -141,7 +141,7 @@ func BenchmarkLabelNames(b *testing.B) {
 	}
 }
 
-func BenchmarkLabelValuesIndexV1(b *testing.B) {
+func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 	ctx := context.Background()
 
 	bucketDir := b.TempDir()
@@ -179,7 +179,7 @@ func BenchmarkLabelValuesIndexV1(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			name := names[i%len(names)]
 
-			values, err := br.LabelValues(name, "", func(s string) bool {
+			values, err := br.LabelValuesOffsets(name, "", func(s string) bool {
 				return true
 			})
 
@@ -189,7 +189,7 @@ func BenchmarkLabelValuesIndexV1(b *testing.B) {
 	})
 }
 
-func BenchmarkLabelValuesIndexV2(b *testing.B) {
+func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 	ctx := context.Background()
 
 	bucketDir := b.TempDir()
@@ -223,7 +223,7 @@ func BenchmarkLabelValuesIndexV2(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			name := names[i%len(names)]
 
-			values, err := br.LabelValues(name, "", func(s string) bool {
+			values, err := br.LabelValuesOffsets(name, "", func(s string) bool {
 				return true
 			})
 
@@ -233,7 +233,7 @@ func BenchmarkLabelValuesIndexV2(b *testing.B) {
 	})
 }
 
-func BenchmarkLabelValuesIndexV2_WithPrefix(b *testing.B) {
+func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 	tests, blockID, blockDir := labelValuesTestCases(test.NewTB(b))
 	r, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, blockDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
@@ -243,7 +243,7 @@ func BenchmarkLabelValuesIndexV2_WithPrefix(b *testing.B) {
 			for _, tc := range tcs {
 				b.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
-						values, err := r.LabelValues(lbl, tc.prefix, tc.filter)
+						values, err := r.LabelValuesOffsets(lbl, tc.prefix, tc.filter)
 						require.NoError(b, err)
 						require.Equal(b, tc.expected, len(values))
 					}
