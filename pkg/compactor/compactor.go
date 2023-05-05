@@ -219,6 +219,9 @@ type ConfigProvider interface {
 
 	// CompactorBlockUploadVerifyChunks returns whether chunk verification is enabled for a given tenant.
 	CompactorBlockUploadVerifyChunks(tenantID string) bool
+
+	// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated for a given user.
+	CompactorBlockUploadMaxBlockSizeBytes(userID string) int64
 }
 
 // MultitenantCompactor is a multi-tenant TSDB blocks compactor based on Thanos.

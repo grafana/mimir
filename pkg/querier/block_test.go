@@ -486,12 +486,8 @@ func mkZLabels(s ...string) []mimirpb.LabelAdapter {
 	return result
 }
 
-func mkLabels(s ...string) []labels.Label {
-	return mimirpb.FromLabelAdaptersToLabels(mkZLabels(s...))
-}
-
 func Benchmark_newBlockQuerierSeries(b *testing.B) {
-	lbls := mkLabels(
+	lbls := labels.FromStrings(
 		"__name__", "test",
 		"label_1", "value_1",
 		"label_2", "value_2",

@@ -180,10 +180,6 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
 		require.NoError(t, err)
 
-		strVals, err := headerReader.LabelValues(lname, "", nil)
-		require.NoError(t, err)
-		require.Equal(t, expectedLabelVals, strVals)
-
 		valOffsets, err := headerReader.LabelValuesOffsets(lname, "", nil)
 		require.NoError(t, err)
 		strValsFromOffsets := make([]string, len(valOffsets))
@@ -251,7 +247,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 	return m
 }
 
-func TestReadersLabelValues(t *testing.T) {
+func TestReadersLabelValuesOffsets(t *testing.T) {
 	tests, blockID, blockDir := labelValuesTestCases(test.NewTB(t))
 	for _, impl := range implementations {
 		t.Run(impl.name, func(t *testing.T) {
@@ -260,7 +256,7 @@ func TestReadersLabelValues(t *testing.T) {
 				t.Run(lbl, func(t *testing.T) {
 					for _, tc := range tcs {
 						t.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(t *testing.T) {
-							values, err := r.LabelValues(lbl, tc.prefix, tc.filter)
+							values, err := r.LabelValuesOffsets(lbl, tc.prefix, tc.filter)
 							require.NoError(t, err)
 							require.Equal(t, tc.expected, len(values))
 						})

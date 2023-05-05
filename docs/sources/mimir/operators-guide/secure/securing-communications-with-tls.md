@@ -11,14 +11,14 @@ weight: 50
 
 Grafana Mimir is a distributed system with significant traffic between its components.
 To allow for secure communication, Grafana Mimir supports TLS between its
-components. This topic describes the process you use to set up TLS.
+components. This topic describes the process used to set up TLS.
 
 ### Generation of certificates to configure TLS
 
 To establish secure inter-component communication in Grafana Mimir with TLS, you must generate certificates using a certificate authority (CA).
 The CA should be private to the organization because certificates signed by the CA will have permissions to communicate with the cluster.
 
-> **Note**: The generated certficates are valid for 100,000 days. You can change the duration by adjusting the `-days` option in the command. We recommended that you replace the certificates every two years.
+> **Note**: The generated certificates are valid for 100,000 days. You can change the duration by adjusting the `-days` option in the command. We recommend that you replace the certificates every two years.
 
 The following script generates self-signed certificates for the cluster.
 The script generates private keys `client.key`, `server.key` and certificates `client.crt`, `server.crt` for both the client and server.
@@ -44,7 +44,7 @@ openssl x509 -req -in server.csr -CA root.crt -CAkey root.key -CAcreateserial -o
 
 ### Configure TLS certificates in Grafana Mimir
 
-Every gRPC link between Grafana Mimir components supports TLS configuration as specified in server flags and client flags.
+Every gRPC connection between Grafana Mimir components supports TLS configuration as specified in server flags and client flags.
 
 #### Server flags
 
@@ -120,9 +120,9 @@ In the following example, both of the server authorization flags, `-server.http-
 
 #### Client flags
 
-You can configure TLS private keys, certificates, and CAs in a similar fashion for gRPC clients in Grafana Mimir.
+You can configure TLS private keys, certificates, and certificate authorities in a similar fashion for gRPC clients in Grafana Mimir.
 
-To enable TLS for a component, use the client flag that contains the suffix `*.tls-enabled=true`, for example, `-querier.frontend-client.tls-enabled=true`.
+To enable TLS for a component, use the client configuration flag that contains the suffix `*.tls-enabled=true`, for example, `-querier.frontend-client.tls-enabled=true`.
 
 The following Grafana Mimir components support TLS for inter-communication, which are shown with their corresponding configuration flag prefixes:
 

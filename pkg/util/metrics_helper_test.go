@@ -19,28 +19,28 @@ import (
 func TestMatchesSelectors(t *testing.T) {
 	tests := []struct {
 		name      string
-		selectors labels.Labels
+		selectors []labels.Label
 		expected  bool
 	}{
 		{
 			name: "with some matching selectors",
-			selectors: labels.Labels{
-				labels.Label{Name: "lbl1", Value: "value1"},
+			selectors: []labels.Label{
+				{Name: "lbl1", Value: "value1"},
 			},
 			expected: true,
 		},
 		{
 			name: "with all matching selectors",
-			selectors: labels.Labels{
-				labels.Label{Name: "lbl1", Value: "value1"},
-				labels.Label{Name: "lbl2", Value: "value2"},
+			selectors: []labels.Label{
+				{Name: "lbl1", Value: "value1"},
+				{Name: "lbl2", Value: "value2"},
 			},
 			expected: true,
 		},
 		{
 			name: "with non-matching selectors",
-			selectors: labels.Labels{
-				labels.Label{Name: "lbl1", Value: "barbaz"},
+			selectors: []labels.Label{
+				{Name: "lbl1", Value: "barbaz"},
 			},
 			expected: false,
 		},

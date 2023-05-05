@@ -98,17 +98,18 @@ When using a reverse proxy, use the following settings when you configure the HT
 
 The Mimir Alertmanager adds some custom template functions to the default ones of the Prometheus Alertmanager.
 
-| Function            | Params                                        | Description                                                                                                                                                                  |
-| ------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tenantID`          | -                                             | Returns ID of the tenant the alert belongs to.                                                                                                                               |
-| `grafanaExploreURL` | `grafana_URL`,`datasource`,`from`,`to`,`expr` | Returns link to Grafana explore with range query based on the input parameters. Example: `{{ grafanaExploreURL "https://foo.bar" "xyz" "now-12h" "now" "up{foo=\"bar\"}" }}` |
+| Function                | Params                                        | Description                                                                                                                                                                                                       |
+| ----------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tenantID`              | -                                             | Returns ID of the tenant the alert belongs to.                                                                                                                                                                    |
+| `queryFromGeneratorURL` | `generator_url`                               | Returns the URL decoded query from `GeneratorURL` of an alert set by a Prometheus. Example: `{{ queryFromGeneratorURL (index .Alerts 0).GeneratorURL }}`                                                          |
+| `grafanaExploreURL`     | `grafana_URL`,`datasource`,`from`,`to`,`expr` | Returns link to Grafana explore with range query based on the input parameters. Example: `{{ grafanaExploreURL "https://foo.bar" "xyz" "now-12h" "now" (queryFromGeneratorURL (index .Alerts 0).GeneratorURL) }}` |
 
 ## Sharding and replication
 
 The Alertmanager shards and replicates alerts by tenant.
 Sharding requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
 
-Grafana Mimir Alertmanager replicas use [hash ring]({{< relref "../hash-ring/index.md" >}}) that is stored in the KV store to discover their peers.
+Grafana Mimir Alertmanager replicas use a [hash ring]({{< relref "../hash-ring/index.md" >}}) that is stored in the KV store to discover their peers.
 This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
 If the Mimir Alertmanager replica receiving the HTTP request doesn't own the tenant to which the request belongs, the request is internally routed to the appropriate replica.
 

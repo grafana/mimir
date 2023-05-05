@@ -15,22 +15,22 @@
   //
 
   mimir_backend_args::
-    $.store_gateway_args +
+    $.alertmanager_args +
     $.compactor_args +
+    $.overrides_exporter_args +
     $.query_scheduler_args +
     $.ruler_args +
-    $.overrides_exporter_args {
+    $.store_gateway_args {
       target: 'backend',
 
       // Do not conflict with /data/tsdb and /data/tokens used by store-gateway.
+      'alertmanager.storage.path': '/data/alertmanager',
       'compactor.data-dir': '/data/compactor',
-
-      // Run the Alertmanager with the local filesystem, so we don't really use it as bundled with Alertmanager at Grafana Labs.
-      'alertmanager-storage.backend': 'filesystem',
 
       // Use ruler's remote evaluation mode.
       'querier.frontend-address': null,
       'ruler.query-frontend.address': 'dns:///mimir-read-headless.%s.svc.cluster.local:9095' % $._config.namespace,
+      'ruler.alertmanager-url': 'http://mimir-backend.%s.svc.cluster.local:8080/alertmanager' % $._config.namespace,
 
       // Restrict number of active query-schedulers.
       'query-scheduler.max-used-instances': 2,

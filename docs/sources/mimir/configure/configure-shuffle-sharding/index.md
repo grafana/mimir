@@ -4,7 +4,7 @@ aliases:
   - configuring-shuffle-sharding/
   - ../operators-guide/configure/configure-shuffle-sharding/
 description: Learn how to configure shuffle sharding.
-menuTitle: Configure shuffle sharding
+menuTitle: Shuffle sharding
 title: Configure Grafana Mimir shuffle sharding
 weight: 80
 ---

@@ -150,11 +150,11 @@ func (i *timeSeriesIterator) Labels() (l labels.Labels) {
 	}
 
 	series := i.ts[i.posSeries]
-	i.labels = make(labels.Labels, len(series.Labels))
+	builder := labels.NewScratchBuilder(len(series.Labels))
 	for posLabel := range series.Labels {
-		i.labels[posLabel].Name = series.Labels[posLabel].Name
-		i.labels[posLabel].Value = series.Labels[posLabel].Value
+		builder.Add(series.Labels[posLabel].Name, series.Labels[posLabel].Value)
 	}
+	i.labels = builder.Labels()
 	i.labelsSeriesPos = i.posSeries
 	return i.labels
 }

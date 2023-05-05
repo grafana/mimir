@@ -1,0 +1,11 @@
+apiVersion: 1
+datasources:
+- name: Mimir
+  type: prometheus
+  access: proxy
+  uid: mimir
+  orgID: 1
+  url: http://nginx:8080/prometheus
+  isDefault: true
+  jsonData:
+    prometheusType: Mimir

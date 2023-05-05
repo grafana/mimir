@@ -450,9 +450,9 @@ How to **investigate**:
 
 ### MimirIngesterTSDBWALCorrupted
 
-This alert fires when a Mimir ingester finds a corrupted TSDB WAL (stored on disk) while replaying it at ingester startup or when creation of a checkpoint comes across a WAL corruption.
+This alert fires when more than one Mimir ingester finds a corrupted TSDB WAL (stored on disk) while replaying it at ingester startup or when creation of a checkpoint comes across a WAL corruption.
 
-If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism causes data loss because all WAL records after the corrupted segment are discarded, and so their samples are lost while replaying the WAL. If this happens only on 1 ingester then Mimir doesn't suffer any data loss because of the replication factor, but if it happens on multiple ingesters some data loss is possible.
+If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism causes data loss because all WAL records after the corrupted segment are discarded, and so their samples are lost while replaying the WAL. If this happens only on 1 ingester or only on one zone in a multi-zone cluster, then Mimir doesn't suffer any data loss because of the replication factor. But if it happens on multiple ingesters, multiple zones, or both, some data loss is possible.
 
 To investigate how the ingester dealt with the WAL corruption, it's recommended you search the logs, e.g. with the following Grafana Loki query:
 
@@ -1167,21 +1167,6 @@ How to **investigate**:
 - This alert should always be actionable. There are two possible outcomes:
   1. The alert fired because of a bug in Mimir: fix it.
   1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.
-
-### MimirDistributorForwardingErrorRate
-
-This alert fires when the Distributor is trying to forward samples to a forwarding target, but the forwarding requests
-result in errors at a high rate.
-
-How it **works**:
-
-- The alert compares the total rate of forwarding requests to the rate of forwarding requests which result in an error.
-
-How to **investigate**:
-
-- Check the `Mimir / Writes` dashboard, it should have a row named `Distributor Forwarding` which also shows the type of error if an HTTP status code was returned.
-- Check the Distributor logs, depending on the type of errors which occur the Distributor might log information about the errors.
-- Check what the forwarding targets are in use, this can be seen in the runtime config under the key `forwarding_endpoint`, then check the logs of the forwarding target(s).
 
 ### MimirRingMembersMismatch
 

@@ -81,15 +81,16 @@ func (m *mockExemplarQuerier) Select(_, _ int64, allMatchers ...[]*labels.Matche
 }
 
 func (m *mockExemplarQuerier) matches(res exemplar.QueryResult, matchers []*labels.Matcher) bool {
-	for _, l := range res.SeriesLabels {
+	ret := true
+	res.SeriesLabels.Range(func(l labels.Label) {
 		for _, m := range matchers {
 			if m.Name == l.Name && !m.Matches(l.Value) {
-				return false
+				ret = false
 			}
 		}
-	}
+	})
 
-	return true
+	return ret
 }
 
 func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {

@@ -191,10 +191,9 @@ func TestBucketBlockSet_remove(t *testing.T) {
 }
 
 // Regression tests against: https://github.com/thanos-io/thanos/issues/1983.
-func TestReadIndexCache_LoadSeries(t *testing.T) {
+func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 
-	s := NewBucketStoreMetrics(nil)
 	b := &bucketBlock{
 		meta: &metadata.Meta{
 			BlockMeta: tsdb.BlockMeta{
@@ -203,7 +202,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 		},
 		bkt:        bkt,
 		logger:     log.NewNopLogger(),
-		metrics:    s,
+		metrics:    NewBucketStoreMetrics(nil),
 		indexCache: noopCache{},
 	}
 
@@ -223,32 +222,33 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	}
 
 	// Success with no refetches.
+	stats := newSafeQueryStats()
 	loaded := newBucketIndexLoadedSeries()
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 100, loaded, newSafeQueryStats()))
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 100, loaded, stats))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2:  []byte("aaaaaaaaaa"),
 		13: []byte("bbbbbbbbbb"),
 		24: []byte("cccccccccc"),
 	}, loaded.series)
-	assert.Equal(t, float64(0), promtest.ToFloat64(s.seriesRefetches))
+	assert.Equal(t, 0, stats.export().seriesRefetches)
 
 	// Success with 2 refetches.
 	loaded = newBucketIndexLoadedSeries()
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 15, loaded, newSafeQueryStats()))
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 15, loaded, stats))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2:  []byte("aaaaaaaaaa"),
 		13: []byte("bbbbbbbbbb"),
 		24: []byte("cccccccccc"),
 	}, loaded.series)
-	assert.Equal(t, float64(2), promtest.ToFloat64(s.seriesRefetches))
+	assert.Equal(t, 2, stats.export().seriesRefetches)
 
 	// Success with refetch on first element.
 	loaded = newBucketIndexLoadedSeries()
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2}, false, 2, 5, loaded, newSafeQueryStats()))
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2}, false, 2, 5, loaded, stats))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2: []byte("aaaaaaaaaa"),
 	}, loaded.series)
-	assert.Equal(t, float64(3), promtest.ToFloat64(s.seriesRefetches))
+	assert.Equal(t, 3, stats.export().seriesRefetches)
 
 	buf.Reset()
 	buf.PutByte(0)
@@ -258,7 +258,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	assert.NoError(t, bkt.Upload(context.Background(), filepath.Join(b.meta.ULID.String(), block.IndexFilename), bytes.NewReader(buf.Get())))
 
 	// Fail, but no recursion at least.
-	assert.Error(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 1, 15, newBucketIndexLoadedSeries(), newSafeQueryStats()))
+	assert.Error(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 1, 15, newBucketIndexLoadedSeries(), stats))
 }
 
 func TestBlockLabelNames(t *testing.T) {
@@ -525,7 +525,7 @@ func (o omitMatchersStrategy) selectPostings(groups []postingGroup) (selected, o
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
-	const series = 500
+	const series = 50000
 
 	bucketBlockFactories := map[string]func() *bucketBlock{
 		"binary reader": prepareTestBlockWithBinaryReader(tb, appendTestSeries(series)),
@@ -883,15 +883,6 @@ func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
 	return iir.Reader.LabelNames()
 }
 
-func (iir *interceptedIndexReader) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
-	if iir.onLabelValuesCalled != nil {
-		if err := iir.onLabelValuesCalled(name); err != nil {
-			return nil, err
-		}
-	}
-	return iir.Reader.LabelValues(name, prefix, filter)
-}
-
 func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
 	if iir.onLabelValuesOffsetsCalled != nil {
 		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {
@@ -1129,21 +1120,75 @@ func benchmarkExpandedPostings(
 	for _, testCase := range seriesSelectionTestCases(tb, series) {
 		tb.Run(testCase.name, func(tb test.TB) {
 			indexr := newBucketIndexReader(newTestBucketBlock(), selectAllStrategy{})
+
+			var allSeries []labels.Labels
+			if !tb.IsBenchmark() {
+				allPostings, _, err := indexr.ExpandedPostings(ctx, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "my_made_up_label", "")}, newSafeQueryStats())
+				require.NoError(tb, err)
+				allSeries = loadSeries(ctx, tb, allPostings, indexr)
+			}
+
 			indexrStats := newSafeQueryStats()
 
 			tb.ResetTimer()
 			for i := 0; i < tb.N(); i++ {
 				p, _, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
-
-				if err != nil {
-					tb.Fatal(err.Error())
-				}
-				if testCase.expectedSeriesLen != len(p) {
-					tb.Fatalf("expected %d postings but got %d", testCase.expectedSeriesLen, len(p))
+				assert.NoError(tb, err)
+				assert.Equal(tb, testCase.expectedSeriesLen, len(p))
+				if !tb.IsBenchmark() {
+					seriesThatMatch := filterSeries(allSeries, testCase.matchers)
+					seriesForPostings := loadSeries(ctx, tb, p, indexr)
+					assert.Equal(tb, seriesThatMatch, seriesForPostings)
 				}
 			}
 		})
 	}
+}
+
+// filterSeries modified series in place and returns a subslice of series.
+func filterSeries(series []labels.Labels, ms []*labels.Matcher) []labels.Labels {
+	writeIdx := 0
+	for i, s := range series {
+		matches := true
+		for _, m := range ms {
+			if !m.Matches(s.Get(m.Name)) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			series[writeIdx], series[i] = series[i], series[writeIdx]
+			writeIdx++
+		}
+	}
+	return series[:writeIdx]
+}
+
+func loadSeries(ctx context.Context, tb test.TB, postings []storage.SeriesRef, indexr *bucketIndexReader) []labels.Labels {
+	setIterator := newLoadingSeriesChunkRefsSetIterator(
+		ctx,
+		newPostingsSetsIterator(postings, 1000),
+		indexr,
+		noopCache{},
+		newSafeQueryStats(),
+		indexr.block.meta,
+		nil,
+		nil,
+		true,
+		0,
+		0,
+		"",
+		1,
+		log.NewNopLogger(),
+	)
+	series := make([]labels.Labels, 0, len(postings))
+	seriesIterator := newSeriesSetWithoutChunks(ctx, setIterator, newSafeQueryStats())
+	for seriesIterator.Next() {
+		lbls, _ := seriesIterator.At()
+		series = append(series, lbls)
+	}
+	require.NoError(tb, seriesIterator.Err())
+	return series
 }
 
 type seriesSelectionTestCase struct {
@@ -2244,14 +2289,14 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
-	}, numSamplesPerSeries, minTime, maxTime, nil)
+	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
 	_, err = testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
-	}, numSamplesPerSeries, minTime, maxTime, nil)
+	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
 	// Create a bucket and upload the block there.
@@ -2364,7 +2409,7 @@ func createBlockWithOneSeriesWithStep(t test.TB, dir string, lbls labels.Labels,
 	ref, err := app.Append(0, lbls, ts, random.Float64())
 	assert.NoError(t, err)
 	for i := 1; i < totalSamples; i++ {
-		_, err := app.Append(ref, nil, ts+step*int64(i), random.Float64())
+		_, err := app.Append(ref, lbls, ts+step*int64(i), random.Float64())
 		assert.NoError(t, err)
 	}
 	assert.NoError(t, app.Commit())
@@ -2779,16 +2824,17 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		lbls := labels.NewBuilder(opts.PrependLabels)
 		lbls.Set("foo", "bar")
 		lbls.Set("i", fmt.Sprintf("%07d%s", tsLabel, labelLongSuffix))
+		ll := lbls.Labels()
 		ref, err := app.Append(
 			0,
-			lbls.Labels(),
+			ll,
 			int64(tsLabel)*opts.ScrapeInterval.Milliseconds(),
 			opts.Random.Float64(),
 		)
 		assert.NoError(t, err)
 
 		for is := 1; is < opts.SamplesPerSeries; is++ {
-			_, err := app.Append(ref, nil, int64(tsLabel+is)*opts.ScrapeInterval.Milliseconds(), opts.Random.Float64())
+			_, err := app.Append(ref, ll, int64(tsLabel+is)*opts.ScrapeInterval.Milliseconds(), opts.Random.Float64())
 			assert.NoError(t, err)
 		}
 	}

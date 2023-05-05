@@ -106,6 +106,7 @@ rules:
   - list
   - get
   - watch
+  - patch
 - apiGroups:
   - apps
   resources:
@@ -817,7 +818,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -926,7 +927,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -1023,7 +1024,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1103,7 +1104,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1182,7 +1183,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1236,7 +1237,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.4.0
+        image: grafana/rollout-operator:v0.5.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -1314,7 +1315,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1391,7 +1392,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1471,6 +1472,7 @@ spec:
         - -compactor.compactor-tenant-shard-size=1
         - -compactor.data-dir=/data
         - -compactor.deletion-delay=2h
+        - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.prefix=
@@ -1487,7 +1489,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1579,7 +1581,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
@@ -1603,7 +1607,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1695,7 +1699,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
@@ -1719,7 +1725,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1811,7 +1817,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
@@ -1835,7 +1843,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2136,7 +2144,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -alertmanager-storage.backend=filesystem
+        - -alertmanager-storage.gcs.bucket-name=alerts-bucket
+        - -alertmanager.sharding-ring.replication-factor=3
+        - -alertmanager.sharding-ring.store=memberlist
+        - -alertmanager.storage.path=/data/alertmanager
+        - -alertmanager.web.external-url=http://test/alertmanager
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -2171,6 +2183,7 @@ spec:
         - -compactor.compactor-tenant-shard-size=1
         - -compactor.data-dir=/data/compactor
         - -compactor.deletion-delay=2h
+        - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.prefix=
@@ -2203,7 +2216,7 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -ruler-storage.gcs.bucket-name=rules-bucket
-        - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
+        - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
@@ -2223,7 +2236,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -2312,7 +2325,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -alertmanager-storage.backend=filesystem
+        - -alertmanager-storage.gcs.bucket-name=alerts-bucket
+        - -alertmanager.sharding-ring.replication-factor=3
+        - -alertmanager.sharding-ring.store=memberlist
+        - -alertmanager.storage.path=/data/alertmanager
+        - -alertmanager.web.external-url=http://test/alertmanager
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -2347,6 +2364,7 @@ spec:
         - -compactor.compactor-tenant-shard-size=1
         - -compactor.data-dir=/data/compactor
         - -compactor.deletion-delay=2h
+        - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.prefix=
@@ -2379,7 +2397,7 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -ruler-storage.gcs.bucket-name=rules-bucket
-        - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
+        - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
@@ -2399,7 +2417,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -2488,7 +2506,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -alertmanager-storage.backend=filesystem
+        - -alertmanager-storage.gcs.bucket-name=alerts-bucket
+        - -alertmanager.sharding-ring.replication-factor=3
+        - -alertmanager.sharding-ring.store=memberlist
+        - -alertmanager.storage.path=/data/alertmanager
+        - -alertmanager.web.external-url=http://test/alertmanager
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -2523,6 +2545,7 @@ spec:
         - -compactor.compactor-tenant-shard-size=1
         - -compactor.data-dir=/data/compactor
         - -compactor.deletion-delay=2h
+        - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.prefix=
@@ -2555,7 +2578,7 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -ruler-storage.gcs.bucket-name=rules-bucket
-        - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
+        - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
@@ -2575,7 +2598,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -2667,7 +2690,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
@@ -2703,7 +2728,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -2795,7 +2820,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
@@ -2831,7 +2858,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -2923,7 +2950,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
         - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
@@ -2959,7 +2988,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -3090,7 +3119,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -3221,7 +3250,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -3352,7 +3381,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.7.2
+        image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
