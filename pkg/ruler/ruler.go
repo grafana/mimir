@@ -35,7 +35,6 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerdiscovery"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -106,7 +105,7 @@ type Config struct {
 	// Specifies how alert managers should be discovered - injected internally
 	AlertmanagerDiscovery alertmanagerdiscovery.Config `yaml:"-"`
 	// Alertmanager ring discovery configuration - injected internally
-	AlertmanagerRing alertmanager.RingConfig `yaml:"-"`
+	AlertmanagerRing alertmanagerdiscovery.RingConfig `yaml:"-"`
 	// How long to wait between refreshing the list of Alertmanager based on DNS service discovery.
 	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval" category:"advanced"`
 	// Capacity of the queue for notifications to be sent to the Alertmanager.

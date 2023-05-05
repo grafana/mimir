@@ -31,7 +31,6 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
 
-	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerdiscovery"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
@@ -118,7 +117,7 @@ func NewDefaultMultiTenantManager(cfg Config, alertmanagerHTTPPrefix string, man
 	switch cfg.AlertmanagerDiscovery.Mode {
 	case alertmanagerdiscovery.ModeRing:
 		level.Info(logger).Log("msg", "using ring based alertmanager discovery")
-		m.discoveryService, err = alertmanager.NewRing(cfg.AlertmanagerRing, "ruler", m, logger, reg)
+		m.discoveryService, err = alertmanagerdiscovery.NewRingProvider(cfg.AlertmanagerRing, "ruler", m, logger, reg)
 		if err != nil {
 			return nil, err
 		}

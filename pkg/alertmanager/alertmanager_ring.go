@@ -12,12 +12,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 const (
@@ -75,23 +71,6 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.InstanceZone, flagNamePrefix+"instance-availability-zone", "", "The availability zone where this instance is running. Required if zone-awareness is enabled.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
-}
-
-// NewRing creates a new client ring for the clientComponent, with servicediscovery notification being sent to the receiver.
-func NewRing(cfg RingConfig, clientComponent string, receiver servicediscovery.Notifications, logger log.Logger, reg prometheus.Registerer) (services.Service, error) {
-	// Since this is a client for the alert-managers ring, we append "alertmanager-client" to the component to clearly differentiate it.
-	clientComponent += "-alertmanager-client"
-
-	client, err := ring.New(cfg.toRingConfig(), clientComponent, RingKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize alertmanagers' ring client")
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	const ringCheckPeriod = 5 * time.Second
-	return servicediscovery.NewRing(client, ringCheckPeriod, 0, receiver), nil
 }
 
 // ToLifecyclerConfig returns a LifecyclerConfig based on the alertmanager

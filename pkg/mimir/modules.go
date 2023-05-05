@@ -304,7 +304,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.Ruler.AlertManagerRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.Ruler.AlertmanagerRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
@@ -684,8 +684,8 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, nil
 	}
 
-	t.Cfg.Ruler.AlertManagerDiscovery = t.Cfg.Alertmanager.ServiceDiscovery
-	t.Cfg.Ruler.AlertManagerRing = t.Cfg.Alertmanager.ShardingRing
+	t.Cfg.Ruler.AlertmanagerDiscovery = t.Cfg.Alertmanager.ServiceDiscovery
+	t.Cfg.Ruler.AlertmanagerRing.Common = t.Cfg.Alertmanager.ShardingRing.Common
 	t.Cfg.Ruler.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	var embeddedQueryable prom_storage.Queryable

@@ -30,7 +30,6 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerdiscovery"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/util"
@@ -88,8 +87,7 @@ func TestNewDefaultMultiTenantManager(t *testing.T) {
 	t.Run("with ring discovery mode", func(t *testing.T) {
 		m, err := NewDefaultMultiTenantManager(Config{
 			RulePath: dir,
-			AlertmanagerRing: alertmanager.RingConfig{
-				ReplicationFactor: 1,
+			AlertmanagerRing: alertmanagerdiscovery.RingConfig{
 				Common: util.CommonRingConfig{
 					KVStore: kv.Config{
 						Store: "mock",
