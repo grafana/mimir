@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+set -euf -o pipefail
+
+# Return the URL directory for a source file path.
+function url_directory {
+  local -r path="$1"
+
+  if [[ "${path}" =~ index.md$ ]]; then
+    dirname "${path}"
+
+    return
+  fi
+
+  echo "${path::-3}"
+}
+
+echo "Steps:"
+while IFS= read -r line; do
+  IFS='|' read -r src dst <<<"${line}"
+  echo
+  echo "1. Update ${dst} with:"
+  echo "$(realpath -m --relative-to "$(dirname "$(url_directory "${dst}")")" "$(url_directory "${src}")")/"
+  echo "2. Test by going to:"
+  echo "http://localhost:3002/docs/mimir/latest/$(url_directory "${src/docs\/sources\/mimir\//}")/"
+  echo "3. You should be redirected to:"
+  echo "http://localhost:3002/docs/mimir/latest/$(url_directory "${dst/docs\/sources\/mimir\//}")/"
+done < <(git diff-index --find-renames=50% --merge-base --diff-filter R origin/main | grep .md$ | awk '{printf "%s|%s\n", $6, $7 }')

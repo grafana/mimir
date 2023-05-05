@@ -14,11 +14,11 @@ Grafana Mimir dashboards and alerts require certain labels to exist on metrics s
 
 The `mimir-distributed` Helm chart provides metamonitoring support, which takes care of these labels.
 For more information about Helm chart metamonitoring, refer to [Collect metrics and logs via the Helm chart](/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/).
-If you are using Helm chart metamonitoring, go to [Installing Grafana Mimir dashboards and alerts]({{< relref "installing-dashboards-and-alerts.md" >}}).
+If you are using Helm chart metamonitoring, go to [Installing Grafana Mimir dashboards and alerts]({{< relref "./installing-dashboards-and-alerts" >}}).
 
 If you are not, then continue reading.
 Your Prometheus or Grafana Agent must be configured to add these labels in order for the dashboards and alerts to function.
-The following table shows the required label names and whether they can be customized when [compiling dashboards or alerts from sources]({{< relref "installing-dashboards-and-alerts.md" >}}).
+The following table shows the required label names and whether they can be customized when [compiling dashboards or alerts from sources]({{< relref "./installing-dashboards-and-alerts" >}}).
 
 | Label name  | Configurable? | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | :---------- | :------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
@@ -33,7 +33,7 @@ For rules and alerts to function properly, you must configure your Prometheus or
 ## Deployment type
 
 By default, Grafana Mimir dashboards assume Mimir is deployed in containers orchestrated by Kubernetes.
-If you're running Mimir on baremetal, set the configuration field `deployment_type: 'baremetal'` and [re-compile the dashboards]({{< relref "installing-dashboards-and-alerts.md" >}}).
+If you're running Mimir on baremetal, set the configuration field `deployment_type: 'baremetal'` and [re-compile the dashboards]({{< relref "./installing-dashboards-and-alerts" >}}).
 
 ## Job selection
 

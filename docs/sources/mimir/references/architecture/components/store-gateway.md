@@ -9,8 +9,8 @@ weight: 70
 
 # Grafana Mimir store-gateway
 
-The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture/index.md#long-term-storage" >}}).
-On the read path, the [querier]({{< relref "querier.md" >}}) and the [ruler]({{< relref "ruler/index.md" >}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
+The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture#long-term-storage" >}}).
+On the read path, the [querier]({{< relref "./querier" >}}) and the [ruler]({{< relref "./ruler" >}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
 
 To find the right blocks to look up at query time, the store-gateway requires a view of the bucket in long-term storage.
 The store-gateway keeps the bucket view updated using one of the following options:
@@ -188,7 +188,7 @@ You can configure the Memcached client via flags that include the prefix `-block
 
 ### Metadata cache
 
-Store-gateways and [queriers]({{< relref "querier.md" >}}) can use memcached to cache the following bucket metadata:
+Store-gateways and [queriers]({{< relref "./querier" >}}) can use memcached to cache the following bucket metadata:
 
 - List of tenants
 - List of blocks per tenant

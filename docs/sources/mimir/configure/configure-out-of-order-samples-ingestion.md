@@ -28,7 +28,7 @@ limits:
 If your Mimir has multitenancy enabled, you can still use the preceding method to set a default out-of-order time window threshold for all tenants.
 If a particular tenant needs a custom threshold, you can use the runtime configuration to set a per-tenant override.
 
-1. Enable [runtime configuration]({{< relref "about-runtime-configuration.md" >}}).
+1. Enable [runtime configuration]({{< relref "./about-runtime-configuration" >}}).
 1. Add an override for the tenant that needs a custom out-of-order time window:
 
 ```yaml

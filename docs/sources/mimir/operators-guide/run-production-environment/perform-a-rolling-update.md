@@ -35,7 +35,7 @@ Stateful components have the following restrictions:
 
 ### Alertmanagers
 
-[Alertmanagers]({{< relref "../../references/architecture/components/alertmanager.md">}}) store alerts state in memory.
+[Alertmanagers]({{< relref "../../references/architecture/components/alertmanager" >}}) store alerts state in memory.
 When an Alertmanager is restarted, the alerts stored on the Alertmanager are not available until the Alertmanager runs again.
 
 By default, Alertmanagers replicate each tenant's alerts to three Alertmanagers.
@@ -47,7 +47,7 @@ To ensure no alerts notification, reception, or visualization fail during a roll
 
 ### Ingesters
 
-[Ingesters]({{< relref "../../references/architecture/components/ingester.md">}}) store recently received samples in memory.
+[Ingesters]({{< relref "../../references/architecture/components/ingester" >}}) store recently received samples in memory.
 When an ingester restarts, the samples stored in the restarting ingester are not available for querying until the ingester runs again.
 
 By default, ingesters run with a replication factor equal to `3`.

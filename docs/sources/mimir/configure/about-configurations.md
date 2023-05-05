@@ -13,7 +13,7 @@ You can configure Grafana Mimir via a ([YAML](https://en.wikipedia.org/wiki/YAML
 
 To see the most common CLI flags that you need to get started with Grafana Mimir, run the `mimir -help` command. To see all of the available CLI flags, run the `mimir -help-all` command.
 
-A given configuration loads at startup and cannot be modified at runtime. However, Grafana Mimir does have a second configuration file, known as the _runtime configuration_, that is dynamically reloaded. For more information, see [About runtime configuration]({{< relref "about-runtime-configuration.md" >}}).
+A given configuration loads at startup and cannot be modified at runtime. However, Grafana Mimir does have a second configuration file, known as the _runtime configuration_, that is dynamically reloaded. For more information, see [About runtime configuration]({{< relref "./about-runtime-configuration" >}}).
 
 To see the current configuration state of any component, use the [`/config`]({{< relref "../references/http-api/index.md#configuration" >}}) or [`/runtime_config`]({{< relref "../references/http-api/index.md#runtime-configuration" >}}) HTTP API endpoint.
 
@@ -38,7 +38,7 @@ blocks_storage:
     bucket_name: mimir-blocks
 ```
 
-For a reference of this configuration, see [Configure Grafana Mimir object storage backend]({{< relref "configure-object-storage-backend.md" >}}).
+For a reference of this configuration, see [Configure Grafana Mimir object storage backend]({{< relref "./configure-object-storage-backend" >}}).
 
 The precedence of the common configuration is as follows, where each configuration overrides the previous one:
 
