@@ -19,6 +19,11 @@ type Interface interface {
 	Get() any
 }
 
+type NoopPool struct{}
+
+func (NoopPool) Put(any)  {}
+func (NoopPool) Get() any { return nil }
+
 // Bytes is a pool of bytes that can be reused.
 type Bytes interface {
 	// Get returns a new byte slices that fits the given size.
