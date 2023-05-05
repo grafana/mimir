@@ -50,7 +50,7 @@ spec:
         []
       containers:
         - name: overrides-exporter
-          image: "grafana/enterprise-metrics:v2.7.1"
+          image: "registry.dev.databricks.com/grafana-enterprise-metrics:2.7.1@sha256:b08a76f912f7cbdebe79cde40c6a3a9a4244efe37c51d3791005aae88a81e327"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=overrides-exporter"
