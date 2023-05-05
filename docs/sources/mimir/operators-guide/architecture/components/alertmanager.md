@@ -107,7 +107,7 @@ The Mimir Alertmanager adds some custom template functions to the default ones o
 The Alertmanager shards and replicates alerts by tenant.
 Sharding requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
 
-Grafana Mimir Alertmanager replicas use [hash ring]({{< relref "../hash-ring/index.md" >}}) that is stored in the KV store to discover their peers.
+Grafana Mimir Alertmanager replicas use a [hash ring]({{< relref "../hash-ring/index.md" >}}) that is stored in the KV store to discover their peers.
 This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
 If the Mimir Alertmanager replica receiving the HTTP request doesn't own the tenant to which the request belongs, the request is internally routed to the appropriate replica.
 

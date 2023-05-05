@@ -6,10 +6,12 @@
 package storegateway
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"sync"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
@@ -33,6 +36,7 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -61,12 +65,14 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 
 // ExpandedPostings returns postings in expanded list instead of index.Postings.
 // This is because we need to have them buffered anyway to perform efficient lookup
-// on object storage.
-// Found posting IDs (ps) are not strictly required to point to a valid Series, e.g. during
-// background garbage collections.
+// on object storage. The returned postings are sorted.
 //
-// Reminder: A posting is a reference (represented as a uint64) to a series reference, which in turn points to the first
-// chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
+// Depending on the postingsSelectionStrategy there may be some pendingMatchers returned.
+// If pendingMatchers is not empty, then the returned postings may or may not match the pendingMatchers.
+// The caller is responsible for filtering the series of the postings with the pendingMatchers.
+//
+// Reminder: A posting is a reference (represented as a uint64) to a series, which points to the first
+// byte of a series in the index for a given block of data. Postings can be fetched by
 // single label name=value.
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
 	var (
@@ -594,6 +600,7 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 	return l, key, pendingMatchers, err
 }
 
+// preloadSeries expects the provided ids to be sorted.
 func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
 	span, ctx := tracing.StartSpan(ctx, "preloadSeries()")
 	defer span.Finish()
@@ -625,47 +632,72 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 	return loaded, g.Wait()
 }
 
-func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
-	begin := time.Now()
+var seriesOffsetReaders = &sync.Pool{New: func() any {
+	return &offsetTrackingReader{r: bufio.NewReaderSize(nil, 32*1024)}
+}}
 
-	b, err := r.block.readIndexRange(ctx, int64(start), int64(end-start))
+// loadSeries expects the provided ids to be sorted.
+func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
+	defer r.recordLoadSeriesStats(stats, refetch, len(ids), start, end, time.Now())
+
+	reader, err := r.block.indexRangeReader(ctx, int64(start), int64(end-start))
 	if err != nil {
 		return errors.Wrap(err, "read series range")
 	}
+	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "loadSeries close range reader")
 
-	stats.update(func(stats *queryStats) {
-		stats.seriesFetchCount++
-		stats.seriesFetched += len(ids)
-		stats.seriesFetchDurationSum += time.Since(begin)
-		stats.seriesFetchedSizeSum += int(end - start)
-	})
+	offsetReader := seriesOffsetReaders.Get().(*offsetTrackingReader)
+	defer seriesOffsetReaders.Put(offsetReader)
+
+	offsetReader.Reset(start, reader)
+	defer offsetReader.Release()
+
+	// Use a slab pool to reduce allocations by sharding one large slice of bytes instead of allocating each series' bytes separately.
+	// But in order to avoid a race condition with an async cache, we never release the pool and let the GC collect it.
+	bytesPool := pool.NewSlabPool[byte](pool.NoopPool{}, seriesBytesSlabSize)
 
 	for i, id := range ids {
-		c := b[uint64(id)-start:]
-
-		l, n := binary.Uvarint(c)
-		if n < 1 {
-			return errors.New("reading series length failed")
+		// We iterate the series in order assuming they are sorted.
+		err := offsetReader.SkipTo(uint64(id))
+		if err != nil {
+			return err
 		}
-		if len(c) < n+int(l) {
+		seriesSize, err := binary.ReadUvarint(offsetReader)
+		if err != nil {
+			return err
+		}
+		seriesBytes := bytesPool.Get(int(seriesSize))
+		n, err := io.ReadFull(offsetReader, seriesBytes)
+		if errors.Is(err, io.ErrUnexpectedEOF) {
 			if i == 0 && refetch {
-				return errors.Errorf("invalid remaining size, even after refetch, remaining: %d, expected %d", len(c), n+int(l))
+				return errors.Errorf("invalid remaining size, even after refetch, read %d, expected %d", n, seriesSize)
 			}
 
+			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", seriesSize, "max_series_size", maxSeriesSize)
 			// Inefficient, but should be rare.
-			r.block.metrics.seriesRefetches.Inc()
-			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "id", id, "series length", n+int(l), "maxSeriesSize", maxSeriesSize)
-
 			// Fetch plus to get the size of next one if exists.
-			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+uint64(n+int(l)+1), loaded, stats)
+			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+binary.MaxVarintLen64+seriesSize+1, loaded, stats)
+		} else if err != nil {
+			return errors.Wrapf(err, "fetching series %d from block %s", id, r.block.meta.ULID)
 		}
-		c = c[n : n+int(l)]
+		loaded.addSeries(id, seriesBytes)
 
-		loaded.addSeries(id, c)
-
-		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, c)
+		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes)
 	}
 	return nil
+}
+
+func (r *bucketIndexReader) recordLoadSeriesStats(stats *safeQueryStats, refetch bool, numSeries int, start, end uint64, loadStartTime time.Time) {
+	stats.update(func(stats *queryStats) {
+		if !refetch {
+			// only the root loadSeries will record the time
+			stats.seriesFetchDurationSum += time.Since(loadStartTime)
+		} else {
+			stats.seriesRefetches++
+		}
+		stats.seriesFetched += numSeries
+		stats.seriesFetchedSizeSum += int(end - start)
+	})
 }
 
 // Close released the underlying resources of the reader.

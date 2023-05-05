@@ -34,6 +34,10 @@ const (
 	// fine-grained chunks cache is enabled (byte slices have variable size and contain many chunks) or disabled (byte slices
 	// are at most 16KB each).
 	chunkBytesSlabSize = 160 * 1024
+
+	// Selected so that most series fit it and at the same time it's not too large for requests with few series.
+	// Most series are less than 4096 B.
+	seriesBytesSlabSize = 16 * 1024
 )
 
 var (
