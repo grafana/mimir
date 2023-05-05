@@ -661,7 +661,12 @@ func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 		return
 	}
 
-	t.RulerStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, rules.FileLoader{}, util_log.Logger, t.Registerer)
+	// For any ruler operation that supports reading stale data for a short period,
+	// we do accept stale data for about a polling interval (2 intervals in the worst
+	// case scenario due to the jitter applied).
+	cacheTTL := t.Cfg.Ruler.PollInterval
+
+	t.RulerStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, rules.FileLoader{}, cacheTTL, util_log.Logger, t.Registerer)
 	return
 }
 

@@ -7,29 +7,52 @@ package rulestore
 
 import (
 	"flag"
+	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 
-	"github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
+
+const (
+	LocalBackend = "local"
+)
+
+var supportedCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
 
 // Config configures a rule store.
 type Config struct {
 	bucket.Config `yaml:",inline"`
-	Local         local.Config `yaml:"local"`
+	Local         LocalConfig `yaml:"local"`
+
+	// BackendConfig holds the configuration used for the ruler storage cache.
+	Cache cache.BackendConfig `yaml:"cache"`
 }
 
 // RegisterFlags registers the backend storage config.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	prefix := "ruler-storage."
 
-	cfg.StorageBackendConfig.ExtraBackends = []string{local.Name}
+	cfg.StorageBackendConfig.ExtraBackends = []string{LocalBackend}
 	cfg.Local.RegisterFlagsWithPrefix(prefix, f)
 	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "ruler", f, logger)
+
+	f.StringVar(&cfg.Cache.Backend, prefix+"cache.backend", "", fmt.Sprintf("Backend for ruler storage cache, if not empty. The cache is supported for any backend except %q. Supported values: %s.", LocalBackend, strings.Join(supportedCacheBackends, ", ")))
+	cfg.Cache.Memcached.RegisterFlagsWithPrefix(prefix+"cache.memcached.", f)
+	cfg.Cache.Redis.RegisterFlagsWithPrefix(prefix+"cache.redis.", f)
+}
+
+func (cfg *Config) Validate() error {
+	if err := cfg.Config.Validate(); err != nil {
+		return err
+	}
+
+	return cfg.Cache.Validate()
 }
 
 // IsDefaults returns true if the storage options have not been set.
@@ -39,6 +62,15 @@ func (cfg *Config) IsDefaults() bool {
 
 	// Note: cmp.Equal will panic if it encounters anything it cannot handle.
 	return cmp.Equal(*cfg, defaults, cmp.FilterPath(filterNonYaml, cmp.Ignore()), cmp.Comparer(equalSecrets))
+}
+
+type LocalConfig struct {
+	Directory string `yaml:"directory"`
+}
+
+// RegisterFlagsWithPrefix registers flags with the input prefix.
+func (cfg *LocalConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.StringVar(&cfg.Directory, prefix+"local.directory", "", "Directory to scan for rules")
 }
 
 // Return true if the path contains a struct field with tag `yaml:"-"`.

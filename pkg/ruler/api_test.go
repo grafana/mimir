@@ -21,13 +21,170 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestRuler_ListRules(t *testing.T) {
+	const (
+		userID   = "user1"
+		interval = time.Minute
+	)
+
+	testCases := map[string]struct {
+		requestPath        string
+		configuredRules    rulespb.RuleGroupList
+		missingRules       rulespb.RuleGroupList
+		expectedStatusCode int
+		expectedRules      map[string][]rulefmt.RuleGroup
+		expectedErr        string
+	}{
+		"should list all rule groups of an user if the namespace parameter is missing": {
+			requestPath: "/prometheus/config/v1/rules",
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("COUNT_UP_RULE", "count(up)")},
+					Interval:  interval,
+				},
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedRules: map[string][]rulefmt.RuleGroup{
+				"namespace1": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace1",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+						Interval:  interval,
+					}),
+				},
+				"namespace2": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace2",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("COUNT_UP_RULE", "count(up)")},
+						Interval:  interval,
+					}),
+				},
+			},
+		},
+		"should list all rule groups of an user belonging to the input namespace": {
+			requestPath: "/prometheus/config/v1/rules/namespace1",
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("COUNT_UP_RULE", "count(up)")},
+					Interval:  interval,
+				},
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedRules: map[string][]rulefmt.RuleGroup{
+				"namespace1": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace1",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+						Interval:  interval,
+					}),
+				},
+			},
+		},
+		"should fail if some rule groups were missing when loading them": {
+			requestPath: "/prometheus/config/v1/rules",
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("COUNT_UP_RULE", "count(up)")},
+					Interval:  interval,
+				},
+			},
+			missingRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedErr:        "an error occurred while loading 1 rule groups",
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Pre-condition check: ensure all rules have the user set.
+			for _, rule := range tc.configuredRules {
+				assert.Equal(t, userID, rule.User)
+			}
+
+			cfg := defaultRulerConfig(t)
+			cfg.TenantFederation.Enabled = true
+
+			store := newMockRuleStore(map[string]rulespb.RuleGroupList{userID: tc.configuredRules})
+			store.setMissingRuleGroups(tc.missingRules)
+
+			r := prepareRuler(t, cfg, store, withStart())
+			a := NewAPI(r, r.store, log.NewNopLogger())
+
+			router := mux.NewRouter()
+			router.Path("/prometheus/config/v1/rules").Methods("GET").HandlerFunc(a.ListRules)
+			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("GET").HandlerFunc(a.ListRules)
+			req := requestFor(t, http.MethodGet, "https://localhost:8080"+tc.requestPath, nil, userID)
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			resp := w.Result()
+			body, _ := io.ReadAll(resp.Body)
+			require.Equal(t, tc.expectedStatusCode, resp.StatusCode)
+
+			if tc.expectedStatusCode >= 200 && tc.expectedStatusCode < 300 {
+				expectedYAML, err := yaml.Marshal(tc.expectedRules)
+				require.NoError(t, err)
+				require.YAMLEq(t, string(expectedYAML), string(body))
+			} else {
+				require.Contains(t, string(body), tc.expectedErr)
+			}
+		})
+
+	}
+}
 
 func TestRuler_PrometheusRules(t *testing.T) {
 	const (
