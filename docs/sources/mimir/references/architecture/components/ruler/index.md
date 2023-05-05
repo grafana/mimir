@@ -1,5 +1,6 @@
 ---
-aliases: ../../../operators-guide/architecture/components/ruler/
+aliases: 
+  - ../../../operators-guide/architecture/components/ruler/
 title: "(Optional) Grafana Mimir ruler"
 menuTitle: "(Optional) Ruler"
 description: "The ruler evaluates PromQL expressions defined in recording and alerting rules."

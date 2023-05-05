@@ -1,5 +1,6 @@
 ---
-aliases: ../../../operators-guide/architecture/components/query-frontend/
+aliases:
+  - ../../../operators-guide/architecture/components/query-frontend/
 title: "Grafana Mimir query-frontend"
 menuTitle: "Query-frontend"
 description: "The query-frontend accelerates queries."
