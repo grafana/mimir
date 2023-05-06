@@ -152,7 +152,7 @@ func (t *TokenDistributor) createTokenInfoCircularList(instanceInfoByInstance ma
 	}
 
 	curr := circularList.head
-	for _ = range t.sortedTokens {
+	for range t.sortedTokens {
 		t.populateTokenInfo(curr.getData(), newInstance)
 		curr = curr.next
 	}
@@ -418,7 +418,7 @@ func (t *TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, op
 				// Proof: if the current barrier of currentToken succeeds candidate, candidate would be at least the
 				// second occurrence of the zone of currentToken, which contradicts the definition of term barrier.
 				// In order to check whether the current barrier precedes candidate, we could compare the current
-				// replicated weight of currToken (i.e., the range of tokens from its barrier to curentToken itself)
+				// replicated weight of currToken (i.e., the range of tokens from its barrier to currentToken itself)
 				// with the range of tokens from candidate to currentToken itself, and if the former is greater, we
 				// can state that the barrier precedes candidate. In that case, candidate becomes the new barrier of
 				// currentToken, and replica start of the latter, being it the direct successor of a barrier, would
@@ -480,7 +480,7 @@ func (t *TokenDistributor) evaluateImprovement(candidate *candidateTokenInfo, op
 	return improvement
 }
 
-func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*tokenInfo], optimalTokenOwnership float64) Statistics {
+func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*tokenInfo], optimalTokenOwnership float64) *Statistics {
 	statisticType := make(map[string]StatisticType, 2)
 	token := StatisticType{}
 	instance := StatisticType{}
@@ -501,26 +501,33 @@ func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*to
 	instance.OptimalTokenOwnership = float64(t.tokensPerInstance) * optimalTokenOwnership
 	instance.StandardDeviation = 0.0
 	instance.Sum = 0.0
+	sum := 0.0
 	for {
-		dist := curr.getData().getReplicatedOwnership() / optimalTokenOwnership
 		currTokensOwnership := curr.getData().getReplicatedOwnership()
+		dist := currTokensOwnership / optimalTokenOwnership
 		token.MinDistanceFromOptimalTokenOwnership = math.Min(token.MinDistanceFromOptimalTokenOwnership, dist)
 		token.MaxDistanceFromOptimalTokenOwnership = math.Max(token.MaxDistanceFromOptimalTokenOwnership, dist)
 		token.MinOwnership = math.Min(token.MinOwnership, currTokensOwnership)
 		token.MaxOwnership = math.Max(token.MaxOwnership, currTokensOwnership)
-		token.StandardDeviation += +sq(dist - 1.0)
+		token.StandardDeviation += sq(currTokensOwnership - optimalTokenOwnership)
+		currSum := sum
+		sum = sum + sq(currTokensOwnership-optimalTokenOwnership)
+		if len(t.tokensByInstance) == 66 {
+			fmt.Printf("instance: %s, current sum: %f, sum after adding %f: %f\n", curr.getData().getOwningInstance(), currSum, sq(currTokensOwnership-optimalTokenOwnership), sum)
+		}
 		token.Spread = (token.MaxOwnership - token.MinOwnership) * 100.00 / token.MaxOwnership
 		token.Sum += currTokensOwnership
 
-		dist = curr.getData().getOwningInstance().ownership / (optimalTokenOwnership * float64(t.tokensPerInstance))
 		currTokensOwnership = curr.getData().getOwningInstance().ownership
+		dist = currTokensOwnership / instance.OptimalTokenOwnership
 		instance.MinDistanceFromOptimalTokenOwnership = math.Min(instance.MinDistanceFromOptimalTokenOwnership, dist)
 		instance.MaxDistanceFromOptimalTokenOwnership = math.Max(instance.MaxDistanceFromOptimalTokenOwnership, dist)
 		instance.MinOwnership = math.Min(instance.MinOwnership, currTokensOwnership)
 		instance.MaxOwnership = math.Max(instance.MaxOwnership, currTokensOwnership)
-		instance.StandardDeviation += +sq(dist - 1.0)
+		instance.StandardDeviation += sq(currTokensOwnership - instance.OptimalTokenOwnership)
+		sum += sq(currTokensOwnership - instance.OptimalTokenOwnership)
 		instance.Spread = (instance.MaxOwnership - instance.MinOwnership) * 100.00 / instance.MaxOwnership
-		instance.Sum += curr.getData().getOwningInstance().ownership
+		instance.Sum += currTokensOwnership
 
 		_, ok := registeredOwnersByInstance[curr.getData().getOwningInstance().instanceId]
 		if !ok {
@@ -532,10 +539,18 @@ func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*to
 			break
 		}
 	}
+	token.StandardDeviation = math.Sqrt(token.StandardDeviation / float64(len(t.sortedTokens)))
+	token.LowerBound = optimalTokenOwnership - token.StandardDeviation
+	token.UpperBound = optimalTokenOwnership + token.StandardDeviation
+	instance.StandardDeviation = math.Sqrt(instance.StandardDeviation / float64(len(t.tokensByInstance)))
+	instance.LowerBound = instance.OptimalTokenOwnership - instance.StandardDeviation
+	instance.UpperBound = instance.OptimalTokenOwnership + instance.StandardDeviation
 	statisticType["token"] = token
 	statisticType["instance"] = instance
 
-	return Statistics{
+	return &Statistics{
+		MaxToken:                           uint32(t.maxTokenValue),
+		ReplicationFactor:                  t.replicationStrategy.getReplicationFactor(),
 		CombinedStatistics:                 statisticType,
 		RegisteredTokenOwnershipByInstance: registeredOwnersByInstance,
 	}
@@ -611,7 +626,7 @@ func (t *TokenDistributor) isAlreadyVisited(instance *instanceInfo) bool {
 		// we check instance.precededBy attribute.
 		return instance.precededBy != nil
 	}
-	// if it is a mulit-zone mode, we check whether the given zone has already been visited
+	// if it is a multi-zone mode, we check whether the given zone has already been visited
 	return zone.precededBy != nil
 }
 
@@ -1212,11 +1227,11 @@ func printInstanceOwnership(instanceInfoByInstance map[Instance]*instanceInfo) {
 	//fmt.Println()
 }
 
-func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], *Statistics, error) {
+func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], *OwnershipInfo, error) {
 	t.replicationStrategy.addInstance(instance, zone)
 	if t.seedGenerator != nil && t.seedGenerator.hasNextSeed(zone) {
 		t.addTokensFromSeed(instance, zone)
-		return nil, nil, &Statistics{}, nil
+		return nil, nil, &OwnershipInfo{}, nil
 	}
 
 	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
@@ -1268,7 +1283,7 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 				break
 			}
 			nextBestToken := pq.Peek()
-			//fmt.Printf("Understanding whether token %s [%.5f] is still the best. Its new weight is %.5f, and the current elemement with the max weight in pq is %s [%.5f]\n", bestToken.navigableToken, bestToken.weight, newImprovement, nextBestToken.navigableToken, nextBestToken.weight)
+			//fmt.Printf("Understanding whether token %s [%.5f] is still the best. Its new weight is %.5f, and the current element with the max weight in pq is %s [%.5f]\n", bestToken.navigableToken, bestToken.weight, newImprovement, nextBestToken.navigableToken, nextBestToken.weight)
 			if newImprovement >= nextBestToken.weight {
 				//fmt.Printf("Token %s [%.5f] is the best candidate\n", bestToken.navigableToken, bestToken.weight)
 				break
@@ -1281,13 +1296,41 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 		}
 	}
 
-	stat := t.getStatistics(tokenInfoCircularList, optimalTokenOwnership)
+	ownershipInfo := t.createOwnershipInfo(tokenInfoCircularList, optimalTokenOwnership)
+
 	printInstanceOwnership(instanceInfoByInstance)
 	//t.count(tokenInfoCircularList)
 	//fmt.Println("-----------------------------------------------------------")
-	if stat.CombinedStatistics["instance"].Sum != float64(t.maxTokenValue)*float64(t.tokensPerInstance*t.replicationStrategy.getReplicationFactor()) {
-		fmt.Printf("During insertion of instance %s Sum of replication ownership was %.2f instead of %.2f\n", instance, stat.CombinedStatistics["instance"].Sum, float64(t.maxTokenValue)*float64(t.tokensPerInstance*t.replicationStrategy.getReplicationFactor()))
-	}
+	return tokenInfoCircularList, candidateTokenInfoCircularList, ownershipInfo, nil
+}
 
-	return tokenInfoCircularList, candidateTokenInfoCircularList, &stat, nil
+func (t *TokenDistributor) createOwnershipInfo(tokenInfoCircularList *CircularList[*tokenInfo], optimalTokenOwnership float64) *OwnershipInfo {
+	instanceOwnershipMap := make(map[Instance]float64, len(t.tokensByInstance))
+	tokenOwnershipMap := make(map[Token]float64, len(t.sortedTokens))
+	curr := tokenInfoCircularList.head
+	for {
+		instance := curr.getData().getOwningInstance()
+		instanceOwnership, ok := instanceOwnershipMap[instance.instanceId]
+		if !ok {
+			instanceOwnership = instance.ownership
+			instanceOwnershipMap[instance.instanceId] = instanceOwnership
+		}
+		token := curr.getData().getToken()
+		tokenOwnership, ok := tokenOwnershipMap[token]
+		if !ok {
+			tokenOwnership = curr.getData().getReplicatedOwnership()
+			tokenOwnershipMap[token] = tokenOwnership
+		}
+
+		curr = curr.next
+		if curr == tokenInfoCircularList.head {
+			break
+		}
+	}
+	return &OwnershipInfo{
+		InstanceOwnershipMap:    instanceOwnershipMap,
+		TokenOwnershipMap:       tokenOwnershipMap,
+		OptimaInstanceOwnership: optimalTokenOwnership * float64(t.tokensPerInstance),
+		OptimalTokenOwnership:   optimalTokenOwnership,
+	}
 }

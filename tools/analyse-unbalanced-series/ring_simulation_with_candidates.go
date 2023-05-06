@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -15,14 +16,16 @@ import (
 const (
 	maxTokenValue        = tokdistr.Token(math.MaxUint32)
 	initialInstanceCount = 66
-	iterations           = 30
+	iterations           = 10
 )
 
 func generateRingWithZoneAwareness(logger log.Logger, numTokensPerInstanceScenarios []int, replicationFactor, instancesPerZone int, zones []tokdistr.Zone, seedGeneratorProvider func(zones []tokdistr.Zone, replicationFactor, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator) error {
-	result := make([][]float64, 0, iterations)
-
-	for it := 0; it < iterations; it++ {
-		result = append(result, make([]float64, 0, len(numTokensPerInstanceScenarios)))
+	result := make([][]string, 0, instancesPerZone*len(zones))
+	optimalTokenOwnership := float64(maxTokenValue) * float64(replicationFactor) / float64(instancesPerZone*len(zones))
+	for it := 0; it < instancesPerZone*len(zones); it++ {
+		result = append(result, make([]string, 0, iterations*len(numTokensPerInstanceScenarios)+2))
+		result[it] = append(result[it], "")
+		result[it] = append(result[it], fmt.Sprintf("%f", optimalTokenOwnership))
 	}
 
 	for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
@@ -30,34 +33,37 @@ func generateRingWithZoneAwareness(logger log.Logger, numTokensPerInstanceScenar
 			level.Info(logger).Log("tokensPerInstance", numTokensPerInstance, "iteration", it)
 			replicationStrategy := tokdistr.NewZoneAwareReplicationStrategy(replicationFactor, make(map[tokdistr.Instance]tokdistr.Zone, initialInstanceCount), nil, nil)
 			tokenDistributor := tokdistr.NewTokenDistributor(numTokensPerInstance, len(zones), maxTokenValue, replicationStrategy, seedGeneratorProvider(zones, replicationFactor, numTokensPerInstance, maxTokenValue))
-			var stat *tokdistr.Statistics
+			var ownershipInfo *tokdistr.OwnershipInfo
 			for i := 0; i < instancesPerZone; i++ {
 				for j := 0; j < len(zones); j++ {
 					instance := tokdistr.Instance(fmt.Sprintf("%s-%d", string(rune('A'+j)), i))
-					_, _, stat, _ = tokenDistributor.AddInstance(instance, zones[j])
+					_, _, ownershipInfo, _ = tokenDistributor.AddInstance(instance, zones[j])
+					result[i*len(zones)+j][0] = string(instance)
 				}
 			}
-			result[it] = append(result[it], stat.CombinedStatistics[tokdistr.InstanceStatKey].Spread)
+			for i := 0; i < instancesPerZone*len(zones); i++ {
+				result[i] = append(result[i], fmt.Sprintf("%f", ownershipInfo.InstanceOwnershipMap[tokdistr.Instance(result[i][0])]))
+			}
 		}
 	}
 
 	//Generate CSV header.
-	csvHeader := make([]string, 0, len(numTokensPerInstanceScenarios))
+	csvHeader := make([]string, 0, iterations*len(numTokensPerInstanceScenarios)+1)
+	csvHeader = append(csvHeader, "instance")
+	csvHeader = append(csvHeader, "optimal ownership")
 	for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
-		csvHeader = append(csvHeader, fmt.Sprintf("%d tokens per instance", numTokensPerInstance))
+		for i := 0; i < iterations; i++ {
+			csvHeader = append(csvHeader, fmt.Sprintf("it:%d-tokens:%d", i+1, numTokensPerInstance))
+		}
 	}
 
 	// Write result to CSV.
-	w := newCSVWriter[[]float64]()
+	w := newCSVWriter[[]string]()
 	w.setHeader(csvHeader)
-	w.setData(result, func(entry []float64) []string {
-		res := make([]string, 0, len(numTokensPerInstanceScenarios))
-		for _, value := range entry {
-			res = append(res, fmt.Sprintf("%.3f", value))
-		}
-		return res
+	w.setData(result, func(entry []string) []string {
+		return entry
 	})
-	output := fmt.Sprintf("simulated-ring-with-different-tokens-per-instance-with-candidates-selection-rf-%d-zone-awareness-%s.csv", replicationFactor, formatEnabled(len(zones) > 1))
+	output := fmt.Sprintf("%s-simulated-ring-with-different-tokens-per-instance-with-candidates-selection-rf-%d-zone-awareness-%s.csv", time.Now().Local(), replicationFactor, formatEnabled(len(zones) > 1))
 	filename := filepath.Join("tools", "analyse-unbalanced-series", "tokendistributor", output)
 	if err := w.writeCSV(filename); err != nil {
 		return err
@@ -66,10 +72,12 @@ func generateRingWithZoneAwareness(logger log.Logger, numTokensPerInstanceScenar
 }
 
 func generateRingWithoutZoneAwareness(logger log.Logger, numTokensPerInstanceScenarios []int, replicationFactor, instancesCount int, seedGeneratorProvider func(zones []tokdistr.Zone, replicationFactor int, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator) error {
-	result := make([][]float64, 0, iterations)
-
-	for it := 0; it < iterations; it++ {
-		result = append(result, make([]float64, 0, len(numTokensPerInstanceScenarios)))
+	result := make([][]string, 0, instancesCount)
+	optimalTokenOwnership := float64(maxTokenValue) * float64(replicationFactor) / float64(instancesCount)
+	for it := 0; it < instancesCount; it++ {
+		result = append(result, make([]string, 0, iterations*len(numTokensPerInstanceScenarios)+2))
+		result[it] = append(result[it], "")
+		result[it] = append(result[it], fmt.Sprintf("%f", optimalTokenOwnership))
 	}
 
 	zones := []tokdistr.Zone{tokdistr.SingleZone}
@@ -79,32 +87,35 @@ func generateRingWithoutZoneAwareness(logger log.Logger, numTokensPerInstanceSce
 			level.Info(logger).Log("tokensPerInstance", numTokensPerInstance, "iteration", it)
 			replicationStrategy := tokdistr.NewSimpleReplicationStrategy(replicationFactor, nil)
 			tokenDistributor := tokdistr.NewTokenDistributor(numTokensPerInstance, len(zones), maxTokenValue, replicationStrategy, seedGeneratorProvider(zones, replicationFactor, numTokensPerInstance, maxTokenValue))
-			var stat *tokdistr.Statistics
+			var ownershipInfo *tokdistr.OwnershipInfo
 			for i := 0; i < instancesCount; i++ {
 				instance := tokdistr.Instance(fmt.Sprintf("I-%d", i))
-				_, _, stat, _ = tokenDistributor.AddInstance(instance, zones[0])
+				_, _, ownershipInfo, _ = tokenDistributor.AddInstance(instance, zones[0])
+				result[i][0] = string(instance)
 			}
-			result[it] = append(result[it], stat.CombinedStatistics[tokdistr.InstanceStatKey].Spread)
+			for i := 0; i < instancesCount; i++ {
+				result[i] = append(result[i], fmt.Sprintf("%f", ownershipInfo.InstanceOwnershipMap[tokdistr.Instance(result[i][0])]))
+			}
 		}
 	}
 
 	//Generate CSV header.
-	csvHeader := make([]string, 0, len(numTokensPerInstanceScenarios))
+	csvHeader := make([]string, 0, iterations*len(numTokensPerInstanceScenarios)+1)
+	csvHeader = append(csvHeader, "instance")
+	csvHeader = append(csvHeader, "optimal ownership")
 	for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
-		csvHeader = append(csvHeader, fmt.Sprintf("%d tokens per instance", numTokensPerInstance))
+		for i := 0; i < iterations; i++ {
+			csvHeader = append(csvHeader, fmt.Sprintf("it:%d-tokens:%d", i+1, numTokensPerInstance))
+		}
 	}
 
 	// Write result to CSV.
-	w := newCSVWriter[[]float64]()
+	w := newCSVWriter[[]string]()
 	w.setHeader(csvHeader)
-	w.setData(result, func(entry []float64) []string {
-		res := make([]string, 0, len(numTokensPerInstanceScenarios))
-		for _, value := range entry {
-			res = append(res, fmt.Sprintf("%.3f", value))
-		}
-		return res
+	w.setData(result, func(entry []string) []string {
+		return entry
 	})
-	output := fmt.Sprintf("simulated-ring-with-different-tokens-per-instance-with-candidates-selection-rf-%d-zone-awareness-%s.csv", replicationFactor, formatEnabled(len(zones) > 1))
+	output := fmt.Sprintf("%s-simulated-ring-with-different-tokens-per-instance-with-candidates-selection-rf-%d-zone-awareness-%s.csv", time.Now().Local(), replicationFactor, formatEnabled(len(zones) > 1))
 	filename := filepath.Join("tools", "analyse-unbalanced-series", "tokendistributor", output)
 	if err := w.writeCSV(filename); err != nil {
 		return err
