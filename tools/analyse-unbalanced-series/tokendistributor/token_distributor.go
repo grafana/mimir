@@ -556,27 +556,6 @@ func (t *TokenDistributor) getStatistics(tokenInfoCircularList *CircularList[*to
 	}
 }
 
-func (t *TokenDistributor) count(tokenInfoCircularList *CircularList[*tokenInfo]) {
-	head := tokenInfoCircularList.head
-	curr := head
-	counts := make(map[Instance]int)
-	s := 0.0
-	for {
-		count, ok := counts[curr.getData().getOwningInstance().instanceId]
-		if !ok {
-			count = 0
-			s += curr.getData().getOwningInstance().ownership
-		}
-		count++
-		counts[curr.getData().getOwningInstance().instanceId] = count
-		curr = curr.next
-		if curr == head {
-			break
-		}
-	}
-	fmt.Println(s, counts)
-}
-
 func sq(value float64) float64 {
 	return value * value
 }
