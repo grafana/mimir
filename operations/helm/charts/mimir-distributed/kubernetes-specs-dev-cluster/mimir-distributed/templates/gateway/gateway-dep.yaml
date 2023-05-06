@@ -4,7 +4,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    {}
+    iamRole: "arn:aws:iam::707343435239:role/TsdbStorageBucketFullAccessRole-dev-us-west-2"
   labels:
     helm.sh/chart: mimir-distributed-4.3.1
     app.kubernetes.io/name: mimir
@@ -36,6 +36,7 @@ spec:
         checksum/config: c156db92d37401a23ee5313c3fd134023403d38f951db1b8b7bb62806cfe9ed4
         prometheus_io_port: "8080"
         prometheus_io_scrape: "true"
+        iamRole: "arn:aws:iam::707343435239:role/TsdbStorageBucketFullAccessRole-dev-us-west-2"
       namespace: "mimir"
     spec:
       serviceAccountName: databricks-gem-mimir
@@ -50,7 +51,7 @@ spec:
         []
       containers:
         - name: gateway
-          image: "grafana/enterprise-metrics:v2.7.1"
+          image: "registry.dev.databricks.com/grafana-enterprise-metrics:2.7.1@sha256:b08a76f912f7cbdebe79cde40c6a3a9a4244efe37c51d3791005aae88a81e327"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=gateway"

@@ -61,7 +61,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: memcached
-          image: memcached:1.6.17-alpine
+          image: registry.dev.databricks.com/memcached@sha256:735ba3c54df4d4b1fe183e05ed9b55a5498c3256f6c231764db2aa469d75506f
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -89,7 +89,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
         - name: exporter
-          image: prom/memcached-exporter:v0.6.0
+          image: registry.dev.databricks.com/memcached-exporter@sha256:5bed24ad981e987f2a668ad289c4098e2149008090ee87c2cafdfac842464917
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9150

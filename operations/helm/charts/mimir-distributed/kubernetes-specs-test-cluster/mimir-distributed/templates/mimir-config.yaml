@@ -29,13 +29,13 @@ data:
           memcached:
             addresses: dns+databricks-gem-mimir-admin-cache.mimir.svc:11211
             max_item_size: 1048576
+        type: s3
         s3:
           access_key_id: minio
           bucket_name: enterprise-metrics-admin
           endpoint: databricks-gem-minio.mimir.svc:9000
           insecure: true
           secret_access_key: minio123
-        type: s3
     alertmanager:
       data_dir: /data
       enable_api: true
