@@ -26,6 +26,6 @@ func createOwnershipInfo() *OwnershipInfo {
 
 func TestOwnershipInfo_CalculateMaxStDev(t *testing.T) {
 	ownershipInfo := createOwnershipInfo()
-	maxInstanceStDev, _ := calculateMaxStdevAndBounds([]*OwnershipInfo{ownershipInfo})
+	maxInstanceStDev, _ := CalculateMaxStdevAndBounds([]*OwnershipInfo{ownershipInfo})
 	require.InDelta(t, 2.3969524061154366e+07, maxInstanceStDev, 0.0001)
 }

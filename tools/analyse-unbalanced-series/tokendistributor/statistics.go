@@ -148,7 +148,7 @@ type OwnershipInfo struct {
 	OptimalTokenOwnership   float64
 }
 
-func calculateMaxStdevAndBounds(input []*OwnershipInfo) (float64, float64) {
+func CalculateMaxStdevAndBounds(input []*OwnershipInfo) (float64, float64) {
 	maxInstanceStDev := 0.0
 	maxTokenStDev := 0.0
 	for _, ownershipInfo := range input {
