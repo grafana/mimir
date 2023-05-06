@@ -29,6 +29,11 @@ data:
           memcached:
             addresses: dns+databricks-gem-mimir-admin-cache.mimir.svc:11211
             max_item_size: 1048576
+        s3:
+          bucket_name: databricks-monitoring-bucket-dev-us-west-2
+          endpoint: s3.us-west-2.amazonaws.com
+          region: us-west-2
+          insecure: false
     alertmanager:
       data_dir: /data
       enable_api: true
