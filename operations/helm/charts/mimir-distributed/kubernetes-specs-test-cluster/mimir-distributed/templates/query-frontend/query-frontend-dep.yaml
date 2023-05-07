@@ -11,8 +11,6 @@ metadata:
     app.kubernetes.io/component: query-frontend
     app.kubernetes.io/version: "2.7.2"
     app.kubernetes.io/managed-by: Helm
-  annotations:
-    {}
   namespace: "mimir"
 spec:
   replicas: 1

@@ -36,7 +36,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: metadata-cache
       annotations:
-        prometheus_io_port: "8080"
+        prometheus_io_port: "9150"
         prometheus_io_scrape: "true"
 
     spec:
@@ -98,8 +98,12 @@ spec:
             - "--memcached.address=localhost:11211"
             - "--web.listen-address=0.0.0.0:9150"
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              cpu: 100m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
