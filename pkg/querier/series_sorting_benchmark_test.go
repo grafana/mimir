@@ -29,7 +29,7 @@ func BenchmarkMergingAndSortingSeries(b *testing.B) {
 							seriesSets[i].NextSeriesIndex = 0
 						}
 
-						heapMergeSeriesSets(seriesSets)
+						heapMergeSeriesSets(seriesSets, zones)
 					}
 				})
 			}
@@ -173,16 +173,18 @@ func TestMergingAndSortingSeries(t *testing.T) {
 		},
 	}
 
-	implementations := map[string]func([]ingesterSeries) []mergedSeries{
+	implementations := map[string]func([]ingesterSeries, int) []mergedSeries{
 		"naive": naiveMergeAndSortSeriesSets,
 		"heap":  heapMergeSeriesSets,
 	}
+
+	zoneCount := 1
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			for implementationName, implementationFunc := range implementations {
 				t.Run(implementationName, func(t *testing.T) {
-					actual := implementationFunc(testCase.seriesSets)
+					actual := implementationFunc(testCase.seriesSets, zoneCount)
 					require.Lenf(t, actual, len(testCase.expected), "should be same length as %v", testCase.expected)
 
 					for i := 0; i < len(actual); i++ {
@@ -201,7 +203,7 @@ func TestMergingAndSortingSeries(t *testing.T) {
 }
 
 // Equivalent of current naive implementation
-func naiveMergeAndSortSeriesSets(ingesters []ingesterSeries) []mergedSeries {
+func naiveMergeAndSortSeriesSets(ingesters []ingesterSeries, zoneCount int) []mergedSeries {
 	hashToStreamingSeries := map[string]mergedSeries{}
 
 	for _, ingester := range ingesters {
@@ -211,8 +213,9 @@ func naiveMergeAndSortSeriesSets(ingesters []ingesterSeries) []mergedSeries {
 
 			if !exists {
 				series = mergedSeries{
-					Labels:  seriesLabels,
-					Sources: make([]mergedSeriesSource, 0, 3), // TODO: take capacity from number of zones
+					Labels: seriesLabels,
+					// Why zoneCount? We assume each series is present exactly one in each zone.
+					Sources: make([]mergedSeriesSource, 0, zoneCount),
 				}
 			}
 
@@ -239,7 +242,7 @@ func naiveMergeAndSortSeriesSets(ingesters []ingesterSeries) []mergedSeries {
 
 // Use a heap to merge lists of series from each ingester.
 // This assumes we add a new implementation of NewConcreteSeriesSet that doesn't try to sort the list of series again.
-func heapMergeSeriesSets(ingesters []ingesterSeries) []mergedSeries {
+func heapMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []mergedSeries {
 	if len(ingesters) == 0 {
 		return []mergedSeries{}
 	}
@@ -270,8 +273,8 @@ func heapMergeSeriesSets(ingesters []ingesterSeries) []mergedSeries {
 			// First time we've seen this series.
 			series := mergedSeries{
 				Labels: nextSeriesFromIngester,
-				// TODO: take capacity of this slice from number of zones?
-				Sources: make([]mergedSeriesSource, 1, 3),
+				// Why zoneCount? We assume each series is present exactly one in each zone.
+				Sources: make([]mergedSeriesSource, 1, zoneCount),
 			}
 
 			series.Sources[0] = mergedSeriesSource{
