@@ -149,7 +149,7 @@ message QueryStreamSeries {
 }
 
 message QueryStreamSeriesChunks {
-  uint64 series = 1;
+  uint64 series_index = 1; // Index into list of all series previously sent with QueryStreamSeries messages by this ingester during this query response.
   repeated Chunk chunks = 2 [(gogoproto.nullable) = false];
 }
 

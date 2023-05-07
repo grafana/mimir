@@ -1750,8 +1750,8 @@ func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stre
 
 	for seriesIdx, it := range allIterators {
 		seriesChunks := client.QueryStreamSeriesChunks{
-			Series: uint64(seriesIdx),
-			Chunks: chunkSlicePool.Get().([]client.Chunk),
+			SeriesIndex: uint64(seriesIdx),
+			Chunks:      chunkSlicePool.Get().([]client.Chunk),
 		}
 
 		for it.Next() {
