@@ -62,7 +62,7 @@ func NewPerfectlySpacedSeedGenerator(zones []Zone, replicationFactor, tokensPerI
 		}
 	}
 	slices.Sort(allSeeds)
-	fmt.Println(allSeeds)
+	//fmt.Println(allSeeds)
 	seedsByZone := distributeSortedTokensByZone(allSeeds, zones, replicationFactor, tokensPerInstance)
 	return &PerfectlySpacedSeedGenerator{
 		&BaseSeedGenerator{

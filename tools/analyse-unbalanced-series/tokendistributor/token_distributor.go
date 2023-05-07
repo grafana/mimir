@@ -21,6 +21,9 @@ var (
 )
 
 type TokenDistributorInterface interface {
+	GetSortedTokens() []Token
+	GetInstances() []Instance
+	GetReplicaSet(key Token) ([]Instance, error)
 	AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], *OwnershipInfo, error)
 }
 
@@ -54,6 +57,23 @@ func NewTokenDistributor(tokensPerInstance, zonesCount int, maxTokenValue Token,
 		seedGenerator:       seedGenerator,
 	}
 	return tokenDistributor
+}
+
+func (t *TokenDistributor) GetSortedTokens() []Token {
+	return t.sortedTokens
+}
+
+func (t *TokenDistributor) GetInstances() []Instance {
+	instances := make([]Instance, 0, len(t.tokensByInstance))
+	for instance := range t.tokensByInstance {
+		instances = append(instances, instance)
+	}
+	slices.Sort(instances)
+	return instances
+}
+
+func (t *TokenDistributor) GetReplicaSet(key Token) ([]Instance, error) {
+	return t.replicationStrategy.getReplicaSet(key, t.sortedTokens, t.instanceByToken)
 }
 
 // newTokenDistributorFromInitializedInstances supposes that the ring already contains some instances with tokensPerInstance tokens each
@@ -1240,6 +1260,9 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 		bestCandidate := bestToken.navigableToken
 		t.addNewInstanceAndToken(instance, zone, bestToken.navigableToken.getData().getToken())
 		err := t.addCandidateAndUpdateTokenInfoCircularList(bestCandidate, tokenInfoCircularList)
+		/*fmt.Printf("Token %d added to the list\n", bestCandidate.getData().token)
+		fmt.Println(tokenInfoCircularList.StringVerobose())
+		fmt.Println("----------------------------")*/
 		if err != nil {
 			return nil, nil, nil, err
 		}

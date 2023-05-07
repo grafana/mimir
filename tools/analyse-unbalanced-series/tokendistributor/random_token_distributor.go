@@ -31,6 +31,7 @@ func (t *RandomTokenDistributor) AddInstance(instance Instance, zone Zone) (*Cir
 		return nil, nil, &OwnershipInfo{}, nil
 	}
 
+	optimalTokenOwnership := t.getOptimalTokenOwnership()
 	for i := 0; i < t.tokensPerInstance; i++ {
 		candidateToken, err := t.calculateCandidateToken()
 		if err != nil {
@@ -49,7 +50,6 @@ func (t *RandomTokenDistributor) AddInstance(instance Instance, zone Zone) (*Cir
 	instanceInfoByInstance[instance] = newInstanceInfo
 	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceInfo)
 	//fmt.Printf("\t\t\t%s", instanceInfoByInstance)
-	optimalTokenOwnership := t.getOptimalTokenOwnership()
 	ownershipInfo := t.createOwnershipInfo(tokenInfoCircularList, optimalTokenOwnership)
 
 	//t.count(tokenInfoCircularList)
