@@ -31,7 +31,7 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 	var rawChunks []client.Chunk // TODO: guess a size for this?
 
 	for _, source := range s.sources {
-		c, err := source.Streamer.GetChunks(source.SeriesIndex)
+		c, err := source.StreamReader.GetChunks(source.SeriesIndex)
 
 		if err != nil {
 			return series.NewErrIterator(err)
@@ -48,15 +48,15 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 	return s.chunkIteratorFunc(chunks, model.Time(s.mint), model.Time(s.maxt))
 }
 
-type SeriesStreamer struct {
+type SeriesChunksStreamReader struct {
 	client              client.Ingester_QueryStreamClient
 	buffer              chan streamedIngesterSeries
 	expectedSeriesCount int
 	seriesBufferSize    int
 }
 
-func NewSeriesStreamer(client client.Ingester_QueryStreamClient, expectedSeriesCount int, seriesBufferSize int) *SeriesStreamer {
-	return &SeriesStreamer{
+func NewSeriesStreamer(client client.Ingester_QueryStreamClient, expectedSeriesCount int, seriesBufferSize int) *SeriesChunksStreamReader {
+	return &SeriesChunksStreamReader{
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		seriesBufferSize:    seriesBufferSize,
@@ -70,11 +70,11 @@ type streamedIngesterSeries struct {
 }
 
 // StartBuffering begins streaming series' chunks from the ingester associated with
-// this SeriesStreamer. Once all series have been consumed with GetChunks, all resources
-// associated with this SeriesStreamer are cleaned up.
+// this SeriesChunksStreamReader. Once all series have been consumed with GetChunks, all resources
+// associated with this SeriesChunksStreamReader are cleaned up.
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
-// To cancel buffering, cancel the context associated with this SeriesStreamer's client.Ingester_QueryStreamClient.
-func (s *SeriesStreamer) StartBuffering() {
+// To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's client.Ingester_QueryStreamClient.
+func (s *SeriesChunksStreamReader) StartBuffering() {
 	s.buffer = make(chan streamedIngesterSeries, s.seriesBufferSize)
 	ctxDone := s.client.Context().Done()
 
@@ -136,7 +136,7 @@ func (s *SeriesStreamer) StartBuffering() {
 
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
-func (s *SeriesStreamer) GetChunks(seriesIndex int) ([]client.Chunk, error) {
+func (s *SeriesChunksStreamReader) GetChunks(seriesIndex int) ([]client.Chunk, error) {
 	series, open := <-s.buffer
 
 	if !open {

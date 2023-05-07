@@ -187,7 +187,7 @@ func mergeExemplarQueryResponses(results []interface{}) *ingester_client.Exempla
 }
 
 type streamerWithSeriesLabels struct {
-	streamer     *querier.SeriesStreamer
+	streamer     *querier.SeriesChunksStreamReader
 	seriesLabels []labels.Labels
 }
 
@@ -272,8 +272,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					}
 
 					series.Sources = append(series.Sources, querier.StreamingSeriesSource{
-						SeriesIndex: seriesIndex,
-						Streamer:    s.streamer,
+						SeriesIndex:  seriesIndex,
+						StreamReader: s.streamer,
 					})
 
 					hashToStreamingSeries[key] = series
@@ -376,7 +376,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					return nil, nil
 				case streamersChan <- streamerWithSeriesLabels{streamer, seriesLabels}:
 					streamer.StartBuffering()
-					closeStream = false // The SeriesStreamer is responsible for closing the stream now.
+					closeStream = false // The SeriesChunksStreamReader is responsible for closing the stream now.
 					return nil, nil
 				}
 			} else if resp.IsEndOfSeriesStream {
