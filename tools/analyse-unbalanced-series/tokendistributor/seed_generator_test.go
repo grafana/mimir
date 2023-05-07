@@ -12,7 +12,7 @@ func TestRandomSeedGenerator_GenerateMultiZone(t *testing.T) {
 	replicationFactor := 3
 	tokensPerInstance := 4
 	maxToken := Token(1000)
-	seedGenerator := newRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	seedGenerator := NewRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
 	seedByZone := make(map[Zone][]Token, len(zones))
 	for i := range zones {
 		require.True(t, seedGenerator.hasNextSeed(zones[i]))
@@ -37,7 +37,7 @@ func TestRandomSeedGenerator_GenerateSingleZoneNoReplication(t *testing.T) {
 	replicationFactor := 1
 	tokensPerInstance := 4
 	maxToken := Token(1000)
-	seedGenerator := newRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	seedGenerator := NewRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
 	seedByZone := make(map[Zone][]Token, len(zones))
 	for i := range zones {
 		require.True(t, seedGenerator.hasNextSeed(zones[i]))
@@ -62,7 +62,7 @@ func TestRandomSeedGenerator_GenerateSingleZoneWithReplication(t *testing.T) {
 	replicationFactor := 3
 	tokensPerInstance := 4
 	maxToken := Token(1000)
-	seedGenerator := newRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
+	seedGenerator := NewRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken)
 	allSeeds := make([][]Token, 0, replicationFactor)
 	for j := 0; j < replicationFactor; j++ {
 		require.True(t, seedGenerator.hasNextSeed(SingleZone))

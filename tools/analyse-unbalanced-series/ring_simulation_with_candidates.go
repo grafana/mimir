@@ -21,12 +21,14 @@ const (
 )
 
 func generateRingWithZoneAwareness(logger log.Logger, numTokensPerInstanceScenarios []int, replicationFactor, instancesPerZone int, zones []tokdistr.Zone, seedGeneratorProvider func(zones []tokdistr.Zone, replicationFactor, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator) error {
-	level.Info(logger).Log("test", "Generate token ring with zone-awareness enabled", "status", "start")
+	level.Info(logger).Log("test", "Generate token ring with candidate selection with zone-awareness enabled", "status", "start")
 	ownershipInfos := make([]*tokdistr.OwnershipInfo, 0, iterations)
 	instanceOwnershipByInstanceMap := make(map[tokdistr.Instance][]string, instancesPerZone*len(zones))
+	runtimesPerScenario := make(map[int]time.Duration, len(numTokensPerInstanceScenarios))
 
 	for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
 		ownershipInfos = ownershipInfos[:0]
+		start := time.Now()
 		for it := 0; it < iterations; it++ {
 			level.Info(logger).Log("tokensPerInstance", numTokensPerInstance, "iteration", it)
 			replicationStrategy := tokdistr.NewZoneAwareReplicationStrategy(replicationFactor, make(map[tokdistr.Instance]tokdistr.Zone, initialInstanceCount), nil, nil)
@@ -40,6 +42,7 @@ func generateRingWithZoneAwareness(logger log.Logger, numTokensPerInstanceScenar
 			}
 			ownershipInfos = append(ownershipInfos, ownershipInfo)
 		}
+		runtimesPerScenario[numTokensPerInstance] = time.Since(start)
 		ownershipInfosIntoInstanceStringMap(ownershipInfos, iterations, len(numTokensPerInstanceScenarios), instanceOwnershipByInstanceMap)
 	}
 
@@ -49,18 +52,24 @@ func generateRingWithZoneAwareness(logger log.Logger, numTokensPerInstanceScenar
 	if err := w.writeCSV(filename); err != nil {
 		return err
 	}
-	level.Info(logger).Log("test", "Generate token ring with zone-awareness enabled", "status", "end")
+	for scenario, runtime := range runtimesPerScenario {
+		level.Info(logger).Log("number of tokens", scenario, "runtime", runtime/iterations)
+	}
+	level.Info(logger).Log("test", "Generate token ring with candidate selection with zone-awareness enabled", "status", "end")
 	return nil
 }
 
 func generateRingWithoutZoneAwareness(logger log.Logger, numTokensPerInstanceScenarios []int, replicationFactor, instancesCount int, seedGeneratorProvider func(zones []tokdistr.Zone, replicationFactor int, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator) error {
-	level.Info(logger).Log("test", "Generate token ring with zone-awareness enabled", "status", "start")
+	level.Info(logger).Log("test", "Generate token ring with candidate selection with zone-awareness enabled", "status", "start")
 	ownershipInfos := make([]*tokdistr.OwnershipInfo, 0, iterations)
 	instanceOwnershipByInstanceMap := make(map[tokdistr.Instance][]string, instancesCount)
+	runtimesPerScenario := make(map[int]time.Duration, len(numTokensPerInstanceScenarios))
 
 	zones := []tokdistr.Zone{tokdistr.SingleZone}
 
 	for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
+		ownershipInfos = ownershipInfos[:0]
+		start := time.Now()
 		for it := 0; it < iterations; it++ {
 			level.Info(logger).Log("tokensPerInstance", numTokensPerInstance, "iteration", it)
 			replicationStrategy := tokdistr.NewSimpleReplicationStrategy(replicationFactor, nil)
@@ -72,6 +81,7 @@ func generateRingWithoutZoneAwareness(logger log.Logger, numTokensPerInstanceSce
 			}
 			ownershipInfos = append(ownershipInfos, ownershipInfo)
 		}
+		runtimesPerScenario[numTokensPerInstance] = time.Since(start)
 		ownershipInfosIntoInstanceStringMap(ownershipInfos, iterations, len(numTokensPerInstanceScenarios), instanceOwnershipByInstanceMap)
 	}
 
@@ -80,6 +90,88 @@ func generateRingWithoutZoneAwareness(logger log.Logger, numTokensPerInstanceSce
 	filename := filepath.Join("tools", "analyse-unbalanced-series", "tokendistributor", output)
 	if err := w.writeCSV(filename); err != nil {
 		return err
+	}
+	for scenario, runtime := range runtimesPerScenario {
+		level.Info(logger).Log("number of tokens", scenario, "runtime", runtime/iterations)
+	}
+	level.Info(logger).Log("test", "Generate token ring with candidate selection with zone-awareness enabled", "status", "end")
+	return nil
+}
+
+func generateRingWithZoneAwarenessAndRandomTokens(logger log.Logger, numTokensPerInstanceScenarios []int, replicationFactor, instancesPerZone int, zones []tokdistr.Zone, seedGeneratorProvider func(zones []tokdistr.Zone, replicationFactor, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator) error {
+	level.Info(logger).Log("test", "Generate token ring with random tokens with zone-awareness enabled", "status", "start")
+	ownershipInfos := make([]*tokdistr.OwnershipInfo, 0, iterations)
+	instanceOwnershipByInstanceMap := make(map[tokdistr.Instance][]string, instancesPerZone*len(zones))
+	runtimesPerScenario := make(map[int]time.Duration, len(numTokensPerInstanceScenarios))
+
+	for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
+		start := time.Now()
+		ownershipInfos = ownershipInfos[:0]
+		for it := 0; it < iterations; it++ {
+			level.Info(logger).Log("tokensPerInstance", numTokensPerInstance, "iteration", it)
+			replicationStrategy := tokdistr.NewZoneAwareReplicationStrategy(replicationFactor, make(map[tokdistr.Instance]tokdistr.Zone, initialInstanceCount), nil, nil)
+			tokenDistributor := tokdistr.NewRandomTokenDistributor(numTokensPerInstance, len(zones), maxTokenValue, replicationStrategy, seedGeneratorProvider(zones, replicationFactor, numTokensPerInstance, maxTokenValue))
+			var ownershipInfo *tokdistr.OwnershipInfo
+			for i := 0; i < instancesPerZone; i++ {
+				for j := 0; j < len(zones); j++ {
+					instance := tokdistr.Instance(fmt.Sprintf("%s-%d", string(rune('A'+j)), i))
+					_, _, ownershipInfo, _ = tokenDistributor.AddInstance(instance, zones[j])
+				}
+			}
+			ownershipInfos = append(ownershipInfos, ownershipInfo)
+		}
+		runtimesPerScenario[numTokensPerInstance] = time.Since(start)
+		ownershipInfosIntoInstanceStringMap(ownershipInfos, iterations, len(numTokensPerInstanceScenarios), instanceOwnershipByInstanceMap)
+	}
+
+	w := createCSVWriter(instanceOwnershipByInstanceMap, numTokensPerInstanceScenarios)
+	output := fmt.Sprintf("%s-simulated-ring-with-different-tokens-per-instance-with-random-tokens-rf-%d-zone-awareness-%s.csv", time.Now().Local(), replicationFactor, formatEnabled(len(zones) > 1))
+	filename := filepath.Join("tools", "analyse-unbalanced-series", "tokendistributor", output)
+	if err := w.writeCSV(filename); err != nil {
+		return err
+	}
+	for scenario, runtime := range runtimesPerScenario {
+		level.Info(logger).Log("number of tokens", scenario, "runtime", runtime/iterations)
+	}
+	level.Info(logger).Log("test", "Generate token with random tokens ring with zone-awareness enabled", "status", "end")
+	return nil
+}
+
+func generateRingWithoutZoneAwarenessAndRandomTokens(logger log.Logger, numTokensPerInstanceScenarios []int, replicationFactor, instancesCount int, seedGeneratorProvider func(zones []tokdistr.Zone, replicationFactor int, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator) error {
+	level.Info(logger).Log("test", "Generate token ring with random tokens with zone-awareness enabled", "status", "start")
+	ownershipInfos := make([]*tokdistr.OwnershipInfo, 0, iterations)
+	instanceOwnershipByInstanceMap := make(map[tokdistr.Instance][]string, instancesCount)
+	runtimesPerScenario := make(map[int]time.Duration, len(numTokensPerInstanceScenarios))
+
+	zones := []tokdistr.Zone{tokdistr.SingleZone}
+
+	for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
+		start := time.Now()
+		ownershipInfos = ownershipInfos[:0]
+		for it := 0; it < iterations; it++ {
+			level.Info(logger).Log("tokensPerInstance", numTokensPerInstance, "iteration", it)
+			replicationStrategy := tokdistr.NewSimpleReplicationStrategy(replicationFactor, nil)
+			tokenDistributor := tokdistr.NewRandomTokenDistributor(numTokensPerInstance, len(zones), maxTokenValue, replicationStrategy, seedGeneratorProvider(zones, replicationFactor, numTokensPerInstance, maxTokenValue))
+			var ownershipInfo *tokdistr.OwnershipInfo
+			for i := 0; i < instancesCount; i++ {
+				instance := tokdistr.Instance(fmt.Sprintf("I-%d", i))
+				_, _, ownershipInfo, _ = tokenDistributor.AddInstance(instance, zones[0])
+			}
+			ownershipInfos = append(ownershipInfos, ownershipInfo)
+		}
+		runtimesPerScenario[numTokensPerInstance] = time.Since(start)
+		ownershipInfosIntoInstanceStringMap(ownershipInfos, iterations, len(numTokensPerInstanceScenarios), instanceOwnershipByInstanceMap)
+	}
+
+	w := createCSVWriter(instanceOwnershipByInstanceMap, numTokensPerInstanceScenarios)
+	output := fmt.Sprintf("%s-simulated-ring-with-different-tokens-per-instance-with-candidates-selection-rf-%d-zone-awareness-%s.csv", time.Now().Local(), replicationFactor, formatEnabled(len(zones) > 1))
+	filename := filepath.Join("tools", "analyse-unbalanced-series", "tokendistributor", output)
+	if err := w.writeCSV(filename); err != nil {
+		return err
+	}
+	level.Info(logger).Log("test", "Generate token ring with random tokens with zone-awareness enabled", "status", "end")
+	for scenario, runtime := range runtimesPerScenario {
+		level.Info(logger).Log("number of tokens", scenario, "runtime", runtime/iterations)
 	}
 	return nil
 }
@@ -146,14 +238,23 @@ func main() {
 	replicationFactor := 3
 	zones := []tokdistr.Zone{tokdistr.Zone("zone-a"), tokdistr.Zone("zone-b"), tokdistr.Zone("zone-c")}
 	instancesPerZone := initialInstanceCount / len(zones)
-	seedGenerator := func(zones []tokdistr.Zone, replicationFactor, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator {
+	/*perfectlySpacedSeedGenerator := func(zones []tokdistr.Zone, replicationFactor, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator {
 		return tokdistr.NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxTokenValue)
+	}*/
+	randomSeedGenerator := func(zones []tokdistr.Zone, replicationFactor, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator {
+		return tokdistr.NewRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxTokenValue)
 	}
 
-	// generate ring with different tokens per instance with RF 1 and zone-awareness disabled
-	generateRingWithoutZoneAwareness(logger, numTokensPerInstanceScenarios, 1, initialInstanceCount, seedGenerator)
-	// generate ring with different tokens per instance with replication and zone-awareness enabled
-	generateRingWithoutZoneAwareness(logger, numTokensPerInstanceScenarios, replicationFactor, initialInstanceCount, seedGenerator)
-	// generate ring with different tokens per instance with replication and zone-awareness enabled
-	generateRingWithZoneAwareness(logger, numTokensPerInstanceScenarios, replicationFactor, instancesPerZone, zones, seedGenerator)
+	// generate ring with different tokens per instance with candidate selection with RF 1 and zone-awareness disabled
+	//generateRingWithoutZoneAwareness(logger, numTokensPerInstanceScenarios, 1, initialInstanceCount, perfectlySpacedSeedGenerator)
+	// generate ring with different tokens per instance with candidate selection with replication and zone-awareness enabled
+	//generateRingWithoutZoneAwareness(logger, numTokensPerInstanceScenarios, replicationFactor, initialInstanceCount, perfectlySpacedSeedGenerator)
+	// generate ring with different tokens per instance with candidate selection with replication and zone-awareness enabled
+	//generateRingWithZoneAwareness(logger, numTokensPerInstanceScenarios, replicationFactor, instancesPerZone, zones, perfectlySpacedSeedGenerator)
+	// generate ring with different tokens per instance with random tokens with RF 1 and zone-awareness disabled
+	generateRingWithoutZoneAwarenessAndRandomTokens(logger, numTokensPerInstanceScenarios, 1, initialInstanceCount, randomSeedGenerator)
+	// generate ring with different tokens per instance with random tokens and zone-awareness enabled
+	generateRingWithoutZoneAwarenessAndRandomTokens(logger, numTokensPerInstanceScenarios, replicationFactor, initialInstanceCount, randomSeedGenerator)
+	// generate ring with different tokens per instance with random tokens and zone-awareness enabled
+	generateRingWithZoneAwarenessAndRandomTokens(logger, numTokensPerInstanceScenarios, replicationFactor, instancesPerZone, zones, randomSeedGenerator)
 }

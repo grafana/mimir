@@ -20,6 +20,10 @@ var (
 	}
 )
 
+type TokenDistributorInterface interface {
+	AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], *OwnershipInfo, error)
+}
+
 type TokenDistributor struct {
 	sortedTokens        []Token
 	instanceByToken     map[Token]Instance
@@ -634,18 +638,29 @@ func (t *TokenDistributor) unvisitAll(instance *instanceInfo, zone *zoneInfo) {
 
 // verifyReplicaStart is used just to double-check that the replica start has been correctly computed
 // should not be used in production
-func (t *TokenDistributor) verifyReplicaStart(candidate *candidateTokenInfo) {
-	_, found := t.instanceByToken[candidate.getToken()]
+func (t *TokenDistributor) verifyReplicaStart(candidate *candidateTokenInfo) error {
+	_, foundInstance := t.instanceByToken[candidate.getToken()]
 	// When candidates are evaluated, they don't belong to the token slice, and they have no instance assigned to them.
 	// If it is the case, we partially assign their possible instance to the token being evaluated for the check, and
 	// then remove it after the check.
-	t.instanceByToken[candidate.getToken()] = candidate.getOwningInstance().instanceId
+	instance := candidate.getOwningInstance()
+	t.instanceByToken[candidate.getToken()] = instance.instanceId
+	_, foundZone := t.zoneByInstance[instance.instanceId]
+	t.zoneByInstance[instance.instanceId] = instance.zone.zone
 	rs, err := t.replicationStrategy.getReplicaStart(candidate.getToken(), t.sortedTokens, t.instanceByToken)
+	if !foundZone {
+		delete(t.zoneByInstance, instance.instanceId)
+	}
+	if !foundInstance {
+		delete(t.instanceByToken, candidate.getToken())
+	}
 	if err != nil {
 		fmt.Printf("\t\tIt was not possible to find the replica start of token %d (%s) by using the replication strategy\n", candidate.getToken(), candidate.getOwningInstance())
+		return fmt.Errorf("it was not possible to find the replica start of token %d (%s) by using the replication strategy\n", candidate.getToken(), candidate.getOwningInstance())
 	}
 	if rs != candidate.getReplicaStart().getToken() {
 		fmt.Printf("\t\tReplica start of %d(%s) is %d(%s) according to the list, and %d(%s) according to the replication srategy\n", candidate.getToken(), candidate.getOwningInstance().instanceId, candidate.getReplicaStart().getToken(), candidate.getReplicaStart().getOwningInstance().instanceId, rs, t.instanceByToken[rs])
+		return fmt.Errorf("replica start of %d(%s) is %d(%s) according to the list, and %d(%s) according to the replication srategy\n", candidate.getToken(), candidate.getOwningInstance().instanceId, candidate.getReplicaStart().getToken(), candidate.getReplicaStart().getOwningInstance().instanceId, rs, t.instanceByToken[rs])
 		/*rs, _ = t.replicationStrategy.getReplicaStart(candidate.getToken(), t.sortedTokens, t.instanceByToken)
 		curr := candidate.getPrevious()
 		barrier := candidate.getReplicaStart().(navigableTokenInterface).getPrevious()
@@ -658,9 +673,7 @@ func (t *TokenDistributor) verifyReplicaStart(candidate *candidateTokenInfo) {
 			}
 		}*/
 	}
-	if !found {
-		delete(t.instanceByToken, candidate.getToken())
-	}
+	return nil
 }
 
 // DEPRECATED!!! Use addCandidateAndUpdateTokenInfoCircularList instead
@@ -804,8 +817,19 @@ func (t *TokenDistributor) addCandidateAndUpdateTokenInfoCircularList(navigableC
 	// update candidate details, that might have been affected by previous insertions
 	t.populateCandidateTokenInfo(candidate, candidateInstance)
 
+	rs, err := t.replicationStrategy.getReplicaStart(candidate.getToken(), t.sortedTokens, t.instanceByToken)
+	if err != nil {
+		return err
+	}
+	if rs != candidate.replicaStart.getToken() {
+		fmt.Println("I am here")
+	}
+
 	// this is just a check to be used during the development phase
-	t.verifyReplicaStart(candidate)
+	err = t.verifyReplicaStart(candidate)
+	if err != nil {
+		return err
+	}
 
 	host := candidate.host
 	next := host.getNext()
@@ -1165,12 +1189,12 @@ func (t *TokenDistributor) evaluateInsertionImprovement(candidate *candidateToke
 	return improvement, nil
 }
 
-func (t *TokenDistributor) addNewInstanceAndToken(instance *instanceInfo, token Token) {
+func (t *TokenDistributor) addNewInstanceAndToken(instance Instance, zone Zone, token Token) {
 	t.sortedTokens = append(t.sortedTokens, token)
 	slices.Sort(t.sortedTokens)
-	t.instanceByToken[token] = instance.instanceId
-	t.zoneByInstance[instance.instanceId] = instance.zone.zone
-	t.addTokenToInstance(instance.instanceId, token)
+	t.instanceByToken[token] = instance
+	t.zoneByInstance[instance] = zone
+	t.addTokenToInstance(instance, token)
 }
 
 func (t *TokenDistributor) addTokensFromSeed(instance Instance, zone Zone) {
@@ -1184,26 +1208,6 @@ func (t *TokenDistributor) addTokensFromSeed(instance Instance, zone Zone) {
 		t.zoneByInstance[instance] = zone
 		slices.Sort(t.sortedTokens)
 	}
-}
-
-func printInstanceOwnership(instanceInfoByInstance map[Instance]*instanceInfo) {
-	zoneOwnership := make(map[Zone]float64)
-	sum := 0.0
-	//fmt.Println(len(instanceInfoByInstance))
-	for _, instanceInfo := range instanceInfoByInstance {
-		zone := instanceInfo.zone.zone
-		ownership, ok := zoneOwnership[zone]
-		if !ok {
-			ownership = 0
-		}
-		ownership += instanceInfo.ownership
-		zoneOwnership[zone] = ownership
-		if strings.Contains(string(instanceInfo.instanceId), "A-") {
-			sum += instanceInfo.ownership
-		}
-		//fmt.Printf("[%s-%.2f] ", instance, instanceInfoByInstance[instance].ownership)
-	}
-	//fmt.Println()
 }
 
 func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], *OwnershipInfo, error) {
@@ -1234,8 +1238,7 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	addedTokens := 0
 	for {
 		bestCandidate := bestToken.navigableToken
-		printInstanceOwnership(instanceInfoByInstance)
-		t.addNewInstanceAndToken(newInstanceInfo, bestToken.navigableToken.getData().getToken())
+		t.addNewInstanceAndToken(instance, zone, bestToken.navigableToken.getData().getToken())
 		err := t.addCandidateAndUpdateTokenInfoCircularList(bestCandidate, tokenInfoCircularList)
 		if err != nil {
 			return nil, nil, nil, err
@@ -1277,7 +1280,6 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 
 	ownershipInfo := t.createOwnershipInfo(tokenInfoCircularList, optimalTokenOwnership)
 
-	printInstanceOwnership(instanceInfoByInstance)
 	//t.count(tokenInfoCircularList)
 	//fmt.Println("-----------------------------------------------------------")
 	return tokenInfoCircularList, candidateTokenInfoCircularList, ownershipInfo, nil

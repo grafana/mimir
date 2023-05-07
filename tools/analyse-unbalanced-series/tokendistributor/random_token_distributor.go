@@ -24,6 +24,39 @@ func NewRandomTokenDistributor(tokensPerInstance, zonesCount int, maxTokenValue 
 	}
 }
 
+func (t *RandomTokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], *OwnershipInfo, error) {
+	t.replicationStrategy.addInstance(instance, zone)
+	if t.seedGenerator != nil && t.seedGenerator.hasNextSeed(zone) {
+		t.addTokensFromSeed(instance, zone)
+		return nil, nil, &OwnershipInfo{}, nil
+	}
+
+	for i := 0; i < t.tokensPerInstance; i++ {
+		candidateToken, err := t.calculateCandidateToken()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		t.addNewInstanceAndToken(instance, zone, candidateToken)
+	}
+
+	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
+	newInstanceZone, ok := zoneInfoByZone[zone]
+	if !ok {
+		newInstanceZone = newZoneInfo(zone)
+		zoneInfoByZone[zone] = newInstanceZone
+	}
+	newInstanceInfo := newInstanceInfo(instance, newInstanceZone, t.tokensPerInstance)
+	instanceInfoByInstance[instance] = newInstanceInfo
+	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceInfo)
+	//fmt.Printf("\t\t\t%s", instanceInfoByInstance)
+	optimalTokenOwnership := t.getOptimalTokenOwnership()
+	ownershipInfo := t.createOwnershipInfo(tokenInfoCircularList, optimalTokenOwnership)
+
+	//t.count(tokenInfoCircularList)
+	//fmt.Println("-----------------------------------------------------------")
+	return tokenInfoCircularList, nil, ownershipInfo, nil
+}
+
 func (t *RandomTokenDistributor) calculateCandidateToken() (Token, error) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -36,30 +69,6 @@ func (t *RandomTokenDistributor) calculateCandidateToken() (Token, error) {
 		candidate = t.getNextRandomCandidate(r)
 	}
 	return candidate, nil
-}
-
-func (t *RandomTokenDistributor) createCandidateTokenInfo(tokenInfoCircularList *CircularList[*tokenInfo], newInstanceInfo *instanceInfo) (*candidateTokenInfo, error) {
-	candidateToken, err := t.calculateCandidateToken()
-	if err != nil {
-		return nil, err
-	}
-	hostIndex := searchToken(t.sortedTokens, candidateToken)
-	if hostIndex == 0 {
-		hostIndex = len(t.sortedTokens) - 1
-	}
-	prev := tokenInfoCircularList.head.prev
-	curr := tokenInfoCircularList.head
-	for {
-		if curr.getData().getToken() > candidateToken {
-			break
-		}
-		prev = curr
-		curr = curr.next
-		if curr == tokenInfoCircularList.head {
-			return nil, errorHostToken
-		}
-	}
-	return newCandidateTokenInfo(newInstanceInfo, candidateToken, prev.getData()), nil
 }
 
 func (t *RandomTokenDistributor) getNextRandomCandidate(rand *rand.Rand) Token {

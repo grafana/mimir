@@ -77,7 +77,7 @@ type RandomSeedGenerator struct {
 	*BaseSeedGenerator
 }
 
-func newRandomSeedGenerator(zones []Zone, replicationFactor, tokensPerInstance int, maxTokenValue Token) *RandomSeedGenerator {
+func NewRandomSeedGenerator(zones []Zone, replicationFactor, tokensPerInstance int, maxTokenValue Token) *RandomSeedGenerator {
 	tokensCount := int(math.Max(float64(len(zones)), float64(replicationFactor))) * tokensPerInstance
 
 	allSeeds := make([]Token, 0, tokensCount)
