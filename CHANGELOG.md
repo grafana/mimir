@@ -25,6 +25,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752
+* [ENHANCEMENT] Add `symbol table size exceeds` case to `MimirCompactorHasNotSuccessfullyRunCompaction` runbook. #4945
 
 ### Mixin
 
