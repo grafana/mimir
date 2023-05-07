@@ -595,7 +595,7 @@ How to **investigate**:
   - Invalid result block:
     - **How to detect**: Search compactor logs for `invalid result block`.
     - **What it means**: The compactor successfully validated the source blocks. But the validation of the result block after the compaction did not succeed. The result block was not uploaded and the compaction job will be retried.
-  - Out-of-order chunks
+  - Out-of-order chunks:
     - **How to detect**: Search compactor logs for `invalid result block` and `out-of-order chunks`.
     - This is caused by a bug in the ingester - see [mimir#1537](https://github.com/grafana/mimir/issues/1537). Ingesters upload blocks where the MinT and MaxT of some chunks don't match the first and last samples in the chunk. When the faulty chunks' MinT and MaxT overlap with other chunks, the compactor merges the chunks. Because one chunk's MinT and MaxT are incorrect the merge may be performed incorrectly, leading to OoO samples.
     - **How to mitigate**: Mark the faulty blocks to avoid compacting them in the future:
@@ -607,6 +607,22 @@ How to **investigate**:
           ```
           ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Leading to out-of-order chunks when compacting with other blocks" <block-1> <block-2>...
           ```
+  - Result block exceeds symbol table maximum size:
+    - **How to detect**: Search compactor logs for `symbol table size exceeds`.
+    - **What it means**: The compactor successfully validated the source blocks. But the resulting block is impossible to write due to the error above.
+    - This is caused by too many series being stored in the blocks, which indicates that `-compactor.split-and-merge-shards` is too low for the tenant. Could be also an indication of very high churn in labels causing label cardinality explosion.
+    - **How to mitigate**: These blocks are not possible to compact, mark the source blocks indicated in the error message with `no-compact`.
+      - Find all affected source blocks in the compactor logs by searching for `symbol table size exceeds`.
+      - The log lines contain the block IDs in a list of paths, such as:
+        ```
+        [/data/compact/0@17241709254077376921-merge-3_of_4-1683244800000-1683331200000/01GZS91PMTAWAWAKRYQVNV1FPP /data/compact/0@17241709254077376921-merge-3_of_4-1683244800000-1683331200000/01GZSC5803FN1V1ZFY6Q8PWV1E]
+        ```
+        Where the filenames are the block IDs: `01GZS91PMTAWAWAKRYQVNV1FPP` and `01GZSC5803FN1V1ZFY6Q8PWV1E`
+      - Mark the source blocks for no compaction (in this example the object storage backend is GCS):
+        ```
+        ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" <block-1> <block-2>...
+        ```
+    - Further reading: [Compaction algorithm]({{< relref "../../references/architecture/components/compactor/index.md#compaction-algorithm" >}}).
 
 - Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor/index.md" >}}) and set it to view the last 7 days.
 
