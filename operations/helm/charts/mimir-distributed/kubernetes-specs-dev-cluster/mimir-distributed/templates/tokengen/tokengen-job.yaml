@@ -13,6 +13,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   annotations:
     "helm.sh/hook": post-install
+    iamRole: "arn:aws:iam::707343435239:role/TsdbStorageBucketFullAccessRole-dev-us-west-2"
   namespace: "mimir"
 spec:
   backoffLimit: 6
@@ -29,6 +30,8 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: tokengen
       namespace: "mimir"
+      annotations:
+        iamRole: "arn:aws:iam::707343435239:role/TsdbStorageBucketFullAccessRole-dev-us-west-2"
     spec:
       serviceAccountName: databricks-gem-mimir
       securityContext:
@@ -44,6 +47,12 @@ spec:
         - name: tokengen
           image: "registry.dev.databricks.com/grafana-enterprise-metrics:2.7.1@sha256:b08a76f912f7cbdebe79cde40c6a3a9a4244efe37c51d3791005aae88a81e327"
           imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              memory: 77Mi
+            requests:
+              cpu: 500m
+              memory: 77Mi
           args:
             - "-target=tokengen"
             - "-config.expand-env=true"
