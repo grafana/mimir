@@ -212,7 +212,7 @@
       - "--remote-url=http://distributor-2:8001/api/v1/push"
       - "--remote-write-concurrency=5"
       - "--remote-write-interval=10s"
-      - "--series-count=1000"
+      - "--series-count=10000"
       - "--tenants-count=1"
       - "--query-enabled=true"
       - "--query-interval=1s"
@@ -276,7 +276,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/activity/querier-8004 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address= -memberlist.nodename=querier -memberlist.bind-port=10004 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/activity/querier-8004 -querier.prefer-streaming-chunks=true -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address= -memberlist.nodename=querier -memberlist.bind-port=10004 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
     "depends_on":
       - "minio"
       - "distributor-1"

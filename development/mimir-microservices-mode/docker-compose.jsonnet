@@ -89,6 +89,7 @@ std.manifestYamlDoc({
         target: 'querier',
         httpPort: 8004,
         extraArguments:
+          '-querier.prefer-streaming-chunks=true ' +
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
           if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else '',
       }),
