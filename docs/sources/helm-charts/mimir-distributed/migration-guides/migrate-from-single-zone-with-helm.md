@@ -164,10 +164,11 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
-   This step also removes the Service and StatefulSet manifests of the old non zone-aware alertmanagers.
-   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster.
-   You need to manually prune the old Service and StatefulSet.
-   Otherwise, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
+1. Ensure that the Service and StatefulSet resources of the non zone-aware alertmanagers have been deleted.
+   The previous step also removes the Service and StatefulSet manifests of the old non zone-aware alertmanagers.
+   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster
+   even if the Helm chart no longer renders them. If the old resources still exist, delete them manually.
+   If not deleted, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
 
 1. Wait until old non zone-aware alertmanagers are terminated.
 
@@ -257,10 +258,11 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
-   This step also removes the Service and StatefulSet manifests of the old non zone-aware store-gateways.
-   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster.
-   You need to manually prune the old Service and StatefulSet.
-   Otherwise, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
+1. Ensure that the Service and StatefulSet resources of the non zone-aware store-gateways have been deleted.
+   The previous step also removes the Service and StatefulSet manifests of the old non zone-aware store-gateways.
+   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster
+   even if the Helm chart no longer renders them. If the old resources still exist, delete them manually.
+   If not deleted, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
 
 1. Wait until all store-gateways are running and ready.
 
@@ -332,10 +334,11 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
-   This step also removes the Service and StatefulSet manifests of the old non zone-aware store-gateways.
-   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster.
-   You need to manually prune the old Service and StatefulSet.
-   Otherwise, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
+1. Ensure that the Service and StatefulSet resources of the non zone-aware store-gateways have been deleted.
+   The previous step also removes the Service and StatefulSet manifests of the old non zone-aware store-gateways.
+   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster
+   even if the Helm chart no longer renders them. If the old resources still exist, delete them manually.
+   If not deleted, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
 
 1. Wait for non zone-aware store-gateways to terminate.
 
@@ -510,10 +513,11 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    These values are actually the default, which means that removing the values `ingester.zoneAwareReplication.enabled` and `rollout_operator.enabled` is also a valid step.
 
-   This step also removes the Service and StatefulSet manifests of the old non zone-aware ingesters.
-   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster.
-   You need to manually prune the old Service and StatefulSet.
-   Otherwise, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
+1. Ensure that the Service and StatefulSet resources of the non zone-aware ingesters have been deleted.
+   The previous step also removes the Service and StatefulSet manifests of the old non zone-aware ingesters.
+   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster
+   even if the Helm chart no longer renders them. If the old resources still exist, delete them manually.
+   If not deleted, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
@@ -742,12 +746,13 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    These values are actually the default, which means that removing the values `ingester.zoneAwareReplication.enabled` and `rollout_operator.enabled` from your `custom.yaml` is also a valid step.
 
-   This step also removes the Service and StatefulSet manifests of the old non zone-aware ingesters.
-   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster.
-   You need to manually prune the old Service and StatefulSet.
-   Otherwise, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
-
 1. Upgrade the installation with the `helm` command using your regular command line flags.
+
+1. Ensure that the Service and StatefulSet resources of the non zone-aware ingesters have been deleted.
+   The previous step also removes the Service and StatefulSet manifests of the old non zone-aware ingesters.
+   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster
+   even if the Helm chart no longer renders them. If the old resources still exist, delete them manually.
+   If not deleted, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
 
 1. Wait at least 3 hours.
 
