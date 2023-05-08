@@ -687,6 +687,60 @@ func TestCachingKey_ShouldKeepAllocationsToMinimum(t *testing.T) {
 	}
 }
 
+func BenchmarkCachingKey(b *testing.B) {
+	tests := map[string]struct {
+		run func(bucketID string)
+	}{
+		"cachingKeyAttributes()": {
+			run: func(bucketID string) {
+				cachingKeyAttributes(bucketID, "/object")
+			},
+		},
+		"cachingKeyObjectSubrange()": {
+			run: func(bucketID string) {
+				cachingKeyObjectSubrange(bucketID, "/object", 10, 20)
+			},
+		},
+		"cachingKeyIter()": {
+			run: func(bucketID string) {
+				cachingKeyIter(bucketID, "/dir")
+			},
+		},
+		"cachingKeyIter() recursive": {
+			run: func(bucketID string) {
+				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter)
+			},
+		},
+		"cachingKeyExists()": {
+			run: func(bucketID string) {
+				cachingKeyExists(bucketID, "/object")
+			},
+		},
+		"cachingKeyContent()": {
+			run: func(bucketID string) {
+				cachingKeyContent(bucketID, "/object")
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		for _, withBucketID := range []bool{false, true} {
+			b.Run(fmt.Sprintf("%s with bucket ID: %t", testName, withBucketID), func(b *testing.B) {
+				bucketID := ""
+				if withBucketID {
+					bucketID = "test"
+				}
+
+				b.ResetTimer()
+
+				for n := 0; n < b.N; n++ {
+					testData.run(bucketID)
+				}
+			})
+		}
+	}
+}
+
 func verifyObjectAttrs(t *testing.T, cb *CachingBucket, file string, expectedLength int, cacheUsed bool, cfgName string) {
 	t.Helper()
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName)))

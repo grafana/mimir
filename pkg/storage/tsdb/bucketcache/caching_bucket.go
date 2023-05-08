@@ -553,43 +553,40 @@ func mergeRanges(input []rng, limit int64) []rng {
 }
 
 func cachingKeyAttributes(bucketID, name string) string {
-	return cachingKeyForSimpleOperation("attrs", bucketID, name)
+	return composeCachingKey("attrs", bucketID, name)
 }
 
 func cachingKeyObjectSubrange(bucketID, name string, start, end int64) string {
-	const op = "subrange"
-
-	// Format start and end.
-	startString := strconv.FormatInt(start, 10)
-	endString := strconv.FormatInt(end, 10)
-
-	b := strings.Builder{}
-	b.Grow(len(bucketID) + len(op) + len(name) + len(startString) + len(endString) + 4)
-
-	if bucketID != "" {
-		b.WriteString(bucketID)
-		b.WriteRune(':')
-	}
-
-	b.WriteString(op)
-	b.WriteRune(':')
-	b.WriteString(name)
-	b.WriteRune(':')
-	b.WriteString(startString)
-	b.WriteRune(':')
-	b.WriteString(endString)
-
-	return b.String()
+	return composeCachingKey("subrange", bucketID, name, strconv.FormatInt(start, 10), strconv.FormatInt(end, 10))
 }
 
 func cachingKeyIter(bucketID, name string, options ...objstore.IterOption) string {
-	const (
-		op        = "iter"
-		recursive = "recursive"
-	)
+	// Ensure the caching key is different for the same request but different
+	// recursive config.
+	if params := objstore.ApplyIterOptions(options...); params.Recursive {
+		return composeCachingKey("iter", bucketID, name, "recursive")
+	}
+
+	return composeCachingKey("iter", bucketID, name)
+}
+
+func cachingKeyExists(bucketID, name string) string {
+	return composeCachingKey("exists", bucketID, name)
+}
+
+func cachingKeyContent(bucketID, name string) string {
+	return composeCachingKey("content", bucketID, name)
+}
+
+func composeCachingKey(op, bucketID string, values ...string) string {
+	// Estimate size.
+	estimatedSize := len(op) + len(bucketID) + (2 + len(values))
+	for _, value := range values {
+		estimatedSize += len(value)
+	}
 
 	b := strings.Builder{}
-	b.Grow(len(bucketID) + len(op) + len(name) + len(recursive) + 3)
+	b.Grow(estimatedSize)
 
 	if bucketID != "" {
 		b.WriteString(bucketID)
@@ -597,25 +594,13 @@ func cachingKeyIter(bucketID, name string, options ...objstore.IterOption) strin
 	}
 
 	b.WriteString(op)
-	b.WriteRune(':')
-	b.WriteString(name)
 
-	// Ensure the caching key is different for the same request but different
-	// recursive config.
-	if params := objstore.ApplyIterOptions(options...); params.Recursive {
+	for _, value := range values {
 		b.WriteRune(':')
-		b.WriteString(recursive)
+		b.WriteString(value)
 	}
 
 	return b.String()
-}
-
-func cachingKeyExists(bucketID, name string) string {
-	return cachingKeyForSimpleOperation("exists", bucketID, name)
-}
-
-func cachingKeyContent(bucketID, name string) string {
-	return cachingKeyForSimpleOperation("content", bucketID, name)
 }
 
 func cachingKeyForSimpleOperation(op, bucketID, name string) string {
