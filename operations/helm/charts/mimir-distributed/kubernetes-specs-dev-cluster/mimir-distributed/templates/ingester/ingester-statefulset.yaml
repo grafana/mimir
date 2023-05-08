@@ -17,7 +17,7 @@ metadata:
   namespace: "mimir"
 spec:
   podManagementPolicy: Parallel
-  replicas: 3
+  replicas: 12
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
@@ -147,10 +147,10 @@ spec:
             initialDelaySeconds: 60
           resources:
             limits:
-              memory: 12Gi
+              memory: 32Gi
             requests:
               cpu: 3.5
-              memory: 8Gi
+              memory: 16Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
