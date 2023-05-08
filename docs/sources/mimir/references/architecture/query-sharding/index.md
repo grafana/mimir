@@ -16,6 +16,9 @@ partial queries are distributed by the query-frontend to run on different
 queriers in parallel. The results of those partial queries are aggregated by the
 query-frontend to return the full query result.
 
+Query sharding is applied on the [`query`]({{< relref "../../http-api/index.md#instant-query" >}})
+and [`query_range`]({{< relref "../../http-api/index.md#range-query" >}}) APIs only.
+
 ## Query sharding at glance
 
 Not all queries are shardable. While the full query is not shardable, the inner
