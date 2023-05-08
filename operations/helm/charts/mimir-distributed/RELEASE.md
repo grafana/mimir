@@ -107,7 +107,7 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
 1. After the release tag in Git is created, merge the branch back into `main` by following the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
 
-1. Backport and additional release candidate
+1. Backport and additional release candidate.
 
    - If additional changes need to be added to this release, another release candidate version has to be created.
    - Follow [backport process](https://github.com/grafana/mimir/blob/main/RELEASE.md#cherry-picking-changes-into-release-branch) similar with Mimir release to backport changes from main branch.
