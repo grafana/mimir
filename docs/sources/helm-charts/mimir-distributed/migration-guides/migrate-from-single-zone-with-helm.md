@@ -164,6 +164,10 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
+   This step should also delete the Service and StatefulSet of the old non zone-aware alertmanagers.
+   In some cases, such as when using Helm from Tanka, you may need to manually prune the old Service and StatefulSet.
+   Otherwise, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
+
 1. Wait until old non zone-aware alertmanagers are terminated.
 
 ## Migrate store-gateways to zone-aware replication
@@ -252,6 +256,10 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
+   This step should also delete the Service and StatefulSet of the old non zone-aware store-gateways.
+   In some cases, such as when using Helm from Tanka, you may need to manually prune the old Service and StatefulSet.
+   Otherwise, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
+
 1. Wait until all store-gateways are running and ready.
 
 ### Migrate store-gateways without downtime
@@ -321,6 +329,10 @@ Before starting this procedure, set up your zones according to [Configure zone-a
    These values are actually the default, which means that removing the values `store_gateway.zoneAwareReplication.enabled` and `rollout_operator.enabled` is also a valid step.
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
+
+   This step should also delete the Service and StatefulSet of the old non zone-aware store-gateways.
+   In some cases, such as when using Helm from Tanka, you may need to manually prune the old Service and StatefulSet.
+   Otherwise, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
 
 1. Wait for non zone-aware store-gateways to terminate.
 
@@ -494,6 +506,10 @@ Before starting this procedure, set up your zones according to [Configure zone-a
    ```
 
    These values are actually the default, which means that removing the values `ingester.zoneAwareReplication.enabled` and `rollout_operator.enabled` is also a valid step.
+
+   This step should also delete the Service and StatefulSet of the old non zone-aware ingesters.
+   In some cases, such as when using Helm from Tanka, you may need to manually prune the old Service and StatefulSet.
+   Otherwise, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
@@ -721,6 +737,10 @@ Before starting this procedure, set up your zones according to [Configure zone-a
    [//]: # "ingester-step7"
 
    These values are actually the default, which means that removing the values `ingester.zoneAwareReplication.enabled` and `rollout_operator.enabled` from your `custom.yaml` is also a valid step.
+
+   This step should also delete the Service and StatefulSet of the old non zone-aware ingesters.
+   In some cases, such as when using Helm from Tanka, you may need to manually prune the old Service and StatefulSet.
+   Otherwise, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
