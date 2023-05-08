@@ -77,13 +77,7 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
    The two parameters are `mimir_docs_version` and `gem_docs_version`. With the exception of the release notes, the Helm chart documentation should refer to the documentation or Mimir and GEM that is actually included in the Helm chart.
 
-1. Update the [Mimir Helm Chart Readme template](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md.gotmpl). Update the line that link to Mimir release note to the latest Mimir version.
-
-   Example:
-
-   ```
-   See the [Grafana Mimir version 2.6 release notes](https://grafana.com/docs/mimir/v2.6.x/release-notes/v2.6/).
-   ```
+1. Update the [Mimir Helm Chart Readme template](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md.gotmpl). Update the line that link to Mimir release note to the latest Mimir version. Example: `See the [Grafana Mimir version 2.6 release notes](https://grafana.com/docs/mimir/v2.6.x/release-notes/v2.6/)`.
 
 1. From the root directory of the repository, run `make doc` so a template can update the [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) file.
 
