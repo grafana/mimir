@@ -50,13 +50,11 @@ There are the following ways to mitigate this failure mode:
 - Write-ahead log (WAL)
 - Write-behind log (WBL), only used if out-of-order ingestion is enabled.
 
-### Replication
+### Replication and availability
 
-By default, each series is replicated to three ingesters.
-Writes to the Mimir cluster are successful if a quorum of ingesters received the data, which is a minimum of 2 with a replication factor of 3.
-If the Mimir cluster loses an ingester, the in-memory series samples held by the lost ingester are available at least in one other ingester.
-In the event of a single ingester failure, no time series samples are lost.
-If multiple ingesters fail, time series might be lost if the failure affects all the ingesters holding the replicas of a specific time series.
+Writes to the Mimir cluster are successful if a majority of ingesters received the data. With the default replication factor of 3, this means 2 out of 3 writes to ingesters must succeed.
+If the Mimir cluster loses a minority of ingesters, the in-memory series samples held by the lost ingesters are available in at least one other ingester, meaning no time series samples are lost.
+If a majority of ingesters fail, time series might be lost if the failure affects all the ingesters holding the replicas of a specific time series.
 
 > **Note:** Replication only happens at write time. If an ingester is unavailable during a period when writes are actively being written to other ingesters, that particular ingester will never recover those missed samples.
 
