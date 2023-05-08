@@ -220,7 +220,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 		defer func() {
 			close(doneReading)
-			// TODO: do we need something similar for streaming?
+			// TODO: do something similar for streaming
 			d.ingesterChunksDeduplicated.Add(float64(numDeduplicatedChunks))
 			d.ingesterChunksTotal.Add(float64(numTotalChunks))
 		}()
