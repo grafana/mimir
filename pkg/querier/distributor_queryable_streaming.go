@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -54,6 +55,7 @@ type SeriesChunksStreamReader struct {
 	seriesBatch         []streamedIngesterSeries
 	expectedSeriesCount int
 	seriesBufferSize    int
+	batchPool           sync.Pool
 }
 
 func NewSeriesStreamer(client client.Ingester_QueryStreamClient, expectedSeriesCount int, seriesBufferSize int) *SeriesChunksStreamReader {
@@ -61,6 +63,11 @@ func NewSeriesStreamer(client client.Ingester_QueryStreamClient, expectedSeriesC
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		seriesBufferSize:    seriesBufferSize,
+		batchPool: sync.Pool{
+			New: func() any {
+				return make([]streamedIngesterSeries, 0, seriesBufferSize)
+			},
+		},
 	}
 }
 
@@ -104,7 +111,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 		defer close(s.seriesBatchChan)
 
 		nextSeriesIndex := 0
-		currentBatch := make([]streamedIngesterSeries, 0, s.seriesBufferSize)
+		currentBatch := s.batchPool.Get().([]streamedIngesterSeries)
 
 		for {
 			msg, err := s.client.Recv()
@@ -112,17 +119,15 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				if errors.Is(err, io.EOF) {
 					if nextSeriesIndex < s.expectedSeriesCount {
 						tryToWriteErrorToBuffer(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, nextSeriesIndex))
-					} else if len(currentBatch) > 0 {
-						writeToBufferOrAbort(currentBatch)
 					}
 				} else {
-					tryToWriteErrorToBuffer(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, nextSeriesIndex))
+					tryToWriteErrorToBuffer(err)
 				}
 
 				return
 			}
 
-			for _, series := range msg.SeriesChunks {
+			for seriesIdx, series := range msg.SeriesChunks {
 				if nextSeriesIndex >= s.expectedSeriesCount {
 					tryToWriteErrorToBuffer(fmt.Errorf("expected to receive only %v series, but received more than this", s.expectedSeriesCount))
 					return
@@ -130,12 +135,12 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 				currentBatch = append(currentBatch, streamedIngesterSeries{chunks: series.Chunks, seriesIndex: nextSeriesIndex})
 
-				if len(currentBatch) == s.seriesBufferSize {
+				if len(currentBatch) == s.seriesBufferSize || seriesIdx == len(msg.SeriesChunks)-1 {
 					if !writeToBufferOrAbort(currentBatch) {
 						return
 					}
 
-					currentBatch = currentBatch[:0]
+					currentBatch = s.batchPool.Get().([]streamedIngesterSeries)[:0]
 				}
 
 				nextSeriesIndex++
@@ -169,6 +174,7 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex int) ([]client.Chunk, e
 	if len(s.seriesBatch) > 1 {
 		s.seriesBatch = s.seriesBatch[1:]
 	} else {
+		s.batchPool.Put(s.seriesBatch)
 		s.seriesBatch = nil
 	}
 
