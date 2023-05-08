@@ -28,7 +28,7 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
    - Release candidates have the version `x.y.z-rc.w`, for example `3.1.0-rc.7`.
 
    > **Note**: You must precede the release candidate number (such as `7`) with a dot (`.`).
- 
+
 1. Prepare changelog.
 
    a. Create a PR, whose target is `main`, that updates the [Helm chart changelog](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md), and move any `## main / unreleased` items under this release’s version.
@@ -46,7 +46,7 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
    b. Push the branch to origin without any commit added.
 
    c. Once the branch is pushed, all changes to `mimir-distributed-release-x.y` branch must be done through PR.
- 
+
 1. Create a branch to update Mimir/GEM image and helm chart version. For example `user/update-mimir-distributed-release-x.y`. Do the following updates in the next steps from this branch.
 
 1. Set the image versions in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml), as needed:
@@ -76,10 +76,11 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 1. Update the Mimir and GEM documentation version parameters in [\_index.md](https://github.com/grafana/mimir/blob/main/docs/sources/helm-charts/mimir-distributed/_index.md)
 
    The two parameters are `mimir_docs_version` and `gem_docs_version`. With the exception of the release notes, the Helm chart documentation should refer to the documentation or Mimir and GEM that is actually included in the Helm chart.
- 
+
 1. Update the [Mimir Helm Chart Readme template](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md.gotmpl). Update the line that link to Mimir release note to the latest Mimir version.
 
    Example:
+
    ```
    See the [Grafana Mimir version 2.6 release notes](https://grafana.com/docs/mimir/v2.6.x/release-notes/v2.6/).
    ```
@@ -104,7 +105,6 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
 The [release process](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-release.yaml) checks and creates a Git tag formatted as `mimir-distributed-<version>`, for example `mimir-distributed-4.5.0`, on the merge commit created when the PR is merged. To prevent releasing the same version with different content, the release process fails if the tag already exists. The release is published in the [Grafana helm-charts](https://grafana.github.io/helm-charts/) Helm repository.
 
-
 ## Release process for a final release
 
 1. Determine the Helm chart version number.
@@ -120,7 +120,7 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
    For example, `4.5.0`.
 
-   > **Note:** Once this change is merged to `mimir-distributed-x.y` branch, it will trigger the release process GitHub Action. 
+   > **Note:** Once this change is merged to `mimir-distributed-x.y` branch, it will trigger the release process GitHub Action.
 
 1. There shouldn't be anymore update needed in release notes and documentation because that has been done in the release candidate step above.
 
