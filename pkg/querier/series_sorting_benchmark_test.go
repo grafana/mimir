@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/util/loser"
 )
 
 func BenchmarkMergingAndSortingSeries(b *testing.B) {
@@ -29,7 +30,7 @@ func BenchmarkMergingAndSortingSeries(b *testing.B) {
 							seriesSets[i].NextSeriesIndex = 0
 						}
 
-						heapMergeSeriesSets(seriesSets, zones)
+						loserTreeMergeSeriesSets(seriesSets, zones)
 					}
 				})
 			}
@@ -174,8 +175,9 @@ func TestMergingAndSortingSeries(t *testing.T) {
 	}
 
 	implementations := map[string]func([]ingesterSeries, int) []mergedSeries{
-		"naive": naiveMergeAndSortSeriesSets,
-		"heap":  heapMergeSeriesSets,
+		"naive":      naiveMergeAndSortSeriesSets,
+		"heap":       heapMergeSeriesSets,
+		"loser tree": loserTreeMergeSeriesSets,
 	}
 
 	zoneCount := 1
@@ -184,6 +186,11 @@ func TestMergingAndSortingSeries(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			for implementationName, implementationFunc := range implementations {
 				t.Run(implementationName, func(t *testing.T) {
+					// Reset the test data.
+					for i := range testCase.seriesSets {
+						testCase.seriesSets[i].NextSeriesIndex = 0
+					}
+
 					actual := implementationFunc(testCase.seriesSets, zoneCount)
 					require.Lenf(t, actual, len(testCase.expected), "should be same length as %v", testCase.expected)
 
@@ -273,7 +280,7 @@ func heapMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []mergedSeri
 			// First time we've seen this series.
 			series := mergedSeries{
 				Labels: nextSeriesFromIngester,
-				// Why zoneCount? We assume each series is present exactly one in each zone.
+				// Why zoneCount? We assume each series is present exactly once in each zone.
 				Sources: make([]mergedSeriesSource, 1, zoneCount),
 			}
 
@@ -296,6 +303,70 @@ func heapMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []mergedSeri
 	}
 }
 
+// Use a loser tree to merge lists of series from each ingester.
+// This assumes we add a new implementation of NewConcreteSeriesSet that doesn't try to sort the list of series again.
+func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []mergedSeries {
+	if len(ingesters) == 0 {
+		return []mergedSeries{}
+	}
+
+	ingesterPointers := make([]*ingesterSeries, len(ingesters))
+	for i, _ := range ingesters {
+		ingesterPointers[i] = &ingesters[i]
+	}
+
+	at := func(ingester *ingesterSeries) labels.Labels {
+		return ingester.Series[ingester.NextSeriesIndex-1]
+	}
+
+	less := func(a, b labels.Labels) bool {
+		if a == nil {
+			return false
+		}
+
+		if b == nil {
+			return true
+		}
+
+		return labels.Compare(a, b) < 0
+	}
+
+	close := func(series *ingesterSeries) {} // Nothing to do.
+
+	tree := loser.New(ingesterPointers, nil, at, less, close)
+	allSeries := []mergedSeries{}
+
+	for tree.Next() {
+		nextIngester := tree.Winner()
+		nextSeriesFromIngester := nextIngester.Series[nextIngester.NextSeriesIndex-1]
+		lastSeriesIndex := len(allSeries) - 1
+
+		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
+			// First time we've seen this series.
+			series := mergedSeries{
+				Labels: nextSeriesFromIngester,
+				// Why zoneCount? We assume each series is present exactly once in each zone.
+				Sources: make([]mergedSeriesSource, 1, zoneCount),
+			}
+
+			series.Sources[0] = mergedSeriesSource{
+				Ingester:    nextIngester.IngesterName,
+				SeriesIndex: nextIngester.NextSeriesIndex - 1,
+			}
+
+			allSeries = append(allSeries, series)
+		} else {
+			// We've seen this series before.
+			allSeries[lastSeriesIndex].Sources = append(allSeries[lastSeriesIndex].Sources, mergedSeriesSource{
+				Ingester:    nextIngester.IngesterName,
+				SeriesIndex: nextIngester.NextSeriesIndex - 1,
+			})
+		}
+	}
+
+	return allSeries
+}
+
 // Equivalent of StreamingSeries
 type mergedSeries struct {
 	Labels  labels.Labels
@@ -312,8 +383,17 @@ type ingesterSeries struct {
 	IngesterName string
 	Series       []labels.Labels
 
-	// HACK for heap sort
+	// Required only for heap sort and loser tree
 	NextSeriesIndex int
+}
+
+func (i *ingesterSeries) Next() bool {
+	if i.NextSeriesIndex >= len(i.Series) {
+		return false
+	}
+
+	i.NextSeriesIndex++
+	return true
 }
 
 func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) []ingesterSeries {
