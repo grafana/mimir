@@ -81,7 +81,8 @@ spec:
             {{- toYaml .Values.nginx.containerSecurityContext | nindent 12 }}
           volumeMounts:
             - name: config
-              mountPath: /etc/nginx
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
             {{- if .Values.nginx.basicAuth.enabled }}
             - name: auth
               mountPath: /etc/nginx/secrets
