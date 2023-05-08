@@ -52,7 +52,7 @@ There are the following ways to mitigate this failure mode:
 
 ### Replication and availability
 
-Writes to the Mimir cluster are successful if a quorum of ingesters received the data. With the default replication factor of 3, this means 2 out of 3 writes to ingesters must succeed.
+Writes to the Mimir cluster are successful if a majority of ingesters received the data. With the default replication factor of 3, this means 2 out of 3 writes to ingesters must succeed.
 If the Mimir cluster loses a minority of ingesters, the in-memory series samples held by the lost ingesters are available in at least one other ingester, meaning no time series samples are lost.
 If a majority of ingesters fail, time series might be lost if the failure affects all the ingesters holding the replicas of a specific time series.
 
