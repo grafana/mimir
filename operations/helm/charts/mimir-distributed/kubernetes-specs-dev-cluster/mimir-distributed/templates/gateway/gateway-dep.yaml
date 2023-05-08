@@ -15,7 +15,7 @@ metadata:
   name: databricks-gem-mimir-gateway
   namespace: "mimir"
 spec:
-  replicas: 1
+  replicas: 6
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
