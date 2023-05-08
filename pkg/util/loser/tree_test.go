@@ -110,15 +110,8 @@ func TestMerge(t *testing.T) {
 	at2 := func(s *loser.Tree[uint64, *List]) uint64 { return s.Winner().At() }
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			numCloses := 0
-			close := func(s *List) {
-				numCloses++
-			}
-			lt := loser.New(tt.args, math.MaxUint64, at, less, close)
+			lt := loser.New(tt.args, math.MaxUint64, at, less)
 			checkIterablesEqual(t, tt.want, lt, at, at2, less)
-			if numCloses != len(tt.args) {
-				t.Errorf("Expected %d closes, got %d", len(tt.args), numCloses)
-			}
 		})
 	}
 }
@@ -129,18 +122,11 @@ func TestPush(t *testing.T) {
 	at2 := func(s *loser.Tree[uint64, *List]) uint64 { return s.Winner().At() }
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			numCloses := 0
-			close := func(s *List) {
-				numCloses++
-			}
-			lt := loser.New(nil, math.MaxUint64, at, less, close)
+			lt := loser.New(nil, math.MaxUint64, at, less)
 			for _, s := range tt.args {
 				lt.Push(s)
 			}
 			checkIterablesEqual(t, tt.want, lt, at, at2, less)
-			if numCloses != len(tt.args) {
-				t.Errorf("Expected %d closes, got %d", len(tt.args), numCloses)
-			}
 		})
 	}
 }

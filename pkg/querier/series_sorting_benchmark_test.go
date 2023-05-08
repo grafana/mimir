@@ -331,9 +331,7 @@ func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []merge
 		return labels.Compare(a, b) < 0
 	}
 
-	close := func(series *ingesterSeries) {} // Nothing to do.
-
-	tree := loser.New(ingesterPointers, nil, at, less, close)
+	tree := loser.New(ingesterPointers, nil, at, less)
 	allSeries := []mergedSeries{}
 
 	for tree.Next() {

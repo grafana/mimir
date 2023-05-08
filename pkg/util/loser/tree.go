@@ -9,13 +9,12 @@ type Sequence interface {
 	Next() bool // Advances and returns true if there is a value at this new position.
 }
 
-func New[E any, S Sequence](sequences []S, maxVal E, at func(S) E, less func(E, E) bool, close func(S)) *Tree[E, S] {
+func New[E any, S Sequence](sequences []S, maxVal E, at func(S) E, less func(E, E) bool) *Tree[E, S] {
 	nSequences := len(sequences)
 	t := Tree[E, S]{
 		maxVal: maxVal,
 		at:     at,
 		less:   less,
-		close:  close,
 		nodes:  make([]node[E, S], nSequences*2),
 	}
 	for i, s := range sequences {
@@ -28,16 +27,6 @@ func New[E any, S Sequence](sequences []S, maxVal E, at func(S) E, less func(E, 
 	return &t
 }
 
-// Call the close function on all sequences that are still open.
-func (t *Tree[E, S]) Close() {
-	for _, e := range t.nodes[len(t.nodes)/2 : len(t.nodes)] {
-		if e.index == -1 {
-			continue
-		}
-		t.close(e.items)
-	}
-}
-
 // A loser tree is a binary tree laid out such that nodes N and N+1 have parent N/2.
 // We store M leaf nodes in positions M...2M-1, and M-1 internal nodes in positions 1..M-1.
 // Node 0 is a special node, containing the winner of the contest.
@@ -45,7 +34,6 @@ type Tree[E any, S Sequence] struct {
 	maxVal E
 	at     func(S) E
 	less   func(E, E) bool
-	close  func(S) // Called when Next() returns false.
 	nodes  []node[E, S]
 }
 
@@ -61,7 +49,6 @@ func (t *Tree[E, S]) moveNext(index int) bool {
 		n.value = t.at(n.items)
 		return true
 	}
-	t.close(n.items) // Next() returned false; close it and mark as finished.
 	n.value = t.maxVal
 	n.index = -1
 	return false
