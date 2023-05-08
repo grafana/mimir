@@ -10521,7 +10521,7 @@
               "kind": "field",
               "name": "backend",
               "required": false,
-              "desc": "Backend for ruler storage cache, if not empty. The cache is supported for any backend except \"local\". Supported values: memcached, redis.",
+              "desc": "Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except \"local\". Supported values: memcached, redis.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.cache.backend",

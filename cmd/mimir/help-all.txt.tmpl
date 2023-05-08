@@ -1884,7 +1884,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
   -ruler-storage.cache.backend string
-    	Backend for ruler storage cache, if not empty. The cache is supported for any backend except "local". Supported values: memcached, redis.
+    	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached, redis.
   -ruler-storage.cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -ruler-storage.cache.memcached.connect-timeout duration

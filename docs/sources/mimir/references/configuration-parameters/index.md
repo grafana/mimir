@@ -1643,7 +1643,7 @@ local:
 
 cache:
   # Backend for ruler storage cache, if not empty. The cache is supported for
-  # any backend except "local". Supported values: memcached, redis.
+  # any storage backend except "local". Supported values: memcached, redis.
   # CLI flag: -ruler-storage.cache.backend
   [backend: <string> | default = ""]
 

@@ -42,7 +42,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.Local.RegisterFlagsWithPrefix(prefix, f)
 	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "ruler", f, logger)
 
-	f.StringVar(&cfg.Cache.Backend, prefix+"cache.backend", "", fmt.Sprintf("Backend for ruler storage cache, if not empty. The cache is supported for any backend except %q. Supported values: %s.", LocalBackend, strings.Join(supportedCacheBackends, ", ")))
+	f.StringVar(&cfg.Cache.Backend, prefix+"cache.backend", "", fmt.Sprintf("Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except %q. Supported values: %s.", LocalBackend, strings.Join(supportedCacheBackends, ", ")))
 	cfg.Cache.Memcached.RegisterFlagsWithPrefix(prefix+"cache.memcached.", f)
 	cfg.Cache.Redis.RegisterFlagsWithPrefix(prefix+"cache.redis.", f)
 }
