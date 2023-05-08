@@ -16,7 +16,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -26,7 +25,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -48,6 +46,8 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
+
+	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -115,8 +115,6 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
-
-	shutdownMarkerFilename = "shutdown-requested.txt"
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -411,13 +409,13 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	shutdownMarkerPath := path.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, shutdownMarkerFilename)
-	shutdownMarker, err := shutdownMarkerExists(shutdownMarkerPath)
+	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
+	shutdownMarkerFound, err := shutdownmarker.Exists(shutdownMarkerPath)
 	if err != nil {
 		return errors.Wrap(err, "failed to check ingester shutdown marker")
 	}
 
-	if shutdownMarker {
+	if shutdownMarkerFound {
 		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", shutdownMarkerPath)
 		i.setPrepareShutdown()
 	}
@@ -2468,11 +2466,11 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 // * `POST` enables this configuration
 // * `DELETE` disables this configuration
 func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request) {
-	shutdownMarkerPath := path.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, shutdownMarkerFilename)
+	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
 
 	switch r.Method {
 	case http.MethodGet:
-		exists, err := shutdownMarkerExists(shutdownMarkerPath)
+		exists, err := shutdownmarker.Exists(shutdownMarkerPath)
 		if err != nil {
 			level.Error(i.logger).Log("msg", "unable to check for prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -2485,7 +2483,7 @@ func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request
 			util.WriteTextResponse(w, "unset")
 		}
 	case http.MethodPost:
-		if err := createShutdownMarker(shutdownMarkerPath); err != nil {
+		if err := shutdownmarker.Create(shutdownMarkerPath); err != nil {
 			level.Error(i.logger).Log("msg", "unable to create prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -2496,7 +2494,7 @@ func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request
 
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodDelete:
-		if err := removeShutdownMarker(shutdownMarkerPath); err != nil {
+		if err := shutdownmarker.Remove(shutdownMarkerPath); err != nil {
 			level.Error(i.logger).Log("msg", "unable to remove prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -2753,72 +2751,4 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorHandling:      promhttp.HTTPErrorOnError,
 		Timeout:            10 * time.Second,
 	}).ServeHTTP(w, r)
-}
-
-// createShutdownMarker writes a marker file to disk to indicate that an ingester is
-// going to be scaled down in the future. The presence of this file means that an ingester
-// should flush and upload all data when stopping.
-func createShutdownMarker(p string) error {
-	// Write the file, fsync it, then fsync the containing directory in order to guarantee
-	// it is persisted to disk. From https://man7.org/linux/man-pages/man2/fsync.2.html
-	//
-	// > Calling fsync() does not necessarily ensure that the entry in the
-	// > directory containing the file has also reached disk.  For that an
-	// > explicit fsync() on a file descriptor for the directory is also
-	// > needed.
-	file, err := os.Create(p)
-	if err != nil {
-		return err
-	}
-
-	merr := multierror.New()
-	_, err = file.WriteString(time.Now().UTC().Format(time.RFC3339))
-	merr.Add(err)
-	merr.Add(file.Sync())
-	merr.Add(file.Close())
-
-	if err := merr.Err(); err != nil {
-		return err
-	}
-
-	dir, err := os.OpenFile(path.Dir(p), os.O_RDONLY, 0777)
-	if err != nil {
-		return err
-	}
-
-	merr.Add(dir.Sync())
-	merr.Add(dir.Close())
-	return merr.Err()
-}
-
-// removeShutdownMarker removes the shutdown marker file if it exists.
-func removeShutdownMarker(p string) error {
-	err := os.Remove(p)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	dir, err := os.OpenFile(path.Dir(p), os.O_RDONLY, 0777)
-	if err != nil {
-		return err
-	}
-
-	merr := multierror.New()
-	merr.Add(dir.Sync())
-	merr.Add(dir.Close())
-	return merr.Err()
-}
-
-// shutdownMarkerExists returns true if the shutdown marker file exists, false otherwise
-func shutdownMarkerExists(p string) (bool, error) {
-	s, err := os.Stat(p)
-	if err != nil && os.IsNotExist(err) {
-		return false, nil
-	}
-
-	if err != nil {
-		return false, err
-	}
-
-	return s.Mode().IsRegular(), nil
 }
