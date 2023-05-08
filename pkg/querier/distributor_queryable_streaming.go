@@ -50,7 +50,8 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 
 type SeriesChunksStreamReader struct {
 	client              client.Ingester_QueryStreamClient
-	buffer              chan streamedIngesterSeries
+	seriesBatchChan     chan []streamedIngesterSeries
+	seriesBatch         []streamedIngesterSeries
 	expectedSeriesCount int
 	seriesBufferSize    int
 }
@@ -75,7 +76,7 @@ type streamedIngesterSeries struct {
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
 // To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's client.Ingester_QueryStreamClient.
 func (s *SeriesChunksStreamReader) StartBuffering() {
-	s.buffer = make(chan streamedIngesterSeries, s.seriesBufferSize)
+	s.seriesBatchChan = make(chan []streamedIngesterSeries, 1)
 	ctxDone := s.client.Context().Done()
 
 	// Why does this exist?
@@ -85,24 +86,25 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 	// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
 	// This only works correctly if the context is cancelled when the query request is complete (or cancelled),
 	// which is true at the time of writing.
-	writeToBufferOrAbort := func(msg streamedIngesterSeries) bool {
+	writeToBufferOrAbort := func(batch []streamedIngesterSeries) bool {
 		select {
 		case <-ctxDone:
 			return false
-		case s.buffer <- msg:
+		case s.seriesBatchChan <- batch:
 			return true
 		}
 	}
 
 	tryToWriteErrorToBuffer := func(err error) {
-		writeToBufferOrAbort(streamedIngesterSeries{err: err})
+		writeToBufferOrAbort([]streamedIngesterSeries{{err: err}})
 	}
 
 	go func() {
 		defer s.client.CloseSend() //nolint:errcheck
-		defer close(s.buffer)
+		defer close(s.seriesBatchChan)
 
 		nextSeriesIndex := 0
+		currentBatch := make([]streamedIngesterSeries, 0, s.seriesBufferSize)
 
 		for {
 			msg, err := s.client.Recv()
@@ -110,6 +112,8 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				if errors.Is(err, io.EOF) {
 					if nextSeriesIndex < s.expectedSeriesCount {
 						tryToWriteErrorToBuffer(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, nextSeriesIndex))
+					} else if len(currentBatch) > 0 {
+						writeToBufferOrAbort(currentBatch)
 					}
 				} else {
 					tryToWriteErrorToBuffer(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, nextSeriesIndex))
@@ -124,8 +128,14 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 					return
 				}
 
-				if !writeToBufferOrAbort(streamedIngesterSeries{chunks: series.Chunks, seriesIndex: nextSeriesIndex}) {
-					return
+				currentBatch = append(currentBatch, streamedIngesterSeries{chunks: series.Chunks, seriesIndex: nextSeriesIndex})
+
+				if len(currentBatch) == s.seriesBufferSize {
+					if !writeToBufferOrAbort(currentBatch) {
+						return
+					}
+
+					currentBatch = currentBatch[:0]
 				}
 
 				nextSeriesIndex++
@@ -137,19 +147,29 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
 func (s *SeriesChunksStreamReader) GetChunks(seriesIndex int) ([]client.Chunk, error) {
-	series, open := <-s.buffer
+	if len(s.seriesBatch) == 0 {
+		s.seriesBatch = <-s.seriesBatchChan
 
-	if !open {
-		// If the context has been cancelled, report the cancellation.
-		// Note that we only check this if there are no series in the buffer as the context is always cancelled
-		// at the end of a successful request - so if we checked for an error even if there are series in the
-		// buffer, we might incorrectly report that the context has been cancelled, when in fact the request
-		// has concluded as expected.
-		if err := s.client.Context().Err(); err != nil {
-			return nil, err
+		if len(s.seriesBatch) == 0 {
+			// If the context has been cancelled, report the cancellation.
+			// Note that we only check this if there are no series in the buffer as the context is always cancelled
+			// at the end of a successful request - so if we checked for an error even if there are series in the
+			// buffer, we might incorrectly report that the context has been cancelled, when in fact the request
+			// has concluded as expected.
+			if err := s.client.Context().Err(); err != nil {
+				return nil, err
+			}
+
+			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
 		}
+	}
 
-		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
+	series := s.seriesBatch[0]
+
+	if len(s.seriesBatch) > 1 {
+		s.seriesBatch = s.seriesBatch[1:]
+	} else {
+		s.seriesBatch = nil
 	}
 
 	if series.err != nil {

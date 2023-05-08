@@ -80,11 +80,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.PreferStreamingChunks, "querier.prefer-streaming-chunks", false, "Stream chunks from ingesters if ingesters support this.")
 
 	// TODO: more science to pick this number
-	// Why 128 series / ingester?
+	// Why 64 series / ingester?
 	// Assuming the worst case scenario of loading a full 13 hours of chunks for a series from an ingester, a 15s scrape interval, 120 samples per chunk with average chunk size of 300 B,
 	// 128 series would consume ~1 MB (26 chunks needed per series to cover 13 hours, so 7.8 KB needed per series).
-	// Note that this will not hold true for native histograms, which can be substantially larger.
-	f.IntVar(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 128, "Number of series to buffer per ingester when streaming chunks from ingesters.")
+	// (Note that this will not hold true for native histograms, which can be substantially larger.)
+	// We use two buffers per ingester, so we use 128/2=64 series per buffer per ingester.
+	f.IntVar(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 64, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 
 	// The querier.query-ingesters-within flag has been moved to the limits.go file
 	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.11.0
