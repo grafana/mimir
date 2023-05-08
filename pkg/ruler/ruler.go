@@ -478,7 +478,7 @@ func (r *Ruler) syncRules(ctx context.Context, reason rulesSyncReason) {
 	level.Debug(r.logger).Log("msg", "syncing rules", "reason", reason)
 	r.metrics.rulerSync.WithLabelValues(string(reason)).Inc()
 
-	configs, err := r.listRulesToSync(ctx, reason)
+	configs, err := r.listRuleGroupsToSync(ctx, reason)
 	if err != nil {
 		level.Error(r.logger).Log("msg", "unable to list rules", "err", err)
 		return
@@ -519,16 +519,16 @@ func (r *Ruler) loadRuleGroupsToSync(ctx context.Context, configs map[string]rul
 	return configs, nil
 }
 
-// listRulesToSync lists all the rule groups that should be synched by this ruler instance.
+// listRuleGroupsToSync lists all the rule groups that should be synched by this ruler instance.
 // This function should be used only when syncing the rule groups, because it expects the
 // storage view to be eventually consistent (due to optional caching).
-func (r *Ruler) listRulesToSync(ctx context.Context, reason rulesSyncReason) (result map[string]rulespb.RuleGroupList, err error) {
+func (r *Ruler) listRuleGroupsToSync(ctx context.Context, reason rulesSyncReason) (result map[string]rulespb.RuleGroupList, err error) {
 	start := time.Now()
 	defer func() {
 		r.metrics.listRules.Observe(time.Since(start).Seconds())
 	}()
 
-	result, err = r.listRulesToSyncSharded(ctx, reason)
+	result, err = r.listRuleGroupsToSyncSharded(ctx, reason)
 	if err != nil {
 		return
 	}
@@ -542,9 +542,9 @@ func (r *Ruler) listRulesToSync(ctx context.Context, reason rulesSyncReason) (re
 	return
 }
 
-func (r *Ruler) listRulesToSyncSharded(ctx context.Context, reason rulesSyncReason) (map[string]rulespb.RuleGroupList, error) {
+func (r *Ruler) listRuleGroupsToSyncSharded(ctx context.Context, reason rulesSyncReason) (map[string]rulespb.RuleGroupList, error) {
 	// In order to reduce API calls to the object storage among all ruler replicas,
-	// we do support to lookup stale data for a short period using the cached rules store.
+	// we support lookup of stale data for a short period.
 	users, err := r.cachedStore.ListAllUsers(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to list users of ruler")

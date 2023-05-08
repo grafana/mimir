@@ -12,7 +12,7 @@ import (
 	"github.com/thanos-io/objstore"
 )
 
-// IterCodec defines the interface of a codec used to for encode and decode results of Iter call.
+// IterCodec is a codec for encoding and decoding results of Iter call.
 type IterCodec interface {
 	Encode(files []string) ([]byte, error)
 	Decode(cachedData []byte) ([]string, error)
