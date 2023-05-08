@@ -59,6 +59,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	rulebucketclient "github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
+	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -300,7 +301,7 @@ func (c *Config) validateBucketConfigs() error {
 	}
 
 	// Validate ruler bucket config.
-	if c.isAnyModuleEnabled(All, Ruler, Backend) && c.RulerStorage.Backend != rulestore.LocalBackend {
+	if c.isAnyModuleEnabled(All, Ruler, Backend) && c.RulerStorage.Backend != rulestorelocal.Name {
 		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
 	}
 
@@ -408,7 +409,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 				checkValue: filepath.Join(c.RulerStorage.Filesystem.Directory, rulebucketclient.RulesPrefix),
 			})
 		}
-		if c.RulerStorage.Backend == rulestore.LocalBackend {
+		if c.RulerStorage.Backend == rulestorelocal.Name {
 			paths = append(paths, pathConfig{
 				name:       "ruler storage local directory",
 				cfgValue:   c.RulerStorage.Local.Directory,
@@ -668,7 +669,8 @@ type Mimir struct {
 	QueryFrontendTripperware querymiddleware.Tripperware
 	QueryFrontendCodec       querymiddleware.Codec
 	Ruler                    *ruler.Ruler
-	RulerStorage             rulestore.RuleStore
+	RulerDirectStorage       rulestore.RuleStore
+	RulerCachedStorage       rulestore.RuleStore
 	Alertmanager             *alertmanager.MultitenantAlertmanager
 	Compactor                *compactor.MultitenantCompactor
 	StoreGateway             *storegateway.StoreGateway

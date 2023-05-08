@@ -25,9 +25,14 @@ import (
 )
 
 // NewRuleStore returns a rule store backend client based on the provided cfg.
-func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.TenantConfigProvider, loader promRules.GroupLoader, cacheTTL time.Duration, logger log.Logger, reg prometheus.Registerer) (rulestore.RuleStore, error) {
-	if cfg.Backend == rulestore.LocalBackend {
-		return local.NewLocalRulesClient(cfg.Local, loader)
+func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.TenantConfigProvider, loader promRules.GroupLoader, cacheTTL time.Duration, logger log.Logger, reg prometheus.Registerer) (directStore, cachedStore rulestore.RuleStore, _ error) {
+	if cfg.Backend == local.Name {
+		store, err := local.NewLocalRulesClient(cfg.Local, loader)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return store, store, nil
 	}
 
 	if cfg.Backend == bucket.Filesystem {
@@ -36,20 +41,18 @@ func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.
 
 	directBucketClient, err := bucket.NewClient(ctx, cfg.Config, "ruler-storage", logger, reg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	cachedBucketClient, err := wrapBucketWithCache(directBucketClient, cfg, cacheTTL, logger, reg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	store := bucketclient.NewBucketRuleStore(directBucketClient, cachedBucketClient, cfgProvider, logger)
-	if err != nil {
-		return nil, err
-	}
+	directStore = bucketclient.NewBucketRuleStore(directBucketClient, cfgProvider, logger)
+	cachedStore = bucketclient.NewBucketRuleStore(cachedBucketClient, cfgProvider, logger)
 
-	return store, nil
+	return directStore, cachedStore, nil
 }
 
 func wrapBucketWithCache(bkt objstore.Bucket, cfg rulestore.Config, cacheTTL time.Duration, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {

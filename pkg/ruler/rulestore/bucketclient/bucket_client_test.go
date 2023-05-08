@@ -32,220 +32,181 @@ type testGroup struct {
 }
 
 func TestListRules(t *testing.T) {
-	for _, cacheEnabled := range []bool{false, true} {
-		t.Run(fmt.Sprintf("cache enabled: %t", cacheEnabled), func(t *testing.T) {
-			directBucket := objstore.NewInMemBucket()
-			cachedBucket := objstore.NewInMemBucket()
-			rs := rulestore.RuleStore(NewBucketRuleStore(directBucket, cachedBucket, nil, log.NewNopLogger()))
+	rs := NewBucketRuleStore(objstore.NewInMemBucket(), nil, log.NewNopLogger())
 
-			if cacheEnabled {
-				rs = rs.WithCache()
-			}
+	groups := []testGroup{
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup"}},
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup"}},
+		{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup"}},
+		{user: "user2", namespace: "+-!@#$%. ", ruleGroup: rulefmt.RuleGroup{Name: "different user"}},
+	}
 
-			groups := []testGroup{
-				{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup"}},
-				{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup"}},
-				{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup"}},
-				{user: "user2", namespace: "+-!@#$%. ", ruleGroup: rulefmt.RuleGroup{Name: "different user"}},
-			}
+	for _, g := range groups {
+		desc := rulespb.ToProto(g.user, g.namespace, g.ruleGroup)
+		require.NoError(t, rs.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
+	}
 
-			for _, g := range groups {
-				desc := rulespb.ToProto(g.user, g.namespace, g.ruleGroup)
-				require.NoError(t, rs.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
-			}
+	{
+		users, err := rs.ListAllUsers(context.Background())
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"user1", "user2"}, users)
+	}
 
-			{
-				users, err := rs.ListAllUsers(context.Background())
-				require.NoError(t, err)
-				require.ElementsMatch(t, []string{"user1", "user2"}, users)
-			}
+	{
+		user1Groups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
+		require.NoError(t, err)
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user1", Namespace: "hello", Name: "first testGroup"},
+			{User: "user1", Namespace: "hello", Name: "second testGroup"},
+			{User: "user1", Namespace: "world", Name: "another namespace testGroup"},
+		}, user1Groups)
+	}
 
-			{
-				user1Groups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
-				require.NoError(t, err)
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user1", Namespace: "hello", Name: "first testGroup"},
-					{User: "user1", Namespace: "hello", Name: "second testGroup"},
-					{User: "user1", Namespace: "world", Name: "another namespace testGroup"},
-				}, user1Groups)
-			}
+	{
+		helloGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "hello")
+		require.NoError(t, err)
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user1", Namespace: "hello", Name: "first testGroup"},
+			{User: "user1", Namespace: "hello", Name: "second testGroup"},
+		}, helloGroups)
+	}
 
-			{
-				helloGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "hello")
-				require.NoError(t, err)
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user1", Namespace: "hello", Name: "first testGroup"},
-					{User: "user1", Namespace: "hello", Name: "second testGroup"},
-				}, helloGroups)
-			}
+	{
+		invalidUserGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "invalid", "")
+		require.NoError(t, err)
+		require.Empty(t, invalidUserGroups)
+	}
 
-			{
-				invalidUserGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "invalid", "")
-				require.NoError(t, err)
-				require.Empty(t, invalidUserGroups)
-			}
+	{
+		invalidNamespaceGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "invalid")
+		require.NoError(t, err)
+		require.Empty(t, invalidNamespaceGroups)
+	}
 
-			{
-				invalidNamespaceGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "invalid")
-				require.NoError(t, err)
-				require.Empty(t, invalidNamespaceGroups)
-			}
-
-			{
-				user2Groups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user2", "")
-				require.NoError(t, err)
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user2", Namespace: "+-!@#$%. ", Name: "different user"},
-				}, user2Groups)
-			}
-
-			// Ensure the right bucket client has been used.
-			if cacheEnabled {
-				assert.Empty(t, directBucket.Objects())
-				assert.NotEmpty(t, cachedBucket.Objects())
-			} else {
-				assert.NotEmpty(t, directBucket.Objects())
-				assert.Empty(t, cachedBucket.Objects())
-			}
-		})
+	{
+		user2Groups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user2", "")
+		require.NoError(t, err)
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user2", Namespace: "+-!@#$%. ", Name: "different user"},
+		}, user2Groups)
 	}
 }
 
 func TestLoadRules(t *testing.T) {
-	for _, cacheEnabled := range []bool{false, true} {
-		t.Run(fmt.Sprintf("cache enabled: %t", cacheEnabled), func(t *testing.T) {
-			directBucket := objstore.NewInMemBucket()
-			cachedBucket := objstore.NewInMemBucket()
-			rs := rulestore.RuleStore(NewBucketRuleStore(directBucket, cachedBucket, nil, log.NewNopLogger()))
+	rs := NewBucketRuleStore(objstore.NewInMemBucket(), nil, log.NewNopLogger())
+	groups := []testGroup{
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup", Interval: model.Duration(time.Minute), Rules: []rulefmt.RuleNode{{
+			For:           model.Duration(5 * time.Minute),
+			KeepFiringFor: model.Duration(2 * time.Minute),
+			Labels:        map[string]string{"label1": "value1"},
+		}}}},
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup", Interval: model.Duration(2 * time.Minute)}},
+		{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup", Interval: model.Duration(1 * time.Hour)}},
+		{user: "user2", namespace: "+-!@#$%. ", ruleGroup: rulefmt.RuleGroup{Name: "different user", Interval: model.Duration(5 * time.Minute)}},
+		{user: "user3", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "third user", SourceTenants: []string{"tenant-1"}}},
+	}
 
-			if cacheEnabled {
-				rs = rs.WithCache()
-			}
+	for _, g := range groups {
+		desc := rulespb.ToProto(g.user, g.namespace, g.ruleGroup)
+		require.NoError(t, rs.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
+	}
 
-			groups := []testGroup{
-				{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup", Interval: model.Duration(time.Minute), Rules: []rulefmt.RuleNode{{
-					For:           model.Duration(5 * time.Minute),
-					KeepFiringFor: model.Duration(2 * time.Minute),
-					Labels:        map[string]string{"label1": "value1"},
-				}}}},
-				{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup", Interval: model.Duration(2 * time.Minute)}},
-				{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup", Interval: model.Duration(1 * time.Hour)}},
-				{user: "user2", namespace: "+-!@#$%. ", ruleGroup: rulefmt.RuleGroup{Name: "different user", Interval: model.Duration(5 * time.Minute)}},
-				{user: "user3", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "third user", SourceTenants: []string{"tenant-1"}}},
-			}
+	// Utility function used to run each test case in isolation.
+	listAllRuleGroups := func() map[string]rulespb.RuleGroupList {
+		allGroupsMap := map[string]rulespb.RuleGroupList{}
+		for _, u := range []string{"user1", "user2", "user3"} {
+			rgl, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), u, "")
+			require.NoError(t, err)
+			allGroupsMap[u] = rgl
+		}
+		return allGroupsMap
+	}
 
-			for _, g := range groups {
-				desc := rulespb.ToProto(g.user, g.namespace, g.ruleGroup)
-				require.NoError(t, rs.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
-			}
+	// Before load, rules are not loaded
+	{
+		allGroupsMap := listAllRuleGroups()
 
-			// Utility function used to run each test case in isolation.
-			listAllRuleGroups := func() map[string]rulespb.RuleGroupList {
-				allGroupsMap := map[string]rulespb.RuleGroupList{}
-				for _, u := range []string{"user1", "user2", "user3"} {
-					rgl, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), u, "")
-					require.NoError(t, err)
-					allGroupsMap[u] = rgl
-				}
-				return allGroupsMap
-			}
+		require.Len(t, allGroupsMap, 3)
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user1", Namespace: "hello", Name: "first testGroup"},
+			{User: "user1", Namespace: "hello", Name: "second testGroup"},
+			{User: "user1", Namespace: "world", Name: "another namespace testGroup"},
+		}, allGroupsMap["user1"])
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user2", Namespace: "+-!@#$%. ", Name: "different user"},
+		}, allGroupsMap["user2"])
+	}
 
-			// Before load, rules are not loaded
-			{
-				allGroupsMap := listAllRuleGroups()
+	// After load, rules are loaded.
+	{
+		allGroupsMap := listAllRuleGroups()
 
-				require.Len(t, allGroupsMap, 3)
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user1", Namespace: "hello", Name: "first testGroup"},
-					{User: "user1", Namespace: "hello", Name: "second testGroup"},
-					{User: "user1", Namespace: "world", Name: "another namespace testGroup"},
-				}, allGroupsMap["user1"])
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user2", Namespace: "+-!@#$%. ", Name: "different user"},
-				}, allGroupsMap["user2"])
-			}
+		missing, err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
+		require.NoError(t, err)
+		require.Empty(t, missing)
 
-			// After load, rules are loaded.
-			{
-				allGroupsMap := listAllRuleGroups()
+		require.NoError(t, err)
+		require.Len(t, allGroupsMap, 3)
 
-				missing, err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
-				require.NoError(t, err)
-				require.Empty(t, missing)
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user1", Namespace: "hello", Name: "first testGroup", Interval: time.Minute, Rules: []*rulespb.RuleDesc{
+				{
+					For:           5 * time.Minute,
+					KeepFiringFor: 2 * time.Minute,
+					Labels:        []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}},
+				},
+			}},
+			{User: "user1", Namespace: "hello", Name: "second testGroup", Interval: 2 * time.Minute},
+			{User: "user1", Namespace: "world", Name: "another namespace testGroup", Interval: 1 * time.Hour},
+		}, allGroupsMap["user1"])
 
-				require.NoError(t, err)
-				require.Len(t, allGroupsMap, 3)
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user2", Namespace: "+-!@#$%. ", Name: "different user", Interval: 5 * time.Minute},
+		}, allGroupsMap["user2"])
 
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user1", Namespace: "hello", Name: "first testGroup", Interval: time.Minute, Rules: []*rulespb.RuleDesc{
-						{
-							For:           5 * time.Minute,
-							KeepFiringFor: 2 * time.Minute,
-							Labels:        []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}},
-						},
-					}},
-					{User: "user1", Namespace: "hello", Name: "second testGroup", Interval: 2 * time.Minute},
-					{User: "user1", Namespace: "world", Name: "another namespace testGroup", Interval: 1 * time.Hour},
-				}, allGroupsMap["user1"])
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user3", Namespace: "hello", Name: "third user", SourceTenants: []string{"tenant-1"}},
+		}, allGroupsMap["user3"])
+	}
 
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user2", Namespace: "+-!@#$%. ", Name: "different user", Interval: 5 * time.Minute},
-				}, allGroupsMap["user2"])
+	// Load a missing rule groups doesn't fail but return missing ones.
+	{
+		allGroupsMap := listAllRuleGroups()
 
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user3", Namespace: "hello", Name: "third user", SourceTenants: []string{"tenant-1"}},
-				}, allGroupsMap["user3"])
-			}
+		require.NoError(t, rs.DeleteRuleGroup(context.Background(), "user1", "hello", "first testGroup"))
+		missing, err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
+		require.NoError(t, err)
+		require.ElementsMatch(t, rulespb.RuleGroupList{{User: "user1", Namespace: "hello", Name: "first testGroup"}}, missing)
 
-			// Load a missing rule groups doesn't fail but return missing ones.
-			{
-				allGroupsMap := listAllRuleGroups()
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user1", Namespace: "hello", Name: "first testGroup"}, // The missing one still exists in the rule groups map, but has not been loaded.
+			{User: "user1", Namespace: "hello", Name: "second testGroup", Interval: 2 * time.Minute},
+			{User: "user1", Namespace: "world", Name: "another namespace testGroup", Interval: 1 * time.Hour},
+		}, allGroupsMap["user1"])
 
-				require.NoError(t, rs.DeleteRuleGroup(context.Background(), "user1", "hello", "first testGroup"))
-				missing, err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
-				require.NoError(t, err)
-				require.ElementsMatch(t, rulespb.RuleGroupList{{User: "user1", Namespace: "hello", Name: "first testGroup"}}, missing)
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user2", Namespace: "+-!@#$%. ", Name: "different user", Interval: 5 * time.Minute},
+		}, allGroupsMap["user2"])
 
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user1", Namespace: "hello", Name: "first testGroup"}, // The missing one still exists in the rule groups map, but has not been loaded.
-					{User: "user1", Namespace: "hello", Name: "second testGroup", Interval: 2 * time.Minute},
-					{User: "user1", Namespace: "world", Name: "another namespace testGroup", Interval: 1 * time.Hour},
-				}, allGroupsMap["user1"])
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user3", Namespace: "hello", Name: "third user", SourceTenants: []string{"tenant-1"}},
+		}, allGroupsMap["user3"])
+	}
 
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user2", Namespace: "+-!@#$%. ", Name: "different user", Interval: 5 * time.Minute},
-				}, allGroupsMap["user2"])
+	// Loading group with mismatched info fails.
+	{
+		require.NoError(t, rs.SetRuleGroup(context.Background(), "user1", "hello", &rulespb.RuleGroupDesc{User: "user2", Namespace: "world", Name: "first testGroup"}))
 
-				require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-					{User: "user3", Namespace: "hello", Name: "third user", SourceTenants: []string{"tenant-1"}},
-				}, allGroupsMap["user3"])
-			}
-
-			// Loading group with mismatched info fails.
-			{
-				require.NoError(t, rs.SetRuleGroup(context.Background(), "user1", "hello", &rulespb.RuleGroupDesc{User: "user2", Namespace: "world", Name: "first testGroup"}))
-
-				allGroupsMap := listAllRuleGroups()
-				missing, err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
-				require.EqualError(t, err, "mismatch between requested rule group and loaded rule group, requested: user=\"user1\", namespace=\"hello\", group=\"first testGroup\", loaded: user=\"user2\", namespace=\"world\", group=\"first testGroup\"")
-				require.Empty(t, missing)
-			}
-
-			// Ensure the right bucket client has been used.
-			if cacheEnabled {
-				assert.Empty(t, directBucket.Objects())
-				assert.NotEmpty(t, cachedBucket.Objects())
-			} else {
-				assert.NotEmpty(t, directBucket.Objects())
-				assert.Empty(t, cachedBucket.Objects())
-			}
-		})
+		allGroupsMap := listAllRuleGroups()
+		missing, err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
+		require.EqualError(t, err, "mismatch between requested rule group and loaded rule group, requested: user=\"user1\", namespace=\"hello\", group=\"first testGroup\", loaded: user=\"user2\", namespace=\"world\", group=\"first testGroup\"")
+		require.Empty(t, missing)
 	}
 }
 
 func TestDelete(t *testing.T) {
 	bucketClient := objstore.NewInMemBucket()
-	rs := NewBucketRuleStore(bucketClient, bucketClient, nil, log.NewNopLogger())
+	rs := NewBucketRuleStore(bucketClient, nil, log.NewNopLogger())
 
 	groups := []testGroup{
 		{user: "user1", namespace: "A", ruleGroup: rulefmt.RuleGroup{Name: "1"}},
@@ -453,7 +414,7 @@ func TestListAllRuleGroupsWithNoNamespaceOrGroup(t *testing.T) {
 		},
 	}
 
-	s := NewBucketRuleStore(obj, obj, nil, log.NewNopLogger())
+	s := NewBucketRuleStore(obj, nil, log.NewNopLogger())
 	out, err := s.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
 	require.NoError(t, err)
 	require.Equal(t, 0, len(out))

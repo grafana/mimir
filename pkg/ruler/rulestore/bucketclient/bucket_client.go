@@ -43,26 +43,22 @@ var (
 // BucketRuleStore is used to support the RuleStore interface against an object storage backend. It is implemented
 // using the Thanos objstore.Bucket interface
 type BucketRuleStore struct {
-	directBucket objstore.Bucket
-	cachedBucket objstore.Bucket
-	cfgProvider  bucket.TenantConfigProvider
-	logger       log.Logger
-	cacheEnabled bool
+	bucket      objstore.Bucket
+	cfgProvider bucket.TenantConfigProvider
+	logger      log.Logger
 }
 
-func NewBucketRuleStore(directBkt, cachedBkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketRuleStore {
+func NewBucketRuleStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketRuleStore {
 	return &BucketRuleStore{
-		directBucket: bucket.NewPrefixedBucketClient(directBkt, RulesPrefix),
-		cachedBucket: bucket.NewPrefixedBucketClient(cachedBkt, RulesPrefix),
-		cfgProvider:  cfgProvider,
-		logger:       logger,
-		cacheEnabled: false,
+		bucket:      bucket.NewPrefixedBucketClient(bkt, RulesPrefix),
+		cfgProvider: cfgProvider,
+		logger:      logger,
 	}
 }
 
 // getRuleGroup loads and return a rules group. If existing rule group is supplied, it is Reset and reused. If nil, new RuleGroupDesc is allocated.
 func (b *BucketRuleStore) getRuleGroup(ctx context.Context, userID, namespace, groupName string, rg *rulespb.RuleGroupDesc) (*rulespb.RuleGroupDesc, error) {
-	userBucket := bucket.NewUserBucketClient(userID, b.getBucketClient(), b.cfgProvider)
+	userBucket := bucket.NewUserBucketClient(userID, b.bucket, b.cfgProvider)
 	objectKey := getRuleGroupObjectKey(namespace, groupName)
 
 	reader, err := userBucket.Get(ctx, objectKey)
@@ -98,7 +94,7 @@ func (b *BucketRuleStore) getRuleGroup(ctx context.Context, userID, namespace, g
 // ListAllUsers implements rules.RuleStore.
 func (b *BucketRuleStore) ListAllUsers(ctx context.Context) ([]string, error) {
 	var users []string
-	err := b.getBucketClient().Iter(ctx, "", func(user string) error {
+	err := b.bucket.Iter(ctx, "", func(user string) error {
 		users = append(users, strings.TrimSuffix(user, objstore.DirDelim))
 		return nil
 	})
@@ -111,7 +107,7 @@ func (b *BucketRuleStore) ListAllUsers(ctx context.Context) ([]string, error) {
 
 // ListRuleGroupsForUserAndNamespace implements rules.RuleStore.
 func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string) (rulespb.RuleGroupList, error) {
-	userBucket := bucket.NewUserBucketClient(userID, b.getBucketClient(), b.cfgProvider)
+	userBucket := bucket.NewUserBucketClient(userID, b.bucket, b.cfgProvider)
 
 	groupList := rulespb.RuleGroupList{}
 
@@ -211,7 +207,7 @@ func (b *BucketRuleStore) GetRuleGroup(ctx context.Context, userID string, names
 
 // SetRuleGroup implements rules.RuleStore.
 func (b *BucketRuleStore) SetRuleGroup(ctx context.Context, userID string, namespace string, group *rulespb.RuleGroupDesc) error {
-	userBucket := bucket.NewUserBucketClient(userID, b.getBucketClient(), b.cfgProvider)
+	userBucket := bucket.NewUserBucketClient(userID, b.bucket, b.cfgProvider)
 	data, err := proto.Marshal(group)
 	if err != nil {
 		return err
@@ -222,9 +218,9 @@ func (b *BucketRuleStore) SetRuleGroup(ctx context.Context, userID string, names
 
 // DeleteRuleGroup implements rules.RuleStore.
 func (b *BucketRuleStore) DeleteRuleGroup(ctx context.Context, userID string, namespace string, group string) error {
-	userBucket := bucket.NewUserBucketClient(userID, b.getBucketClient(), b.cfgProvider)
+	userBucket := bucket.NewUserBucketClient(userID, b.bucket, b.cfgProvider)
 	err := userBucket.Delete(ctx, getRuleGroupObjectKey(namespace, group))
-	if b.getBucketClient().IsObjNotFoundErr(err) {
+	if b.bucket.IsObjNotFoundErr(err) {
 		return rulestore.ErrGroupNotFound
 	}
 	return err
@@ -241,7 +237,7 @@ func (b *BucketRuleStore) DeleteNamespace(ctx context.Context, userID string, na
 		return rulestore.ErrGroupNamespaceNotFound
 	}
 
-	userBucket := bucket.NewUserBucketClient(userID, b.getBucketClient(), b.cfgProvider)
+	userBucket := bucket.NewUserBucketClient(userID, b.bucket, b.cfgProvider)
 	for _, rg := range ruleGroupList {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -256,20 +252,6 @@ func (b *BucketRuleStore) DeleteNamespace(ctx context.Context, userID string, na
 	}
 
 	return nil
-}
-
-// WithCache implements RulerStore
-func (b *BucketRuleStore) WithCache() rulestore.RuleStore {
-	bucketWithCache := *b
-	bucketWithCache.cacheEnabled = true
-	return &bucketWithCache
-}
-
-func (b *BucketRuleStore) getBucketClient() objstore.Bucket {
-	if b.cacheEnabled {
-		return b.cachedBucket
-	}
-	return b.directBucket
 }
 
 func getNamespacePrefix(namespace string) string {

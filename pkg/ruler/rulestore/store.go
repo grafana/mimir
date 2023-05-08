@@ -57,8 +57,4 @@ type RuleStore interface {
 	// DeleteNamespace lists rule groups for given user and namespace, and deletes all rule groups.
 	// If namespace is empty, deletes all rule groups for user.
 	DeleteNamespace(ctx context.Context, userID, namespace string) error
-
-	// WithCache returns an instance of RuleStore which may return stale data because
-	// looked up from a cache.
-	WithCache() RuleStore
 }

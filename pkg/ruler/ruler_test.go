@@ -173,7 +173,7 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ..
 	options := applyPrepareOptions(opts...)
 	manager := prepareRulerManager(t, cfg, opts...)
 
-	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
+	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
 	require.NoError(t, err)
 
 	// Start the ruler if requested to do so.
@@ -958,7 +958,7 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 	}
 
 	obj := objstore.NewInMemBucket()
-	rs := bucketclient.NewBucketRuleStore(obj, obj, nil, log.NewNopLogger())
+	rs := bucketclient.NewBucketRuleStore(obj, nil, log.NewNopLogger())
 
 	// "upload" rule groups
 	for _, key := range ruleGroups {
@@ -969,7 +969,7 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 	require.Len(t, obj.Objects(), 3)
 
 	cfg := defaultRulerConfig(t)
-	api, err := NewRuler(cfg, nil, nil, log.NewNopLogger(), rs, nil)
+	api, err := NewRuler(cfg, nil, nil, log.NewNopLogger(), rs, rs, nil)
 	require.NoError(t, err)
 
 	{
@@ -1039,7 +1039,7 @@ func callDeleteTenantAPI(t *testing.T, api *Ruler, userID string) {
 }
 
 func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID string, expectedDeleted bool) {
-	list, err := r.store.ListRuleGroupsForUserAndNamespace(context.Background(), userID, "")
+	list, err := r.directStore.ListRuleGroupsForUserAndNamespace(context.Background(), userID, "")
 	require.NoError(t, err)
 
 	if expectedDeleted {

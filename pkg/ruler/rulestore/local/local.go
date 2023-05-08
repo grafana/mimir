@@ -7,6 +7,7 @@ package local
 
 import (
 	"context"
+	"flag"
 	"os"
 	"path/filepath"
 
@@ -14,18 +15,30 @@ import (
 	promRules "github.com/prometheus/prometheus/rules"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
-	"github.com/grafana/mimir/pkg/ruler/rulestore"
 )
+
+const (
+	Name = "local"
+)
+
+type Config struct {
+	Directory string `yaml:"directory"`
+}
+
+// RegisterFlagsWithPrefix registers flags with the input prefix.
+func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.StringVar(&cfg.Directory, prefix+"local.directory", "", "Directory to scan for rules")
+}
 
 // Client expects to load already existing rules located at:
 //
 //	cfg.Directory / userID / namespace
 type Client struct {
-	cfg    rulestore.LocalConfig
+	cfg    Config
 	loader promRules.GroupLoader
 }
 
-func NewLocalRulesClient(cfg rulestore.LocalConfig, loader promRules.GroupLoader) (*Client, error) {
+func NewLocalRulesClient(cfg Config, loader promRules.GroupLoader) (*Client, error) {
 	if cfg.Directory == "" {
 		return nil, errors.New("directory required for local rules config")
 	}
@@ -99,12 +112,6 @@ func (l *Client) DeleteRuleGroup(ctx context.Context, userID, namespace string, 
 // DeleteNamespace implements RulerStore
 func (l *Client) DeleteNamespace(ctx context.Context, userID, namespace string) error {
 	return errors.New("DeleteNamespace unsupported in rule local store")
-}
-
-// WithCache implements RulerStore
-func (l *Client) WithCache() rulestore.RuleStore {
-	// The local backend doesn't support the cache.
-	return l
 }
 
 func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string) (rulespb.RuleGroupList, error) {

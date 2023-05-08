@@ -219,8 +219,3 @@ func (m *mockRuleStore) DeleteNamespace(ctx context.Context, userID, namespace s
 
 	return nil
 }
-
-func (m *mockRuleStore) WithCache() rulestore.RuleStore {
-	// No cache supported.
-	return m
-}

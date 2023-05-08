@@ -19,7 +19,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
-	"github.com/grafana/mimir/pkg/ruler/rulestore"
 )
 
 func TestClient_LoadAllRuleGroups(t *testing.T) {
@@ -70,7 +69,7 @@ func TestClient_LoadAllRuleGroups(t *testing.T) {
 	err = os.Symlink(namespace1, path.Join(dir, user1, namespace2))
 	require.NoError(t, err)
 
-	client, err := NewLocalRulesClient(rulestore.LocalConfig{
+	client, err := NewLocalRulesClient(Config{
 		Directory: dir,
 	}, promRules.FileLoader{})
 	require.NoError(t, err)
