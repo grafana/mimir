@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/util/loser"
 )
 
 func BenchmarkMergingAndSortingSeries(b *testing.B) {
@@ -306,37 +305,11 @@ func heapMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []mergedSeri
 // Use a loser tree to merge lists of series from each ingester.
 // This assumes we add a new implementation of NewConcreteSeriesSet that doesn't try to sort the list of series again.
 func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []mergedSeries {
-	if len(ingesters) == 0 {
-		return []mergedSeries{}
-	}
-
-	ingesterPointers := make([]*ingesterSeries, len(ingesters))
-	for i, _ := range ingesters {
-		ingesterPointers[i] = &ingesters[i]
-	}
-
-	at := func(ingester *ingesterSeries) labels.Labels {
-		return ingester.Series[ingester.NextSeriesIndex-1]
-	}
-
-	less := func(a, b labels.Labels) bool {
-		if a == nil {
-			return false
-		}
-
-		if b == nil {
-			return true
-		}
-
-		return labels.Compare(a, b) < 0
-	}
-
-	tree := loser.New(ingesterPointers, nil, at, less)
+	tree := NewTree(ingesters)
 	allSeries := []mergedSeries{}
 
 	for tree.Next() {
-		nextIngester := tree.Winner()
-		nextSeriesFromIngester := nextIngester.Series[nextIngester.NextSeriesIndex-1]
+		nextIngester, nextSeriesFromIngester, nextSeriesIndex := tree.Winner()
 		lastSeriesIndex := len(allSeries) - 1
 
 		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
@@ -349,7 +322,7 @@ func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []merge
 
 			series.Sources[0] = mergedSeriesSource{
 				Ingester:    nextIngester.IngesterName,
-				SeriesIndex: nextIngester.NextSeriesIndex - 1,
+				SeriesIndex: nextSeriesIndex,
 			}
 
 			allSeries = append(allSeries, series)
@@ -357,7 +330,7 @@ func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []merge
 			// We've seen this series before.
 			allSeries[lastSeriesIndex].Sources = append(allSeries[lastSeriesIndex].Sources, mergedSeriesSource{
 				Ingester:    nextIngester.IngesterName,
-				SeriesIndex: nextIngester.NextSeriesIndex - 1,
+				SeriesIndex: nextSeriesIndex,
 			})
 		}
 	}
@@ -381,7 +354,7 @@ type ingesterSeries struct {
 	IngesterName string
 	Series       []labels.Labels
 
-	// Required only for heap sort and loser tree
+	// Required only for heap sort
 	NextSeriesIndex int
 }
 
@@ -463,3 +436,123 @@ func (pq *ingesterPriorityQueue) Pop() any {
 	*pq = old[0 : n-1]
 	return item
 }
+
+func NewTree(ingesters []ingesterSeries) *Tree {
+	nIngesters := len(ingesters)
+	t := Tree{
+		nodes: make([]node, nIngesters*2),
+	}
+	for idx, s := range ingesters {
+		t.nodes[idx+nIngesters].ingester = s
+		t.moveNext(idx + nIngesters) // Must call Next on each item so that At() has a value.
+	}
+	if nIngesters > 0 {
+		t.nodes[0].index = -1 // flag to be initialized on first call to Next().
+	}
+	return &t
+}
+
+// A loser tree is a binary tree laid out such that nodes N and N+1 have parent N/2.
+// We store M leaf nodes in positions M...2M-1, and M-1 internal nodes in positions 1..M-1.
+// Node 0 is a special node, containing the winner of the contest.
+type Tree struct {
+	nodes []node
+}
+
+type node struct {
+	index           int            // This is the loser for all nodes except the 0th, where it is the winner.
+	value           labels.Labels  // Value copied from the loser node, or winner for node 0.
+	ingester        ingesterSeries // Only populated for leaf nodes.
+	nextSeriesIndex int            // Only populated for leaf nodes.
+}
+
+func (t *Tree) moveNext(index int) bool {
+	n := &t.nodes[index]
+	n.nextSeriesIndex++
+	if n.nextSeriesIndex > len(n.ingester.Series) {
+		n.value = nil
+		n.index = -1
+		return false
+	}
+	n.value = n.ingester.Series[n.nextSeriesIndex-1]
+	return true
+}
+
+func (t *Tree) Winner() (ingesterSeries, labels.Labels, int) {
+	n := t.nodes[t.nodes[0].index]
+	return n.ingester, n.value, n.nextSeriesIndex - 1
+}
+
+func (t *Tree) Next() bool {
+	if len(t.nodes) == 0 {
+		return false
+	}
+	if t.nodes[0].index == -1 { // If tree has not been initialized yet, do that.
+		t.initialize()
+		return t.nodes[t.nodes[0].index].index != -1
+	}
+	if t.nodes[t.nodes[0].index].index == -1 { // already exhausted
+		return false
+	}
+	t.moveNext(t.nodes[0].index)
+	t.replayGames(t.nodes[0].index)
+	return t.nodes[t.nodes[0].index].index != -1
+}
+
+func (t *Tree) initialize() {
+	winners := make([]int, len(t.nodes))
+	// Initialize leaf nodes as winners to start.
+	for i := len(t.nodes) / 2; i < len(t.nodes); i++ {
+		winners[i] = i
+	}
+	for i := len(t.nodes) - 2; i > 0; i -= 2 {
+		// At each stage the winners play each other, and we record the loser in the node.
+		loser, winner := t.playGame(winners[i], winners[i+1])
+		p := parent(i)
+		t.nodes[p].index = loser
+		t.nodes[p].value = t.nodes[loser].value
+		winners[p] = winner
+	}
+	t.nodes[0].index = winners[1]
+	t.nodes[0].value = t.nodes[winners[1]].value
+}
+
+// Starting at pos, re-consider all values up to the root.
+func (t *Tree) replayGames(pos int) {
+	// At the start, pos is a leaf node, and is the winner at that level.
+	n := parent(pos)
+	for n != 0 {
+		if t.less(t.nodes[n].value, t.nodes[pos].value) {
+			loser := pos
+			// Record pos as the loser here, and the old loser is the new winner.
+			pos = t.nodes[n].index
+			t.nodes[n].index = loser
+			t.nodes[n].value = t.nodes[loser].value
+		}
+		n = parent(n)
+	}
+	// pos is now the winner; store it in node 0.
+	t.nodes[0].index = pos
+	t.nodes[0].value = t.nodes[pos].value
+}
+
+func (t *Tree) playGame(a, b int) (loser, winner int) {
+	if t.less(t.nodes[a].value, t.nodes[b].value) {
+		return b, a
+	}
+	return a, b
+}
+
+func (t *Tree) less(a, b labels.Labels) bool {
+	if a == nil {
+		return false
+	}
+
+	if b == nil {
+		return true
+	}
+
+	return labels.Compare(a, b) < 0
+}
+
+func parent(i int) int { return i / 2 }
