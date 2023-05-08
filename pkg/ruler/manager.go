@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
-	"github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
@@ -434,11 +433,10 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			// When ring discovery mode is enabled, the address we discover is the alertmanager's GRPC address
 			// So we need to convert the request to GRPC before sending
 			if r.cfg.AlertmanagerDiscovery.Mode == alertmanagerdiscovery.ModeRing {
-				grpcReq, err := server.HTTPRequest(req)
+				grpcReq, err := httpgrpcutil.ToGRPCRequest(req)
 				if err != nil {
 					return nil, err
 				}
-				grpcReq.Url = req.URL.String()
 				grpcClient, err := httpgrpcutil.NewGRPCClient(req.Host)
 				if err != nil {
 					return nil, err
@@ -447,7 +445,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 				if err != nil {
 					return nil, errors.Wrap(err, "failed to send notification via grpc")
 				}
-				return httpgrpcutil.GrpcToHTTPResponse(grpcResponse), nil
+				return httpgrpcutil.ToHTTPResponse(grpcResponse), nil
 			}
 
 			return ctxhttp.Do(ctx, client, req)
