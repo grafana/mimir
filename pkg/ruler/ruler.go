@@ -451,11 +451,6 @@ func (r *Ruler) run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-periodicTicker.C:
-			// Apply the jitter each time. The reason is to reduce the likelihood that,
-			// after a slow sync (ending across multiple ruler replicas nearly at the same
-			// time), the ruler replicas may unintentionally synchronise their ticket.
-			periodicTicker.Reset(util.DurationWithJitter(r.cfg.PollInterval, rulerPeriodicSyncJitter))
-
 			r.syncRules(ctx, rulerSyncReasonPeriodic)
 		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
