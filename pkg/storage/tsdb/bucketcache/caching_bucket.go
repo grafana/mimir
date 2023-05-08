@@ -603,22 +603,6 @@ func composeCachingKey(op, bucketID string, values ...string) string {
 	return b.String()
 }
 
-func cachingKeyForSimpleOperation(op, bucketID, name string) string {
-	b := strings.Builder{}
-	b.Grow(len(bucketID) + len(op) + len(name) + 2)
-
-	if bucketID != "" {
-		b.WriteString(bucketID)
-		b.WriteRune(':')
-	}
-
-	b.WriteString(op)
-	b.WriteRune(':')
-	b.WriteString(name)
-
-	return b.String()
-}
-
 // Reader implementation that uses in-memory subranges.
 type subrangesReader struct {
 	subrangeSize int64
