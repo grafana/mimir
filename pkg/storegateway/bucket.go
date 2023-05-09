@@ -65,7 +65,7 @@ const (
 	// because you barely get any improvements in compression when the number of samples is beyond this.
 	// Take a look at Figure 6 in this whitepaper http://www.vldb.org/pvldb/vol8/p1816-teller.pdf.
 	MaxSamplesPerChunk = 120
-	maxSeriesSize      = 64 * 1024
+
 	// Relatively large in order to reduce memory waste, yet small enough to avoid excessive allocations.
 	chunkBytesPoolMinSize = 64 * 1024        // 64 KiB
 	chunkBytesPoolMaxSize = 64 * 1024 * 1024 // 64 MiB
