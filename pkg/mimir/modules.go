@@ -727,14 +727,15 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			queryFunc = rules.EngineQueryFunc(eng, queryable)
 		}
 	}
-	managerFactory := ruler.DefaultTenantManagerFactory(
-		t.Cfg.Ruler,
-		t.Distributor,
-		embeddedQueryable,
-		queryFunc,
-		t.Overrides,
-		t.Registerer,
-	)
+	rmf := &ruler.RulesManagerFactory{
+		Cfg:               t.Cfg.Ruler,
+		Pusher:            t.Distributor,
+		EmbeddedQueryable: embeddedQueryable,
+		QueryFunc:         queryFunc,
+		Overrides:         t.Overrides,
+		Registerer:        t.Registerer,
+	}
+	managerFactory := rmf.Build()
 
 	// We need to prefix and add a label to the metrics for the DNS resolver because, unlike other mimir components,
 	// it doesn't already have the `cortex_` prefix and the `component` label to the metrics it emits
@@ -747,9 +748,22 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
-	if err != nil {
-		return nil, err
+
+	var manager ruler.MultiTenantManager
+
+	if t.Cfg.Ruler.RWConfig.Enabled {
+		rwAppendable := ruler.NewRemoteWriteAppendable(t.Distributor, t.Overrides, rmf.TotalWrites, rmf.FailedWrites)
+		rwManager, err := ruler.NewRWMultiTenantManager(t.Cfg.Ruler, managerFactory, rwAppendable, t.Registerer, util_log.Logger)
+		if err != nil {
+			return nil, err
+		}
+		manager = rwManager
+	} else {
+		defaultManager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
+		if err != nil {
+			return nil, err
+		}
+		manager = defaultManager
 	}
 
 	t.Ruler, err = ruler.NewRuler(

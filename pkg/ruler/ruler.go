@@ -116,6 +116,8 @@ type Config struct {
 
 	EnableQueryStats bool `yaml:"query_stats_enabled" category:"advanced"`
 
+	RWConfig RemoteWriteConfig
+
 	QueryFrontend QueryFrontendConfig `yaml:"query_frontend"`
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
@@ -170,6 +172,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.DisabledTenants, "ruler.disabled-tenants", "Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.")
 
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.")
+
+	f.BoolVar(&cfg.RWConfig.Enabled, "ruler.remote-write.enable", false, "Enable ruler to remote write output.")
+	f.StringVar(&cfg.RWConfig.WALDir, "ruler.remote-write.wal-dir", "wal", "Directory to store WAL (for Ruler Remote Write).")
+	f.DurationVar(&cfg.RWConfig.WALTruncateFrequency, "ruler.remote-write.wal-truncate-frequency", time.Hour, "Frequency for truncating WAL")
+	f.DurationVar(&cfg.RWConfig.MinWALTime, "ruler.remote-write.min-wal-time", 5*time.Minute, "Minimum time to stay in WAL")
+	f.DurationVar(&cfg.RWConfig.MaxWALTime, "ruler.remote-write.max-wal-time", 4*time.Hour, "Maximum time to stay in WAL")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }
@@ -729,13 +737,14 @@ func filterRuleGroupByEnabled(group *rulespb.RuleGroupDesc, recordingEnabled, al
 
 	// Create a copy of the group and remove some rules.
 	filtered = &rulespb.RuleGroupDesc{
-		Name:          group.Name,
-		Namespace:     group.Namespace,
-		Interval:      group.Interval,
-		Rules:         make([]*rulespb.RuleDesc, 0, len(group.Rules)-removedRules),
-		User:          group.User,
-		Options:       group.Options,
-		SourceTenants: group.SourceTenants,
+		Name:           group.Name,
+		Namespace:      group.Namespace,
+		Interval:       group.Interval,
+		Rules:          make([]*rulespb.RuleDesc, 0, len(group.Rules)-removedRules),
+		User:           group.User,
+		Options:        group.Options,
+		SourceTenants:  group.SourceTenants,
+		RemoteWriteUrl: group.RemoteWriteUrl,
 	}
 
 	for _, rule := range group.Rules {

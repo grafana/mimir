@@ -1570,6 +1570,27 @@ ring:
 # CLI flag: -ruler.query-stats-enabled
 [query_stats_enabled: <boolean> | default = false]
 
+rwconfig:
+  # Directory to store WAL (for Ruler Remote Write).
+  # CLI flag: -ruler.remote-write.wal-dir
+  [wal_dir: <string> | default = "wal"]
+
+  # Enable ruler to remote write output.
+  # CLI flag: -ruler.remote-write.enable
+  [enabled: <boolean> | default = false]
+
+  # Frequency for truncating WAL
+  # CLI flag: -ruler.remote-write.wal-truncate-frequency
+  [wal_truncate_frequency: <duration> | default = 1h]
+
+  # Minimum time to stay in WAL
+  # CLI flag: -ruler.remote-write.min-wal-time
+  [min_wal_time: <duration> | default = 5m]
+
+  # Maximum time to stay in WAL
+  # CLI flag: -ruler.remote-write.max-wal-time
+  [max_wal_time: <duration> | default = 4h]
+
 query_frontend:
   # GRPC listen address of the query-frontend(s). Must be a DNS address
   # (prefixed with dns:///) to enable client side load balancing.
