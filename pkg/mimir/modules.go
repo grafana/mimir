@@ -696,7 +696,6 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			func() (int64, error) { return 0, nil },
 		)
 		queryFunc = remoteQuerier.Query
-
 	} else {
 		var queryable, federatedQueryable prom_storage.Queryable
 

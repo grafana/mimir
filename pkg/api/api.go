@@ -254,7 +254,7 @@ type Ingester interface {
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
 }
 
-// RegisterIngester registers the ingesters HTTP and GRPC service
+// RegisterIngester registers the ingester HTTP and gRPC services.
 func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
