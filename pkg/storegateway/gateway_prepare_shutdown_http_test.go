@@ -41,7 +41,7 @@ func createStoreGateway(t *testing.T, reg prometheus.Registerer) (*StoreGateway,
 	return g, ringStore
 }
 
-func getRingDesc(t *testing.T, ringStore *consul.Client, ctx context.Context) *ring.Desc {
+func getRingDesc(ctx context.Context, t *testing.T, ringStore *consul.Client) *ring.Desc {
 	desc, err := ringStore.Get(ctx, RingKey)
 	require.Nil(t, err)
 	return desc.(*ring.Desc)
@@ -121,10 +121,10 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	require.Equal(t, 204, response5.Code)
 
 	// Stop the store-gateway
-	ringDesc := getRingDesc(t, ringStore, ctx)
+	ringDesc := getRingDesc(ctx, t, ringStore)
 	assert.NotEmpty(t, ringDesc.GetIngesters())
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, g))
-	ringDesc = getRingDesc(t, ringStore, ctx)
+	ringDesc = getRingDesc(ctx, t, ringStore)
 	assert.Empty(t, ringDesc.GetIngesters())
 }
 
@@ -162,9 +162,9 @@ func TestStoreGateway_InitialisePrepareShutdownAtStartup(t *testing.T) {
 	`), "cortex_storegateway_prepare_shutdown_requested"))
 
 	// Stop the store-gateway
-	ringDesc := getRingDesc(t, ringStore, ctx)
+	ringDesc := getRingDesc(ctx, t, ringStore)
 	assert.NotEmpty(t, ringDesc.GetIngesters())
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, g))
-	ringDesc = getRingDesc(t, ringStore, ctx)
+	ringDesc = getRingDesc(ctx, t, ringStore)
 	assert.Empty(t, ringDesc.GetIngesters())
 }
