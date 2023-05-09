@@ -11,3 +11,6 @@
 # Packages.
 /Makefile @wilfriedroset @vaxvms @bubu11e @grafana/mimir-maintainers
 /packaging/ @wilfriedroset @vaxvms @bubu11e @grafana/mimir-maintainers
+
+# No owners - allows sub-maintainers to merge changes.
+CHANGELOG.md
