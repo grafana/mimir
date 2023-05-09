@@ -66,10 +66,10 @@ receivers:
   - name: dummy`
 
 	simpleConfigTwo = `route:
-  receiver: dummy
+  receiver: dummy2
 
 receivers:
-  - name: dummy`
+  - name: dummy2`
 
 	grafanaConfig     = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"grafana-default-email","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"grafana-default-email","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"WH","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
 	simpleTemplateOne = `{{ define "some.template.one" }}{{ end }}`
@@ -2479,8 +2479,7 @@ func Test_configChanged(t *testing.T) {
 			},
 			exp: true,
 		},
-		// TODO: this does not work correctly because the configs used for tests do not actually differ.
-		/*{
+		{
 			name: "config changed",
 			left: alertspb.AlertConfigDesc{
 				User:      "user1",
@@ -2503,7 +2502,7 @@ func Test_configChanged(t *testing.T) {
 				},
 			},
 			exp: true,
-		},*/
+		},
 		{
 			name: "template body changed",
 			left: alertspb.AlertConfigDesc{
