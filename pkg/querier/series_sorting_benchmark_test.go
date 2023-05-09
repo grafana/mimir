@@ -35,21 +35,21 @@ func TestMergingAndSortingSeries(t *testing.T) {
 	ingester3 := &SeriesChunksStreamReader{}
 
 	testCases := map[string]struct {
-		seriesSets []ingesterSeries
+		seriesSets []SeriesChunksStream
 		expected   []StreamingSeries
 	}{
 		"no ingesters": {
-			seriesSets: []ingesterSeries{},
+			seriesSets: []SeriesChunksStream{},
 			expected:   []StreamingSeries{},
 		},
 		"single ingester, no series": {
-			seriesSets: []ingesterSeries{
+			seriesSets: []SeriesChunksStream{
 				{StreamReader: ingester1, Series: []labels.Labels{}},
 			},
 			expected: []StreamingSeries{},
 		},
 		"single ingester, single series": {
-			seriesSets: []ingesterSeries{
+			seriesSets: []SeriesChunksStream{
 				{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
 			},
 			expected: []StreamingSeries{
@@ -62,7 +62,7 @@ func TestMergingAndSortingSeries(t *testing.T) {
 			},
 		},
 		"multiple ingesters, each with single series": {
-			seriesSets: []ingesterSeries{
+			seriesSets: []SeriesChunksStream{
 				{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
 				{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
 				{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
@@ -79,7 +79,7 @@ func TestMergingAndSortingSeries(t *testing.T) {
 			},
 		},
 		"multiple ingesters, each with different series": {
-			seriesSets: []ingesterSeries{
+			seriesSets: []SeriesChunksStream{
 				{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}},
 				{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}},
 				{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}},
@@ -106,7 +106,7 @@ func TestMergingAndSortingSeries(t *testing.T) {
 			},
 		},
 		"multiple ingesters, each with different series, with earliest ingesters having last series": {
-			seriesSets: []ingesterSeries{
+			seriesSets: []SeriesChunksStream{
 				{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}},
 				{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}},
 				{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}},
@@ -133,7 +133,7 @@ func TestMergingAndSortingSeries(t *testing.T) {
 			},
 		},
 		"multiple ingesters, each with multiple series": {
-			seriesSets: []ingesterSeries{
+			seriesSets: []SeriesChunksStream{
 				{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("label-a", "value-a"), labels.FromStrings("label-b", "value-a")}},
 				{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("label-a", "value-b"), labels.FromStrings("label-b", "value-a")}},
 				{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("label-a", "value-c"), labels.FromStrings("label-b", "value-a")}},
@@ -190,8 +190,8 @@ func TestMergingAndSortingSeries(t *testing.T) {
 
 // Use a loser tree to merge lists of series from each ingester.
 // This assumes we add a new implementation of NewConcreteSeriesSet that doesn't try to sort the list of series again.
-func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []StreamingSeries {
-	tree := NewTree(ingesters)
+func loserTreeMergeSeriesSets(ingesters []SeriesChunksStream, zoneCount int) []StreamingSeries {
+	tree := newSeriesChunkStreamsTree(ingesters)
 	allSeries := []StreamingSeries{}
 
 	for tree.Next() {
@@ -224,12 +224,12 @@ func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []Strea
 	return allSeries
 }
 
-type ingesterSeries struct {
+type SeriesChunksStream struct {
 	StreamReader *SeriesChunksStreamReader
 	Series       []labels.Labels
 }
 
-func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) []ingesterSeries {
+func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) []SeriesChunksStream {
 	seriesPerZone := ingestersPerZone * seriesPerIngester
 	zoneSeries := make([]labels.Labels, seriesPerZone)
 
@@ -237,7 +237,7 @@ func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) 
 		zoneSeries[seriesIdx] = labels.FromStrings("the-label", strconv.Itoa(seriesIdx))
 	}
 
-	seriesSets := make([]ingesterSeries, 0, zones*ingestersPerZone)
+	seriesSets := make([]SeriesChunksStream, 0, zones*ingestersPerZone)
 
 	for zone := 1; zone <= zones; zone++ {
 		rand.Shuffle(len(zoneSeries), func(i, j int) { zoneSeries[i], zoneSeries[j] = zoneSeries[j], zoneSeries[i] })
@@ -247,7 +247,7 @@ func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) 
 			series := zoneSeries[(ingester-1)*seriesPerIngester : ingester*seriesPerIngester]
 			sort.Sort(byLabels(series))
 
-			seriesSets = append(seriesSets, ingesterSeries{StreamReader: streamReader, Series: series})
+			seriesSets = append(seriesSets, SeriesChunksStream{StreamReader: streamReader, Series: series})
 		}
 	}
 
@@ -260,10 +260,10 @@ func (b byLabels) Len() int           { return len(b) }
 func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }
 
-func NewTree(ingesters []ingesterSeries) *Tree {
+func newSeriesChunkStreamsTree(ingesters []SeriesChunksStream) *seriesChunkStreamsTree {
 	nIngesters := len(ingesters)
-	t := Tree{
-		nodes: make([]node, nIngesters*2),
+	t := seriesChunkStreamsTree{
+		nodes: make([]seriesChunkStreamsTreeNode, nIngesters*2),
 	}
 	for idx, s := range ingesters {
 		t.nodes[idx+nIngesters].ingester = s
@@ -278,18 +278,18 @@ func NewTree(ingesters []ingesterSeries) *Tree {
 // A loser tree is a binary tree laid out such that nodes N and N+1 have parent N/2.
 // We store M leaf nodes in positions M...2M-1, and M-1 internal nodes in positions 1..M-1.
 // Node 0 is a special node, containing the winner of the contest.
-type Tree struct {
-	nodes []node
+type seriesChunkStreamsTree struct {
+	nodes []seriesChunkStreamsTreeNode
 }
 
-type node struct {
-	index           int            // This is the loser for all nodes except the 0th, where it is the winner.
-	value           labels.Labels  // Value copied from the loser node, or winner for node 0.
-	ingester        ingesterSeries // Only populated for leaf nodes.
-	nextSeriesIndex int            // Only populated for leaf nodes.
+type seriesChunkStreamsTreeNode struct {
+	index           int                // This is the loser for all nodes except the 0th, where it is the winner.
+	value           labels.Labels      // Value copied from the loser node, or winner for node 0.
+	ingester        SeriesChunksStream // Only populated for leaf nodes.
+	nextSeriesIndex int                // Only populated for leaf nodes.
 }
 
-func (t *Tree) moveNext(index int) bool {
+func (t *seriesChunkStreamsTree) moveNext(index int) bool {
 	n := &t.nodes[index]
 	n.nextSeriesIndex++
 	if n.nextSeriesIndex > len(n.ingester.Series) {
@@ -301,12 +301,12 @@ func (t *Tree) moveNext(index int) bool {
 	return true
 }
 
-func (t *Tree) Winner() (ingesterSeries, labels.Labels, int) {
+func (t *seriesChunkStreamsTree) Winner() (SeriesChunksStream, labels.Labels, int) {
 	n := t.nodes[t.nodes[0].index]
 	return n.ingester, n.value, n.nextSeriesIndex - 1
 }
 
-func (t *Tree) Next() bool {
+func (t *seriesChunkStreamsTree) Next() bool {
 	if len(t.nodes) == 0 {
 		return false
 	}
@@ -322,7 +322,7 @@ func (t *Tree) Next() bool {
 	return t.nodes[t.nodes[0].index].index != -1
 }
 
-func (t *Tree) initialize() {
+func (t *seriesChunkStreamsTree) initialize() {
 	winners := make([]int, len(t.nodes))
 	// Initialize leaf nodes as winners to start.
 	for i := len(t.nodes) / 2; i < len(t.nodes); i++ {
@@ -341,7 +341,7 @@ func (t *Tree) initialize() {
 }
 
 // Starting at pos, re-consider all values up to the root.
-func (t *Tree) replayGames(pos int) {
+func (t *seriesChunkStreamsTree) replayGames(pos int) {
 	// At the start, pos is a leaf node, and is the winner at that level.
 	n := parent(pos)
 	for n != 0 {
@@ -359,14 +359,14 @@ func (t *Tree) replayGames(pos int) {
 	t.nodes[0].value = t.nodes[pos].value
 }
 
-func (t *Tree) playGame(a, b int) (loser, winner int) {
+func (t *seriesChunkStreamsTree) playGame(a, b int) (loser, winner int) {
 	if t.less(t.nodes[a].value, t.nodes[b].value) {
 		return b, a
 	}
 	return a, b
 }
 
-func (t *Tree) less(a, b labels.Labels) bool {
+func (t *seriesChunkStreamsTree) less(a, b labels.Labels) bool {
 	if a == nil {
 		return false
 	}
