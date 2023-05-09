@@ -23,13 +23,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func createStoreGateway(t *testing.T, reg prometheus.Registerer) *StoreGateway {
+func createStoreGateway(t *testing.T, reg prometheus.Registerer) (*StoreGateway, *consul.Client) {
 	gatewayCfg := mockGatewayConfig()
 	gatewayCfg.ShardingRing.UnregisterOnShutdown = false
 
 	storageDir := t.TempDir()
 	storageCfg := mockStorageConfig(t)
-	storageCfg.TSDB.Dir = storageDir
 
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -39,15 +38,21 @@ func createStoreGateway(t *testing.T, reg prometheus.Registerer) *StoreGateway {
 
 	g, err := newStoreGateway(gatewayCfg, storageCfg, bucket, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), reg, nil)
 	require.NoError(t, err)
-	return g
+	return g, ringStore
 }
 
-func TestGatewayPrepareShutdownHttp_PrepareShutdownHandler(t *testing.T) {
+func getRingDesc(t *testing.T, ringStore *consul.Client, ctx context.Context) *ring.Desc {
+	desc, err := ringStore.Get(ctx, RingKey)
+	require.Nil(t, err)
+	return desc.(*ring.Desc)
+}
+
+func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	test.VerifyNoLeak(t)
 	reg := prometheus.NewPedanticRegistry()
-	g := createStoreGateway(t, reg)
+	g, ringStore := createStoreGateway(t, reg)
 
-	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.TSDB.Dir)
+	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 	// ensure that there is no shutdown marker
 	exists, err := shutdownmarker.Exists(shutdownMarkerPath)
 	require.Nil(t, err)
@@ -56,7 +61,6 @@ func TestGatewayPrepareShutdownHttp_PrepareShutdownHandler(t *testing.T) {
 	// Start the store-gateway.
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
-	// ensure that unregistering is NOT required
 	require.True(t, g.ringLifecycler.ShouldKeepInstanceInTheRingOnShutdown())
 
 	// after GET is invoked, the expected result is "unset"
@@ -67,6 +71,11 @@ func TestGatewayPrepareShutdownHttp_PrepareShutdownHandler(t *testing.T) {
 	exists, err = shutdownmarker.Exists(shutdownMarkerPath)
 	require.Nil(t, err)
 	require.False(t, exists)
+	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_storegateway_prepare_shutdown_requested If the store-gateway has been requested to prepare for shutdown via endpoint or marker file.
+		# TYPE cortex_storegateway_prepare_shutdown_requested gauge
+		cortex_storegateway_prepare_shutdown_requested 0
+	`), "cortex_storegateway_prepare_shutdown_requested"))
 
 	// after POST is invoked, it is required that cortex_storegateway_prepare_shutdown_requested gets incremented
 	// and that there exists a shutdown marker
@@ -75,15 +84,14 @@ func TestGatewayPrepareShutdownHttp_PrepareShutdownHandler(t *testing.T) {
 	require.Equal(t, 204, response2.Code)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-					# HELP cortex_storegateway_prepare_shutdown_requested If the store-gateway has been requested to prepare for shutdown via endpoint or marker file.
-					# TYPE cortex_storegateway_prepare_shutdown_requested gauge
-					cortex_storegateway_prepare_shutdown_requested 1
-				`), "cortex_storegateway_prepare_shutdown_requested"))
+		# HELP cortex_storegateway_prepare_shutdown_requested If the store-gateway has been requested to prepare for shutdown via endpoint or marker file.
+		# TYPE cortex_storegateway_prepare_shutdown_requested gauge
+		cortex_storegateway_prepare_shutdown_requested 1
+	`), "cortex_storegateway_prepare_shutdown_requested"))
 
 	exists, err = shutdownmarker.Exists(shutdownMarkerPath)
 	require.Nil(t, err)
 	require.True(t, exists)
-	// ensure that unregistering is required
 	require.False(t, g.ringLifecycler.ShouldKeepInstanceInTheRingOnShutdown())
 
 	// after GET is invoked, the expected result is now "set"
@@ -92,20 +100,19 @@ func TestGatewayPrepareShutdownHttp_PrepareShutdownHandler(t *testing.T) {
 	require.Equal(t, "set", response3.Body.String())
 	require.Equal(t, 200, response3.Code)
 
-	// after DELETE is invoked, the effects of POST get deleted
+	// after DELETE is invoked, the effects of POST get reverted
 	response4 := httptest.NewRecorder()
 	g.PrepareShutdownHandler(response4, httptest.NewRequest("DELETE", "/store-gateway/prepare-shutdown", nil))
 	require.Equal(t, 204, response4.Code)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-					# HELP cortex_storegateway_prepare_shutdown_requested If the store-gateway has been requested to prepare for shutdown via endpoint or marker file.
-					# TYPE cortex_storegateway_prepare_shutdown_requested gauge
-					cortex_storegateway_prepare_shutdown_requested 0
-				`), "cortex_storegateway_prepare_shutdown_requested"))
+		# HELP cortex_storegateway_prepare_shutdown_requested If the store-gateway has been requested to prepare for shutdown via endpoint or marker file.
+		# TYPE cortex_storegateway_prepare_shutdown_requested gauge
+		cortex_storegateway_prepare_shutdown_requested 0
+	`), "cortex_storegateway_prepare_shutdown_requested"))
 	exists, err = shutdownmarker.Exists(shutdownMarkerPath)
 	require.Nil(t, err)
 	require.False(t, exists)
-	// ensure that unregistering is NOT required
 	require.True(t, g.ringLifecycler.ShouldKeepInstanceInTheRingOnShutdown())
 
 	// after POST is invoked, and store-gateway is stopped, it is required that it gets removed from the ring
@@ -114,20 +121,20 @@ func TestGatewayPrepareShutdownHttp_PrepareShutdownHandler(t *testing.T) {
 	require.Equal(t, 204, response5.Code)
 
 	// Stop the store-gateway
-	require.True(t, g.ringLifecycler.IsRegistered())
-	require.Equal(t, ring.ACTIVE, g.ringLifecycler.GetState())
+	ringDesc := getRingDesc(t, ringStore, ctx)
+	assert.NotEmpty(t, ringDesc.GetIngesters())
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, g))
-	require.False(t, g.ringLifecycler.IsRegistered())
-	require.NotEqual(t, ring.ACTIVE, g.ringLifecycler.GetState())
+	ringDesc = getRingDesc(t, ringStore, ctx)
+	assert.Empty(t, ringDesc.GetIngesters())
 }
 
-func TestGatewayPrepareShutdownHttp_RePrepareShutdownHandler(t *testing.T) {
+func TestStoreGateway_InitialisePrepareShutdownAtStartup(t *testing.T) {
 	test.VerifyNoLeak(t)
 	reg := prometheus.NewPedanticRegistry()
-	g := createStoreGateway(t, reg)
+	g, ringStore := createStoreGateway(t, reg)
 
 	// create a shutdown marker
-	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.TSDB.Dir)
+	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 	err := shutdownmarker.Create(shutdownMarkerPath)
 	require.Nil(t, err)
 	// ensure that there is s shutdown marker
@@ -149,15 +156,15 @@ func TestGatewayPrepareShutdownHttp_RePrepareShutdownHandler(t *testing.T) {
 
 	// ensure that cortex_storegateway_prepare_shutdown_requested is 1
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-					# HELP cortex_storegateway_prepare_shutdown_requested If the store-gateway has been requested to prepare for shutdown via endpoint or marker file.
-					# TYPE cortex_storegateway_prepare_shutdown_requested gauge
-					cortex_storegateway_prepare_shutdown_requested 1
-				`), "cortex_storegateway_prepare_shutdown_requested"))
+		# HELP cortex_storegateway_prepare_shutdown_requested If the store-gateway has been requested to prepare for shutdown via endpoint or marker file.
+		# TYPE cortex_storegateway_prepare_shutdown_requested gauge
+		cortex_storegateway_prepare_shutdown_requested 1
+	`), "cortex_storegateway_prepare_shutdown_requested"))
 
 	// Stop the store-gateway
-	require.True(t, g.ringLifecycler.IsRegistered())
-	require.Equal(t, ring.ACTIVE, g.ringLifecycler.GetState())
+	ringDesc := getRingDesc(t, ringStore, ctx)
+	assert.NotEmpty(t, ringDesc.GetIngesters())
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, g))
-	require.False(t, g.ringLifecycler.IsRegistered())
-	require.NotEqual(t, ring.ACTIVE, g.ringLifecycler.GetState())
+	ringDesc = getRingDesc(t, ringStore, ctx)
+	assert.Empty(t, ringDesc.GetIngesters())
 }

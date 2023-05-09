@@ -3,7 +3,6 @@
 package storegateway
 
 import (
-	_ "embed" // Used to embed html template
 	"net/http"
 
 	"github.com/go-kit/log/level"
@@ -25,7 +24,7 @@ import (
 // * `POST` enables this configuration
 // * `DELETE` disables this configuration
 func (g *StoreGateway) PrepareShutdownHandler(w http.ResponseWriter, req *http.Request) {
-	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.TSDB.Dir)
+	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 
 	switch req.Method {
 	case http.MethodGet:
@@ -68,7 +67,7 @@ func (g *StoreGateway) PrepareShutdownHandler(w http.ResponseWriter, req *http.R
 	}
 }
 
-// setPrepareShutdown toggles store-gateway lifecycler config to prepare for shutdown
+// setPrepareShutdown changes store-gateway lifecycler config to prepare for shutdown
 func (g *StoreGateway) setPrepareShutdown() {
 	g.ringLifecycler.SetKeepInstanceInTheRingOnShutdown(false)
 	g.shutdownMarker.Set(1)
@@ -84,7 +83,7 @@ func (g *StoreGateway) unsetPrepareShutdown() {
 // if shutdown marker is present. This is possible if the store-gateway crashes and restarts during a
 // previous attempt to shut down.
 func (g *StoreGateway) setPrepareShutdownFromShutdownMarker() error {
-	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.TSDB.Dir)
+	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 	shutdownMarkerFound, err := shutdownmarker.Exists(shutdownMarkerPath)
 	if err != nil {
 		return errors.Wrap(err, "failed to check store-gateway shutdown marker")
