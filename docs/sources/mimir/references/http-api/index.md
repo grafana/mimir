@@ -25,7 +25,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 ## Endpoints
 
 | API                                                                                   | Service                        | Endpoint                                                                  |
-|---------------------------------------------------------------------------------------|--------------------------------|---------------------------------------------------------------------------|
+| ------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
 | [Index page](#index-page)                                                             | _All services_                 | `GET /`                                                                   |
 | [Configuration](#configuration)                                                       | _All services_                 | `GET /config`                                                             |
 | [Status Configuration](#status-configuration)                                         | _All services_                 | `GET /api/v1/status/config`                                               |
@@ -998,7 +998,7 @@ This endpoint changes in-memory store-gateway configuration to prepare for perma
 instance but does not actually stop any part of the latter.
 
 After a `POST` to the `prepare-shutdown` endpoint returns, when the store-gateway process is stopped with `SIGINT` / `SIGTERM`,
-the ingester will be unregistered from the ring. 
+the store-gateway will be unregistered from the ring.
 
 A `GET` to the `prepare-shutdown` endpoint returns the status of this configuration, either `set` or `unset`.
 
