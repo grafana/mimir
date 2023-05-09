@@ -187,19 +187,14 @@ func mergeExemplarQueryResponses(results []interface{}) *ingester_client.Exempla
 	return &ingester_client.ExemplarQueryResponse{Timeseries: result}
 }
 
-type streamerWithSeriesLabels struct {
-	streamer     *querier.SeriesChunksStreamReader
-	seriesLabels []labels.Labels
-}
-
 // queryIngesterStream queries the ingesters using the new streaming API.
 // TODO: break this method into smaller methods, it's enormous
 func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest) (querier.DistributorQueryStreamResponse, error) {
 	var (
-		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
-		reqStats      = stats.FromContext(ctx)
-		results       = make(chan *ingester_client.QueryStreamResponse)
-		streamersChan = make(chan streamerWithSeriesLabels)
+		queryLimiter = limiter.QueryLimiterFromContextWithFallback(ctx)
+		reqStats     = stats.FromContext(ctx)
+		results      = make(chan *ingester_client.QueryStreamResponse)
+		streamsChan  = make(chan seriesChunksStream)
 		// Note we can't signal goroutines to stop by closing 'results', because it has multiple concurrent senders.
 		stop        = make(chan struct{}) // Signal all background goroutines to stop.
 		doneReading = make(chan struct{}) // Signal that the reader has stopped.
@@ -207,7 +202,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
 	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
-	hashToStreamingSeries := map[string]querier.StreamingSeries{}
+	streams := make([]seriesChunksStream, 0, len(replicationSet.Instances))
 
 	// Start reading and accumulating responses. stopReading chan will
 	// be closed when all calls to ingesters have finished.
@@ -229,7 +224,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		for {
 			select {
 			case <-stop:
-				// TODO: will we will leak any streamers already sent to streamersChan?
+				// TODO: will we will leak any stream readers already sent to the streamsChan?
 				// Or will this be handled by the context passed to the gRPC runtime being cancelled eventually?
 
 				return
@@ -260,25 +255,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					}
 					hashToTimeSeries[key] = existing
 				}
-			case s := <-streamersChan:
-				for seriesIndex, seriesLabels := range s.seriesLabels {
-					key := ingester_client.LabelsToKeyString(seriesLabels)
-					series, exists := hashToStreamingSeries[key]
-
-					if !exists {
-						series = querier.StreamingSeries{
-							Labels:  seriesLabels,
-							Sources: make([]querier.StreamingSeriesSource, 0, 3), // TODO: take capacity from number of zones
-						}
-					}
-
-					series.Sources = append(series.Sources, querier.StreamingSeriesSource{
-						SeriesIndex:  seriesIndex,
-						StreamReader: s.streamer,
-					})
-
-					hashToStreamingSeries[key] = series
-				}
+			case s := <-streamsChan:
+				streams = append(streams, s)
 			}
 		}
 	}()
@@ -375,7 +353,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				select {
 				case <-stop:
 					return nil, nil
-				case streamersChan <- streamerWithSeriesLabels{streamer, seriesLabels}:
+				case streamsChan <- seriesChunksStream{streamer, seriesLabels}:
 					streamer.StartBuffering()
 					closeStream = false // The SeriesChunksStreamReader is responsible for closing the stream now.
 					return nil, nil
@@ -398,16 +376,13 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	resp := querier.DistributorQueryStreamResponse{
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
-		StreamingSeries: make([]querier.StreamingSeries, 0, len(hashToStreamingSeries)),
+		StreamingSeries: mergeSeriesChunkStreams(streams, replicationSet.ZoneCount()), // TODO: adjust zone count to only include zones we're actually using results from
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
 	}
 	for _, series := range hashToTimeSeries {
 		resp.Timeseries = append(resp.Timeseries, series)
-	}
-	for _, series := range hashToStreamingSeries {
-		resp.StreamingSeries = append(resp.StreamingSeries, series)
 	}
 
 	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
@@ -462,8 +437,8 @@ type seriesChunksStream struct {
 	Series       []labels.Labels
 }
 
-func mergeSeriesChunkStreams(ingesters []seriesChunksStream, zoneCount int) []querier.StreamingSeries {
-	tree := newSeriesChunkStreamsTree(ingesters)
+func mergeSeriesChunkStreams(streams []seriesChunksStream, zoneCount int) []querier.StreamingSeries {
+	tree := newSeriesChunkStreamsTree(streams)
 	allSeries := []querier.StreamingSeries{}
 
 	for tree.Next() {

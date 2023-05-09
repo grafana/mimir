@@ -202,7 +202,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	}
 
 	if len(streamingSeries) > 0 {
-		sets = append(sets, series.NewConcreteSeriesSetFromUnsortedSeries(streamingSeries))
+		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
 	}
 
 	if len(sets) == 0 {
