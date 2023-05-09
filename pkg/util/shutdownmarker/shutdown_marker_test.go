@@ -36,11 +36,13 @@ func TestShutdownMarker_Remove(t *testing.T) {
 	require.False(t, exists)
 
 	err = Create(shutdownMarkerPath)
+	require.Nil(t, err)
 	exists, err = Exists(shutdownMarkerPath)
 	require.Nil(t, err)
 	require.True(t, exists)
 
 	err = Remove(shutdownMarkerPath)
+	require.Nil(t, err)
 	exists, err = Exists(shutdownMarkerPath)
 	require.Nil(t, err)
 	require.False(t, exists)
