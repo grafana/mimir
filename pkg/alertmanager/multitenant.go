@@ -1283,9 +1283,5 @@ func configChanged(left, right alertspb.AlertConfigDesc) bool {
 		delete(existing, tm.Filename)
 	}
 
-	if len(existing) != 0 {
-		return true // Left has a template that right does not.
-	}
-
-	return false
+	return len(existing) != 0 // Left has a template that right does not.
 }
