@@ -54,7 +54,7 @@ type StreamingSeries struct {
 
 type StreamingSeriesSource struct {
 	StreamReader *SeriesChunksStreamReader
-	SeriesIndex  int
+	SeriesIndex  uint64
 }
 
 func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, logger log.Logger) QueryableWithFilter {

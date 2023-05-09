@@ -228,8 +228,8 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 	sb.WriteString("},")
 
 	b = b[:0]
-	sb.WriteString("PreferStreamingChunks:")
-	sb.Write(strconv.AppendBool(b, req.PreferStreamingChunks))
+	sb.WriteString("StreamingChunksBatchSize:")
+	sb.Write(strconv.AppendUint(b, req.StreamingChunksBatchSize, 10))
 	sb.WriteString(",}")
 }
 

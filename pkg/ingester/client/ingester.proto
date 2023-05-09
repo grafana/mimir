@@ -113,7 +113,7 @@ message QueryRequest {
   int64 end_timestamp_ms = 2;
   repeated LabelMatcher matchers = 3;
 
-  bool prefer_streaming_chunks = 100;
+  uint64 streaming_chunks_batch_size = 100;
 }
 
 message ExemplarQueryRequest {

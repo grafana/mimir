@@ -1433,9 +1433,9 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	if streamType == QueryStreamChunks {
-		if req.PreferStreamingChunks {
+		if req.StreamingChunksBatchSize > 0 {
 			level.Debug(spanlog).Log("msg", "using queryStreamStreaming")
-			numSeries, numSamples, err = i.queryStreamStreaming(ctx, db, int64(from), int64(through), matchers, shard, stream)
+			numSeries, numSamples, err = i.queryStreamStreaming(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize)
 		} else {
 			level.Debug(spanlog).Log("msg", "using queryStreamChunks")
 			numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
@@ -1646,13 +1646,13 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 	return numSeries, numSamples, nil
 }
 
-func (i *Ingester) queryStreamStreaming(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) queryStreamStreaming(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64) (numSeries, numSamples int, _ error) {
 	allIterators, err := i.sendStreamingQuerySeries(ctx, db, from, through, matchers, shard, stream)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	numSamples, err = i.sendStreamingQueryChunks(allIterators, stream)
+	numSamples, err = i.sendStreamingQueryChunks(allIterators, stream, batchSize)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1734,24 +1734,15 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, db *userTSDB, f
 	return allIterators, nil
 }
 
-func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stream client.Ingester_QueryStreamServer) (int, error) {
+func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stream client.Ingester_QueryStreamServer, batchSize uint64) (int, error) {
 	numSamples := 0
 
-	seriesInBatch := make([]client.QueryStreamSeriesChunks, 0, queryStreamBatchSize) // TODO: use a different value for queryStreamBatchSize?
+	seriesInBatch := make([]client.QueryStreamSeriesChunks, 0, batchSize)
 	batchSizeBytes := 0
-
-	// TODO: just use a slice for this? We'll never have more than queryStreamBatchSize series
-	chunkSlicePool := sync.Pool{
-		New: func() any {
-			// TODO: guess what size this will be based on time range?
-			return []client.Chunk{}
-		},
-	}
 
 	for seriesIdx, it := range allIterators {
 		seriesChunks := client.QueryStreamSeriesChunks{
 			SeriesIndex: uint64(seriesIdx),
-			Chunks:      chunkSlicePool.Get().([]client.Chunk),
 		}
 
 		for it.Next() {
@@ -1786,8 +1777,8 @@ func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stre
 
 		msgSize := seriesChunks.Size()
 
-		// TODO: what values to use for queryStreamBatchSize and queryStreamBatchMessageSize?
-		if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= queryStreamBatchSize {
+		// TODO: what values to use for queryStreamBatchMessageSize?
+		if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= int(batchSize) {
 			// Adding this series to the batch would make it too big, flush the data and add it to new batch instead.
 			err := client.SendQueryStream(stream, &client.QueryStreamResponse{
 				SeriesChunks: seriesInBatch,
@@ -1796,12 +1787,8 @@ func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stre
 				return 0, err
 			}
 
-			batchSizeBytes = 0
 			seriesInBatch = seriesInBatch[:0]
-
-			for _, s := range seriesInBatch {
-				chunkSlicePool.Put(s.Chunks)
-			}
+			batchSizeBytes = 0
 		}
 
 		seriesInBatch = append(seriesInBatch, seriesChunks)

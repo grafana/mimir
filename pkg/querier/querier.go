@@ -50,8 +50,8 @@ type Config struct {
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferStreamingChunks                      bool `yaml:"prefer_streaming_chunks" category:"experimental"`
-	StreamingChunksPerIngesterSeriesBufferSize int  `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"experimental"`
+	PreferStreamingChunks                      bool   `yaml:"prefer_streaming_chunks" category:"experimental"`
+	StreamingChunksPerIngesterSeriesBufferSize uint64 `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -84,8 +84,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	// Assuming the worst case scenario of loading a full 13 hours of chunks for a series from an ingester, a 15s scrape interval, 120 samples per chunk with average chunk size of 300 B,
 	// 128 series would consume ~1 MB (26 chunks needed per series to cover 13 hours, so 7.8 KB needed per series).
 	// (Note that this will not hold true for native histograms, which can be substantially larger.)
-	// We use two buffers per ingester, so we use 128/2=64 series per buffer per ingester.
-	f.IntVar(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 64, "Number of series to buffer per ingester when streaming chunks from ingesters.")
+	// We have up to two active batches per ingester in SeriesChunksStreamReader (one in the channel and one already received from the channel), so we use 128/2=64 series per buffer per ingester.
+	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 64, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 
 	// The querier.query-ingesters-within flag has been moved to the limits.go file
 	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.11.0

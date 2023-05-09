@@ -64,7 +64,7 @@ func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matc
 			return err
 		}
 
-		req.PreferStreamingChunks = d.cfg.PreferStreamingChunks
+		req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 
 		replicationSet, err := d.GetIngesters(ctx)
 		if err != nil {
@@ -342,11 +342,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					}
 				}
 
-				// TODO: make buffer size smarter, for example:
-				// - buffer fewer series when selecting large time range (and therefore more chunks per series)
-				// - buffer fewer series per ingester when querying many ingesters (to control overall memory consumption)
-				// Note that this value does not control the size of messages sent by ingesters, which may be larger or smaller than this buffer size.
-				streamer := querier.NewSeriesStreamer(stream, len(seriesLabels), d.cfg.StreamingChunksPerIngesterSeriesBufferSize)
+				streamer := querier.NewSeriesStreamer(stream, len(seriesLabels))
 
 				// This goroutine could be left running after replicationSet.Do() returns,
 				// so check before writing to the results chan.
@@ -498,13 +494,13 @@ type seriesChunkStreamsTreeNode struct {
 	index           int                // This is the loser for all nodes except the 0th, where it is the winner.
 	value           labels.Labels      // Value copied from the loser node, or winner for node 0.
 	ingester        seriesChunksStream // Only populated for leaf nodes.
-	nextSeriesIndex int                // Only populated for leaf nodes.
+	nextSeriesIndex uint64             // Only populated for leaf nodes.
 }
 
 func (t *seriesChunkStreamsTree) moveNext(index int) bool {
 	n := &t.nodes[index]
 	n.nextSeriesIndex++
-	if n.nextSeriesIndex > len(n.ingester.Series) {
+	if int(n.nextSeriesIndex) > len(n.ingester.Series) {
 		n.value = nil
 		n.index = -1
 		return false
@@ -513,7 +509,7 @@ func (t *seriesChunkStreamsTree) moveNext(index int) bool {
 	return true
 }
 
-func (t *seriesChunkStreamsTree) Winner() (seriesChunksStream, labels.Labels, int) {
+func (t *seriesChunkStreamsTree) Winner() (seriesChunksStream, labels.Labels, uint64) {
 	n := t.nodes[t.nodes[0].index]
 	return n.ingester, n.value, n.nextSeriesIndex - 1
 }
