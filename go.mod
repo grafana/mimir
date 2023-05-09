@@ -37,7 +37,7 @@ require (
 	github.com/spf13/afero v1.9.2
 	github.com/stretchr/testify v1.8.2
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	github.com/weaveworks/common v0.0.0-20230411130459-4897cec5feed
+	github.com/weaveworks/common v0.0.0-20230509123641-102db1b5bbb9
 	go.uber.org/atomic v1.10.0
 	go.uber.org/goleak v1.2.1
 	golang.org/x/crypto v0.7.0
