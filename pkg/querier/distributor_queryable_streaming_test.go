@@ -21,7 +21,7 @@ func BenchmarkMergingAndSortingSeries(b *testing.B) {
 
 				b.Run(fmt.Sprintf("%v ingesters per zone, %v zones, %v series per ingester", ingestersPerZone, zones, seriesPerIngester), func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
-						loserTreeMergeSeriesSets(seriesSets, zones)
+						MergeSeriesChunkStreams(seriesSets, zones)
 					}
 				})
 			}
@@ -172,7 +172,7 @@ func TestMergingAndSortingSeries(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			zoneCount := 1 // The exact value of this only matters for performance (it's used to pre-allocate a slice of the correct size)
-			actual := loserTreeMergeSeriesSets(testCase.seriesSets, zoneCount)
+			actual := MergeSeriesChunkStreams(testCase.seriesSets, zoneCount)
 			require.Lenf(t, actual, len(testCase.expected), "should be same length as %v", testCase.expected)
 
 			for i := 0; i < len(actual); i++ {
@@ -186,42 +186,6 @@ func TestMergingAndSortingSeries(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Use a loser tree to merge lists of series from each ingester.
-// This assumes we add a new implementation of NewConcreteSeriesSet that doesn't try to sort the list of series again.
-func loserTreeMergeSeriesSets(ingesters []SeriesChunksStream, zoneCount int) []StreamingSeries {
-	tree := newSeriesChunkStreamsTree(ingesters)
-	allSeries := []StreamingSeries{}
-
-	for tree.Next() {
-		nextIngester, nextSeriesFromIngester, nextSeriesIndex := tree.Winner()
-		lastSeriesIndex := len(allSeries) - 1
-
-		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
-			// First time we've seen this series.
-			series := StreamingSeries{
-				Labels: nextSeriesFromIngester,
-				// Why zoneCount? We assume each series is present exactly once in each zone.
-				Sources: make([]StreamingSeriesSource, 1, zoneCount),
-			}
-
-			series.Sources[0] = StreamingSeriesSource{
-				StreamReader: nextIngester.StreamReader,
-				SeriesIndex:  nextSeriesIndex,
-			}
-
-			allSeries = append(allSeries, series)
-		} else {
-			// We've seen this series before.
-			allSeries[lastSeriesIndex].Sources = append(allSeries[lastSeriesIndex].Sources, StreamingSeriesSource{
-				StreamReader: nextIngester.StreamReader,
-				SeriesIndex:  nextSeriesIndex,
-			})
-		}
-	}
-
-	return allSeries
 }
 
 func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) []SeriesChunksStream {

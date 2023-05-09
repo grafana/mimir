@@ -195,6 +195,40 @@ type SeriesChunksStream struct {
 	Series       []labels.Labels
 }
 
+func MergeSeriesChunkStreams(ingesters []SeriesChunksStream, zoneCount int) []StreamingSeries {
+	tree := newSeriesChunkStreamsTree(ingesters)
+	allSeries := []StreamingSeries{}
+
+	for tree.Next() {
+		nextIngester, nextSeriesFromIngester, nextSeriesIndex := tree.Winner()
+		lastSeriesIndex := len(allSeries) - 1
+
+		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
+			// First time we've seen this series.
+			series := StreamingSeries{
+				Labels: nextSeriesFromIngester,
+				// Why zoneCount? We assume each series is present exactly once in each zone.
+				Sources: make([]StreamingSeriesSource, 1, zoneCount),
+			}
+
+			series.Sources[0] = StreamingSeriesSource{
+				StreamReader: nextIngester.StreamReader,
+				SeriesIndex:  nextSeriesIndex,
+			}
+
+			allSeries = append(allSeries, series)
+		} else {
+			// We've seen this series before.
+			allSeries[lastSeriesIndex].Sources = append(allSeries[lastSeriesIndex].Sources, StreamingSeriesSource{
+				StreamReader: nextIngester.StreamReader,
+				SeriesIndex:  nextSeriesIndex,
+			})
+		}
+	}
+
+	return allSeries
+}
+
 func newSeriesChunkStreamsTree(ingesters []SeriesChunksStream) *seriesChunkStreamsTree {
 	nIngesters := len(ingesters)
 	t := seriesChunkStreamsTree{
