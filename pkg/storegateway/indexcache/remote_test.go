@@ -700,7 +700,14 @@ func TestStringCacheKeys_Values(t *testing.T) {
 		"should stringify postings cache key": {
 			key: postingsCacheKey(user, uid.String(), labels.Label{Name: "foo", Value: "bar"}),
 			expected: func() string {
-				hash := blake2b.Sum256([]byte("foo:bar"))
+				encodedLabel := base64.RawURLEncoding.EncodeToString([]byte("foo:bar"))
+				return fmt.Sprintf("P2:%s:%s:%s", user, uid.String(), encodedLabel)
+			}(),
+		},
+		"should hash long postings cache key": {
+			key: postingsCacheKey(user, uid.String(), labels.Label{Name: "foo", Value: strings.Repeat("bar", 11)}),
+			expected: func() string {
+				hash := blake2b.Sum256([]byte("foo:" + strings.Repeat("bar", 11)))
 				encodedHash := base64.RawURLEncoding.EncodeToString(hash[0:])
 
 				return fmt.Sprintf("P2:%s:%s:%s", user, uid.String(), encodedHash)
@@ -748,7 +755,7 @@ func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			for _, key := range testData.keys {
-				assert.Equal(t, testData.expectedLen, len(key))
+				assert.LessOrEqual(t, len(key), testData.expectedLen)
 			}
 		})
 	}
@@ -819,8 +826,8 @@ func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
 	for w := 0; w < numWorkers; w++ {
 		inputPerWorker = append(inputPerWorker, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", w)})
 
-		hash := postingsCacheKeyLabelHash(inputPerWorker[w])
-		expectedPerWorker = append(expectedPerWorker, hash[0:])
+		hash, hashLen := postingsCacheKeyLabelHash(inputPerWorker[w])
+		expectedPerWorker = append(expectedPerWorker, hash[0:hashLen])
 	}
 
 	// Sanity check: ensure expected hashes are different for each worker.
@@ -843,8 +850,8 @@ func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
 			defer wg.Done()
 
 			for r := 0; r < numRunsPerWorker; r++ {
-				actual := postingsCacheKeyLabelHash(inputPerWorker[workerID])
-				assert.Equal(t, expectedPerWorker[workerID], actual[0:])
+				actual, hashLen := postingsCacheKeyLabelHash(inputPerWorker[workerID])
+				assert.Equal(t, expectedPerWorker[workerID], actual[0:hashLen])
 			}
 		}(w)
 	}
