@@ -359,16 +359,6 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 
 // ApplyConfig applies a new configuration to an Alertmanager.
 func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []io.Reader, rawCfg string) error {
-	templateFiles := make([]string, len(conf.Templates))
-	for i, t := range conf.Templates {
-		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
-		if err != nil {
-			return err
-		}
-
-		templateFiles[i] = templateFilepath
-	}
-
 	tmpl, err := loadTemplates(tmpls, withCustomFunctions(am.cfg.UserID))
 	if err != nil {
 		return err
