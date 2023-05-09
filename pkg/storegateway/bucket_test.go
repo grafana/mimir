@@ -921,7 +921,7 @@ func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Contex
 
 type corruptedPostingsCache struct{ noopCache }
 
-func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
+func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (indexcache.Result[labels.Label], []labels.Label) {
 	res := make(map[labels.Label][]byte)
 	for _, k := range keys {
 		res[k] = []byte("corrupted or unknown")
@@ -969,7 +969,7 @@ type postingsReplacingCache struct {
 	vals map[labels.Label][]byte
 }
 
-func (c *postingsReplacingCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
+func (c *postingsReplacingCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits indexcache.Result[labels.Label], misses []labels.Label) {
 	for _, l := range keys {
 		if _, ok := c.vals[l]; !ok {
 			misses = append(misses, l)

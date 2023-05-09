@@ -141,8 +141,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			set: func(id uint64, b []byte) { cache.StorePostings(user, uid(id), lbl, b) },
 			get: func(id uint64) ([]byte, bool) {
 				hits, _ := cache.FetchMultiPostings(ctx, user, uid(id), []labels.Label{lbl})
-				b, ok := hits[lbl]
-
+				b, ok := hits.Lookup(lbl)
 				return b, ok
 			},
 		},

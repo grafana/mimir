@@ -98,10 +98,30 @@ func (c *RemoteIndexCache) StorePostings(userID string, blockID ulid.ULID, l lab
 	c.set(cacheTypePostings, postingsCacheKey(userID, blockID.String(), l), v)
 }
 
+type labelValueMappingResult struct {
+	userID, blockID string
+	keyBuf          *[]byte
+	res             map[string][]byte
+}
+
+func (l labelValueMappingResult) Close() error {
+	postingsCacheKeyLabelHashBufferPool.Put(l.keyBuf)
+	return nil
+}
+
+func (l labelValueMappingResult) Lookup(t labels.Label) ([]byte, bool) {
+	b, ok := l.res[postingsCacheKeyBuf(l.userID, l.blockID, t, l.keyBuf)]
+	return b, ok
+}
+
+func (l labelValueMappingResult) Len() int {
+	return len(l.res)
+}
+
 // FetchMultiPostings fetches multiple postings - each identified by a label -
 // and returns a map containing cache hits, along with a list of missing keys.
 // In case of error, it logs and return an empty cache hits map.
-func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
+func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (_ Result[labels.Label], misses []labels.Label) {
 	blockIDStr := blockID.String()
 
 	keys := make([]string, 0, len(lbls))
@@ -113,33 +133,16 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 	c.requests.WithLabelValues(cacheTypePostings).Add(float64(len(keys)))
 	results := c.remote.GetMulti(ctx, keys)
 	if len(results) == 0 {
-		return nil, lbls
+		return EmptyResult[labels.Label]{}, lbls
 	}
 
-	// Construct the resulting hits map and list of missing keys. We iterate on the input
-	// list of labels to be able to easily create the list of ones in a single iteration.
-	hits = make(map[labels.Label][]byte, len(results))
-	misses = lbls[:0]
-
-	keyBuf := postingsCacheKeyLabelHashBufferPool.Get().(*[]byte)
-	for i, lbl := range lbls {
-		key := postingsCacheKeyBuf(userID, blockIDStr, lbl, keyBuf)
-
-		// Check if the key has been found in the remote cache. If not, we add it to the list
-		// of missing keys.
-		value, ok := results[key]
-		if !ok {
-			misses = misses[:len(misses)+1]
-			lbls[i] = misses[len(misses)-1]
-			misses[len(misses)-1] = lbl
-			continue
-		}
-
-		hits[lbl] = value
-	}
-
-	c.hits.WithLabelValues(cacheTypePostings).Add(float64(len(hits)))
-	return hits, misses
+	c.hits.WithLabelValues(cacheTypePostings).Add(float64(len(results)))
+	return labelValueMappingResult{
+		userID:  userID,
+		blockID: blockIDStr,
+		keyBuf:  postingsCacheKeyLabelHashBufferPool.Get().(*[]byte),
+		res:     results,
+	}, misses
 }
 
 // postingsCacheKey returns the cache key used to store postings matching the input

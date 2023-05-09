@@ -181,12 +181,12 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
-				hits, _ := c.FetchMultiPostings(ctx, userID, blockID, fetchLabels)
-				assert.Equal(b, numHits, len(hits))
+				hits := c.FetchMultiPostings(ctx, userID, blockID, fetchLabels)
+				assert.Equal(b, numHits, hits.Len())
 				actualHits := 0
 				// iterate over the returned map to account for cost of access
 				for i := 0; i < numHits; i++ {
-					_, ok := hits[fetchLabels[i]]
+					_, ok := hits.Lookup(fetchLabels[i])
 					if ok {
 						actualHits++
 					}

@@ -295,10 +295,23 @@ func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l l
 	c.set(cacheKeyPostings{userID, blockID, copyLabel(l)}, v)
 }
 
+type labelsMapResult map[labels.Label][]byte
+
+func (l labelsMapResult) Lookup(t labels.Label) ([]byte, bool) {
+	b, ok := l[t]
+	return b, ok
+}
+
+func (l labelsMapResult) Len() int {
+	return len(l)
+}
+
+func (labelsMapResult) Close() error { return nil }
+
 // FetchMultiPostings fetches multiple postings - each identified by a label -
 // and returns a map containing cache hits, along with a list of missing keys.
-func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
-	hits = map[labels.Label][]byte{}
+func (c *InMemoryIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (_ Result[labels.Label], misses []labels.Label) {
+	hits := labelsMapResult{}
 
 	for _, key := range keys {
 		if b, ok := c.get(cacheKeyPostings{userID, blockID, key}); ok {

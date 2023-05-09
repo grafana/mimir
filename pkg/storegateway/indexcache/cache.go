@@ -8,6 +8,7 @@ package indexcache
 import (
 	"context"
 	"encoding/base64"
+	"io"
 	"reflect"
 	"sort"
 	"strings"
@@ -42,6 +43,27 @@ var (
 	}
 )
 
+type Result[T any] interface {
+	io.Closer
+
+	Lookup(T) ([]byte, bool)
+	Len() int
+}
+
+type EmptyResult[T any] struct{}
+
+func (EmptyResult[T]) Close() error {
+	return nil
+}
+
+func (EmptyResult[T]) Lookup(t T) ([]byte, bool) {
+	return nil, false
+}
+
+func (EmptyResult[T]) Len() int {
+	return 0
+}
+
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
 	// StorePostings stores postings for a single series.
@@ -49,7 +71,7 @@ type IndexCache interface {
 
 	// FetchMultiPostings fetches multiple postings - each identified by a label -
 	// and returns a map containing cache hits, along with a list of missing keys.
-	FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label)
+	FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits Result[labels.Label], misses []labels.Label)
 
 	// StoreSeriesForRef stores a single series.
 	StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte)

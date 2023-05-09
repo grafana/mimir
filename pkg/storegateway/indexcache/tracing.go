@@ -32,7 +32,7 @@ func (t *TracingIndexCache) StorePostings(userID string, blockID ulid.ULID, l la
 	t.c.StorePostings(userID, blockID, l, v)
 }
 
-func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
+func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits Result[labels.Label], misses []labels.Label) {
 	t0 := time.Now()
 	hits, misses = t.c.FetchMultiPostings(ctx, userID, blockID, keys)
 
@@ -40,10 +40,9 @@ func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID strin
 	level.Debug(spanLogger).Log(
 		"msg", "IndexCache.FetchMultiPostings",
 		"requested keys", len(keys),
-		"cache hits", len(hits),
+		"cache hits", hits.Len(),
 		"cache misses", len(misses),
 		"time elapsed", time.Since(t0),
-		"returned bytes", sumBytes(hits),
 		"user_id", userID,
 	)
 	return hits, misses
