@@ -259,7 +259,7 @@ func TestSlowUploadSpeed(t *testing.T) {
 	}
 
 	// Now start uploading block data, slowly, so that it takes longer than http server timeout.
-	// This will only succeed if timeout is overriden for the endpoint.
+	// This will only succeed if timeout is overridden for the endpoint.
 	{
 		const targetDuration = httpServerTimeout * 2
 		chunksFilename := fmt.Sprintf("%s/%s/chunks/000001", tmpDir, block.String())
