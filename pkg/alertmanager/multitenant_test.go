@@ -71,7 +71,9 @@ receivers:
 receivers:
   - name: dummy`
 
-	grafanaConfig = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"grafana-default-email","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"grafana-default-email","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"WH","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
+	grafanaConfig     = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"grafana-default-email","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"grafana-default-email","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"WH","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
+	simpleTemplateOne = `{{ define "some.template.one" }}{{ end }}`
+	simpleTemplateTwo = `{{ define "some.template.two" }}{{ end }}`
 )
 
 func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
@@ -351,6 +353,28 @@ templates:
 	currentConfig, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
 	require.Equal(t, simpleConfigTwo, currentConfig.RawConfig)
+	require.Empty(t, currentConfig.Templates)
+
+	// Ensure the config is reloaded if only templates changed
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		User:      "user1",
+		RawConfig: simpleConfigTwo,
+		Templates: []*alertspb.TemplateDesc{
+			{
+				Filename: "some-template.tmpl",
+				Body:     simpleTemplateOne,
+			},
+		},
+	}))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+
+	currentConfig, cfgExists = am.cfgs["user1"]
+	require.True(t, cfgExists)
+	require.Len(t, currentConfig.Templates, 1)
+	require.Equal(t, "some-template.tmpl", currentConfig.Templates[0].Filename)
+	require.Contains(t, currentConfig.Templates[0].Body, "some.template")
 
 	// Ensure that when a Grafana config is added, it is synced correctly
 	userGrafanaCfg := alertspb.GrafanaAlertConfigDesc{
@@ -2388,6 +2412,210 @@ func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
 	fallbackConfig, err = ComputeFallbackConfig(configFile)
 	require.NoError(t, err)
 	require.Equal(t, simpleConfigOne, string(fallbackConfig))
+}
+
+func Test_configChanged(t *testing.T) {
+	type tc struct {
+		name  string
+		left  alertspb.AlertConfigDesc
+		right alertspb.AlertConfigDesc
+		exp   bool
+	}
+
+	cases := []tc{
+		{
+			name: "matching",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+					{
+						Filename: "template-two.tmpl",
+						Body:     simpleTemplateTwo,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+					{
+						Filename: "template-two.tmpl",
+						Body:     simpleTemplateTwo,
+					},
+				},
+			},
+			exp: false,
+		},
+		{
+			name: "user changed",
+			left: alertspb.AlertConfigDesc{
+				User:      "user2",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			exp: true,
+		},
+		// TODO: this does not work correctly because the configs used for tests do not actually differ.
+		/*{
+			name: "config changed",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigTwo,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			exp: true,
+		},*/
+		{
+			name: "template body changed",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateTwo,
+					},
+				},
+			},
+			exp: true,
+		},
+		{
+			name: "template name changed",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-two.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			exp: true,
+		},
+		{
+			name: "template added",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+					{
+						Filename: "template-two.tmpl",
+						Body:     simpleTemplateTwo,
+					},
+				},
+			},
+			exp: true,
+		},
+		{
+			name: "template removed",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+					{
+						Filename: "template-two.tmpl",
+						Body:     simpleTemplateTwo,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			exp: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := configChanged(c.left, c.right)
+			require.Equal(t, c.exp, r)
+		})
+	}
 }
 
 type passthroughAlertmanagerClient struct {

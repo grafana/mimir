@@ -721,7 +721,6 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
 	var userAmConfig *definition.PostableApiAlertingConfig
 	var err error
-	var hasTemplateChanges bool
 	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
 	var pathsToRemove = make(map[string]struct{})
 
@@ -752,14 +751,10 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 
 		// Removing from pathsToRemove map the files that still exists in the config
 		delete(pathsToRemove, templateFilePath)
-		hasChanged, err := storeTemplateFile(templateFilePath, tmpl.Body)
+		_, err = storeTemplateFile(templateFilePath, tmpl.Body)
 		templates = append(templates, strings.NewReader(tmpl.Body))
 		if err != nil {
 			return err
-		}
-
-		if hasChanged {
-			hasTemplateChanges = true
 		}
 	}
 
@@ -768,7 +763,6 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 		if err != nil {
 			level.Warn(am.logger).Log("msg", "failed to remove file", "file", pathToRemove, "err", err)
 		}
-		hasTemplateChanges = true
 	}
 
 	level.Debug(am.logger).Log("msg", "setting config", "user", cfg.User)
@@ -814,7 +808,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			return err
 		}
 		am.alertmanagers[cfg.User] = newAM
-	} else if am.cfgs[cfg.User].RawConfig != cfg.RawConfig || hasTemplateChanges {
+	} else if configChanged(am.cfgs[cfg.User], cfg) {
 		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
 		// If the config changed, apply the new one.
 		err := existing.ApplyConfig(userAmConfig, templates, rawCfg)
@@ -1305,4 +1299,35 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func configChanged(left, right alertspb.AlertConfigDesc) bool {
+	if left.User != right.User {
+		return true
+	}
+	if left.RawConfig != right.RawConfig {
+		return true
+	}
+
+	existing := make(map[string]string)
+	for _, tm := range left.Templates {
+		existing[tm.Filename] = tm.Body
+	}
+
+	for _, tm := range right.Templates {
+		corr, ok := existing[tm.Filename]
+		if !ok {
+			return true // Right has a template that left does not.
+		}
+		if corr != tm.Body {
+			return true // The template content is different.
+		}
+		delete(existing, tm.Filename)
+	}
+
+	if len(existing) != 0 {
+		return true // Left has a template that right does not.
+	}
+
+	return false
 }
