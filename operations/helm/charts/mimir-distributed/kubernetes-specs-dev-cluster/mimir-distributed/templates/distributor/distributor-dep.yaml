@@ -90,10 +90,10 @@ spec:
             initialDelaySeconds: 45
           resources:
             limits:
-              memory: 5.7Gi
+              memory: 4Gi
             requests:
               cpu: 2
-              memory: 4Gi
+              memory: 2Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
