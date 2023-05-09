@@ -17,9 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/util/shutdownmarker"
-
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -43,7 +42,7 @@ func createStoreGateway(t *testing.T, reg prometheus.Registerer) (*StoreGateway,
 
 func getRingDesc(ctx context.Context, t *testing.T, ringStore *consul.Client) *ring.Desc {
 	desc, err := ringStore.Get(ctx, RingKey)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	return desc.(*ring.Desc)
 }
 
@@ -55,7 +54,7 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 	// ensure that there is no shutdown marker
 	exists, err := shutdownmarker.Exists(shutdownMarkerPath)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.False(t, exists)
 
 	// Start the store-gateway.
@@ -69,7 +68,7 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	require.Equal(t, "unset", response1.Body.String())
 	require.Equal(t, 200, response1.Code)
 	exists, err = shutdownmarker.Exists(shutdownMarkerPath)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.False(t, exists)
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_storegateway_prepare_shutdown_requested If the store-gateway has been requested to prepare for shutdown via endpoint or marker file.
@@ -90,7 +89,7 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	`), "cortex_storegateway_prepare_shutdown_requested"))
 
 	exists, err = shutdownmarker.Exists(shutdownMarkerPath)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.True(t, exists)
 	require.False(t, g.ringLifecycler.ShouldKeepInstanceInTheRingOnShutdown())
 
@@ -111,7 +110,7 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 		cortex_storegateway_prepare_shutdown_requested 0
 	`), "cortex_storegateway_prepare_shutdown_requested"))
 	exists, err = shutdownmarker.Exists(shutdownMarkerPath)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.False(t, exists)
 	require.True(t, g.ringLifecycler.ShouldKeepInstanceInTheRingOnShutdown())
 
@@ -136,10 +135,10 @@ func TestStoreGateway_InitialisePrepareShutdownAtStartup(t *testing.T) {
 	// create a shutdown marker
 	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 	err := shutdownmarker.Create(shutdownMarkerPath)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	// ensure that there is s shutdown marker
 	exists, err := shutdownmarker.Exists(shutdownMarkerPath)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.True(t, exists)
 
 	// Start the store-gateway.
