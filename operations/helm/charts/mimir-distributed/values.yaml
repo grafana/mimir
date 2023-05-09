@@ -2196,6 +2196,7 @@ nginx:
           "" "{{ include "mimir.noAuthTenant" . }}";
         }
 
+        proxy_read_timeout 300;
         server {
           listen 8080;
 
@@ -2539,6 +2540,7 @@ gateway:
             "" "{{ include "mimir.noAuthTenant" . }}";
           }
 
+          proxy_read_timeout 300;
           server {
             listen {{ include "mimir.serverHttpListenPort" . }};
 
