@@ -7,20 +7,28 @@ package rulestore
 
 import (
 	"flag"
+	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
+var supportedCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+
 // Config configures a rule store.
 type Config struct {
 	bucket.Config `yaml:",inline"`
 	Local         local.Config `yaml:"local"`
+
+	// Cache holds the configuration used for the ruler storage cache.
+	Cache cache.BackendConfig `yaml:"cache"`
 }
 
 // RegisterFlags registers the backend storage config.
@@ -30,6 +38,18 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.StorageBackendConfig.ExtraBackends = []string{local.Name}
 	cfg.Local.RegisterFlagsWithPrefix(prefix, f)
 	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "ruler", f, logger)
+
+	f.StringVar(&cfg.Cache.Backend, prefix+"cache.backend", "", fmt.Sprintf("Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except %q. Supported values: %s.", local.Name, strings.Join(supportedCacheBackends, ", ")))
+	cfg.Cache.Memcached.RegisterFlagsWithPrefix(prefix+"cache.memcached.", f)
+	cfg.Cache.Redis.RegisterFlagsWithPrefix(prefix+"cache.redis.", f)
+}
+
+func (cfg *Config) Validate() error {
+	if err := cfg.Config.Validate(); err != nil {
+		return err
+	}
+
+	return cfg.Cache.Validate()
 }
 
 // IsDefaults returns true if the storage options have not been set.

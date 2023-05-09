@@ -1640,6 +1640,20 @@ local:
   # Directory to scan for rules
   # CLI flag: -ruler-storage.local.directory
   [directory: <string> | default = ""]
+
+cache:
+  # Backend for ruler storage cache, if not empty. The cache is supported for
+  # any storage backend except "local". Supported values: memcached, redis.
+  # CLI flag: -ruler-storage.cache.backend
+  [backend: <string> | default = ""]
+
+  # The memcached block configures the Memcached-based caching backend.
+  # The CLI flags prefix for this block configuration is: ruler-storage.cache
+  [memcached: <memcached>]
+
+  # The redis block configures the Redis-based caching backend.
+  # The CLI flags prefix for this block configuration is: ruler-storage.cache
+  [redis: <redis>]
 ```
 
 ### alertmanager
@@ -3722,6 +3736,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.metadata-cache`
 - `query-frontend.results-cache`
+- `ruler-storage.cache`
 
 &nbsp;
 
@@ -3850,6 +3865,7 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.metadata-cache`
 - `query-frontend.results-cache`
+- `ruler-storage.cache`
 
 &nbsp;
 

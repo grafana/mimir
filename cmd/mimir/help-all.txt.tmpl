@@ -1883,6 +1883,94 @@ Usage of ./cmd/mimir/mimir:
     	User assigned identity. If empty, then System assigned identity is used.
   -ruler-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
+  -ruler-storage.cache.backend string
+    	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached, redis.
+  -ruler-storage.cache.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -ruler-storage.cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -ruler-storage.cache.memcached.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -ruler-storage.cache.memcached.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -ruler-storage.cache.memcached.max-get-multi-batch-size int
+    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -ruler-storage.cache.memcached.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -ruler-storage.cache.memcached.max-idle-connections int
+    	The maximum number of idle connections that will be maintained per address. (default 100)
+  -ruler-storage.cache.memcached.max-item-size int
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -ruler-storage.cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -ruler-storage.cache.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -ruler-storage.cache.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ruler-storage.cache.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler-storage.cache.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ruler-storage.cache.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -ruler-storage.cache.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ruler-storage.cache.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ruler-storage.cache.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -ruler-storage.cache.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ruler-storage.cache.redis.connection-pool-size int
+    	Maximum number of connections in the pool. (default 100)
+  -ruler-storage.cache.redis.db int
+    	Database index.
+  -ruler-storage.cache.redis.dial-timeout duration
+    	Client dial timeout. (default 5s)
+  -ruler-storage.cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -ruler-storage.cache.redis.idle-timeout duration
+    	Amount of time after which client closes idle connections. (default 5m0s)
+  -ruler-storage.cache.redis.master-name string
+    	Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
+  -ruler-storage.cache.redis.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -ruler-storage.cache.redis.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -ruler-storage.cache.redis.max-connection-age duration
+    	Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.
+  -ruler-storage.cache.redis.max-get-multi-batch-size int
+    	The maximum size per batch for mget operations. (default 100)
+  -ruler-storage.cache.redis.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -ruler-storage.cache.redis.max-item-size int
+    	The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 16777216)
+  -ruler-storage.cache.redis.min-idle-connections int
+    	Minimum number of idle connections. (default 10)
+  -ruler-storage.cache.redis.password string
+    	Password to use when connecting to Redis.
+  -ruler-storage.cache.redis.read-timeout duration
+    	Client read timeout. (default 3s)
+  -ruler-storage.cache.redis.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ruler-storage.cache.redis.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler-storage.cache.redis.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ruler-storage.cache.redis.tls-enabled
+    	Enable connecting to Redis with TLS.
+  -ruler-storage.cache.redis.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ruler-storage.cache.redis.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ruler-storage.cache.redis.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -ruler-storage.cache.redis.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ruler-storage.cache.redis.username string
+    	Username to use when connecting to Redis.
+  -ruler-storage.cache.redis.write-timeout duration
+    	Client write timeout. (default 3s)
   -ruler-storage.filesystem.dir string
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string

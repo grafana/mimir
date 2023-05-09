@@ -669,7 +669,8 @@ type Mimir struct {
 	QueryFrontendTripperware querymiddleware.Tripperware
 	QueryFrontendCodec       querymiddleware.Codec
 	Ruler                    *ruler.Ruler
-	RulerStorage             rulestore.RuleStore
+	RulerDirectStorage       rulestore.RuleStore
+	RulerCachedStorage       rulestore.RuleStore
 	Alertmanager             *alertmanager.MultitenantAlertmanager
 	Compactor                *compactor.MultitenantCompactor
 	StoreGateway             *storegateway.StoreGateway

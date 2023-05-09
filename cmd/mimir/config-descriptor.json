@@ -10510,6 +10510,512 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "cache",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "backend",
+              "required": false,
+              "desc": "Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except \"local\". Supported values: memcached, redis.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.cache.backend",
+              "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "memcached",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "addresses",
+                  "required": false,
+                  "desc": "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.addresses",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "timeout",
+                  "required": false,
+                  "desc": "The socket read/write timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 200000000,
+                  "fieldFlag": "ruler-storage.cache.memcached.timeout",
+                  "fieldType": "duration"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "The connection timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 200000000,
+                  "fieldFlag": "ruler-storage.cache.memcached.connect-timeout",
+                  "fieldType": "duration"
+                },
+                {
+                  "kind": "field",
+                  "name": "min_idle_connections_headroom_percentage",
+                  "required": false,
+                  "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": -1,
+                  "fieldFlag": "ruler-storage.cache.memcached.min-idle-connections-headroom-percentage",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections",
+                  "required": false,
+                  "desc": "The maximum number of idle connections that will be maintained per address.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_async_concurrency",
+                  "required": false,
+                  "desc": "The maximum number of concurrent asynchronous operations can occur.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 50,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-async-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_async_buffer_size",
+                  "required": false,
+                  "desc": "The maximum number of enqueued asynchronous operations allowed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 25000,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-async-buffer-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_multi_concurrency",
+                  "required": false,
+                  "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-get-multi-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_multi_batch_size",
+                  "required": false,
+                  "desc": "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-get-multi-batch-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_item_size",
+                  "required": false,
+                  "desc": "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1048576,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-item-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_enabled",
+                  "required": false,
+                  "desc": "Enable connecting to Memcached with TLS.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_insecure_skip_verify",
+                  "required": false,
+                  "desc": "Skip validating server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cipher_suites",
+                  "required": false,
+                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-cipher-suites",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_min_version",
+                  "required": false,
+                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-min-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "redis",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "endpoint",
+                  "required": false,
+                  "desc": "Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.endpoint",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "username",
+                  "required": false,
+                  "desc": "Username to use when connecting to Redis.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.username",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "password",
+                  "required": false,
+                  "desc": "Password to use when connecting to Redis.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.password",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "db",
+                  "required": false,
+                  "desc": "Database index.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler-storage.cache.redis.db",
+                  "fieldType": "int"
+                },
+                {
+                  "kind": "field",
+                  "name": "master_name",
+                  "required": false,
+                  "desc": "Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.master-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dial_timeout",
+                  "required": false,
+                  "desc": "Client dial timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.dial-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "read_timeout",
+                  "required": false,
+                  "desc": "Client read timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.read-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "write_timeout",
+                  "required": false,
+                  "desc": "Client write timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.write-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connection_pool_size",
+                  "required": false,
+                  "desc": "Maximum number of connections in the pool.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.redis.connection-pool-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "min_idle_connections",
+                  "required": false,
+                  "desc": "Minimum number of idle connections.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10,
+                  "fieldFlag": "ruler-storage.cache.redis.min-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "idle_timeout",
+                  "required": false,
+                  "desc": "Amount of time after which client closes idle connections.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 300000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.idle-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_connection_age",
+                  "required": false,
+                  "desc": "Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler-storage.cache.redis.max-connection-age",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_item_size",
+                  "required": false,
+                  "desc": "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 16777216,
+                  "fieldFlag": "ruler-storage.cache.redis.max-item-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_async_concurrency",
+                  "required": false,
+                  "desc": "The maximum number of concurrent asynchronous operations can occur.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 50,
+                  "fieldFlag": "ruler-storage.cache.redis.max-async-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_async_buffer_size",
+                  "required": false,
+                  "desc": "The maximum number of enqueued asynchronous operations allowed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 25000,
+                  "fieldFlag": "ruler-storage.cache.redis.max-async-buffer-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_multi_concurrency",
+                  "required": false,
+                  "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.redis.max-get-multi-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_multi_batch_size",
+                  "required": false,
+                  "desc": "The maximum size per batch for mget operations.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.redis.max-get-multi-batch-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_enabled",
+                  "required": false,
+                  "desc": "Enable connecting to Redis with TLS.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.redis.tls-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_insecure_skip_verify",
+                  "required": false,
+                  "desc": "Skip validating server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.redis.tls-insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cipher_suites",
+                  "required": false,
+                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-cipher-suites",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_min_version",
+                  "required": false,
+                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-min-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
