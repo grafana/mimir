@@ -275,6 +275,18 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
+	// validate the default limits
+	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ValidateLimits validates the runtime limits that can be set for each tenant against static configs
+func (c *Config) ValidateLimits(limits validation.Limits) error {
+	if err := c.Querier.ValidateLimits(limits); err != nil {
+		return errors.Wrap(err, "invalid limits config for querier")
+	}
 	return nil
 }
 

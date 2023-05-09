@@ -26,9 +26,11 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/server"
@@ -52,6 +54,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestMimir(t *testing.T) {
@@ -428,6 +431,70 @@ func TestConfigValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestConfig_ValidateLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		testConfig   *Config
+		limitsConfig validation.Limits
+		hasError     bool
+	}{
+		{
+			name:         "default configs should pass validation",
+			testConfig:   newDefaultConfig(),
+			limitsConfig: newDefaultConfig().LimitsConfig,
+		},
+		{
+			name: "non overlapping query-store-after and query-ingesters-within should return error",
+			testConfig: func() *Config {
+				c := newDefaultConfig()
+				c.Querier.QueryStoreAfter = time.Hour
+				return c
+			}(),
+			limitsConfig: func() validation.Limits {
+				limits := newDefaultConfig().LimitsConfig
+				limits.QueryIngestersWithin = model.Duration(time.Minute)
+				return limits
+			}(),
+			hasError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.testConfig.ValidateLimits(tc.limitsConfig)
+			if tc.hasError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// Temporary behavior to keep supporting global query-ingesters-within flag for two Mimir versions
+// TODO: Remove in Mimir 2.11.0
+func TestQueryIngestersWithinGlobalConfigIsUsedInsteadOfDefaultLimitConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+
+	cfg.Querier.QueryIngestersWithin = 5 * time.Hour
+	cfg.Target = []string{Overrides}
+
+	cfg.RuntimeConfig.LoadPath = []string{filepath.Join(dir, "config.yaml")}
+
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
+	require.NoError(t, err)
+	defer c.Server.Stop()
+
+	duration := c.Overrides.QueryIngestersWithin("test")
+
+	require.Equal(t, 5*time.Hour, duration)
+}
+
 func TestConfig_validateFilesystemPaths(t *testing.T) {
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
@@ -758,6 +825,114 @@ func TestFlagDefaults(t *testing.T) {
 
 	require.Equal(t, true, c.Server.GRPCServerPingWithoutStreamAllowed)
 	require.Equal(t, 10*time.Second, c.Server.GRPCServerMinTimeBetweenPings)
+}
+
+func TestOnlyValidRuntimeConfigIsLoaded(t *testing.T) {
+	dir := t.TempDir()
+	loadPath := filepath.Join(dir, "test")
+
+	userID := "12345"
+
+	initialValidConfig := `
+overrides:
+  '12345':
+    query_ingesters_within: 15h
+`
+	err := os.WriteFile(loadPath, []byte(initialValidConfig), 0600)
+	require.NoError(t, err)
+
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+
+	cfg.Target = []string{Overrides}
+
+	cfg.RuntimeConfig.LoadPath = []string{loadPath}
+	cfg.RuntimeConfig.ReloadPeriod = 100 * time.Millisecond
+	cfg.Querier.QueryStoreAfter = 12 * time.Hour
+	cfg.LimitsConfig.QueryIngestersWithin = model.Duration(13 * time.Hour)
+
+	registry := prometheus.NewPedanticRegistry()
+	c, err := New(cfg, registry)
+	require.NoError(t, err)
+
+	// init services
+	sm, err := c.ModuleManager.InitModuleServices(cfg.Target...)
+	require.NoError(t, err)
+	defer c.Server.Stop()
+
+	servs := []services.Service(nil)
+	for _, s := range sm {
+		servs = append(servs, s)
+	}
+	m, err := services.NewManager(servs...)
+	require.NoError(t, err)
+
+	// before the services start, all users have the default limits
+	duration := c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, cfg.LimitsConfig.QueryIngestersWithin, model.Duration(duration))
+
+	// start services
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	require.NoError(t, m.StartAsync(ctx))
+	require.NoError(t, m.AwaitHealthy(ctx))
+
+	// the runtime config is now loaded, so the content of initialValidConfig will be used
+	duration = c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, 15*time.Hour, duration)
+
+	// check load is successful via metric
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err)
+	metric := metrics["cortex_runtime_config_last_reload_successful"].Metric[0]
+	require.NotNil(t, metric.Gauge.Value)
+	require.Equal(t, 1., metric.Gauge.GetValue())
+
+	// write invalid config with query_ingesters_with < query_store_after
+	configYAML2 := `
+overrides:
+  '12345':
+    query_ingesters_within: 2h
+`
+	err = os.WriteFile(loadPath, []byte(configYAML2), 0600)
+	require.NoError(t, err)
+
+	// wait sufficient time for new runtime config to be loaded
+	time.Sleep(cfg.RuntimeConfig.ReloadPeriod * 2)
+
+	// invalid config is ignored, still using initialValidConfig
+	duration = c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, 15*time.Hour, duration)
+
+	// check load was unsuccessful via metric
+	metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err)
+	metric = metrics["cortex_runtime_config_last_reload_successful"].Metric[0]
+	require.NotNil(t, metric.Gauge.Value)
+	require.Equal(t, 0., metric.Gauge.GetValue())
+
+	// write a new valid config
+	anotherValidConfig := `
+overrides:
+  '12345':
+    query_ingesters_within: 20h
+`
+	err = os.WriteFile(loadPath, []byte(anotherValidConfig), 0600)
+	require.NoError(t, err)
+
+	// wait sufficient time for new runtime config to be loaded
+	time.Sleep(cfg.RuntimeConfig.ReloadPeriod * 2)
+
+	// check config has been updated to anotherValidConfig
+	duration = c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, 20*time.Hour, duration)
+
+	// check load is successful via metric
+	metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err)
+	metric = metrics["cortex_runtime_config_last_reload_successful"].Metric[0]
+	require.NotNil(t, metric.Gauge.Value)
+	require.Equal(t, 1., metric.Gauge.GetValue())
 }
 
 // Generates server config, with gRPC listening on random port.

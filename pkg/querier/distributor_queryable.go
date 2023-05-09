@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -38,23 +39,40 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, logger log.Logger) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, logger log.Logger) QueryableWithFilter {
 	return distributorQueryable{
-		logger:               logger,
-		distributor:          distributor,
-		iteratorFn:           iteratorFn,
-		queryIngestersWithin: queryIngestersWithin,
+		logger:      logger,
+		distributor: distributor,
+		iteratorFn:  iteratorFn,
+		cfgProvider: cfgProvider,
 	}
 }
 
+type distributorQueryableConfigProvider interface {
+	QueryIngestersWithin(userID string) time.Duration
+}
+
 type distributorQueryable struct {
-	logger               log.Logger
-	distributor          Distributor
-	iteratorFn           chunkIteratorFunc
-	queryIngestersWithin time.Duration
+	logger      log.Logger
+	distributor Distributor
+	iteratorFn  chunkIteratorFunc
+	cfgProvider distributorQueryableConfigProvider
 }
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	queryIngestersWithin := d.cfgProvider.QueryIngestersWithin(userID)
+	now := time.Now()
+
+	// Don't create distributorQuerier if maxt is not within QueryIngestersWithin w.r.t. current time.
+	if queryIngestersWithin != 0 && maxt < util.TimeToMillis(now.Add(-queryIngestersWithin)) {
+		return storage.NoopQuerier(), nil
+	}
+
 	return &distributorQuerier{
 		logger:               d.logger,
 		distributor:          d.distributor,
@@ -62,13 +80,16 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 		mint:                 mint,
 		maxt:                 maxt,
 		chunkIterFn:          d.iteratorFn,
-		queryIngestersWithin: d.queryIngestersWithin,
+		queryIngestersWithin: queryIngestersWithin,
 	}, nil
 }
 
-func (d distributorQueryable) UseQueryable(now time.Time, _, queryMaxT int64) bool {
-	// Include ingester only if maxt is within QueryIngestersWithin w.r.t. current time.
-	return d.queryIngestersWithin == 0 || queryMaxT >= util.TimeToMillis(now.Add(-d.queryIngestersWithin))
+func (d distributorQueryable) UseQueryable(_ time.Time, _, _ int64) bool {
+	// Always returns true. The proper check is done in `distributorQueryable.Querier()` - if the time range being
+	// queried doesn't overlap with queryIngestersWithin, a noopQuerier will be returned instead.
+	// This code could be simplified and `UseQueryable()` removed, see
+	// https://github.com/grafana/mimir/pull/4287#discussion_r1132488638
+	return true
 }
 
 type distributorQuerier struct {

@@ -235,7 +235,6 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 
 	var cfg Config
 	flagext.DefaultValues(&cfg)
-	cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 	// Mock distributor to return chunks containing samples outside the queried range.
 	distributor := &mockDistributor{}
@@ -283,7 +282,9 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		},
 		nil)
 
-	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+	limits := defaultLimitsConfig()
+	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
@@ -326,8 +327,12 @@ func TestBatchMergeChunks(t *testing.T) {
 
 	var cfg Config
 	flagext.DefaultValues(&cfg)
-	cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
-	cfg.BatchIterators = true    // Always use the Batch iterator - regression test
+	cfg.BatchIterators = true // Always use the Batch iterator - regression test
+
+	limits := defaultLimitsConfig()
+	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
 
 	s1 := []mimirpb.Sample{}
 	s2 := []mimirpb.Sample{}
@@ -367,9 +372,6 @@ func TestBatchMergeChunks(t *testing.T) {
 			},
 		},
 		nil)
-
-	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:     logger,
@@ -501,11 +503,12 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	})
 	cfg := Config{}
 	for _, c := range testCases {
-		cfg.QueryIngestersWithin = c.queryIngestersWithin
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
 
-			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+			limits := defaultLimitsConfig()
+			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
+			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
 			// We don't have to actually query the storage in this test, so we initialize the querier
@@ -777,10 +780,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = testData.maxQueryLookback
+			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
@@ -933,11 +936,11 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
 			limits.MaxLabelsQueryLength = testData.maxLabelsQueryLength
+			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
@@ -1135,12 +1138,14 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	for _, c := range testCases {
-		cfg.QueryIngestersWithin = c.queryIngestersWithin
 		cfg.QueryStoreAfter = c.queryStoreAfter
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
 
-			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+			limits := defaultLimitsConfig()
+			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
+			overrides, err := validation.NewOverrides(limits, nil)
+
 			require.NoError(t, err)
 
 			// Mock the blocks storage to return an empty SeriesSet (we just need to check whether
@@ -1217,29 +1222,29 @@ func TestStoreQueryable(t *testing.T) {
 	require.True(t, m.useQueryableCalled) // storeQueryable wraps QueryableWithFilter, so it must call its UseQueryable method.
 }
 
-func TestConfig_Validate(t *testing.T) {
+func TestConfig_ValidateLimits(t *testing.T) {
 	tests := map[string]struct {
-		setup    func(cfg *Config)
+		setup    func(cfg *Config, limits *validation.Limits)
 		expected error
 	}{
 		"should pass with default config": {
-			setup: func(cfg *Config) {},
+			setup: func(cfg *Config, limits *validation.Limits) {},
 		},
 		"should pass if 'query store after' is enabled and shuffle-sharding is disabled": {
-			setup: func(cfg *Config) {
+			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.QueryStoreAfter = time.Hour
 			},
 		},
 		"should pass if both 'query store after' and 'query ingesters within' are set and 'query store after' < 'query ingesters within'": {
-			setup: func(cfg *Config) {
+			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.QueryStoreAfter = time.Hour
-				cfg.QueryIngestersWithin = 2 * time.Hour
+				limits.QueryIngestersWithin = model.Duration(2 * time.Hour)
 			},
 		},
 		"should fail if both 'query store after' and 'query ingesters within' are set and 'query store after' > 'query ingesters within'": {
-			setup: func(cfg *Config) {
+			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.QueryStoreAfter = 3 * time.Hour
-				cfg.QueryIngestersWithin = 2 * time.Hour
+				limits.QueryIngestersWithin = model.Duration(2 * time.Hour)
 			},
 			expected: errBadLookbackConfigs,
 		},
@@ -1249,8 +1254,9 @@ func TestConfig_Validate(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			cfg := &Config{}
 			flagext.DefaultValues(cfg)
-			testData.setup(cfg)
-			assert.Equal(t, testData.expected, cfg.Validate())
+			limits := defaultLimitsConfig()
+			testData.setup(cfg, &limits)
+			assert.Equal(t, testData.expected, cfg.ValidateLimits(limits))
 		})
 	}
 }

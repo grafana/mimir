@@ -25,6 +25,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
@@ -265,7 +266,17 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 		// no need to initialize module if load path is empty
 		return nil, nil
 	}
-	t.Cfg.RuntimeConfig.Loader = loadRuntimeConfig
+
+	loader := runtimeConfigLoader{validate: t.Cfg.ValidateLimits}
+	t.Cfg.RuntimeConfig.Loader = loader.load
+
+	// QueryIngestersWithin is moving from a global config that can in the querier yaml to a limit config
+	// We need to preserve the option in the querier yaml for two releases
+	// If the querier config is configured by the user, the default limit is overwritten
+	// TODO: Remove in Mimir 2.11.0
+	if t.Cfg.Querier.QueryIngestersWithin != querier.DefaultQuerierCfgQueryIngestersWithin {
+		t.Cfg.LimitsConfig.QueryIngestersWithin = model.Duration(t.Cfg.Querier.QueryIngestersWithin)
+	}
 
 	// make sure to set default limits before we start loading configuration into memory
 	validation.SetDefaultLimitsForYAMLUnmarshalling(t.Cfg.LimitsConfig)
@@ -333,12 +344,8 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.DistributorRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Distributor.InstanceLimitsFn = distributorInstanceLimits(t.RuntimeConfig)
 
-	// Only enable shuffle sharding on the read path when `query-ingesters-within`
-	// is non-zero since otherwise we can't determine if an ingester should be part
-	// of a tenant's shuffle sharding subring (we compare its registration time with
-	// the lookback period).
-	if t.Cfg.Querier.ShuffleShardingIngestersEnabled && t.Cfg.Querier.QueryIngestersWithin > 0 {
-		t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Querier.QueryIngestersWithin
+	if t.Cfg.Querier.ShuffleShardingIngestersEnabled {
+		t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.BlocksStorage.TSDB.Retention
 	}
 
 	// Check whether the distributor can join the distributors ring, which is
