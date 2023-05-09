@@ -273,7 +273,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	// QueryIngestersWithin is moving from a global config that can in the querier yaml to a limit config
 	// We need to preserve the option in the querier yaml for two releases
 	// If the querier config is configured by the user, the default limit is overwritten
-	// TODO: Remove in Mimir 2.10.0
+	// TODO: Remove in Mimir 2.11.0
 	if t.Cfg.Querier.QueryIngestersWithin != querier.DefaultQuerierCfgQueryIngestersWithin {
 		t.Cfg.LimitsConfig.QueryIngestersWithin = model.Duration(t.Cfg.Querier.QueryIngestersWithin)
 	}
