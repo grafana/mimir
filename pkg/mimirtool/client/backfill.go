@@ -60,7 +60,7 @@ func drainAndCloseBody(resp *http.Response) {
 
 func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx *logrus.Entry, sleepTime time.Duration) error {
 	// blockMeta returned by getBlockMeta will have thanos.files section pre-populated.
-	blockMeta, err := getBlockMeta(blockDir)
+	blockMeta, err := GetBlockMeta(blockDir)
 	if err != nil {
 		return err
 	}
@@ -177,9 +177,9 @@ func (c *MimirClient) uploadBlockFile(ctx context.Context, tf metadata.File, blo
 	return nil
 }
 
-// getBlockMeta reads meta.json file, and adds (or replaces) thanos.files section with
+// GetBlockMeta reads meta.json file, and adds (or replaces) thanos.files section with
 // list of local files from the local block.
-func getBlockMeta(blockDir string) (metadata.Meta, error) {
+func GetBlockMeta(blockDir string) (metadata.Meta, error) {
 	var blockMeta metadata.Meta
 
 	metaPath := filepath.Join(blockDir, block.MetaFilename)
