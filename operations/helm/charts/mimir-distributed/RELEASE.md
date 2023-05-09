@@ -75,9 +75,11 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
      For example, `2.6.0`.
 
-   - Create or update the release notes in [release notes](https://github.com/grafana/mimir/tree/mimir-distributed-release-4.2/docs/sources/helm-charts/mimir-distributed/release-notes).
+   - Create or update the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory.
 
      The release notes should refer to the correct Mimir and GEM versions and their specific documentation version.
+
+     > **Note:** This step can be done in a separate PR and shouldn't block release candidate from getting published.
 
    - Update the Mimir and GEM documentation version parameters in [\_index.md](https://github.com/grafana/mimir/blob/main/docs/sources/helm-charts/mimir-distributed/_index.md)
 
@@ -128,7 +130,9 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
    For example `user/update-mimir-distributed-release-x.y-final`.
 
-1. Update versions in the `user/update-mimir-distributed-release-x.y-final` branch.
+1. Optionally finalise release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
+
+   - Update and finalize the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory if there has been some changes after release candidate.
 
    - Set the `version` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the desired final release version.
 
@@ -136,7 +140,9 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
      > **Note:** Once this change is merged to `mimir-distributed-x.y` branch, it will trigger the release process GitHub Action.
 
-   - There shouldn't be anymore update needed in release notes and documentation because that has been done in the release candidate step above.
+   - There shouldn't be anymore update needed in documentation because that has been done in the release candidate step above.
+
+   - From the root directory of the repository, run `make doc` to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) file.
 
 1. Open PR to release branch
 
