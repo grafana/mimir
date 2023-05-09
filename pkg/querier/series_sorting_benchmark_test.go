@@ -3,7 +3,6 @@
 package querier
 
 import (
-	"container/heap"
 	"fmt"
 	"math/rand"
 	"sort"
@@ -12,8 +11,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
 func BenchmarkMergingAndSortingSeries(b *testing.B) {
@@ -24,11 +21,6 @@ func BenchmarkMergingAndSortingSeries(b *testing.B) {
 
 				b.Run(fmt.Sprintf("%v ingesters per zone, %v zones, %v series per ingester", ingestersPerZone, zones, seriesPerIngester), func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
-						// Reset the test data.
-						for i := range seriesSets {
-							seriesSets[i].NextSeriesIndex = 0
-						}
-
 						loserTreeMergeSeriesSets(seriesSets, zones)
 					}
 				})
@@ -173,132 +165,22 @@ func TestMergingAndSortingSeries(t *testing.T) {
 		},
 	}
 
-	implementations := map[string]func([]ingesterSeries, int) []mergedSeries{
-		"naive":      naiveMergeAndSortSeriesSets,
-		"heap":       heapMergeSeriesSets,
-		"loser tree": loserTreeMergeSeriesSets,
-	}
-
-	zoneCount := 1
-
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			for implementationName, implementationFunc := range implementations {
-				t.Run(implementationName, func(t *testing.T) {
-					// Reset the test data.
-					for i := range testCase.seriesSets {
-						testCase.seriesSets[i].NextSeriesIndex = 0
-					}
+			zoneCount := 1 // The exact value of this only matters for performance (it's used to pre-allocate a slice of the correct size)
+			actual := loserTreeMergeSeriesSets(testCase.seriesSets, zoneCount)
+			require.Lenf(t, actual, len(testCase.expected), "should be same length as %v", testCase.expected)
 
-					actual := implementationFunc(testCase.seriesSets, zoneCount)
-					require.Lenf(t, actual, len(testCase.expected), "should be same length as %v", testCase.expected)
+			for i := 0; i < len(actual); i++ {
+				actualSeries := actual[i]
+				expectedSeries := testCase.expected[i]
 
-					for i := 0; i < len(actual); i++ {
-						actualSeries := actual[i]
-						expectedSeries := testCase.expected[i]
+				require.Equal(t, expectedSeries.Labels, actualSeries.Labels)
 
-						require.Equal(t, expectedSeries.Labels, actualSeries.Labels)
-
-						// We don't care about the order.
-						require.ElementsMatch(t, expectedSeries.Sources, actualSeries.Sources, "series %v", actualSeries.Labels.String())
-					}
-				})
+				// We don't care about the order.
+				require.ElementsMatch(t, expectedSeries.Sources, actualSeries.Sources, "series %v", actualSeries.Labels.String())
 			}
 		})
-	}
-}
-
-// Equivalent of current naive implementation
-func naiveMergeAndSortSeriesSets(ingesters []ingesterSeries, zoneCount int) []mergedSeries {
-	hashToStreamingSeries := map[string]mergedSeries{}
-
-	for _, ingester := range ingesters {
-		for seriesIndex, seriesLabels := range ingester.Series {
-			key := client.LabelsToKeyString(seriesLabels)
-			series, exists := hashToStreamingSeries[key]
-
-			if !exists {
-				series = mergedSeries{
-					Labels: seriesLabels,
-					// Why zoneCount? We assume each series is present exactly one in each zone.
-					Sources: make([]mergedSeriesSource, 0, zoneCount),
-				}
-			}
-
-			series.Sources = append(series.Sources, mergedSeriesSource{
-				SeriesIndex: seriesIndex,
-				Ingester:    ingester.IngesterName,
-			})
-
-			hashToStreamingSeries[key] = series
-		}
-	}
-
-	allSeries := make([]mergedSeries, 0, len(hashToStreamingSeries))
-
-	for _, s := range hashToStreamingSeries {
-		allSeries = append(allSeries, s)
-	}
-
-	// Sort the series, just like NewConcreteSeriesSet does
-	sort.Sort(bySeriesLabels(allSeries))
-
-	return allSeries
-}
-
-// Use a heap to merge lists of series from each ingester.
-// This assumes we add a new implementation of NewConcreteSeriesSet that doesn't try to sort the list of series again.
-func heapMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []mergedSeries {
-	if len(ingesters) == 0 {
-		return []mergedSeries{}
-	}
-
-	ingesterPointers := make([]*ingesterSeries, len(ingesters))
-	for i, _ := range ingesters {
-		ingesterPointers[i] = &ingesters[i]
-	}
-
-	h := ingesterPriorityQueue(ingesterPointers)
-	heap.Init(&h)
-
-	// TODO: can we guess the size of this? Or calculate it by building a map of all series' hashes?
-	allSeries := []mergedSeries{}
-
-	for {
-		nextIngester := h[0]
-
-		if len(nextIngester.Series) == nextIngester.NextSeriesIndex {
-			// Ingesters with no series remaining sort last, so if we've reached an ingester with no series remaining, we are done.
-			return allSeries
-		}
-
-		nextSeriesFromIngester := nextIngester.Series[nextIngester.NextSeriesIndex]
-		lastSeriesIndex := len(allSeries) - 1
-
-		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
-			// First time we've seen this series.
-			series := mergedSeries{
-				Labels: nextSeriesFromIngester,
-				// Why zoneCount? We assume each series is present exactly once in each zone.
-				Sources: make([]mergedSeriesSource, 1, zoneCount),
-			}
-
-			series.Sources[0] = mergedSeriesSource{
-				Ingester:    nextIngester.IngesterName,
-				SeriesIndex: nextIngester.NextSeriesIndex,
-			}
-
-			allSeries = append(allSeries, series)
-		} else {
-			// We've seen this series before.
-			allSeries[lastSeriesIndex].Sources = append(allSeries[lastSeriesIndex].Sources, mergedSeriesSource{
-				Ingester:    nextIngester.IngesterName,
-				SeriesIndex: nextIngester.NextSeriesIndex,
-			})
-		}
-
-		nextIngester.NextSeriesIndex++
-		heap.Fix(&h, 0)
 	}
 }
 
@@ -353,18 +235,6 @@ type mergedSeriesSource struct {
 type ingesterSeries struct {
 	IngesterName string
 	Series       []labels.Labels
-
-	// Required only for heap sort
-	NextSeriesIndex int
-}
-
-func (i *ingesterSeries) Next() bool {
-	if i.NextSeriesIndex >= len(i.Series) {
-		return false
-	}
-
-	i.NextSeriesIndex++
-	return true
 }
 
 func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) []ingesterSeries {
@@ -397,45 +267,6 @@ type byLabels []labels.Labels
 func (b byLabels) Len() int           { return len(b) }
 func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }
-
-type bySeriesLabels []mergedSeries
-
-func (b bySeriesLabels) Len() int           { return len(b) }
-func (b bySeriesLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b bySeriesLabels) Less(i, j int) bool { return labels.Compare(b[i].Labels, b[j].Labels) < 0 }
-
-type ingesterPriorityQueue []*ingesterSeries
-
-func (pq ingesterPriorityQueue) Len() int { return len(pq) }
-
-func (pq ingesterPriorityQueue) Less(i, j int) bool {
-	if len(pq[i].Series) == pq[i].NextSeriesIndex {
-		return false
-	}
-
-	if len(pq[j].Series) == pq[j].NextSeriesIndex {
-		return true
-	}
-
-	return labels.Compare(pq[i].Series[pq[i].NextSeriesIndex], pq[j].Series[pq[j].NextSeriesIndex]) < 0
-}
-
-func (pq ingesterPriorityQueue) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-}
-
-func (pq *ingesterPriorityQueue) Push(x any) {
-	item := x.(*ingesterSeries)
-	*pq = append(*pq, item)
-}
-
-func (pq *ingesterPriorityQueue) Pop() any {
-	old := *pq
-	n := len(old)
-	item := old[n-1]
-	*pq = old[0 : n-1]
-	return item
-}
 
 func NewTree(ingesters []ingesterSeries) *Tree {
 	nIngesters := len(ingesters)
