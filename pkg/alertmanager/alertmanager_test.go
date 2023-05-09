@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -93,7 +94,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(cfg, cfgRaw, &url.URL{}))
+	tmpls := make([]io.Reader, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
 
 	now := time.Now()
 
@@ -177,7 +179,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(cfg, cfgRaw, &url.URL{}))
+	tmpls := make([]io.Reader, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
