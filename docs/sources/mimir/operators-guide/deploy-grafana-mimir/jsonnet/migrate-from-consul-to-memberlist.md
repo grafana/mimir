@@ -63,7 +63,7 @@ You can monitor following metrics to check if mirroring was enabled on all compo
 - `rate(cortex_multikv_mirror_write_errors_total[1m])` – shows rate of write errors to secondary KV store, in errors per second.
 
 After mirroring is enabled, you should see a key for each Mimir hash ring in the [Memberlist cluster information]({{< relref "../../../references/http-api/index.md#memberlist-cluster" >}}) admin page.
-See [list of components that use hash ring]({{< relref "../../architecture/hash-ring/index.md" >}}).
+See [list of components that use hash ring]({{< relref "../../../references/architecture/hash-ring/index.md" >}}).
 
 ## Step 3: Switch Primary and Secondary store
 

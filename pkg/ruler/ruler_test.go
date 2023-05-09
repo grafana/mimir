@@ -173,7 +173,7 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ..
 	options := applyPrepareOptions(opts...)
 	manager := prepareRulerManager(t, cfg, opts...)
 
-	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
+	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
 	require.NoError(t, err)
 
 	// Start the ruler if requested to do so.
@@ -461,7 +461,7 @@ func TestGetRules(t *testing.T) {
 			totalConfiguredRules := 0
 
 			forEachRuler(func(rID string, r *Ruler) {
-				localRules, err := r.listRules(context.Background(), rulerSyncReasonPeriodic)
+				localRules, err := r.listRuleGroupsToSync(context.Background(), rulerSyncReasonPeriodic)
 				require.NoError(t, err)
 				for _, rules := range localRules {
 					totalLoadedRules += len(rules)
@@ -905,7 +905,7 @@ func TestSharding(t *testing.T) {
 			}
 
 			// Always add ruler1 to expected rulers, even if there is no ring (no sharding).
-			loadedRules1, err := r1.listRules(context.Background(), rulerSyncReasonPeriodic)
+			loadedRules1, err := r1.listRuleGroupsToSync(context.Background(), rulerSyncReasonPeriodic)
 			require.NoError(t, err)
 
 			expected := expectedRulesMap{
@@ -915,7 +915,7 @@ func TestSharding(t *testing.T) {
 			addToExpected := func(id string, r *Ruler) {
 				// Only expect rules from other rulers when using ring, and they are present in the ring.
 				if r != nil && rulerRing != nil && rulerRing.HasInstance(id) {
-					loaded, err := r.listRules(context.Background(), rulerSyncReasonPeriodic)
+					loaded, err := r.listRuleGroupsToSync(context.Background(), rulerSyncReasonPeriodic)
 					require.NoError(t, err)
 					// Normalize nil map to empty one.
 					if loaded == nil {
@@ -969,7 +969,7 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 	require.Len(t, obj.Objects(), 3)
 
 	cfg := defaultRulerConfig(t)
-	api, err := NewRuler(cfg, nil, nil, log.NewNopLogger(), rs, nil)
+	api, err := NewRuler(cfg, nil, nil, log.NewNopLogger(), rs, rs, nil)
 	require.NoError(t, err)
 
 	{
@@ -1039,7 +1039,7 @@ func callDeleteTenantAPI(t *testing.T, api *Ruler, userID string) {
 }
 
 func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID string, expectedDeleted bool) {
-	list, err := r.store.ListRuleGroupsForUserAndNamespace(context.Background(), userID, "")
+	list, err := r.directStore.ListRuleGroupsForUserAndNamespace(context.Background(), userID, "")
 	require.NoError(t, err)
 
 	if expectedDeleted {
@@ -1285,6 +1285,82 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 			logger := log.NewNopLogger()
 
 			actual := filterRuleGroupsByEnabled(testData.configs, testData.limits, logger)
+			assert.Equal(t, testData.expected, actual)
+		})
+	}
+}
+
+func TestFilterRuleGroupsByNotMissing(t *testing.T) {
+	tests := map[string]struct {
+		configs  map[string]rulespb.RuleGroupList
+		missing  rulespb.RuleGroupList
+		expected map[string]rulespb.RuleGroupList
+	}{
+		"should return an empty map on empty input": {
+			configs:  nil,
+			expected: nil,
+		},
+		"should remove the input missing rule groups": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+			missing: rulespb.RuleGroupList{
+				mockRuleGroup("group-3", "user-1"),
+				mockRuleGroup("group-2", "user-2"),
+			},
+			expected: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+				},
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+		},
+		"should remove an user from the rule groups configs if all their rule groups are missing": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+			missing: rulespb.RuleGroupList{
+				mockRuleGroup("group-1", "user-1"),
+				mockRuleGroup("group-2", "user-1"),
+				mockRuleGroup("group-3", "user-1"),
+			},
+			expected: map[string]rulespb.RuleGroupList{
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			logger := log.NewNopLogger()
+
+			actual := filterRuleGroupsByNotMissing(testData.configs, testData.missing, logger)
 			assert.Equal(t, testData.expected, actual)
 		})
 	}

@@ -900,6 +900,7 @@ func (s *BucketStore) recordSeriesStats(stats *queryStats) {
 	s.metrics.seriesDataFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("series", "").Observe(float64(stats.seriesProcessedSizeSum))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetchedSizeSum))
+	s.metrics.seriesRefetches.Add(float64(stats.seriesRefetches))
 }
 
 func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
@@ -1549,10 +1550,18 @@ func (b *bucketBlock) indexFilename() string {
 	return path.Join(b.meta.ULID.String(), block.IndexFilename)
 }
 
-func (b *bucketBlock) readIndexRange(ctx context.Context, off, length int64) ([]byte, error) {
+func (b *bucketBlock) indexRangeReader(ctx context.Context, off, length int64) (io.ReadCloser, error) {
 	r, err := b.bkt.GetRange(ctx, b.indexFilename(), off, length)
 	if err != nil {
-		return nil, errors.Wrap(err, "get range reader")
+		return nil, errors.Wrap(err, "get index range reader")
+	}
+	return r, nil
+}
+
+func (b *bucketBlock) readIndexRange(ctx context.Context, off, length int64) ([]byte, error) {
+	r, err := b.indexRangeReader(ctx, off, length)
+	if err != nil {
+		return nil, err
 	}
 	defer runutil.CloseWithLogOnErr(b.logger, r, "readIndexRange close range reader")
 

@@ -176,6 +176,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
 		{Desc: "Status", Path: "/multitenant_alertmanager/status"},
 		{Desc: "Ring status", Path: "/multitenant_alertmanager/ring"},
+		{Desc: "Alertmanager", Path: "/alertmanager"},
 	})
 
 	// Ensure this route is registered before the prefixed AM route
@@ -253,7 +254,7 @@ type Ingester interface {
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
 }
 
-// RegisterIngester registers the ingesters HTTP and GRPC service
+// RegisterIngester registers the ingester HTTP and gRPC services.
 func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 

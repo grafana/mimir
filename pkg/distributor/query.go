@@ -53,7 +53,7 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 	return result, err
 }
 
-// QueryStream multiple ingesters via the streaming interface and returns big ol' set of chunks.
+// QueryStream queries multiple ingesters via the streaming interface and returns a big ol' set of chunks.
 func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (*ingester_client.QueryStreamResponse, error) {
 	var result *ingester_client.QueryStreamResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {

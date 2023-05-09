@@ -16,11 +16,6 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 )
 
-type mockRuleStore struct {
-	rules map[string]rulespb.RuleGroupList
-	mtx   sync.Mutex
-}
-
 var (
 	delim       = "/"
 	interval, _ = time.ParseDuration("1m")
@@ -46,10 +41,24 @@ var (
 	}
 )
 
+type mockRuleStore struct {
+	rules        map[string]rulespb.RuleGroupList
+	missingRules rulespb.RuleGroupList
+	mtx          sync.Mutex
+}
+
 func newMockRuleStore(rules map[string]rulespb.RuleGroupList) *mockRuleStore {
 	return &mockRuleStore{
 		rules: rules,
 	}
+}
+
+// setMissingRuleGroups configures the list of rule groups what will be returned as missing
+// from LoadRuleGroups().
+func (m *mockRuleStore) setMissingRuleGroups(missing rulespb.RuleGroupList) {
+	m.mtx.Lock()
+	m.missingRules = missing
+	m.mtx.Unlock()
 }
 
 func (m *mockRuleStore) ListAllUsers(_ context.Context) ([]string, error) {
@@ -84,7 +93,7 @@ func (m *mockRuleStore) ListRuleGroupsForUserAndNamespace(_ context.Context, use
 	return result, nil
 }
 
-func (m *mockRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) error {
+func (m *mockRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) (rulespb.RuleGroupList, error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -103,12 +112,12 @@ func (m *mockRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[str
 			key := user + delim + base64.URLEncoding.EncodeToString([]byte(namespace)) + delim + base64.URLEncoding.EncodeToString([]byte(name))
 			mgr, ok := gm[key]
 			if !ok {
-				return fmt.Errorf("failed to get rule group user %s", gr.GetUser())
+				return nil, fmt.Errorf("failed to get rule group user %s", gr.GetUser())
 			}
 			*gr = *mgr
 		}
 	}
-	return nil
+	return m.missingRules, nil
 }
 
 func (m *mockRuleStore) GetRuleGroup(_ context.Context, userID string, namespace string, group string) (*rulespb.RuleGroupDesc, error) {

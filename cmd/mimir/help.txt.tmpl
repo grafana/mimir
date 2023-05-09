@@ -511,6 +511,22 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -ruler-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
+  -ruler-storage.cache.backend string
+    	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached, redis.
+  -ruler-storage.cache.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -ruler-storage.cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -ruler-storage.cache.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -ruler-storage.cache.redis.db int
+    	Database index.
+  -ruler-storage.cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -ruler-storage.cache.redis.password string
+    	Password to use when connecting to Redis.
+  -ruler-storage.cache.redis.username string
+    	Username to use when connecting to Redis.
   -ruler-storage.filesystem.dir string
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string

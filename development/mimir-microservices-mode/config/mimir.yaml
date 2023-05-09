@@ -77,6 +77,10 @@ ruler:
 
 ruler_storage:
   backend: s3
+
+  cache:
+    # Cache is configured via CLI flags. See docker-compose.jsonnet
+
   s3:
     bucket_name:       mimir-ruler
     endpoint:          minio:9000

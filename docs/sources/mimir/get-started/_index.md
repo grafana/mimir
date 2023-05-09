@@ -21,8 +21,8 @@ You can get started with Grafana Mimir _imperatively_ or _declaratively_:
 - Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](/docs/grafana-cloud/data-configuration/agent/install_agent/).
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
-> **Note:** The instructions that follow help you to deploy Grafana Mimir in [Monolithic mode]({{< relref "../operators-guide/architecture/deployment-modes/index.md#monolithic-mode" >}}).
-> For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../operators-guide/architecture/deployment-modes/index.md" >}}).
+> **Note:** The instructions that follow help you to deploy Grafana Mimir in [Monolithic mode]({{< relref "../references/architecture/deployment-modes/index.md#monolithic-mode" >}}).
+> For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../references/architecture/deployment-modes/index.md" >}}).
 
 ## Download Grafana Mimir
 

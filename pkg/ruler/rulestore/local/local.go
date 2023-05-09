@@ -25,7 +25,7 @@ type Config struct {
 	Directory string `yaml:"directory"`
 }
 
-// RegisterFlags registers flags.
+// RegisterFlagsWithPrefix registers flags with the input prefix.
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Directory, prefix+"local.directory", "", "Directory to scan for rules")
 }
@@ -89,9 +89,9 @@ func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID s
 	return l.loadAllRulesGroupsForUser(ctx, userID)
 }
 
-func (l *Client) LoadRuleGroups(_ context.Context, _ map[string]rulespb.RuleGroupList) error {
+func (l *Client) LoadRuleGroups(_ context.Context, _ map[string]rulespb.RuleGroupList) (rulespb.RuleGroupList, error) {
 	// This Client already loads the rules in its List methods, there is nothing left to do here.
-	return nil
+	return nil, nil
 }
 
 // GetRuleGroup implements RuleStore
