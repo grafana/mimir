@@ -257,9 +257,6 @@ templates:
 		userDir := dirs["user"]
 		require.NotZero(t, userDir)
 		require.True(t, dirExists(t, userDir))
-		require.True(t, dirExists(t, filepath.Join(userDir, templatesDir)))
-		require.True(t, fileExists(t, filepath.Join(userDir, templatesDir, "first.tpl")))
-		require.True(t, fileExists(t, filepath.Join(userDir, templatesDir, "second.tpl")))
 	}
 }
 
@@ -328,9 +325,11 @@ templates:
 	user3Dir := dirs["user3"]
 	require.NotZero(t, user3Dir)
 	require.True(t, dirExists(t, user3Dir))
-	require.True(t, dirExists(t, filepath.Join(user3Dir, templatesDir)))
-	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "first.tpl")))
-	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "second.tpl")))
+	finalUser3Cfg, ok := am.cfgs["user3"]
+	require.True(t, ok)
+	require.Len(t, finalUser3Cfg.Templates, 2)
+	require.Equal(t, "first.tpl", finalUser3Cfg.Templates[0].Filename)
+	require.Equal(t, "second.tpl", finalUser3Cfg.Templates[1].Filename)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -488,9 +487,6 @@ templates:
 
 	// Hierarchy that existed before should exist again.
 	require.True(t, dirExists(t, user3Dir))
-	require.True(t, dirExists(t, filepath.Join(user3Dir, templatesDir)))
-	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "first.tpl")))
-	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "second.tpl")))
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -515,8 +511,6 @@ templates:
 	require.NoError(t, err)
 
 	require.True(t, dirExists(t, user3Dir))
-	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "first.tpl")))
-	require.False(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "second.tpl")))
 }
 
 func TestMultitenantAlertmanager_FirewallShouldBlockHTTPBasedReceiversWhenEnabled(t *testing.T) {

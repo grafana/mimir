@@ -719,59 +719,16 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
-	var userAmConfig *definition.PostableApiAlertingConfig
-	var err error
-	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
-	var pathsToRemove = make(map[string]struct{})
-
-	// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
-	// The reason for this that the config.Load function uses the origin "config",
-	// which is correct, but Mimir uses config.Load to validate both API requests and tenant
-	// configurations. This means metrics from API requests are confused with metrics from
-	// tenant configurations. To avoid this confusion, we use a different origin.
-	validateMatchersInConfigDesc(am.logger, "tenant", cfg)
-
-	// List existing files to keep track of the ones to be removed
-	if oldTemplateFiles, err := os.ReadDir(userTemplateDir); err == nil {
-		for _, file := range oldTemplateFiles {
-			templateFilePath, err := safeTemplateFilepath(userTemplateDir, file.Name())
-			if err != nil {
-				return err
-			}
-			pathsToRemove[templateFilePath] = struct{}{}
-		}
-	}
-
-	templates := make([]io.Reader, 0, len(cfg.Templates))
-	for _, tmpl := range cfg.Templates {
-		templateFilePath, err := safeTemplateFilepath(userTemplateDir, tmpl.Filename)
-		if err != nil {
-			return err
-		}
-
-		// Removing from pathsToRemove map the files that still exists in the config
-		delete(pathsToRemove, templateFilePath)
-		_, err = storeTemplateFile(templateFilePath, tmpl.Body)
-		templates = append(templates, strings.NewReader(tmpl.Body))
-		if err != nil {
-			return err
-		}
-	}
-
-	for pathToRemove := range pathsToRemove {
-		err := os.Remove(pathToRemove)
-		if err != nil {
-			level.Warn(am.logger).Log("msg", "failed to remove file", "file", pathToRemove, "err", err)
-		}
-	}
-
 	level.Debug(am.logger).Log("msg", "setting config", "user", cfg.User)
 
 	am.alertmanagersMtx.Lock()
 	defer am.alertmanagersMtx.Unlock()
+
 	existing, hasExisting := am.alertmanagers[cfg.User]
 
 	rawCfg := cfg.RawConfig
+	var userAmConfig *amconfig.Config
+	var err error
 	if cfg.RawConfig == "" {
 		if am.fallbackConfig == "" {
 			return fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
@@ -798,6 +755,11 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	// 3) finally, the cortex AM instance is restarted and the running version is no longer present
 	if userAmConfig == nil {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
+	}
+
+	templates := make([]io.Reader, 0, len(cfg.Templates))
+	for _, tmpl := range cfg.Templates {
+		templates = append(templates, strings.NewReader(tmpl.Body))
 	}
 
 	// If no Alertmanager instance exists for this user yet, start one.
@@ -854,11 +816,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
 
-<<<<<<< HEAD
-	if err := newAM.ApplyConfig(amConfig, rawCfg); err != nil {
-=======
-	if err := newAM.ApplyConfig(userID, amConfig, templates, rawCfg); err != nil {
->>>>>>> a51336524 (Load templates directly from memory)
+	if err := newAM.ApplyConfig(amConfig, templates, rawCfg); err != nil {
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
 
