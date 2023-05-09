@@ -264,3 +264,6 @@ replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-2022100509
 
 // Replace goautoneg with a fork until https://github.com/munnerz/goautoneg/pull/5 is merged
 replace github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc
+
+// Replace opentracing-contrib/go-stdlib with a fork until https://github.com/opentracing-contrib/go-stdlib/pull/68 is merged.
+replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956

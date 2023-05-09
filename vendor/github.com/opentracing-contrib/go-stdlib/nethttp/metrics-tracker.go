@@ -1,3 +1,4 @@
+//go:build go1.8
 // +build go1.8
 
 package nethttp
@@ -7,25 +8,38 @@ import (
 	"net/http"
 )
 
-type statusCodeTracker struct {
+type metricsTracker struct {
 	http.ResponseWriter
 	status int
+	size   int
 }
 
-func (w *statusCodeTracker) WriteHeader(status int) {
+func (w *metricsTracker) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
 
-func (w *statusCodeTracker) Write(b []byte) (int, error) {
-	return w.ResponseWriter.Write(b)
+func (w *metricsTracker) Write(b []byte) (int, error) {
+	size, err := w.ResponseWriter.Write(b)
+	w.size += size
+	return size, err
+}
+
+// Unwrap method is used by http.ResponseController to get access to original http.ResponseWriter.
+func (w *metricsTracker) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+// rwUnwrapper is a copy of interface used by http.ResponseController to get access to original http.ResponseWriter.
+type rwUnwrapper interface {
+	Unwrap() http.ResponseWriter
 }
 
 // wrappedResponseWriter returns a wrapped version of the original
 // ResponseWriter and only implements the same combination of additional
 // interfaces as the original.  This implementation is based on
 // https://github.com/felixge/httpsnoop.
-func (w *statusCodeTracker) wrappedResponseWriter() http.ResponseWriter {
+func (w *metricsTracker) wrappedResponseWriter() http.ResponseWriter {
 	var (
 		hj, i0 = w.ResponseWriter.(http.Hijacker)
 		cn, i1 = w.ResponseWriter.(http.CloseNotifier)
@@ -37,215 +51,248 @@ func (w *statusCodeTracker) wrappedResponseWriter() http.ResponseWriter {
 	switch {
 	case !i0 && !i1 && !i2 && !i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
-		}{w}
+		}{w, w}
 	case !i0 && !i1 && !i2 && !i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			io.ReaderFrom
-		}{w, rf}
+		}{w, w, rf}
 	case !i0 && !i1 && !i2 && i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Flusher
-		}{w, fl}
+		}{w, w, fl}
 	case !i0 && !i1 && !i2 && i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Flusher
 			io.ReaderFrom
-		}{w, fl, rf}
+		}{w, w, fl, rf}
 	case !i0 && !i1 && i2 && !i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Pusher
-		}{w, pu}
+		}{w, w, pu}
 	case !i0 && !i1 && i2 && !i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Pusher
 			io.ReaderFrom
-		}{w, pu, rf}
+		}{w, w, pu, rf}
 	case !i0 && !i1 && i2 && i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Pusher
 			http.Flusher
-		}{w, pu, fl}
+		}{w, w, pu, fl}
 	case !i0 && !i1 && i2 && i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Pusher
 			http.Flusher
 			io.ReaderFrom
-		}{w, pu, fl, rf}
+		}{w, w, pu, fl, rf}
 	case !i0 && i1 && !i2 && !i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.CloseNotifier
-		}{w, cn}
+		}{w, w, cn}
 	case !i0 && i1 && !i2 && !i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.CloseNotifier
 			io.ReaderFrom
-		}{w, cn, rf}
+		}{w, w, cn, rf}
 	case !i0 && i1 && !i2 && i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.CloseNotifier
 			http.Flusher
-		}{w, cn, fl}
+		}{w, w, cn, fl}
 	case !i0 && i1 && !i2 && i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.CloseNotifier
 			http.Flusher
 			io.ReaderFrom
-		}{w, cn, fl, rf}
+		}{w, w, cn, fl, rf}
 	case !i0 && i1 && i2 && !i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.CloseNotifier
 			http.Pusher
-		}{w, cn, pu}
+		}{w, w, cn, pu}
 	case !i0 && i1 && i2 && !i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.CloseNotifier
 			http.Pusher
 			io.ReaderFrom
-		}{w, cn, pu, rf}
+		}{w, w, cn, pu, rf}
 	case !i0 && i1 && i2 && i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.CloseNotifier
 			http.Pusher
 			http.Flusher
-		}{w, cn, pu, fl}
+		}{w, w, cn, pu, fl}
 	case !i0 && i1 && i2 && i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.CloseNotifier
 			http.Pusher
 			http.Flusher
 			io.ReaderFrom
-		}{w, cn, pu, fl, rf}
+		}{w, w, cn, pu, fl, rf}
 	case i0 && !i1 && !i2 && !i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
-		}{w, hj}
+		}{w, w, hj}
 	case i0 && !i1 && !i2 && !i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			io.ReaderFrom
-		}{w, hj, rf}
+		}{w, w, hj, rf}
 	case i0 && !i1 && !i2 && i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.Flusher
-		}{w, hj, fl}
+		}{w, w, hj, fl}
 	case i0 && !i1 && !i2 && i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.Flusher
 			io.ReaderFrom
-		}{w, hj, fl, rf}
+		}{w, w, hj, fl, rf}
 	case i0 && !i1 && i2 && !i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.Pusher
-		}{w, hj, pu}
+		}{w, w, hj, pu}
 	case i0 && !i1 && i2 && !i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.Pusher
 			io.ReaderFrom
-		}{w, hj, pu, rf}
+		}{w, w, hj, pu, rf}
 	case i0 && !i1 && i2 && i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.Pusher
 			http.Flusher
-		}{w, hj, pu, fl}
+		}{w, w, hj, pu, fl}
 	case i0 && !i1 && i2 && i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.Pusher
 			http.Flusher
 			io.ReaderFrom
-		}{w, hj, pu, fl, rf}
+		}{w, w, hj, pu, fl, rf}
 	case i0 && i1 && !i2 && !i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.CloseNotifier
-		}{w, hj, cn}
+		}{w, w, hj, cn}
 	case i0 && i1 && !i2 && !i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.CloseNotifier
 			io.ReaderFrom
-		}{w, hj, cn, rf}
+		}{w, w, hj, cn, rf}
 	case i0 && i1 && !i2 && i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.CloseNotifier
 			http.Flusher
-		}{w, hj, cn, fl}
+		}{w, w, hj, cn, fl}
 	case i0 && i1 && !i2 && i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.CloseNotifier
 			http.Flusher
 			io.ReaderFrom
-		}{w, hj, cn, fl, rf}
+		}{w, w, hj, cn, fl, rf}
 	case i0 && i1 && i2 && !i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.CloseNotifier
 			http.Pusher
-		}{w, hj, cn, pu}
+		}{w, w, hj, cn, pu}
 	case i0 && i1 && i2 && !i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.CloseNotifier
 			http.Pusher
 			io.ReaderFrom
-		}{w, hj, cn, pu, rf}
+		}{w, w, hj, cn, pu, rf}
 	case i0 && i1 && i2 && i3 && !i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.CloseNotifier
 			http.Pusher
 			http.Flusher
-		}{w, hj, cn, pu, fl}
+		}{w, w, hj, cn, pu, fl}
 	case i0 && i1 && i2 && i3 && i4:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
 			http.Hijacker
 			http.CloseNotifier
 			http.Pusher
 			http.Flusher
 			io.ReaderFrom
-		}{w, hj, cn, pu, fl, rf}
+		}{w, w, hj, cn, pu, fl, rf}
 	default:
 		return struct {
+			rwUnwrapper
 			http.ResponseWriter
-		}{w}
+		}{w, w}
 	}
 }
