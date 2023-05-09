@@ -15,6 +15,8 @@
 * [ENHANCEMENT] Packaging: facilitate configuration management by instructing systemd to start mimir with a configuration file. #4810
 * [ENHANCEMENT] Store-gateway: reduce memory allocations when looking up postings from cache. #4861 #4869
 * [ENHANCEMENT] Go: update to 1.20.4. #4092
+* [ENHANCEMENT] Updated Kuberesolver dependency (github.com/sercand/kuberesolver) from v2 to v4. #4922
+* [ENHANCEMENT] Introduced new options for logging HTTP request headers: `-server.log-request-headers` enables logging HTTP request headers, `-server.log-request-headers-exclude-list` lists headers which should not be logged. #4922
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
