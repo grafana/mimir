@@ -95,23 +95,18 @@ func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]b
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
 func (c *RemoteIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.set(cacheTypePostings, postingsCacheKey(userID, blockID, l), v)
+	c.set(cacheTypePostings, postingsCacheKey(userID, blockID.String(), l), v)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label -
 // and returns a map containing cache hits, along with a list of missing keys.
 // In case of error, it logs and return an empty cache hits map.
 func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
-	// Build the cache keys, while keeping a map between input matchers and the cache key
-	// so that we can easily reverse it back after the GetMulti().
+	blockIDStr := blockID.String()
+
 	keys := make([]string, 0, len(lbls))
-	keysMapping := make(map[labels.Label]string, len(lbls))
-
 	for _, lbl := range lbls {
-		key := postingsCacheKey(userID, blockID, lbl)
-
-		keys = append(keys, key)
-		keysMapping[lbl] = key
+		keys = append(keys, postingsCacheKey(userID, blockIDStr, lbl))
 	}
 
 	// Fetch the keys from the remote cache in a single request.
@@ -124,20 +119,19 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 	// Construct the resulting hits map and list of missing keys. We iterate on the input
 	// list of labels to be able to easily create the list of ones in a single iteration.
 	hits = make(map[labels.Label][]byte, len(results))
-	misses = make([]labels.Label, 0, len(keys)-len(results))
+	misses = lbls[:0]
 
-	for _, lbl := range lbls {
-		key, ok := keysMapping[lbl]
-		if !ok {
-			level.Error(c.logger).Log("msg", "keys mapping inconsistency found in remote index cache client", "type", "postings", "label", lbl.Name+":"+lbl.Value)
-			continue
-		}
+	keyBuf := postingsCacheKeyLabelHashBufferPool.Get().(*[]byte)
+	for i, lbl := range lbls {
+		key := postingsCacheKeyBuf(userID, blockIDStr, lbl, keyBuf)
 
 		// Check if the key has been found in the remote cache. If not, we add it to the list
 		// of missing keys.
 		value, ok := results[key]
 		if !ok {
-			misses = append(misses, lbl)
+			misses = misses[:len(misses)+1]
+			lbls[i] = misses[len(misses)-1]
+			misses[len(misses)-1] = lbl
 			continue
 		}
 
@@ -150,7 +144,10 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 
 // postingsCacheKey returns the cache key used to store postings matching the input
 // label name/value pair in the given block.
-func postingsCacheKey(userID string, blockID ulid.ULID, l labels.Label) string {
+func postingsCacheKey(userID string, blockID string, l labels.Label) string {
+	return postingsCacheKeyBuf(userID, blockID, l, &[]byte{})
+}
+func postingsCacheKeyBuf(userID string, blockID string, l labels.Label, buf *[]byte) string {
 	const (
 		prefix    = "P2:"
 		separator = ":"
@@ -161,13 +158,19 @@ func postingsCacheKey(userID string, blockID ulid.ULID, l labels.Label) string {
 
 	// Preallocate the byte slice used to store the cache key.
 	expectedLen := len(prefix) + len(userID) + 1 + ulid.EncodedSize + 1 + base64.RawStdEncoding.EncodedLen(blake2b.Size256)
-	key := make([]byte, expectedLen)
+	var key []byte
+	if expectedLen <= cap(*buf) {
+		key = (*buf)[:expectedLen]
+	} else {
+		*buf = make([]byte, expectedLen)
+		key = *buf
+	}
 	offset := 0
 
 	offset += copy(key[offset:], prefix)
 	offset += copy(key[offset:], userID)
 	offset += copy(key[offset:], separator)
-	offset += copy(key[offset:], blockID.String())
+	offset += copy(key[offset:], blockID)
 	offset += copy(key[offset:], separator)
 	base64.RawURLEncoding.Encode(key[offset:], lblHash[0:])
 

@@ -698,7 +698,7 @@ func TestStringCacheKeys_Values(t *testing.T) {
 		expected string
 	}{
 		"should stringify postings cache key": {
-			key: postingsCacheKey(user, uid, labels.Label{Name: "foo", Value: "bar"}),
+			key: postingsCacheKey(user, uid.String(), labels.Label{Name: "foo", Value: "bar"}),
 			expected: func() string {
 				hash := blake2b.Sum256([]byte("foo:bar"))
 				encodedHash := base64.RawURLEncoding.EncodeToString(hash[0:])
@@ -733,8 +733,8 @@ func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) 
 		"should guarantee reasonably short key length for postings": {
 			expectedLen: 80,
 			keys: []string{
-				postingsCacheKey(user, uid, labels.Label{Name: "a", Value: "b"}),
-				postingsCacheKey(user, uid, labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}),
+				postingsCacheKey(user, uid.String(), labels.Label{Name: "a", Value: "b"}),
+				postingsCacheKey(user, uid.String(), labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}),
 			},
 		},
 		"should guarantee reasonably short key length for series": {
@@ -762,7 +762,7 @@ func BenchmarkStringCacheKeys(b *testing.B) {
 
 	b.Run("postings", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			postingsCacheKey(userID, uid, lbl)
+			postingsCacheKey(userID, uid.String(), lbl)
 		}
 	})
 
@@ -786,7 +786,7 @@ func TestPostingsCacheKey_ShouldOnlyAllocateOncePerCall(t *testing.T) {
 	lbl := labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}
 
 	actualAllocs := testing.AllocsPerRun(numRuns, func() {
-		postingsCacheKey("user-1", blockID, lbl)
+		postingsCacheKey("user-1", blockID.String(), lbl)
 	})
 
 	// Allow for 1 extra allocation here, reported when running the test with -race.
