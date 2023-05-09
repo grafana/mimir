@@ -30,135 +30,139 @@ func BenchmarkMergingAndSortingSeries(b *testing.B) {
 }
 
 func TestMergingAndSortingSeries(t *testing.T) {
+	ingester1 := &SeriesChunksStreamReader{}
+	ingester2 := &SeriesChunksStreamReader{}
+	ingester3 := &SeriesChunksStreamReader{}
+
 	testCases := map[string]struct {
 		seriesSets []ingesterSeries
-		expected   []mergedSeries
+		expected   []StreamingSeries
 	}{
 		"no ingesters": {
 			seriesSets: []ingesterSeries{},
-			expected:   []mergedSeries{},
+			expected:   []StreamingSeries{},
 		},
 		"single ingester, no series": {
 			seriesSets: []ingesterSeries{
-				{IngesterName: "ingester-1", Series: []labels.Labels{}},
+				{StreamReader: ingester1, Series: []labels.Labels{}},
 			},
-			expected: []mergedSeries{},
+			expected: []StreamingSeries{},
 		},
 		"single ingester, single series": {
 			seriesSets: []ingesterSeries{
-				{IngesterName: "ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
+				{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
 			},
-			expected: []mergedSeries{
+			expected: []StreamingSeries{
 				{
 					Labels: labels.FromStrings("some-label", "some-value"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 0},
 					},
 				},
 			},
 		},
 		"multiple ingesters, each with single series": {
 			seriesSets: []ingesterSeries{
-				{IngesterName: "zone-a-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
-				{IngesterName: "zone-b-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
-				{IngesterName: "zone-c-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
+				{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
+				{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
+				{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}},
 			},
-			expected: []mergedSeries{
+			expected: []StreamingSeries{
 				{
 					Labels: labels.FromStrings("some-label", "some-value"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-a-ingester-1", SeriesIndex: 0},
-						{Ingester: "zone-b-ingester-1", SeriesIndex: 0},
-						{Ingester: "zone-c-ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 0},
+						{StreamReader: ingester2, SeriesIndex: 0},
+						{StreamReader: ingester3, SeriesIndex: 0},
 					},
 				},
 			},
 		},
 		"multiple ingesters, each with different series": {
 			seriesSets: []ingesterSeries{
-				{IngesterName: "zone-a-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}},
-				{IngesterName: "zone-b-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}},
-				{IngesterName: "zone-c-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}},
+				{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}},
+				{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}},
+				{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}},
 			},
-			expected: []mergedSeries{
+			expected: []StreamingSeries{
 				{
 					Labels: labels.FromStrings("some-label", "value-a"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-a-ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("some-label", "value-b"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-b-ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester2, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("some-label", "value-c"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-c-ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester3, SeriesIndex: 0},
 					},
 				},
 			},
 		},
 		"multiple ingesters, each with different series, with earliest ingesters having last series": {
 			seriesSets: []ingesterSeries{
-				{IngesterName: "zone-c-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}},
-				{IngesterName: "zone-b-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}},
-				{IngesterName: "zone-a-ingester-1", Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}},
+				{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}},
+				{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}},
+				{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}},
 			},
-			expected: []mergedSeries{
+			expected: []StreamingSeries{
 				{
 					Labels: labels.FromStrings("some-label", "value-a"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-a-ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("some-label", "value-b"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-b-ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester2, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("some-label", "value-c"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-c-ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester3, SeriesIndex: 0},
 					},
 				},
 			},
 		},
 		"multiple ingesters, each with multiple series": {
 			seriesSets: []ingesterSeries{
-				{IngesterName: "zone-a-ingester-1", Series: []labels.Labels{labels.FromStrings("label-a", "value-a"), labels.FromStrings("label-b", "value-a")}},
-				{IngesterName: "zone-b-ingester-1", Series: []labels.Labels{labels.FromStrings("label-a", "value-b"), labels.FromStrings("label-b", "value-a")}},
-				{IngesterName: "zone-c-ingester-1", Series: []labels.Labels{labels.FromStrings("label-a", "value-c"), labels.FromStrings("label-b", "value-a")}},
+				{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("label-a", "value-a"), labels.FromStrings("label-b", "value-a")}},
+				{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("label-a", "value-b"), labels.FromStrings("label-b", "value-a")}},
+				{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("label-a", "value-c"), labels.FromStrings("label-b", "value-a")}},
 			},
-			expected: []mergedSeries{
+			expected: []StreamingSeries{
 				{
 					Labels: labels.FromStrings("label-a", "value-a"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-a-ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("label-a", "value-b"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-b-ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester2, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("label-a", "value-c"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-c-ingester-1", SeriesIndex: 0},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester3, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("label-b", "value-a"),
-					Sources: []mergedSeriesSource{
-						{Ingester: "zone-a-ingester-1", SeriesIndex: 1},
-						{Ingester: "zone-b-ingester-1", SeriesIndex: 1},
-						{Ingester: "zone-c-ingester-1", SeriesIndex: 1},
+					Sources: []StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 1},
+						{StreamReader: ingester2, SeriesIndex: 1},
+						{StreamReader: ingester3, SeriesIndex: 1},
 					},
 				},
 			},
@@ -186,9 +190,9 @@ func TestMergingAndSortingSeries(t *testing.T) {
 
 // Use a loser tree to merge lists of series from each ingester.
 // This assumes we add a new implementation of NewConcreteSeriesSet that doesn't try to sort the list of series again.
-func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []mergedSeries {
+func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []StreamingSeries {
 	tree := NewTree(ingesters)
-	allSeries := []mergedSeries{}
+	allSeries := []StreamingSeries{}
 
 	for tree.Next() {
 		nextIngester, nextSeriesFromIngester, nextSeriesIndex := tree.Winner()
@@ -196,23 +200,23 @@ func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []merge
 
 		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
 			// First time we've seen this series.
-			series := mergedSeries{
+			series := StreamingSeries{
 				Labels: nextSeriesFromIngester,
 				// Why zoneCount? We assume each series is present exactly once in each zone.
-				Sources: make([]mergedSeriesSource, 1, zoneCount),
+				Sources: make([]StreamingSeriesSource, 1, zoneCount),
 			}
 
-			series.Sources[0] = mergedSeriesSource{
-				Ingester:    nextIngester.IngesterName,
-				SeriesIndex: nextSeriesIndex,
+			series.Sources[0] = StreamingSeriesSource{
+				StreamReader: nextIngester.StreamReader,
+				SeriesIndex:  nextSeriesIndex,
 			}
 
 			allSeries = append(allSeries, series)
 		} else {
 			// We've seen this series before.
-			allSeries[lastSeriesIndex].Sources = append(allSeries[lastSeriesIndex].Sources, mergedSeriesSource{
-				Ingester:    nextIngester.IngesterName,
-				SeriesIndex: nextSeriesIndex,
+			allSeries[lastSeriesIndex].Sources = append(allSeries[lastSeriesIndex].Sources, StreamingSeriesSource{
+				StreamReader: nextIngester.StreamReader,
+				SeriesIndex:  nextSeriesIndex,
 			})
 		}
 	}
@@ -220,20 +224,8 @@ func loserTreeMergeSeriesSets(ingesters []ingesterSeries, zoneCount int) []merge
 	return allSeries
 }
 
-// Equivalent of StreamingSeries
-type mergedSeries struct {
-	Labels  labels.Labels
-	Sources []mergedSeriesSource
-}
-
-// Equivalent of StreamingSeriesSource
-type mergedSeriesSource struct {
-	Ingester    string
-	SeriesIndex int
-}
-
 type ingesterSeries struct {
-	IngesterName string
+	StreamReader *SeriesChunksStreamReader
 	Series       []labels.Labels
 }
 
@@ -251,11 +243,11 @@ func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) 
 		rand.Shuffle(len(zoneSeries), func(i, j int) { zoneSeries[i], zoneSeries[j] = zoneSeries[j], zoneSeries[i] })
 
 		for ingester := 1; ingester <= ingestersPerZone; ingester++ {
-			ingesterName := fmt.Sprintf("zone-%v-ingester-%v", zone, ingester)
+			streamReader := &SeriesChunksStreamReader{}
 			series := zoneSeries[(ingester-1)*seriesPerIngester : ingester*seriesPerIngester]
 			sort.Sort(byLabels(series))
 
-			seriesSets = append(seriesSets, ingesterSeries{IngesterName: ingesterName, Series: series})
+			seriesSets = append(seriesSets, ingesterSeries{StreamReader: streamReader, Series: series})
 		}
 	}
 
