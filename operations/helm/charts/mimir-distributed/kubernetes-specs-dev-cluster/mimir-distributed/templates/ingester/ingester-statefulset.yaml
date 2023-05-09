@@ -149,7 +149,7 @@ spec:
             limits:
               memory: 48Gi
             requests:
-              cpu: 3.5
+              cpu: 5
               memory: 32Gi
           securityContext:
             allowPrivilegeEscalation: false
