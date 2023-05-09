@@ -188,7 +188,7 @@ overrides:
 	}
 }
 
-func TestSlowUploadSpeed(t *testing.T) {
+func TestBackfillSlowUploadSpeed(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
