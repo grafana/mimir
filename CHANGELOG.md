@@ -32,6 +32,7 @@
 * [ENHANCEMENT] Updated Kuberesolver dependency (github.com/sercand/kuberesolver) from v2.4.0 to v4.0.0 and gRPC dependency (google.golang.org/grpc) from v1.47.0 to v1.53.0. #4922
 * [ENHANCEMENT] Introduced new options for logging HTTP request headers: `-server.log-request-headers` enables logging HTTP request headers, `-server.log-request-headers-exclude-list` lists headers which should not be logged. #4922
 * [ENHANCEMENT] Block upload: `/api/v1/upload/block/{block}/files` endpoint now disables read and write HTTP timeout, overriding `-server.http-read-timeout` and `-server.http-write-timeout` values. This is done to allow large file uploads to succeed. #4956
+* [ENHANCEMENT] Ingester: Add instance query limit `-ingester.instance-limits.max-inflight-queries`, that limits the max number of queries an ingester can handle concurrently. #
 * [ENHANCEMENT] Alertmanager: Introduce new metrics from upstream. #4918
   * `cortex_alertmanager_notifications_failed_total` (added `reason` label)
   * `cortex_alertmanager_nflog_maintenance_total`

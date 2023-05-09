@@ -136,7 +136,7 @@ type Config struct {
 	Common CommonConfig `yaml:"common"`
 }
 
-// RegisterFlags registers flag.
+// RegisterFlags registers flags.
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"

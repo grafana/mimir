@@ -40,6 +40,7 @@ const (
 	IngesterMaxTenants              ID = "ingester-max-tenants"
 	IngesterMaxInMemorySeries       ID = "ingester-max-series"
 	IngesterMaxInflightPushRequests ID = "ingester-max-inflight-push-requests"
+	IngesterMaxInflightQueries      ID = "ingester-max-inflight-queries"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"

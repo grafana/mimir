@@ -255,6 +255,8 @@ type Ingester struct {
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
 
+	inflightQueries atomic.Int64
+
 	// Anonymous usage statistics tracked by ingester.
 	memorySeriesStats                  *expvar.Int
 	memoryTenantsStats                 *expvar.Int
@@ -309,7 +311,8 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		return nil, err
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
-	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests,
+		&i.inflightQueries)
 	i.activeGroups = activeGroupsCleanupService
 
 	if registerer != nil {
@@ -351,7 +354,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	if err != nil {
 		return nil, err
 	}
-	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightQueries)
 
 	i.shipperIngesterID = "flusher"
 
@@ -1078,6 +1081,14 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 		return nil, err
 	}
 
+	inflight := i.inflightQueries.Inc()
+	defer i.inflightQueries.Dec()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightQueries > 0 && inflight > il.MaxInflightQueries {
+		return nil, httpgrpc.Errorf(http.StatusTooManyRequests, errMaxInflightQueriesReached.Error())
+	}
+
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
 
@@ -1132,6 +1143,14 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return nil, err
 	}
 
+	inflight := i.inflightQueries.Inc()
+	defer i.inflightQueries.Dec()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightQueries > 0 && inflight > il.MaxInflightQueries {
+		return nil, httpgrpc.Errorf(http.StatusTooManyRequests, errMaxInflightQueriesReached.Error())
+	}
+
 	labelName, startTimestampMs, endTimestampMs, matchers, err := client.FromLabelValuesRequest(req)
 	if err != nil {
 		return nil, err
@@ -1166,6 +1185,14 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
+	}
+
+	inflight := i.inflightQueries.Inc()
+	defer i.inflightQueries.Dec()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightQueries > 0 && inflight > il.MaxInflightQueries {
+		return nil, httpgrpc.Errorf(http.StatusTooManyRequests, errMaxInflightQueriesReached.Error())
 	}
 
 	userID, err := tenant.TenantID(ctx)
@@ -1203,6 +1230,14 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (*client.MetricsForLabelMatchersResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
+	}
+
+	inflight := i.inflightQueries.Inc()
+	defer i.inflightQueries.Dec()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightQueries > 0 && inflight > il.MaxInflightQueries {
+		return nil, httpgrpc.Errorf(http.StatusTooManyRequests, errMaxInflightQueriesReached.Error())
 	}
 
 	userID, err := tenant.TenantID(ctx)
@@ -1315,6 +1350,15 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
+
+	inflight := i.inflightQueries.Inc()
+	defer i.inflightQueries.Dec()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightQueries > 0 && inflight > il.MaxInflightQueries {
+		return httpgrpc.Errorf(http.StatusTooManyRequests, errMaxInflightQueriesReached.Error())
+	}
+
 	userID, err := tenant.TenantID(server.Context())
 	if err != nil {
 		return err
@@ -1343,6 +1387,15 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
+
+	inflight := i.inflightQueries.Inc()
+	defer i.inflightQueries.Dec()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightQueries > 0 && inflight > il.MaxInflightQueries {
+		return httpgrpc.Errorf(http.StatusTooManyRequests, errMaxInflightQueriesReached.Error())
+	}
+
 	userID, err := tenant.TenantID(srv.Context())
 	if err != nil {
 		return err
@@ -1389,6 +1442,14 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
 	if err := i.checkRunning(); err != nil {
 		return err
+	}
+
+	inflight := i.inflightQueries.Inc()
+	defer i.inflightQueries.Dec()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightQueries > 0 && inflight > il.MaxInflightQueries {
+		return httpgrpc.Errorf(http.StatusTooManyRequests, errMaxInflightQueriesReached.Error())
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")

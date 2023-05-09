@@ -2560,6 +2560,17 @@
               "fieldFlag": "ingester.instance-limits.max-inflight-push-requests",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_inflight_queries",
+              "required": false,
+              "desc": "Max inflight queries that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.",
+              "fieldValue": null,
+              "fieldDefaultValue": 30000,
+              "fieldFlag": "ingester.instance-limits.max-inflight-queries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,

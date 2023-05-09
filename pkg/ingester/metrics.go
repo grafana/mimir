@@ -45,6 +45,8 @@ type ingesterMetrics struct {
 	ingestionRate           prometheus.GaugeFunc
 	maxInflightPushRequests prometheus.GaugeFunc
 	inflightRequests        prometheus.GaugeFunc
+	maxInflightQueries      prometheus.GaugeFunc
+	inflightQueries         prometheus.GaugeFunc
 
 	// Head compactions metrics.
 	compactionsTriggered   prometheus.Counter
@@ -72,6 +74,7 @@ func newIngesterMetrics(
 	instanceLimitsFn func() *InstanceLimits,
 	ingestionRate *util_math.EwmaRate,
 	inflightRequests *atomic.Int64,
+	inflightQueries *atomic.Int64,
 ) *ingesterMetrics {
 	const (
 		instanceLimits     = "cortex_ingester_instance_limits"
@@ -225,6 +228,27 @@ func newIngesterMetrics(
 		}, func() float64 {
 			if inflightRequests != nil {
 				return float64(inflightRequests.Load())
+			}
+			return 0
+		}),
+
+		maxInflightQueries: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        instanceLimits,
+			Help:        instanceLimitsHelp,
+			ConstLabels: map[string]string{limitLabel: "max_inflight_queries"},
+		}, func() float64 {
+			if g := instanceLimitsFn(); g != nil {
+				return float64(g.MaxInflightQueries)
+			}
+			return 0
+		}),
+
+		inflightQueries: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_inflight_queries",
+			Help: "Current number of inflight queries in ingester.",
+		}, func() float64 {
+			if inflightQueries != nil {
+				return float64(inflightQueries.Load())
 			}
 			return 0
 		}),

@@ -19,6 +19,7 @@ const (
 	maxInMemoryTenantsFlag      = "ingester.instance-limits.max-tenants"
 	maxInMemorySeriesFlag       = "ingester.instance-limits.max-series"
 	maxInflightPushRequestsFlag = "ingester.instance-limits.max-inflight-push-requests"
+	maxInflightQueriesFlag      = "ingester.instance-limits.max-inflight-queries"
 )
 
 var (
@@ -27,15 +28,17 @@ var (
 	errMaxTenantsReached          = errors.New(globalerror.IngesterMaxTenants.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of tenants", maxInMemoryTenantsFlag))
 	errMaxInMemorySeriesReached   = errors.New(globalerror.IngesterMaxInMemorySeries.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of in-memory series", maxInMemorySeriesFlag))
 	errMaxInflightRequestsReached = errors.New(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
+	errMaxInflightQueriesReached  = errors.New(globalerror.IngesterMaxInflightQueries.MessageWithPerInstanceLimitConfig("the query has been rejected because the ingester exceeded the allowed number of inflight queries", maxInflightQueriesFlag))
 )
 
-// InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return
-// (internal) error.
+// InstanceLimits describes read and write limits used by the ingester. Reaching any of these will result in respectively
+// the various query methods or the Push method returning an (internal) error.
 type InstanceLimits struct {
 	MaxIngestionRate        float64 `yaml:"max_ingestion_rate" category:"advanced"`
 	MaxInMemoryTenants      int64   `yaml:"max_tenants" category:"advanced"`
 	MaxInMemorySeries       int64   `yaml:"max_series" category:"advanced"`
 	MaxInflightPushRequests int64   `yaml:"max_inflight_push_requests" category:"advanced"`
+	MaxInflightQueries      int64   `yaml:"max_inflight_queries" category:"advanced"`
 }
 
 func (l *InstanceLimits) RegisterFlags(f *flag.FlagSet) {
@@ -43,6 +46,7 @@ func (l *InstanceLimits) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&l.MaxInMemoryTenants, maxInMemoryTenantsFlag, 0, "Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.")
 	f.Int64Var(&l.MaxInMemorySeries, maxInMemorySeriesFlag, 0, "Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.")
 	f.Int64Var(&l.MaxInflightPushRequests, maxInflightPushRequestsFlag, 30000, "Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.")
+	f.Int64Var(&l.MaxInflightQueries, maxInflightQueriesFlag, 30000, "Max inflight queries that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.")
 }
 
 // Sets default limit values for unmarshalling.
