@@ -26,6 +26,7 @@
 * [ENHANCEMENT] Query-frontend: added `remote_read` to `op` supported label values for the `cortex_query_frontend_queries_total` metric. #8412
 * [ENHANCEMENT] Query-frontend: log the overall length and start, end time offset from current time for remote read requests. The start and end times are calculated as the miminum and maximum times of the individual queries in the remote read request. #8404
 * [ENHANCEMENT] Storage Provider: Added option `-<prefix>.s3.dualstack-enabled` that allows disabling S3 client from resolving AWS S3 endpoint into dual-stack IPv4/IPv6 endpoint. Defaults to true. #8405
+* [ENHANCEMENT] Alertmanager: Reloading config and templates no longer needs to hit the disk. #4967
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
 * [BUGFIX] Ingester, store-gateway: fix case insensitive regular expressions not matching correctly some Unicode characters. #8391
@@ -779,31 +780,6 @@
 * [ENHANCEMENT] Distributor: add more detailed information to traces generated while processing OTLP write requests. #5539
 * [ENHANCEMENT] Distributor: improve performance ingesting OTLP payloads. #5531 #5607 #5616
 * [ENHANCEMENT] Ingester: optimize label-values with matchers call when number of matched series is small. #5600
-* [ENHANCEMENT] Compactor: delete bucket-index, markers and debug files if there are no blocks left in the bucket index. This cleanup must be enabled by using `-compactor.no-blocks-file-cleanup-enabled` option. #5648
-* [ENHANCEMENT] Ingester: reduce memory usage of active series tracker. #5665
-* [ENHANCEMENT] Store-gateway: added `-store-gateway.sharding-ring.auto-forget-enabled` configuration parameter to control whether store-gateway auto-forget feature should be enabled or disabled (enabled by default). #5702
-* [ENHANCEMENT] Compactor: added per tenant block upload counters `cortex_block_upload_api_blocks_total`, `cortex_block_upload_api_bytes_total`, and `cortex_block_upload_api_files_total`. #5738
-* [ENHANCEMENT] Compactor: verify time range of compacted block(s) matches the time range of input blocks. #5760
-* [ENHANCEMENT] Querier: improved observability of calls to ingesters during queries. #5724
-* [ENHANCEMENT] Compactor: block backfilling logging is now more verbose. #5711
-* [ENHANCEMENT] Added support to rate limit application logs: #5764
-  * `-log.rate-limit-enabled`
-  * `-log.rate-limit-logs-per-second`
-  * `-log.rate-limit-logs-per-second-burst`
-* [ENHANCEMENT] Ingester: added `cortex_ingester_tsdb_head_min_timestamp_seconds` and `cortex_ingester_tsdb_head_max_timestamp_seconds` metrics which return min and max time of all TSDB Heads open in an ingester. #5786 #5815
-* [ENHANCEMENT] Querier: cancel query requests to ingesters in a zone upon first error received from the zone, to reduce wasted effort spent computing results that won't be used #5764
-* [ENHANCEMENT] All: improve tracing of internal HTTP requests sent over httpgrpc. #5782
-* [ENHANCEMENT] Querier: add experimental per-query chunks limit based on an estimate of the number of chunks that will be sent from ingesters and store-gateways that is enforced earlier during query evaluation. This limit is disabled by default and can be configured with `-querier.max-estimated-fetched-chunks-per-query-multiplier`. #5765
-* [ENHANCEMENT] Ingester: add UI for listing tenants with TSDB on given ingester and viewing details of tenants's TSDB on given ingester. #5803 #5824
-* [ENHANCEMENT] Querier: improve observability of calls to store-gateways during queries. #5809
-* [ENHANCEMENT] Query-frontend: improve tracing of interactions with query-scheduler. #5818
-* [ENHANCEMENT] Query-scheduler: improve tracing of requests when request is rejected by query-scheduler. #5848
-* [ENHANCEMENT] Ingester: avoid logging some errors that could cause logging contention. #5494 #5581
-* [ENHANCEMENT] Store-gateway: wait for query gate after loading blocks. #5507
-* [ENHANCEMENT] Store-gateway: always include `__name__` posting group in selection in order to reduce the number of object storage API calls. #5246
-* [ENHANCEMENT] Ingester: track active series by ref instead of hash/labels to reduce memory usage. #5134 #5193
-* [ENHANCEMENT] Go: updated to 1.21.1. #5955 #5960
-* [ENHANCEMENT] Alertmanager: updated to alertmanager 0.26.0. #5840
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377
@@ -980,9 +956,11 @@
 * [ENHANCEMENT] Alertmanager: Add additional template function `queryFromGeneratorURL` returning query URL decoded query from the `GeneratorURL` field of an alert. #4301
 * [ENHANCEMENT] Ruler: added experimental ruler storage cache support. The cache should reduce the number of "list objects" API calls issued to the object storage when there are 2+ ruler replicas running in a Mimir cluster. The cache can be configured setting `-ruler-storage.cache.*` CLI flags or their respective YAML config options. #4950 #5054
 * [ENHANCEMENT] Store-gateway: added HTTP `/store-gateway/prepare-shutdown` endpoint for gracefully scaling down of store-gateways. A gauge `cortex_store_gateway_prepare_shutdown_requested` has been introduced for tracing this process. #4955
-* [ENHANCEMENT] Updated Kuberesolver dependency (github.com/sercand/kuberesolver) from v2.4.0 to v4.0.0 and gRPC dependency (google.golang.org/grpc) from v1.47.0 to v1.53.0. #4922
-* [ENHANCEMENT] Introduced new options for logging HTTP request headers: `-server.log-request-headers` enables logging HTTP request headers, `-server.log-request-headers-exclude-list` lists headers which should not be logged. #4922
-* [ENHANCEMENT] Block upload: `/api/v1/upload/block/{block}/files` endpoint now disables read and write HTTP timeout, overriding `-server.http-read-timeout` and `-server.http-write-timeout` values. This is done to allow large file uploads to succeed. #4956
+* [ENHANCEMENT] Alertmanager: Reloading config and templates no longer needs to hit the disk. #4967
+* [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
+* [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
+* [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
+* [BUGFIX] Backend: Check that alertmanager's data-dir doesn't overlap with bucket-sync dir. #4921
 * [ENHANCEMENT] Alertmanager: Introduce new metrics from upstream. #4918
   * `cortex_alertmanager_notifications_failed_total` (added `reason` label)
   * `cortex_alertmanager_nflog_maintenance_total`
