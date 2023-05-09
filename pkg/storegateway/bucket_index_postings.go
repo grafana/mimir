@@ -7,7 +7,6 @@ package storegateway
 
 import (
 	"encoding/binary"
-	"fmt"
 	"sort"
 
 	"github.com/pkg/errors"
@@ -336,17 +335,7 @@ type postingsSelectionStrategy interface {
 	selectPostings([]postingGroup) (selected, omitted []postingGroup)
 }
 
-type selectAllStrategy struct{}
-
-func (selectAllStrategy) name() string {
-	return tsdb.AllPostingsStrategy
-}
-
-func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	return groups, nil
-}
-
-// worstCaseFetchedDataStrategy select a few of the posting groups such that their total size
+// minimizeFetchedDataStrategy select a few of the posting groups such that their total size
 // does not exceed the size of series in the worst case. The worst case is fetching all series
 // in the smallest non-subtractive posting group - this is effectively the
 // upper bound on how many series all the posting groups can select after being intersected/subtracted.
@@ -357,26 +346,19 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 // The strategy greedily selects the first N posting groups (sorted in ascending order by their size)
 // whose combined size doesn't exceed the size of series in the worst case. The rest of the posting groups
 // are omitted.
-// worstCaseFetchedDataStrategy uses a fixed estimation about the size of series in the index (tsdb.EstimatedSeriesP99Size).
+// minimizeFetchedDataStrategy uses a fixed estimation about the size of series in the index (tsdb.EstimatedSeriesP99Size).
 //
 // For example, given the query `cpu_seconds_total{namespace="ns1"}`, if `namespace="ns1"` selects 1M series and
 // `__name__="cpu_seconds_total"` selects 500K series, then the strategy calculates that the whole query will
 // select no more than 500K series. It uses this to calculate that in the worst case we will fetch 500K * tsdb.EstimatedSeriesP99Size
 // bytes for the series = 256 MB. So it will not fetch more than 256 MB of posting lists.
-type worstCaseFetchedDataStrategy struct {
-	// postingListActualSizeFactor affects how posting lists are summed together.
-	// Postings lists have different sizes in the bucket and the cache.
-	// The size in a postingGroup is the size in the block.
-	// Since we don't know whether we will fetch the lists from the cache
-	// or the bucket we can adjust the size we sum by a factor.
-	postingListActualSizeFactor float64
+type minimizeFetchedDataStrategy struct{}
+
+func (s minimizeFetchedDataStrategy) name() string {
+	return "minimize-data"
 }
 
-func (s worstCaseFetchedDataStrategy) name() string {
-	return fmt.Sprintf(tsdb.WorstCasePostingsStrategy+"%0.1f", s.postingListActualSizeFactor)
-}
-
-func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+func (s minimizeFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].totalSize < groups[j].totalSize
 	})
@@ -394,11 +376,10 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 		maxSelectedSize                = maxSelectedSeriesCount * tsdb.EstimatedSeriesP99Size
 	)
 	for i, g := range groups {
-		postingListSize := int64(float64(g.totalSize) * s.postingListActualSizeFactor)
-		if atLeastOneIntersectingSelected && selectedSize+postingListSize > maxSelectedSize {
+		if atLeastOneIntersectingSelected && selectedSize+g.totalSize > maxSelectedSize {
 			return groups[:i], groups[i:]
 		}
-		selectedSize += postingListSize
+		selectedSize += g.totalSize
 		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
 	}
 	return groups, nil
@@ -422,54 +403,7 @@ func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
 	return minGroupSize / tsdb.BytesPerPostingInAPostingList
 }
 
-// speculativeFetchedDataStrategy selects postings lists in a very similar way to worstCaseFetchedDataStrategy,
-// except it speculates on the size of the actual series after intersecting the selected posting lists.
-// Right now it assumes that each intersecting posting list will halve the number of series selected by the query.
-//
-// For example, given the query `cpu_seconds_total{namespace="ns1"}`, if `namespace="ns1"` selects 1M series and
-// `__name__="cpu_seconds_total"` selects 500K series, then the speculative strategy assumes the whole query will
-// select 250K series. It uses this to calculate that in the worst case we will fetch 250K * tsdb.EstimatedSeriesP99Size
-// bytes for the series = 128 MB. So it will not fetch more than 128 MB of posting lists.
-type speculativeFetchedDataStrategy struct{}
-
-func (s speculativeFetchedDataStrategy) name() string {
-	return tsdb.SpeculativePostingsStrategy
-}
-
-func (s speculativeFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].totalSize < groups[j].totalSize
-	})
-
-	maxSelectedSeriesCount := numSeriesInSmallestIntersectingPostingGroup(groups)
-	if maxSelectedSeriesCount == 0 {
-		// This should also cover the case of all postings group. all postings is requested only when there is no
-		// additive group.
-		return groups, nil
-	}
-
-	var (
-		selectedSize                   int64
-		atLeastOneIntersectingSelected bool
-		maxSelectedSize                = maxSelectedSeriesCount * tsdb.EstimatedSeriesP99Size
-	)
-	for i, g := range groups {
-		if atLeastOneIntersectingSelected && selectedSize+g.totalSize > maxSelectedSize {
-			return groups[:i], groups[i:]
-		}
-		selectedSize += g.totalSize
-		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
-
-		// We assume that every intersecting posting list after the first one will
-		// filter out half of the postings.
-		if i > 0 && !g.isSubtract {
-			maxSelectedSize /= 2
-		}
-	}
-	return groups, nil
-}
-
-// labelValuesPostingsStrategy works in a similar way to worstCaseFetchedDataStrategy.
+// labelValuesPostingsStrategy works in a similar way to minimizeFetchedDataStrategy.
 // The differences are:
 //   - it doesn't a factor for the posting list size
 //   - as the bounded maximum for fetched data it also takes into account the provided allLabelValues;

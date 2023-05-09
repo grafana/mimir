@@ -2780,3 +2780,13 @@ type mockIndexCacheEntry struct {
 func (c mockIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey) ([]byte, bool) {
 	return c.fetchSeriesForPostingsResponse.contents, c.fetchSeriesForPostingsResponse.cached
 }
+
+type selectAllStrategy struct{}
+
+func (selectAllStrategy) name() string {
+	return "all"
+}
+
+func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+	return groups, nil
+}

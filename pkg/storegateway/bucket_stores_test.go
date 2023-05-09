@@ -803,7 +803,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	prepareCfg := defaultPrepareStoreConfig(tb)
 	prepareCfg.tempDir = dir
 	prepareCfg.series = series
-	prepareCfg.postingsStrategy = worstCaseFetchedDataStrategy{1.0}
+	prepareCfg.postingsStrategy = minimizeFetchedDataStrategy{}
 
 	s := prepareStoreWithTestBlocks(tb, bkt, prepareCfg)
 	mint, maxt := s.store.TimeRange()

@@ -474,14 +474,14 @@ func TestBlockLabelValues(t *testing.T) {
 			labels.MustNewMatcher(labels.MatchRegexp, "i", "1234.+"),
 			labels.MustNewMatcher(labels.MatchRegexp, "j", ".+"), // this is too weak and doesn't bring much value, it should be shortcut
 		}
-		values, err := blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err := blockLabelValues(context.Background(), b, minimizeFetchedDataStrategy{}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
 
 		// we break the indexHeaderReader to ensure that results come from a cache
 		b.indexHeaderReader = deadlineExceededIndexHeader()
 
-		values, err = blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err = blockLabelValues(context.Background(), b, minimizeFetchedDataStrategy{}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
 	})
