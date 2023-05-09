@@ -354,17 +354,19 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 	}
 
 	var (
-		n          = r.cfg.ReplicationFactor
-		instances  = bufDescs[:0]
-		start      = searchToken(r.ringTokens, key)
-		iterations = 0
+		n            = r.cfg.ReplicationFactor
+		instances    = bufDescs[:0]
+		start        = searchToken(r.ringTokens, key)
+		iterations   = 0
+		maxZones     = len(r.ringTokensByZone)
+		maxInstances = len(r.ringDesc.Ingesters)
 
 		// We use a slice instead of a map because it's faster to search within a
 		// slice than lookup a map for a very low number of items.
 		distinctHosts = bufHosts[:0]
 		distinctZones = bufZones[:0]
 	)
-	for i := start; len(distinctHosts) < n && iterations < len(r.ringTokens); i++ {
+	for i := start; len(distinctHosts) < dsmath.Min(maxInstances, n) && len(distinctZones) < maxZones && iterations < len(r.ringTokens); i++ {
 		iterations++
 		// Wrap i around in the ring.
 		i %= len(r.ringTokens)

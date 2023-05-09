@@ -86,6 +86,8 @@ type StoreGateway struct {
 	subservicesWatcher *services.FailureWatcher
 
 	bucketSync *prometheus.CounterVec
+	// Shutdown marker for store-gateway scale down
+	shutdownMarker prometheus.Gauge
 }
 
 func NewStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer, tracker *activitytracker.ActivityTracker) (*StoreGateway, error) {
@@ -121,6 +123,10 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 			Name: "cortex_storegateway_bucket_sync_total",
 			Help: "Total number of times the bucket sync operation triggered.",
 		}, []string{"reason"}),
+		shutdownMarker: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_storegateway_prepare_shutdown_requested",
+			Help: "If the store-gateway has been requested to prepare for shutdown via endpoint or marker file.",
+		}),
 	}
 
 	// Init metrics.
@@ -179,6 +185,11 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 			level.Error(g.logger).Log("msg", "failed to gracefully stop store-gateway dependencies", "err", stopErr)
 		}
 	}()
+
+	err = g.setPrepareShutdownFromShutdownMarker()
+	if err != nil {
+		return err
+	}
 
 	// First of all we register the instance in the ring and wait
 	// until the lifecycler successfully started.

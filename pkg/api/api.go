@@ -325,6 +325,7 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	a.RegisterRoute("/store-gateway/ring", http.HandlerFunc(s.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/store-gateway/tenants", http.HandlerFunc(s.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/store-gateway/tenant/{tenant}/blocks", http.HandlerFunc(s.BlocksHandler), false, true, "GET")
+	a.RegisterRoute("/store-gateway/prepare-shutdown", http.HandlerFunc(s.PrepareShutdownHandler), false, true, "GET", "POST", "DELETE")
 }
 
 // RegisterCompactor registers routes associated with the compactor.

@@ -6,6 +6,7 @@
 package mimir
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ import (
 // Given limits are usually loaded via a config file, and that
 // a configmap is limited to 1MB, we need to minimise the limits file.
 // One way to do it is via YAML anchors.
-func TestLoadRuntimeConfig_ShouldLoadAnchoredYAML(t *testing.T) {
+func TestRuntimeConfigLoader_ShouldLoadAnchoredYAML(t *testing.T) {
 	validation.SetDefaultLimitsForYAMLUnmarshalling(validation.Limits{})
 
 	yamlFile := strings.NewReader(`
@@ -33,7 +34,9 @@ overrides:
   '1235': *id001
   '1236': *id001
 `)
-	runtimeCfg, err := loadRuntimeConfig(yamlFile)
+
+	loader := &runtimeConfigLoader{}
+	runtimeCfg, err := loader.load(yamlFile)
 	require.NoError(t, err)
 
 	limits := validation.Limits{
@@ -53,20 +56,23 @@ overrides:
 	require.Equal(t, limits, *loadedLimits["1236"])
 }
 
-func TestLoadRuntimeConfig_ShouldLoadEmptyFile(t *testing.T) {
+func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {
 	yamlFile := strings.NewReader(`
 # This is an empty YAML.
 `)
-	actual, err := loadRuntimeConfig(yamlFile)
+
+	loader := &runtimeConfigLoader{}
+	actual, err := loader.load(yamlFile)
 	require.NoError(t, err)
 	assert.Equal(t, &runtimeConfigValues{}, actual)
 }
 
-func TestLoadRuntimeConfig_MissingPointerFieldsAreNil(t *testing.T) {
+func TestRuntimeConfigLoader_MissingPointerFieldsAreNil(t *testing.T) {
 	yamlFile := strings.NewReader(`
 # This is an empty YAML.
 `)
-	actual, err := loadRuntimeConfig(yamlFile)
+	loader := &runtimeConfigLoader{}
+	actual, err := loader.load(yamlFile)
 	require.NoError(t, err)
 
 	actualCfg, ok := actual.(*runtimeConfigValues)
@@ -76,7 +82,7 @@ func TestLoadRuntimeConfig_MissingPointerFieldsAreNil(t *testing.T) {
 	assert.Nil(t, actualCfg.IngesterLimits)
 }
 
-func TestLoadRuntimeConfig_ShouldReturnErrorOnMultipleDocumentsInTheConfig(t *testing.T) {
+func TestRuntimeConfigLoader_ShouldReturnErrorOnMultipleDocumentsInTheConfig(t *testing.T) {
 	cases := []string{
 		`
 ---
@@ -108,8 +114,50 @@ overrides:
 	}
 
 	for _, tc := range cases {
-		actual, err := loadRuntimeConfig(strings.NewReader(tc))
+		loader := &runtimeConfigLoader{}
+		actual, err := loader.load(strings.NewReader(tc))
 		assert.Equal(t, errMultipleDocuments, err)
 		assert.Nil(t, actual)
+	}
+}
+
+func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		validate func(limits validation.Limits) error
+		hasError bool
+	}{
+		{
+			name: "successful validate doesn't return error",
+			validate: func(limits validation.Limits) error {
+				return nil
+			},
+		},
+		{
+			name: "no validate function doesn't return error",
+		},
+		{
+			name: "unsuccessful validate returns error",
+			validate: func(limits validation.Limits) error {
+				return errors.New("validation failed")
+			},
+			hasError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			loader := &runtimeConfigLoader{
+				validate: tc.validate,
+			}
+			_, err := loader.load(strings.NewReader(`
+overrides:
+  '1234':
+    ingestion_burst_size: 123
+`))
+			if tc.hasError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }

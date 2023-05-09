@@ -40,7 +40,7 @@ import (
 type Config struct {
 	Iterators            bool          `yaml:"iterators" category:"advanced"`
 	BatchIterators       bool          `yaml:"batch_iterators" category:"advanced"`
-	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced"`
+	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced" doc:"hidden"` // TODO: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0
 
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
@@ -55,12 +55,14 @@ type Config struct {
 }
 
 const (
-	queryIngestersWithinFlag = "querier.query-ingesters-within"
-	queryStoreAfterFlag      = "querier.query-store-after"
+	queryStoreAfterFlag = "querier.query-store-after"
+
+	// DefaultQuerierCfgQueryIngestersWithin is the default value for the deprecated querier config QueryIngestersWithin (it has been moved to a per-tenant limit instead)
+	DefaultQuerierCfgQueryIngestersWithin = 13 * time.Hour
 )
 
 var (
-	errBadLookbackConfigs = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries might return partial results", queryIngestersWithinFlag, queryStoreAfterFlag)
+	errBadLookbackConfigs = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries might return partial results", validation.QueryIngestersWithinFlag, queryStoreAfterFlag)
 	errEmptyTimeRange     = errors.New("empty time range")
 )
 
@@ -69,19 +71,26 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
 	f.BoolVar(&cfg.Iterators, "querier.iterators", false, "Use iterators to execute query, as opposed to fully materialising the series in memory.")
 	f.BoolVar(&cfg.BatchIterators, "querier.batch-iterators", true, "Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag.")
-	f.DurationVar(&cfg.QueryIngestersWithin, queryIngestersWithinFlag, 13*time.Hour, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
-	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", queryIngestersWithinFlag, queryIngestersWithinFlag))
+	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
+
+	// The querier.query-ingesters-within flag has been moved to the limits.go file
+	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.11.0
+	// TODO: Remove in Mimir 2.11.0
+	cfg.QueryIngestersWithin = DefaultQuerierCfgQueryIngestersWithin
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
 
-// Validate the config
 func (cfg *Config) Validate() error {
+	return nil
+}
+
+func (cfg *Config) ValidateLimits(limits validation.Limits) error {
 	// Ensure the config wont create a situation where no queriers are returned.
-	if cfg.QueryIngestersWithin != 0 && cfg.QueryStoreAfter != 0 {
-		if cfg.QueryStoreAfter >= cfg.QueryIngestersWithin {
+	if limits.QueryIngestersWithin != 0 && cfg.QueryStoreAfter != 0 {
+		if cfg.QueryStoreAfter >= time.Duration(limits.QueryIngestersWithin) {
 			return errBadLookbackConfigs
 		}
 	}
@@ -102,7 +111,7 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
-	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, logger)
+	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, logger)
 
 	ns := make([]QueryableWithFilter, len(stores))
 	for ix, s := range stores {

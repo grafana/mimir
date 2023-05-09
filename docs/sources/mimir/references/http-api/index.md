@@ -83,6 +83,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Store-gateway ring status](#store-gateway-ring-status)                               | Store-gateway                  | `GET /store-gateway/ring`                                                 |
 | [Store-gateway tenants](#store-gateway-tenants)                                       | Store-gateway                  | `GET /store-gateway/tenants`                                              |
 | [Store-gateway tenant blocks](#store-gateway-tenant-blocks)                           | Store-gateway                  | `GET /store-gateway/tenant/{tenant}/blocks`                               |
+| [Prepare for Shutdown](#prepare-for-shutdown)                                         | Store-gateway                  | `GET,POST,DELETE /store-gateway/prepare-shutdown`                         |
 | [Compactor ring status](#compactor-ring-status)                                       | Compactor                      | `GET /compactor/ring`                                                     |
 | [Start block upload](#start-block-upload)                                             | Compactor                      | `POST /api/v1/upload/block/{block}/start`                                 |
 | [Upload block file](#upload-block-file)                                               | Compactor                      | `POST /api/v1/upload/block/{block}/files?path={path}`                     |
@@ -986,6 +987,26 @@ GET /store-gateway/tenant/{tenant}/blocks
 ```
 
 Displays a web page listing the blocks for a given tenant.
+
+### Prepare for Shutdown
+
+```
+GET,POST,DELETE /store-gateway/prepare-shutdown
+```
+
+This endpoint changes in-memory store-gateway configuration to prepare for permanently stopping a store-gateway
+instance but does not actually stop any part of the latter.
+
+After a `POST` to the `prepare-shutdown` endpoint returns, when the store-gateway process is stopped with `SIGINT` / `SIGTERM`,
+the store-gateway will be unregistered from the ring.
+
+A `GET` to the `prepare-shutdown` endpoint returns the status of this configuration, either `set` or `unset`.
+
+A `DELETE` to the `prepare-shutdown` endpoint reverts the configuration of the store-gateway to its previous state
+(with respect to unregistering).
+
+This API endpoint is usually used by Kubernetes-specific scale down automations such as the
+[rollout-operator](https://github.com/grafana/rollout-operator).
 
 ## Compactor
 
