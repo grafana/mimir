@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
+	"github.com/platinummonkey/go-concurrency-limits/core"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -146,6 +147,7 @@ type Config struct {
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period" category:"advanced"`
 
 	ActiveSeriesMetricsEnabled      bool          `yaml:"active_series_metrics_enabled" category:"advanced"`
+	DynamicRateLimitingEnabled      bool          `yaml:"dynamic_rate_limiting_enabled" category:"experimental"`
 	ActiveSeriesMetricsUpdatePeriod time.Duration `yaml:"active_series_metrics_update_period" category:"advanced"`
 	ActiveSeriesMetricsIdleTimeout  time.Duration `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
 
@@ -169,6 +171,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
+	f.BoolVar(&cfg.DynamicRateLimitingEnabled, "ingester.dynamic-rate-limiting-enabled", true, "Enable dynamic rate limiting based on ingestion rates.")
 	f.BoolVar(&cfg.ActiveSeriesMetricsEnabled, "ingester.active-series-metrics-enabled", true, "Enable tracking of active series and export them as metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsUpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
@@ -220,6 +223,8 @@ type Ingester struct {
 	limits             *validation.Overrides
 	limiter            *Limiter
 	subservicesWatcher *services.FailureWatcher
+
+	concurrencyLimiter *ConcurrencyLimiter
 
 	// Mimir blocks storage.
 	tsdbsMtx sync.RWMutex
@@ -292,6 +297,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
 
+		concurrencyLimiter:                 NewConcurrencyLimiter(),
 		memorySeriesStats:                  usagestats.GetAndResetInt(memorySeriesStatsName),
 		memoryTenantsStats:                 usagestats.GetAndResetInt(memoryTenantsStatsName),
 		appendedSamplesStats:               usagestats.GetAndResetCounter(appendedSamplesStatsName),
@@ -592,6 +598,10 @@ func (i *Ingester) updateUsageStats() {
 	i.tenantsWithOutOfOrderEnabledStat.Set(tenantsWithOutOfOrderEnabledCount)
 	i.minOutOfOrderTimeWindowSecondsStat.Set(int64(minOutOfOrderTimeWindow.Seconds()))
 	i.maxOutOfOrderTimeWindowSecondsStat.Set(int64(maxOutOfOrderTimeWindow.Seconds()))
+
+	if i.cfg.DynamicRateLimitingEnabled {
+		i.concurrencyLimiter.UpdateConcurrencyLimiter(i.tsdbs, memorySeriesCount)
+	}
 }
 
 // applyTSDBSettings goes through all tenants and applies
@@ -1067,6 +1077,16 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	return nil
 }
 
+func (i *Ingester) checkRateLimit(userID string) (bool, core.Listener) {
+	if !i.cfg.DynamicRateLimitingEnabled {
+		return true, nil
+	}
+
+	// here we can directly call the ConcurrencyLimiter to check if we should reject request.
+	ok, token := i.concurrencyLimiter.Acquire(userID)
+	return ok, token
+}
+
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
@@ -1080,45 +1100,63 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 		return nil, err
 	}
 
-	from, through, matchers, err := client.FromExemplarQueryRequest(req)
-	if err != nil {
-		return nil, err
-	}
+	var token core.Listener
+	var resp *client.ExemplarQueryResponse
 
-	i.metrics.queries.Inc()
-
-	db := i.getTSDB(userID)
-	if db == nil {
-		return &client.ExemplarQueryResponse{}, nil
-	}
-
-	q, err := db.ExemplarQuerier(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// It's not required to sort series from a single ingester because series are sorted by the Exemplar Storage before returning from Select.
-	res, err := q.Select(from, through, matchers...)
-	if err != nil {
-		return nil, err
-	}
-
-	numExemplars := 0
-
-	result := &client.ExemplarQueryResponse{}
-	for _, es := range res {
-		ts := mimirpb.TimeSeries{
-			Labels:    mimirpb.FromLabelsToLabelAdapters(es.SeriesLabels),
-			Exemplars: mimirpb.FromExemplarsToExemplarProtos(es.Exemplars),
+	resp, token, err = func() (*client.ExemplarQueryResponse, core.Listener, error) {
+		ok, token := i.checkRateLimit(userID)
+		if !ok {
+			return nil, nil, fmt.Errorf("rate limit exceeded for tenant %s", userID)
+		}
+		from, through, matchers, err := client.FromExemplarQueryRequest(req)
+		if err != nil {
+			return nil, token, err
 		}
 
-		numExemplars += len(ts.Exemplars)
-		result.Timeseries = append(result.Timeseries, ts)
+		i.metrics.queries.Inc()
+
+		db := i.getTSDB(userID)
+		if db == nil {
+			return &client.ExemplarQueryResponse{}, token, nil
+		}
+
+		q, err := db.ExemplarQuerier(ctx)
+		if err != nil {
+			return nil, token, err
+		}
+
+		// It's not required to sort series from a single ingester because series are sorted by the Exemplar Storage before returning from Select.
+		res, err := q.Select(from, through, matchers...)
+		if err != nil {
+			return nil, token, err
+		}
+
+		numExemplars := 0
+
+		result := &client.ExemplarQueryResponse{}
+		for _, es := range res {
+			ts := mimirpb.TimeSeries{
+				Labels:    mimirpb.FromLabelsToLabelAdapters(es.SeriesLabels),
+				Exemplars: mimirpb.FromExemplarsToExemplarProtos(es.Exemplars),
+			}
+
+			numExemplars += len(ts.Exemplars)
+			result.Timeseries = append(result.Timeseries, ts)
+		}
+
+		i.metrics.queriedExemplars.Observe(float64(numExemplars))
+		return result, token, nil
+	}()
+
+	// we have to release token when we are done with the request.
+	if token != nil {
+		if err != nil {
+			token.OnDropped()
+		} else {
+			token.OnSuccess()
+		}
 	}
-
-	i.metrics.queriedExemplars.Observe(float64(numExemplars))
-
-	return result, nil
+	return resp, nil
 }
 
 func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (*client.LabelValuesResponse, error) {

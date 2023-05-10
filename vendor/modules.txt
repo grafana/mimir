@@ -765,6 +765,15 @@ github.com/pkg/browser
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
+# github.com/platinummonkey/go-concurrency-limits v0.7.0
+## explicit; go 1.11
+github.com/platinummonkey/go-concurrency-limits/core
+github.com/platinummonkey/go-concurrency-limits/limit
+github.com/platinummonkey/go-concurrency-limits/limit/functions
+github.com/platinummonkey/go-concurrency-limits/limiter
+github.com/platinummonkey/go-concurrency-limits/measurements
+github.com/platinummonkey/go-concurrency-limits/strategy
+github.com/platinummonkey/go-concurrency-limits/strategy/matchers
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib

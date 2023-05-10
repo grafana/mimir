@@ -64,6 +64,7 @@ require (
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.73.0
+	github.com/platinummonkey/go-concurrency-limits v0.7.0
 	github.com/thanos-io/objstore v0.0.0-20230201072718-11ffbc490204
 	github.com/xlab/treeprint v1.1.0
 	go.opentelemetry.io/collector/pdata v1.0.0-rc7
