@@ -2324,7 +2324,11 @@ Usage of ./cmd/mimir/mimir:
   -server.http-write-timeout duration
     	Write timeout for HTTP server (default 2m0s)
   -server.log-request-at-info-level-enabled
-    	Optionally log requests at info level instead of debug level.
+    	Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.
+  -server.log-request-headers
+    	Optionally log request headers.
+  -server.log-request-headers-exclude-list string
+    	Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.
   -server.log-source-ips-enabled
     	Optionally log the source IPs.
   -server.log-source-ips-header string
