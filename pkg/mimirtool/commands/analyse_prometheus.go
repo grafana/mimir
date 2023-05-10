@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"sync"
@@ -30,10 +31,11 @@ import (
 )
 
 type PrometheusAnalyzeCommand struct {
-	address     string
-	username    string
-	password    string
-	readTimeout time.Duration
+	address              string
+	prometheusHTTPPrefix string
+	username             string
+	password             string
+	readTimeout          time.Duration
 
 	grafanaMetricsFile string
 	rulerMetricsFile   string
@@ -111,8 +113,12 @@ func (cmd *PrometheusAnalyzeCommand) newAPI() (v1.API, error) {
 		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", rt)
 	}
 
+	address, err := url.JoinPath(cmd.address, cmd.prometheusHTTPPrefix)
+	if err != nil {
+		return nil, err
+	}
 	client, err := api.NewClient(api.Config{
-		Address:      cmd.address,
+		Address:      address,
 		RoundTripper: rt,
 	})
 	if err != nil {

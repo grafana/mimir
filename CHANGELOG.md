@@ -57,6 +57,10 @@
 * [ENHANCEMENT] Compactor: configure `-compactor.first-level-compaction-wait-period` to TSDB head compaction interval plus 10 minutes. #4872
 * [BUGFIX] Backend: configure `-ruler.alertmanager-url` to `mimir-backend` when running in read-write deployment mode. #4892
 
+### Mimirtool
+
+* [ENHANCEMENT] analyze prometheus: allow to specify `-prometheus-http-prefix`. #4966
+
 ## 2.8.0
 
 ### Grafana Mimir
