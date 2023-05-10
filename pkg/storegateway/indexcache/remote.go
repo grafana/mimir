@@ -112,7 +112,7 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 	c.requests.WithLabelValues(cacheTypePostings).Add(float64(len(keys)))
 	results := c.remote.GetMulti(ctx, keys)
 	if len(results) == 0 {
-		return EmptyResult[labels.Label]{}
+		return MapResult[string](nil)
 	}
 
 	c.hits.WithLabelValues(cacheTypePostings).Add(float64(len(results)))
@@ -124,15 +124,7 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 
 // postingsCacheKey returns the cache key used to store postings matching the input
 // label name/value pair in the given block.
-func postingsCacheKey(userID string, blockID string, l labels.Label) string {
-	return postingsCacheKeyBuf(userID, blockID, l, nil)
-}
-
-// postingsCacheKeyBuf is the same as postingsCacheKey but tries to reuse the provided buf.
-// If buf is sufficiently sized the returned string will be stored in buf.
-// If buf's capacity is not sufficient and buf is non-nil, a new buffer is stored in the pointer.
-// If buf's capacity is not sufficient and buf is nil, then a new byte slice is allocated.
-func postingsCacheKeyBuf(userID string, blockID string, l labels.Label, buf *[]byte) string {
+func postingsCacheKey(userID, blockID string, l labels.Label) string {
 	const (
 		prefix    = "P2:"
 		separator = ":"
@@ -142,16 +134,9 @@ func postingsCacheKeyBuf(userID string, blockID string, l labels.Label, buf *[]b
 	lblHash, hashLen := postingsCacheKeyLabelID(l)
 
 	// Preallocate the byte slice used to store the cache key.
-	expectedLen := len(prefix) + len(userID) + 1 + ulid.EncodedSize + 1 + base64.RawStdEncoding.EncodedLen(hashLen)
-	var key []byte
-	if buf != nil && expectedLen <= cap(*buf) {
-		key = (*buf)[:expectedLen]
-	} else {
-		key = make([]byte, expectedLen)
-		if buf != nil {
-			*buf = key
-		}
-	}
+	encodedHashLen := base64.RawURLEncoding.EncodedLen(len(lblHash[:hashLen]))
+	expectedLen := len(prefix) + len(userID) + 1 + ulid.EncodedSize + 1 + encodedHashLen
+	key := make([]byte, expectedLen)
 	offset := 0
 
 	offset += copy(key[offset:], prefix)
@@ -160,7 +145,7 @@ func postingsCacheKeyBuf(userID string, blockID string, l labels.Label, buf *[]b
 	offset += copy(key[offset:], blockID)
 	offset += copy(key[offset:], separator)
 	base64.RawURLEncoding.Encode(key[offset:], lblHash[:hashLen])
-	offset += base64.RawURLEncoding.EncodedLen(len(lblHash[:hashLen]))
+	offset += encodedHashLen
 
 	sizedKey := key[:offset]
 	// Convert []byte to string with no extra allocation.

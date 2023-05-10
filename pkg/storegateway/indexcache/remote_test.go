@@ -201,7 +201,6 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 					}
 				}
 				assert.Equal(b, numHits, actualHits)
-				require.NoError(b, hits.Close())
 			}
 		})
 	}

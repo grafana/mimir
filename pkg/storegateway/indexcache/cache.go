@@ -8,7 +8,6 @@ package indexcache
 import (
 	"context"
 	"encoding/base64"
-	"io"
 	"reflect"
 	"sort"
 	"strings"
@@ -44,28 +43,15 @@ var (
 )
 
 type BytesResult interface {
-	io.Closer
-
 	Bytes() ([]byte, bool)
 	Len() int
 }
 
-type EmptyResult[T any] struct{}
-
-func (EmptyResult[T]) Close() error {
-	return nil
-}
-
-func (EmptyResult[T]) Bytes() ([]byte, bool) {
-	return nil, false
-}
-
-func (EmptyResult[T]) Len() int {
-	return 0
-}
-
 func MapResult[T comparable](m map[T][]byte) *mapResult[T] {
-	keys := make([]T, 0, len(m))
+	var keys []T
+	if len(m) > 0 {
+		keys = make([]T, 0, len(m))
+	}
 	for k := range m {
 		keys = append(keys, k)
 	}
@@ -92,8 +78,6 @@ func (l *mapResult[T]) Bytes() ([]byte, bool) {
 func (l *mapResult[T]) Len() int {
 	return len(l.m)
 }
-
-func (*mapResult[T]) Close() error { return nil }
 
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {

@@ -144,7 +144,7 @@ type noopCache struct{}
 
 func (noopCache) StorePostings(string, ulid.ULID, labels.Label, []byte) {}
 func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, _ []labels.Label) indexcache.BytesResult {
-	return indexcache.EmptyResult[labels.Label]{}
+	return indexcache.MapResult[string](nil)
 }
 
 func (noopCache) StoreSeriesForRef(string, ulid.ULID, storage.SeriesRef, []byte) {}
