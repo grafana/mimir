@@ -118,9 +118,8 @@ func (l labelValueMappingResult) Len() int {
 	return len(l.res)
 }
 
-// FetchMultiPostings fetches multiple postings - each identified by a label -
-// and returns a map containing cache hits, along with a list of missing keys.
-// In case of error, it logs and return an empty cache hits map.
+// FetchMultiPostings fetches multiple postings - each identified by a label.
+// In case of error, it logs and return an empty result.
 func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (_ BytesResult[labels.Label]) {
 	blockIDStr := blockID.String()
 

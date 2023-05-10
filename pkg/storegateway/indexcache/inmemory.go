@@ -295,8 +295,7 @@ func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l l
 	c.set(cacheKeyPostings{userID, blockID, copyLabel(l)}, v)
 }
 
-// FetchMultiPostings fetches multiple postings - each identified by a label -
-// and returns a map containing cache hits, along with a list of missing keys.
+// FetchMultiPostings fetches multiple postings - each identified by a label.
 func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (_ BytesResult[labels.Label]) {
 	hits := MapResult[labels.Label]{}
 
