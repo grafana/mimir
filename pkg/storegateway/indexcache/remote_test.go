@@ -164,7 +164,7 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 				return fetchLabels
 			}(),
 		},
-		"long labels": {
+		"long labels": { // this should trigger hashing the labels instead of embedding them in the cache key
 			fetchLabels: func() []labels.Label {
 				fetchLabels := make([]labels.Label, 0, numHits+numMisses)
 				for i := 0; i < numHits+numMisses; i++ {
