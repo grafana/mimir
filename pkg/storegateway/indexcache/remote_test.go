@@ -132,9 +132,9 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 
 func assertResultMatches[T comparable](t testing.TB, expected *mapResult[T], result BytesResult) {
 	t.Helper()
-	assert.Equal(t, result.Len(), expected.Len())
-	for exp, next := expected.Bytes(); next; exp, next = expected.Bytes() {
-		actual, ok := result.Bytes()
+	assert.Equal(t, result.Remaining(), expected.Remaining())
+	for exp, next := expected.Next(); next; exp, next = expected.Next() {
+		actual, ok := result.Next()
 		assert.True(t, ok)
 		assert.Equal(t, exp, actual)
 	}
@@ -191,11 +191,11 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 
 			for n := 0; n < b.N; n++ {
 				hits := c.FetchMultiPostings(ctx, userID, blockID, fetchLabels)
-				assert.Equal(b, numHits, hits.Len())
+				assert.Equal(b, numHits, hits.Remaining())
 				actualHits := 0
 				// iterate over the returned map to account for cost of access
 				for i := 0; i < numHits; i++ {
-					_, ok := hits.Bytes()
+					_, ok := hits.Next()
 					if ok {
 						actualHits++
 					}

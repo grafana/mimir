@@ -40,9 +40,10 @@ func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID strin
 	level.Debug(spanLogger).Log(
 		"msg", "IndexCache.FetchMultiPostings",
 		"requested keys", len(keys),
-		"cache hits", hits.Len(),
-		"cache misses", len(keys)-hits.Len(),
+		"cache hits", hits.Remaining(),
+		"cache misses", len(keys)-hits.Remaining(),
 		"time elapsed", time.Since(t0),
+		"returned bytes", hits.Size(),
 		"user_id", userID,
 	)
 	return hits

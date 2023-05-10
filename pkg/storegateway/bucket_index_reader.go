@@ -427,7 +427,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	// Overlaps are well handled by partitioner, so we don't need to deduplicate keys.
 	for ix, key := range keys {
 		// Get postings for the given key from cache first.
-		if b, _ := fromCache.Bytes(); b != nil {
+		if b, _ := fromCache.Next(); b != nil {
 			stats.update(func(stats *queryStats) {
 				stats.postingsTouched++
 				stats.postingsTouchedSizeSum += len(b)

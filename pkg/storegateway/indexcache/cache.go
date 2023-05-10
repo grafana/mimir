@@ -43,10 +43,20 @@ var (
 )
 
 type BytesResult interface {
-	Bytes() ([]byte, bool)
-	Len() int
+	// Next should return a byte slice if there was a cache hit for the current key; otherwise Next should return nil.
+	// Next should return false when there are no more keys in the result.
+	Next() ([]byte, bool)
+
+	// Remaining should return the number of keys left in the result.
+	// There may or may not be an item for each key.
+	Remaining() int
+
+	// Size should return the size in bytes of the result.
+	Size() int
 }
 
+// MapResult returns an implementation of BytesResult backed by the provided map and its keys.
+// A nil map is a valid argument.
 func MapResult[T comparable](m map[T][]byte) *mapResult[T] {
 	var keys []T
 	if len(m) > 0 {
@@ -66,7 +76,7 @@ type mapResult[T comparable] struct {
 	keys []T
 }
 
-func (l *mapResult[T]) Bytes() ([]byte, bool) {
+func (l *mapResult[T]) Next() ([]byte, bool) {
 	if len(l.keys) == 0 {
 		return nil, false
 	}
@@ -75,8 +85,12 @@ func (l *mapResult[T]) Bytes() ([]byte, bool) {
 	return b, true
 }
 
-func (l *mapResult[T]) Len() int {
+func (l *mapResult[T]) Remaining() int {
 	return len(l.m)
+}
+
+func (l *mapResult[T]) Size() int {
+	return sumBytes[T](l.m)
 }
 
 // IndexCache is the interface exported by index cache backends.
@@ -85,6 +99,7 @@ type IndexCache interface {
 	StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte)
 
 	// FetchMultiPostings fetches multiple postings - each identified by a label.
+	// The returned result should contain one item for each requested key.
 	FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (result BytesResult)
 
 	// StoreSeriesForRef stores a single series.
