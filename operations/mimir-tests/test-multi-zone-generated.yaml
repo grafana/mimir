@@ -1801,6 +1801,9 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMEMLIMIT
+          value: "12884901888"
         image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
@@ -1932,6 +1935,9 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMEMLIMIT
+          value: "12884901888"
         image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
@@ -2063,6 +2069,9 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMEMLIMIT
+          value: "12884901888"
         image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
