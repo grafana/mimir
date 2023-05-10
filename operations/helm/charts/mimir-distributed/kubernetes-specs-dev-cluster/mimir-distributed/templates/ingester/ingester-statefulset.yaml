@@ -17,7 +17,7 @@ metadata:
   namespace: "mimir"
 spec:
   podManagementPolicy: Parallel
-  replicas: 12
+  replicas: 20
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
