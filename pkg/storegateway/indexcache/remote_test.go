@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -142,31 +143,57 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 		blockID = ulid.MustNew(1, nil)
 	)
 
-	// Generate the labels for which we're going to fetch the postings.
-	fetchLabels := make([]labels.Label, 0, numHits+numMisses)
-	for i := 0; i < numHits+numMisses; i++ {
-		fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", i)})
+	benchCases := map[string]struct {
+		fetchLabels []labels.Label
+	}{
+		"short labels": {
+			fetchLabels: func() []labels.Label {
+				fetchLabels := make([]labels.Label, 0, numHits+numMisses)
+				for i := 0; i < numHits+numMisses; i++ {
+					fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", i)})
+				}
+				return fetchLabels
+			}(),
+		},
+		"long labels": {
+			fetchLabels: func() []labels.Label {
+				fetchLabels := make([]labels.Label, 0, numHits+numMisses)
+				for i := 0; i < numHits+numMisses; i++ {
+					fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: "series_" + strings.Repeat(strconv.Itoa(i), 100)})
+				}
+				return fetchLabels
+			}(),
+		},
 	}
 
-	client := newMockedRemoteCacheClient(nil)
-	c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
-	assert.NoError(b, err)
+	for name, benchCase := range benchCases {
+		fetchLabels := benchCase.fetchLabels
+		b.Run(name, func(b *testing.B) {
+			client := newMockedRemoteCacheClient(nil)
+			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			assert.NoError(b, err)
 
-	// Store the postings expected before running the benchmark.
-	for i := 0; i < numHits; i++ {
-		c.StorePostings(userID, blockID, fetchLabels[i], []byte{1})
-	}
+			// Store the postings expected before running the benchmark.
+			for i := 0; i < numHits; i++ {
+				c.StorePostings(userID, blockID, fetchLabels[i], []byte{1})
+			}
 
-	b.ResetTimer()
+			b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
-		hits, misses := c.FetchMultiPostings(ctx, userID, blockID, fetchLabels)
-		if len(hits) != numHits {
-			b.Fatalf("unexpected hits (expected: %d, got: %d)", numHits, len(hits))
-		}
-		if len(misses) != numMisses {
-			b.Fatalf("unexpected misses (expected: %d, got: %d)", numMisses, len(hits))
-		}
+			for n := 0; n < b.N; n++ {
+				hits, _ := c.FetchMultiPostings(ctx, userID, blockID, fetchLabels)
+				assert.Equal(b, numHits, len(hits))
+				actualHits := 0
+				// iterate over the returned map to account for cost of access
+				for i := 0; i < numHits; i++ {
+					_, ok := hits[fetchLabels[i]]
+					if ok {
+						actualHits++
+					}
+				}
+				assert.Equal(b, numHits, actualHits)
+			}
+		})
 	}
 }
 
