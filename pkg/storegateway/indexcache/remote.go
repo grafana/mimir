@@ -121,7 +121,7 @@ func (l labelValueMappingResult) Len() int {
 // FetchMultiPostings fetches multiple postings - each identified by a label -
 // and returns a map containing cache hits, along with a list of missing keys.
 // In case of error, it logs and return an empty cache hits map.
-func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (_ Result[labels.Label], misses []labels.Label) {
+func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (_ Result[labels.Label]) {
 	blockIDStr := blockID.String()
 
 	keys := make([]string, 0, len(lbls))
@@ -133,7 +133,7 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 	c.requests.WithLabelValues(cacheTypePostings).Add(float64(len(keys)))
 	results := c.remote.GetMulti(ctx, keys)
 	if len(results) == 0 {
-		return EmptyResult[labels.Label]{}, lbls
+		return EmptyResult[labels.Label]{}
 	}
 
 	c.hits.WithLabelValues(cacheTypePostings).Add(float64(len(results)))
@@ -142,7 +142,7 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 		blockID: blockIDStr,
 		keyBuf:  postingsCacheKeyLabelHashBufferPool.Get().(*[]byte),
 		res:     results,
-	}, misses
+	}
 }
 
 // postingsCacheKey returns the cache key used to store postings matching the input

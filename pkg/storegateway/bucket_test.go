@@ -921,12 +921,12 @@ func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Contex
 
 type corruptedPostingsCache struct{ noopCache }
 
-func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (indexcache.Result[labels.Label], []labels.Label) {
+func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) indexcache.Result[labels.Label] {
 	res := make(map[labels.Label][]byte)
 	for _, k := range keys {
 		res[k] = []byte("corrupted or unknown")
 	}
-	return res, nil
+	return res
 }
 
 type cacheNotExpectingToStoreExpandedPostings struct {
@@ -969,13 +969,13 @@ type postingsReplacingCache struct {
 	vals map[labels.Label][]byte
 }
 
-func (c *postingsReplacingCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits indexcache.Result[labels.Label], misses []labels.Label) {
+func (c *postingsReplacingCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits indexcache.Result[labels.Label]) {
 	for _, l := range keys {
 		if _, ok := c.vals[l]; !ok {
 			misses = append(misses, l)
 		}
 	}
-	return c.vals, misses
+	return c.vals
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {

@@ -116,9 +116,8 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 			}
 
 			// Fetch postings from cached and assert on it.
-			hits, misses := c.FetchMultiPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels)
+			hits := c.FetchMultiPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels)
 			assert.Equal(t, testData.expectedHits, hits)
-			assert.Equal(t, testData.expectedMisses, misses)
 
 			// Assert on metrics.
 			assert.Equal(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
@@ -192,6 +191,7 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 					}
 				}
 				assert.Equal(b, numHits, actualHits)
+				require.NoError(b, hits.Close())
 			}
 		})
 	}
