@@ -31,7 +31,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Set `nginx` and `gateway` Nginx read timeout (`proxy_read_timeout`) to 300 seconds (increase from default 60 seconds), so that it doesn't interfere with the querier's default 120 seconds timeout (`mimir.structuredConfig.querier.timeout`). #4924
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.5.0`. #4930
 
-## 4.4.0
+## 4.4.1
 
 * [CHANGE] Change number of Memcached max idle connections to 150. #4591
 * [CHANGE] Set `unregister_on_shutdown` for `store-gateway` to `false` by default. #4690
@@ -48,6 +48,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Configure ingester TSDB WAL replay concurrency to 3. #4864
 * [ENHANCEMENT] Configure compactor's first level compaction wait period to 25m. #4872
 * [ENHANCEMENT] You can now configure `storageClass` per zone for Alertmanager, StoreGateway and Ingester. #4234
+* [ENHANCEMENT] Add suffix to minio create buckets job to avoid mimir-distributed helm chart fail to upgrade when minio image version changes. #4936
 * [BUGFIX] Helm-Chart: fix route to service port mapping. #4728
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573

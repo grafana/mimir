@@ -7,7 +7,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "make-minio-buckets") }}
+  {{- $minioSub := index .Subcharts "minio" }}
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "make-minio-buckets") }}-{{ $minioSub.Chart.Version }}
   namespace: {{ .Release.Namespace | quote }}
   labels:
     app: {{ template "minio.name" . }}-make-bucket-job
