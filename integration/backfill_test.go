@@ -360,20 +360,20 @@ func getURL(url string) (string, error) {
 }
 
 func newRateLimitedReader(r io.Reader, bytesPerSec float64, burst int) io.Reader {
-	return &reader{
+	return &rateLimitedReader{
 		r:      r,
 		burst:  burst,
 		bucket: rate.NewLimiter(rate.Limit(bytesPerSec), burst),
 	}
 }
 
-type reader struct {
+type rateLimitedReader struct {
 	r      io.Reader
 	burst  int
 	bucket *rate.Limiter
 }
 
-func (r *reader) Read(buf []byte) (int, error) {
+func (r *rateLimitedReader) Read(buf []byte) (int, error) {
 	// We can't wait for more bytes than our burst size.
 	if len(buf) > r.burst {
 		buf = buf[:r.burst]
