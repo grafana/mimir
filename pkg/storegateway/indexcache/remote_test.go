@@ -117,7 +117,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 
 			// Fetch postings from cached and assert on it.
 			hits := c.FetchMultiPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels)
-			assertResultMatches(t, testData.expectedHits, hits)
+			assertResultMatches(t, MapResult[labels.Label](testData.expectedHits), hits)
 
 			// Assert on metrics.
 			assert.Equal(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
@@ -130,11 +130,11 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 	}
 }
 
-func assertResultMatches[T comparable](t testing.TB, expected MapResult[T], result BytesResult[T]) {
+func assertResultMatches[T comparable](t testing.TB, expected *mapResult[T], result BytesResult) {
 	t.Helper()
-	assert.Equal(t, result.Len(), len(expected))
-	for k, exp := range expected {
-		actual, ok := result.Lookup(k)
+	assert.Equal(t, result.Len(), expected.Len())
+	for exp, next := expected.Bytes(); next; exp, next = expected.Bytes() {
+		actual, ok := result.Bytes()
 		assert.True(t, ok)
 		assert.Equal(t, exp, actual)
 	}
@@ -195,7 +195,7 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 				actualHits := 0
 				// iterate over the returned map to account for cost of access
 				for i := 0; i < numHits; i++ {
-					_, ok := hits.Lookup(fetchLabels[i])
+					_, ok := hits.Bytes()
 					if ok {
 						actualHits++
 					}

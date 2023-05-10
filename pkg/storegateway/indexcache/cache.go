@@ -43,10 +43,10 @@ var (
 	}
 )
 
-type BytesResult[T any] interface {
+type BytesResult interface {
 	io.Closer
 
-	Lookup(T) ([]byte, bool)
+	Bytes() ([]byte, bool)
 	Len() int
 }
 
@@ -56,7 +56,7 @@ func (EmptyResult[T]) Close() error {
 	return nil
 }
 
-func (EmptyResult[T]) Lookup(t T) ([]byte, bool) {
+func (EmptyResult[T]) Bytes() ([]byte, bool) {
 	return nil, false
 }
 
@@ -64,18 +64,36 @@ func (EmptyResult[T]) Len() int {
 	return 0
 }
 
-type MapResult[T comparable] map[T][]byte
-
-func (l MapResult[T]) Lookup(t T) ([]byte, bool) {
-	b, ok := l[t]
-	return b, ok
+func MapResult[T comparable](m map[T][]byte) *mapResult[T] {
+	keys := make([]T, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return &mapResult[T]{
+		keys: keys,
+		m:    m,
+	}
 }
 
-func (l MapResult[T]) Len() int {
-	return len(l)
+type mapResult[T comparable] struct {
+	m    map[T][]byte
+	keys []T
 }
 
-func (MapResult[T]) Close() error { return nil }
+func (l *mapResult[T]) Bytes() ([]byte, bool) {
+	if len(l.keys) == 0 {
+		return nil, false
+	}
+	b := l.m[l.keys[0]]
+	l.keys = l.keys[1:]
+	return b, true
+}
+
+func (l *mapResult[T]) Len() int {
+	return len(l.m)
+}
+
+func (*mapResult[T]) Close() error { return nil }
 
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
@@ -83,7 +101,7 @@ type IndexCache interface {
 	StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte)
 
 	// FetchMultiPostings fetches multiple postings - each identified by a label.
-	FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits BytesResult[labels.Label])
+	FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (result BytesResult)
 
 	// StoreSeriesForRef stores a single series.
 	StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte)

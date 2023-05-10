@@ -143,7 +143,7 @@ type BucketStore struct {
 type noopCache struct{}
 
 func (noopCache) StorePostings(string, ulid.ULID, labels.Label, []byte) {}
-func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, _ []labels.Label) indexcache.BytesResult[labels.Label] {
+func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, _ []labels.Label) indexcache.BytesResult {
 	return indexcache.EmptyResult[labels.Label]{}
 }
 

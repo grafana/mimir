@@ -296,8 +296,8 @@ func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l l
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label.
-func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (_ BytesResult[labels.Label]) {
-	hits := MapResult[labels.Label]{}
+func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string, blockID ulid.ULID, keys []labels.Label) BytesResult {
+	hits := map[labels.Label][]byte{}
 
 	for _, key := range keys {
 		if b, ok := c.get(cacheKeyPostings{userID, blockID, key}); ok {
@@ -306,7 +306,7 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string
 		}
 	}
 
-	return hits
+	return MapResult(hits)
 }
 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v,

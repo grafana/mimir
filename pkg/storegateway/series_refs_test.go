@@ -2379,7 +2379,7 @@ type forbiddenFetchMultiPostingsIndexCache struct {
 	t *testing.T
 }
 
-func (c forbiddenFetchMultiPostingsIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits indexcache.BytesResult[labels.Label]) {
+func (c forbiddenFetchMultiPostingsIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) indexcache.BytesResult {
 	assert.Fail(c.t, "index cache FetchMultiPostings should not be called")
 	return nil
 }

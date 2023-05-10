@@ -98,29 +98,9 @@ func (c *RemoteIndexCache) StorePostings(userID string, blockID ulid.ULID, l lab
 	c.set(cacheTypePostings, postingsCacheKey(userID, blockID.String(), l), v)
 }
 
-type labelValueMappingResult struct {
-	userID, blockID string
-	keyBuf          *[]byte
-	res             map[string][]byte
-}
-
-func (l labelValueMappingResult) Close() error {
-	postingsCacheKeyLabelHashBufferPool.Put(l.keyBuf)
-	return nil
-}
-
-func (l labelValueMappingResult) Lookup(t labels.Label) ([]byte, bool) {
-	b, ok := l.res[postingsCacheKeyBuf(l.userID, l.blockID, t, l.keyBuf)]
-	return b, ok
-}
-
-func (l labelValueMappingResult) Len() int {
-	return len(l.res)
-}
-
 // FetchMultiPostings fetches multiple postings - each identified by a label.
 // In case of error, it logs and return an empty result.
-func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (_ BytesResult[labels.Label]) {
+func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) BytesResult {
 	blockIDStr := blockID.String()
 
 	keys := make([]string, 0, len(lbls))
@@ -136,11 +116,9 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 	}
 
 	c.hits.WithLabelValues(cacheTypePostings).Add(float64(len(results)))
-	return labelValueMappingResult{
-		userID:  userID,
-		blockID: blockIDStr,
-		keyBuf:  postingsCacheKeyLabelHashBufferPool.Get().(*[]byte),
-		res:     results,
+	return &mapResult[string]{
+		keys: keys,
+		m:    results,
 	}
 }
 
