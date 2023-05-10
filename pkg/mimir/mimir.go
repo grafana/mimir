@@ -734,6 +734,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/grpc.health.v1.Health/Check",
 			"/frontend.Frontend/Process",
 			"/frontend.Frontend/NotifyClientShutdown",
+			"/ruler.Ruler/SyncRules",
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",

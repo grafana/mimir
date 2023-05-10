@@ -20,7 +20,11 @@ option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 service Ruler {
+  // Rules returns the currently loaded on the ruler instance for the authenticated tenant.
   rpc Rules(RulesRequest) returns (RulesResponse) {};
+
+  // SyncRules requests a ruler to asynchronously re-synchronize the rules of 1+ tenants.
+  rpc SyncRules(SyncRulesRequest) returns (SyncRulesResponse) {};
 }
 
 message RulesRequest {
@@ -35,6 +39,15 @@ message RulesRequest {
 message RulesResponse {
   repeated GroupStateDesc groups = 1;
 }
+
+// SyncRulesRequest is the message sent to request a ruler to re-synchronize the rules of 1+ tenants.
+message SyncRulesRequest {
+  // The user / tenant IDs for which the rules should be synced.
+  repeated string user_ids = 1;
+}
+
+// SyncRulesResponse is the message received back for a SyncRulesRequest.
+message SyncRulesResponse {}
 
 // GroupStateDesc is a proto representation of a mimir rule group
 message GroupStateDesc {

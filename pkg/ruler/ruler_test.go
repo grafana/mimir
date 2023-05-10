@@ -50,7 +50,10 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/util"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -78,6 +81,20 @@ func defaultRulerConfig(t testing.TB) Config {
 	return cfg
 }
 
+type mockRulerClient struct {
+	ruler           *Ruler
+	rulesCallsCount *atomic.Int32
+}
+
+func (c *mockRulerClient) Rules(ctx context.Context, in *RulesRequest, _ ...grpc.CallOption) (*RulesResponse, error) {
+	c.rulesCallsCount.Inc()
+	return c.ruler.Rules(ctx, in)
+}
+
+func (c *mockRulerClient) SyncRules(ctx context.Context, in *SyncRulesRequest, _ ...grpc.CallOption) (*SyncRulesResponse, error) {
+	return c.ruler.SyncRules(ctx, in)
+}
+
 type mockRulerClientsPool struct {
 	ClientsPool
 	cfg           Config
@@ -85,27 +102,17 @@ type mockRulerClientsPool struct {
 	numberOfCalls atomic.Int32
 }
 
-type mockRulerClient struct {
-	ruler         *Ruler
-	numberOfCalls *atomic.Int32
-}
-
-func (c *mockRulerClient) Rules(ctx context.Context, in *RulesRequest, _ ...grpc.CallOption) (*RulesResponse, error) {
-	c.numberOfCalls.Inc()
-	return c.ruler.Rules(ctx, in)
-}
-
 func (p *mockRulerClientsPool) GetClientFor(addr string) (RulerClient, error) {
 	for _, r := range p.rulerAddrMap {
 		if r.lifecycler.GetInstanceAddr() == addr {
 			return &mockRulerClient{
-				ruler:         r,
-				numberOfCalls: &p.numberOfCalls,
+				ruler:           r,
+				rulesCallsCount: &p.numberOfCalls,
 			}, nil
 		}
 	}
 
-	return nil, fmt.Errorf("unable to find ruler for add %s", addr)
+	return nil, fmt.Errorf("unable to find ruler for addr %s", addr)
 }
 
 func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer, rulerAddrMap map[string]*Ruler) *mockRulerClientsPool {
@@ -119,11 +126,12 @@ func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer
 type prepareOption func(opts *prepareOptions)
 
 type prepareOptions struct {
-	limits       RulesLimits
-	logger       log.Logger
-	registerer   prometheus.Registerer
-	rulerAddrMap map[string]*Ruler
-	start        bool
+	limits           RulesLimits
+	logger           log.Logger
+	registerer       prometheus.Registerer
+	rulerAddrMap     map[string]*Ruler
+	rulerAddrAutoMap bool
+	start            bool
 }
 
 func applyPrepareOptions(opts ...prepareOption) prepareOptions {
@@ -137,8 +145,9 @@ func applyPrepareOptions(opts ...prepareOption) prepareOptions {
 			defaults.RulerMaxRuleGroupsPerTenant = 20
 			defaults.RulerMaxRulesPerRuleGroup = 15
 		}),
-		logger:     defaultLogger,
-		registerer: prometheus.NewPedanticRegistry(),
+		rulerAddrMap: map[string]*Ruler{},
+		logger:       defaultLogger,
+		registerer:   prometheus.NewPedanticRegistry(),
 	}
 
 	for _, opt := range opts {
@@ -169,12 +178,30 @@ func withRulerAddrMap(addrs map[string]*Ruler) prepareOption {
 	}
 }
 
+// withRulerAddrAutomaticMapping is a prepareOption that automatically configures the mapping between rulers and their network addresses.
+func withRulerAddrAutomaticMapping() prepareOption {
+	return func(opts *prepareOptions) {
+		opts.rulerAddrAutoMap = true
+	}
+}
+
+// withPrometheusRegisterer is a prepareOption that configures the Prometheus registerer to pass to the ruler.
+func withPrometheusRegisterer(reg prometheus.Registerer) prepareOption {
+	return func(opts *prepareOptions) {
+		opts.registerer = reg
+	}
+}
+
 func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ...prepareOption) *Ruler {
 	options := applyPrepareOptions(opts...)
 	manager := prepareRulerManager(t, cfg, opts...)
 
 	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
 	require.NoError(t, err)
+
+	if options.rulerAddrAutoMap {
+		options.rulerAddrMap[cfg.Ring.Common.InstanceAddr] = ruler
+	}
 
 	// Start the ruler if requested to do so.
 	if options.start {
@@ -213,6 +240,8 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 var _ MultiTenantManager = &DefaultMultiTenantManager{}
 
 func TestNotifierSendsUserIDHeader(t *testing.T) {
+	util_test.VerifyNoLeak(t)
+
 	var wg sync.WaitGroup
 
 	// We do expect 1 API call for the user create with the getOrCreateNotifier()
@@ -254,6 +283,8 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 }
 
 func TestRuler_Rules(t *testing.T) {
+	util_test.VerifyNoLeak(t)
+
 	testCases := map[string]struct {
 		mockRules map[string]rulespb.RuleGroupList
 		userID    string
@@ -324,6 +355,8 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 }
 
 func TestGetRules(t *testing.T) {
+	util_test.VerifyNoLeak(t)
+
 	// ruler ID -> (user ID -> list of groups).
 	type expectedRulesMap map[string]map[string]rulespb.RuleGroupList
 
@@ -372,42 +405,39 @@ func TestGetRules(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			var (
+				allRulesByUser   = map[string]rulespb.RuleGroupList{}
+				allRulesByRuler  = map[string]rulespb.RuleGroupList{}
+				allTokensByRuler = map[string][]uint32{}
+				registryByRuler  = map[string]*prometheus.Registry{}
+				rulerAddrMap     = map[string]*Ruler{}
+				storage          = newMockRuleStore(allRulesByUser)
+				ctx              = context.Background()
+			)
+
 			kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
-			allRulesByUser := map[string]rulespb.RuleGroupList{}
-			allRulesByRuler := map[string]rulespb.RuleGroupList{}
-			allTokensByRuler := map[string][]uint32{}
-			rulerAddrMap := map[string]*Ruler{}
-			storage := newMockRuleStore(allRulesByUser)
 
-			createRuler := func(id string) *Ruler {
+			createAndStartRuler := func(id string) *Ruler {
 				cfg := defaultRulerConfig(t)
+				cfg.Ring.Common.InstanceID = id
+				cfg.Ring.Common.InstanceAddr = id
+				cfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+				cfg.Ring.NumTokens = 0          // Join the ring with no tokens because they will be injected later.
+				cfg.PollInterval = time.Hour    // No periodic syncing because we want to trigger it.
+				cfg.RingCheckPeriod = time.Hour // No syncing on ring change because we want to trigger it.
 
-				cfg.Ring = RingConfig{
-					Common: util.CommonRingConfig{
-						InstanceID:   id,
-						InstanceAddr: id,
-						KVStore: kv.Config{
-							Mock: kvStore,
-						},
-					},
-				}
+				reg := prometheus.NewPedanticRegistry()
+				registryByRuler[id] = reg
 
-				r := prepareRuler(t, cfg, storage, withRulerAddrMap(rulerAddrMap), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+				return prepareRuler(t, cfg, storage, withStart(), withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
 				})))
-
-				rulerAddrMap[id] = r
-				if r.ring != nil {
-					require.NoError(t, services.StartAndAwaitRunning(context.Background(), r.ring))
-					t.Cleanup(r.ring.StopAsync)
-				}
-				return r
 			}
 
 			for rID, r := range expectedRulesByRuler {
-				createRuler(rID)
+				createAndStartRuler(rID)
 				for user, rules := range r {
 					allRulesByUser[user] = append(allRulesByUser[user], rules...)
 					allRulesByRuler[rID] = append(allRulesByRuler[rID], rules...)
@@ -415,7 +445,13 @@ func TestGetRules(t *testing.T) {
 				}
 			}
 
-			err := kvStore.CAS(context.Background(), RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			// Pre-condition check: we expect rulers have done the initial sync (but they have no tokens in the ring at this point).
+			for _, reg := range registryByRuler {
+				verifySyncRulesMetric(t, reg, 1, 0)
+			}
+
+			// Inject the tokens for each ruler.
+			require.NoError(t, kvStore.CAS(ctx, RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 				d, _ := in.(*ring.Desc)
 				if d == nil {
 					d = ring.NewDesc()
@@ -424,25 +460,21 @@ func TestGetRules(t *testing.T) {
 					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, ring.ACTIVE, time.Now())
 				}
 				return d, true, nil
-			})
-			require.NoError(t, err)
+			}))
+
 			// Wait a bit to make sure ruler's ring is updated.
 			time.Sleep(100 * time.Millisecond)
 
-			forEachRuler := func(f func(rID string, r *Ruler)) {
-				for rID, r := range rulerAddrMap {
-					f(rID, r)
-				}
+			// Sync rules on each ruler.
+			for _, r := range rulerAddrMap {
+				r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
 			}
 
-			// Sync Rules
-			forEachRuler(func(_ string, r *Ruler) {
-				r.syncRules(context.Background(), rulerSyncReasonInitial)
-			})
-
+			// Call GetRules() on each ruler.
 			for u := range allRulesByUser {
-				ctx := user.InjectOrgID(context.Background(), u)
-				forEachRuler(func(_ string, r *Ruler) {
+				ctx := user.InjectOrgID(ctx, u)
+
+				for _, r := range rulerAddrMap {
 					rules, err := r.GetRules(ctx, AnyRule)
 					require.NoError(t, err)
 					require.Equal(t, len(allRulesByUser[u]), len(rules))
@@ -454,20 +486,21 @@ func TestGetRules(t *testing.T) {
 						require.Equal(t, int32(len(rulerAddrMap)), mockPoolClient.numberOfCalls.Load())
 					}
 					mockPoolClient.numberOfCalls.Store(0)
-				})
+				}
 			}
 
+			// Ensure rule groups have been sharded among rulers.
 			totalLoadedRules := 0
 			totalConfiguredRules := 0
 
-			forEachRuler(func(rID string, r *Ruler) {
-				localRules, err := r.listRuleGroupsToSyncForAllUsers(context.Background(), rulerSyncReasonPeriodic)
+			for rID, r := range rulerAddrMap {
+				localRules, err := r.listRuleGroupsToSyncForAllUsers(ctx, rulerSyncReasonPeriodic, true)
 				require.NoError(t, err)
 				for _, rules := range localRules {
 					totalLoadedRules += len(rules)
 				}
 				totalConfiguredRules += len(allRulesByRuler[rID])
-			})
+			}
 
 			require.Equal(t, totalConfiguredRules, totalLoadedRules)
 		})
@@ -475,6 +508,8 @@ func TestGetRules(t *testing.T) {
 }
 
 func TestSharding(t *testing.T) {
+	util_test.VerifyNoLeak(t)
+
 	const (
 		user1 = "user1"
 		user2 = "user2"
@@ -839,7 +874,12 @@ func TestSharding(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
+		// Change scope because we run these test cases parallelly.
+		tc := tc
+
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
@@ -865,6 +905,9 @@ func TestSharding(t *testing.T) {
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
 				})))
 
+				// Ensure the manager is stopped before leaving the test.
+				t.Cleanup(r.manager.Stop)
+
 				if forceRing != nil {
 					r.ring = forceRing
 				}
@@ -878,7 +921,9 @@ func TestSharding(t *testing.T) {
 			// We start ruler's ring, but nothing else (not even lifecycler).
 			if rulerRing != nil {
 				require.NoError(t, services.StartAndAwaitRunning(context.Background(), rulerRing))
-				t.Cleanup(rulerRing.StopAsync)
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(context.Background(), rulerRing))
+				})
 			}
 
 			var r2, r3 *Ruler
@@ -905,7 +950,7 @@ func TestSharding(t *testing.T) {
 			}
 
 			// Always add ruler1 to expected rulers, even if there is no ring (no sharding).
-			loadedRules1, err := r1.listRuleGroupsToSyncForAllUsers(context.Background(), rulerSyncReasonPeriodic)
+			loadedRules1, err := r1.listRuleGroupsToSyncForAllUsers(context.Background(), rulerSyncReasonPeriodic, true)
 			require.NoError(t, err)
 
 			expected := expectedRulesMap{
@@ -915,7 +960,7 @@ func TestSharding(t *testing.T) {
 			addToExpected := func(id string, r *Ruler) {
 				// Only expect rules from other rulers when using ring, and they are present in the ring.
 				if r != nil && rulerRing != nil && rulerRing.HasInstance(id) {
-					loaded, err := r.listRuleGroupsToSyncForAllUsers(context.Background(), rulerSyncReasonPeriodic)
+					loaded, err := r.listRuleGroupsToSyncForAllUsers(context.Background(), rulerSyncReasonPeriodic, true)
 					require.NoError(t, err)
 					// Normalize nil map to empty one.
 					if loaded == nil {
@@ -930,6 +975,106 @@ func TestSharding(t *testing.T) {
 
 			require.Equal(t, tc.expectedRules, expected)
 		})
+	}
+}
+
+func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulers(t *testing.T) {
+	util_test.VerifyNoLeak(t)
+
+	const (
+		numRulers     = 2
+		numRuleGroups = 10
+		userID        = "user-1"
+		namespace     = "test"
+	)
+
+	var (
+		ctx          = context.Background()
+		logger       = log.NewNopLogger()
+		rulerAddrMap = map[string]*Ruler{}
+	)
+
+	// Create a filesystem backed storage.
+	bucketCfg := bucket.Config{StorageBackendConfig: bucket.StorageBackendConfig{Backend: "filesystem", Filesystem: filesystem.Config{Directory: t.TempDir()}}}
+	bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", logger, nil)
+	require.NoError(t, err)
+
+	store := bucketclient.NewBucketRuleStore(bucketClient, nil, logger)
+
+	// Create an in-memory ring backend.
+	kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
+	t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
+
+	// Create rulers. The rulers are configured with a very long polling interval
+	// so that they will not trigger after the initial sync. Once the ruler has started,
+	// the initial sync already occurred.
+	rulers := make([]*Ruler, numRulers)
+	regs := make([]*prometheus.Registry, numRulers)
+
+	for i := 0; i < len(rulers); i++ {
+		rulerAddr := fmt.Sprintf("ruler-%d", i)
+
+		rulerCfg := defaultRulerConfig(t)
+		rulerCfg.PollInterval = time.Hour
+		rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+		rulerCfg.Ring.NumTokens = 128
+		rulerCfg.Ring.Common.InstanceID = rulerAddr
+		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
+		rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+
+		regs[i] = prometheus.NewPedanticRegistry()
+		rulers[i] = prepareRuler(t, rulerCfg, store, withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withStart(), withPrometheusRegisterer(regs[i]))
+	}
+
+	// Pre-condition check: each ruler should have synced the rules once (at startup).
+	for _, reg := range regs {
+		verifySyncRulesMetric(t, reg, 1, 0)
+	}
+
+	// Pre-condition check: each ruler should have an updated view over the ring.
+	for _, reg := range regs {
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ring_members Number of members in the ring
+			# TYPE cortex_ring_members gauge
+			cortex_ring_members{name="ruler",state="ACTIVE"} 2
+			cortex_ring_members{name="ruler",state="JOINING"} 0
+			cortex_ring_members{name="ruler",state="LEAVING"} 0
+			cortex_ring_members{name="ruler",state="PENDING"} 0
+			cortex_ring_members{name="ruler",state="Unhealthy"} 0
+		`), "cortex_ring_members"))
+	}
+
+	// Create some rule groups in the storage.
+	for i := 0; i < numRuleGroups; i++ {
+		groupID := fmt.Sprintf("group-%d", i)
+		record := fmt.Sprintf("count:metric_%d", i)
+		expr := fmt.Sprintf("count(metric_%d)", i)
+
+		require.NoError(t, store.SetRuleGroup(ctx, userID, namespace, createRuleGroup(groupID, userID, createRecordingRule(record, expr))))
+	}
+
+	// Call NotifySyncRulesAsync() on 1 ruler.
+	rulers[0].NotifySyncRulesAsync("user-1")
+
+	// Wait until rules syncing triggered on both rulers (with reason "config change").
+	for _, reg := range regs {
+		verifySyncRulesMetric(t, reg, 1, 1)
+	}
+
+	// GetRules() should return all configured rule groups. We use test.Poll() because
+	// the per-tenant rules manager gets started asynchronously.
+	for _, ruler := range rulers {
+		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
+			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+			require.NoError(t, err)
+			return len(actualRuleGroups)
+		})
+	}
+
+	// Post-condition check: there should have been no other rules syncing other than the initial one
+	// and the one driven by the config change.
+	for _, reg := range regs {
+		verifySyncRulesMetric(t, reg, 1, 1)
 	}
 }
 
@@ -950,7 +1095,7 @@ func sortTokens(tokens []uint32) []uint32 {
 	return tokens
 }
 
-func TestDeleteTenantRuleGroups(t *testing.T) {
+func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTriggerSync(t *testing.T) {
 	ruleGroups := []ruleGroupKey{
 		{user: "userA", namespace: "namespace", group: "group"},
 		{user: "userB", namespace: "namespace1", group: "group"},
@@ -968,54 +1113,59 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 
 	require.Len(t, obj.Objects(), 3)
 
+	// Configure ruler with an high poll interval so that it will just sync
+	// once explicitly triggered by the config change.
 	cfg := defaultRulerConfig(t)
-	api, err := NewRuler(cfg, nil, nil, log.NewNopLogger(), rs, rs, nil)
-	require.NoError(t, err)
+	cfg.PollInterval = time.Hour
+	cfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+	cfg.Ring.Common.InstanceAddr = "ruler-1"
 
-	{
-		req := &http.Request{}
-		resp := httptest.NewRecorder()
-		api.DeleteTenantConfiguration(resp, req)
+	reg := prometheus.NewPedanticRegistry()
+	ruler := prepareRuler(t, cfg, rs, withStart(), withPrometheusRegisterer(reg), withRulerAddrAutomaticMapping())
 
-		require.Equal(t, http.StatusUnauthorized, resp.Code)
-	}
+	// Pre-condition check: the ruler should have synced the rules once (at startup).
+	verifySyncRulesMetric(t, reg, 1, 0)
 
-	{
-		callDeleteTenantAPI(t, api, "user-with-no-rule-groups")
+	t.Run("should return 401 on missing tenant ID", func(t *testing.T) {
+		require.Equal(t, http.StatusUnauthorized, callDeleteTenantConfigurationAPI(ruler, ""))
+	})
+
+	t.Run("should return 200 and be a no-op if the tenant has no rule groups configured", func(t *testing.T) {
+		require.Equal(t, http.StatusOK, callDeleteTenantConfigurationAPI(ruler, "user-with-no-rule-groups"))
 		require.Len(t, obj.Objects(), 3)
 
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "user-with-no-rule-groups", true) // Has no rule groups
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "userA", false)
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "userB", false)
-	}
+		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "user-with-no-rule-groups", true) // Has no rule groups
+		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "userA", false)
+		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "userB", false)
 
-	{
-		callDeleteTenantAPI(t, api, "userA")
+		// Ensure rules re-sync has been triggered.
+		verifySyncRulesMetric(t, reg, 1, 1)
+	})
+
+	t.Run("should return 200 and delete the rule groups configured for the tenant", func(t *testing.T) {
+		require.Equal(t, http.StatusOK, callDeleteTenantConfigurationAPI(ruler, "userA"))
 		require.Len(t, obj.Objects(), 2)
 
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "user-with-no-rule-groups", true) // Has no rule groups
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "userA", true)                    // Just deleted.
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "userB", false)
-	}
+		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "user-with-no-rule-groups", true) // Has no rule groups
+		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "userA", true)                    // Just deleted.
+		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "userB", false)
 
-	// Deleting same user again works fine and reports no problems.
-	{
-		callDeleteTenantAPI(t, api, "userA")
+		// Ensure rules re-sync has been triggered.
+		verifySyncRulesMetric(t, reg, 1, 2)
+	})
+
+	t.Run("should return 200 and be idempotent if the tenant rule groups have already been deleted", func(t *testing.T) {
+		// Deleting same user again works fine and reports no problems.
+		require.Equal(t, http.StatusOK, callDeleteTenantConfigurationAPI(ruler, "userA"))
 		require.Len(t, obj.Objects(), 2)
 
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "user-with-no-rule-groups", true) // Has no rule groups
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "userA", true)                    // Already deleted before.
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "userB", false)
-	}
+		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "user-with-no-rule-groups", true) // Has no rule groups
+		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "userA", true)                    // Already deleted before.
+		verifyExpectedDeletedRuleGroupsForUser(t, ruler, "userB", false)
 
-	{
-		callDeleteTenantAPI(t, api, "userB")
-		require.Empty(t, obj.Objects())
-
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "user-with-no-rule-groups", true) // Has no rule groups
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "userA", true)                    // Deleted previously
-		verifyExpectedDeletedRuleGroupsForUser(t, api, "userB", true)                    // Just deleted
-	}
+		// Ensure rules re-sync has been triggered.
+		verifySyncRulesMetric(t, reg, 1, 3)
+	})
 }
 
 func generateTokenForGroups(groups []*rulespb.RuleGroupDesc, offset uint32) []uint32 {
@@ -1028,25 +1178,57 @@ func generateTokenForGroups(groups []*rulespb.RuleGroupDesc, offset uint32) []ui
 	return tokens
 }
 
-func callDeleteTenantAPI(t *testing.T, api *Ruler, userID string) {
-	ctx := user.InjectOrgID(context.Background(), userID)
+func callDeleteTenantConfigurationAPI(api *Ruler, userID string) (statusCode int) {
+	ctx := context.Background()
+	if userID != "" {
+		ctx = user.InjectOrgID(ctx, userID)
+	}
 
 	req := &http.Request{}
 	resp := httptest.NewRecorder()
 	api.DeleteTenantConfiguration(resp, req.WithContext(ctx))
 
-	require.Equal(t, http.StatusOK, resp.Code)
+	return resp.Code
 }
 
 func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID string, expectedDeleted bool) {
-	list, err := r.directStore.ListRuleGroupsForUserAndNamespace(context.Background(), userID, "")
-	require.NoError(t, err)
+	ctx := context.Background()
 
-	if expectedDeleted {
-		require.Empty(t, list)
-	} else {
-		require.NotEqual(t, 0, len(list))
-	}
+	t.Run("ListRuleGroupsForUserAndNamespace()", func(t *testing.T) {
+		list, err := r.directStore.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
+		require.NoError(t, err)
+
+		if expectedDeleted {
+			require.Empty(t, list)
+		} else {
+			require.NotEmpty(t, list)
+		}
+	})
+
+	t.Run("GetRules()", func(t *testing.T) {
+		// The rules manager updates the rules asynchronously so we need to poll it.
+		test.Poll(t, time.Second, expectedDeleted, func() interface{} {
+			list, err := r.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+			require.NoError(t, err)
+
+			return len(list) == 0
+		})
+	})
+}
+
+func verifySyncRulesMetric(t *testing.T, reg prometheus.Gatherer, initialCount, configChangeCount int) {
+	t.Helper()
+
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ruler_sync_rules_total Total number of times the ruler sync operation triggered.
+			# TYPE cortex_ruler_sync_rules_total counter
+			cortex_ruler_sync_rules_total{reason="initial"} %d
+			cortex_ruler_sync_rules_total{reason="config-change"} %d
+			cortex_ruler_sync_rules_total{reason="periodic"} 0
+			cortex_ruler_sync_rules_total{reason="ring-change"} 0
+		`, initialCount, configChangeCount)), "cortex_ruler_sync_rules_total")
+	})
 }
 
 type ruleGroupKey struct {
@@ -1362,6 +1544,67 @@ func TestFilterRuleGroupsByNotMissing(t *testing.T) {
 
 			actual := filterRuleGroupsByNotMissing(testData.configs, testData.missing, logger)
 			assert.Equal(t, testData.expected, actual)
+		})
+	}
+}
+
+func TestFilterRuleGroupsByNotEmptyUsers(t *testing.T) {
+	tests := map[string]struct {
+		configs         map[string]rulespb.RuleGroupList
+		expectedConfigs map[string]rulespb.RuleGroupList
+		expectedRemoved map[string]struct{}
+	}{
+		"should return an empty map on empty input": {
+			configs:         nil,
+			expectedConfigs: nil,
+		},
+		"should return the input map on no empty users": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+				},
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+			},
+			expectedConfigs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+				},
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+			},
+		},
+		"should remove users with no rule groups from the input map": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {},
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+				"user-3": {},
+			},
+			expectedConfigs: map[string]rulespb.RuleGroupList{
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+			},
+			expectedRemoved: map[string]struct{}{
+				"user-1": {},
+				"user-3": {},
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			actualConfigs, actualRemoved := filterRuleGroupsByNotEmptyUsers(testData.configs)
+			assert.Equal(t, testData.expectedConfigs, actualConfigs)
+			assert.Equal(t, testData.expectedRemoved, actualRemoved)
 		})
 	}
 }

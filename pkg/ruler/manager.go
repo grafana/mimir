@@ -103,9 +103,9 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 	}, nil
 }
 
-// SyncRuleGroups sync the input rulesGroups.
-// It's not safe to call this function concurrently.
-func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
+// SyncAllRuleGroups implements MultiTenantManager.
+// It's not safe to call this function concurrently with SyncAllRuleGroups() or SyncPartialRuleGroups().
+func (r *DefaultMultiTenantManager) SyncAllRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
 		removeFederatedRuleGroups(ruleGroups, r.logger)
 	}
@@ -119,6 +119,28 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 	r.removeUsersIf(func(userID string) bool {
 		_, exists := ruleGroups[userID]
 		return !exists
+	})
+}
+
+// SyncPartialRuleGroups implements MultiTenantManager.
+// It's not safe to call this function concurrently with SyncAllRuleGroups() or SyncPartialRuleGroups().
+func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
+	if !r.cfg.TenantFederation.Enabled {
+		removeFederatedRuleGroups(ruleGroups, r.logger)
+	}
+
+	// Filter out tenants with no rule groups.
+	ruleGroups, removedUsers := filterRuleGroupsByNotEmptyUsers(ruleGroups)
+
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroups); err != nil {
+		// We don't log it because the only error we could get here is a context canceled.
+		return
+	}
+
+	// Check for deleted users and remove them.
+	r.removeUsersIf(func(userID string) bool {
+		_, removed := removedUsers[userID]
+		return removed
 	})
 }
 
