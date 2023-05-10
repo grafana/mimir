@@ -117,7 +117,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 
 			// Fetch postings from cached and assert on it.
 			hits := c.FetchMultiPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels)
-			assert.Equal(t, testData.expectedHits, hits)
+			assertResultMatches(t, testData.expectedHits, hits)
 
 			// Assert on metrics.
 			assert.Equal(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
@@ -127,6 +127,16 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
 			}
 		})
+	}
+}
+
+func assertResultMatches[T comparable](t testing.TB, expected MapResult[T], result BytesResult[T]) {
+	t.Helper()
+	assert.Equal(t, result.Len(), len(expected))
+	for k, exp := range expected {
+		actual, ok := result.Lookup(k)
+		assert.True(t, ok)
+		assert.Equal(t, exp, actual)
 	}
 }
 
@@ -806,7 +816,7 @@ func TestPostingsCacheKeyLabelHash_ShouldNotAllocateMemory(t *testing.T) {
 	lbl := labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}
 
 	actualAllocs := testing.AllocsPerRun(numRuns, func() {
-		postingsCacheKeyLabelHash(lbl)
+		postingsCacheKeyLabelID(lbl)
 	})
 
 	// Allow for 1 extra allocation here, reported when running the test with -race.
@@ -826,7 +836,7 @@ func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
 	for w := 0; w < numWorkers; w++ {
 		inputPerWorker = append(inputPerWorker, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", w)})
 
-		hash, hashLen := postingsCacheKeyLabelHash(inputPerWorker[w])
+		hash, hashLen := postingsCacheKeyLabelID(inputPerWorker[w])
 		expectedPerWorker = append(expectedPerWorker, hash[0:hashLen])
 	}
 
@@ -850,7 +860,7 @@ func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
 			defer wg.Done()
 
 			for r := 0; r < numRunsPerWorker; r++ {
-				actual, hashLen := postingsCacheKeyLabelHash(inputPerWorker[workerID])
+				actual, hashLen := postingsCacheKeyLabelID(inputPerWorker[workerID])
 				assert.Equal(t, expectedPerWorker[workerID], actual[0:hashLen])
 			}
 		}(w)

@@ -43,7 +43,7 @@ var (
 	}
 )
 
-type Result[T any] interface {
+type BytesResult[T any] interface {
 	io.Closer
 
 	Lookup(T) ([]byte, bool)
@@ -64,6 +64,19 @@ func (EmptyResult[T]) Len() int {
 	return 0
 }
 
+type MapResult[T comparable] map[T][]byte
+
+func (l MapResult[T]) Lookup(t T) ([]byte, bool) {
+	b, ok := l[t]
+	return b, ok
+}
+
+func (l MapResult[T]) Len() int {
+	return len(l)
+}
+
+func (MapResult[T]) Close() error { return nil }
+
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
 	// StorePostings stores postings for a single series.
@@ -71,7 +84,7 @@ type IndexCache interface {
 
 	// FetchMultiPostings fetches multiple postings - each identified by a label -
 	// and returns a map containing cache hits, along with a list of missing keys.
-	FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits Result[labels.Label])
+	FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits BytesResult[labels.Label])
 
 	// StoreSeriesForRef stores a single series.
 	StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte)
