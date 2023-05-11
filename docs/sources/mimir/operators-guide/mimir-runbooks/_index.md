@@ -521,15 +521,6 @@ How to **investigate**:
 
 - Look for any scan error in the querier logs (ie. networking or rate limiting issues)
 
-### MimirQuerierHighRefetchRate
-
-This alert fires when there's an high number of queries for which series have been refetched from a different store-gateway because of missing blocks. This could happen for a short time whenever a store-gateway ring resharding occurs (e.g. during/after an outage or while rolling out store-gateway) but store-gateways should reconcile in a short time. This alert fires if the issue persist for an unexpected long time and thus it should be investigated.
-
-How to **investigate**:
-
-- Ensure there are no errors related to blocks scan or sync in the queriers and store-gateways
-- Check store-gateway logs to see if all store-gateway have successfully completed a blocks sync
-
 ### MimirStoreGatewayHasNotSyncTheBucket
 
 This alert fires when a Mimir store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket for a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
