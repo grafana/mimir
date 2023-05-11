@@ -306,9 +306,9 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string
 		}
 	}
 
-	return &mapIterator[labels.Label]{
-		keys: keys,
-		mp:   hits,
+	return &MapIterator[labels.Label]{
+		Keys: keys,
+		M:    hits,
 	}
 }
 

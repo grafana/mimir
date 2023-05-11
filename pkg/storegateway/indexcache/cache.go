@@ -55,26 +55,26 @@ type BytesResult interface {
 	Size() int
 }
 
-type mapIterator[T comparable] struct {
-	mp   map[T][]byte
-	keys []T
+type MapIterator[T comparable] struct {
+	M    map[T][]byte
+	Keys []T
 }
 
-func (l *mapIterator[T]) Next() ([]byte, bool) {
-	if len(l.keys) == 0 {
+func (l *MapIterator[T]) Next() ([]byte, bool) {
+	if len(l.Keys) == 0 {
 		return nil, false
 	}
-	b := l.mp[l.keys[0]]
-	l.keys = l.keys[1:]
+	b := l.M[l.Keys[0]]
+	l.Keys = l.Keys[1:]
 	return b, true
 }
 
-func (l *mapIterator[T]) Remaining() int {
-	return len(l.keys)
+func (l *MapIterator[T]) Remaining() int {
+	return len(l.Keys)
 }
 
-func (l *mapIterator[T]) Size() int {
-	return sumBytes[T](l.mp)
+func (l *MapIterator[T]) Size() int {
+	return sumBytes[T](l.M)
 }
 
 // IndexCache is the interface exported by index cache backends.

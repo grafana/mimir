@@ -926,7 +926,7 @@ func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID s
 	for _, k := range keys {
 		res[k] = []byte("corrupted or unknown")
 	}
-	return indexcache.MapResult[labels.Label](res)
+	return &indexcache.MapIterator[labels.Label]{Keys: keys, M: res}
 }
 
 type cacheNotExpectingToStoreExpandedPostings struct {
@@ -970,7 +970,7 @@ type postingsReplacingCache struct {
 }
 
 func (c *postingsReplacingCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) indexcache.BytesResult {
-	return indexcache.MapResult[labels.Label](c.vals)
+	return &indexcache.MapIterator[labels.Label]{Keys: keys, M: c.vals}
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {

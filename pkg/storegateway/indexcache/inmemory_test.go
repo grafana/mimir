@@ -457,7 +457,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 func testFetchMultiPostings(ctx context.Context, t *testing.T, cache IndexCache, user string, id ulid.ULID, keys []labels.Label, expectedHits map[labels.Label][]byte) {
 	t.Helper()
 	pHits := cache.FetchMultiPostings(ctx, user, id, keys)
-	expectedResult := &mapIterator[labels.Label]{mp: expectedHits, keys: keys}
+	expectedResult := &MapIterator[labels.Label]{M: expectedHits, Keys: keys}
 
 	assert.Equal(t, expectedResult.Remaining(), pHits.Remaining())
 	for exp, hasNext := expectedResult.Next(); hasNext; exp, hasNext = expectedResult.Next() {
