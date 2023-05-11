@@ -3864,7 +3864,7 @@ func TestIngester_flushing(t *testing.T) {
 
 				response1 := httptest.NewRecorder()
 				i.PrepareShutdownHandler(response1, httptest.NewRequest("GET", "/ingester/prepare-shutdown", nil))
-				require.Equal(t, "unset", response1.Body.String())
+				require.Equal(t, "unset\n", response1.Body.String())
 				require.Equal(t, 200, response1.Code)
 
 				response2 := httptest.NewRecorder()
@@ -3879,7 +3879,7 @@ func TestIngester_flushing(t *testing.T) {
 
 				response3 := httptest.NewRecorder()
 				i.PrepareShutdownHandler(response3, httptest.NewRequest("GET", "/ingester/prepare-shutdown", nil))
-				require.Equal(t, "set", response3.Body.String())
+				require.Equal(t, "set\n", response3.Body.String())
 				require.Equal(t, 200, response3.Code)
 
 				response4 := httptest.NewRecorder()
