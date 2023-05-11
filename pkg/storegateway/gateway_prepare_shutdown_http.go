@@ -3,6 +3,7 @@
 package storegateway
 
 import (
+	"github.com/grafana/dskit/services"
 	"net/http"
 
 	"github.com/go-kit/log/level"
@@ -24,8 +25,14 @@ import (
 // * `POST` enables this configuration
 // * `DELETE` disables this configuration
 func (g *StoreGateway) PrepareShutdownHandler(w http.ResponseWriter, req *http.Request) {
-	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
+	// Don't allow callers to change the shutdown configuration while we're in the middle
+	// of starting or shutting down.
+	if g.State() != services.Running {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
 
+	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 	switch req.Method {
 	case http.MethodGet:
 		exists, err := shutdownmarker.Exists(shutdownMarkerPath)
