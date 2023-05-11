@@ -1,3 +1,4 @@
+local k = import 'ksonnet-util/kausal.libsonnet';
 local mimir = import 'mimir/mimir.libsonnet';
 
 mimir {
@@ -22,6 +23,11 @@ mimir {
       },
     },
   },
+
+  // The store-gateway should request the same memory as Helm so that GOMEMLIMIT
+  // gets set to the same value.
+  store_gateway_container+::
+    k.util.resourcesRequestsMixin(null, '512Mi'),
 
   // These are properties that are set differently on different components in jsonnet.
   // We unset them all here so the default values are used like in Helm.
