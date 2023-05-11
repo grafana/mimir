@@ -13,6 +13,8 @@ metadata:
   namespace: "mimir"
 data:
   mimir.yaml: | 
+    tenant_federation:
+      enabled: true
     activity_tracker:
       filepath: /active-query-tracker/activity.log
     admin_api:
@@ -141,6 +143,7 @@ data:
       max_label_names_per_series: 90
       cardinality_analysis_enabled: true
       max_global_series_per_user: 300000
+      query_sharding_max_sharded_queries: 32
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false

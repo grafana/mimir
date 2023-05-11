@@ -15,7 +15,7 @@ metadata:
     iamRole: "arn:aws:iam::707343435239:role/TsdbStorageBucketFullAccessRole-dev-us-west-2"
   namespace: "mimir"
 spec:
-  replicas: 4
+  replicas: 8
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
