@@ -117,7 +117,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 
 			// Fetch postings from cached and assert on it.
 			result := c.FetchMultiPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels)
-			assertResultMatches(t, &mapResult[labels.Label]{keys: testData.fetchLabels, mp: testData.expectedHits}, result)
+			assertResultMatches(t, &MapIterator[labels.Label]{keys: testData.fetchLabels, mp: testData.expectedHits}, result)
 
 			// Assert on metrics.
 			assert.Equal(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
