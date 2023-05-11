@@ -1647,7 +1647,21 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 }
 
 func (i *Ingester) queryStreamStreaming(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64) (numSeries, numSamples int, _ error) {
-	allIterators, err := i.sendStreamingQuerySeries(ctx, db, from, through, matchers, shard, stream)
+	var q storage.ChunkQuerier
+	var err error
+	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
+		q, err = db.UnorderedChunkQuerier(ctx, from, through)
+	} else {
+		q, err = db.ChunkQuerier(ctx, from, through)
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// The querier must remain open until we've finished streaming chunks.
+	defer q.Close()
+
+	allIterators, err := i.sendStreamingQuerySeries(q, from, through, matchers, shard, stream)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1660,21 +1674,7 @@ func (i *Ingester) queryStreamStreaming(ctx context.Context, db *userTSDB, from,
 	return len(allIterators), numSamples, nil
 }
 
-func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) ([]chunks.Iterator, error) {
-	var q storage.ChunkQuerier
-	var err error
-	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(ctx, from, through)
-	} else {
-		q, err = db.ChunkQuerier(ctx, from, through)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO: does q need to remain open until we're done using the series and their chunks?
-	defer q.Close()
-
+func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) ([]chunks.Iterator, error) {
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	hints := initSelectHints(from, through)
@@ -1718,7 +1718,7 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, db *userTSDB, f
 	}
 
 	// Send any remaining series, and signal that there are no more.
-	err = client.SendQueryStream(stream, &client.QueryStreamResponse{
+	err := client.SendQueryStream(stream, &client.QueryStreamResponse{
 		Series:              seriesInBatch,
 		IsEndOfSeriesStream: true,
 	})
