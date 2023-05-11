@@ -57,22 +57,22 @@ type BytesResult interface {
 
 // MapResult returns an implementation of BytesResult backed by the provided map and its keys.
 // A nil map is a valid argument.
-func MapResult[T comparable](m map[T][]byte) *mapResult[T] {
+func MapResult[T comparable](mp map[T][]byte) *mapResult[T] {
 	var keys []T
-	if len(m) > 0 {
-		keys = make([]T, 0, len(m))
+	if len(mp) > 0 {
+		keys = make([]T, 0, len(mp))
 	}
-	for k := range m {
+	for k := range mp {
 		keys = append(keys, k)
 	}
 	return &mapResult[T]{
 		keys: keys,
-		m:    m,
+		mp:   mp,
 	}
 }
 
 type mapResult[T comparable] struct {
-	m    map[T][]byte
+	mp   map[T][]byte
 	keys []T
 }
 
@@ -80,17 +80,17 @@ func (l *mapResult[T]) Next() ([]byte, bool) {
 	if len(l.keys) == 0 {
 		return nil, false
 	}
-	b := l.m[l.keys[0]]
+	b := l.mp[l.keys[0]]
 	l.keys = l.keys[1:]
 	return b, true
 }
 
 func (l *mapResult[T]) Remaining() int {
-	return len(l.m)
+	return len(l.keys)
 }
 
 func (l *mapResult[T]) Size() int {
-	return sumBytes[T](l.m)
+	return sumBytes[T](l.mp)
 }
 
 // IndexCache is the interface exported by index cache backends.
