@@ -306,7 +306,10 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string
 		}
 	}
 
-	return MapResult(hits)
+	return &mapIterator[labels.Label]{
+		keys: keys,
+		mp:   hits,
+	}
 }
 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v,

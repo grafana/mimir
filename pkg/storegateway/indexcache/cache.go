@@ -55,28 +55,12 @@ type BytesResult interface {
 	Size() int
 }
 
-// MapResult returns an implementation of BytesResult backed by the provided map and its keys.
-// A nil map is a valid argument.
-func MapResult[T comparable](mp map[T][]byte) *MapIterator[T] {
-	var keys []T
-	if len(mp) > 0 {
-		keys = make([]T, 0, len(mp))
-	}
-	for k := range mp {
-		keys = append(keys, k)
-	}
-	return &MapIterator[T]{
-		keys: keys,
-		mp:   mp,
-	}
-}
-
-type MapIterator[T comparable] struct {
+type mapIterator[T comparable] struct {
 	mp   map[T][]byte
 	keys []T
 }
 
-func (l *MapIterator[T]) Next() ([]byte, bool) {
+func (l *mapIterator[T]) Next() ([]byte, bool) {
 	if len(l.keys) == 0 {
 		return nil, false
 	}
@@ -85,11 +69,11 @@ func (l *MapIterator[T]) Next() ([]byte, bool) {
 	return b, true
 }
 
-func (l *MapIterator[T]) Remaining() int {
+func (l *mapIterator[T]) Remaining() int {
 	return len(l.keys)
 }
 
-func (l *MapIterator[T]) Size() int {
+func (l *mapIterator[T]) Size() int {
 	return sumBytes[T](l.mp)
 }
 

@@ -116,8 +116,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 			}
 
 			// Fetch postings from cached and assert on it.
-			result := c.FetchMultiPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels)
-			assertResultMatches(t, &MapIterator[labels.Label]{keys: testData.fetchLabels, mp: testData.expectedHits}, result)
+			testFetchMultiPostings(ctx, t, c, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels, testData.expectedHits)
 
 			// Assert on metrics.
 			assert.Equal(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
@@ -128,29 +127,6 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 			}
 		})
 	}
-}
-
-func assertResultMatches(t testing.TB, expected, result BytesResult) {
-	t.Helper()
-	assert.Equal(t, expected.Remaining(), result.Remaining())
-	for exp, hasNext := expected.Next(); hasNext; exp, hasNext = expected.Next() {
-		actual, ok := result.Next()
-		assert.True(t, ok)
-		assert.Equal(t, exp, actual)
-	}
-	_, ok := result.Next()
-	assert.False(t, ok)
-}
-
-func assertEmptyBytesResult(t *testing.T, result BytesResult) {
-	t.Helper()
-	actualHits := 0
-	for hit, hasNext := result.Next(); hasNext; hit, hasNext = result.Next() {
-		if hit != nil {
-			actualHits++
-		}
-	}
-	assert.Zero(t, actualHits)
 }
 
 func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {

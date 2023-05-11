@@ -113,7 +113,7 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 	results := c.remote.GetMulti(ctx, keys)
 	c.hits.WithLabelValues(cacheTypePostings).Add(float64(len(results)))
 
-	return &MapIterator[string]{
+	return &mapIterator[string]{
 		keys: keys,
 		mp:   results,
 	}
