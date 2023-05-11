@@ -595,3 +595,25 @@ Params:
 {{- define "mimir.var_dump" -}}
 {{- . | mustToPrettyJson | printf "\nThe JSON output of the dumped var is: \n%s" | fail }}
 {{- end -}}
+
+
+{{/*
+siToBytes is used to convert Kubernetes byte units to bytes.
+Only works for limited set of SI prefixes: Ki, Mi, Gi, Ti.
+
+mimir.siToBytes takes 1 argument
+  .value = the input value with SI unit
+*/}}
+{{- define "mimir.siToBytes" -}}
+    {{- if (hasSuffix "Ki" .value) -}}
+        {{- trimSuffix "Ki" .value | float64 | mul 1024 | ceil | int64 -}}
+    {{- else if (hasSuffix "Mi" .value) -}}
+        {{- trimSuffix "Mi" .value | float64 | mul 1048576 | ceil | int64 -}}
+    {{- else if (hasSuffix "Gi" .value) -}}
+        {{- trimSuffix "Gi" .value | float64 | mul 1073741824 | ceil | int64 -}}
+    {{- else if (hasSuffix "Ti" .value) -}}
+        {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
+    {{- else -}}
+        {{- .value }}
+    {{- end -}}
+{{- end -}}

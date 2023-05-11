@@ -1416,6 +1416,9 @@ spec:
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMEMLIMIT
+          value: "536870912"
         image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
@@ -1437,7 +1440,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
-            memory: 12Gi
+            memory: 512Mi
         volumeMounts:
         - mountPath: /data
           name: store-gateway-data

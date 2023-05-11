@@ -3,6 +3,7 @@
   local pvc = $.core.v1.persistentVolumeClaim,
   local statefulSet = $.apps.v1.statefulSet,
   local volumeMount = $.core.v1.volumeMount,
+  local envVar = $.core.v1.envVar,
 
   // The store-gateway runs a statefulset.
   local store_gateway_data_pvc =
@@ -35,7 +36,6 @@
       'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
 
       'blocks-storage.bucket-store.max-chunk-pool-bytes': 12 * 1024 * 1024 * 1024,
-
     } +
     $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +
@@ -50,6 +50,10 @@
     container.withPorts($.store_gateway_ports) +
     container.withArgsMixin($.util.mapToFlags($.store_gateway_args)) +
     container.withVolumeMountsMixin([volumeMount.new('store-gateway-data', '/data')]) +
+    container.withEnvMixin([
+      // Dynamically set GOMEMLIMIT based on memory request.
+      envVar.new('GOMEMLIMIT', std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory)))),
+    ]) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
     $.util.readinessProbe +

@@ -125,4 +125,6 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMEMLIMIT"
+              value: "536870912"
           envFrom:
