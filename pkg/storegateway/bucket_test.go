@@ -538,6 +538,15 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
 			})
 
+			t.Run("happy cases with index cache", func(t *testing.T) {
+				newBlockWithIndexCache := func() *bucketBlock {
+					b := newTestBucketBlock()
+					b.indexCache = newInMemoryIndexCache(t)
+					return b
+				}
+				benchmarkExpandedPostings(test.NewTB(t), newBlockWithIndexCache, series)
+			})
+
 			t.Run("corrupted or undecodable postings cache doesn't fail", func(t *testing.T) {
 				b := newTestBucketBlock()
 				b.indexCache = corruptedPostingsCache{}
