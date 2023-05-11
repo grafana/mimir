@@ -16,7 +16,7 @@ metadata:
     iamRole: "arn:aws:iam::707343435239:role/TsdbStorageBucketFullAccessRole-dev-us-west-2"
   namespace: "mimir"
 spec:
-  replicas: 2
+  replicas: 12
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
@@ -89,10 +89,10 @@ spec:
             initialDelaySeconds: 45
           resources:
             limits:
-              memory: 8.5Gi
+              memory: 24Gi
             requests:
-              cpu: 2
-              memory: 6Gi
+              cpu: 4
+              memory: 12Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

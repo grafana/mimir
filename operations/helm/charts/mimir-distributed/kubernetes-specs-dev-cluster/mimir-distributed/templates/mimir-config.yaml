@@ -12,8 +12,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   namespace: "mimir"
 data:
-  mimir.yaml: |
-    
+  mimir.yaml: | 
     activity_tracker:
       filepath: /active-query-tracker/activity.log
     admin_api:
@@ -139,8 +138,9 @@ data:
       max_query_parallelism: 240
       max_total_query_length: 12000h
       out_of_order_time_window: 5m
-      max_label_names_per_series: 40
+      max_label_names_per_series: 90
       cardinality_analysis_enabled: true
+      max_global_series_per_user: 300000
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false

@@ -13,5 +13,248 @@ metadata:
   namespace: "mimir"
 data:
   runtime.yaml: |
-    
-    {}
+    overrides:
+      __system__:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-app-framework-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-app-infra-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-cal-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-compute-lifecycle-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-container-execution-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-dataplane-platform:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-dbfs:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-kubernetes-control-plane-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-kubernetes-runtime-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-messaging-platform:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-ml-inference:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-monitoring-platform:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-nephos-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-observability-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-service-infra-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-storage-platform:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      eng-test-foundation-team:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      recording:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+      unknown:
+        ingestion_rate: 10000000
+        ingestion_burst_size: 200000000000
+        max_global_series_per_user: 0
+        max_global_series_per_metric: 0
+        max_global_exemplars_per_user: 0
+        ruler_max_rules_per_rule_group: 20
+        ruler_max_rule_groups_per_tenant: 70
+        max_fetched_chunks_per_query: 200000000000
+        max_fetched_series_per_query: 0
+        max_fetched_chunk_bytes_per_query: 0
+        compactor_blocks_retention_period: 0s
+  
+  
+  
+  
