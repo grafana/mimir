@@ -116,8 +116,8 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 			}
 
 			// Fetch postings from cached and assert on it.
-			hits := c.FetchMultiPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels)
-			assertResultMatches(t, MapResult[labels.Label](testData.expectedHits), hits)
+			result := c.FetchMultiPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels)
+			assertResultMatches(t, &mapResult[labels.Label]{keys: testData.fetchLabels, mp: testData.expectedHits}, result)
 
 			// Assert on metrics.
 			assert.Equal(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
@@ -130,20 +130,35 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 	}
 }
 
-func assertResultMatches[T comparable](t testing.TB, expected *mapResult[T], result BytesResult) {
+func assertResultMatches(t testing.TB, expected, result BytesResult) {
 	t.Helper()
-	assert.Equal(t, result.Remaining(), expected.Remaining())
-	for exp, next := expected.Next(); next; exp, next = expected.Next() {
+	assert.Equal(t, expected.Remaining(), result.Remaining())
+	for exp, hasNext := expected.Next(); hasNext; exp, hasNext = expected.Next() {
 		actual, ok := result.Next()
 		assert.True(t, ok)
 		assert.Equal(t, exp, actual)
 	}
+	_, ok := result.Next()
+	assert.False(t, ok)
+}
+
+func assertEmptyBytesResult(t *testing.T, result BytesResult) {
+	t.Helper()
+	actualHits := 0
+	for hit, hasNext := result.Next(); hasNext; hit, hasNext = result.Next() {
+		if hit != nil {
+			actualHits++
+		}
+	}
+	assert.Zero(t, actualHits)
 }
 
 func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 	const (
 		numHits   = 10000
 		numMisses = 10000
+
+		numKeys = numHits + numMisses
 	)
 
 	var (
@@ -157,8 +172,8 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 	}{
 		"short labels": {
 			fetchLabels: func() []labels.Label {
-				fetchLabels := make([]labels.Label, 0, numHits+numMisses)
-				for i := 0; i < numHits+numMisses; i++ {
+				fetchLabels := make([]labels.Label, 0, numKeys)
+				for i := 0; i < numKeys; i++ {
 					fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", i)})
 				}
 				return fetchLabels
@@ -166,8 +181,8 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 		},
 		"long labels": { // this should trigger hashing the labels instead of embedding them in the cache key
 			fetchLabels: func() []labels.Label {
-				fetchLabels := make([]labels.Label, 0, numHits+numMisses)
-				for i := 0; i < numHits+numMisses; i++ {
+				fetchLabels := make([]labels.Label, 0, numKeys)
+				for i := 0; i < numKeys; i++ {
 					fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: "series_" + strings.Repeat(strconv.Itoa(i), 100)})
 				}
 				return fetchLabels
@@ -190,13 +205,14 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
-				hits := c.FetchMultiPostings(ctx, userID, blockID, fetchLabels)
-				assert.Equal(b, numHits, hits.Remaining())
+				results := c.FetchMultiPostings(ctx, userID, blockID, fetchLabels)
+				assert.Equal(b, numKeys, results.Remaining())
 				actualHits := 0
 				// iterate over the returned map to account for cost of access
-				for i := 0; i < numHits; i++ {
-					_, ok := hits.Next()
-					if ok {
+				for i := 0; i < numKeys; i++ {
+					bytes, ok := results.Next()
+					assert.True(b, ok)
+					if bytes != nil {
 						actualHits++
 					}
 				}

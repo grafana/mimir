@@ -111,11 +111,8 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 	// Fetch the keys from the remote cache in a single request.
 	c.requests.WithLabelValues(cacheTypePostings).Add(float64(len(keys)))
 	results := c.remote.GetMulti(ctx, keys)
-	if len(results) == 0 {
-		return MapResult[string](nil)
-	}
-
 	c.hits.WithLabelValues(cacheTypePostings).Add(float64(len(results)))
+
 	return &mapResult[string]{
 		keys: keys,
 		mp:   results,

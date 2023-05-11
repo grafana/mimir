@@ -287,12 +287,11 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	id := ulid.MustNew(0, nil)
 	lbls := labels.Label{Name: "test", Value: "123"}
 	ctx := context.Background()
-	emptyPostingsHits := &mapResult[labels.Label]{}
 	emptySeriesHits := map[storage.SeriesRef][]byte{}
 	emptySeriesMisses := []storage.SeriesRef(nil)
 
 	pHits := cache.FetchMultiPostings(ctx, user, id, []labels.Label{lbls})
-	assertResultMatches(t, emptyPostingsHits, pHits)
+	assertEmptyBytesResult(t, pHits)
 
 	// Add sliceHeaderSize + 2 bytes.
 	cache.StorePostings(user, id, lbls, []byte{42, 33})
@@ -312,10 +311,10 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	assertResultMatches(t, MapResult[labels.Label](map[labels.Label][]byte{lbls: {42, 33}}), pHits)
 
 	pHits = cache.FetchMultiPostings(ctx, user, ulid.MustNew(1, nil), []labels.Label{lbls})
-	assertResultMatches(t, emptyPostingsHits, pHits)
+	assertEmptyBytesResult(t, pHits)
 
 	pHits = cache.FetchMultiPostings(ctx, user, id, []labels.Label{{Name: "test", Value: "124"}})
-	assertResultMatches(t, emptyPostingsHits, pHits)
+	assertEmptyBytesResult(t, pHits)
 
 	// Add sliceHeaderSize + 3 more bytes.
 	cache.StoreSeriesForRef(user, id, 1234, []byte{222, 223, 224})
@@ -358,7 +357,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 
 	// Evicted.
 	pHits = cache.FetchMultiPostings(ctx, user, id, []labels.Label{lbls})
-	assertResultMatches(t, emptyPostingsHits, pHits)
+	assertEmptyBytesResult(t, pHits)
 
 	sHits, sMisses = cache.FetchMultiSeriesForRefs(ctx, user, id, []storage.SeriesRef{1234})
 	assert.Equal(t, emptySeriesHits, sHits, "no such key")
