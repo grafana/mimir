@@ -131,7 +131,7 @@ func postingsCacheKey(userID, blockID string, l labels.Label) string {
 	lblHash, hashLen := postingsCacheKeyLabelID(l)
 
 	// Preallocate the byte slice used to store the cache key.
-	encodedHashLen := base64.RawURLEncoding.EncodedLen(len(lblHash[:hashLen]))
+	encodedHashLen := base64.RawURLEncoding.EncodedLen(hashLen)
 	expectedLen := len(prefix) + len(userID) + 1 + ulid.EncodedSize + 1 + encodedHashLen
 	key := make([]byte, expectedLen)
 	offset := 0
