@@ -29,6 +29,7 @@
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
 * [BUGFIX] Backend: Check that alertmanager's data-dir doesn't overlap with bucket-sync dir. #4921
+* [BUGFIX] Alertmanager: Allow to rate-limit webex, telegram and discord notifications. #4979
 * [ENHANCEMENT] Alertmanager: Introduce new metrics from upstream. #4918
   * `cortex_alertmanager_notifications_failed_total` (added `reason` label)
   * `cortex_alertmanager_nflog_maintenance_total`
