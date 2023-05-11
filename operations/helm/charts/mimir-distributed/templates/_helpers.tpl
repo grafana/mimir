@@ -606,13 +606,13 @@ mimir.siToBytes takes 1 argument
 */}}
 {{- define "mimir.siToBytes" -}}
     {{- if (hasSuffix "Ki" .value) -}}
-        {{- trimSuffix "Ki" .value | float64 | mul 1024 -}}
+        {{- trimSuffix "Ki" .value | float64 | mul 1024 | ceil | int64 -}}
     {{- else if (hasSuffix "Mi" .value) -}}
-        {{- trimSuffix "Mi" .value | float64 | mul 1048576 -}}
+        {{- trimSuffix "Mi" .value | float64 | mul 1048576 | ceil | int64 -}}
     {{- else if (hasSuffix "Gi" .value) -}}
-        {{- trimSuffix "Gi" .value | float64 | mul 1073741824 -}}
+        {{- trimSuffix "Gi" .value | float64 | mul 1073741824 | ceil | int64 -}}
     {{- else if (hasSuffix "Ti" .value) -}}
-        {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 -}}
+        {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
     {{- else -}}
         {{- .value }}
     {{- end -}}
