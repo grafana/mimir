@@ -3,15 +3,14 @@
 package storegateway
 
 import (
-	"github.com/grafana/dskit/services"
 	"net/http"
 
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
-	"github.com/grafana/mimir/pkg/util/shutdownmarker"
-
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 )
 
 // PrepareShutdownHandler possibly changes the configuration of the store-gateway in such a way
