@@ -31,6 +31,7 @@ import (
 	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
@@ -618,7 +619,7 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 	}
 
 	parts := r.block.partitioners.series.Partition(len(ids), func(i int) (start, end uint64) {
-		return uint64(ids[i]), uint64(ids[i] + maxSeriesSize)
+		return uint64(ids[i]), uint64(ids[i] + tsdb.MaxSeriesSize)
 	})
 	g, ctx := errgroup.WithContext(ctx)
 	for _, p := range parts {
@@ -673,7 +674,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 				return errors.Errorf("invalid remaining size, even after refetch, read %d, expected %d", n, seriesSize)
 			}
 
-			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", seriesSize, "max_series_size", maxSeriesSize)
+			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", seriesSize, "max_series_size", tsdb.MaxSeriesSize)
 			// Inefficient, but should be rare.
 			// Fetch plus to get the size of next one if exists.
 			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+binary.MaxVarintLen64+seriesSize+1, loaded, stats)

@@ -64,6 +64,11 @@ const (
 	// This is an estimation that should cover >99% of series with less than 30 labels and around 50 chunks per series.
 	EstimatedSeriesP99Size = 512
 
+	// MaxSeriesSize is an estimated worst case for a series size in the index. A valid series may still be larger than this.
+	// This was calculated assuming a rate of 1 sample/sec, in a 24h block we have 744 chunks per series.
+	// The worst case scenario of each meta ref is 8*3=24 bytes, so 744*24 = 17856 bytes, which is 448 bytes away form 17 KiB.
+	MaxSeriesSize = 17 * 1024
+
 	// BytesPerPostingInAPostingList is the number of bytes that each posting (series ID) takes in a
 	// posting list in the index. Each posting is 4 bytes (uint32) which are the offset of the series in the index file.
 	BytesPerPostingInAPostingList = 4
