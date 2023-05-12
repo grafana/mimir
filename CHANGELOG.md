@@ -17,6 +17,7 @@
 * [ENHANCEMENT] Store-gateway: reduce memory allocations when looking up postings from cache. #4861 #4869
 * [ENHANCEMENT] Alertmanager: Add additional template function `queryFromGeneratorURL` returning query URL decoded query from the `GeneratorURL` field of an alert. #4301
 * [ENHANCEMENT] Go: update to 1.20.4. #4092
+* [ENHANCEMENT] Alertmanager: Add configuration option to enable/disable deletion of alertmanager state from object storage. This is useful when migrating alertmanager tenants from one cluster to another, as it avoids a condition where the state object is copied but then deleted before the configuration object is copied. #4989
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
