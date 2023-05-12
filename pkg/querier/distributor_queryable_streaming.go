@@ -63,6 +63,12 @@ func NewSeriesStreamer(client client.Ingester_QueryStreamClient, expectedSeriesC
 	}
 }
 
+// Close cleans up all resources associated with this SeriesChunksStreamReader.
+// This method should only be called if StartBuffering is not called.
+func (s *SeriesChunksStreamReader) Close() {
+	s.client.CloseSend() //nolint:errcheck
+}
+
 // StartBuffering begins streaming series' chunks from the ingester associated with
 // this SeriesChunksStreamReader. Once all series have been consumed with GetChunks, all resources
 // associated with this SeriesChunksStreamReader are cleaned up.
@@ -134,7 +140,7 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]client.Chunk
 			if haveError {
 				return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
 			}
-			
+
 			// Streaming finished successfully with no errors. Discard the error channel and try reading from seriesBatchChan again.
 			s.errorChan = nil
 			return s.GetChunks(seriesIndex)
