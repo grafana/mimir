@@ -25,17 +25,17 @@
 * [ENHANCEMENT] Updated Kuberesolver dependency (github.com/sercand/kuberesolver) from v2.4.0 to v4.0.0 and gRPC dependency (google.golang.org/grpc) from v1.47.0 to v1.53.0. #4922
 * [ENHANCEMENT] Introduced new options for logging HTTP request headers: `-server.log-request-headers` enables logging HTTP request headers, `-server.log-request-headers-exclude-list` lists headers which should not be logged. #4922
 * [ENHANCEMENT] Block upload: `/api/v1/upload/block/{block}/files` endpoint now disables read and write HTTP timeout, overriding `-server.http-read-timeout` and `-server.http-write-timeout` values. This is done to allow large file uploads to succeed. #4956
-* [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
-* [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
-* [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
-* [BUGFIX] Backend: Check that alertmanager's data-dir doesn't overlap with bucket-sync dir. #4921
-* [BUGFIX] Alertmanager: Allow to rate-limit webex, telegram and discord notifications. #4979
 * [ENHANCEMENT] Alertmanager: Introduce new metrics from upstream. #4918
   * `cortex_alertmanager_notifications_failed_total` (added `reason` label)
   * `cortex_alertmanager_nflog_maintenance_total`
   * `cortex_alertmanager_nflog_maintenance_errors_total`
   * `cortex_alertmanager_silences_maintenance_total`
   * `cortex_alertmanager_silences_maintenance_errors_total`
+* [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
+* [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
+* [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
+* [BUGFIX] Backend: Check that alertmanager's data-dir doesn't overlap with bucket-sync dir. #4921
+* [BUGFIX] Alertmanager: Allow to rate-limit webex, telegram and discord notifications. #4979
 
 ### Documentation
 
