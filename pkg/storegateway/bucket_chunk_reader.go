@@ -14,6 +14,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/dennwc/varint"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -65,7 +67,7 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry 
 	}
 	r.toLoad[seq] = append(r.toLoad[seq], loadIdx{
 		offset:      off,
-		length:      length,
+		length:      util_math.Max(varint.MaxLen32, length), // If the length is 0, we need to at least fetch the length of the chunk.
 		seriesEntry: seriesEntry,
 		chunkEntry:  chunkEntry,
 	})
@@ -149,7 +151,8 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 		cb := chunksPool.Get(chunkEncDataLen)
 
 		fullyRead, err := io.ReadFull(reader, cb)
-		if errors.Is(err, io.ErrUnexpectedEOF) {
+		// We get io.EOF when there are 0 bytes read and io.UnexpectedEOF when there are some but not all read.
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			if chunksLeft := len(pIdxs) - 1 - i; chunksLeft != 0 {
 				// Unexpected EOF for last chunk could be a valid case if we have underestimated the length of the chunk.
 				// Any other errors are definitely unexpected.
@@ -250,6 +253,7 @@ type bucketChunkReaders struct {
 type chunkReader interface {
 	io.Closer
 
+	// addLoad prepares to load the chunk. If length is unknown, it can be 0.
 	addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry int, length uint32) error
 	load(result []seriesChunks, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error
 	reset()
@@ -261,6 +265,7 @@ func newChunkReaders(readersMap map[ulid.ULID]chunkReader) *bucketChunkReaders {
 	}
 }
 
+// addLoad prepares to load the chunk for the chunk reader of the provided block. If length is unknown, it can be 0.
 func (r bucketChunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry, chunk int, length uint32) error {
 	reader, ok := r.readers[blockID]
 	if !ok {
