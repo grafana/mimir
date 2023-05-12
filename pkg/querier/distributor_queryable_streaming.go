@@ -130,14 +130,14 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]client.Chunk, error) {
 	if len(s.seriesBatch) == 0 {
 		select {
-		case err, open := <-s.errorChan:
-			if open {
+		case err, haveError := <-s.errorChan:
+			if haveError {
 				return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
-			} else {
-				// Streaming finished successfully with no errors. Discard the error channel and try reading from seriesBatchChan again.
-				s.errorChan = nil
-				return s.GetChunks(seriesIndex)
 			}
+			
+			// Streaming finished successfully with no errors. Discard the error channel and try reading from seriesBatchChan again.
+			s.errorChan = nil
+			return s.GetChunks(seriesIndex)
 
 		case s.seriesBatch = <-s.seriesBatchChan:
 			if len(s.seriesBatch) == 0 {
