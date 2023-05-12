@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana-tools/sdk"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -26,8 +28,24 @@ type GrafanaAnalyzeCommand struct {
 	address     string
 	apiKey      string
 	readTimeout time.Duration
+	folders     folderTitles
 
 	outputFile string
+}
+
+type folderTitles []string
+
+func (f *folderTitles) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
+func (f folderTitles) String() string {
+	return strings.Join(f, ",")
+}
+
+func (f folderTitles) IsCumulative() bool {
+	return true
 }
 
 func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
@@ -47,7 +65,12 @@ func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
 		return err
 	}
 
+	filterOnFolders := len(cmd.folders) > 0
+
 	for _, link := range boardLinks {
+		if filterOnFolders && !slices.Contains(cmd.folders, link.FolderTitle) {
+			continue
+		}
 		data, _, err := c.GetRawDashboardByUID(ctx, link.UID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)

@@ -64,6 +64,7 @@
 ### Mimirtool
 
 * [ENHANCEMENT] analyze prometheus: allow to specify `-prometheus-http-prefix`. #4966
+* [ENHANCEMENT] analyze grafana: allow to specify `--folder-title` to limit dashboards analysis based on their exact folder title. #4973
 
 ## 2.8.0
 
