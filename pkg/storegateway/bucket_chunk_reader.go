@@ -177,7 +177,7 @@ func (r *bucketChunkReader) fetchChunkRemainder(ctx context.Context, seq int, of
 	if err != nil {
 		return errors.Wrap(err, "open chunk reader")
 	}
-	defer runutil.CloseWithLogOnErr(r.block.logger, refetchReader, "readChunkRange close refetch range reader")
+	defer runutil.CloseWithLogOnErr(r.block.logger, refetchReader, "close refetch chunk reader")
 	refetchedRead, err := io.ReadFull(refetchReader, dest)
 	if err != nil {
 		return errors.Wrap(err, "read refetched chunk")
