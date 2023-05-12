@@ -200,30 +200,6 @@
           },
         },
         {
-          // Alert if the number of queries for which we had to refetch series from different store-gateways
-          // (because of missing blocks) is greater than a %.
-          alert: $.alertName('QuerierHighRefetchRate'),
-          'for': '10m',
-          expr: |||
-            100 * (
-              (
-                sum by(%(alert_aggregation_labels)s) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
-                -
-                sum by(%(alert_aggregation_labels)s) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0.0"}[5m]))
-              )
-              /
-              sum by(%(alert_aggregation_labels)s) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
-            )
-            > 1
-          ||| % $._config,
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: '%(product)s Queries in %(alert_aggregation_variables)s are refetching series from different store-gateways (because of missing blocks) for the {{ printf "%%.0f" $value }}%% of queries.' % $._config,
-          },
-        },
-        {
           // Alert if the store-gateway is not successfully synching the bucket.
           alert: $.alertName('StoreGatewayHasNotSyncTheBucket'),
           'for': '5m',

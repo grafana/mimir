@@ -748,26 +748,6 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: MimirQuerierHighRefetchRate
-    annotations:
-      message: Mimir Queries in {{ $labels.cluster }}/{{ $labels.namespace }} are
-        refetching series from different store-gateways (because of missing blocks)
-        for the {{ printf "%.0f" $value }}% of queries.
-      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirquerierhighrefetchrate
-    expr: |
-      100 * (
-        (
-          sum by(cluster, namespace) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
-          -
-          sum by(cluster, namespace) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0.0"}[5m]))
-        )
-        /
-        sum by(cluster, namespace) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
-      )
-      > 1
-    for: 10m
-    labels:
-      severity: warning
   - alert: MimirStoreGatewayHasNotSyncTheBucket
     annotations:
       message: Mimir store-gateway {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace

@@ -46,6 +46,7 @@
 
 ### Mixin
 
+* [CHANGE] Alerts: Remove `MimirQuerierHighRefetchRate`. #4980
 * [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
 * [ENHANCEMENT] Alerts: `MimirIngesterTSDBWALCorrupted` now only fires when there are more than one corrupted WALs in single-zone deployments and when there are more than two zones affected in multi-zone deployments. #4920
 * [ENHANCEMENT] dashboards: fix holes in graph for lightly loaded clusters #4915
