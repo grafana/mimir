@@ -538,6 +538,15 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 				benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
 			})
 
+			t.Run("happy cases with index cache", func(t *testing.T) {
+				newBlockWithIndexCache := func() *bucketBlock {
+					b := newTestBucketBlock()
+					b.indexCache = newInMemoryIndexCache(t)
+					return b
+				}
+				benchmarkExpandedPostings(test.NewTB(t), newBlockWithIndexCache, series)
+			})
+
 			t.Run("corrupted or undecodable postings cache doesn't fail", func(t *testing.T) {
 				b := newTestBucketBlock()
 				b.indexCache = corruptedPostingsCache{}
@@ -921,12 +930,12 @@ func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Contex
 
 type corruptedPostingsCache struct{ noopCache }
 
-func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
+func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) indexcache.BytesResult {
 	res := make(map[labels.Label][]byte)
 	for _, k := range keys {
 		res[k] = []byte("corrupted or unknown")
 	}
-	return res, nil
+	return &indexcache.MapIterator[labels.Label]{Keys: keys, M: res}
 }
 
 type cacheNotExpectingToStoreExpandedPostings struct {
@@ -960,7 +969,7 @@ type expandedPostingsReplacingCache struct {
 	v []byte
 }
 
-func (c *expandedPostingsReplacingCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
+func (c *expandedPostingsReplacingCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ string) ([]byte, bool) {
 	return c.v, true
 }
 
@@ -969,13 +978,8 @@ type postingsReplacingCache struct {
 	vals map[labels.Label][]byte
 }
 
-func (c *postingsReplacingCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
-	for _, l := range keys {
-		if _, ok := c.vals[l]; !ok {
-			misses = append(misses, l)
-		}
-	}
-	return c.vals, misses
+func (c *postingsReplacingCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) indexcache.BytesResult {
+	return &indexcache.MapIterator[labels.Label]{Keys: keys, M: c.vals}
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {

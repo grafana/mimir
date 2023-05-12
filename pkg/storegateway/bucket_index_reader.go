@@ -421,14 +421,14 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	output := make([]index.Postings, len(keys))
 
 	// Fetch postings from the cache with a single call.
-	fromCache, _ := r.block.indexCache.FetchMultiPostings(ctx, r.block.userID, r.block.meta.ULID, keys)
+	fromCache := r.block.indexCache.FetchMultiPostings(ctx, r.block.userID, r.block.meta.ULID, keys)
 
 	// Iterate over all groups and fetch posting from cache.
 	// If we have a miss, mark key to be fetched in `ptrs` slice.
 	// Overlaps are well handled by partitioner, so we don't need to deduplicate keys.
 	for ix, key := range keys {
 		// Get postings for the given key from cache first.
-		if b, ok := fromCache[key]; ok {
+		if b, _ := fromCache.Next(); b != nil {
 			stats.update(func(stats *queryStats) {
 				stats.postingsTouched++
 				stats.postingsTouchedSizeSum += len(b)
