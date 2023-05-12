@@ -42,14 +42,12 @@ increment_semver() {
   echo $(local IFS=$delimiter ; echo "${array[*]}")
 }
 
-# Sets a part of the semver string
+# Sets the patch segment of a semver to 0
 # $1: version itself
-# $2: number of part: 0 – major, 1 – minor, 2 – patch
-# $3: the number to set the part to
-set_semver() {
+set_semver_patch_to_zero() {
   local delimiter=.
   local array=($(echo "$1" | tr $delimiter '\n'))
-  array[$2]=$3
+  array[2]="0"
   echo $(local IFS=$delimiter ; echo "${array[*]}")
 }
 
@@ -65,7 +63,7 @@ calculate_next_chart_version() {
     # _This_ weekly release should have a semver that's one above the stable release.
     new_chart_semver=$(increment_semver $current_chart_semver 1)
     # Also reset the patch release number to 0.
-    new_chart_semver=$(set_semver $new_chart_semver 2 0)
+    new_chart_semver=$(set_semver_patch_to_zero $new_chart_semver)
   fi
   echo "$new_chart_semver-weekly.$new_chart_weekly"
 }
