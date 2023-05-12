@@ -2333,28 +2333,6 @@ func mustMarshalAny(pb proto.Message) *types.Any {
 	return out
 }
 
-func createBlockWithOneSeriesWithStep(t test.TB, dir string, lbls labels.Labels, blockIndex, totalSamples int, random *rand.Rand, step int64) ulid.ULID {
-	headOpts := tsdb.DefaultHeadOptions()
-	headOpts.ChunkDirRoot = dir
-	headOpts.ChunkRange = int64(totalSamples) * step
-	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, h.Close()) }()
-
-	app := h.Appender(context.Background())
-
-	ts := int64(blockIndex * totalSamples)
-	ref, err := app.Append(0, lbls, ts, random.Float64())
-	assert.NoError(t, err)
-	for i := 1; i < totalSamples; i++ {
-		_, err := app.Append(ref, lbls, ts+step*int64(i), random.Float64())
-		assert.NoError(t, err)
-	}
-	assert.NoError(t, app.Commit())
-
-	return createBlockFromHead(t, dir, h)
-}
-
 func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
 	tb := test.NewTB(t)
 
