@@ -1004,12 +1004,24 @@ func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender stor
 	require.NoError(tb, err)
 
 	return func() *bucketBlock {
+		var chunkObjects []string
+		err := bkt.Iter(context.Background(), path.Join(id.String(), "chunks"), func(s string) error {
+			chunkObjects = append(chunkObjects, s)
+			return nil
+		})
+		require.NoError(tb, err)
+
+		p, err := pool.NewBucketedBytes(10, 1000000, 10, 10000000)
+		require.NoError(tb, err)
+
 		return &bucketBlock{
 			userID:            "tenant",
 			logger:            log.NewNopLogger(),
 			metrics:           NewBucketStoreMetrics(nil),
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
+			chunkPool:         p,
+			chunkObjs:         chunkObjects,
 			bkt:               bkt,
 			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
