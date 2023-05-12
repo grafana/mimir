@@ -1465,11 +1465,10 @@ func mockAlertingRuleDesc(alert, expr string) *rulespb.RuleDesc {
 // are copied when a rule group is cloned.
 func mockRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.RuleGroupDesc {
 	return &rulespb.RuleGroupDesc{
-		Name:          name,
-		Namespace:     "test",
-		Interval:      time.Minute,
-		Rules:         rules,
-		User:          user,
-		SourceTenants: []string{user},
+		Name:      name,
+		Namespace: "test",
+		Interval:  time.Minute,
+		Rules:     rules,
+		User:      user,
 	}
 }
