@@ -10,7 +10,6 @@
 * [CHANGE] Querier: `-querier.query-ingesters-within` has been moved from a global flag to a per-tenant override. #4287
 * [CHANGE] Querier: Use `-blocks-storage.tsdb.retention-period` instead of `-querier.query-ingesters-within` for calculating the lookback period for shuffle sharded ingesters. Setting `-querier.query-ingesters-within=0` no longer disables shuffle sharding on the read path. #4287
 * [CHANGE] Block upload: `/api/v1/upload/block/{block}/files` endpoint now allows file uploads with no `Content-Length`. #4956
-* [CHANGE] Add native histogram support for `cortex_request_duration_seconds` metric family. #4987
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metric `cortex_bucket_store_series_data_touched`. This label now applies to `data_type="chunks"` and `data_type="series"`. The `stage` label has 2 values: `processed` - the number of series that parsed - and `returned` - the number of series selected from the processed bytes to satisfy the query. #4797 #4830
@@ -32,6 +31,7 @@
   * `cortex_alertmanager_nflog_maintenance_errors_total`
   * `cortex_alertmanager_silences_maintenance_total`
   * `cortex_alertmanager_silences_maintenance_errors_total`
+* [ENHANCEMENT] Add native histogram support for `cortex_request_duration_seconds` metric family. #4987
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
