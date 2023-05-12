@@ -33,9 +33,9 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 	// Initialise the result tracker, which is use to keep track of successes and failures.
 	var tracker replicationSetResultTracker
 	if r.MaxUnavailableZones > 0 {
-		tracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones)
+		tracker = newZoneAwareResultTracker(ctx, r.Instances, r.MaxUnavailableZones)
 	} else {
-		tracker = newDefaultResultTracker(r.Instances, r.MaxErrors)
+		tracker = newDefaultResultTracker(ctx, r.Instances, r.MaxErrors)
 	}
 
 	var (
@@ -93,6 +93,122 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 	}
 
 	return results, nil
+}
+
+// DoUntilQuorum runs function f in parallel for all replicas in r.
+//
+// If r.MaxUnavailableZones is greater than zero:
+//   - DoUntilQuorum returns an error if calls to f for instances in r.MaxUnavailableZones zones return errors
+//   - Otherwise, DoUntilQuorum returns all results from all replicas in the first zones for which f succeeds
+//     for every instance in that zone (eg. if there are 3 zones and r.MaxUnavailableZones is 1, DoUntilQuorum will
+//     return the results from all instances in 2 zones, even if all calls to f succeed).
+//
+// Otherwise:
+//   - DoUntilQuorum returns an error if r.MaxErrors calls to f return errors
+//   - Otherwise, DoUntilQuorum returns all results from the first len(r.Instances) - r.MaxErrors instances
+//     (eg. if there are 6 replicas and r.MaxErrors is 2, DoUntilQuorum will return the results from the first 4
+//     successful calls to f, even if all 6 calls to f succeed).
+//
+// Any results from successful calls to f that are not returned by DoUntilQuorum will be passed to cleanupFunc,
+// including when DoUntilQuorum returns an error or only returns a subset of successful results. cleanupFunc may
+// be called both before and after DoUntilQuorum returns.
+//
+// DoUntilQuorum cancels the context.Context passed to each invocation of f if the result of that invocation of
+// f will not be returned. If the result of that invocation of f will be returned, the context.Context passed
+// to that invocation of f will not be cancelled by DoUntilQuorum, but the context.Context is a child of ctx
+// and so will be cancelled if ctx is cancelled.
+func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, f func(context.Context, *InstanceDesc) (T, error), cleanupFunc func(T)) ([]T, error) {
+	resultsChan := make(chan instanceResult[T], len(r.Instances))
+	resultsRemaining := len(r.Instances)
+
+	defer func() {
+		go func() {
+			for resultsRemaining > 0 {
+				result := <-resultsChan
+				resultsRemaining--
+
+				if result.err == nil {
+					cleanupFunc(result.result)
+				}
+			}
+		}()
+	}()
+
+	var tracker replicationSetResultTracker
+	if r.MaxUnavailableZones > 0 {
+		tracker = newZoneAwareResultTracker(ctx, r.Instances, r.MaxUnavailableZones)
+	} else {
+		tracker = newDefaultResultTracker(ctx, r.Instances, r.MaxErrors)
+	}
+
+	for i := range r.Instances {
+		instance := &r.Instances[i]
+		instanceCtx := tracker.contextFor(instance)
+
+		go func(desc *InstanceDesc) {
+			result, err := f(instanceCtx, desc)
+			resultsChan <- instanceResult[T]{
+				result:   result,
+				err:      err,
+				instance: desc,
+			}
+		}(instance)
+	}
+
+	resultsMap := make(map[*InstanceDesc]T, len(r.Instances))
+	cleanupResultsAlreadyReceived := func() {
+		for _, result := range resultsMap {
+			cleanupFunc(result)
+		}
+	}
+
+	for !tracker.succeeded() {
+		select {
+		case <-ctx.Done():
+			// No need to cancel individual instance contexts, as they inherit the cancellation from ctx.
+			cleanupResultsAlreadyReceived()
+
+			return nil, ctx.Err()
+		case result := <-resultsChan:
+			resultsRemaining--
+			tracker.done(result.instance, result.err)
+
+			if result.err == nil {
+				resultsMap[result.instance] = result.result
+			} else if tracker.failed() {
+				tracker.cancelAllContexts()
+				cleanupResultsAlreadyReceived()
+				return nil, result.err
+			}
+		}
+	}
+
+	results := make([]T, 0, len(r.Instances))
+
+	for i := range r.Instances {
+		instance := &r.Instances[i]
+		result, haveResult := resultsMap[instance]
+
+		if haveResult {
+			if tracker.shouldIncludeResultFrom(instance) {
+				results = append(results, result)
+			} else {
+				tracker.cancelContextFor(instance)
+				cleanupFunc(result)
+			}
+		} else {
+			// Nothing to clean up (yet) - this will be handled by deferred call above.
+			tracker.cancelContextFor(instance)
+		}
+	}
+
+	return results, nil
+}
+
+type instanceResult[T any] struct {
+	result   T
+	err      error
+	instance *InstanceDesc
 }
 
 // Includes returns whether the replication set includes the replica with the provided addr.
