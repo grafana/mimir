@@ -264,9 +264,15 @@ local filename = 'mimir-writes.json';
         $.stack,
       )
       .addPanel(
-        $.panel('WAL truncations latency (includes checkpointing)') +
-        $.queryPanel('sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{%s}[$__rate_interval])) / sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)], 'avg') +
-        { yaxes: $.yaxes('s') } +
+        $.timeseriesPanel('WAL truncations latency (includes checkpointing)') +
+        $.queryPanel(
+          |||
+            sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{%s}[$__rate_interval]))
+            /
+            sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{%s}[$__rate_interval])) >= 0
+          ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)], 'avg'
+        ) +
+        { fieldConfig: { defaults: { noValue: '0', unit: 's' } } } +
         $.panelDescription(
           'WAL truncations latency (including checkpointing)',
           |||

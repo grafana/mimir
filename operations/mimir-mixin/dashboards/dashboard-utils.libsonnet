@@ -778,9 +778,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('reqps') },
     )
     .addPanel(
-      $.panel('Error rate') +
-      $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s,component="%s"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component, $.namespaceMatcher(), component], '{{operation}}') +
-      { yaxes: $.yaxes('percentunit') },
+      $.timeseriesPanel('Error rate') +
+      $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s,component="%s"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval])) >= 0' % [$.namespaceMatcher(), component, $.namespaceMatcher(), component], '{{operation}}') +
+      { fieldConfig: { defaults: { noValue: '0', unit: 'percentunit' } } }
     )
     .addPanel(
       $.panel('Latency of op: Attributes') +

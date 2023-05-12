@@ -143,13 +143,14 @@ local filename = 'mimir-ruler.json';
     .addRow(
       $.row('Notifications')
       .addPanel(
-        $.panel('Delivery errors') +
+        $.timeseriesPanel('Delivery errors') +
         $.queryPanel(|||
           sum by(user) (rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval]))
             /
-          sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]))
+          sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]) > 0)
           > 0
-        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}')
+        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}') +
+        { fieldConfig: { defaults: { unit: 'short', noValue: 0 } } }
       )
       .addPanel(
         $.panel('Queue length') +
@@ -158,12 +159,14 @@ local filename = 'mimir-ruler.json';
             /
           sum by(user) (rate(cortex_prometheus_notifications_queue_capacity{%s}[$__rate_interval])) > 0
         ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}')
+        { fieldConfig: { defaults: { unit: 'percentunit', noValue: 0 } } }
       )
       .addPanel(
-        $.panel('Dropped') +
+        $.timeseriesPanel('Dropped') +
         $.queryPanel(|||
           sum by (user) (increase(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval])) > 0
-        ||| % $.jobMatcher($._config.job_names.ruler), '{{ user }}')
+        ||| % $.jobMatcher($._config.job_names.ruler), '{{ user }}') +
+        { fieldConfig: { defaults: { unit: 'short', noValue: 0 } } }
       )
     )
     .addRow(
