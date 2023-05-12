@@ -31,6 +31,7 @@
   * `cortex_alertmanager_nflog_maintenance_errors_total`
   * `cortex_alertmanager_silences_maintenance_total`
   * `cortex_alertmanager_silences_maintenance_errors_total`
+* [ENHANCEMENT] Add native histogram support for `cortex_request_duration_seconds` metric family. #4987
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
