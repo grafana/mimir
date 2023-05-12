@@ -10,7 +10,7 @@
 * [CHANGE] Querier: `-querier.query-ingesters-within` has been moved from a global flag to a per-tenant override. #4287
 * [CHANGE] Querier: Use `-blocks-storage.tsdb.retention-period` instead of `-querier.query-ingesters-within` for calculating the lookback period for shuffle sharded ingesters. Setting `-querier.query-ingesters-within=0` no longer disables shuffle sharding on the read path. #4287
 * [CHANGE] Block upload: `/api/v1/upload/block/{block}/files` endpoint now allows file uploads with no `Content-Length`. #4956
-* [CHANGE] Store-gateway: deprecate configuration parameters for chunk pooling. The following options are now also ignored:
+* [CHANGE] Store-gateway: deprecate configuration parameters for chunk pooling. The following options are now also ignored: #4996
   * `-blocks-storage.bucket-store.max-chunk-pool-bytes`
   * `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
   * `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
