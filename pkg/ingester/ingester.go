@@ -259,6 +259,9 @@ type Ingester struct {
 	tenantsWithOutOfOrderEnabledStat   *expvar.Int
 	minOutOfOrderTimeWindowSecondsStat *expvar.Int
 	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
+
+	readPathMemoryThreshold uint64
+	readPathCPUThreshold    uint64
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -1415,6 +1418,9 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 // QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
 	if err := i.checkRunning(); err != nil {
+		return err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
 		return err
 	}
 
