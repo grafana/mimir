@@ -27,6 +27,9 @@ type ReplicationStrategy interface {
 
 	// addInstance add the given instance with the given zone to the replication strategy
 	addInstance(instance Instance, zone Zone)
+
+	// removeInstance removes the given instance from the replication strategy
+	removeInstance(instance Instance)
 }
 
 // SimpleReplicationStrategy is an implementation of replicationStrategy which is not zone-aware
@@ -54,6 +57,10 @@ func NewSimpleReplicationStrategy(replicationFactor int, bufInstances []Instance
 
 func (s SimpleReplicationStrategy) getReplicationFactor() int {
 	return s.replicationFactor
+}
+
+func (s SimpleReplicationStrategy) removeInstance(instance Instance) {
+
 }
 
 func (s SimpleReplicationStrategy) addInstance(instance Instance, zone Zone) {
@@ -181,6 +188,10 @@ func NewZoneAwareReplicationStrategy(replicationFactor int, zoneByInstance map[I
 		bufZones:          bufZones,
 		logger:            logger,
 	}
+}
+
+func (z ZoneAwareReplicationStrategy) removeInstance(instance Instance) {
+	delete(z.zonesByInstance, instance)
 }
 
 func (z ZoneAwareReplicationStrategy) addInstance(instance Instance, zone Zone) {

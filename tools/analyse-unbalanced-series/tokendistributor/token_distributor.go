@@ -25,6 +25,7 @@ type TokenDistributorInterface interface {
 	GetInstances() []Instance
 	GetReplicaSet(key Token) ([]Instance, error)
 	AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], *OwnershipInfo, error)
+	RemoveInstance(instance Instance) (*OwnershipInfo, error)
 }
 
 type TokenDistributor struct {
@@ -124,9 +125,13 @@ func (t *TokenDistributor) addTokenToInstance(instance Instance, token Token) {
 	t.tokensByInstance[instance] = tokens
 }
 
-func (t *TokenDistributor) getOptimalTokenOwnership() float64 {
+func (t *TokenDistributor) getOptimalTokenOwnership(adding bool) float64 {
 	maxTokenAsFloat64 := float64(t.maxTokenValue)
-	return maxTokenAsFloat64 * float64(t.replicationStrategy.getReplicationFactor()) / float64(len(t.sortedTokens)+t.tokensPerInstance)
+	totalTokens := len(t.sortedTokens)
+	if adding {
+		totalTokens += t.tokensPerInstance
+	}
+	return maxTokenAsFloat64 * float64(t.replicationStrategy.getReplicationFactor()) / float64(totalTokens)
 }
 
 // calculateReplicatedOwnership calculated the replicated weight of the given token with its given replicaStart.
@@ -327,6 +332,9 @@ func (t *TokenDistributor) isCongruent(instanceA, instanceB *instanceInfo) bool 
 // The expandable condition is calculated according to the congruence between the passed instances and according
 // to the differentRequired parameter, which determines whether the passed instances should be congruent or not.
 func (t *TokenDistributor) isExpandable(instanceA, instanceB *instanceInfo, differentRequired bool) bool {
+	if instanceA == nil || instanceB == nil {
+		return false
+	}
 	if instanceA.zone != SingleZoneInfo && instanceB.zone != SingleZoneInfo {
 		if differentRequired {
 			return instanceA.zone != instanceB.zone
@@ -1230,6 +1238,31 @@ func (t *TokenDistributor) addTokensFromSeed(instance Instance, zone Zone) {
 	}
 }
 
+func (t *TokenDistributor) RemoveInstance(instance Instance) (*OwnershipInfo, error) {
+	t.replicationStrategy.removeInstance(instance)
+	tokens, ok := t.tokensByInstance[instance]
+	if !ok {
+		return &OwnershipInfo{}, nil
+	}
+	for _, token := range tokens {
+		index := searchTokenFloor(t.sortedTokens, token)
+		if t.sortedTokens[index] != token {
+			return &OwnershipInfo{}, fmt.Errorf("token %d not found in the ring", token)
+		}
+		copy(t.sortedTokens[index:], t.sortedTokens[index+1:])
+		t.sortedTokens[len(t.sortedTokens)-1] = 0
+		t.sortedTokens = t.sortedTokens[:len(t.sortedTokens)-1]
+		delete(t.instanceByToken, token)
+	}
+	delete(t.tokensByInstance, instance)
+	delete(t.zoneByInstance, instance)
+	instanceInfoByInstance, _ := t.createInstanceAndZoneInfos()
+	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, nil)
+	optimalTokenOwnership := t.getOptimalTokenOwnership(false)
+	ownershipInfo := t.createOwnershipInfo(tokenInfoCircularList, optimalTokenOwnership)
+	return ownershipInfo, nil
+}
+
 func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo], *OwnershipInfo, error) {
 	t.replicationStrategy.addInstance(instance, zone)
 	if t.seedGenerator != nil && t.seedGenerator.hasNextSeed(zone) {
@@ -1247,7 +1280,7 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 	instanceInfoByInstance[instance] = newInstanceInfo
 	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceInfo)
 	//fmt.Printf("\t\t\t%s", instanceInfoByInstance)
-	optimalTokenOwnership := t.getOptimalTokenOwnership()
+	optimalTokenOwnership := t.getOptimalTokenOwnership(true)
 	candidateTokenInfoCircularList := t.createCandidateTokenInfoCircularList(tokenInfoCircularList, newInstanceInfo, optimalTokenOwnership)
 
 	pq := t.createPriorityQueue(candidateTokenInfoCircularList, optimalTokenOwnership, t.tokensPerInstance)

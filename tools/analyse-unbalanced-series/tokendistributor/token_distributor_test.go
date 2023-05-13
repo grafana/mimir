@@ -45,7 +45,7 @@ func createTokenInfoCircularList(tokenDistributor *TokenDistributor, instance In
 
 func createNewInstanceAncCircularListsWithVerification(t *testing.T, tokenDistributor *TokenDistributor, newInstance Instance, newInstanceZone Zone, verify bool) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo]) {
 	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
-	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership()
+	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(true)
 	newInstanceInfo := newInstanceInfo(newInstance, zoneInfoByZone[newInstanceZone], tokenDistributor.tokensPerInstance)
 	newInstanceInfo.ownership = float64(tokenDistributor.tokensPerInstance) * optimalTokenOwnership
 	tokenInfoCircularList := tokenDistributor.createTokenInfoCircularList(infoInstanceByInstance, newInstanceInfo)
@@ -115,7 +115,7 @@ func TestTokenDistributor_CreateCandidateTokenInfoCircularList(t *testing.T) {
 func TestTokenDistributor_EvaluateImprovement(t *testing.T) {
 	tokenDistributor := createTokenDistributor(maxToken)
 	_, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, false)
-	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership()
+	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(true)
 	head := candidateTokenCircularList.head
 	curr := head
 	bestOwnershipDecrease := math.MaxFloat64
@@ -145,7 +145,7 @@ func TestTokenDistributor_EvaluateImprovement(t *testing.T) {
 func TestTokenDistributor_CreatePriorityQueue(t *testing.T) {
 	tokenDistributor := createTokenDistributor(maxToken)
 	_, candidateTokenCircularList := createNewInstanceAncCircularListsWithVerification(t, tokenDistributor, newInstance, newInstanceZone, false)
-	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership()
+	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(true)
 
 	sortedImprovements := make([]float64, 0, len(tokenDistributor.sortedTokens))
 	head := candidateTokenCircularList.head
@@ -351,6 +351,39 @@ func TestTokenDistributor_AddSecondInstanceOfAZone(t *testing.T) {
 	}
 
 	require.Len(t, tokenDistributor.sortedTokens, 9*tokensPerInstance)
+}
+
+func TestTokenDistributor_RemoveInstance(t *testing.T) {
+	zones := []Zone{"zone-a", "zone-b", "zone-c"}
+	replicationStrategy := NewZoneAwareReplicationStrategy(replicationFactor, make(map[Instance]Zone, initialInstanceCount), nil, nil)
+	tokenDistributor := NewTokenDistributor(tokensPerInstance, zonesCount, maxToken, replicationStrategy, NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
+	tokenDistributor.maxTokenValue = maxToken
+	instances := []Instance{"A-1", "B-1", "C-1"}
+
+	for i := range instances {
+		tokenDistributor.AddInstance(instances[i], zones[i])
+	}
+	instances = []Instance{"A-2", "B-2", "C-2", "A-3", "B-3", "C-3"}
+	for i := range instances {
+		tokenDistributor.AddInstance(instances[i], zones[i%len(zones)])
+	}
+	for _, instance := range instances {
+		tokens, ok := tokenDistributor.tokensByInstance[instance]
+		require.True(t, ok)
+		tokenDistributor.RemoveInstance(instance)
+		for _, token := range tokens {
+			require.NotContains(t, tokenDistributor.sortedTokens, token)
+			_, ok = tokenDistributor.instanceByToken[token]
+			require.False(t, ok)
+		}
+		_, ok = tokenDistributor.zoneByInstance[instance]
+		require.False(t, ok)
+		_, ok = tokenDistributor.tokensByInstance[instance]
+		require.False(t, ok)
+		require.True(t, slices.IsSorted(tokenDistributor.sortedTokens))
+	}
+
+	require.Len(t, tokenDistributor.sortedTokens, 3*tokensPerInstance)
 }
 
 func TestTokenDistributor_GenerationZoneAware(t *testing.T) {

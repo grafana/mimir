@@ -268,7 +268,7 @@ func createRandomTokenDistributor(replicationFactor, tokensPerInstance, instance
 	return tokdistr.NewRandomTokenDistributor(tokensPerInstance, len(zones), maxTokenValue, replicationStrategy, randomSeedGenerator)
 }
 
-func generateRing(logger log.Logger, candidateSelectionMode bool, replicationFactor, tokensPerInstance, instancesPerZone int, zones []tokdistr.Zone) (tokdistr.TokenDistributorInterface, error) {
+func generateRing(logger log.Logger, candidateSelectionMode bool, replicationFactor, tokensPerInstance, instancesPerZone int, zones []tokdistr.Zone) (tokdistr.TokenDistributorInterface, *tokdistr.OwnershipInfo, error) {
 	level.Info(logger).Log("test", "Generate token ring", "mode", formatCandidateSelectionMode(candidateSelectionMode), "replication factor", replicationFactor, "zone-awareness", formatEnabled(len(zones) > 1), "tokens per instance", tokensPerInstance, "total tokens", tokensPerInstance*instancesPerZone, "status", "start")
 
 	var initial rune
@@ -283,28 +283,30 @@ func generateRing(logger log.Logger, candidateSelectionMode bool, replicationFac
 	} else {
 		tokenDistributor = createRandomTokenDistributor(replicationFactor, tokensPerInstance, instancesPerZone, zones)
 	}
+	var ownershipInfo *tokdistr.OwnershipInfo
+	var err error
 	start := time.Now()
 	for i := 0; i < instancesPerZone; i++ {
 		for j := 0; j < len(zones); j++ {
 			instance := tokdistr.Instance(fmt.Sprintf("%s-%d", string(initial+rune(j)), i))
-			_, _, _, err := tokenDistributor.AddInstance(instance, zones[j])
+			_, _, ownershipInfo, err = tokenDistributor.AddInstance(instance, zones[j])
 			if err != nil {
 				level.Error(logger).Log("test", "Generate token ring", "mode", formatCandidateSelectionMode(candidateSelectionMode), "replication factor", replicationFactor, "zone-awareness", formatEnabled(len(zones) > 1), "tokens per instance", tokensPerInstance, "total instances", tokensPerInstance*instancesPerZone, "runtime", time.Since(start), "err", err)
-				return nil, err
+				return nil, nil, err
 			}
 		}
 	}
 	level.Info(logger).Log("test", "Generate token ring", "mode", formatCandidateSelectionMode(candidateSelectionMode), "replication factor", replicationFactor, "zone-awareness", formatEnabled(len(zones) > 1), "tokens per instance", tokensPerInstance, "total tokens", tokensPerInstance*instancesPerZone, "runtime", time.Since(start), "status", "end")
-	return tokenDistributor, nil
+	return tokenDistributor, ownershipInfo, nil
 }
 
 func simulateTimeSeriesDistribution(logger log.Logger, candidateSelectionMode bool, numTokensPerInstanceScenarios []int, timeSeriesCount, replicationFactor, instancesPerZone int, zones []tokdistr.Zone) error {
 	instancesCount := instancesPerZone * len(zones)
-	level.Info(logger).Log("test", "Distribute tokens in a simulater ring", "mode", formatCandidateSelectionMode(candidateSelectionMode), "replication factor", replicationFactor, "zone-awareness", formatEnabled(len(zones) > 1), "total instances", instancesCount, "status", "start")
+	level.Info(logger).Log("test", "Distribute tokens in a simulated ring", "mode", formatCandidateSelectionMode(candidateSelectionMode), "replication factor", replicationFactor, "zone-awareness", formatEnabled(len(zones) > 1), "total instances", instancesCount, "status", "start")
 	instanceOwnershipByInstanceMap := make(map[tokdistr.Instance][]string, instancesCount)
 	ownershipInfos := make([]*tokdistr.OwnershipInfo, 0, 1)
 	for _, tokensPerInstance := range numTokensPerInstanceScenarios {
-		tokenDistribution, err := generateRing(logger, candidateSelectionMode, replicationFactor, tokensPerInstance, instancesPerZone, zones)
+		tokenDistribution, _, err := generateRing(logger, candidateSelectionMode, replicationFactor, tokensPerInstance, instancesPerZone, zones)
 		if err != nil {
 			panic(err)
 		}
@@ -345,9 +347,100 @@ func simulateTimeSeriesDistribution(logger log.Logger, candidateSelectionMode bo
 	if err := w.writeCSV(filename); err != nil {
 		return err
 	}
-	level.Info(logger).Log("test", "Distribute tokens in a simulater ring", "mode", formatCandidateSelectionMode(candidateSelectionMode), "replication factor", replicationFactor, "zone-awareness", formatEnabled(len(zones) > 1), "total instances", instancesCount, "status", "end")
+	level.Info(logger).Log("test", "Distribute tokens in a simulated ring", "mode", formatCandidateSelectionMode(candidateSelectionMode), "replication factor", replicationFactor, "zone-awareness", formatEnabled(len(zones) > 1), "total instances", instancesCount, "status", "end")
 	return nil
+}
 
+func simulateAddingAndRemovingInstances(logger log.Logger, candidateSelectionMode bool, numTokensPerInstanceScenarios []int, deltaCount, replicationFactor, instancesPerZone int, zones []tokdistr.Zone, lifoZones bool) error {
+	instancesCount := instancesPerZone * len(zones)
+	level.Info(logger).Log("test", "Add and Remove Instances in a simulated ring", "mode", formatCandidateSelectionMode(candidateSelectionMode), "replication factor", replicationFactor, "zone-awareness", formatEnabled(len(zones) > 1), "total instances", instancesCount, "status", "start")
+	standardDeviationEvolutionByScenario := make(map[int][]*tokdistr.OwnershipInfo)
+	ownershipInfos := make([]*tokdistr.OwnershipInfo, 0, 1+2*deltaCount)
+	var initial rune
+	if len(zones) == 1 {
+		initial = 'I'
+	} else {
+		initial = 'A'
+	}
+	for _, tokensPerInstance := range numTokensPerInstanceScenarios {
+		ownershipInfos = ownershipInfos[:0]
+		tokenDistributor, ownershipInfo, err := generateRing(logger, candidateSelectionMode, replicationFactor, tokensPerInstance, instancesPerZone, zones)
+		ownershipInfos = append(ownershipInfos, ownershipInfo)
+		if err != nil {
+			panic(err)
+		}
+		currIndex := instancesPerZone - 1
+		for i := 0; i < deltaCount; i++ {
+			zoneIndex := i % len(zones)
+			if zoneIndex == 0 {
+				currIndex++
+			}
+			instance := tokdistr.Instance(fmt.Sprintf("%s-%d", string(initial+rune(zoneIndex)), currIndex))
+			_, _, ownershipInfo, _ = tokenDistributor.AddInstance(instance, zones[zoneIndex])
+			ownershipInfos = append(ownershipInfos, ownershipInfo)
+		}
+
+		currIndex++
+		for i := 0; i < deltaCount; i++ {
+			zoneIndex := i % len(zones)
+			if zoneIndex == 0 {
+				currIndex--
+			}
+			if lifoZones {
+				zoneIndex = len(zones) - 1 - zoneIndex
+			}
+			instance := tokdistr.Instance(fmt.Sprintf("%s-%d", string(initial+rune(zoneIndex)), currIndex))
+			ownershipInfo, _ := tokenDistributor.RemoveInstance(instance)
+			ownershipInfos = append(ownershipInfos, ownershipInfo)
+		}
+		standardDeviationEvolution := make([]*tokdistr.OwnershipInfo, 0, 1+2*deltaCount)
+		standardDeviationEvolution = append(standardDeviationEvolution, ownershipInfos...)
+		standardDeviationEvolutionByScenario[tokensPerInstance] = standardDeviationEvolution
+	}
+
+	//Generate CSV header.
+	csvHeader := make([]string, 0, 3*len(numTokensPerInstanceScenarios))
+	for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
+		csvHeader = append(csvHeader, fmt.Sprintf("tokens:%d-instances count", numTokensPerInstance))
+		csvHeader = append(csvHeader, fmt.Sprintf("tokens:%d-optimal ownership", numTokensPerInstance))
+		csvHeader = append(csvHeader, fmt.Sprintf("tokens:%d-stdev", numTokensPerInstance))
+	}
+
+	result := make([][]string, 0, 1+2*deltaCount)
+	for i := 0; i < 1+2*deltaCount; i++ {
+		result = append(result, make([]string, 0, 3*len(numTokensPerInstanceScenarios)))
+	}
+	for _, numTokensPerInstance := range numTokensPerInstanceScenarios {
+		standardDeviationEvolution := standardDeviationEvolutionByScenario[numTokensPerInstance]
+		for i, ownershipInfo := range standardDeviationEvolution {
+			stdev := result[i]
+			stdev = append(stdev, fmt.Sprintf("%d", len(ownershipInfo.InstanceOwnershipMap)))
+			stdev = append(stdev, fmt.Sprintf("%.3f", ownershipInfo.OptimaInstanceOwnership))
+			instanceStDev, _ := ownershipInfo.StDev()
+			stdev = append(stdev, fmt.Sprintf("%.3f", instanceStDev))
+			result[i] = stdev
+		}
+	}
+
+	// Write result to CSV.
+	w := newCSVWriter[[]string]()
+	w.setHeader(csvHeader)
+	w.setData(result, func(entry []string) []string {
+		return entry
+	})
+
+	var output string
+	if candidateSelectionMode {
+		output = fmt.Sprintf("%s-add-remove-stdev-with-different-tokens-per-instance-with-candidate-selection-instances-%d-rf-%d-zone-awareness-%s.csv", time.Now().Local(), instancesCount, replicationFactor, formatEnabled(len(zones) > 1))
+	} else {
+		output = fmt.Sprintf("%s-add-remove-stdev-with-different-tokens-per-instance-with-random-tokens-instances-%d-rf-%d-zone-awareness-%s.csv", time.Now().Local(), instancesCount, replicationFactor, formatEnabled(len(zones) > 1))
+	}
+	filename := filepath.Join("tools", "analyse-unbalanced-series", "tokendistributor", output)
+	if err := w.writeCSV(filename); err != nil {
+		return err
+	}
+	level.Info(logger).Log("test", "Add and Remove Instances in a simulated ring", "mode", formatCandidateSelectionMode(candidateSelectionMode), "replication factor", replicationFactor, "zone-awareness", formatEnabled(len(zones) > 1), "total instances", instancesCount, "status", "end")
+	return nil
 }
 
 func main() {
@@ -393,4 +486,19 @@ func main() {
 	simulateTimeSeriesDistribution(logger, false, numTokensPerInstanceScenarios, timeSeriesCount, 3, totalInstanceCount, singleZones)
 	// random tokens, RF = 3, zone-awareness enabled
 	simulateTimeSeriesDistribution(logger, false, numTokensPerInstanceScenarios, timeSeriesCount, 3, totalInstanceCount/len(zones), zones)
+
+	// simulation of changing standard deviation by adding 100% of instances one-by-one and then removing the added instances one-by-one
+	// in a simulated ring with different number of tokens per instance, and with candidate selection or random token modes
+	// candidate selection, RF = 1, zone-awareness disabled
+	simulateAddingAndRemovingInstances(logger, true, numTokensPerInstanceScenarios, totalInstanceCount, 1, totalInstanceCount, singleZones, true)
+	// candidate selection, RF = 3, zone-awareness disabled
+	simulateAddingAndRemovingInstances(logger, true, numTokensPerInstanceScenarios, totalInstanceCount, 3, totalInstanceCount, singleZones, true)
+	// candidate selection, RF = 3, zone-awareness enabled
+	simulateAddingAndRemovingInstances(logger, true, numTokensPerInstanceScenarios, totalInstanceCount, 3, totalInstanceCount/len(zones), zones, true)
+	// random tokens, RF = 1, zone-awareness disabled
+	simulateAddingAndRemovingInstances(logger, false, numTokensPerInstanceScenarios, totalInstanceCount, 1, totalInstanceCount, zones, true)
+	// random tokens, RF = 3, zone-awareness disabled
+	simulateAddingAndRemovingInstances(logger, false, numTokensPerInstanceScenarios, totalInstanceCount, 3, totalInstanceCount, zones, true)
+	// random tokens, RF = 3, zone-awareness enabled
+	simulateAddingAndRemovingInstances(logger, false, numTokensPerInstanceScenarios, totalInstanceCount, 3, totalInstanceCount/len(zones), zones, true)
 }

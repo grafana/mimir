@@ -31,7 +31,7 @@ func (t *RandomTokenDistributor) AddInstance(instance Instance, zone Zone) (*Cir
 		return nil, nil, &OwnershipInfo{}, nil
 	}
 
-	optimalTokenOwnership := t.getOptimalTokenOwnership()
+	optimalTokenOwnership := t.getOptimalTokenOwnership(true)
 	for i := 0; i < t.tokensPerInstance; i++ {
 		candidateToken, err := t.calculateCandidateToken()
 		if err != nil {
