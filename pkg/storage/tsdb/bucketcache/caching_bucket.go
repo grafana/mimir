@@ -377,18 +377,21 @@ func (cb *CachingBucket) Attributes(ctx context.Context, name string) (objstore.
 func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName string, cache cache.Cache, ttl time.Duration) (objstore.ObjectAttributes, error) {
 	key := cachingKeyAttributes(cb.bucketID, name)
 
-	cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
+	// Lookup the cache.
+	if isCacheLookupEnabled(ctx) {
+		cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
 
-	hits := cache.Fetch(ctx, []string{key})
-	if raw, ok := hits[key]; ok {
-		var attrs objstore.ObjectAttributes
-		err := json.Unmarshal(raw, &attrs)
-		if err == nil {
-			cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
-			return attrs, nil
+		hits := cache.Fetch(ctx, []string{key})
+		if raw, ok := hits[key]; ok {
+			var attrs objstore.ObjectAttributes
+			err := json.Unmarshal(raw, &attrs)
+			if err == nil {
+				cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
+				return attrs, nil
+			}
+
+			level.Warn(cb.logger).Log("msg", "failed to decode cached Attributes result", "key", key, "err", err)
 		}
-
-		level.Warn(cb.logger).Log("msg", "failed to decode cached Attributes result", "key", key, "err", err)
 	}
 
 	attrs, err := cb.Bucket.Attributes(ctx, name)

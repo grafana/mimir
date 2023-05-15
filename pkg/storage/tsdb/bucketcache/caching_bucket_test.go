@@ -28,8 +28,6 @@ import (
 	"github.com/grafana/dskit/runutil"
 )
 
-const testFilename = "/random_object"
-
 func TestChunksCaching(t *testing.T) {
 	const bucketID = "test"
 
@@ -709,6 +707,7 @@ func TestAttributes(t *testing.T) {
 
 	// We reuse cache between tests (!)
 	cache := cache.NewMockCache()
+	ctx := context.Background()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "test"
@@ -717,14 +716,50 @@ func TestAttributes(t *testing.T) {
 	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
-	verifyObjectAttrs(t, cb, testFilename, -1, false, cfgName)
-	verifyObjectAttrs(t, cb, testFilename, -1, false, cfgName) // Attributes doesn't cache non-existent files.
+	t.Run("Attributes() should not cache non existing objects", func(t *testing.T) {
+		const filename = "/object-1"
 
-	data := []byte("hello world")
-	assert.NoError(t, inmem.Upload(context.Background(), testFilename, bytes.NewBuffer(data)))
+		// Run twice and make sure it's never looked up from cache.
+		verifyObjectAttrs(ctx, t, cb, filename, -1, true, false, cfgName)
+		verifyObjectAttrs(ctx, t, cb, filename, -1, true, false, cfgName)
+	})
 
-	verifyObjectAttrs(t, cb, testFilename, len(data), false, cfgName)
-	verifyObjectAttrs(t, cb, testFilename, len(data), true, cfgName)
+	t.Run("Attributes() should return value from cache on cache hit", func(t *testing.T) {
+		const filename = "/object-2"
+
+		// Pre-condition: the object should not exist.
+		verifyExists(ctx, t, cb, filename, false, false, false, cfgName)
+
+		// Upload the object.
+		data := []byte("hello world")
+		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(data)))
+
+		// The first call to Attributes() should cache it, while the second one should return the value from the cache.
+		verifyObjectAttrs(ctx, t, cb, filename, len(data), true, false, cfgName)
+		verifyObjectAttrs(ctx, t, cb, filename, len(data), true, true, cfgName)
+	})
+
+	t.Run("Attributes() should skip the cache lookup but store the value to the cache if cache lookup is disabled", func(t *testing.T) {
+		const filename = "/object-3"
+
+		// Pre-condition: the object should exist.
+		firstData := []byte("hello world")
+		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(firstData)))
+		verifyExists(ctx, t, cb, filename, true, false, false, cfgName)
+
+		// A call to Attributes() should cache the object attributes.
+		verifyObjectAttrs(ctx, t, cb, filename, len(firstData), true, false, cfgName)
+		verifyObjectAttrs(ctx, t, cb, filename, len(firstData), true, true, cfgName)
+
+		// Modify the object.
+		secondData := append(firstData, []byte("with additional data")...)
+		require.NotEqual(t, len(firstData), len(secondData))
+		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(secondData)))
+
+		// A call to Attributes() with cache lookup disabled should go to the object storage, but cache the updated value.
+		verifyObjectAttrs(WithCacheLookupEnabled(ctx, false), t, cb, filename, len(secondData), false, false, cfgName)
+		verifyObjectAttrs(ctx, t, cb, filename, len(secondData), true, true, cfgName)
+	})
 }
 
 func TestCachingKeyAttributes(t *testing.T) {
@@ -869,23 +904,33 @@ func BenchmarkCachingKey(b *testing.B) {
 	}
 }
 
-func verifyObjectAttrs(t *testing.T, cb *CachingBucket, file string, expectedLength int, cacheUsed bool, cfgName string) {
+func verifyObjectAttrs(ctx context.Context, t *testing.T, cb *CachingBucket, file string, expectedLength int, expectedCacheLookup, expectedFromCache bool, cfgName string) {
 	t.Helper()
+
+	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName)))
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName)))
 
-	attrs, err := cb.Attributes(context.Background(), file)
+	attrs, err := cb.Attributes(ctx, file)
 	if expectedLength < 0 {
 		assert.True(t, cb.IsObjNotFoundErr(err))
 	} else {
 		assert.NoError(t, err)
 		assert.Equal(t, int64(expectedLength), attrs.Size)
+	}
 
-		hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName)))
-		if cacheUsed {
-			assert.Equal(t, 1, hitsAfter-hitsBefore)
-		} else {
-			assert.Equal(t, 0, hitsAfter-hitsBefore)
-		}
+	requestsAfter := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName)))
+	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName)))
+
+	if expectedCacheLookup {
+		assert.Equal(t, 1, requestsAfter-requestsBefore)
+	} else {
+		assert.Equal(t, 0, requestsAfter-requestsBefore)
+	}
+
+	if expectedFromCache {
+		assert.Equal(t, 1, hitsAfter-hitsBefore)
+	} else {
+		assert.Equal(t, 0, hitsAfter-hitsBefore)
 	}
 }
 
