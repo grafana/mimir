@@ -75,7 +75,7 @@ type queryStats struct {
 	streamingSeriesEncodeResponseDuration       time.Duration
 	streamingSeriesSendResponseDuration         time.Duration
 	streamingSeriesOtherDuration                time.Duration
-	streamingSeriesIndexReaderOpenDuration      time.Duration
+	streamingSeriesIndexLoadDuration            time.Duration
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
@@ -133,7 +133,7 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.streamingSeriesSendResponseDuration += o.streamingSeriesSendResponseDuration
 	s.streamingSeriesOtherDuration += o.streamingSeriesOtherDuration
 
-	s.streamingSeriesIndexReaderOpenDuration += o.streamingSeriesIndexReaderOpenDuration
+	s.streamingSeriesIndexLoadDuration += o.streamingSeriesIndexLoadDuration
 
 	return &s
 }
