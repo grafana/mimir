@@ -137,7 +137,7 @@ The following features are currently deprecated and will be **removed in Mimir 2
 - Ingester
   - `-ingester.ring.readiness-check-ring-health`
 
-The following features are currently deprecated and will be **removed in Mimir 2.10**:
+The following features are currently deprecated and will be **removed in Mimir 2.11**:
 
 - Store-gateway
   - `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`

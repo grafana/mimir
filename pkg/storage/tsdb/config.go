@@ -74,10 +74,10 @@ const (
 	BytesPerPostingInAPostingList = 4
 
 	// ChunkPoolDefaultMinBucketSize is the default minimum bucket size (bytes) of the chunk pool.
-	ChunkPoolDefaultMinBucketSize = EstimatedMaxChunkSize // Deprecated. Remove in Mimir 2.10.
+	ChunkPoolDefaultMinBucketSize = EstimatedMaxChunkSize // Deprecated. TODO: Remove in Mimir 2.11.
 
 	// ChunkPoolDefaultMaxBucketSize is the default maximum bucket size (bytes) of the chunk pool.
-	ChunkPoolDefaultMaxBucketSize = 50e6 // Deprecated. Remove in Mimir 2.10.
+	ChunkPoolDefaultMaxBucketSize = 50e6 // Deprecated. TODO: Remove in Mimir 2.11.
 
 	// DefaultPostingOffsetInMemorySampling represents default value for --store.index-header-posting-offsets-in-mem-sampling.
 	// 32 value is chosen as it's a good balance for common setups. Sampling that is not too large (too many CPU cycles) and
@@ -349,9 +349,9 @@ type BucketStoreConfig struct {
 	IgnoreBlocksWithin         time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
 	// Chunk pool.
-	DeprecatedMaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes" category:"deprecated"`             // Deprecated. Remove in Mimir 2.10
-	DeprecatedChunkPoolMinBucketSizeBytes int    `yaml:"chunk_pool_min_bucket_size_bytes" category:"deprecated"` // Deprecated. Remove in Mimir 2.10
-	DeprecatedChunkPoolMaxBucketSizeBytes int    `yaml:"chunk_pool_max_bucket_size_bytes" category:"deprecated"` // Deprecated. Remove in Mimir 2.10
+	DeprecatedMaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes" category:"deprecated"`             // Deprecated. TODO: Remove in Mimir 2.11.
+	DeprecatedChunkPoolMinBucketSizeBytes int    `yaml:"chunk_pool_min_bucket_size_bytes" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.11.
+	DeprecatedChunkPoolMaxBucketSizeBytes int    `yaml:"chunk_pool_max_bucket_size_bytes" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.11.
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
