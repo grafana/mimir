@@ -535,20 +535,26 @@ func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rule
 }
 
 func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []string, reason rulesSyncReason) (map[string]rulespb.RuleGroupList, error) {
-	// Only users in userRings will be used in the to load the rules.
+	// Only users in userRings will be used to load the rules.
 	userRings := map[string]ring.ReadRing{}
-	for _, u := range userIDs {
-		if shardSize := r.limits.RulerTenantShardSize(u); shardSize > 0 {
-			subRing := r.ring.ShuffleShard(u, shardSize)
+	for _, userID := range userIDs {
+		// Filter out users which have been explicitly disabled.
+		if !r.allowedTenants.IsAllowed(userID) {
+			level.Debug(r.logger).Log("msg", "ignoring rule groups for user, not allowed", "user", userID)
+			continue
+		}
+
+		if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
+			subRing := r.ring.ShuffleShard(userID, shardSize)
 
 			// Include the user only if it belongs to this ruler shard.
 			if subRing.HasInstance(r.lifecycler.GetInstanceID()) {
-				userRings[u] = subRing
+				userRings[userID] = subRing
 			}
 		} else {
 			// A shard size of 0 means shuffle sharding is disabled for this specific user.
 			// In that case we use the full ring so that rule groups will be sharded across all rulers.
-			userRings[u] = r.ring
+			userRings[userID] = r.ring
 		}
 	}
 
@@ -594,19 +600,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 
 	// Wait until all the rule groups have been loaded.
 	err := g.Wait()
-	if err != nil {
-		return nil, err
-	}
-
-	// Filter out users which have been explicitly disabled.
-	for userID := range result {
-		if !r.allowedTenants.IsAllowed(userID) {
-			level.Debug(r.logger).Log("msg", "ignoring rule groups for user, not allowed", "user", userID)
-			delete(result, userID)
-		}
-	}
-
-	return result, nil
+	return result, err
 }
 
 // filterRuleGroupsByOwnership returns map of rule groups that given instance "owns" based on supplied ring.

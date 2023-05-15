@@ -806,7 +806,7 @@ func TestSharding(t *testing.T) {
 			},
 
 			expectedRules: expectedRulesMap{
-				ruler1: map[string]rulespb.RuleGroupList{},
+				ruler1: nil,
 				ruler2: map[string]rulespb.RuleGroupList{},
 				ruler3: map[string]rulespb.RuleGroupList{
 					user2: {user2Group1},
