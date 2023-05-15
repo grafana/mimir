@@ -437,9 +437,9 @@ func TestCachedIter(t *testing.T) {
 		// (because result is picked up from the cache).
 		assert.NoError(t, inmem.Upload(context.Background(), "/file-6", strings.NewReader("world")))
 		verifyIter(ctx, t, cb, allFiles, true, true, cfgName)
-		allFiles = append(allFiles, "/file-6")
 
 		// Calling Iter() with cache lookup disabled should return the new object and also update the cached list.
+		allFiles = append(allFiles, "/file-6")
 		verifyIter(WithCacheLookupEnabled(ctx, false), t, cb, allFiles, false, false, cfgName)
 		verifyIter(ctx, t, cb, allFiles, true, true, cfgName)
 	})
@@ -459,8 +459,6 @@ func TestCachedIter(t *testing.T) {
 }
 
 func verifyIter(ctx context.Context, t *testing.T, cb *CachingBucket, expectedFiles []string, expectedCacheLookup, expectedFromCache bool, cfgName string) {
-	t.Helper()
-
 	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName)))
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
 
@@ -575,8 +573,6 @@ func TestExistsCachingDisabled(t *testing.T) {
 }
 
 func verifyExists(ctx context.Context, t *testing.T, cb *CachingBucket, file string, expectedExists, expectedCacheLookup, expectedFromCache bool, cfgName string) {
-	t.Helper()
-
 	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName)))
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpExists, cfgName)))
 
@@ -734,8 +730,6 @@ func TestGetPartialRead(t *testing.T) {
 }
 
 func verifyGet(ctx context.Context, t *testing.T, cb *CachingBucket, file string, expectedData []byte, expectedCacheLookup, expectedFromCache bool, cfgName string) {
-	t.Helper()
-
 	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName)))
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpGet, cfgName)))
 
@@ -971,8 +965,6 @@ func BenchmarkCachingKey(b *testing.B) {
 }
 
 func verifyObjectAttrs(ctx context.Context, t *testing.T, cb *CachingBucket, file string, expectedLength int, expectedCacheLookup, expectedFromCache bool, cfgName string) {
-	t.Helper()
-
 	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName)))
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName)))
 
