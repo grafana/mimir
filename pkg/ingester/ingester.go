@@ -448,6 +448,12 @@ func (i *Ingester) stopping(_ error) error {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester lifecycler", "err", err)
 	}
 
+	// Remove the shutdown marker if it exists since we are shutting down
+	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
+	if err := shutdownmarker.Remove(shutdownMarkerPath); err != nil {
+		level.Warn(i.logger).Log("msg", "failed to remove shutdown marker", "path", shutdownMarkerPath, "err", err)
+	}
+
 	if !i.cfg.BlocksStorageConfig.TSDB.KeepUserTSDBOpenOnShutdown {
 		i.closeAllTSDB()
 	}
@@ -2466,8 +2472,14 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 // * `POST` enables this configuration
 // * `DELETE` disables this configuration
 func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request) {
-	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
+	// Don't allow callers to change the shutdown configuration while we're in the middle
+	// of starting or shutting down.
+	if i.State() != services.Running {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
 
+	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
 	switch r.Method {
 	case http.MethodGet:
 		exists, err := shutdownmarker.Exists(shutdownMarkerPath)
@@ -2478,9 +2490,9 @@ func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request
 		}
 
 		if exists {
-			util.WriteTextResponse(w, "set")
+			util.WriteTextResponse(w, "set\n")
 		} else {
-			util.WriteTextResponse(w, "unset")
+			util.WriteTextResponse(w, "unset\n")
 		}
 	case http.MethodPost:
 		if err := shutdownmarker.Create(shutdownMarkerPath); err != nil {

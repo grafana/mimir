@@ -3864,7 +3864,7 @@ func TestIngester_flushing(t *testing.T) {
 
 				response1 := httptest.NewRecorder()
 				i.PrepareShutdownHandler(response1, httptest.NewRequest("GET", "/ingester/prepare-shutdown", nil))
-				require.Equal(t, "unset", response1.Body.String())
+				require.Equal(t, "unset\n", response1.Body.String())
 				require.Equal(t, 200, response1.Code)
 
 				response2 := httptest.NewRecorder()
@@ -3879,7 +3879,7 @@ func TestIngester_flushing(t *testing.T) {
 
 				response3 := httptest.NewRecorder()
 				i.PrepareShutdownHandler(response3, httptest.NewRequest("GET", "/ingester/prepare-shutdown", nil))
-				require.Equal(t, "set", response3.Body.String())
+				require.Equal(t, "set\n", response3.Body.String())
 				require.Equal(t, 200, response3.Code)
 
 				response4 := httptest.NewRecorder()
@@ -3905,6 +3905,11 @@ func TestIngester_flushing(t *testing.T) {
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 1
 				`), "cortex_ingester_shipper_uploads_total"))
+
+				// If the ingester isn't "running", requests to the prepare-shutdown endpoint should fail
+				response6 := httptest.NewRecorder()
+				i.PrepareShutdownHandler(response6, httptest.NewRequest("POST", "/ingester/prepare-shutdown", nil))
+				require.Equal(t, 503, response6.Code)
 			},
 		},
 
