@@ -535,6 +535,19 @@ func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rule
 }
 
 func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []string, reason rulesSyncReason) (map[string]rulespb.RuleGroupList, error) {
+	// Filter out users which have been explicitly disabled.
+	wIdx := 0
+	for rIdx := 0; rIdx < len(userIDs); rIdx++ {
+		if userID := userIDs[rIdx]; !r.allowedTenants.IsAllowed(userID) {
+			level.Debug(r.logger).Log("msg", "ignoring rule groups for user, not allowed", "user", userID)
+			continue
+		}
+
+		userIDs[wIdx] = userIDs[rIdx]
+		wIdx++
+	}
+	userIDs = userIDs[:wIdx]
+
 	// Only users in userRings will be used in the to load the rules.
 	userRings := map[string]ring.ReadRing{}
 	for _, u := range userIDs {
@@ -594,19 +607,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 
 	// Wait until all the rule groups have been loaded.
 	err := g.Wait()
-	if err != nil {
-		return nil, err
-	}
-
-	// Filter out users which have been explicitly disabled.
-	for userID := range result {
-		if !r.allowedTenants.IsAllowed(userID) {
-			level.Debug(r.logger).Log("msg", "ignoring rule groups for user, not allowed", "user", userID)
-			delete(result, userID)
-		}
-	}
-
-	return result, nil
+	return result, err
 }
 
 // filterRuleGroupsByOwnership returns map of rule groups that given instance "owns" based on supplied ring.
