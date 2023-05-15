@@ -44,23 +44,27 @@ const (
 )
 
 type config struct {
-	service                     string
-	sourceBucket                string
-	destBucket                  string
-	minBlockDuration            time.Duration
-	minTime                     flagext.Time
-	maxTime                     flagext.Time
-	tenantConcurrency           int
-	blocksConcurrency           int
-	copyPeriod                  time.Duration
-	enabledUsers                flagext.StringSliceCSV
-	disabledUsers               flagext.StringSliceCSV
-	dryRun                      bool
-	azureSourceAccountName      string
-	azureSourceAccountKey       string
-	azureDestinationAccountName string
-	azureDestinationAccountKey  string
-	httpListen                  string
+	service                           string
+	sourceBucket                      string
+	destBucket                        string
+	minBlockDuration                  time.Duration
+	minTime                           flagext.Time
+	maxTime                           flagext.Time
+	tenantConcurrency                 int
+	blocksConcurrency                 int
+	copyPeriod                        time.Duration
+	enabledUsers                      flagext.StringSliceCSV
+	disabledUsers                     flagext.StringSliceCSV
+	dryRun                            bool
+	azureSourceAccountName            string
+	azureSourceAccountKey             string
+	azureDestinationAccountName       string
+	azureDestinationAccountKey        string
+	azureCheckDestinationFirst        bool
+	azureCopyStatusBackoffMinDuration time.Duration
+	azureCopyStatusBackoffMaxDuration time.Duration
+	azureCopyStatusBackoffRetries     int
+	httpListen                        string
 }
 
 func (c *config) RegisterFlags(f *flag.FlagSet) {
@@ -81,6 +85,10 @@ func (c *config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&c.azureSourceAccountKey, "azure-source-account-key", "", "Account key for the azure source bucket.")
 	f.StringVar(&c.azureDestinationAccountName, "azure-destination-account-name", "", "Account name for the azure destination bucket.")
 	f.StringVar(&c.azureDestinationAccountKey, "azure-destination-account-key", "", "Account key for the azure destination bucket.")
+	f.BoolVar(&c.azureCheckDestinationFirst, "azure-check-destination", false, "Whether the destination should be checked for pending copy operations first.")
+	f.DurationVar(&c.azureCopyStatusBackoffMinDuration, "azure-copy-status-backoff-min-duration", 1*time.Second, "The minimum amount of time to back off per copy operation.")
+	f.DurationVar(&c.azureCopyStatusBackoffMaxDuration, "azure-copy-status-backoff-max-duration", 1*time.Minute, "The maximum amount of time to back off per copy operation.")
+	f.IntVar(&c.azureCopyStatusBackoffRetries, "azure-copy-status-backoff-retries", 10, "The maximum number of retries while checking the copy status.")
 }
 
 type metrics struct {
@@ -180,11 +188,27 @@ func initializeBuckets(ctx context.Context, cfg config) (sourceBucket bucket, de
 		}
 
 		var err error
-		sourceBucket, err = newAzureBucketClient(cfg.sourceBucket, cfg.azureSourceAccountName, cfg.azureSourceAccountKey)
+		sourceBucket, err = newAzureBucketClient(
+			cfg.sourceBucket,
+			cfg.azureSourceAccountName,
+			cfg.azureSourceAccountKey,
+			cfg.azureCheckDestinationFirst,
+			cfg.azureCopyStatusBackoffMinDuration,
+			cfg.azureCopyStatusBackoffMaxDuration,
+			cfg.azureCopyStatusBackoffRetries,
+		)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "failed to create source azure bucket client")
 		}
-		destBucket, err = newAzureBucketClient(cfg.destBucket, cfg.azureDestinationAccountName, cfg.azureDestinationAccountKey)
+		destBucket, err = newAzureBucketClient(
+			cfg.destBucket,
+			cfg.azureDestinationAccountName,
+			cfg.azureDestinationAccountKey,
+			cfg.azureCheckDestinationFirst,
+			cfg.azureCopyStatusBackoffMinDuration,
+			cfg.azureCopyStatusBackoffMaxDuration,
+			cfg.azureCopyStatusBackoffRetries,
+		)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "failed to create destination azure bucket client")
 		}

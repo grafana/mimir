@@ -11,6 +11,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/grafana/dskit/backoff"
@@ -116,11 +117,15 @@ func (bkt *gcsBucket) Name() string {
 
 type azureBucket struct {
 	azblob.Client
-	containerClient container.Client
-	containerName   string
+	containerClient              container.Client
+	containerName                string
+	checkDestinationFirst        bool
+	copyStatusBackoffMinDuration time.Duration
+	copyStatusBackoffMaxDuration time.Duration
+	copyStatusBackoffRetries     int
 }
 
-func newAzureBucketClient(containerURL string, accountName string, sharedKey string) (bucket, error) {
+func newAzureBucketClient(containerURL string, accountName string, sharedKey string, checkDestinationFirst bool, copyStatusBackoffMinDuration, copyStatusBackoffMaxDuration time.Duration, copyStatusBackoffRetries int) (bucket, error) {
 	urlParts, err := blob.ParseURL(containerURL)
 	if err != nil {
 		return nil, err
@@ -146,9 +151,13 @@ func newAzureBucketClient(containerURL string, accountName string, sharedKey str
 		return nil, err
 	}
 	return &azureBucket{
-		Client:          *client,
-		containerClient: *containerClient,
-		containerName:   containerName,
+		Client:                       *client,
+		containerClient:              *containerClient,
+		containerName:                containerName,
+		checkDestinationFirst:        checkDestinationFirst,
+		copyStatusBackoffMinDuration: copyStatusBackoffMinDuration,
+		copyStatusBackoffMaxDuration: copyStatusBackoffMaxDuration,
+		copyStatusBackoffRetries:     copyStatusBackoffRetries,
 	}, nil
 }
 
@@ -171,18 +180,40 @@ func (bkt *azureBucket) Copy(ctx context.Context, objectName string, dstBucket b
 	if !ok {
 		return errors.New("destination bucket wasn't a blob storage bucket")
 	}
+
 	dstClient := d.containerClient.NewBlobClient(objectName)
 
-	response, err := dstClient.StartCopyFromURL(ctx, sasURL, nil)
-	if err != nil {
-		return err
+	var copyStatus *blob.CopyStatusType
+	if bkt.checkDestinationFirst {
+		// For failure case - check if this object has been copied already
+		response, err := dstClient.GetProperties(ctx, nil)
+		if err != nil {
+			// If the object isn't found that's fine, we'll initiate a copy
+			if !bloberror.HasCode(err, bloberror.BlobNotFound) {
+				return err
+			}
+		} else {
+			if response.CopyCompletionTime != nil {
+				return nil // already done copying
+			}
+			if response.CopyStatus != nil && *response.CopyStatus == blob.CopyStatusTypePending {
+				copyStatus = response.CopyStatus // there's already a copy in progress, keep checking the status
+			}
+		}
 	}
 
-	copyStatus := response.CopyStatus
+	if copyStatus == nil {
+		response, err := dstClient.StartCopyFromURL(ctx, sasURL, nil)
+		if err != nil {
+			return err
+		}
+		copyStatus = response.CopyStatus
+	}
+
 	backoff := backoff.New(ctx, backoff.Config{
-		MinBackoff: time.Second,
-		MaxBackoff: time.Minute,
-		MaxRetries: 10,
+		MinBackoff: bkt.copyStatusBackoffMinDuration,
+		MaxBackoff: bkt.copyStatusBackoffMaxDuration,
+		MaxRetries: bkt.copyStatusBackoffRetries,
 	})
 
 	var copyStatusDescription *string
