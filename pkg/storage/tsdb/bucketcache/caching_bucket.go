@@ -35,7 +35,8 @@ const (
 	originCache  = "cache"
 	originBucket = "bucket"
 
-	memoryPoolContextKey contextKey = 0
+	memoryPoolContextKey         contextKey = 0
+	cacheLookupEnabledContextKey contextKey = 1
 )
 
 var errObjNotFound = errors.Errorf("object not found")
@@ -45,6 +46,12 @@ var errObjNotFound = errors.Errorf("object not found")
 // io.ReadCloser associated with the Get or GetRange call is closed.
 func WithMemoryPool(ctx context.Context, p pool.Interface, slabSize int) context.Context {
 	return context.WithValue(ctx, memoryPoolContextKey, pool.NewSafeSlabPool[byte](p, slabSize))
+}
+
+// WithCacheLookupEnabled returns a new context which will explicitly enable/disable the cache lookup but keep
+// storing the result to the cache. The cache lookup is enabled by default.
+func WithCacheLookupEnabled(ctx context.Context, enabled bool) context.Context {
+	return context.WithValue(ctx, cacheLookupEnabledContextKey, enabled)
 }
 
 func getMemoryPool(ctx context.Context) *pool.SafeSlabPool[byte] {
@@ -59,6 +66,15 @@ func getMemoryPool(ctx context.Context) *pool.SafeSlabPool[byte] {
 	}
 
 	return slabs
+}
+
+func isCacheLookupEnabled(ctx context.Context) bool {
+	val := ctx.Value(cacheLookupEnabledContextKey)
+	if val == nil {
+		return true
+	}
+
+	return val.(bool)
 }
 
 func getCacheOptions(slabs *pool.SafeSlabPool[byte]) []cache.Option {
@@ -169,26 +185,30 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 		return cb.Bucket.Iter(ctx, dir, f, options...)
 	}
 
-	cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName).Inc()
-
 	key := cachingKeyIter(cb.bucketID, dir, options...)
-	data := cfg.cache.Fetch(ctx, []string{key})
-	if data[key] != nil {
-		list, err := cfg.codec.Decode(data[key])
-		if err == nil {
-			cb.operationHits.WithLabelValues(objstore.OpIter, cfgName).Inc()
-			for _, n := range list {
-				if err := f(n); err != nil {
-					return err
+
+	// Lookup the cache.
+	if isCacheLookupEnabled(ctx) {
+		cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName).Inc()
+
+		data := cfg.cache.Fetch(ctx, []string{key})
+		if data[key] != nil {
+			list, err := cfg.codec.Decode(data[key])
+			if err == nil {
+				cb.operationHits.WithLabelValues(objstore.OpIter, cfgName).Inc()
+				for _, n := range list {
+					if err := f(n); err != nil {
+						return err
+					}
 				}
+				return nil
 			}
-			return nil
+			level.Warn(cb.logger).Log("msg", "failed to decode cached Iter result", "key", key, "err", err)
 		}
-		level.Warn(cb.logger).Log("msg", "failed to decode cached Iter result", "key", key, "err", err)
 	}
 
 	// Iteration can take a while (esp. since it calls function), and iterTTL is generally low.
-	// We will compute TTL based time when iteration started.
+	// We will compute TTL based on time when iteration started.
 	iterTime := time.Now()
 	var list []string
 	err := cb.Bucket.Iter(ctx, dir, func(s string) error {

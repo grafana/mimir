@@ -342,6 +342,7 @@ func TestCachedIter(t *testing.T) {
 
 	// We reuse cache between tests (!)
 	cache := cache.NewMockCache()
+	ctx := context.Background()
 
 	const cfgName = "dirs"
 	cfg := NewCachingBucketConfig()
@@ -350,44 +351,74 @@ func TestCachedIter(t *testing.T) {
 	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
-	verifyIter(t, cb, allFiles, false, cfgName)
+	t.Run("Iter() should return objects list from the cache on cache hit", func(t *testing.T) {
+		// Pre-condition: populate the cache.
+		cache.Flush()
+		verifyIter(ctx, t, cb, allFiles, true, false, cfgName)
 
-	assert.NoError(t, inmem.Upload(context.Background(), "/file-5", strings.NewReader("nazdar")))
-	verifyIter(t, cb, allFiles, true, cfgName) // Iter returns old response.
+		assert.NoError(t, inmem.Upload(context.Background(), "/file-5", strings.NewReader("nazdar")))
+		verifyIter(ctx, t, cb, allFiles, true, true, cfgName) // Iter returns old response.
 
-	cache.Flush()
-	allFiles = append(allFiles, "/file-5")
-	verifyIter(t, cb, allFiles, false, cfgName)
+		cache.Flush()
+		allFiles = append(allFiles, "/file-5")
+		verifyIter(ctx, t, cb, allFiles, true, false, cfgName)
+	})
 
-	cache.Flush()
+	t.Run("Iter() should skip the cache lookup but cache the result on cache lookup disabled", func(t *testing.T) {
+		// Pre-condition: populate the cache.
+		cache.Flush()
+		verifyIter(ctx, t, cb, allFiles, true, false, cfgName)
 
-	e := errors.Errorf("test error")
+		// Pre-condition: add a new object and make sure it's NOT returned by the Iter()
+		// (because result is picked up from the cache).
+		assert.NoError(t, inmem.Upload(context.Background(), "/file-6", strings.NewReader("world")))
+		verifyIter(ctx, t, cb, allFiles, true, true, cfgName)
+		allFiles = append(allFiles, "/file-6")
 
-	// This iteration returns false. Result will not be cached.
-	assert.Equal(t, e, cb.Iter(context.Background(), "/", func(_ string) error {
-		return e
-	}))
+		// Calling Iter() with cache lookup disabled should return the new object and also update the cached list.
+		verifyIter(WithCacheLookupEnabled(ctx, false), t, cb, allFiles, false, false, cfgName)
+		verifyIter(ctx, t, cb, allFiles, true, true, cfgName)
+	})
 
-	// Nothing cached now.
-	verifyIter(t, cb, allFiles, false, cfgName)
+	t.Run("Iter() should not cache objects list on error while iterating the bucket", func(t *testing.T) {
+		cache.Flush()
+
+		// This iteration returns false. Result will not be cached.
+		e := errors.Errorf("test error")
+		assert.Equal(t, e, cb.Iter(context.Background(), "/", func(_ string) error {
+			return e
+		}))
+
+		// Nothing cached now.
+		verifyIter(ctx, t, cb, allFiles, true, false, cfgName)
+	})
 }
 
-func verifyIter(t *testing.T, cb *CachingBucket, expectedFiles []string, expectedCache bool, cfgName string) {
+func verifyIter(ctx context.Context, t *testing.T, cb *CachingBucket, expectedFiles []string, expectedCacheLookup, expectedFromCache bool, cfgName string) {
+	t.Helper()
+
+	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName)))
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
 
 	col := iterCollector{}
-	assert.NoError(t, cb.Iter(context.Background(), "/", col.collect))
+	assert.NoError(t, cb.Iter(ctx, "/", col.collect))
 
+	requestsAfter := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName)))
 	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
 
 	slices.Sort(col.items)
 	assert.Equal(t, expectedFiles, col.items)
 
+	expectedRequestsDiff := 0
 	expectedHitsDiff := 0
-	if expectedCache {
+	if expectedCacheLookup {
+		expectedRequestsDiff = 1
+	}
+	if expectedFromCache {
 		expectedHitsDiff = 1
 	}
 
+	assert.Equal(t, expectedRequestsDiff, requestsAfter-requestsBefore)
 	assert.Equal(t, expectedHitsDiff, hitsAfter-hitsBefore)
 }
 
