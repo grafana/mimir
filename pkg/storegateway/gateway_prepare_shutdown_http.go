@@ -102,3 +102,12 @@ func (g *StoreGateway) setPrepareShutdownFromShutdownMarker() error {
 
 	return nil
 }
+
+// unsetPrepareShutdownMarker is executed when the store-gateway successfully shuts down and removes the
+// shutdown marker if it is present. It does not modify configuration in any way.
+func (g *StoreGateway) unsetPrepareShutdownMarker() {
+	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
+	if err := shutdownmarker.Remove(shutdownMarkerPath); err != nil {
+		level.Warn(g.logger).Log("msg", "failed to remove shutdown marker", "path", shutdownMarkerPath, "err", err)
+	}
+}
