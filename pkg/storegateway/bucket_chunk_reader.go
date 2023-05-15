@@ -176,6 +176,9 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 }
 
 func (r *bucketChunkReader) fetchChunkRemainder(ctx context.Context, seq int, offset, length int64, dest []byte, localStats *queryStats) error {
+	if length != int64(len(dest)) {
+		return fmt.Errorf("byte range length (%d) different from destination length (%d)", length, len(dest))
+	}
 	refetchReader, err := r.block.chunkRangeReader(ctx, seq, offset, length)
 	if err != nil {
 		return errors.Wrap(err, "open chunk reader")
