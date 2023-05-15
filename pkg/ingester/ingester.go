@@ -71,7 +71,7 @@ import (
 
 const (
 	// Number of timeseries to return in each batch of a QueryStream.
-	queryStreamBatchSize = 128
+	queryStreamBatchSize = 512
 
 	// Discarded Metadata metric labels.
 	perUserMetadataLimit   = "per_user_metadata_limit"
