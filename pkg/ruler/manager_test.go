@@ -109,6 +109,9 @@ func TestDefaultMultiTenantManager_SyncRuleGroups(t *testing.T) {
 		assertManagerMockStopped(t, currUser1Manager)
 		assertManagerMockStopped(t, currUser2Manager)
 
+		assertManagerMockNotRunningForUser(t, m, user1)
+		assertManagerMockNotRunningForUser(t, m, user2)
+
 		// Ensure the files have been removed from disk.
 		assertRuleGroupsMappedOnDisk(t, m, user1, nil)
 		assertRuleGroupsMappedOnDisk(t, m, user2, nil)
