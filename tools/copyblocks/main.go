@@ -21,6 +21,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
@@ -42,23 +43,20 @@ const (
 )
 
 type config struct {
-	service                     string
-	sourceBucket                string
-	destBucket                  string
-	minBlockDuration            time.Duration
-	minTime                     flagext.Time
-	maxTime                     flagext.Time
-	tenantConcurrency           int
-	blocksConcurrency           int
-	copyPeriod                  time.Duration
-	enabledUsers                flagext.StringSliceCSV
-	disabledUsers               flagext.StringSliceCSV
-	dryRun                      bool
-	azureSourceAccountName      string
-	azureSourceAccountKey       string
-	azureDestinationAccountName string
-	azureDestinationAccountKey  string
-	httpListen                  string
+	service           string
+	sourceBucket      string
+	destBucket        string
+	minBlockDuration  time.Duration
+	minTime           flagext.Time
+	maxTime           flagext.Time
+	tenantConcurrency int
+	blocksConcurrency int
+	copyPeriod        time.Duration
+	enabledUsers      flagext.StringSliceCSV
+	disabledUsers     flagext.StringSliceCSV
+	dryRun            bool
+	httpListen        string
+	azureConfig       azureConfig
 }
 
 func (c *config) RegisterFlags(f *flag.FlagSet) {
@@ -75,10 +73,25 @@ func (c *config) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&c.disabledUsers, "disabled-users", "If not empty, blocks for these users are not copied.")
 	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform copy; only log what would happen.")
-	f.StringVar(&c.azureSourceAccountName, "azure-source-account-name", "", "Account name for the azure source bucket.")
-	f.StringVar(&c.azureSourceAccountKey, "azure-source-account-key", "", "Account key for the azure source bucket.")
-	f.StringVar(&c.azureDestinationAccountName, "azure-destination-account-name", "", "Account name for the azure destination bucket.")
-	f.StringVar(&c.azureDestinationAccountKey, "azure-destination-account-key", "", "Account key for the azure destination bucket.")
+	c.azureConfig.RegisterFlags(f)
+}
+
+type azureConfig struct {
+	sourceAccountName      string
+	sourceAccountKey       string
+	destinationAccountName string
+	destinationAccountKey  string
+	copyStatusBackoff      backoff.Config
+}
+
+func (c *azureConfig) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&c.sourceAccountName, "azure-source-account-name", "", "Account name for the azure source bucket.")
+	f.StringVar(&c.sourceAccountKey, "azure-source-account-key", "", "Account key for the azure source bucket.")
+	f.StringVar(&c.destinationAccountName, "azure-destination-account-name", "", "Account name for the azure destination bucket.")
+	f.StringVar(&c.destinationAccountKey, "azure-destination-account-key", "", "Account key for the azure destination bucket.")
+	f.DurationVar(&c.copyStatusBackoff.MinBackoff, "azure-copy-status-backoff-min-duration", 15*time.Second, "The minimum amount of time to back off per copy operation.")
+	f.DurationVar(&c.copyStatusBackoff.MaxBackoff, "azure-copy-status-backoff-max-duration", 20*time.Second, "The maximum amount of time to back off per copy operation.")
+	f.IntVar(&c.copyStatusBackoff.MaxRetries, "azure-copy-status-backoff-max-retries", 40, "The maximum number of retries while checking the copy status.")
 }
 
 type metrics struct {
@@ -170,19 +183,30 @@ func initializeBuckets(ctx context.Context, cfg config) (sourceBucket bucket, de
 		sourceBucket = newGCSBucket(client, cfg.sourceBucket)
 		destBucket = newGCSBucket(client, cfg.destBucket)
 	case serviceABS:
-		if cfg.azureSourceAccountKey == "" || cfg.azureSourceAccountName == "" {
+		azureConfig := cfg.azureConfig
+		if azureConfig.sourceAccountKey == "" || azureConfig.sourceAccountName == "" {
 			return nil, nil, errors.New("the azure source bucket's account name (--azure-source-account-name) and account key (--azure-source-account-key) are required")
 		}
-		if cfg.azureDestinationAccountKey == "" || cfg.azureDestinationAccountName == "" {
+		if azureConfig.destinationAccountKey == "" || azureConfig.destinationAccountName == "" {
 			return nil, nil, errors.New("the azure destination bucket's account name (--azure-destination-account-name) and account key (--azure-destination-account-key) are required")
 		}
 
 		var err error
-		sourceBucket, err = newAzureBucketClient(cfg.sourceBucket, cfg.azureSourceAccountName, cfg.azureSourceAccountKey)
+		sourceBucket, err = newAzureBucketClient(
+			cfg.sourceBucket,
+			azureConfig.sourceAccountName,
+			azureConfig.sourceAccountKey,
+			azureConfig.copyStatusBackoff,
+		)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "failed to create source azure bucket client")
 		}
-		destBucket, err = newAzureBucketClient(cfg.destBucket, cfg.azureDestinationAccountName, cfg.azureDestinationAccountKey)
+		destBucket, err = newAzureBucketClient(
+			cfg.destBucket,
+			azureConfig.destinationAccountName,
+			azureConfig.destinationAccountKey,
+			azureConfig.copyStatusBackoff,
+		)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "failed to create destination azure bucket client")
 		}

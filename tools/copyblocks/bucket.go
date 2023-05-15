@@ -11,6 +11,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/grafana/dskit/backoff"
@@ -116,11 +117,12 @@ func (bkt *gcsBucket) Name() string {
 
 type azureBucket struct {
 	azblob.Client
-	containerClient container.Client
-	containerName   string
+	containerClient         container.Client
+	containerName           string
+	copyStatusBackoffConfig backoff.Config
 }
 
-func newAzureBucketClient(containerURL string, accountName string, sharedKey string) (bucket, error) {
+func newAzureBucketClient(containerURL string, accountName string, sharedKey string, copyStatusBackoffConfig backoff.Config) (bucket, error) {
 	urlParts, err := blob.ParseURL(containerURL)
 	if err != nil {
 		return nil, err
@@ -146,9 +148,10 @@ func newAzureBucketClient(containerURL string, accountName string, sharedKey str
 		return nil, err
 	}
 	return &azureBucket{
-		Client:          *client,
-		containerClient: *containerClient,
-		containerName:   containerName,
+		Client:                  *client,
+		containerClient:         *containerClient,
+		containerName:           containerName,
+		copyStatusBackoffConfig: copyStatusBackoffConfig,
 	}, nil
 }
 
@@ -171,21 +174,29 @@ func (bkt *azureBucket) Copy(ctx context.Context, objectName string, dstBucket b
 	if !ok {
 		return errors.New("destination bucket wasn't a blob storage bucket")
 	}
+
 	dstClient := d.containerClient.NewBlobClient(objectName)
+
+	var copyStatus *blob.CopyStatusType
+	var copyStatusDescription *string
 
 	response, err := dstClient.StartCopyFromURL(ctx, sasURL, nil)
 	if err != nil {
-		return err
+		if !bloberror.HasCode(err, bloberror.PendingCopyOperation) {
+			return err
+		}
+		// There's already a copy operation. Assume it was initiated by us and a restart occurred, so check for the copy status.
+		copyStatus, copyStatusDescription, err = checkCopyStatus(ctx, dstClient)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Note: no copy status description is currently provided from StartCopyFromURL
+		// see https://learn.microsoft.com/en-us/rest/api/storageservices/copy-blob
+		copyStatus = response.CopyStatus
 	}
 
-	copyStatus := response.CopyStatus
-	backoff := backoff.New(ctx, backoff.Config{
-		MinBackoff: time.Second,
-		MaxBackoff: time.Minute,
-		MaxRetries: 10,
-	})
-
-	var copyStatusDescription *string
+	backoff := backoff.New(ctx, d.copyStatusBackoffConfig)
 	for {
 		if copyStatus == nil {
 			return errors.New("no copy status present for blob copy")
@@ -212,14 +223,21 @@ func (bkt *azureBucket) Copy(ctx context.Context, objectName string, dstBucket b
 		}
 		backoff.Wait()
 
-		response, err := dstClient.GetProperties(ctx, nil)
+		copyStatus, copyStatusDescription, err = checkCopyStatus(ctx, dstClient)
 		if err != nil {
 			return err
 		}
-		copyStatus = response.CopyStatus
-		copyStatusDescription = response.CopyStatusDescription
 	}
+
 	return errors.Wrap(backoff.Err(), "waiting for blob copy status")
+}
+
+func checkCopyStatus(ctx context.Context, client *blob.Client) (*blob.CopyStatusType, *string, error) {
+	response, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "failed while checking copy status")
+	}
+	return response.CopyStatus, response.CopyStatusDescription, nil
 }
 
 func (bkt *azureBucket) ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error) {
