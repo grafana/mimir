@@ -360,11 +360,16 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
+	zones := map[string]struct{}{}
+	for _, i := range replicationSet.Instances {
+		zones[i.Zone] = struct{}{}
+	}
+
 	// Now turn the accumulated maps into slices.
 	resp := querier.DistributorQueryStreamResponse{
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
-		StreamingSeries: mergeSeriesChunkStreams(results, replicationSet.ZoneCount()), // TODO: adjust zone count to only include zones we're actually using results from
+		StreamingSeries: mergeSeriesChunkStreams(results, len(zones)), // TODO: adjust zone count to only include zones we're actually using results from
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)

@@ -138,6 +138,8 @@ type Config struct {
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"
+	// Enable native histograms for enabled scrapers with 10% bucket growth.
+	c.Server.MetricsNativeHistogramFactor = 1.1
 	c.Server.ExcludeRequestInLog = true
 	c.Server.DisableRequestSuccessLog = true
 

@@ -227,7 +227,7 @@ jobs:
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
         # to a timeout
-        run: go run ./tools/pre-pull-images | xargs -n1 docker pull
+        run: go run ./tools/pre-pull-images | xargs -n1 -P4 docker pull
       - name: Integration Tests
         run: |
           export IMAGE_TAG=$(make image-tag)
