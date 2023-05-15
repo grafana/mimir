@@ -26,6 +26,8 @@ The Helm chart can also scrape additional metrics from kube-state-metrics, kubel
 The Helm chart does not collect Prometheus node_exporter metrics;
 metrics from node_exporter must all have an instance label on them
 that has the same value as the instance label on Mimir metrics.
+For the list of necessary node_exporter metrics see the metrics
+prefixed with `node` in [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations/integration-mimir/#metrics).
 
 You can configure your collection of metrics and logs
 by using the [Grafana Agent operator](/docs/agent/latest/operator/).
