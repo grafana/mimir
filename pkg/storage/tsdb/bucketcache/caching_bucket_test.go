@@ -551,21 +551,65 @@ func TestGet(t *testing.T) {
 	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
-	verifyGet(t, cb, testFilename, nil, false, cfgName)
-	verifyExists(ctx, t, cb, testFilename, false, true, true, cfgName)
+	t.Run("Get() should cache non-existence of the requested object if it doesn't exist", func(t *testing.T) {
+		const filename = "/object-1"
 
-	data := []byte("hello world")
-	assert.NoError(t, inmem.Upload(context.Background(), testFilename, bytes.NewBuffer(data)))
+		// Pre-condition: issue a Get() request when the object does not exist, and ensure non-existence has been cached.
+		verifyGet(ctx, t, cb, filename, nil, true, false, cfgName)
+		verifyExists(ctx, t, cb, filename, false, true, true, cfgName)
 
-	// Even if file is now uploaded, old data is served from cache.
-	verifyGet(t, cb, testFilename, nil, true, cfgName)
-	verifyExists(ctx, t, cb, testFilename, false, true, true, cfgName)
+		// Upload the object.
+		data := []byte("content-1")
+		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(data)))
 
-	cache.Flush()
+		// Even if object is now uploaded, old data is served from cache.
+		verifyGet(ctx, t, cb, filename, nil, true, true, cfgName)
+		verifyExists(ctx, t, cb, filename, false, true, true, cfgName)
+	})
 
-	verifyGet(t, cb, testFilename, data, false, cfgName)
-	verifyGet(t, cb, testFilename, data, true, cfgName)
-	verifyExists(ctx, t, cb, testFilename, true, true, true, cfgName)
+	t.Run("Get() should cache both the content and existence of the requested object if it does exist", func(t *testing.T) {
+		const filename = "/object-2"
+
+		// Pre-condition: ensure the object exists and is cached.
+		data := []byte("content-2")
+		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(data)))
+		verifyGet(ctx, t, cb, filename, data, true, false, cfgName)
+
+		// Issue another Get(). This time we expect the content to be served from cache.
+		verifyGet(ctx, t, cb, filename, data, true, true, cfgName)
+		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
+	})
+
+	t.Run("Get() should skip the cache lookup but store the content and existence to the cache if cache lookup is disabled", func(t *testing.T) {
+		const filename = "/object-3"
+
+		// Pre-condition: issue a Get() request when the object does not exist, and ensure non-existence has been cached.
+		verifyGet(ctx, t, cb, filename, nil, true, false, cfgName)
+		verifyExists(ctx, t, cb, filename, false, true, true, cfgName)
+
+		// Upload the object.
+		data := []byte("content-3")
+		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(data)))
+
+		// Calling Get() with cache lookup disabled should lookup the object storage and also update the cached value.
+		verifyGet(WithCacheLookupEnabled(ctx, false), t, cb, filename, data, false, false, cfgName)
+
+		verifyGet(ctx, t, cb, filename, data, true, true, cfgName)
+		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
+
+		// Delete the object.
+		require.NoError(t, inmem.Delete(ctx, filename))
+
+		// Pre-condition: the content and existence is looked up from the cache by default.
+		verifyGet(ctx, t, cb, filename, data, true, true, cfgName)
+		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
+
+		// Calling Get() with cache lookup disabled should lookup the object storage and also update the cached value.
+		verifyGet(WithCacheLookupEnabled(ctx, false), t, cb, filename, nil, false, false, cfgName)
+
+		verifyGet(ctx, t, cb, filename, nil, true, true, cfgName)
+		verifyExists(ctx, t, cb, filename, false, true, true, cfgName)
+	})
 }
 
 func TestGetTooBigObject(t *testing.T) {
@@ -576,6 +620,7 @@ func TestGetTooBigObject(t *testing.T) {
 	ctx := context.Background()
 
 	cfg := NewCachingBucketConfig()
+	const filename = "/object-1"
 	const cfgName = "metafile"
 	// Only allow 5 bytes to be cached.
 	cfg.CacheGet(cfgName, cache, matchAll, 5, 10*time.Minute, 10*time.Minute, 2*time.Minute)
@@ -585,20 +630,22 @@ func TestGetTooBigObject(t *testing.T) {
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
-	assert.NoError(t, inmem.Upload(context.Background(), testFilename, bytes.NewBuffer(data)))
+	assert.NoError(t, inmem.Upload(context.Background(), filename, bytes.NewBuffer(data)))
 
 	// Object is too big, so it will not be stored to cache on first read.
-	verifyGet(t, cb, testFilename, data, false, cfgName)
-	verifyGet(t, cb, testFilename, data, false, cfgName)
-	verifyExists(ctx, t, cb, testFilename, true, true, true, cfgName)
+	verifyGet(ctx, t, cb, filename, data, true, false, cfgName)
+	verifyGet(ctx, t, cb, filename, data, true, false, cfgName)
+	verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
 }
 
 func TestGetPartialRead(t *testing.T) {
 	inmem := objstore.NewInMemBucket()
 
 	cache := cache.NewMockCache()
+	ctx := context.Background()
 
 	cfg := NewCachingBucketConfig()
+	const filename = "/object-1"
 	const cfgName = "metafile"
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
@@ -607,47 +654,53 @@ func TestGetPartialRead(t *testing.T) {
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
-	assert.NoError(t, inmem.Upload(context.Background(), testFilename, bytes.NewBuffer(data)))
+	assert.NoError(t, inmem.Upload(context.Background(), filename, bytes.NewBuffer(data)))
 
 	// Read only few bytes from data.
-	r, err := cb.Get(context.Background(), testFilename)
+	r, err := cb.Get(context.Background(), filename)
 	assert.NoError(t, err)
 	_, err = r.Read(make([]byte, 1))
 	assert.NoError(t, err)
 	assert.NoError(t, r.Close())
 
 	// Object wasn't cached as it wasn't fully read.
-	verifyGet(t, cb, testFilename, data, false, cfgName)
+	verifyGet(ctx, t, cb, filename, data, true, false, cfgName)
 	// VerifyGet read object, so now it's cached.
-	verifyGet(t, cb, testFilename, data, true, cfgName)
+	verifyGet(ctx, t, cb, filename, data, true, true, cfgName)
 }
 
-func verifyGet(t *testing.T, cb *CachingBucket, file string, expectedData []byte, cacheUsed bool, cfgName string) {
+func verifyGet(ctx context.Context, t *testing.T, cb *CachingBucket, file string, expectedData []byte, expectedCacheLookup, expectedFromCache bool, cfgName string) {
+	t.Helper()
+
+	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName)))
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpGet, cfgName)))
 
-	r, err := cb.Get(context.Background(), file)
-	if expectedData == nil {
-		assert.True(t, cb.IsObjNotFoundErr(err))
+	r, err := cb.Get(ctx, file)
 
-		hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpGet, cfgName)))
-		if cacheUsed {
-			assert.Equal(t, 1, hitsAfter-hitsBefore)
-		} else {
-			assert.Equal(t, 0, hitsAfter-hitsBefore)
-		}
+	if expectedData == nil {
+		assert.Error(t, err)
+		assert.True(t, cb.IsObjNotFoundErr(err))
 	} else {
 		assert.NoError(t, err)
 		defer runutil.CloseWithLogOnErr(log.NewNopLogger(), r, "verifyGet")
 		data, err := io.ReadAll(r)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedData, data)
+	}
 
-		hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpGet, cfgName)))
-		if cacheUsed {
-			assert.Equal(t, 1, hitsAfter-hitsBefore)
-		} else {
-			assert.Equal(t, 0, hitsAfter-hitsBefore)
-		}
+	requestsAfter := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName)))
+	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpGet, cfgName)))
+
+	if expectedCacheLookup {
+		assert.Equal(t, 1, requestsAfter-requestsBefore)
+	} else {
+		assert.Equal(t, 0, requestsAfter-requestsBefore)
+	}
+
+	if expectedFromCache {
+		assert.Equal(t, 1, hitsAfter-hitsBefore)
+	} else {
+		assert.Equal(t, 0, hitsAfter-hitsBefore)
 	}
 }
 

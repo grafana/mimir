@@ -280,38 +280,48 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 		return cb.Bucket.Get(ctx, name)
 	}
 
-	cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName).Inc()
-
 	contentKey := cachingKeyContent(cb.bucketID, name)
 	existsKey := cachingKeyExists(cb.bucketID, name)
-	slabs := getMemoryPool(ctx)
-	cacheOpts := getCacheOptions(slabs)
-	releaseSlabs := true
 
-	// On cache hit, the returned reader is responsible for freeing any allocated
-	// slabs. However, if the content key isn't a hit the client still might have
-	// allocated memory for the exists key, and we need to free it in that case.
-	if slabs != nil {
-		defer func() {
-			if releaseSlabs {
-				slabs.Release()
+	// Lookup the cache.
+	if isCacheLookupEnabled(ctx) {
+		slabs := getMemoryPool(ctx)
+		cacheOpts := getCacheOptions(slabs)
+		releaseSlabs := true
+
+		// On cache hit, the returned reader is responsible for freeing any allocated
+		// slabs. However, if the content key isn't a hit the client still might have
+		// allocated memory for the exists key, and we need to free it in that case.
+		if slabs != nil {
+			defer func() {
+				if releaseSlabs {
+					slabs.Release()
+				}
+			}()
+		}
+
+		cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName).Inc()
+
+		hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey}, cacheOpts...)
+
+		// If we know that file doesn't exist, we can return that. Useful for deletion marks.
+		//
+		// Non-existence is updated in the cache on each Get() going through the object storage
+		// and not finding the object, while the object content is not updated, so it's safer
+		// to check this before the actual cached content (if any).
+		if ex := hits[existsKey]; ex != nil {
+			if exists, err := strconv.ParseBool(string(ex)); err == nil && !exists {
+				cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
+				return nil, errObjNotFound
 			}
-		}()
-	}
+		}
 
-	hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey}, cacheOpts...)
-	if hits[contentKey] != nil {
-		cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
-
-		releaseSlabs = false
-		return &sizedSlabGetReader{bytes.NewBuffer(hits[contentKey]), slabs}, nil
-	}
-
-	// If we know that file doesn't exist, we can return that. Useful for deletion marks.
-	if ex := hits[existsKey]; ex != nil {
-		if exists, err := strconv.ParseBool(string(ex)); err == nil && !exists {
+		// Check if the content was cached.
+		if hits[contentKey] != nil {
 			cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
-			return nil, errObjNotFound
+
+			releaseSlabs = false
+			return &sizedSlabGetReader{bytes.NewBuffer(hits[contentKey]), slabs}, nil
 		}
 	}
 
