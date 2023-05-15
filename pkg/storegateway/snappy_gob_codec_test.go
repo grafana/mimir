@@ -57,4 +57,22 @@ func TestSnappyGobSeriesCacheEntryCodec(t *testing.T) {
 		err = decodeSnappyGob(data, &decoded)
 		require.Error(t, err)
 	})
+
+	t.Run("large values", func(t *testing.T) {
+		const (
+			numValues = 655360 + 1
+		)
+		entry := labelValuesCacheEntry{
+			Values: make([]string, numValues),
+		}
+
+		data, err := encodeSnappyGob(entry)
+		require.NoError(t, err)
+
+		var decoded labelValuesCacheEntry
+		err = decodeSnappyGob(data, &decoded)
+
+		require.NoError(t, err)
+		require.Len(t, decoded.Values, len(entry.Values))
+	})
 }
