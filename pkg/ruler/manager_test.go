@@ -200,12 +200,12 @@ type managerMock struct {
 }
 
 func (m *managerMock) Run() {
+	defer m.running.Store(false)
 	m.running.Store(true)
 	<-m.done
 }
 
 func (m *managerMock) Stop() {
-	m.running.Store(false)
 	close(m.done)
 }
 
