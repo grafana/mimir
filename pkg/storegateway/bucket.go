@@ -614,7 +614,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	span, ctx := tracing.StartSpan(ctx, "bucket_store_preload_all")
 
-	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers)
+	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
 	for _, r := range indexReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
@@ -916,6 +916,7 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesFetchSeriesAndChunksDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe(stats.streamingSeriesOtherDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index").Observe(stats.streamingSeriesIndexReaderOpenDuration.Seconds())
 }
 
 func (s *BucketStore) recordCachedPostingStats(stats *queryStats) {
@@ -934,17 +935,24 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
 }
 
-func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
+func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
 	s.blocksMx.RLock()
 	defer s.blocksMx.RUnlock()
 
 	// Find all blocks owned by this store-gateway instance and matching the request.
 	blocks := s.blockSet.getFor(minT, maxT, blockMatchers)
 
+	indexReaderOpenStartTime := time.Now()
+
 	indexReaders := make(map[ulid.ULID]*bucketIndexReader, len(blocks))
 	for _, b := range blocks {
 		indexReaders[b.meta.ULID] = b.indexReader(s.postingsStrategy)
 	}
+
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesIndexReaderOpenDuration += time.Since(indexReaderOpenStartTime)
+	})
+
 	if skipChunks {
 		return blocks, indexReaders, nil
 	}
@@ -992,6 +1000,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	var mtx sync.Mutex
 	var sets [][]string
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	indexReaderOpenStartTime := time.Now()
 
 	for _, b := range s.blocks {
 		b := b
@@ -1025,6 +1034,10 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	}
 
 	s.blocksMx.RUnlock()
+
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesIndexReaderOpenDuration += time.Since(indexReaderOpenStartTime)
+	})
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -1242,9 +1255,15 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 // Notice that when no matchers are provided, the list of matched postings is AllPostings,
 // so we could also intersect those with each label's postings being each one non-empty and leading to the same result.
 func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy postingsSelectionStrategy, maxSeriesPerBatch int, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
+	indexReaderOpenStartTime := time.Now()
+
 	// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
 	labelValuesReader := b.indexReader(selectAllStrategy{})
 	defer runutil.CloseWithLogOnErr(b.logger, labelValuesReader, "close block index reader")
+
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesIndexReaderOpenDuration += time.Since(indexReaderOpenStartTime)
+	})
 
 	values, ok := fetchCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, logger)
 	if ok {
@@ -1613,6 +1632,10 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 
 func (b *bucketBlock) indexReader(postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
 	b.pendingReaders.Add(1)
+
+	// Call IndexVersion to lazy load the index header if it lazy-loaded.
+	_, _ = b.indexHeaderReader.IndexVersion()
+
 	return newBucketIndexReader(b, postingsStrategy)
 }
 
