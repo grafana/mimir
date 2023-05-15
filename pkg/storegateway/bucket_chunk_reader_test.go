@@ -26,7 +26,7 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	newTestBucketBlock := prepareTestBlockWithStreamReader(test.NewTB(t), appendTestSeries(1000))
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(1000))
 	block := newTestBucketBlock()
 	seriesRefsIterator, err := openBlockSeriesChunkRefsSetsIterator(
 		ctx,
