@@ -110,45 +110,16 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 		removeFederatedRuleGroups(ruleGroups, r.logger)
 	}
 
-	// Sync the rules to disk and then update the user's Prometheus Rules Manager.
-	// Since users are different, we can sync rules in parallel.
-	users := make([]string, 0, len(ruleGroups))
-	for userID := range ruleGroups {
-		users = append(users, userID)
-	}
-
-	// concurrenty.ForEachJob is a helper function that runs a function for each job in parallel.
-	// It cancel context of jobFunc once iteration is done.
-	// That is why the context passed to syncRulesToManager should be the global context not the context of jobFunc.
-	err := concurrency.ForEachJob(ctx, len(users), 10, func(_ context.Context, idx int) error {
-		userID := users[idx]
-		r.syncRulesToManager(ctx, userID, ruleGroups[userID])
-		return nil
-	})
-	if err != nil {
-		// The only error we could get here is a context canceled.
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroups); err != nil {
+		// We don't log it because the only error we could get here is a context canceled.
 		return
 	}
 
-	r.userManagerMtx.Lock()
-	defer r.userManagerMtx.Unlock()
-
-	// Check for deleted users and remove them
-	for userID, mngr := range r.userManagers {
-		if _, exists := ruleGroups[userID]; !exists {
-			go mngr.Stop()
-			delete(r.userManagers, userID)
-
-			r.mapper.cleanupUser(userID)
-			r.lastReloadSuccessful.DeleteLabelValues(userID)
-			r.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
-			r.configUpdatesTotal.DeleteLabelValues(userID)
-			r.userManagerMetrics.RemoveUserRegistry(userID)
-			level.Info(r.logger).Log("msg", "deleted rule manager and local rule files", "user", userID)
-		}
-	}
-
-	r.managersTotal.Set(float64(len(r.userManagers)))
+	// Check for deleted users and remove them.
+	r.removeUsersIf(func(userID string) bool {
+		_, exists := ruleGroups[userID]
+		return !exists
+	})
 }
 
 func (r *DefaultMultiTenantManager) Start() {
@@ -165,6 +136,34 @@ func (r *DefaultMultiTenantManager) Start() {
 	}
 	// set rulerIsRunning to true once user managers are started.
 	r.rulerIsRunning.Store(true)
+}
+
+// syncRulesToManagerConcurrently calls syncRulesToManager() concurrently for each user in the input
+// ruleGroups. The max concurrency is limited. This function is expected to return an error only if
+// the input ctx is canceled.
+func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) error {
+	// Sync the rules to disk and then update the user's Prometheus Rules Manager.
+	// Since users are different, we can sync rules in parallel.
+	users := make([]string, 0, len(ruleGroups))
+	for userID := range ruleGroups {
+		users = append(users, userID)
+	}
+
+	// concurrenty.ForEachJob is a helper function that runs a function for each job in parallel.
+	// It cancel context of jobFunc once iteration is done.
+	// That is why the context passed to syncRulesToManager should be the global context not the context of jobFunc.
+	err := concurrency.ForEachJob(ctx, len(users), 10, func(_ context.Context, idx int) error {
+		userID := users[idx]
+		r.syncRulesToManager(ctx, userID, ruleGroups[userID])
+		return nil
+	})
+
+	// Update the metric even in case of error.
+	r.userManagerMtx.RLock()
+	r.managersTotal.Set(float64(len(r.userManagers)))
+	r.userManagerMtx.RUnlock()
+
+	return err
 }
 
 // syncRulesToManager maps the rule files to disk, detects any changes and will create/update
@@ -302,6 +301,32 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 
 	r.notifiers[userID] = n
 	return n.notifier, nil
+}
+
+// removeUsersIf stops the manager and cleanup the resources for each user for which
+// the input shouldRemove() function returns true.
+func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID string) bool) {
+	r.userManagerMtx.Lock()
+	defer r.userManagerMtx.Unlock()
+
+	// Check for deleted users and remove them
+	for userID, mngr := range r.userManagers {
+		if !shouldRemove(userID) {
+			continue
+		}
+
+		go mngr.Stop()
+		delete(r.userManagers, userID)
+
+		r.mapper.cleanupUser(userID)
+		r.lastReloadSuccessful.DeleteLabelValues(userID)
+		r.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
+		r.configUpdatesTotal.DeleteLabelValues(userID)
+		r.userManagerMetrics.RemoveUserRegistry(userID)
+		level.Info(r.logger).Log("msg", "deleted rule manager and local rule files", "user", userID)
+	}
+
+	r.managersTotal.Set(float64(len(r.userManagers)))
 }
 
 func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
