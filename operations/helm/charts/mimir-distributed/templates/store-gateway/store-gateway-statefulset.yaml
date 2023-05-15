@@ -166,6 +166,11 @@ spec:
             {{- with .Values.store_gateway.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
+            {{- if $mem_request }}
+            - name: "GOMEMLIMIT"
+              value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
+            {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}

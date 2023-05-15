@@ -36,14 +36,6 @@ type Reader interface {
 	// Error is return if the symbol can't be found.
 	LookupSymbol(o uint32) (string, error)
 
-	// LabelValues returns all label values for given label name or error.
-	// The returned label values are sorted lexicographically.
-	// If no values are found for label name, or label name does not exists,
-	// then empty slice is returned and no error.
-	// If non-empty prefix is provided, only values starting with the prefix are returned.
-	// If non-nil filter is provided, then only values for which filter returns true are returned.
-	LabelValues(name string, prefix string, filter func(string) bool) ([]string, error)
-
 	// LabelValuesOffsets returns all label values and the offsets for their posting lists for given label name or error.
 	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
 	// The ranges of each posting list are the same as returned by PostingsOffset.

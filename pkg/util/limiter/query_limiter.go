@@ -47,9 +47,9 @@ type QueryLimiter struct {
 	maxChunksPerQuery     int
 }
 
-// NewQueryLimiter makes a new per-query limiter. Each query limiter
-// is configured using the `maxSeriesPerQuery` limit.
-func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery int, maxChunksPerQuery int) *QueryLimiter {
+// NewQueryLimiter makes a new per-query limiter. Each query limiter is configured using the
+// `maxSeriesPerQuery`, `maxChunkBytesPerQuery`, and `maxChunksPerQuery` limits.
+func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery int) *QueryLimiter {
 	return &QueryLimiter{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   map[uint64]struct{}{},

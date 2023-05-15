@@ -1,3 +1,5 @@
+//go:build !stringlabels
+
 package labels
 
 import (

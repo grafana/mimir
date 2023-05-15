@@ -65,7 +65,7 @@ const (
 	// because you barely get any improvements in compression when the number of samples is beyond this.
 	// Take a look at Figure 6 in this whitepaper http://www.vldb.org/pvldb/vol8/p1816-teller.pdf.
 	MaxSamplesPerChunk = 120
-	maxSeriesSize      = 64 * 1024
+
 	// Relatively large in order to reduce memory waste, yet small enough to avoid excessive allocations.
 	chunkBytesPoolMinSize = 64 * 1024        // 64 KiB
 	chunkBytesPoolMaxSize = 64 * 1024 * 1024 // 64 MiB
@@ -143,8 +143,8 @@ type BucketStore struct {
 type noopCache struct{}
 
 func (noopCache) StorePostings(string, ulid.ULID, labels.Label, []byte) {}
-func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
-	return map[labels.Label][]byte{}, keys
+func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) indexcache.BytesResult {
+	return &indexcache.MapIterator[labels.Label]{Keys: keys}
 }
 
 func (noopCache) StoreSeriesForRef(string, ulid.ULID, storage.SeriesRef, []byte) {}
@@ -900,6 +900,7 @@ func (s *BucketStore) recordSeriesStats(stats *queryStats) {
 	s.metrics.seriesDataFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("series", "").Observe(float64(stats.seriesProcessedSizeSum))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("series", "").Observe(float64(stats.seriesFetchedSizeSum))
+	s.metrics.seriesRefetches.Add(float64(stats.seriesRefetches))
 }
 
 func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
@@ -1549,10 +1550,18 @@ func (b *bucketBlock) indexFilename() string {
 	return path.Join(b.meta.ULID.String(), block.IndexFilename)
 }
 
-func (b *bucketBlock) readIndexRange(ctx context.Context, off, length int64) ([]byte, error) {
+func (b *bucketBlock) indexRangeReader(ctx context.Context, off, length int64) (io.ReadCloser, error) {
 	r, err := b.bkt.GetRange(ctx, b.indexFilename(), off, length)
 	if err != nil {
-		return nil, errors.Wrap(err, "get range reader")
+		return nil, errors.Wrap(err, "get index range reader")
+	}
+	return r, nil
+}
+
+func (b *bucketBlock) readIndexRange(ctx context.Context, off, length int64) ([]byte, error) {
+	r, err := b.indexRangeReader(ctx, off, length)
+	if err != nil {
+		return nil, err
 	}
 	defer runutil.CloseWithLogOnErr(b.logger, r, "readIndexRange close range reader")
 

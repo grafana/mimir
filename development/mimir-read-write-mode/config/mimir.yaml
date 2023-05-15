@@ -44,6 +44,10 @@ ruler:
 ruler_storage:
   s3:
     bucket_name:       mimir-ruler
+  cache:
+    backend: memcached
+    memcached:
+      addresses: dns+memcached:11211
 
 query_scheduler:
   service_discovery_mode: "ring"

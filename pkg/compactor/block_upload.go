@@ -237,31 +237,34 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	ctx := r.Context()
+	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
+	const op = "block file upload"
+
 	pth := r.URL.Query().Get("path")
 	if pth == "" {
-		http.Error(w, "missing or invalid file path", http.StatusBadRequest)
+		err := httpError{statusCode: http.StatusBadRequest, message: "missing or invalid file path"}
+		writeBlockUploadError(err, op, "", logger, w)
 		return
 	}
 
 	if path.Base(pth) == block.MetaFilename {
-		http.Error(w, fmt.Sprintf("%s is not allowed", block.MetaFilename), http.StatusBadRequest)
+		err := httpError{statusCode: http.StatusBadRequest, message: fmt.Sprintf("%s is not allowed", block.MetaFilename)}
+		writeBlockUploadError(err, op, "", logger, w)
 		return
 	}
 
 	if !rePath.MatchString(pth) {
-		http.Error(w, fmt.Sprintf("invalid path: %q", pth), http.StatusBadRequest)
+		err := httpError{statusCode: http.StatusBadRequest, message: fmt.Sprintf("invalid path: %q", pth)}
+		writeBlockUploadError(err, op, "", logger, w)
 		return
 	}
 
 	if r.ContentLength == 0 {
-		http.Error(w, "file cannot be empty", http.StatusBadRequest)
+		err := httpError{statusCode: http.StatusBadRequest, message: "file cannot be empty"}
+		writeBlockUploadError(err, op, "", logger, w)
 		return
 	}
-
-	const op = "block file upload"
-
-	ctx := r.Context()
-	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 
@@ -273,7 +276,8 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 	// This should not happen.
 	if m == nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		err := httpError{statusCode: http.StatusInternalServerError, message: "internal error"}
+		writeBlockUploadError(err, op, "", logger, w)
 		return
 	}
 
@@ -283,14 +287,16 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		if pth == f.RelPath {
 			found = true
 
-			if r.ContentLength != f.SizeBytes {
-				http.Error(w, fmt.Sprintf("file size doesn't match %s", block.MetaFilename), http.StatusBadRequest)
+			if r.ContentLength >= 0 && r.ContentLength != f.SizeBytes {
+				err := httpError{statusCode: http.StatusBadRequest, message: fmt.Sprintf("file size doesn't match %s", block.MetaFilename)}
+				writeBlockUploadError(err, op, "", logger, w)
 				return
 			}
 		}
 	}
 	if !found {
-		http.Error(w, "unexpected file", http.StatusBadRequest)
+		err := httpError{statusCode: http.StatusBadRequest, message: "unexpected file"}
+		writeBlockUploadError(err, op, "", logger, w)
 		return
 	}
 

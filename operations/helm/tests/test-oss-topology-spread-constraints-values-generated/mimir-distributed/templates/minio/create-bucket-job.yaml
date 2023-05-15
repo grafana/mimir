@@ -7,7 +7,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: test-oss-topology-spread-constraints-values-mimir-make-minio-buckets
+  name: test-oss-topology-spread-constraints-values-mimir-make-minio-buckets-5.0.7
   namespace: "citestns"
   labels:
     app: mimir-distributed-make-bucket-job

@@ -49,6 +49,7 @@ const (
 	HATrackerMaxClustersFlag               = "distributor.ha-tracker.max-clusters"
 	resultsCacheTTLFlag                    = "query-frontend.results-cache-ttl"
 	resultsCacheTTLForOutOfOrderWindowFlag = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
+	QueryIngestersWithinFlag               = "querier.query-ingesters-within"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -118,6 +119,7 @@ type Limits struct {
 	QueryShardingMaxShardedQueries  int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
 	QueryShardingMaxRegexpSizeBytes int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes" category:"experimental"`
 	SplitInstantQueriesByInterval   model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
+	QueryIngestersWithin            model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 
 	// Query-frontend limits.
 	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
@@ -225,8 +227,10 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxQueriersPerTenant, "query-frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
 	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
-	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 0, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
+	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
 	f.Var(&l.SplitInstantQueriesByInterval, "query-frontend.split-instant-queries-by-interval", "Split instant queries by an interval and execute in parallel. 0 to disable it.")
+	_ = l.QueryIngestersWithin.Set("13h")
+	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 
 	_ = l.RulerEvaluationDelay.Set("1m")
 	f.Var(&l.RulerEvaluationDelay, "ruler.evaluation-delay-duration", "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.")
@@ -553,6 +557,12 @@ func (o *Overrides) QueryShardingMaxRegexpSizeBytes(userID string) int {
 // via the query-frontend. 0 to disable limit.
 func (o *Overrides) SplitInstantQueriesByInterval(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).SplitInstantQueriesByInterval)
+}
+
+// QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
+// 0 means all queries are sent to ingester.
+func (o *Overrides) QueryIngestersWithin(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).QueryIngestersWithin)
 }
 
 // EnforceMetadataMetricName whether to enforce the presence of a metric name on metadata.

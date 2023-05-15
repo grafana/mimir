@@ -633,7 +633,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, float64(0), sum[0])
 
-			// Delete rule before checkin "cortex_ruler_queries_total", as we want to reuse value for next test.
+			// Delete rule before checking "cortex_ruler_queries_total", as we want to reuse value for next test.
 			require.NoError(t, c.DeleteRuleGroup(namespace, groupName))
 
 			// Wait until ruler has unloaded the group. We don't use any matcher, so there should be no groups (in fact, metric disappears).

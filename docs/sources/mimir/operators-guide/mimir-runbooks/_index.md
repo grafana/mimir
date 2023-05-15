@@ -238,7 +238,7 @@ How to **investigate**:
       - If queries are waiting in queue
         - Consider scaling up number of queriers if they're not auto-scaled; if auto-scaled, check auto-scaling parameters
       - If queries are not waiting in queue
-        - Consider [enabling query sharding]({{< relref "../architecture/query-sharding/index.md#how-to-enable-query-sharding" >}}) if not already enabled, to increase query parallelism
+        - Consider [enabling query sharding]({{< relref "../../references/architecture/query-sharding/index.md#how-to-enable-query-sharding" >}}) if not already enabled, to increase query parallelism
         - If query sharding already enabled, consider increasing total number of query shards (`query_sharding_total_shards`) for tenants submitting slow queries, so their queries can be further parallelized
 
 #### Alertmanager
@@ -450,9 +450,9 @@ How to **investigate**:
 
 ### MimirIngesterTSDBWALCorrupted
 
-This alert fires when a Mimir ingester finds a corrupted TSDB WAL (stored on disk) while replaying it at ingester startup or when creation of a checkpoint comes across a WAL corruption.
+This alert fires when more than one Mimir ingester finds a corrupted TSDB WAL (stored on disk) while replaying it at ingester startup or when creation of a checkpoint comes across a WAL corruption.
 
-If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism causes data loss because all WAL records after the corrupted segment are discarded, and so their samples are lost while replaying the WAL. If this happens only on 1 ingester then Mimir doesn't suffer any data loss because of the replication factor, but if it happens on multiple ingesters some data loss is possible.
+If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism causes data loss because all WAL records after the corrupted segment are discarded, and so their samples are lost while replaying the WAL. If this happens only on 1 ingester or only on one zone in a multi-zone cluster, then Mimir doesn't suffer any data loss because of the replication factor. But if it happens on multiple ingesters, multiple zones, or both, some data loss is possible.
 
 To investigate how the ingester dealt with the WAL corruption, it's recommended you search the logs, e.g. with the following Grafana Loki query:
 
@@ -521,15 +521,6 @@ How to **investigate**:
 
 - Look for any scan error in the querier logs (ie. networking or rate limiting issues)
 
-### MimirQuerierHighRefetchRate
-
-This alert fires when there's an high number of queries for which series have been refetched from a different store-gateway because of missing blocks. This could happen for a short time whenever a store-gateway ring resharding occurs (e.g. during/after an outage or while rolling out store-gateway) but store-gateways should reconcile in a short time. This alert fires if the issue persist for an unexpected long time and thus it should be investigated.
-
-How to **investigate**:
-
-- Ensure there are no errors related to blocks scan or sync in the queriers and store-gateways
-- Check store-gateway logs to see if all store-gateway have successfully completed a blocks sync
-
 ### MimirStoreGatewayHasNotSyncTheBucket
 
 This alert fires when a Mimir store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket for a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
@@ -595,7 +586,7 @@ How to **investigate**:
   - Invalid result block:
     - **How to detect**: Search compactor logs for `invalid result block`.
     - **What it means**: The compactor successfully validated the source blocks. But the validation of the result block after the compaction did not succeed. The result block was not uploaded and the compaction job will be retried.
-  - Out-of-order chunks
+  - Out-of-order chunks:
     - **How to detect**: Search compactor logs for `invalid result block` and `out-of-order chunks`.
     - This is caused by a bug in the ingester - see [mimir#1537](https://github.com/grafana/mimir/issues/1537). Ingesters upload blocks where the MinT and MaxT of some chunks don't match the first and last samples in the chunk. When the faulty chunks' MinT and MaxT overlap with other chunks, the compactor merges the chunks. Because one chunk's MinT and MaxT are incorrect the merge may be performed incorrectly, leading to OoO samples.
     - **How to mitigate**: Mark the faulty blocks to avoid compacting them in the future:
@@ -607,6 +598,22 @@ How to **investigate**:
           ```
           ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Leading to out-of-order chunks when compacting with other blocks" <block-1> <block-2>...
           ```
+  - Result block exceeds symbol table maximum size:
+    - **How to detect**: Search compactor logs for `symbol table size exceeds`.
+    - **What it means**: The compactor successfully validated the source blocks. But the resulting block is impossible to write due to the error above.
+    - This is caused by too many series being stored in the blocks, which indicates that `-compactor.split-and-merge-shards` is too low for the tenant. Could be also an indication of very high churn in labels causing label cardinality explosion.
+    - **How to mitigate**: These blocks are not possible to compact, mark the source blocks indicated in the error message with `no-compact`.
+      - Find all affected source blocks in the compactor logs by searching for `symbol table size exceeds`.
+      - The log lines contain the block IDs in a list of paths, such as:
+        ```
+        [/data/compact/0@17241709254077376921-merge-3_of_4-1683244800000-1683331200000/01GZS91PMTAWAWAKRYQVNV1FPP /data/compact/0@17241709254077376921-merge-3_of_4-1683244800000-1683331200000/01GZSC5803FN1V1ZFY6Q8PWV1E]
+        ```
+        Where the filenames are the block IDs: `01GZS91PMTAWAWAKRYQVNV1FPP` and `01GZSC5803FN1V1ZFY6Q8PWV1E`
+      - Mark the source blocks for no compaction (in this example the object storage backend is GCS):
+        ```
+        ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" <block-1> <block-2>...
+        ```
+    - Further reading: [Compaction algorithm]({{< relref "../../references/architecture/components/compactor/index.md#compaction-algorithm" >}}).
 
 - Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor/index.md" >}}) and set it to view the last 7 days.
 
@@ -1649,7 +1656,7 @@ How it **works**:
 - Mimir has been designed to guarantee query results correctness and never return partial query results. Either a query succeeds returning fully consistent results or it fails.
 - Queriers, and rulers running with the "internal" evaluation mode, run a consistency check to ensure all expected blocks have been queried from the long-term storage via the store-gateways.
 - If any expected block has not been queried via the store-gateways, then the query fails with this error.
-- See [Anatomy of a query request]({{< relref "../architecture/components/querier.md#anatomy-of-a-query-request" >}}) to learn more.
+- See [Anatomy of a query request]({{< relref "../../references/architecture/components/querier.md#anatomy-of-a-query-request" >}}) to learn more.
 
 How to **fix** it:
 

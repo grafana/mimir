@@ -138,6 +138,8 @@ type Config struct {
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"
+	// Enable native histograms for enabled scrapers with 10% bucket growth.
+	c.Server.MetricsNativeHistogramFactor = 1.1
 	c.Server.ExcludeRequestInLog = true
 	c.Server.DisableRequestSuccessLog = true
 
@@ -274,6 +276,18 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
+	}
+	// validate the default limits
+	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ValidateLimits validates the runtime limits that can be set for each tenant against static configs
+func (c *Config) ValidateLimits(limits validation.Limits) error {
+	if err := c.Querier.ValidateLimits(limits); err != nil {
+		return errors.Wrap(err, "invalid limits config for querier")
 	}
 	return nil
 }
@@ -419,7 +433,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Alertmanager.
-	if c.isAnyModuleEnabled(AlertManager) {
+	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		paths = append(paths, pathConfig{
 			name:       "alertmanager data directory",
 			cfgValue:   c.Alertmanager.DataDir,
@@ -669,7 +683,8 @@ type Mimir struct {
 	QueryFrontendTripperware querymiddleware.Tripperware
 	QueryFrontendCodec       querymiddleware.Codec
 	Ruler                    *ruler.Ruler
-	RulerStorage             rulestore.RuleStore
+	RulerDirectStorage       rulestore.RuleStore
+	RulerCachedStorage       rulestore.RuleStore
 	Alertmanager             *alertmanager.MultitenantAlertmanager
 	Compactor                *compactor.MultitenantCompactor
 	StoreGateway             *storegateway.StoreGateway

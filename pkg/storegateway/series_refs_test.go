@@ -1097,7 +1097,7 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 }
 
 func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
-	newTestBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
 		for i := 0; i < 100; i++ {
 			_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
 			assert.NoError(t, err)
@@ -1333,7 +1333,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	newTestBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
 		const (
 			samplesFor1Chunk   = 100                  // not a complete chunk
 			samplesFor2Chunks  = samplesFor1Chunk * 2 // not a complete chunk
@@ -1636,7 +1636,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	newTestBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(10_000))
+	newTestBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(10_000))
 
 	testCases := map[string]struct {
 		matchers        []*labels.Matcher
@@ -1741,7 +1741,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 	const series = 5e6
 
-	newTestBlock := prepareTestBlockWithBinaryReader(test.NewTB(b), appendTestSeries(series))
+	newTestBlock := prepareTestBlock(test.NewTB(b), appendTestSeries(series))
 
 	testSetups := map[string]struct {
 		indexCache indexcache.IndexCache
@@ -1751,45 +1751,47 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 	}
 
 	for name, setup := range testSetups {
-		for _, testCase := range seriesSelectionTestCases(test.NewTB(b), series) {
-			b.Run(name, func(b *testing.B) {
-				ctx, cancel := context.WithCancel(context.Background())
-				b.Cleanup(cancel)
+		b.Run(name, func(b *testing.B) {
+			for _, testCase := range seriesSelectionTestCases(test.NewTB(b), series) {
+				b.Run(testCase.name, func(b *testing.B) {
+					ctx, cancel := context.WithCancel(context.Background())
+					b.Cleanup(cancel)
 
-				var block = newTestBlock()
-				indexReader := block.indexReader(selectAllStrategy{})
-				b.Cleanup(func() { require.NoError(b, indexReader.Close()) })
+					var block = newTestBlock()
+					indexReader := block.indexReader(selectAllStrategy{})
+					b.Cleanup(func() { require.NoError(b, indexReader.Close()) })
 
-				hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
+					hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
 
-				b.ResetTimer()
+					b.ResetTimer()
 
-				for i := 0; i < b.N; i++ {
-					iterator, err := openBlockSeriesChunkRefsSetsIterator(
-						ctx,
-						5000,
-						"",
-						indexReader,
-						setup.indexCache,
-						block.meta,
-						testCase.matchers,
-						nil,
-						cachedSeriesHasher{hashCache},
-						false, // we don't skip chunks, so we can measure impact in loading chunk refs too
-						block.meta.MinTime,
-						block.meta.MaxTime,
-						2,
-						newSafeQueryStats(),
-						nil,
-					)
-					require.NoError(b, err)
+					for i := 0; i < b.N; i++ {
+						iterator, err := openBlockSeriesChunkRefsSetsIterator(
+							ctx,
+							5000,
+							"",
+							indexReader,
+							setup.indexCache,
+							block.meta,
+							testCase.matchers,
+							nil,
+							cachedSeriesHasher{hashCache},
+							false, // we don't skip chunks, so we can measure impact in loading chunk refs too
+							block.meta.MinTime,
+							block.meta.MaxTime,
+							2,
+							newSafeQueryStats(),
+							nil,
+						)
+						require.NoError(b, err)
 
-					actualSeriesSets := readAllSeriesChunkRefs(newFlattenedSeriesChunkRefsIterator(iterator))
-					assert.Len(b, actualSeriesSets, testCase.expectedSeriesLen)
-					assert.NoError(b, iterator.Err())
-				}
-			})
-		}
+						actualSeriesSets := readAllSeriesChunkRefs(newFlattenedSeriesChunkRefsIterator(iterator))
+						assert.Len(b, actualSeriesSets, testCase.expectedSeriesLen)
+						assert.NoError(b, iterator.Err())
+					}
+				})
+			}
+		})
 	}
 }
 
@@ -2125,7 +2127,7 @@ func TestPartitionChunks(t *testing.T) {
 // TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching currently tests logic in loadingSeriesChunkRefsSetIterator.
 // If openBlockSeriesChunkRefsSetsIterator becomes more complex, consider making this a test for loadingSeriesChunkRefsSetIterator only.
 func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
-	newTestBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
 		existingSeries := []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"), // series ref 32
 			labels.FromStrings("a", "1", "b", "2"), // series ref 48
@@ -2377,9 +2379,9 @@ type forbiddenFetchMultiPostingsIndexCache struct {
 	t *testing.T
 }
 
-func (c forbiddenFetchMultiPostingsIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
+func (c forbiddenFetchMultiPostingsIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) indexcache.BytesResult {
 	assert.Fail(c.t, "index cache FetchMultiPostings should not be called")
-	return nil, nil
+	return nil
 }
 
 func extractLabelsFromSeriesChunkRefsSets(sets []seriesChunkRefsSet) (result []labels.Labels) {

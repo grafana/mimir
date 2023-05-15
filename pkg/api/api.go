@@ -176,6 +176,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
 		{Desc: "Status", Path: "/multitenant_alertmanager/status"},
 		{Desc: "Ring status", Path: "/multitenant_alertmanager/ring"},
+		{Desc: "Alertmanager", Path: "/alertmanager"},
 	})
 
 	// Ensure this route is registered before the prefixed AM route
@@ -253,7 +254,7 @@ type Ingester interface {
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
 }
 
-// RegisterIngester registers the ingesters HTTP and GRPC service
+// RegisterIngester registers the ingester HTTP and gRPC services.
 func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
@@ -324,6 +325,7 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	a.RegisterRoute("/store-gateway/ring", http.HandlerFunc(s.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/store-gateway/tenants", http.HandlerFunc(s.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/store-gateway/tenant/{tenant}/blocks", http.HandlerFunc(s.BlocksHandler), false, true, "GET")
+	a.RegisterRoute("/store-gateway/prepare-shutdown", http.HandlerFunc(s.PrepareShutdownHandler), false, true, "GET", "POST", "DELETE")
 }
 
 // RegisterCompactor registers routes associated with the compactor.
@@ -333,11 +335,29 @@ func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	})
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/api/v1/upload/block/{block}/start", http.HandlerFunc(c.StartBlockUpload), true, false, http.MethodPost)
-	a.RegisterRoute("/api/v1/upload/block/{block}/files", http.HandlerFunc(c.UploadBlockFile), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/upload/block/{block}/files", a.DisableServerHTTPTimeouts(http.HandlerFunc(c.UploadBlockFile)), true, false, http.MethodPost)
 	a.RegisterRoute("/api/v1/upload/block/{block}/finish", http.HandlerFunc(c.FinishBlockUpload), true, false, http.MethodPost)
 	a.RegisterRoute("/api/v1/upload/block/{block}/check", http.HandlerFunc(c.GetBlockUploadStateHandler), true, false, http.MethodGet)
 	a.RegisterRoute("/compactor/delete_tenant", http.HandlerFunc(c.DeleteTenant), true, true, "POST")
 	a.RegisterRoute("/compactor/delete_tenant_status", http.HandlerFunc(c.DeleteTenantStatus), true, true, "GET")
+}
+
+func (a *API) DisableServerHTTPTimeouts(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := http.NewResponseController(w)
+		zero := time.Time{}
+
+		level.Debug(a.logger).Log("msg", "disabling HTTP server timeouts for URL", "url", r.URL)
+
+		if err := c.SetReadDeadline(zero); err != nil {
+			level.Warn(a.logger).Log("msg", "failed to clear read deadline on HTTP connection", "url", r.URL, "err", err)
+		}
+		if err := c.SetWriteDeadline(zero); err != nil {
+			level.Warn(a.logger).Log("msg", "failed to clear write deadline on HTTP connection", "url", r.URL, "err", err)
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 type Distributor interface {

@@ -695,8 +695,27 @@ groups:
         }} got a corrupted TSDB WAL.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
     expr: |
-      rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0
+      # alert when there are more than one corruptions
+      count by (cluster, namespace) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
+      and
+      # and there is only one zone
+      count by (cluster, namespace) (group by (cluster, namespace, job) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
     labels:
+      deployment: single-zone
+      severity: critical
+  - alert: MimirIngesterTSDBWALCorrupted
+    annotations:
+      message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} got a corrupted TSDB WAL.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
+    expr: |
+      # alert when there are more than one corruptions
+      count by (cluster, namespace) (sum by (cluster, namespace, job) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
+      and
+      # and there are multiple zones
+      count by (cluster, namespace) (group by (cluster, namespace, job) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+    labels:
+      deployment: multi-zone
       severity: critical
   - alert: MimirIngesterTSDBWALWritesFailed
     annotations:
@@ -721,26 +740,6 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: MimirQuerierHighRefetchRate
-    annotations:
-      message: Mimir Queries in {{ $labels.cluster }}/{{ $labels.namespace }} are
-        refetching series from different store-gateways (because of missing blocks)
-        for the {{ printf "%.0f" $value }}% of queries.
-      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirquerierhighrefetchrate
-    expr: |
-      100 * (
-        (
-          sum by(cluster, namespace) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
-          -
-          sum by(cluster, namespace) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0.0"}[5m]))
-        )
-        /
-        sum by(cluster, namespace) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
-      )
-      > 1
-    for: 10m
-    labels:
-      severity: warning
   - alert: MimirStoreGatewayHasNotSyncTheBucket
     annotations:
       message: Mimir store-gateway {{ $labels.instance }} in {{ $labels.cluster }}/{{

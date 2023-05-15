@@ -31,6 +31,8 @@ import (
 const testFilename = "/random_object"
 
 func TestChunksCaching(t *testing.T) {
+	const bucketID = "test"
+
 	length := int64(1024 * 1024)
 	subrangeSize := int64(16000) // All tests are based on this value.
 
@@ -130,9 +132,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete first 3 subranges.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 0*subrangeSize, 1*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 1*subrangeSize, 2*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 2*subrangeSize, 3*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 0*subrangeSize, 1*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 1*subrangeSize, 2*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 2*subrangeSize, 3*subrangeSize)))
 			},
 		},
 
@@ -146,9 +148,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete last 3 subranges.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 7*subrangeSize, 8*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 8*subrangeSize, 9*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 9*subrangeSize, 10*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 7*subrangeSize, 8*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 8*subrangeSize, 9*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 9*subrangeSize, 10*subrangeSize)))
 			},
 		},
 
@@ -162,9 +164,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete 3 subranges in the middle.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 3*subrangeSize, 4*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 4*subrangeSize, 5*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(name, 5*subrangeSize, 6*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 3*subrangeSize, 4*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 4*subrangeSize, 5*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 5*subrangeSize, 6*subrangeSize)))
 			},
 		},
 
@@ -181,7 +183,7 @@ func TestChunksCaching(t *testing.T) {
 					if i > 0 && i%3 == 0 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -201,7 +203,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 3 || i == 5 || i == 7 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -220,7 +222,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 5 || i == 6 || i == 7 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -233,7 +235,7 @@ func TestChunksCaching(t *testing.T) {
 			cfg := NewCachingBucketConfig()
 			cfg.CacheGetRange("chunks", cache, isTSDBChunkFile, subrangeSize, cache, time.Hour, time.Hour, tc.maxGetRangeRequests)
 
-			cachingBucket, err := NewCachingBucket(inmem, cfg, nil, nil)
+			cachingBucket, err := NewCachingBucket(bucketID, inmem, cfg, nil, nil)
 			assert.NoError(t, err)
 
 			verifyGetRange(t, cachingBucket, name, tc.offset, tc.length, tc.expectedLength)
@@ -301,7 +303,7 @@ func TestInvalidOffsetAndLength(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheGetRange("chunks", cache, func(string) bool { return true }, 10000, cache, time.Hour, time.Hour, 3)
 
-	c, err := NewCachingBucket(b, cfg, nil, nil)
+	c, err := NewCachingBucket("test", b, cfg, nil, nil)
 	assert.NoError(t, err)
 
 	r, err := c.GetRange(context.Background(), "test", -1, 1000)
@@ -345,7 +347,7 @@ func TestCachedIter(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheIter(cfgName, cache, func(string) bool { return true }, 5*time.Minute, JSONIterCodec{})
 
-	cb, err := NewCachingBucket(inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
 	verifyIter(t, cb, allFiles, false, cfgName)
@@ -408,7 +410,7 @@ func TestExists(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket(inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
 	verifyExists(t, cb, testFilename, false, false, cfgName)
@@ -434,7 +436,7 @@ func TestExistsCachingDisabled(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheExists(cfgName, cache, func(string) bool { return false }, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket(inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
 	verifyExists(t, cb, testFilename, false, false, cfgName)
@@ -472,7 +474,7 @@ func TestGet(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket(inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
 	verifyGet(t, cb, testFilename, nil, false, cfgName)
@@ -504,7 +506,7 @@ func TestGetTooBigObject(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 5, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket(inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
@@ -526,7 +528,7 @@ func TestGetPartialRead(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket(inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
@@ -584,7 +586,7 @@ func TestAttributes(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheAttributes(cfgName, cache, matchAll, time.Minute)
 
-	cb, err := NewCachingBucket(inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
 	verifyObjectAttrs(t, cb, testFilename, -1, false, cfgName)
@@ -595,6 +597,148 @@ func TestAttributes(t *testing.T) {
 
 	verifyObjectAttrs(t, cb, testFilename, len(data), false, cfgName)
 	verifyObjectAttrs(t, cb, testFilename, len(data), true, cfgName)
+}
+
+func TestCachingKeyAttributes(t *testing.T) {
+	assert.Equal(t, "attrs:/object", cachingKeyAttributes("", "/object"))
+	assert.Equal(t, "test:attrs:/object", cachingKeyAttributes("test", "/object"))
+}
+
+func TestCachingKeyObjectSubrange(t *testing.T) {
+	assert.Equal(t, "subrange:/object:10:20", cachingKeyObjectSubrange("", "/object", 10, 20))
+	assert.Equal(t, "test:subrange:/object:10:20", cachingKeyObjectSubrange("test", "/object", 10, 20))
+}
+
+func TestCachingKeyIter(t *testing.T) {
+	assert.Equal(t, "iter:/object", cachingKeyIter("", "/object"))
+	assert.Equal(t, "iter:/object:recursive", cachingKeyIter("", "/object", objstore.WithRecursiveIter))
+	assert.Equal(t, "test:iter:/object", cachingKeyIter("test", "/object"))
+	assert.Equal(t, "test:iter:/object:recursive", cachingKeyIter("test", "/object", objstore.WithRecursiveIter))
+}
+
+func TestCachingKeyExists(t *testing.T) {
+	assert.Equal(t, "exists:/object", cachingKeyExists("", "/object"))
+	assert.Equal(t, "test:exists:/object", cachingKeyExists("test", "/object"))
+}
+
+func TestCachingKeyContent(t *testing.T) {
+	assert.Equal(t, "content:/object", cachingKeyContent("", "/object"))
+	assert.Equal(t, "test:content:/object", cachingKeyContent("test", "/object"))
+}
+
+func TestCachingKey_ShouldKeepAllocationsToMinimum(t *testing.T) {
+	tests := map[string]struct {
+		run            func(bucketID string)
+		expectedAllocs float64
+	}{
+		"cachingKeyAttributes()": {
+			run: func(bucketID string) {
+				cachingKeyAttributes(bucketID, "/object")
+			},
+			expectedAllocs: 1.0,
+		},
+		"cachingKeyObjectSubrange()": {
+			run: func(bucketID string) {
+				cachingKeyObjectSubrange(bucketID, "/object", 10, 20)
+			},
+			expectedAllocs: 1.0,
+		},
+		"cachingKeyIter()": {
+			run: func(bucketID string) {
+				cachingKeyIter(bucketID, "/dir")
+			},
+			expectedAllocs: 2.0,
+		},
+		"cachingKeyIter() recursive": {
+			run: func(bucketID string) {
+				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter)
+			},
+			expectedAllocs: 2.0,
+		},
+		"cachingKeyExists()": {
+			run: func(bucketID string) {
+				cachingKeyExists(bucketID, "/object")
+			},
+			expectedAllocs: 1.0,
+		},
+		"cachingKeyContent()": {
+			run: func(bucketID string) {
+				cachingKeyContent(bucketID, "/object")
+			},
+			expectedAllocs: 1.0,
+		},
+	}
+
+	for testName, testData := range tests {
+		for _, withBucketID := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s with bucket ID: %t", testName, withBucketID), func(t *testing.T) {
+				bucketID := ""
+				if withBucketID {
+					bucketID = "test"
+				}
+
+				allocs := testing.AllocsPerRun(100, func() {
+					testData.run(bucketID)
+				})
+
+				require.Equal(t, testData.expectedAllocs, allocs)
+			})
+		}
+	}
+}
+
+func BenchmarkCachingKey(b *testing.B) {
+	tests := map[string]struct {
+		run func(bucketID string)
+	}{
+		"cachingKeyAttributes()": {
+			run: func(bucketID string) {
+				cachingKeyAttributes(bucketID, "/object")
+			},
+		},
+		"cachingKeyObjectSubrange()": {
+			run: func(bucketID string) {
+				cachingKeyObjectSubrange(bucketID, "/object", 10, 20)
+			},
+		},
+		"cachingKeyIter()": {
+			run: func(bucketID string) {
+				cachingKeyIter(bucketID, "/dir")
+			},
+		},
+		"cachingKeyIter() recursive": {
+			run: func(bucketID string) {
+				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter)
+			},
+		},
+		"cachingKeyExists()": {
+			run: func(bucketID string) {
+				cachingKeyExists(bucketID, "/object")
+			},
+		},
+		"cachingKeyContent()": {
+			run: func(bucketID string) {
+				cachingKeyContent(bucketID, "/object")
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		for _, withBucketID := range []bool{false, true} {
+			b.Run(fmt.Sprintf("%s with bucket ID: %t", testName, withBucketID), func(b *testing.B) {
+				bucketID := ""
+				if withBucketID {
+					bucketID = "test"
+				}
+
+				b.ResetTimer()
+
+				for n := 0; n < b.N; n++ {
+					testData.run(bucketID)
+				}
+			})
+		}
+	}
 }
 
 func verifyObjectAttrs(t *testing.T, cb *CachingBucket, file string, expectedLength int, cacheUsed bool, cfgName string) {

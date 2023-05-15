@@ -20,7 +20,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 
 - **Microservices mode**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
-- **Read-Write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../../operators-guide/architecture/deployment-modes/index.md" >}}) for the grouping of components.
+- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../../references/architecture/deployment-modes/index.md" >}}) for the grouping of components.
 
 ## Endpoints
 
@@ -84,6 +84,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Store-gateway ring status](#store-gateway-ring-status)                               | Store-gateway                  | `GET /store-gateway/ring`                                                 |
 | [Store-gateway tenants](#store-gateway-tenants)                                       | Store-gateway                  | `GET /store-gateway/tenants`                                              |
 | [Store-gateway tenant blocks](#store-gateway-tenant-blocks)                           | Store-gateway                  | `GET /store-gateway/tenant/{tenant}/blocks`                               |
+| [Prepare for Shutdown](#prepare-for-shutdown)                                         | Store-gateway                  | `GET,POST,DELETE /store-gateway/prepare-shutdown`                         |
 | [Compactor ring status](#compactor-ring-status)                                       | Compactor                      | `GET /compactor/ring`                                                     |
 | [Start block upload](#start-block-upload)                                             | Compactor                      | `POST /api/v1/upload/block/{block}/start`                                 |
 | [Upload block file](#upload-block-file)                                               | Compactor                      | `POST /api/v1/upload/block/{block}/files?path={path}`                     |
@@ -280,7 +281,7 @@ The endpoint is only available if Grafana Mimir is configured with the `-runtime
 
 ## Distributor
 
-The following endpoints relate to the [distributor]({{< relref "../../operators-guide/architecture/components/distributor.md" >}}).
+The following endpoints relate to the [distributor]({{< relref "../../references/architecture/components/distributor.md" >}}).
 
 ### Remote write
 
@@ -346,7 +347,7 @@ This endpoint displays a web page with the current status of the HA tracker, inc
 
 ## Ingester
 
-The following endpoints relate to the [ingester]({{< relref "../../operators-guide/architecture/components/ingester.md" >}}).
+The following endpoints relate to the [ingester]({{< relref "../../references/architecture/components/ingester.md" >}}).
 
 ### Flush chunks / blocks
 
@@ -422,7 +423,7 @@ This endpoint displays a web page with the ingesters hash ring status, including
 
 ## Querier / Query-frontend
 
-The following endpoints are exposed both by the [querier]({{< relref "../../operators-guide/architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../../operators-guide/architecture/components/query-frontend/index.md" >}}).
+The following endpoints are exposed both by the [querier]({{< relref "../../references/architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../../references/architecture/components/query-frontend/index.md" >}}).
 
 ### Instant query
 
@@ -655,10 +656,12 @@ List all tenant rules. This endpoint is not part of ruler-API and is always avai
 ### List Prometheus rules
 
 ```
-GET <prometheus-http-prefix>/api/v1/rules
+GET <prometheus-http-prefix>/api/v1/rules?type={alert|record}
 ```
 
 Prometheus-compatible rules endpoint to list alerting and recording rules that are currently loaded.
+
+The `type` parameter is optional. If set, only the specified type of rule is returned.
 
 For more information, refer to Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules).
 
@@ -998,6 +1001,26 @@ GET /store-gateway/tenant/{tenant}/blocks
 ```
 
 Displays a web page listing the blocks for a given tenant.
+
+### Prepare for Shutdown
+
+```
+GET,POST,DELETE /store-gateway/prepare-shutdown
+```
+
+This endpoint changes in-memory store-gateway configuration to prepare for permanently stopping a store-gateway
+instance but does not actually stop any part of the latter.
+
+After a `POST` to the `prepare-shutdown` endpoint returns, when the store-gateway process is stopped with `SIGINT` / `SIGTERM`,
+the store-gateway will be unregistered from the ring.
+
+A `GET` to the `prepare-shutdown` endpoint returns the status of this configuration, either `set` or `unset`.
+
+A `DELETE` to the `prepare-shutdown` endpoint reverts the configuration of the store-gateway to its previous state
+(with respect to unregistering).
+
+This API endpoint is usually used by Kubernetes-specific scale down automations such as the
+[rollout-operator](https://github.com/grafana/rollout-operator).
 
 ## Compactor
 

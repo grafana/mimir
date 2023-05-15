@@ -9,14 +9,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/golang/snappy"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
@@ -74,8 +75,9 @@ func getCacheOptions(slabs *pool.SafeSlabPool[byte]) []cache.Option {
 type CachingBucket struct {
 	objstore.Bucket
 
-	cfg    *CachingBucketConfig
-	logger log.Logger
+	bucketID string
+	cfg      *CachingBucketConfig
+	logger   log.Logger
 
 	requestedGetRangeBytes *prometheus.CounterVec
 	fetchedGetRangeBytes   *prometheus.CounterVec
@@ -88,15 +90,16 @@ type CachingBucket struct {
 
 // NewCachingBucket creates new caching bucket with provided configuration. Configuration should not be
 // changed after creating caching bucket.
-func NewCachingBucket(b objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
-	if b == nil {
+func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
+	if bucketClient == nil {
 		return nil, errors.New("bucket is nil")
 	}
 
 	cb := &CachingBucket{
-		Bucket: b,
-		cfg:    cfg,
-		logger: logger,
+		Bucket:   bucketClient,
+		bucketID: bucketID,
+		cfg:      cfg,
+		logger:   logger,
 
 		operationConfigs: map[string][]*operationConfig{},
 
@@ -168,7 +171,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 
 	cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName).Inc()
 
-	key := cachingKeyIter(dir)
+	key := cachingKeyIter(cb.bucketID, dir, options...)
 	data := cfg.cache.Fetch(ctx, []string{key})
 	if data[key] != nil {
 		list, err := cfg.codec.Decode(data[key])
@@ -213,7 +216,7 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 
 	cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName).Inc()
 
-	key := cachingKeyExists(name)
+	key := cachingKeyExists(cb.bucketID, name)
 	hits := cfg.cache.Fetch(ctx, []string{key})
 
 	if ex := hits[key]; ex != nil {
@@ -255,8 +258,8 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 
 	cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName).Inc()
 
-	contentKey := cachingKeyContent(name)
-	existsKey := cachingKeyExists(name)
+	contentKey := cachingKeyContent(cb.bucketID, name)
+	existsKey := cachingKeyExists(cb.bucketID, name)
 	slabs := getMemoryPool(ctx)
 	cacheOpts := getCacheOptions(slabs)
 	releaseSlabs := true
@@ -338,7 +341,7 @@ func (cb *CachingBucket) Attributes(ctx context.Context, name string) (objstore.
 }
 
 func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName string, cache cache.Cache, ttl time.Duration) (objstore.ObjectAttributes, error) {
-	key := cachingKeyAttributes(name)
+	key := cachingKeyAttributes(cb.bucketID, name)
 
 	cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
 
@@ -410,7 +413,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 		}
 		totalRequestedBytes += (end - off)
 
-		k := cachingKeyObjectSubrange(name, off, end)
+		k := cachingKeyObjectSubrange(cb.bucketID, name, off, end)
 		keys = append(keys, k)
 		offsetKeys[off] = k
 	}
@@ -549,24 +552,55 @@ func mergeRanges(input []rng, limit int64) []rng {
 	return input[:last+1]
 }
 
-func cachingKeyAttributes(name string) string {
-	return fmt.Sprintf("attrs:%s", name)
+func cachingKeyAttributes(bucketID, name string) string {
+	return composeCachingKey("attrs", bucketID, name)
 }
 
-func cachingKeyObjectSubrange(name string, start, end int64) string {
-	return fmt.Sprintf("subrange:%s:%d:%d", name, start, end)
+func cachingKeyObjectSubrange(bucketID, name string, start, end int64) string {
+	return composeCachingKey("subrange", bucketID, name, strconv.FormatInt(start, 10), strconv.FormatInt(end, 10))
 }
 
-func cachingKeyIter(name string) string {
-	return fmt.Sprintf("iter:%s", name)
+func cachingKeyIter(bucketID, name string, options ...objstore.IterOption) string {
+	// Ensure the caching key is different for the same request but different
+	// recursive config.
+	if params := objstore.ApplyIterOptions(options...); params.Recursive {
+		return composeCachingKey("iter", bucketID, name, "recursive")
+	}
+
+	return composeCachingKey("iter", bucketID, name)
 }
 
-func cachingKeyExists(name string) string {
-	return fmt.Sprintf("exists:%s", name)
+func cachingKeyExists(bucketID, name string) string {
+	return composeCachingKey("exists", bucketID, name)
 }
 
-func cachingKeyContent(name string) string {
-	return fmt.Sprintf("content:%s", name)
+func cachingKeyContent(bucketID, name string) string {
+	return composeCachingKey("content", bucketID, name)
+}
+
+func composeCachingKey(op, bucketID string, values ...string) string {
+	// Estimate size.
+	estimatedSize := len(op) + len(bucketID) + (2 + len(values))
+	for _, value := range values {
+		estimatedSize += len(value)
+	}
+
+	b := strings.Builder{}
+	b.Grow(estimatedSize)
+
+	if bucketID != "" {
+		b.WriteString(bucketID)
+		b.WriteRune(':')
+	}
+
+	b.WriteString(op)
+
+	for _, value := range values {
+		b.WriteRune(':')
+		b.WriteString(value)
+	}
+
+	return b.String()
 }
 
 // Reader implementation that uses in-memory subranges.
@@ -717,4 +751,24 @@ func (jic JSONIterCodec) Decode(data []byte) ([]string, error) {
 	var list []string
 	err := json.Unmarshal(data, &list)
 	return list, err
+}
+
+type SnappyIterCodec struct {
+	IterCodec
+}
+
+func (i SnappyIterCodec) Encode(files []string) ([]byte, error) {
+	b, err := i.IterCodec.Encode(files)
+	if err != nil {
+		return nil, err
+	}
+	return snappy.Encode(nil, b), nil
+}
+
+func (i SnappyIterCodec) Decode(cachedData []byte) ([]string, error) {
+	b, err := snappy.Decode(nil, cachedData)
+	if err != nil {
+		return nil, errors.Wrap(err, "SnappyIterCodec")
+	}
+	return i.IterCodec.Decode(b)
 }

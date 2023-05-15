@@ -368,7 +368,7 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 	const userID = "tenant-1"
 
-	dummyRules := []*rulespb.RuleDesc{mockRecordingRuleDesc("sum:up", "sum(up)")}
+	dummyRules := []*rulespb.RuleDesc{createRecordingRule("sum:up", "sum(up)")}
 
 	testCases := map[string]struct {
 		ruleGroup rulespb.RuleGroupDesc

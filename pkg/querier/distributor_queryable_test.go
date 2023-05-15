@@ -88,10 +88,15 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-			ctx := user.InjectOrgID(context.Background(), "test")
-			queryable := newDistributorQueryable(distributor, nil, testData.queryIngestersWithin, log.NewNopLogger())
+			userID := "test"
+			ctx := user.InjectOrgID(context.Background(), userID)
+			configProvider := newMockConfigProvider(testData.queryIngestersWithin)
+			queryable := newDistributorQueryable(distributor, nil, configProvider, log.NewNopLogger())
 			querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
+
+			require.Len(t, configProvider.seenUserIDs, 1)
+			require.Equal(t, configProvider.seenUserIDs[0], userID)
 
 			hints := &storage.SelectHints{Start: testData.queryMinT, End: testData.queryMaxT}
 			if testData.querySeries {
@@ -112,9 +117,9 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 	}
 }
 
-func TestDistributorQueryableFilter(t *testing.T) {
+func TestDistributorQueryableFilterAlwaysReturnsTrue(t *testing.T) {
 	d := &mockDistributor{}
-	dq := newDistributorQueryable(d, nil, 1*time.Hour, log.NewNopLogger())
+	dq := newDistributorQueryable(d, nil, newMockConfigProvider(1*time.Hour), log.NewNopLogger())
 
 	now := time.Now()
 
@@ -124,8 +129,9 @@ func TestDistributorQueryableFilter(t *testing.T) {
 	require.True(t, dq.UseQueryable(now, queryMinT, queryMaxT))
 	require.True(t, dq.UseQueryable(now.Add(time.Hour), queryMinT, queryMaxT))
 
-	// Same query, hour+1ms later, is not sent to ingesters.
-	require.False(t, dq.UseQueryable(now.Add(time.Hour).Add(1*time.Millisecond), queryMinT, queryMaxT))
+	// Same query, hour+1ms later
+	// While this query is outside the time range, true is still returned - see comment in distributorQueryable.UseQueryable() function
+	require.True(t, dq.UseQueryable(now.Add(time.Hour).Add(1*time.Millisecond), queryMinT, queryMaxT))
 }
 
 func TestIngesterStreaming(t *testing.T) {
@@ -166,7 +172,7 @@ func TestIngesterStreaming(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -242,7 +248,7 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -328,7 +334,7 @@ func TestIngesterStreamingMixedResultsHistograms(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -422,7 +428,7 @@ func TestIngesterStreamingMixedTypedResults(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -453,9 +459,9 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 			d := &mockDistributor{}
 			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
 				Return(labelNames, nil)
-
-			queryable := newDistributorQueryable(d, nil, 0, log.NewNopLogger())
-			querier, err := queryable.Querier(context.Background(), mint, maxt)
+			ctx := user.InjectOrgID(context.Background(), "0")
+			queryable := newDistributorQueryable(d, nil, newMockConfigProvider(0), log.NewNopLogger())
+			querier, err := queryable.Querier(ctx, mint, maxt)
 			require.NoError(t, err)
 
 			names, warnings, err := querier.LabelNames(someMatchers...)
@@ -505,7 +511,7 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 
@@ -641,4 +647,18 @@ func (m *mockDistributor) LabelNamesAndValues(ctx context.Context, matchers []*l
 func (m *mockDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	args := m.Called(ctx, labelNames, matchers)
 	return args.Get(0).(uint64), args.Get(1).(*client.LabelValuesCardinalityResponse), args.Error(2)
+}
+
+type mockConfigProvider struct {
+	queryIngestersWithin time.Duration
+	seenUserIDs          []string
+}
+
+func newMockConfigProvider(duration time.Duration) *mockConfigProvider {
+	return &mockConfigProvider{queryIngestersWithin: duration}
+}
+
+func (p *mockConfigProvider) QueryIngestersWithin(userID string) time.Duration {
+	p.seenUserIDs = append(p.seenUserIDs, userID)
+	return p.queryIngestersWithin
 }

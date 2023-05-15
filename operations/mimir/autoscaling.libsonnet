@@ -183,7 +183,7 @@
           ],
 
           // Threshold is expected to be a string
-          threshold: std.toString(std.floor(siToBytes(memory_requests) * memory_target_utilization)),
+          threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
         },
       ],
     },
@@ -212,29 +212,6 @@
       replicas+:: null,
     },
   },
-
-  local siToBytes(str) = (
-    // Simple method to convert binary multiples.
-    // Only works for limited set of SI prefixes (as below).
-
-    // Utility converting the input to a (potentially decimal) number of bytes
-    local siToBytesDecimal(str) = (
-      if std.endsWith(str, 'Ki') then (
-        std.parseJson(std.rstripChars(str, 'Ki')) * std.pow(2, 10)
-      ) else if std.endsWith(str, 'Mi') then (
-        std.parseJson(std.rstripChars(str, 'Mi')) * std.pow(2, 20)
-      ) else if std.endsWith(str, 'Gi') then (
-        std.parseJson(std.rstripChars(str, 'Gi')) * std.pow(2, 30)
-      ) else if std.endsWith(str, 'Ti') then (
-        std.parseJson(std.rstripChars(str, 'Ti')) * std.pow(2, 40)
-      ) else (
-        std.parseJson(str)
-      )
-    );
-
-    // Round down to nearest integer
-    std.floor(siToBytesDecimal(str))
-  ),
 
   local cpuToMilliCPUInt(str) = (
     // Converts any CPU requests to millicores. (eg 0.5 = 500m)
@@ -364,7 +341,7 @@
         query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
 
         // threshold is expected to be a string
-        threshold: std.toString(siToBytes(distributor_memory_requests)),
+        threshold: std.toString($.util.siToBytes(distributor_memory_requests)),
       },
     ],
   }),
@@ -422,7 +399,7 @@
           ],
 
           // Threshold is expected to be a string
-          threshold: std.toString(std.floor(siToBytes($.ruler_container.resources.requests.memory) * $._config.autoscaling_ruler_memory_target_utilization)),
+          threshold: std.toString(std.floor($.util.siToBytes($.ruler_container.resources.requests.memory) * $._config.autoscaling_ruler_memory_target_utilization)),
         },
       ],
     },

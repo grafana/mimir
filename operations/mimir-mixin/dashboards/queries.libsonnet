@@ -24,11 +24,12 @@ local filename = 'mimir-queries.json';
         ),
       )
       .addPanel(
-        $.panel('Queue length (per user)') +
+        $.timeseriesPanel('Queue length (per user)') +
         $.queryPanel(
           'sum by(user) (cortex_query_frontend_queue_length{%s}) > 0' % [$.jobMatcher($._config.job_names.query_frontend)],
           '{{user}}'
-        ),
+        ) +
+        { fieldConfig: { defaults: { noValue: '0', unit: 'short' } } }
       )
     )
     .addRow(
@@ -45,11 +46,12 @@ local filename = 'mimir-queries.json';
         ),
       )
       .addPanel(
-        $.panel('Queue length (per user)') +
+        $.timeseriesPanel('Queue length (per user)') +
         $.queryPanel(
           'sum by(user) (cortex_query_scheduler_queue_length{%s}) > 0' % [$.jobMatcher($._config.job_names.query_scheduler)],
           '{{user}}'
-        ),
+        ) +
+        { fieldConfig: { defaults: { noValue: '0', unit: 'short' } } }
       )
     )
     .addRow(

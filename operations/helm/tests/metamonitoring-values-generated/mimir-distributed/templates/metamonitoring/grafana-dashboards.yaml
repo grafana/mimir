@@ -1881,38 +1881,28 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 12,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": "0",
+                            "unit": "percentunit"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 12,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 3,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\"}[$__rate_interval]))",
+                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\"}[$__rate_interval])) >= 0",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{operation}}",
@@ -1920,41 +1910,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Error rate",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "percentunit",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    },
                    {
                       "aliasColors": { },
@@ -4792,39 +4749,30 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Tenants compaction progress\nIn a multi-tenant cluster, display the progress of tenants that are compacted while compaction is running.\nReset to <tt>0</tt> after the compaction run is completed for all tenants in the shard.\n\n",
-                      "fill": 1,
-                      "id": 2,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "description": "### Tenants compaction progress\nIn a multi-tenant cluster, display the progress of tenants that are compacted while compaction is running.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "max": 1,
+                            "noValue": 1,
+                            "unit": "percentunit"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 2,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 3,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "(\n  cortex_compactor_tenants_processing_succeeded{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"} +\n  cortex_compactor_tenants_processing_failed{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"} +\n  cortex_compactor_tenants_skipped{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}\n)\n/\ncortex_compactor_tenants_discovered{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}\n",
+                            "expr": "(\n  cortex_compactor_tenants_processing_succeeded{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"} +\n  cortex_compactor_tenants_processing_failed{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"} +\n  cortex_compactor_tenants_skipped{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}\n)\n/\ncortex_compactor_tenants_discovered{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"} > 0\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{pod}}",
@@ -4832,41 +4780,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Tenants compaction progress",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "percentunit",
-                            "label": null,
-                            "logBase": 1,
-                            "max": 1,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    },
                    {
                       "aliasColors": { },
@@ -6118,38 +6033,28 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 14,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": "0",
+                            "unit": "percentunit"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 14,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 3,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"compactor\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"compactor\"}[$__rate_interval]))",
+                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"compactor\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"compactor\"}[$__rate_interval])) >= 0",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{operation}}",
@@ -6157,41 +6062,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Error rate",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "percentunit",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    },
                    {
                       "aliasColors": { },
@@ -7518,38 +7390,28 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 2,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": "0",
+                            "unit": "percentunit"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 2,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 6,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(component) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval])) / sum by(component) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))",
+                            "expr": "sum by(component) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval])) / sum by(component) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval])) >= 0",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{component}}",
@@ -7557,41 +7419,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Error rate / component",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "percentunit",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
@@ -7682,38 +7511,28 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 4,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": "0",
+                            "unit": "percentunit"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 4,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 6,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))",
+                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval])) >= 0",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{operation}}",
@@ -7721,41 +7540,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Error rate / operation",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "percentunit",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
@@ -13073,35 +12859,25 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 4,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": "0",
+                            "unit": "short"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 4,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 3,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
                             "expr": "sum by(user) (cortex_query_frontend_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}) > 0",
@@ -13112,41 +12888,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Queue length (per user)",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
@@ -13329,35 +13072,25 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 7,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": "0",
+                            "unit": "short"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 7,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 4,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
                             "expr": "sum by(user) (cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}) > 0",
@@ -13368,41 +13101,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Queue length (per user)",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
@@ -24309,38 +24009,28 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 42,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": "0",
+                            "unit": "percentunit"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 42,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 3,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"store-gateway\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"store-gateway\"}[$__rate_interval]))",
+                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"store-gateway\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"store-gateway\"}[$__rate_interval])) >= 0",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{operation}}",
@@ -24348,41 +24038,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Error rate",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "percentunit",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    },
                    {
                       "aliasColors": { },
@@ -25037,38 +24694,28 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 50,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": "0",
+                            "unit": "percentunit"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 50,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 3,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"querier\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"querier\"}[$__rate_interval]))",
+                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"querier\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"querier\"}[$__rate_interval])) >= 0",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{operation}}",
@@ -25076,41 +24723,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Error rate",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "percentunit",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    },
                    {
                       "aliasColors": { },
@@ -30860,38 +30474,28 @@ data:
                 "height": "250px",
                 "panels": [
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 16,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": 0,
+                            "unit": "short"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 16,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 4,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(user) (rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  /\nsum by(user) (rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n> 0\n",
+                            "expr": "sum by(user) (rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  /\nsum by(user) (rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]) > 0)\n> 0\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{ user }}",
@@ -30899,41 +30503,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Delivery errors",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    },
                    {
                       "aliasColors": { },
@@ -30941,6 +30512,12 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": 0,
+                            "unit": "percentunit"
+                         }
+                      },
                       "fill": 1,
                       "id": 17,
                       "legend": {
@@ -31012,35 +30589,25 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 18,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": 0,
+                            "unit": "short"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 18,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 4,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
                             "expr": "sum by (user) (increase(cortex_prometheus_notifications_dropped_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) > 0\n",
@@ -31051,41 +30618,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Dropped",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
@@ -31504,38 +31038,28 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 24,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": "0",
+                            "unit": "percentunit"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 24,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 3,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\"}[$__rate_interval]))",
+                            "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\"}[$__rate_interval])) >= 0",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{operation}}",
@@ -31543,41 +31067,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "Error rate",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "percentunit",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    },
                    {
                       "aliasColors": { },
@@ -42147,39 +41638,29 @@ data:
                       ]
                    },
                    {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
                       "datasource": "$datasource",
                       "description": "### WAL truncations latency (including checkpointing)\nAverage time taken to perform a full WAL truncation,\nincluding the time taken for the checkpointing to complete.\n\n",
-                      "fill": 1,
-                      "id": 29,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
+                      "fieldConfig": {
+                         "defaults": {
+                            "noValue": "0",
+                            "unit": "s"
+                         }
                       },
-                      "lines": true,
-                      "linewidth": 1,
+                      "id": 29,
                       "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "single",
+                            "sort": "none"
+                         }
+                      },
                       "span": 3,
-                      "stack": false,
-                      "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])) / sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\n/\nsum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval])) >= 0\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "avg",
@@ -42187,41 +41668,8 @@ data:
                             "step": 10
                          }
                       ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
                       "title": "WAL truncations latency (includes checkpointing)",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "s",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
+                      "type": "timeseries"
                    },
                    {
                       "aliasColors": {

@@ -23,7 +23,14 @@ service Ruler {
   rpc Rules(RulesRequest) returns (RulesResponse) {};
 }
 
-message RulesRequest {}
+message RulesRequest {
+  enum RuleType{
+    AnyRule = 0;
+    AlertingRule = 1;
+    RecordingRule = 2;
+  }
+  RuleType filter = 1;
+}
 
 message RulesResponse {
   repeated GroupStateDesc groups = 1;

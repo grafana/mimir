@@ -35,6 +35,28 @@
       else if std.isNumber(v) then v
       else 0,
 
+    // siToBytes is used to convert Kubernetes byte units to bytes.
+    // Only works for limited set of SI prefixes: Ki, Mi, Gi, Ti.
+    siToBytes(str):: (
+      // Utility converting the input to a (potentially decimal) number of bytes
+      local siToBytesDecimal(str) = (
+        if std.endsWith(str, 'Ki') then (
+          std.parseJson(std.rstripChars(str, 'Ki')) * std.pow(2, 10)
+        ) else if std.endsWith(str, 'Mi') then (
+          std.parseJson(std.rstripChars(str, 'Mi')) * std.pow(2, 20)
+        ) else if std.endsWith(str, 'Gi') then (
+          std.parseJson(std.rstripChars(str, 'Gi')) * std.pow(2, 30)
+        ) else if std.endsWith(str, 'Ti') then (
+          std.parseJson(std.rstripChars(str, 'Ti')) * std.pow(2, 40)
+        ) else (
+          std.parseJson(str)
+        )
+      );
+
+      // Round down to nearest integer
+      std.floor(siToBytesDecimal(str))
+    ),
+
     parseDuration(duration)::
       if std.endsWith(duration, 's') then
         std.parseInt(std.substr(duration, 0, std.length(duration) - 1))

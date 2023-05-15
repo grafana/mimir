@@ -8,7 +8,7 @@ weight: 5
 # Grafana Mimir Overview dashboard
 
 The Overview dashboard shows health and status of a Mimir cluster.
-This dashboard gives an high level view over the entire Mimir cluster, and provides links to drill down into specific dashboards.
+This dashboard gives a high-level view of the entire Mimir cluster, and provides links to drill down into specific dashboards.
 
 ## Example
 

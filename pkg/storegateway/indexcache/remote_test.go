@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -115,9 +116,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 			}
 
 			// Fetch postings from cached and assert on it.
-			hits, misses := c.FetchMultiPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels)
-			assert.Equal(t, testData.expectedHits, hits)
-			assert.Equal(t, testData.expectedMisses, misses)
+			testFetchMultiPostings(ctx, t, c, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels, testData.expectedHits)
 
 			// Assert on metrics.
 			assert.Equal(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
@@ -134,6 +133,8 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 	const (
 		numHits   = 10000
 		numMisses = 10000
+
+		numKeys = numHits + numMisses
 	)
 
 	var (
@@ -142,31 +143,58 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 		blockID = ulid.MustNew(1, nil)
 	)
 
-	// Generate the labels for which we're going to fetch the postings.
-	fetchLabels := make([]labels.Label, 0, numHits+numMisses)
-	for i := 0; i < numHits+numMisses; i++ {
-		fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", i)})
+	benchCases := map[string]struct {
+		fetchLabels []labels.Label
+	}{
+		"short labels": {
+			fetchLabels: func() []labels.Label {
+				fetchLabels := make([]labels.Label, 0, numKeys)
+				for i := 0; i < numKeys; i++ {
+					fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", i)})
+				}
+				return fetchLabels
+			}(),
+		},
+		"long labels": { // this should trigger hashing the labels instead of embedding them in the cache key
+			fetchLabels: func() []labels.Label {
+				fetchLabels := make([]labels.Label, 0, numKeys)
+				for i := 0; i < numKeys; i++ {
+					fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: "series_" + strings.Repeat(strconv.Itoa(i), 100)})
+				}
+				return fetchLabels
+			}(),
+		},
 	}
 
-	client := newMockedRemoteCacheClient(nil)
-	c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
-	assert.NoError(b, err)
+	for name, benchCase := range benchCases {
+		fetchLabels := benchCase.fetchLabels
+		b.Run(name, func(b *testing.B) {
+			client := newMockedRemoteCacheClient(nil)
+			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			assert.NoError(b, err)
 
-	// Store the postings expected before running the benchmark.
-	for i := 0; i < numHits; i++ {
-		c.StorePostings(userID, blockID, fetchLabels[i], []byte{1})
-	}
+			// Store the postings expected before running the benchmark.
+			for i := 0; i < numHits; i++ {
+				c.StorePostings(userID, blockID, fetchLabels[i], []byte{1})
+			}
 
-	b.ResetTimer()
+			b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
-		hits, misses := c.FetchMultiPostings(ctx, userID, blockID, fetchLabels)
-		if len(hits) != numHits {
-			b.Fatalf("unexpected hits (expected: %d, got: %d)", numHits, len(hits))
-		}
-		if len(misses) != numMisses {
-			b.Fatalf("unexpected misses (expected: %d, got: %d)", numMisses, len(hits))
-		}
+			for n := 0; n < b.N; n++ {
+				results := c.FetchMultiPostings(ctx, userID, blockID, fetchLabels)
+				assert.Equal(b, numKeys, results.Remaining())
+				actualHits := 0
+				// iterate over the returned map to account for cost of access
+				for i := 0; i < numKeys; i++ {
+					bytes, ok := results.Next()
+					assert.True(b, ok)
+					if bytes != nil {
+						actualHits++
+					}
+				}
+				assert.Equal(b, numHits, actualHits)
+			}
+		})
 	}
 }
 
@@ -671,9 +699,16 @@ func TestStringCacheKeys_Values(t *testing.T) {
 		expected string
 	}{
 		"should stringify postings cache key": {
-			key: postingsCacheKey(user, uid, labels.Label{Name: "foo", Value: "bar"}),
+			key: postingsCacheKey(user, uid.String(), labels.Label{Name: "foo", Value: "bar"}),
 			expected: func() string {
-				hash := blake2b.Sum256([]byte("foo:bar"))
+				encodedLabel := base64.RawURLEncoding.EncodeToString([]byte("foo:bar"))
+				return fmt.Sprintf("P2:%s:%s:%s", user, uid.String(), encodedLabel)
+			}(),
+		},
+		"should hash long postings cache key": {
+			key: postingsCacheKey(user, uid.String(), labels.Label{Name: "foo", Value: strings.Repeat("bar", 11)}),
+			expected: func() string {
+				hash := blake2b.Sum256([]byte("foo:" + strings.Repeat("bar", 11)))
 				encodedHash := base64.RawURLEncoding.EncodeToString(hash[0:])
 
 				return fmt.Sprintf("P2:%s:%s:%s", user, uid.String(), encodedHash)
@@ -706,8 +741,8 @@ func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) 
 		"should guarantee reasonably short key length for postings": {
 			expectedLen: 80,
 			keys: []string{
-				postingsCacheKey(user, uid, labels.Label{Name: "a", Value: "b"}),
-				postingsCacheKey(user, uid, labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}),
+				postingsCacheKey(user, uid.String(), labels.Label{Name: "a", Value: "b"}),
+				postingsCacheKey(user, uid.String(), labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}),
 			},
 		},
 		"should guarantee reasonably short key length for series": {
@@ -721,7 +756,7 @@ func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			for _, key := range testData.keys {
-				assert.Equal(t, testData.expectedLen, len(key))
+				assert.LessOrEqual(t, len(key), testData.expectedLen)
 			}
 		})
 	}
@@ -735,7 +770,7 @@ func BenchmarkStringCacheKeys(b *testing.B) {
 
 	b.Run("postings", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			postingsCacheKey(userID, uid, lbl)
+			postingsCacheKey(userID, uid.String(), lbl)
 		}
 	})
 
@@ -759,7 +794,7 @@ func TestPostingsCacheKey_ShouldOnlyAllocateOncePerCall(t *testing.T) {
 	lbl := labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}
 
 	actualAllocs := testing.AllocsPerRun(numRuns, func() {
-		postingsCacheKey("user-1", blockID, lbl)
+		postingsCacheKey("user-1", blockID.String(), lbl)
 	})
 
 	// Allow for 1 extra allocation here, reported when running the test with -race.
@@ -772,7 +807,7 @@ func TestPostingsCacheKeyLabelHash_ShouldNotAllocateMemory(t *testing.T) {
 	lbl := labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}
 
 	actualAllocs := testing.AllocsPerRun(numRuns, func() {
-		postingsCacheKeyLabelHash(lbl)
+		postingsCacheKeyLabelID(lbl)
 	})
 
 	// Allow for 1 extra allocation here, reported when running the test with -race.
@@ -792,8 +827,8 @@ func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
 	for w := 0; w < numWorkers; w++ {
 		inputPerWorker = append(inputPerWorker, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", w)})
 
-		hash := postingsCacheKeyLabelHash(inputPerWorker[w])
-		expectedPerWorker = append(expectedPerWorker, hash[0:])
+		hash, hashLen := postingsCacheKeyLabelID(inputPerWorker[w])
+		expectedPerWorker = append(expectedPerWorker, hash[0:hashLen])
 	}
 
 	// Sanity check: ensure expected hashes are different for each worker.
@@ -816,8 +851,8 @@ func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
 			defer wg.Done()
 
 			for r := 0; r < numRunsPerWorker; r++ {
-				actual := postingsCacheKeyLabelHash(inputPerWorker[workerID])
-				assert.Equal(t, expectedPerWorker[workerID], actual[0:])
+				actual, hashLen := postingsCacheKeyLabelID(inputPerWorker[workerID])
+				assert.Equal(t, expectedPerWorker[workerID], actual[0:hashLen])
 			}
 		}(w)
 	}

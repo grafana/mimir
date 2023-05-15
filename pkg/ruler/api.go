@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -108,10 +109,10 @@ type recordingRule struct {
 	EvaluationTime float64       `json:"evaluationTime"`
 }
 
-func respondError(logger log.Logger, w http.ResponseWriter, msg string) {
+func respondError(logger log.Logger, w http.ResponseWriter, status int, errorType v1.ErrorType, msg string) {
 	b, err := json.Marshal(&response{
 		Status:    "error",
-		ErrorType: v1.ErrServer,
+		ErrorType: errorType,
 		Error:     msg,
 		Data:      nil,
 	})
@@ -122,10 +123,18 @@ func respondError(logger log.Logger, w http.ResponseWriter, msg string) {
 		return
 	}
 
-	w.WriteHeader(http.StatusInternalServerError)
+	w.WriteHeader(status)
 	if n, err := w.Write(b); err != nil {
 		level.Error(logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
+}
+
+func respondInvalidRequest(logger log.Logger, w http.ResponseWriter, msg string) {
+	respondError(logger, w, http.StatusBadRequest, v1.ErrBadData, msg)
+}
+
+func respondServerError(logger log.Logger, w http.ResponseWriter, msg string) {
+	respondError(logger, w, http.StatusInternalServerError, v1.ErrServer, msg)
 }
 
 // API is used to handle HTTP requests for the ruler service
@@ -150,15 +159,29 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	userID, err := tenant.TenantID(req.Context())
 	if err != nil || userID == "" {
 		level.Error(logger).Log("msg", "error extracting org id from context", "err", err)
-		respondError(logger, w, "no valid org id found")
+		respondServerError(logger, w, "no valid org id found")
 		return
 	}
 
+	filter := AnyRule
+	ruleTypeFilter := strings.ToLower(req.URL.Query().Get("type"))
+	if ruleTypeFilter != "" {
+		switch ruleTypeFilter {
+		case "alert":
+			filter = AlertingRule
+		case "record":
+			filter = RecordingRule
+		default:
+			respondInvalidRequest(logger, w, fmt.Sprintf("not supported value %q", ruleTypeFilter))
+			return
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	rgs, err := a.ruler.GetRules(req.Context())
+	rgs, err := a.ruler.GetRules(req.Context(), filter)
 
 	if err != nil {
-		respondError(logger, w, err.Error())
+		respondServerError(logger, w, err.Error())
 		return
 	}
 
@@ -223,7 +246,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	})
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshaling json response", "err", err)
-		respondError(logger, w, "unable to marshal the requested data")
+		respondServerError(logger, w, "unable to marshal the requested data")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -238,15 +261,15 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	userID, err := tenant.TenantID(req.Context())
 	if err != nil || userID == "" {
 		level.Error(logger).Log("msg", "error extracting org id from context", "err", err)
-		respondError(logger, w, "no valid org id found")
+		respondServerError(logger, w, "no valid org id found")
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, err := a.ruler.GetRules(req.Context())
+	rgs, err := a.ruler.GetRules(req.Context(), AlertingRule)
 
 	if err != nil {
-		respondError(logger, w, err.Error())
+		respondServerError(logger, w, err.Error())
 		return
 	}
 
@@ -268,7 +291,7 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	})
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshaling json response", "err", err)
-		respondError(logger, w, "unable to marshal the requested data")
+		respondServerError(logger, w, "unable to marshal the requested data")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -310,7 +333,7 @@ func respondAccepted(w http.ResponseWriter, logger log.Logger) {
 	})
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshaling json response", "err", err)
-		respondError(logger, w, "unable to marshal the requested data")
+		respondServerError(logger, w, "unable to marshal the requested data")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -387,7 +410,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 
 	userID, namespace, _, err := parseRequest(req, false, false)
 	if err != nil {
-		respondError(logger, w, err.Error())
+		respondServerError(logger, w, err.Error())
 		return
 	}
 
@@ -405,9 +428,14 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err = a.store.LoadRuleGroups(req.Context(), map[string]rulespb.RuleGroupList{userID: rgs})
+	missing, err := a.store.LoadRuleGroups(req.Context(), map[string]rulespb.RuleGroupList{userID: rgs})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(missing) > 0 {
+		// This API is expected to be strongly consistent, so it's an error if any rule group was missing.
+		http.Error(w, fmt.Sprintf("an error occurred while loading %d rule groups", len(missing)), http.StatusInternalServerError)
 		return
 	}
 
@@ -421,7 +449,7 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 	logger := util_log.WithContext(req.Context(), a.logger)
 	userID, namespace, groupName, err := parseRequest(req, true, true)
 	if err != nil {
-		respondError(logger, w, err.Error())
+		respondServerError(logger, w, err.Error())
 		return
 	}
 
@@ -443,7 +471,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	logger := util_log.WithContext(req.Context(), a.logger)
 	userID, namespace, _, err := parseRequest(req, true, false)
 	if err != nil {
-		respondError(logger, w, err.Error())
+		respondServerError(logger, w, err.Error())
 		return
 	}
 
@@ -516,7 +544,7 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 
 	userID, namespace, _, err := parseRequest(req, true, false)
 	if err != nil {
-		respondError(logger, w, err.Error())
+		respondServerError(logger, w, err.Error())
 		return
 	}
 
@@ -526,7 +554,7 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		respondError(logger, w, err.Error())
+		respondServerError(logger, w, err.Error())
 		return
 	}
 
@@ -538,7 +566,7 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	userID, namespace, groupName, err := parseRequest(req, true, true)
 	if err != nil {
-		respondError(logger, w, err.Error())
+		respondServerError(logger, w, err.Error())
 		return
 	}
 
@@ -548,7 +576,7 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		respondError(logger, w, err.Error())
+		respondServerError(logger, w, err.Error())
 		return
 	}
 
