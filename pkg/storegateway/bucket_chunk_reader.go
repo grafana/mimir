@@ -144,7 +144,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 		}
 		chunkDataLen, err := binary.ReadUvarint(reader)
 		if err != nil {
-			return errors.Wrap(err, "parsing reader")
+			return errors.Wrap(err, "parsing chunk length")
 		}
 		// We ignore the crc32 after the chunk data.
 		chunkEncDataLen := int(chunkDataLen) + chunks.ChunkEncodingSize
