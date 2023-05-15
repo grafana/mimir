@@ -42,8 +42,8 @@ func TestDefaultMultiTenantManager_SyncRuleGroups(t *testing.T) {
 	var (
 		ctx         = context.Background()
 		logger      = testutil.NewTestingLogger(t)
-		user1Group1 = mockRuleGroup("group-1", user1, mockRecordingRuleDesc("count:metric_1", "count(metric_1)"))
-		user2Group1 = mockRuleGroup("group-1", user2, mockRecordingRuleDesc("sum:metric_1", "sum(metric_1)"))
+		user1Group1 = createRuleGroup("group-1", user1, createRecordingRule("count:metric_1", "count(metric_1)"))
+		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
 	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil)
