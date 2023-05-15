@@ -873,6 +873,7 @@ type interceptedIndexReader struct {
 	onLabelNamesCalled         func() error
 	onLabelValuesCalled        func(name string) error
 	onLabelValuesOffsetsCalled func(name string) error
+	onIndexVersionCalled       func() error
 }
 
 func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
@@ -893,11 +894,21 @@ func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string
 	return iir.Reader.LabelValuesOffsets(name, prefix, filter)
 }
 
+func (iir *interceptedIndexReader) IndexVersion() (int, error) {
+	if iir.onIndexVersionCalled != nil {
+		if err := iir.onIndexVersionCalled(); err != nil {
+			return 0, err
+		}
+	}
+	return iir.Reader.IndexVersion()
+}
+
 func deadlineExceededIndexHeader() *interceptedIndexReader {
 	return &interceptedIndexReader{
 		onLabelNamesCalled:         func() error { return context.DeadlineExceeded },
 		onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
 		onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
+		onIndexVersionCalled:       func() error { return context.DeadlineExceeded },
 	}
 }
 
