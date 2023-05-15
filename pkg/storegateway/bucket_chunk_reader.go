@@ -147,7 +147,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 			return errors.Wrap(err, "parsing chunk length")
 		}
 		// We ignore the crc32 after the chunk data.
-		chunkEncDataLen := int(chunkDataLen) + chunks.ChunkEncodingSize
+		chunkEncDataLen := chunks.ChunkEncodingSize + int(chunkDataLen)
 		cb := chunksPool.Get(chunkEncDataLen)
 
 		fullyRead, err := io.ReadFull(reader, cb)
