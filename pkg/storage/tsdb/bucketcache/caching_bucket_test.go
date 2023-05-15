@@ -436,6 +436,7 @@ func TestExists(t *testing.T) {
 
 	// We reuse cache between tests (!)
 	cache := cache.NewMockCache()
+	ctx := context.Background()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "test"
@@ -444,17 +445,40 @@ func TestExists(t *testing.T) {
 	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
-	verifyExists(t, cb, testFilename, false, false, cfgName)
+	t.Run("Exists() should return cached value on cache hit", func(t *testing.T) {
+		const filename = "/object-1"
 
-	assert.NoError(t, inmem.Upload(context.Background(), testFilename, strings.NewReader("hej")))
-	verifyExists(t, cb, testFilename, false, true, cfgName) // Reused cache result.
-	cache.Flush()
-	verifyExists(t, cb, testFilename, true, false, cfgName)
+		// Pre-condition: the object should not exist.
+		verifyExists(ctx, t, cb, filename, false, true, false, cfgName)
 
-	assert.NoError(t, inmem.Delete(context.Background(), testFilename))
-	verifyExists(t, cb, testFilename, true, true, cfgName) // Reused cache result.
-	cache.Flush()
-	verifyExists(t, cb, testFilename, false, false, cfgName)
+		// Upload the file then ensure the value is picked up from the cache.
+		assert.NoError(t, inmem.Upload(context.Background(), filename, strings.NewReader("hej")))
+		verifyExists(ctx, t, cb, filename, false, true, true, cfgName) // Reused cache result.
+
+		cache.Flush()
+		verifyExists(ctx, t, cb, filename, true, true, false, cfgName)
+
+		assert.NoError(t, inmem.Delete(context.Background(), filename))
+		verifyExists(ctx, t, cb, filename, true, true, true, cfgName) // Reused cache result.
+
+		cache.Flush()
+		verifyExists(ctx, t, cb, filename, false, true, false, cfgName)
+	})
+
+	t.Run("Exists() should skip the cache lookup but cache the result on cache lookup disabled", func(t *testing.T) {
+		const filename = "/object-2"
+
+		// Pre-condition: the object should not exist.
+		verifyExists(ctx, t, cb, filename, false, true, false, cfgName)
+
+		// Pre-condition: upload the file then ensure the value is picked up from the cache if cache lookup is enabled.
+		assert.NoError(t, inmem.Upload(context.Background(), filename, strings.NewReader("hej")))
+		verifyExists(ctx, t, cb, filename, false, true, true, cfgName) // Reused cache result.
+
+		// Calling Exists() with cache lookup disabled should lookup the object storage and also update the cached value.
+		verifyExists(WithCacheLookupEnabled(ctx, false), t, cb, filename, true, false, false, cfgName)
+		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
+	})
 }
 
 func TestExistsCachingDisabled(t *testing.T) {
@@ -462,6 +486,7 @@ func TestExistsCachingDisabled(t *testing.T) {
 
 	// We reuse cache between tests (!)
 	cache := cache.NewMockCache()
+	ctx := context.Background()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "test"
@@ -470,24 +495,41 @@ func TestExistsCachingDisabled(t *testing.T) {
 	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
 
-	verifyExists(t, cb, testFilename, false, false, cfgName)
+	t.Run("Exists() should not use the cache when caching is disabled for the given object", func(t *testing.T) {
+		const filename = "/object-1"
 
-	assert.NoError(t, inmem.Upload(context.Background(), testFilename, strings.NewReader("hej")))
-	verifyExists(t, cb, testFilename, true, false, cfgName)
+		verifyExists(ctx, t, cb, filename, false, false, false, cfgName)
 
-	assert.NoError(t, inmem.Delete(context.Background(), testFilename))
-	verifyExists(t, cb, testFilename, false, false, cfgName)
+		assert.NoError(t, inmem.Upload(context.Background(), filename, strings.NewReader("hej")))
+		verifyExists(ctx, t, cb, filename, true, false, false, cfgName)
+		verifyExists(WithCacheLookupEnabled(ctx, false), t, cb, filename, true, false, false, cfgName)
+
+		assert.NoError(t, inmem.Delete(context.Background(), filename))
+		verifyExists(ctx, t, cb, filename, false, false, false, cfgName)
+		verifyExists(WithCacheLookupEnabled(ctx, false), t, cb, filename, false, false, false, cfgName)
+	})
 }
 
-func verifyExists(t *testing.T, cb *CachingBucket, file string, exists, fromCache bool, cfgName string) {
+func verifyExists(ctx context.Context, t *testing.T, cb *CachingBucket, file string, expectedExists, expectedCacheLookup, expectedFromCache bool, cfgName string) {
 	t.Helper()
+
+	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName)))
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpExists, cfgName)))
-	ok, err := cb.Exists(context.Background(), file)
+
+	ok, err := cb.Exists(ctx, file)
 	assert.NoError(t, err)
-	assert.Equal(t, exists, ok)
+	assert.Equal(t, expectedExists, ok)
+
+	requestsAfter := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName)))
 	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpExists, cfgName)))
 
-	if fromCache {
+	if expectedCacheLookup {
+		assert.Equal(t, 1, requestsAfter-requestsBefore)
+	} else {
+		assert.Equal(t, 0, requestsAfter-requestsBefore)
+	}
+
+	if expectedFromCache {
 		assert.Equal(t, 1, hitsAfter-hitsBefore)
 	} else {
 		assert.Equal(t, 0, hitsAfter-hitsBefore)
@@ -499,6 +541,7 @@ func TestGet(t *testing.T) {
 
 	// We reuse cache between tests (!)
 	cache := cache.NewMockCache()
+	ctx := context.Background()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "metafile"
@@ -509,20 +552,20 @@ func TestGet(t *testing.T) {
 	assert.NoError(t, err)
 
 	verifyGet(t, cb, testFilename, nil, false, cfgName)
-	verifyExists(t, cb, testFilename, false, true, cfgName)
+	verifyExists(ctx, t, cb, testFilename, false, true, true, cfgName)
 
 	data := []byte("hello world")
 	assert.NoError(t, inmem.Upload(context.Background(), testFilename, bytes.NewBuffer(data)))
 
 	// Even if file is now uploaded, old data is served from cache.
 	verifyGet(t, cb, testFilename, nil, true, cfgName)
-	verifyExists(t, cb, testFilename, false, true, cfgName)
+	verifyExists(ctx, t, cb, testFilename, false, true, true, cfgName)
 
 	cache.Flush()
 
 	verifyGet(t, cb, testFilename, data, false, cfgName)
 	verifyGet(t, cb, testFilename, data, true, cfgName)
-	verifyExists(t, cb, testFilename, true, true, cfgName)
+	verifyExists(ctx, t, cb, testFilename, true, true, true, cfgName)
 }
 
 func TestGetTooBigObject(t *testing.T) {
@@ -530,6 +573,7 @@ func TestGetTooBigObject(t *testing.T) {
 
 	// We reuse cache between tests (!)
 	cache := cache.NewMockCache()
+	ctx := context.Background()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "metafile"
@@ -546,7 +590,7 @@ func TestGetTooBigObject(t *testing.T) {
 	// Object is too big, so it will not be stored to cache on first read.
 	verifyGet(t, cb, testFilename, data, false, cfgName)
 	verifyGet(t, cb, testFilename, data, false, cfgName)
-	verifyExists(t, cb, testFilename, true, true, cfgName)
+	verifyExists(ctx, t, cb, testFilename, true, true, true, cfgName)
 }
 
 func TestGetPartialRead(t *testing.T) {

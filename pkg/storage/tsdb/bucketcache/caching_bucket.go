@@ -234,18 +234,22 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 		return cb.Bucket.Exists(ctx, name)
 	}
 
-	cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName).Inc()
-
 	key := cachingKeyExists(cb.bucketID, name)
-	hits := cfg.cache.Fetch(ctx, []string{key})
 
-	if ex := hits[key]; ex != nil {
-		exists, err := strconv.ParseBool(string(ex))
-		if err == nil {
-			cb.operationHits.WithLabelValues(objstore.OpExists, cfgName).Inc()
-			return exists, nil
+	// Lookup the cache.
+	if isCacheLookupEnabled(ctx) {
+		cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName).Inc()
+
+		hits := cfg.cache.Fetch(ctx, []string{key})
+
+		if ex := hits[key]; ex != nil {
+			exists, err := strconv.ParseBool(string(ex))
+			if err == nil {
+				cb.operationHits.WithLabelValues(objstore.OpExists, cfgName).Inc()
+				return exists, nil
+			}
+			level.Warn(cb.logger).Log("msg", "unexpected cached 'exists' value", "key", key, "val", string(ex))
 		}
-		level.Warn(cb.logger).Log("msg", "unexpected cached 'exists' value", "key", key, "val", string(ex))
 	}
 
 	existsTime := time.Now()
