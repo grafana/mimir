@@ -94,6 +94,9 @@ const (
 
 	instanceIngestionRateTickInterval = time.Second
 
+	// Interval for updating resource (CPU/memory) utilization
+	resourceUtilizationUpdateInterval = time.Second
+
 	// Reasons for discarding samples
 	sampleOutOfOrder     = "sample-out-of-order"
 	sampleTooOld         = "sample-too-old"
@@ -160,6 +163,10 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
+
+	UtilizationBasedLimitingEnabled bool    `yaml:"utilization_based_limiting_enabled" category:"experimental"`
+	CPUUtilizationTarget            float64 `yaml:"cpu_utilization_target" category:"experimental"`
+	MemoryUtilizationTarget         uint64  `yaml:"memory_utilization_target" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -179,8 +186,20 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DefaultLimits.RegisterFlags(f)
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
+
+	f.BoolVar(&cfg.UtilizationBasedLimitingEnabled, "ingester.utilization-based-limiting-enabled", false, "Enable CPU/memory utilization based request limiting")
+	f.Float64Var(&cfg.CPUUtilizationTarget, "ingester.cpu-utilization-target", 0, "CPU target, as a fraction of 1, for CPU/memory utilization based request limiting")
+	f.Uint64Var(&cfg.MemoryUtilizationTarget, "ingester.memory-utilization-target", 0, "Memory target, in bytes, for CPU/memory utilization based request limiting")
 }
 
+	if cfg.UtilizationBasedLimitingEnabled {
+		if cfg.CPUUtilizationTarget == 0 {
+			return fmt.Errorf("CPU utilization target must be set")
+		}
+		if cfg.MemoryUtilizationTarget == 0 {
+			return fmt.Errorf("memory utilization target must be set")
+		}
+	}
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 	if cfg.IgnoreSeriesLimitForMetricNames == "" {
 		return nil
@@ -260,8 +279,18 @@ type Ingester struct {
 	minOutOfOrderTimeWindowSecondsStat *expvar.Int
 	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
 
+	// Read path memory threshold in bytes
 	readPathMemoryThreshold uint64
-	readPathCPUThreshold    uint64
+	// Read path CPU threshold as a fraction of 1
+	readPathCPUThreshold float64
+	// Memory utilization in bytes
+	memoryUtilization atomic.Uint64
+	// CPU utilization as fraction
+	cpuUtilization atomic.Float64
+	// Last CPU time counter
+	lastCPUTime atomic.Float64
+	// Last time resource utilization was computed
+	lastResourceUtilizationUpdate atomic.Time
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -298,6 +327,10 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		tenantsWithOutOfOrderEnabledStat:   usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName),
 		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
 		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
+
+		// TODO: Parameterize thresholds
+		readPathCPUThreshold:    0.8 * cfg.CPUUtilizationTarget,
+		readPathMemoryThreshold: uint64(0.8 * float64(cfg.MemoryUtilizationTarget)),
 	}, nil
 }
 
@@ -483,6 +516,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	usageStatsUpdateTicker := time.NewTicker(usageStatsUpdateInterval)
 	defer usageStatsUpdateTicker.Stop()
 
+	resourceUtilizationUpdateTicker := time.NewTicker(resourceUtilizationUpdateInterval)
+	defer resourceUtilizationUpdateTicker.Stop()
+
 	for {
 		select {
 		case <-metadataPurgeTicker.C:
@@ -505,6 +541,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 
 		case <-usageStatsUpdateTicker.C:
 			i.updateUsageStats()
+
+		case <-resourceUtilizationUpdateTicker.C:
+			i.updateResourceUtilization()
 
 		case <-ctx.Done():
 			return nil

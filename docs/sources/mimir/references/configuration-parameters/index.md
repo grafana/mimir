@@ -959,6 +959,20 @@ instance_limits:
 # the -ingester.max-global-series-per-user limit.
 # CLI flag: -ingester.ignore-series-limit-for-metric-names
 [ignore_series_limit_for_metric_names: <string> | default = ""]
+
+# (experimental) Enable CPU/memory utilization based request limiting
+# CLI flag: -ingester.utilization-based-limiting-enabled
+[utilization_based_limiting_enabled: <boolean> | default = false]
+
+# (experimental) CPU target, as a fraction of 1, for CPU/memory utilization
+# based request limiting
+# CLI flag: -ingester.cpu-utilization-target
+[cpu_utilization_target: <float> | default = 0]
+
+# (experimental) Memory target, in bytes, for CPU/memory utilization based
+# request limiting
+# CLI flag: -ingester.memory-utilization-target
+[memory_utilization_target: <int> | default = 0]
 ```
 
 ### querier

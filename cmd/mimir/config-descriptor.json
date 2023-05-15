@@ -2663,6 +2663,39 @@
           "fieldFlag": "ingester.ignore-series-limit-for-metric-names",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "utilization_based_limiting_enabled",
+          "required": false,
+          "desc": "Enable CPU/memory utilization based request limiting",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.utilization-based-limiting-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cpu_utilization_target",
+          "required": false,
+          "desc": "CPU target, as a fraction of 1, for CPU/memory utilization based request limiting",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.cpu-utilization-target",
+          "fieldType": "float",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "memory_utilization_target",
+          "required": false,
+          "desc": "Memory target, in bytes, for CPU/memory utilization based request limiting",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.memory-utilization-target",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

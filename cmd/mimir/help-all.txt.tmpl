@@ -1227,6 +1227,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.cpu-utilization-target float
+    	[experimental] CPU target, as a fraction of 1, for CPU/memory utilization based request limiting
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
@@ -1247,6 +1249,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.
   -ingester.max-global-series-per-user int
     	The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable. (default 150000)
+  -ingester.memory-utilization-target uint
+    	[experimental] Memory target, in bytes, for CPU/memory utilization based request limiting
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
   -ingester.native-histograms-ingestion-enabled
@@ -1347,6 +1351,8 @@ Usage of ./cmd/mimir/mimir:
     	Stream chunks from ingesters to queriers. (default true)
   -ingester.tsdb-config-update-period duration
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
+  -ingester.utilization-based-limiting-enabled
+    	[experimental] Enable CPU/memory utilization based request limiting
   -log.format value
     	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
   -log.level value

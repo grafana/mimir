@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package ingester
 
 import (
@@ -6,53 +8,85 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/weaveworks/common/httpgrpc"
 )
 
-// checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.
-func (i *Ingester) checkReadOverloaded() error {
-	// TODO: Determine memory usage as percentage of threshold (80% of memory request)
+func (i *Ingester) updateResourceUtilization() {
+	if !i.cfg.UtilizationBasedLimitingEnabled {
+		return
+	}
+
+	lastUpdate := i.lastResourceUtilizationUpdate.Load()
 
 	proc, err := process.NewProcess(int32(os.Getpid()))
 	if err != nil {
-		return errors.Wrap(err, "failed getting process info")
+		level.Warn(i.logger).Log("msg", "couldn't update CPU/memory utilization - failed to get process info",
+			"err", err.Error())
+		return
 	}
-	crtTime, err := proc.CreateTime()
-	if err != nil {
-		return errors.Wrap(err, "failed getting process creation time")
-	}
-	created := time.Unix(0, crtTime*int64(time.Millisecond))
-	// Time elapsed since process creation
-	timeAlive := time.Since(created).Seconds()
 
 	memInfo, err := proc.MemoryInfo()
 	if err != nil {
-		return errors.Wrap(err, "failed getting process memory info")
+		level.Warn(i.logger).Log("msg", "couldn't update CPU/memory utilization - failed to get memory info",
+			"err", err.Error())
+		return
 	}
-	memPercent := 100 * (memInfo.RSS / i.readPathMemoryThreshold)
+	i.memoryUtilization.Store(memInfo.RSS)
 
-	// Calculate CPU utilization percentage by dividing CPU time (in seconds) spent by process by time the process has been alive
-	// This should give us the percentage of a core the process has used
-	var cpuUtilPercent float64
-	if timeAlive > 0 {
-		cput, err := proc.Times()
-		if err != nil {
-			return errors.Wrap(err, "failed getting process times")
-		}
-		cpuUtilPercent = 100 * cput.Total() / timeAlive
+	cput, err := proc.Times()
+	if err != nil {
+		level.Warn(i.logger).Log("msg", "couldn't update CPU/memory utilization - failed to get process times",
+			"err", err.Error())
+		return
 	}
-	cpuPercent := 100 * (cpuUtilPercent / (float64(i.readPathCPUThreshold) / 1000))
 
-	level.Info(i.logger).Log("msg", "resource utilization",
-		"memory_threshold", i.readPathMemoryThreshold, "memory_percentage", memPercent,
-		"cpu_threshold", i.readPathCPUThreshold, "cpu_percentage", cpuPercent)
+	now := time.Now().UTC()
+
+	lastCPUTime := i.lastCPUTime.Load()
+	// TODO: Should Guest and GuestNice be ignored, as potentially duplicated in User?
+	// https://github.com/mackerelio/go-osstat/blob/54b9216143f9aa087151258f103dbd5c381f7915/cpu/cpu_linux.go#L70-L74
+	cpuTime := cput.User + cput.System + cput.Idle + cput.Nice + cput.Iowait + cput.Irq +
+		cput.Softirq + cput.Steal + cput.Guest + cput.GuestNice
+	i.lastCPUTime.Store(cpuTime)
+
+	i.lastResourceUtilizationUpdate.Store(now)
+
+	if lastUpdate.IsZero() {
+		return
+	}
+
+	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
+	i.cpuUtilization.Store(cpuUtil)
+
+	level.Info(i.logger).Log("msg", "process resource utilization", "memory_utilization", memInfo.RSS,
+		"cpu_utilization", cpuUtil)
+}
+
+// checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.
+func (i *Ingester) checkReadOverloaded() error {
+	if !i.cfg.UtilizationBasedLimitingEnabled {
+		return nil
+	}
+
+	memUtil := i.memoryUtilization.Load()
+	cpuUtil := i.cpuUtilization.Load()
+	lastUpdate := i.lastResourceUtilizationUpdate.Load()
+	if lastUpdate.IsZero() {
+		return nil
+	}
+
+	memPercent := 100 * (float64(memUtil) / float64(i.readPathMemoryThreshold))
+	cpuPercent := 100 * (cpuUtil / i.readPathCPUThreshold)
+
+	level.Info(i.logger).Log("msg", "resource based limiting",
+		"memory_threshold", i.readPathMemoryThreshold, "memory_percentage_of_threshold", memPercent,
+		"cpu_threshold", i.readPathCPUThreshold, "cpu_percentage_of_threshold", cpuPercent,
+		"memory_utilization", memUtil, "cpu_utilization", cpuUtil)
 
 	if memPercent >= 100 {
 		return httpgrpc.Errorf(http.StatusTooManyRequests, "the ingester is currently too busy to process queries, try again later")
 	}
-
 	if cpuPercent >= 100 {
 		return httpgrpc.Errorf(http.StatusTooManyRequests, "the ingester is currently too busy to process queries, try again later")
 	}
