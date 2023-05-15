@@ -14,6 +14,7 @@
   * `-blocks-storage.bucket-store.max-chunk-pool-bytes`
   * `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
   * `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
+* [CHANGE] Store-gateway: remove metrics `cortex_bucket_store_chunk_pool_requested_bytes_total` and `cortex_bucket_store_chunk_pool_returned_bytes_total`. #4996
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metric `cortex_bucket_store_series_data_touched`. This label now applies to `data_type="chunks"` and `data_type="series"`. The `stage` label has 2 values: `processed` - the number of series that parsed - and `returned` - the number of series selected from the processed bytes to satisfy the query. #4797 #4830
