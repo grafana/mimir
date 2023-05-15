@@ -71,7 +71,7 @@ import (
 
 const (
 	// Number of timeseries to return in each batch of a QueryStream.
-	queryStreamBatchSize = 128
+	//queryStreamBatchSize = 128
 
 	// Discarded Metadata metric labels.
 	perUserMetadataLimit   = "per_user_metadata_limit"
@@ -160,6 +160,8 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
+
+	BatchSize int `yaml:"non_streaming_batch_size" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -179,6 +181,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DefaultLimits.RegisterFlags(f)
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
+	f.IntVar(&cfg.BatchSize, "ingester.non-streaming-batch-size", 128, "Batch size in number of series for queries.")
 }
 
 func (cfg *Config) Validate(logger log.Logger) error {
@@ -266,6 +269,9 @@ type Ingester struct {
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+	if cfg.BatchSize < 128 {
+		cfg.BatchSize = 128
+	}
 	if cfg.BlocksStorageConfig.Bucket.Backend == bucket.Filesystem {
 		level.Warn(logger).Log("msg", "-blocks-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem")
 	}
@@ -1472,7 +1478,7 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 		return 0, 0, ss.Err()
 	}
 
-	timeseries := make([]mimirpb.TimeSeries, 0, queryStreamBatchSize)
+	timeseries := make([]mimirpb.TimeSeries, 0, i.cfg.BatchSize)
 	batchSizeBytes := 0
 	var it chunkenc.Iterator
 	for ss.Next() {
@@ -1503,7 +1509,7 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 		numSeries++
 		tsSize := ts.Size()
 
-		if (batchSizeBytes > 0 && batchSizeBytes+tsSize > queryStreamBatchMessageSize) || len(timeseries) >= queryStreamBatchSize {
+		if (batchSizeBytes > 0 && batchSizeBytes+tsSize > queryStreamBatchMessageSize) || len(timeseries) >= i.cfg.BatchSize {
 			// Adding this series to the batch would make it too big,
 			// flush the data and add it to new batch instead.
 			err = client.SendQueryStream(stream, &client.QueryStreamResponse{
@@ -1565,7 +1571,7 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 		return 0, 0, ss.Err()
 	}
 
-	chunkSeries := make([]client.TimeSeriesChunk, 0, queryStreamBatchSize)
+	chunkSeries := make([]client.TimeSeriesChunk, 0, i.cfg.BatchSize)
 	batchSizeBytes := 0
 	var it chunks.Iterator
 	for ss.Next() {
@@ -1610,7 +1616,7 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 		numSeries++
 		tsSize := ts.Size()
 
-		if (batchSizeBytes > 0 && batchSizeBytes+tsSize > queryStreamBatchMessageSize) || len(chunkSeries) >= queryStreamBatchSize {
+		if (batchSizeBytes > 0 && batchSizeBytes+tsSize > queryStreamBatchMessageSize) || len(chunkSeries) >= i.cfg.BatchSize {
 			// Adding this series to the batch would make it too big,
 			// flush the data and add it to new batch instead.
 			err = client.SendQueryStream(stream, &client.QueryStreamResponse{
@@ -1692,7 +1698,7 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 	// this method.
 	// TODO: pool slice?
 	var allIterators []chunks.Iterator
-	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize) // TODO: use a different value for queryStreamBatchSize?
+	seriesInBatch := make([]client.QueryStreamSeries, 0, i.cfg.BatchSize) // TODO: use a different value for queryStreamBatchSize?
 
 	// TODO: enforce limits on number of series? Or is this enforced elsewhere already?
 	for ss.Next() {
@@ -1705,7 +1711,7 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
 		})
 
-		if len(seriesInBatch) >= queryStreamBatchSize {
+		if len(seriesInBatch) >= i.cfg.BatchSize {
 			err := client.SendQueryStream(stream, &client.QueryStreamResponse{
 				Series: seriesInBatch,
 			})

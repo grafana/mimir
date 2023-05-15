@@ -20,7 +20,9 @@ type replicationSetResultTracker interface {
 	// This method should only be called after succeeded returns true for the first time and before
 	// calling done any further times.
 	shouldIncludeResultFrom(instance *InstanceDesc) bool
+}
 
+type replicationSetContextTracker interface {
 	// Returns a context.Context for instance.
 	contextFor(instance *InstanceDesc) context.Context
 
@@ -34,22 +36,18 @@ type replicationSetResultTracker interface {
 }
 
 type defaultResultTracker struct {
-	ctx                        context.Context
-	minSucceeded               int
-	numSucceeded               int
-	numErrors                  int
-	maxErrors                  int
-	instanceContextCancelFuncs map[*InstanceDesc]context.CancelFunc
+	minSucceeded int
+	numSucceeded int
+	numErrors    int
+	maxErrors    int
 }
 
-func newDefaultResultTracker(ctx context.Context, instances []InstanceDesc, maxErrors int) *defaultResultTracker {
+func newDefaultResultTracker(instances []InstanceDesc, maxErrors int) *defaultResultTracker {
 	return &defaultResultTracker{
-		ctx:                        ctx,
-		minSucceeded:               len(instances) - maxErrors,
-		numSucceeded:               0,
-		numErrors:                  0,
-		maxErrors:                  maxErrors,
-		instanceContextCancelFuncs: make(map[*InstanceDesc]context.CancelFunc, len(instances)),
+		minSucceeded: len(instances) - maxErrors,
+		numSucceeded: 0,
+		numErrors:    0,
+		maxErrors:    maxErrors,
 	}
 }
 
@@ -70,39 +68,51 @@ func (t *defaultResultTracker) failed() bool {
 }
 
 func (t *defaultResultTracker) shouldIncludeResultFrom(_ *InstanceDesc) bool {
-	// This method should only be called for instances that succeeded, and immediately
-	// after we've returned succeeded()==true for the first time.
 	return true
 }
 
-func (t *defaultResultTracker) contextFor(instance *InstanceDesc) context.Context {
+type defaultContextTracker struct {
+	ctx         context.Context
+	cancelFuncs map[*InstanceDesc]context.CancelFunc
+}
+
+func newDefaultContextTracker(ctx context.Context, instances []InstanceDesc) *defaultContextTracker {
+	return &defaultContextTracker{
+		ctx:         ctx,
+		cancelFuncs: make(map[*InstanceDesc]context.CancelFunc, len(instances)),
+	}
+}
+
+func (t *defaultContextTracker) contextFor(instance *InstanceDesc) context.Context {
 	ctx, cancel := context.WithCancel(t.ctx)
-	t.instanceContextCancelFuncs[instance] = cancel
+	t.cancelFuncs[instance] = cancel
 	return ctx
 }
 
-func (t *defaultResultTracker) cancelContextFor(instance *InstanceDesc) {
-	t.instanceContextCancelFuncs[instance]()
+func (t *defaultContextTracker) cancelContextFor(instance *InstanceDesc) {
+	if cancel, ok := t.cancelFuncs[instance]; ok {
+		cancel()
+		delete(t.cancelFuncs, instance)
+	}
 }
 
-func (t *defaultResultTracker) cancelAllContexts() {
-	for _, cancel := range t.instanceContextCancelFuncs {
+func (t *defaultContextTracker) cancelAllContexts() {
+	for instance, cancel := range t.cancelFuncs {
 		cancel()
+		delete(t.cancelFuncs, instance)
 	}
 }
 
 // zoneAwareResultTracker tracks the results per zone.
 // All instances in a zone must succeed in order for the zone to succeed.
 type zoneAwareResultTracker struct {
-	waitingByZone          map[string]int
-	failuresByZone         map[string]int
-	minSuccessfulZones     int
-	maxUnavailableZones    int
-	zoneContexts           map[string]context.Context
-	zoneContextCancelFuncs map[string]context.CancelFunc
+	waitingByZone       map[string]int
+	failuresByZone      map[string]int
+	minSuccessfulZones  int
+	maxUnavailableZones int
 }
 
-func newZoneAwareResultTracker(ctx context.Context, instances []InstanceDesc, maxUnavailableZones int) *zoneAwareResultTracker {
+func newZoneAwareResultTracker(instances []InstanceDesc, maxUnavailableZones int) *zoneAwareResultTracker {
 	t := &zoneAwareResultTracker{
 		waitingByZone:       make(map[string]int),
 		failuresByZone:      make(map[string]int),
@@ -114,15 +124,6 @@ func newZoneAwareResultTracker(ctx context.Context, instances []InstanceDesc, ma
 	}
 
 	t.minSuccessfulZones = len(t.waitingByZone) - maxUnavailableZones
-
-	t.zoneContexts = make(map[string]context.Context, len(t.waitingByZone))
-	t.zoneContextCancelFuncs = make(map[string]context.CancelFunc, len(t.waitingByZone))
-
-	for zone := range t.waitingByZone {
-		zoneCtx, cancel := context.WithCancel(ctx)
-		t.zoneContexts[zone] = zoneCtx
-		t.zoneContextCancelFuncs[zone] = cancel
-	}
 
 	return t
 }
@@ -158,16 +159,42 @@ func (t *zoneAwareResultTracker) shouldIncludeResultFrom(instance *InstanceDesc)
 	return t.failuresByZone[instance.Zone] == 0 && t.waitingByZone[instance.Zone] == 0
 }
 
-func (t *zoneAwareResultTracker) contextFor(instance *InstanceDesc) context.Context {
-	return t.zoneContexts[instance.Zone]
+type zoneAwareContextTracker struct {
+	contexts    map[string]context.Context
+	cancelFuncs map[string]context.CancelFunc
 }
 
-func (t *zoneAwareResultTracker) cancelContextFor(instance *InstanceDesc) {
-	t.zoneContextCancelFuncs[instance.Zone]()
+func newZoneAwareContextTracker(ctx context.Context, instances []InstanceDesc) *zoneAwareContextTracker {
+	t := &zoneAwareContextTracker{
+		contexts:    map[string]context.Context{},
+		cancelFuncs: map[string]context.CancelFunc{},
+	}
+
+	for _, instance := range instances {
+		if _, ok := t.contexts[instance.Zone]; !ok {
+			zoneCtx, cancel := context.WithCancel(ctx)
+			t.contexts[instance.Zone] = zoneCtx
+			t.cancelFuncs[instance.Zone] = cancel
+		}
+	}
+
+	return t
 }
 
-func (t *zoneAwareResultTracker) cancelAllContexts() {
-	for _, cancel := range t.zoneContextCancelFuncs {
+func (t *zoneAwareContextTracker) contextFor(instance *InstanceDesc) context.Context {
+	return t.contexts[instance.Zone]
+}
+
+func (t *zoneAwareContextTracker) cancelContextFor(instance *InstanceDesc) {
+	if cancel, ok := t.cancelFuncs[instance.Zone]; ok {
 		cancel()
+		delete(t.cancelFuncs, instance.Zone)
+	}
+}
+
+func (t *zoneAwareContextTracker) cancelAllContexts() {
+	for zone, cancel := range t.cancelFuncs {
+		cancel()
+		delete(t.cancelFuncs, zone)
 	}
 }
