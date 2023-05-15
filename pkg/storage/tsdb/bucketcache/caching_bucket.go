@@ -134,7 +134,7 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 
 		operationRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_operation_requests_total",
-			Help: "Number of requested operations matching given config.",
+			Help: "Number of requested operations matching given config which triggered a cache lookup.",
 		}, []string{"operation", "config"}),
 		operationHits: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_operation_hits_total",
@@ -409,9 +409,6 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 }
 
 func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset, length int64, cfgName string, cfg *getRangeConfig) (io.ReadCloser, error) {
-	cb.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName).Inc()
-	cb.requestedGetRangeBytes.WithLabelValues(cfgName).Add(float64(length))
-
 	attrs, err := cb.cachedAttributes(ctx, name, cfgName, cfg.attributes.cache, cfg.attributes.ttl)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get object attributes: %s", name)
@@ -455,28 +452,39 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 		offsetKeys[off] = k
 	}
 
-	releaseSlabs := true
-	slabs := getMemoryPool(ctx)
-	cacheOpts := getCacheOptions(slabs)
+	var (
+		hits         map[string][]byte
+		slabs        = getMemoryPool(ctx)
+		releaseSlabs = true
+	)
 
-	// If there's an error after fetching things from cache but before we return the subrange
-	// reader we're responsible for releasing any memory used by the slab pool.
-	if slabs != nil {
-		defer func() {
-			if releaseSlabs {
-				slabs.Release()
-			}
-		}()
-	}
+	cb.requestedGetRangeBytes.WithLabelValues(cfgName).Add(float64(length))
 
-	// Try to get all subranges from the cache.
-	totalCachedBytes := int64(0)
-	hits := cfg.cache.Fetch(ctx, keys, cacheOpts...)
-	for _, b := range hits {
-		totalCachedBytes += int64(len(b))
+	// Lookup the cache.
+	if isCacheLookupEnabled(ctx) {
+		cacheOpts := getCacheOptions(slabs)
+
+		// If there's an error after fetching things from cache but before we return the subrange
+		// reader we're responsible for releasing any memory used by the slab pool.
+		if slabs != nil {
+			defer func() {
+				if releaseSlabs {
+					slabs.Release()
+				}
+			}()
+		}
+
+		// Try to get all subranges from the cache.
+		totalCachedBytes := int64(0)
+		hits = cfg.cache.Fetch(ctx, keys, cacheOpts...)
+		for _, b := range hits {
+			totalCachedBytes += int64(len(b))
+		}
+
+		cb.fetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(totalCachedBytes))
+		cb.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName).Inc()
+		cb.operationHits.WithLabelValues(objstore.OpGetRange, cfgName).Add(float64(len(hits)) / float64(len(keys)))
 	}
-	cb.fetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(totalCachedBytes))
-	cb.operationHits.WithLabelValues(objstore.OpGetRange, cfgName).Add(float64(len(hits)) / float64(len(keys)))
 
 	if len(hits) < len(keys) {
 		if hits == nil {
