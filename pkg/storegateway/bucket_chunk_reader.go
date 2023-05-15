@@ -190,6 +190,7 @@ func (r *bucketChunkReader) fetchChunkRemainder(ctx context.Context, seq int, of
 	return nil
 }
 
+// populateChunk retains in.Bytes() in out.Raw.
 func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk) error {
 	var enc storepb.Chunk_Encoding
 	switch in.Encoding() {
