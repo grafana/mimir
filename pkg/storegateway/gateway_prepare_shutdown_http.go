@@ -42,9 +42,9 @@ func (g *StoreGateway) PrepareShutdownHandler(w http.ResponseWriter, req *http.R
 		}
 
 		if exists {
-			util.WriteTextResponse(w, "set")
+			util.WriteTextResponse(w, "set\n")
 		} else {
-			util.WriteTextResponse(w, "unset")
+			util.WriteTextResponse(w, "unset\n")
 		}
 	case http.MethodPost:
 		if err := shutdownmarker.Create(shutdownMarkerPath); err != nil {

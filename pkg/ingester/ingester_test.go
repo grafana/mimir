@@ -3905,6 +3905,11 @@ func TestIngester_flushing(t *testing.T) {
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 1
 				`), "cortex_ingester_shipper_uploads_total"))
+
+				// If the ingester isn't "running", requests to the prepare-shutdown endpoint should fail
+				response6 := httptest.NewRecorder()
+				i.PrepareShutdownHandler(response6, httptest.NewRequest("POST", "/ingester/prepare-shutdown", nil))
+				require.Equal(t, 503, response6.Code)
 			},
 		},
 
