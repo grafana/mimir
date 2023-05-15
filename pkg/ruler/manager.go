@@ -350,14 +350,15 @@ func (r *DefaultMultiTenantManager) Stop() {
 	level.Info(r.logger).Log("msg", "stopping user managers")
 	wg := sync.WaitGroup{}
 	r.userManagerMtx.Lock()
-	for user, manager := range r.userManagers {
-		level.Debug(r.logger).Log("msg", "shutting down user manager", "user", user)
+	for userID, manager := range r.userManagers {
+		level.Debug(r.logger).Log("msg", "shutting down user manager", "user", userID)
 		wg.Add(1)
 		go func(manager RulesManager, user string) {
 			manager.Stop()
 			wg.Done()
 			level.Debug(r.logger).Log("msg", "user manager shut down", "user", user)
-		}(manager, user)
+		}(manager, userID)
+		delete(r.userManagers, userID)
 	}
 	wg.Wait()
 	r.userManagerMtx.Unlock()

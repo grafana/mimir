@@ -275,7 +275,7 @@ func TestRuler_Rules(t *testing.T) {
 						Namespace:     "namespace1",
 						User:          "user1",
 						SourceTenants: []string{"tenant-1"},
-						Rules:         []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+						Rules:         []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
 						Interval:      interval,
 					},
 				},
@@ -1176,14 +1176,14 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 		"should remove alerting rules if disabled for a given tenant": {
 			configs: map[string]rulespb.RuleGroupList{
 				"user-1": {
-					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-1", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-1", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
@@ -1193,27 +1193,27 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 			}),
 			expected: map[string]rulespb.RuleGroupList{
 				"user-1": {
-					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-1", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
 				},
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 		},
 		"should remove recording rules if disabled for a given tenant": {
 			configs: map[string]rulespb.RuleGroupList{
 				"user-1": {
-					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-1", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-1", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
@@ -1223,27 +1223,27 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 			}),
 			expected: map[string]rulespb.RuleGroupList{
 				"user-1": {
-					mockRuleGroup("group-1", "user-1", mockAlertingRuleDesc("alert-2", "2")),
-					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-1", createAlertingRule("alert-2", "2")),
+					createRuleGroup("group-3", "user-1", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 		},
 		"should remove all config for a user if both recording and alerting rules are disabled": {
 			configs: map[string]rulespb.RuleGroupList{
 				"user-1": {
-					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-1", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-1", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
@@ -1253,23 +1253,23 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 			}),
 			expected: map[string]rulespb.RuleGroupList{
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 		},
 		"should remove configs for all users if both recording and alerting rules are disabled for every user": {
 			configs: map[string]rulespb.RuleGroupList{
 				"user-1": {
-					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-1", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-1", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
@@ -1303,54 +1303,54 @@ func TestFilterRuleGroupsByNotMissing(t *testing.T) {
 		"should remove the input missing rule groups": {
 			configs: map[string]rulespb.RuleGroupList{
 				"user-1": {
-					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-1", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-1", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 			missing: rulespb.RuleGroupList{
-				mockRuleGroup("group-3", "user-1"),
-				mockRuleGroup("group-2", "user-2"),
+				createRuleGroup("group-3", "user-1"),
+				createRuleGroup("group-2", "user-2"),
 			},
 			expected: map[string]rulespb.RuleGroupList{
 				"user-1": {
-					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-1", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
 				},
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 		},
 		"should remove an user from the rule groups configs if all their rule groups are missing": {
 			configs: map[string]rulespb.RuleGroupList{
 				"user-1": {
-					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-1", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-1", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 			missing: rulespb.RuleGroupList{
-				mockRuleGroup("group-1", "user-1"),
-				mockRuleGroup("group-2", "user-1"),
-				mockRuleGroup("group-3", "user-1"),
+				createRuleGroup("group-1", "user-1"),
+				createRuleGroup("group-2", "user-1"),
+				createRuleGroup("group-3", "user-1"),
 			},
 			expected: map[string]rulespb.RuleGroupList{
 				"user-2": {
-					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
-					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
-					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
 		},
@@ -1396,11 +1396,11 @@ func BenchmarkFilterRuleGroupsByEnabled(b *testing.B) {
 				}
 
 				for r := 0; r < numRecordingRulesPerRuleGroup; r++ {
-					group.Rules = append(group.Rules, mockRecordingRuleDesc(fmt.Sprintf("record:%d", r), "count(up)"))
+					group.Rules = append(group.Rules, createRecordingRule(fmt.Sprintf("record:%d", r), "count(up)"))
 				}
 
 				for r := 0; r < numAlertingRulesPerRuleGroup; r++ {
-					group.Rules = append(group.Rules, mockAlertingRuleDesc(fmt.Sprintf("alert-%d", r), "count(up)"))
+					group.Rules = append(group.Rules, createAlertingRule(fmt.Sprintf("alert-%d", r), "count(up)"))
 				}
 
 				configs[tenantID] = append(configs[tenantID], group)
@@ -1447,29 +1447,28 @@ func BenchmarkFilterRuleGroupsByEnabled(b *testing.B) {
 	}
 }
 
-func mockRecordingRuleDesc(record, expr string) *rulespb.RuleDesc {
+func createRecordingRule(record, expr string) *rulespb.RuleDesc {
 	return &rulespb.RuleDesc{
 		Record: record,
 		Expr:   expr,
 	}
 }
 
-func mockAlertingRuleDesc(alert, expr string) *rulespb.RuleDesc {
+func createAlertingRule(alert, expr string) *rulespb.RuleDesc {
 	return &rulespb.RuleDesc{
 		Alert: alert,
 		Expr:  expr,
 	}
 }
 
-// mockRuleGroup creates a rule group filling in all fields, so that we can use it in tests to check if all fields
+// createRuleGroup creates a rule group filling in all fields, so that we can use it in tests to check if all fields
 // are copied when a rule group is cloned.
-func mockRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.RuleGroupDesc {
+func createRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.RuleGroupDesc {
 	return &rulespb.RuleGroupDesc{
-		Name:          name,
-		Namespace:     "test",
-		Interval:      time.Minute,
-		Rules:         rules,
-		User:          user,
-		SourceTenants: []string{user},
+		Name:      name,
+		Namespace: "test",
+		Interval:  time.Minute,
+		Rules:     rules,
+		User:      user,
 	}
 }
