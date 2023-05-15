@@ -473,7 +473,7 @@ func (r *Ruler) syncRules(ctx context.Context, reason rulesSyncReason) {
 	level.Debug(r.logger).Log("msg", "syncing rules", "reason", reason)
 	r.metrics.rulerSync.WithLabelValues(string(reason)).Inc()
 
-	configs, err := r.listRuleGroupsToSync(ctx, reason)
+	configs, err := r.listRuleGroupsToSyncForAllUsers(ctx, reason)
 	if err != nil {
 		level.Error(r.logger).Log("msg", "unable to list rules", "err", err)
 		return
@@ -514,30 +514,15 @@ func (r *Ruler) loadRuleGroupsToSync(ctx context.Context, configs map[string]rul
 	return configs, nil
 }
 
-// listRuleGroupsToSync lists all the rule groups that should be synched by this ruler instance.
+// listRuleGroupsToSyncForAllUsers lists all the rule groups that should be synched by this ruler instance.
 // This function should be used only when syncing the rule groups, because it expects the
 // storage view to be eventually consistent (due to optional caching).
-func (r *Ruler) listRuleGroupsToSync(ctx context.Context, reason rulesSyncReason) (result map[string]rulespb.RuleGroupList, err error) {
+func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rulesSyncReason) (result map[string]rulespb.RuleGroupList, err error) {
 	start := time.Now()
 	defer func() {
 		r.metrics.listRules.Observe(time.Since(start).Seconds())
 	}()
 
-	result, err = r.listRuleGroupsToSyncSharded(ctx, reason)
-	if err != nil {
-		return
-	}
-
-	for userID := range result {
-		if !r.allowedTenants.IsAllowed(userID) {
-			level.Debug(r.logger).Log("msg", "ignoring rule groups for user, not allowed", "user", userID)
-			delete(result, userID)
-		}
-	}
-	return
-}
-
-func (r *Ruler) listRuleGroupsToSyncSharded(ctx context.Context, reason rulesSyncReason) (map[string]rulespb.RuleGroupList, error) {
 	// In order to reduce API calls to the object storage among all ruler replicas,
 	// we support lookup of stale data for a short period.
 	users, err := r.cachedStore.ListAllUsers(ctx)
@@ -545,9 +530,14 @@ func (r *Ruler) listRuleGroupsToSyncSharded(ctx context.Context, reason rulesSyn
 		return nil, errors.Wrap(err, "unable to list users of ruler")
 	}
 
+	result, err = r.listRuleGroupsToSyncForUsers(ctx, users, reason)
+	return
+}
+
+func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []string, reason rulesSyncReason) (map[string]rulespb.RuleGroupList, error) {
 	// Only users in userRings will be used in the to load the rules.
 	userRings := map[string]ring.ReadRing{}
-	for _, u := range users {
+	for _, u := range userIDs {
 		if shardSize := r.limits.RulerTenantShardSize(u); shardSize > 0 {
 			subRing := r.ring.ShuffleShard(u, shardSize)
 
@@ -602,8 +592,21 @@ func (r *Ruler) listRuleGroupsToSyncSharded(ctx context.Context, reason rulesSyn
 		})
 	}
 
-	err = g.Wait()
-	return result, err
+	// Wait until all the rule groups have been loaded.
+	err := g.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out users which have been explicitly disabled.
+	for userID := range result {
+		if !r.allowedTenants.IsAllowed(userID) {
+			level.Debug(r.logger).Log("msg", "ignoring rule groups for user, not allowed", "user", userID)
+			delete(result, userID)
+		}
+	}
+
+	return result, nil
 }
 
 // filterRuleGroupsByOwnership returns map of rule groups that given instance "owns" based on supplied ring.
