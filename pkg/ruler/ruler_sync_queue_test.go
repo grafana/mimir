@@ -13,12 +13,9 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestRulerSyncQueue_EnqueueAndPoll(t *testing.T) {
-	util_test.VerifyNoLeak(t)
 	ctx := context.Background()
 
 	t.Run("poll() should return the enqueued user IDs", func(t *testing.T) {
@@ -75,7 +72,6 @@ func TestRulerSyncQueue_EnqueueAndPoll(t *testing.T) {
 }
 
 func TestRulerSyncQueue_ShouldNotNotifyChannelMoreFrequentlyThanPollFrequency(t *testing.T) {
-	util_test.VerifyNoLeak(t)
 	ctx := context.Background()
 
 	const pollFrequency = time.Second
@@ -130,8 +126,6 @@ func TestRulerSyncQueue_ShouldNotNotifyChannelMoreFrequentlyThanPollFrequency(t 
 }
 
 func TestRulerSyncQueue_Concurrency(t *testing.T) {
-	util_test.VerifyNoLeak(t)
-
 	const (
 		numWriteWorkers = 10
 		numReadWorkers  = 10

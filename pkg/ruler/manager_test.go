@@ -32,8 +32,6 @@ import (
 )
 
 func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
-	testutil.VerifyNoLeak(t)
-
 	const (
 		user1 = "user-1"
 		user2 = "user-2"
@@ -119,8 +117,6 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 }
 
 func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
-	testutil.VerifyNoLeak(t)
-
 	const (
 		user1 = "user-1"
 		user2 = "user-2"

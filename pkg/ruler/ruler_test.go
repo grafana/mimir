@@ -57,6 +57,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func TestMain(m *testing.M) {
+	util_test.VerifyNoLeakTestMain(m)
+}
+
 func defaultRulerConfig(t testing.TB) Config {
 	t.Helper()
 
@@ -240,8 +244,6 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 var _ MultiTenantManager = &DefaultMultiTenantManager{}
 
 func TestNotifierSendsUserIDHeader(t *testing.T) {
-	util_test.VerifyNoLeak(t)
-
 	var wg sync.WaitGroup
 
 	// We do expect 1 API call for the user create with the getOrCreateNotifier()
@@ -283,8 +285,6 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 }
 
 func TestRuler_Rules(t *testing.T) {
-	util_test.VerifyNoLeak(t)
-
 	testCases := map[string]struct {
 		mockRules map[string]rulespb.RuleGroupList
 		userID    string
@@ -355,8 +355,6 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 }
 
 func TestGetRules(t *testing.T) {
-	util_test.VerifyNoLeak(t)
-
 	// ruler ID -> (user ID -> list of groups).
 	type expectedRulesMap map[string]map[string]rulespb.RuleGroupList
 
@@ -508,8 +506,6 @@ func TestGetRules(t *testing.T) {
 }
 
 func TestSharding(t *testing.T) {
-	util_test.VerifyNoLeak(t)
-
 	const (
 		user1 = "user1"
 		user2 = "user2"
@@ -979,8 +975,6 @@ func TestSharding(t *testing.T) {
 }
 
 func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulers(t *testing.T) {
-	util_test.VerifyNoLeak(t)
-
 	const (
 		numRulers     = 2
 		numRuleGroups = 10
