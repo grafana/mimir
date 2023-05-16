@@ -235,17 +235,17 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 // MultiTenantManager is the interface of interaction with a Manager that is tenant aware.
 type MultiTenantManager interface {
 	// SyncAllRuleGroups is used to sync the Manager with rules from the RuleStore.
-	// If existing user is missing in the ruleGroups map, its ruler manager will be stopped.
-	SyncAllRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList)
+	// If existing user is missing in the ruleGroupsByUser map, its ruler manager will be stopped.
+	SyncAllRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList)
 
 	// SyncPartialRuleGroups syncs the rule groups for the input tenants.
 	//
-	// If a tenant is completely missing from the input ruleGroups map it doesn't mean their
+	// If a tenant is completely missing from the input ruleGroupsByUser map it doesn't mean their
 	// rule groups config don't exist anymore, so they shouldn't be removed from the ruler.
 	//
 	// If a tenant exists in the map but the list of its rule groups is empty, then
 	// it's safe to assume their rules have been removed and the tenant's ruler manager should be stopped.
-	SyncPartialRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList)
+	SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList)
 
 	// GetRules fetches rules for a particular tenant (userID).
 	GetRules(userID string) []*promRules.Group

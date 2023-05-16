@@ -105,34 +105,34 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 
 // SyncAllRuleGroups implements MultiTenantManager.
 // It's not safe to call this function concurrently with SyncAllRuleGroups() or SyncPartialRuleGroups().
-func (r *DefaultMultiTenantManager) SyncAllRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
+func (r *DefaultMultiTenantManager) SyncAllRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
-		removeFederatedRuleGroups(ruleGroups, r.logger)
+		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
 	}
 
-	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroups); err != nil {
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser); err != nil {
 		// We don't log it because the only error we could get here is a context canceled.
 		return
 	}
 
 	// Check for deleted users and remove them.
 	r.removeUsersIf(func(userID string) bool {
-		_, exists := ruleGroups[userID]
+		_, exists := ruleGroupsByUser[userID]
 		return !exists
 	})
 }
 
 // SyncPartialRuleGroups implements MultiTenantManager.
 // It's not safe to call this function concurrently with SyncAllRuleGroups() or SyncPartialRuleGroups().
-func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
+func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
-		removeFederatedRuleGroups(ruleGroups, r.logger)
+		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
 	}
 
 	// Filter out tenants with no rule groups.
-	ruleGroups, removedUsers := filterRuleGroupsByNotEmptyUsers(ruleGroups)
+	ruleGroupsByUser, removedUsers := filterRuleGroupsByNotEmptyUsers(ruleGroupsByUser)
 
-	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroups); err != nil {
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser); err != nil {
 		// We don't log it because the only error we could get here is a context canceled.
 		return
 	}
