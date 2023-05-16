@@ -564,7 +564,7 @@ func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T)
 	protoType := reflect.TypeOf(SampleHistogram{})
 	prometheusType := reflect.TypeOf(model.SampleHistogram{})
 
-	test.RequireSameShape(t, prometheusType, protoType)
+	test.RequireSameShape(t, prometheusType, protoType, false)
 }
 
 // Check that Promtheus Label and MimirPb LabelAdapter types converted
@@ -573,5 +573,5 @@ func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(t *testing.T) {
 	protoType := reflect.TypeOf(LabelAdapter{})
 	prometheusType := reflect.TypeOf(labels.Label{})
 
-	test.RequireSameShape(t, prometheusType, protoType)
+	test.RequireSameShape(t, prometheusType, protoType, false)
 }

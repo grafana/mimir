@@ -81,5 +81,5 @@ func TestFloatHistogramProtobufTypeRemainsInSyncWithPrometheus(t *testing.T) {
 	protoType := reflect.TypeOf(FloatHistogram{})
 	prometheusType := reflect.TypeOf(histogram.FloatHistogram{})
 
-	test.RequireSameShape(t, prometheusType, protoType)
+	test.RequireSameShape(t, prometheusType, protoType, false)
 }
