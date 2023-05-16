@@ -218,6 +218,11 @@ func TestRulerSyncQueueProcessor(t *testing.T) {
 		require.NoError(t, services.StartAndAwaitRunning(ctx, q))
 		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
 
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, q))
+		})
+
 		q.enqueue("user-1", "user-2")
 
 		test.Poll(t, time.Second, [][]string{{"user-1", "user-2"}}, func() interface{} {
@@ -227,8 +232,5 @@ func TestRulerSyncQueueProcessor(t *testing.T) {
 			// Make a shallow copy of the calls slice.
 			return append([][]string{}, calls...)
 		})
-
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, q))
 	})
 }
