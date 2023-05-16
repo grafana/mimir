@@ -223,6 +223,15 @@ func TestFromFPointsToSamples(t *testing.T) {
 	assert.Equal(t, expected, FromFPointsToSamples(input))
 }
 
+// Check that Prometheus FPoint and Mimir Sample types converted
+// into each other with unsafe.Pointer are compatible
+func TestPrometheusFPointInSyncWithMimirPbSample(t *testing.T) {
+	protoType := reflect.TypeOf(Sample{})
+	prometheusType := reflect.TypeOf(promql.FPoint{})
+
+	test.RequireSameShape(t, prometheusType, protoType, true)
+}
+
 func BenchmarkFromFPointsToSamples(b *testing.B) {
 	n := 100
 	input := make([]promql.FPoint, n)

@@ -341,16 +341,9 @@ func fromSpansToSpansProto(s []histogram.Span) []BucketSpan {
 	return spans
 }
 
-// FromFPointsToSamples converts []promql.FPoint to []Sample.
+// FromFPointsToSamples casts []promql.FPoint to []Sample. It uses unsafe.
 func FromFPointsToSamples(points []promql.FPoint) []Sample {
-	samples := make([]Sample, 0, len(points))
-	for _, point := range points {
-		samples = append(samples, Sample{
-			TimestampMs: point.T,
-			Value:       point.F,
-		})
-	}
-	return samples
+	return *(*[]Sample)(unsafe.Pointer(&points))
 }
 
 // FromHPointsToHistograms converts []promql.HPoint to []FloatHistogramPair.
