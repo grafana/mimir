@@ -36,6 +36,9 @@ func newRulerSyncQueue(pollFrequency time.Duration) *rulerSyncQueue {
 }
 
 func (q *rulerSyncQueue) running(ctx context.Context) error {
+	ticker := time.NewTicker(q.pollFrequency)
+	defer ticker.Stop()
+
 	for {
 		q.queueMx.Lock()
 		userIDs := q.queue
@@ -53,7 +56,7 @@ func (q *rulerSyncQueue) running(ctx context.Context) error {
 
 		// Wait.
 		select {
-		case <-time.After(q.pollFrequency):
+		case <-ticker.C:
 		case <-ctx.Done():
 			// We're done.
 			return nil
