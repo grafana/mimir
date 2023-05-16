@@ -171,8 +171,8 @@ message BucketSpan {
 
 message FloatHistogramPair {
 	// Fields order MUST match promql.HPoint so that we can cast types between them.
-  int64 timestamp_ms = 1;
-  FloatHistogram histogram = 2 [(gogoproto.nullable) = true];
+  int64 timestamp_ms = 2;
+  FloatHistogram histogram = 1 [(gogoproto.nullable) = true];
 }
 
 // SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
