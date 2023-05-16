@@ -243,6 +243,29 @@ func (r ReplicationSet) GetAddressesWithout(exclude string) []string {
 	return addrs
 }
 
+// ZoneCount returns the number of unique zones represented by instances within this replication set.
+func (r *ReplicationSet) ZoneCount() int {
+	// Why not use a map here? Using a slice is faster for the small number of zones we expect to typically use.
+	zones := []string{}
+
+	for _, i := range r.Instances {
+		sawZone := false
+
+		for _, z := range zones {
+			if z == i.Zone {
+				sawZone = true
+				break
+			}
+		}
+
+		if !sawZone {
+			zones = append(zones, i.Zone)
+		}
+	}
+
+	return len(zones)
+}
+
 // HasReplicationSetChanged returns true if two replications sets are the same (with possibly different timestamps),
 // false if they differ in any way (number of instances, instance states, tokens, zones, ...).
 func HasReplicationSetChanged(before, after ReplicationSet) bool {
