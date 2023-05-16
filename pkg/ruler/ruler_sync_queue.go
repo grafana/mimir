@@ -23,54 +23,42 @@ type rulerSyncQueue struct {
 
 	pollChan      chan []string
 	pollFrequency time.Duration
-
-	stopped chan struct{}
 }
 
 func newRulerSyncQueue(pollFrequency time.Duration) *rulerSyncQueue {
 	q := &rulerSyncQueue{
 		pollChan:      make(chan []string),
 		pollFrequency: pollFrequency,
-		stopped:       make(chan struct{}, 1),
 	}
 
-	q.Service = services.NewIdleService(q.starting, q.stopping)
+	q.Service = services.NewBasicService(nil, q.running, nil)
 	return q
 }
 
-func (q *rulerSyncQueue) starting(_ context.Context) error {
-	go func() {
-		for {
-			q.queueMx.Lock()
-			userIDs := q.queue
-			q.queue = nil
-			q.queueMx.Unlock()
+func (q *rulerSyncQueue) running(ctx context.Context) error {
+	for {
+		q.queueMx.Lock()
+		userIDs := q.queue
+		q.queue = nil
+		q.queueMx.Unlock()
 
-			if len(userIDs) > 0 {
-				select {
-				case q.pollChan <- userIDs:
-				case <-q.stopped:
-					// We're done.
-					return
-				}
-			}
-
-			// Wait.
+		if len(userIDs) > 0 {
 			select {
-			case <-time.After(q.pollFrequency):
-			case <-q.stopped:
+			case q.pollChan <- userIDs:
+			case <-ctx.Done():
 				// We're done.
-				return
+				return nil
 			}
 		}
-	}()
 
-	return nil
-}
-
-func (q *rulerSyncQueue) stopping(_ error) error {
-	close(q.stopped)
-	return nil
+		// Wait.
+		select {
+		case <-time.After(q.pollFrequency):
+		case <-ctx.Done():
+			// We're done.
+			return nil
+		}
+	}
 }
 
 // enqueue adds to the queue the request to sync rules for the input userID.
