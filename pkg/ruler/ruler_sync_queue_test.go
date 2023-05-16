@@ -24,15 +24,12 @@ func TestRulerSyncQueue_EnqueueAndPoll(t *testing.T) {
 	t.Run("poll() should return the enqueued user IDs", func(t *testing.T) {
 		q := newRulerSyncQueue(100 * time.Millisecond)
 
-		q.enqueue("user-1")
-		q.enqueue("user-2")
-		q.enqueue("user-3")
-
-		// Start after the calls to enqueue() to ensure all user IDs are notified in a single message.
 		require.NoError(t, services.StartAndAwaitRunning(ctx, q))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, q))
 		})
+
+		q.enqueue("user-1", "user-2", "user-3")
 
 		select {
 		case actual := <-q.poll():
@@ -45,10 +42,8 @@ func TestRulerSyncQueue_EnqueueAndPoll(t *testing.T) {
 	t.Run("enqueue() should de-duplicate user IDs", func(t *testing.T) {
 		q := newRulerSyncQueue(100 * time.Millisecond)
 
-		q.enqueue("user-1")
-		q.enqueue("user-2")
-		q.enqueue("user-2")
-		q.enqueue("user-1")
+		q.enqueue("user-1", "user-2")
+		q.enqueue("user-2", "user-1")
 
 		// Start after the calls to enqueue() to ensure all user IDs are notified in a single message.
 		require.NoError(t, services.StartAndAwaitRunning(ctx, q))
@@ -220,12 +215,10 @@ func TestRulerSyncQueueProcessor(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("The processor should call the callback function each time some tenants are polled from the queue", func(t *testing.T) {
-		// Push some users to the queue before starting the processor (this way we get stable tests).
-		q.enqueue("user-1")
-		q.enqueue("user-2")
-
 		require.NoError(t, services.StartAndAwaitRunning(ctx, q))
 		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+
+		q.enqueue("user-1", "user-2")
 
 		test.Poll(t, time.Second, [][]string{{"user-1", "user-2"}}, func() interface{} {
 			callsMx.Lock()

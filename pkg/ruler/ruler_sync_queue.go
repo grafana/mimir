@@ -62,12 +62,14 @@ func (q *rulerSyncQueue) running(ctx context.Context) error {
 }
 
 // enqueue adds to the queue the request to sync rules for the input userID.
-func (q *rulerSyncQueue) enqueue(userID string) {
+func (q *rulerSyncQueue) enqueue(userIDs ...string) {
 	q.queueMx.Lock()
 	defer q.queueMx.Unlock()
 
-	if !slices.Contains(q.queue, userID) {
-		q.queue = append(q.queue, userID)
+	for _, userID := range userIDs {
+		if !slices.Contains(q.queue, userID) {
+			q.queue = append(q.queue, userID)
+		}
 	}
 }
 
