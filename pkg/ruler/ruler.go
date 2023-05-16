@@ -1255,9 +1255,9 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 	}))
 
 	// The call is a fire and forget. If an error occurs, we just log it and move on.
-	// Rules will be synced anyway periodically.
+	// Rules will be synced periodically anyway.
 	if errs.Err() != nil {
-		level.Warn(r.logger).Log("msg", "failed to trigger rules sync on remote rulers upon user config change (the config will be re-synced anyway periodically)", "err", errs.Err())
+		level.Warn(r.logger).Log("msg", "failed to trigger rules sync on remote rulers upon user config change (the config will be re-synced periodically)", "err", errs.Err())
 	}
 }
 
