@@ -243,8 +243,10 @@ type MultiTenantManager interface {
 	// If a tenant is completely missing from the input ruleGroupsByUser map it doesn't mean their
 	// rule groups config don't exist anymore, so they shouldn't be removed from the ruler.
 	//
-	// If a tenant exists in the map but the list of its rule groups is empty, then
-	// it's safe to assume their rules have been removed and the tenant's ruler manager should be stopped.
+	// If a tenant exists in the map then the list of rule groups must be all the rule groups owned
+	// by this tenant manager (not a partial view). If a tenant exists in the map but its list of rule
+	// groups is empty, then it means there are no rule groups owned by this ruler and it's safe to stop
+	// the tenant's ruler manager.
 	SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList)
 
 	// GetRules fetches rules for a particular tenant (userID).
