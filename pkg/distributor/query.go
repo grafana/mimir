@@ -184,7 +184,7 @@ type ingesterQueryResult struct {
 	timeseriesBatches  [][]mimirpb.TimeSeries
 }
 
-// queryIngesterStream queries the ingesters using the new streaming API.
+// queryIngesterStream queries the ingesters using the gRPC streaming API.
 func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest) (*ingester_client.QueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
