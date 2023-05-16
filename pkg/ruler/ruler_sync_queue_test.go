@@ -134,6 +134,74 @@ func TestRulerSyncQueue_ShouldNotNotifyChannelMoreFrequentlyThanPollFrequency(t 
 	assert.LessOrEqual(t, numPolls, 6)
 }
 
+func TestRulerSyncQueue_Concurrency(t *testing.T) {
+	util_test.VerifyNoLeak(t)
+
+	const (
+		numWriteWorkers = 10
+		numReadWorkers  = 10
+		pollFrequency   = 10 * time.Millisecond
+	)
+
+	ctx := context.Background()
+
+	q := newRulerSyncQueue(pollFrequency)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, q))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, q))
+	})
+
+	done := make(chan struct{}, 1)
+	wg := sync.WaitGroup{}
+
+	// Start write workers.
+	wg.Add(numWriteWorkers)
+
+	for i := 0; i < numWriteWorkers; i++ {
+		go func() {
+			defer wg.Done()
+
+			for {
+				select {
+				case <-time.After(pollFrequency / 10):
+					q.enqueue("input")
+				case <-done:
+					return
+				}
+			}
+		}()
+	}
+
+	// Start read workers.
+	wg.Add(numReadWorkers)
+
+	for i := 0; i < numReadWorkers; i++ {
+		go func() {
+			defer wg.Done()
+
+			for {
+				select {
+				case values := <-q.poll():
+					for v := 0; v < len(values); v++ {
+						require.Equal(t, "input", values[v])
+
+						// Manipulate the returned slice so that if there's any race condition
+						// then it will be reported when running tests with -race.
+						values[v] = "updated"
+					}
+				case <-done:
+					return
+				}
+			}
+		}()
+	}
+
+	// Run for some time.
+	time.Sleep(2 * time.Second)
+	close(done)
+	wg.Wait()
+}
+
 func TestRulerSyncQueueProcessor(t *testing.T) {
 	var (
 		callsMx sync.Mutex
