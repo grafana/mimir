@@ -190,10 +190,10 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 4 groups.
+      # Split tests into 6 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3]
-        test_group_total: [4]
+        test_group_id:    [0, 1, 2, 3, 4, 5]
+        test_group_total: [6]
     steps:
       - name: Upgrade golang
         uses: actions/setup-go@v3
