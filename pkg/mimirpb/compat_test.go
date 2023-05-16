@@ -247,11 +247,20 @@ func BenchmarkFromFPointsToSamples(b *testing.B) {
 func TestFromHPointsToHistograms(t *testing.T) {
 	input := []promql.HPoint{{T: 3, H: test.GenerateTestFloatHistogram(0)}, {T: 5, H: test.GenerateTestFloatHistogram(1)}}
 	expected := []FloatHistogramPair{
-		{TimestampMs: 3, Histogram: *FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(0))},
-		{TimestampMs: 5, Histogram: *FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(1))},
+		{TimestampMs: 3, Histogram: FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(0))},
+		{TimestampMs: 5, Histogram: FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(1))},
 	}
 
 	assert.Equal(t, expected, FromHPointsToHistograms(input))
+}
+
+// Check that Prometheus HPoint and Mimir FloatHistogramPair types converted
+// into each other with unsafe.Pointer are compatible
+func TestPrometheusHPointInSyncWithMimirPbFloatHistogramPair(t *testing.T) {
+	protoType := reflect.TypeOf(FloatHistogramPair{})
+	prometheusType := reflect.TypeOf(promql.HPoint{})
+
+	test.RequireSameShape(t, prometheusType, protoType, true)
 }
 
 func BenchmarkFromHPointsToHistograms(b *testing.B) {

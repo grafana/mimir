@@ -336,20 +336,9 @@ func FromFPointsToSamples(points []promql.FPoint) []Sample {
 	return *(*[]Sample)(unsafe.Pointer(&points))
 }
 
-// FromHPointsToHistograms converts []promql.HPoint to []FloatHistogramPair.
+// FromHPointsToHistograms converts []promql.HPoint to []FloatHistogramPair. It uses unsafe.
 func FromHPointsToHistograms(points []promql.HPoint) []FloatHistogramPair {
-	samples := make([]FloatHistogramPair, 0, len(points))
-	for _, point := range points {
-		h := point.H
-		if h == nil {
-			continue
-		}
-		samples = append(samples, FloatHistogramPair{
-			TimestampMs: point.T,
-			Histogram:   *FloatHistogramFromPrometheusModel(point.H),
-		})
-	}
-	return samples
+	return *(*[]FloatHistogramPair)(unsafe.Pointer(&points))
 }
 
 // FromFloatHistogramToPromHistogram converts histogram.FloatHistogram to model.SampleHistogram.

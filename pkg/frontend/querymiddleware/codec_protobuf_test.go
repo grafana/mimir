@@ -236,7 +236,7 @@ var protobufCodecScenarios = []struct {
 				Result: []SampleStream{
 					{
 						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}},
-						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
 			},
@@ -273,7 +273,7 @@ var protobufCodecScenarios = []struct {
 					},
 					{
 						Labels:     []mimirpb.LabelAdapter{{Name: "baz", Value: "blah"}},
-						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
 			},
@@ -499,7 +499,7 @@ var protobufCodecScenarios = []struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric:     []string{"name-1", "value-1", "name-2", "value-2"},
-							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 						},
 					},
 				},
@@ -512,7 +512,7 @@ var protobufCodecScenarios = []struct {
 				Result: []SampleStream{
 					{
 						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
-						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
 			},
@@ -529,7 +529,7 @@ var protobufCodecScenarios = []struct {
 						{
 							Metric:     []string{"name-1", "value-1", "name-2", "value-2"},
 							Samples:    []mimirpb.Sample{{TimestampMs: 1000, Value: 200}},
-							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 						},
 					},
 				},
@@ -543,7 +543,7 @@ var protobufCodecScenarios = []struct {
 					{
 						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
 						Samples:    []mimirpb.Sample{{TimestampMs: 1000, Value: 200}},
-						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
 			},
