@@ -34,8 +34,6 @@
       // Block index-headers are pre-downloaded but lazy mmaped and loaded at query time.
       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
       'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
-
-      'blocks-storage.bucket-store.max-chunk-pool-bytes': 12 * 1024 * 1024 * 1024,
     } +
     $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +

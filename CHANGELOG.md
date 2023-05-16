@@ -10,6 +10,11 @@
 * [CHANGE] Querier: `-querier.query-ingesters-within` has been moved from a global flag to a per-tenant override. #4287
 * [CHANGE] Querier: Use `-blocks-storage.tsdb.retention-period` instead of `-querier.query-ingesters-within` for calculating the lookback period for shuffle sharded ingesters. Setting `-querier.query-ingesters-within=0` no longer disables shuffle sharding on the read path. #4287
 * [CHANGE] Block upload: `/api/v1/upload/block/{block}/files` endpoint now allows file uploads with no `Content-Length`. #4956
+* [CHANGE] Store-gateway: deprecate configuration parameters for chunk pooling, they will be removed in Mimir 2.11. The following options are now also ignored: #4996
+  * `-blocks-storage.bucket-store.max-chunk-pool-bytes`
+  * `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
+  * `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
+* [CHANGE] Store-gateway: remove metrics `cortex_bucket_store_chunk_pool_requested_bytes_total` and `cortex_bucket_store_chunk_pool_returned_bytes_total`. #4996
 * [CHANGE] Compactor: change default of `-compactor.partial-block-deletion-delay` to `1d`. This will automatically clean up partial blocks that were a result of failed block upload or deletion. #5026
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
@@ -54,6 +59,7 @@
 * [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
 * [ENHANCEMENT] Alerts: `MimirIngesterTSDBWALCorrupted` now only fires when there are more than one corrupted WALs in single-zone deployments and when there are more than two zones affected in multi-zone deployments. #4920
 * [ENHANCEMENT] dashboards: fix holes in graph for lightly loaded clusters #4915
+* [ENHANCEMENT] Dashboards: allow configuring additional services for the Rollout Progress dashboard. #5007
 
 ### Jsonnet
 

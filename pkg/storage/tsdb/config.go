@@ -74,10 +74,10 @@ const (
 	BytesPerPostingInAPostingList = 4
 
 	// ChunkPoolDefaultMinBucketSize is the default minimum bucket size (bytes) of the chunk pool.
-	ChunkPoolDefaultMinBucketSize = EstimatedMaxChunkSize
+	ChunkPoolDefaultMinBucketSize = EstimatedMaxChunkSize // Deprecated. TODO: Remove in Mimir 2.11.
 
 	// ChunkPoolDefaultMaxBucketSize is the default maximum bucket size (bytes) of the chunk pool.
-	ChunkPoolDefaultMaxBucketSize = 50e6
+	ChunkPoolDefaultMaxBucketSize = 50e6 // Deprecated. TODO: Remove in Mimir 2.11.
 
 	// DefaultPostingOffsetInMemorySampling represents default value for --store.index-header-posting-offsets-in-mem-sampling.
 	// 32 value is chosen as it's a good balance for common setups. Sampling that is not too large (too many CPU cycles) and
@@ -96,6 +96,10 @@ const (
 	consistencyDelayFlag                      = "blocks-storage.bucket-store.consistency-delay"
 	maxTSDBOpeningConcurrencyOnStartupFlag    = "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup"
 	defaultMaxTSDBOpeningConcurrencyOnStartup = 10
+
+	maxChunksBytesPoolFlag = "blocks-storage.bucket-store.max-chunk-pool-bytes"
+	minBucketSizeBytesFlag = "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes"
+	maxBucketSizeBytesFlag = "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes"
 )
 
 // Validation errors
@@ -345,9 +349,9 @@ type BucketStoreConfig struct {
 	IgnoreBlocksWithin         time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
 	// Chunk pool.
-	MaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes" category:"advanced"`
-	ChunkPoolMinBucketSizeBytes int    `yaml:"chunk_pool_min_bucket_size_bytes" category:"advanced"`
-	ChunkPoolMaxBucketSizeBytes int    `yaml:"chunk_pool_max_bucket_size_bytes" category:"advanced"`
+	DeprecatedMaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes" category:"deprecated"`             // Deprecated. TODO: Remove in Mimir 2.11.
+	DeprecatedChunkPoolMinBucketSizeBytes int    `yaml:"chunk_pool_min_bucket_size_bytes" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.11.
+	DeprecatedChunkPoolMaxBucketSizeBytes int    `yaml:"chunk_pool_max_bucket_size_bytes" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.11.
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
@@ -398,9 +402,9 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) 
 
 	f.StringVar(&cfg.SyncDir, "blocks-storage.bucket-store.sync-dir", "./tsdb-sync/", "Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time.")
 	f.DurationVar(&cfg.SyncInterval, "blocks-storage.bucket-store.sync-interval", 15*time.Minute, "How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction).")
-	f.Uint64Var(&cfg.MaxChunkPoolBytes, "blocks-storage.bucket-store.max-chunk-pool-bytes", uint64(2*units.Gibibyte), "Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit.")
-	f.IntVar(&cfg.ChunkPoolMinBucketSizeBytes, "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes", ChunkPoolDefaultMinBucketSize, "Size - in bytes - of the smallest chunks pool bucket.")
-	f.IntVar(&cfg.ChunkPoolMaxBucketSizeBytes, "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes", ChunkPoolDefaultMaxBucketSize, "Size - in bytes - of the largest chunks pool bucket.")
+	f.Uint64Var(&cfg.DeprecatedMaxChunkPoolBytes, maxChunksBytesPoolFlag, uint64(2*units.Gibibyte), "Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit.")
+	f.IntVar(&cfg.DeprecatedChunkPoolMinBucketSizeBytes, minBucketSizeBytesFlag, ChunkPoolDefaultMinBucketSize, "Size - in bytes - of the smallest chunks pool bucket.")
+	f.IntVar(&cfg.DeprecatedChunkPoolMaxBucketSizeBytes, maxBucketSizeBytesFlag, ChunkPoolDefaultMaxBucketSize, "Size - in bytes - of the largest chunks pool bucket.")
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.bucket-store.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
 	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 100, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 10, "Maximum number of concurrent tenants synching blocks.")
@@ -435,6 +439,15 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	}
 	if cfg.DeprecatedConsistencyDelay > 0 {
 		util.WarnDeprecatedConfig(consistencyDelayFlag, logger)
+	}
+	if cfg.DeprecatedMaxChunkPoolBytes != uint64(2*units.Gibibyte) {
+		util.WarnDeprecatedConfig(maxChunksBytesPoolFlag, logger)
+	}
+	if cfg.DeprecatedChunkPoolMinBucketSizeBytes != ChunkPoolDefaultMinBucketSize {
+		util.WarnDeprecatedConfig(minBucketSizeBytesFlag, logger)
+	}
+	if cfg.DeprecatedChunkPoolMaxBucketSizeBytes != ChunkPoolDefaultMaxBucketSize {
+		util.WarnDeprecatedConfig(maxBucketSizeBytesFlag, logger)
 	}
 	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
 		return errors.New("invalid series-selection-strategy, set one of " + strings.Join(validSeriesSelectionStrategies, ", "))

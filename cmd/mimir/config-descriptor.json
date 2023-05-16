@@ -7057,7 +7057,7 @@
               "fieldDefaultValue": 2147483648,
               "fieldFlag": "blocks-storage.bucket-store.max-chunk-pool-bytes",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7068,7 +7068,7 @@
               "fieldDefaultValue": 16000,
               "fieldFlag": "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7079,7 +7079,7 @@
               "fieldDefaultValue": 50000000,
               "fieldFlag": "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
