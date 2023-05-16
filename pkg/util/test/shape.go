@@ -20,9 +20,9 @@ const ignoredFieldName = "<name ignored>"
 // but we also check the names are the same here to ensure there's no confusion
 // (eg. two bool fields swapped) when ignoreName is false. However, when you
 // know the names are different, you can set ignoreName to true.
-func RequireSameShape(t *testing.T, expectedType reflect.Type, actualType reflect.Type, ignoreName bool) {
-	expectedFormatted := prettyPrintType(expectedType, ignoreName)
-	actualFormatted := prettyPrintType(actualType, ignoreName)
+func RequireSameShape(t *testing.T, expectedType, actualType any, ignoreName bool) {
+	expectedFormatted := prettyPrintType(reflect.TypeOf(expectedType), ignoreName)
+	actualFormatted := prettyPrintType(reflect.TypeOf(actualType), ignoreName)
 
 	require.Equal(t, expectedFormatted, actualFormatted)
 }

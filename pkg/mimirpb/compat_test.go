@@ -8,7 +8,6 @@ package mimirpb
 import (
 	stdlibjson "encoding/json"
 	"math"
-	"reflect"
 	"strconv"
 	"testing"
 	"unsafe"
@@ -226,10 +225,7 @@ func TestFromFPointsToSamples(t *testing.T) {
 // Check that Prometheus FPoint and Mimir Sample types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusFPointInSyncWithMimirPbSample(t *testing.T) {
-	protoType := reflect.TypeOf(Sample{})
-	prometheusType := reflect.TypeOf(promql.FPoint{})
-
-	test.RequireSameShape(t, prometheusType, protoType, true)
+	test.RequireSameShape(t, promql.FPoint{}, Sample{}, true)
 }
 
 func BenchmarkFromFPointsToSamples(b *testing.B) {
@@ -257,10 +253,7 @@ func TestFromHPointsToHistograms(t *testing.T) {
 // Check that Prometheus HPoint and Mimir FloatHistogramPair types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusHPointInSyncWithMimirPbFloatHistogramPair(t *testing.T) {
-	protoType := reflect.TypeOf(FloatHistogramPair{})
-	prometheusType := reflect.TypeOf(promql.HPoint{})
-
-	test.RequireSameShape(t, prometheusType, protoType, true)
+	test.RequireSameShape(t, promql.HPoint{}, FloatHistogramPair{}, true)
 }
 
 func BenchmarkFromHPointsToHistograms(b *testing.B) {
@@ -637,26 +630,17 @@ func TestFromFloatHistogramToPromHistogram(t *testing.T) {
 // Check that Prometheus and Mimir SampleHistogram types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T) {
-	protoType := reflect.TypeOf(SampleHistogram{})
-	prometheusType := reflect.TypeOf(model.SampleHistogram{})
-
-	test.RequireSameShape(t, prometheusType, protoType, false)
+	test.RequireSameShape(t, model.SampleHistogram{}, SampleHistogram{}, false)
 }
 
 // Check that Prometheus Label and MimirPb LabelAdapter types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(t *testing.T) {
-	protoType := reflect.TypeOf(LabelAdapter{})
-	prometheusType := reflect.TypeOf(labels.Label{})
-
-	test.RequireSameShape(t, prometheusType, protoType, false)
+	test.RequireSameShape(t, labels.Label{}, LabelAdapter{}, false)
 }
 
 // Check that Prometheus histogram.Span and MimirPb BucketSpan types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusHistogramSpanInSyncWithMimirPbBucketSpan(t *testing.T) {
-	protoType := reflect.TypeOf(BucketSpan{})
-	prometheusType := reflect.TypeOf(histogram.Span{})
-
-	test.RequireSameShape(t, prometheusType, protoType, false)
+	test.RequireSameShape(t, histogram.Span{}, BucketSpan{}, false)
 }
