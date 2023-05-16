@@ -58,6 +58,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Label names cardinality](#label-names-cardinality)                                   | Querier, Query-frontend        | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names`       |
 | [Label values cardinality](#label-values-cardinality)                                 | Querier, Query-frontend        | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values`      |
 | [Build information](#build-information)                                               | Querier, Query-frontend, Ruler | `GET <prometheus-http-prefix>/api/v1/status/buildinfo`                    |
+| [Format query](#format-query)                                                         | Querier, Query-frontend        | `GET, POST <prometheus-http-prefix>/api/v1/format_query`                  |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats)                             | Querier                        | `GET /api/v1/user_stats`                                                  |
 | [Query-scheduler ring status](#query-scheduler-ring-status)                           | Query-scheduler                | `GET /query-scheduler/ring`                                               |
 | [Ruler ring status](#ruler-ring-status)                                               | Ruler                          | `GET /ruler/ring`                                                         |
@@ -239,6 +240,19 @@ GET <alertmanager-http-prefix>/api/v1/status/buildinfo
 ```
 
 This endpoint returns in JSON format information about the build and enabled features. The format returned is not identical, but is similar to the [Prometheus Build Information endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#build-information).
+
+### Format query
+
+```
+GET <prometheus-http-prefix>/api/v1/format_query?query={query}
+POST <prometheus-http-prefix>/api/v1/format_query
+```
+
+Formats the PromQL query.
+
+This endpoint is compatible with the Prometheus format query endpoint.
+
+For more information about formatting queries, refer to [Prometheus' documentation](https://prometheus.io/docs/prometheus/latest/querying/api/#formatting-query-expressions).
 
 ### Memberlist cluster
 

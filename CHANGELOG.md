@@ -33,6 +33,7 @@
   * `cortex_alertmanager_silences_maintenance_errors_total`
 * [ENHANCEMENT] Add native histogram support for `cortex_request_duration_seconds` metric family. #4987
 * [ENHANCEMENT] Ruler: do not list rule groups in the object storage for disabled tenants. #5004
+* [ENHANCEMENT] Query-frontend and querier: add HTTP API endpoint `<prometheus-http-prefix>/api/v1/format_query` to format a PromQL query. #4373
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
