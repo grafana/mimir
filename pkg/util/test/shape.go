@@ -11,6 +11,8 @@ import (
 	"github.com/xlab/treeprint"
 )
 
+const ignoredFieldName = "<name ignored>"
+
 // We use unsafe casting to convert between some Mimir and Prometheus types
 // For this to be safe, the two types need to have the same shape (same fields
 // in the same order). This function requires that this property is maintained.
@@ -40,7 +42,7 @@ func addTypeToTree(t reflect.Type, tree treeprint.Tree, ignoreName bool) {
 	if t.Kind() == reflect.Pointer {
 		fieldName := t.Name()
 		if ignoreName {
-			fieldName = "name"
+			fieldName = ignoredFieldName
 		}
 		name := fmt.Sprintf("%s: *%s", fieldName, t.Elem().Kind())
 		addTypeToTree(t.Elem(), tree.AddBranch(name), ignoreName)
@@ -55,7 +57,7 @@ func addTypeToTree(t reflect.Type, tree treeprint.Tree, ignoreName bool) {
 		f := t.Field(i)
 		fieldName := f.Name
 		if ignoreName {
-			fieldName = "name"
+			fieldName = ignoredFieldName
 		}
 
 		switch f.Type.Kind() {
