@@ -642,3 +642,12 @@ func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(t *testing.T) {
 
 	test.RequireSameShape(t, prometheusType, protoType, false)
 }
+
+// Check that Prometheus histogram.Span and MimirPb BucketSpan types converted
+// into each other with unsafe.Pointer are compatible
+func TestPrometheusHistogramSpanInSyncWithMimirPbBucketSpan(t *testing.T) {
+	protoType := reflect.TypeOf(BucketSpan{})
+	prometheusType := reflect.TypeOf(histogram.Span{})
+
+	test.RequireSameShape(t, prometheusType, protoType, false)
+}

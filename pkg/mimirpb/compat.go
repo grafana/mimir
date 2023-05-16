@@ -279,12 +279,7 @@ func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
 	if len(s) == 0 {
 		return nil
 	}
-	spans := make([]histogram.Span, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
+	return *(*[]histogram.Span)(unsafe.Pointer(&s))
 }
 
 func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Histogram {
@@ -333,12 +328,7 @@ func fromSpansToSpansProto(s []histogram.Span) []BucketSpan {
 	if len(s) == 0 {
 		return nil
 	}
-	spans := make([]BucketSpan, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
+	return *(*[]BucketSpan)(unsafe.Pointer(&s))
 }
 
 // FromFPointsToSamples casts []promql.FPoint to []Sample. It uses unsafe.
