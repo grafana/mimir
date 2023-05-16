@@ -1918,6 +1918,12 @@ alertmanager_client:
 # notifications.
 # CLI flag: -alertmanager.persist-interval
 [persist_interval: <duration> | default = 15m]
+
+# (advanced) Enables periodic cleanup of alertmanager stateful data
+# (notification logs and silences) from object storage. When enabled, data is
+# removed for any tenant that does not have a configuration.
+# CLI flag: -alertmanager.enable-state-cleanup
+[enable_state_cleanup: <boolean> | default = true]
 ```
 
 ### alertmanager_storage

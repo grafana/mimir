@@ -143,6 +143,8 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to poll Alertmanager configs. (default 15s)
   -alertmanager.enable-api
     	Enable the alertmanager config API. (default true)
+  -alertmanager.enable-state-cleanup
+    	Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration. (default true)
   -alertmanager.max-alerts-count int
     	Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int

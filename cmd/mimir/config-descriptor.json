@@ -11823,6 +11823,17 @@
           "fieldFlag": "alertmanager.persist-interval",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "enable_state_cleanup",
+          "required": false,
+          "desc": "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "alertmanager.enable-state-cleanup",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
