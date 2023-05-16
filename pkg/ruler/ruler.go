@@ -964,7 +964,12 @@ func (r *Ruler) GetRules(ctx context.Context, rulesTypeFilter RulesRequest_RuleT
 
 	// Concurrently fetch rules from all rulers. Since rules are not replicated,
 	// we need all requests to succeed.
-	err = r.forEachRulerInTheRing(ctx, ring, RuleEvalRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient) error {
+	err = r.forEachRulerInTheRing(ctx, ring, RuleEvalRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error {
+		// Fail if we have not been able to get the client for a ruler.
+		if rulerClientErr != nil {
+			return err
+		}
+
 		newGrps, err := rulerClient.Rules(ctx, &RulesRequest{Filter: rulesTypeFilter})
 		if err != nil {
 			return errors.Wrapf(err, "unable to retrieve rules from ruler %s", rulerAddr)
@@ -1243,8 +1248,14 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 	// the client-side gRPC instrumentation fails.
 	ctx = user.InjectOrgID(ctx, "")
 
-	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient) error {
-		_, err := rulerClient.SyncRules(ctx, &SyncRulesRequest{UserIds: userIDs})
+	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error {
+		var err error
+
+		if rulerClientErr != nil {
+			err = rulerClientErr
+		} else {
+			_, err = rulerClient.SyncRules(ctx, &SyncRulesRequest{UserIds: userIDs})
+		}
 
 		errsMx.Lock()
 		errs.Add(err)
@@ -1263,7 +1274,7 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 
 // forEachRulerInTheRing calls f() for each ruler in the ring which is part of the replication set for the input op.
 // The execution breaks on first error returned by f().
-func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, rulerAddr string, rulerClient RulerClient) error) error {
+func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error) error {
 	rulers, err := ring.GetReplicationSetForOperation(op)
 	if err != nil {
 		return err
@@ -1277,9 +1288,9 @@ func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, o
 
 		rulerClient, err := r.clientsPool.GetClientFor(rulerAddr)
 		if err != nil {
-			return errors.Wrapf(err, "unable to get client for ruler %s", rulerAddr)
+			return f(ctx, rulerAddr, nil, errors.Wrapf(err, "unable to get client for ruler %s", rulerAddr))
 		}
 
-		return f(ctx, rulerAddr, rulerClient)
+		return f(ctx, rulerAddr, rulerClient, nil)
 	})
 }
