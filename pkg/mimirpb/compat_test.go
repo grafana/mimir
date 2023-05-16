@@ -229,6 +229,7 @@ func BenchmarkFromFPointsToSamples(b *testing.B) {
 	for i := 0; i < n; i++ {
 		input[i] = promql.FPoint{T: int64(i), F: float64(i)}
 	}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		FromFPointsToSamples(input)
 	}
@@ -250,6 +251,7 @@ func BenchmarkFromHPointsToHistograms(b *testing.B) {
 	for i := 0; i < n; i++ {
 		input[i] = promql.HPoint{T: int64(i), H: test.GenerateTestFloatHistogram(i)}
 	}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		FromHPointsToHistograms(input)
 	}
@@ -477,9 +479,14 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 }
 
 func BenchmarkFromHistogramToHistogramProto(b *testing.B) {
+	n := 100
+	input := make([]*histogram.Histogram, n)
+	for i := 0; i < n; i++ {
+		input[i] = test.GenerateTestHistogram(int(i))
+	}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for i := 0; i < 100; i++ {
-			h := test.GenerateTestHistogram(int(i))
+		for _, h := range input {
 			p := FromHistogramToHistogramProto(int64(i), h)
 			FromHistogramProtoToHistogram(&p)
 		}
@@ -520,9 +527,14 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 }
 
 func BenchmarkFromFloatHistogramToHistogramProto(b *testing.B) {
+	n := 100
+	input := make([]*histogram.FloatHistogram, n)
+	for i := 0; i < n; i++ {
+		input[i] = test.GenerateTestFloatHistogram(int(i))
+	}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for i := 0; i < 100; i++ {
-			h := test.GenerateTestFloatHistogram(int(i))
+		for _, h := range input {
 			p := FromFloatHistogramToHistogramProto(int64(i), h)
 			FromFloatHistogramProtoToFloatHistogram(&p)
 		}
