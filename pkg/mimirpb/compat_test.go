@@ -442,6 +442,8 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 		Timestamp:      ts,
 	}
 	assert.Equal(t, expected, p)
+	h2 := FromHistogramProtoToHistogram(&p)
+	assert.Equal(t, h, h2)
 
 	// Also check via JSON encode/decode
 	promP := remote.HistogramToHistogramProto(ts, h)
@@ -473,6 +475,8 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 		Timestamp:      ts,
 	}
 	assert.Equal(t, expected, p)
+	h2 := FromFloatHistogramProtoToFloatHistogram(&p)
+	assert.Equal(t, h, h2)
 
 	// Also check via JSON encode/decode
 	promP := remote.FloatHistogramToHistogramProto(ts, h)
@@ -567,7 +571,7 @@ func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T)
 	test.RequireSameShape(t, prometheusType, protoType, false)
 }
 
-// Check that Promtheus Label and MimirPb LabelAdapter types converted
+// Check that Prometheus Label and MimirPb LabelAdapter types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(t *testing.T) {
 	protoType := reflect.TypeOf(LabelAdapter{})
