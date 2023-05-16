@@ -65,7 +65,7 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	// after GET is invoked, the expected result is "unset"
 	response1 := httptest.NewRecorder()
 	g.PrepareShutdownHandler(response1, httptest.NewRequest("GET", "/store-gateway/prepare-shutdown", nil))
-	require.Equal(t, "unset", response1.Body.String())
+	require.Equal(t, "unset\n", response1.Body.String())
 	require.Equal(t, 200, response1.Code)
 	exists, err = shutdownmarker.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
@@ -96,7 +96,7 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	// after GET is invoked, the expected result is now "set"
 	response3 := httptest.NewRecorder()
 	g.PrepareShutdownHandler(response3, httptest.NewRequest("GET", "/store-gateway/prepare-shutdown", nil))
-	require.Equal(t, "set", response3.Body.String())
+	require.Equal(t, "set\n", response3.Body.String())
 	require.Equal(t, 200, response3.Code)
 
 	// after DELETE is invoked, the effects of POST get reverted
@@ -125,6 +125,11 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, g))
 	ringDesc = getRingDesc(ctx, t, ringStore)
 	assert.Empty(t, ringDesc.GetIngesters())
+
+	// Once the store-gateway isn't "running", requests to the prepare-shutdown endpoint should fail
+	response6 := httptest.NewRecorder()
+	g.PrepareShutdownHandler(response6, httptest.NewRequest("POST", "/store-gateway/prepare-shutdown", nil))
+	require.Equal(t, 503, response6.Code)
 }
 
 func TestStoreGateway_InitialisePrepareShutdownAtStartup(t *testing.T) {
@@ -150,7 +155,7 @@ func TestStoreGateway_InitialisePrepareShutdownAtStartup(t *testing.T) {
 	// after GET is invoked, the expected result is "set"
 	response1 := httptest.NewRecorder()
 	g.PrepareShutdownHandler(response1, httptest.NewRequest("GET", "/store-gateway/prepare-shutdown", nil))
-	require.Equal(t, "set", response1.Body.String())
+	require.Equal(t, "set\n", response1.Body.String())
 	require.Equal(t, 200, response1.Code)
 
 	// ensure that cortex_storegateway_prepare_shutdown_requested is 1
