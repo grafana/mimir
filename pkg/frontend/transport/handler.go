@@ -323,7 +323,7 @@ func formatQueryString(queryString url.Values) (fields []interface{}) {
 func formatRequestHeaders(h *http.Header, headersToLog string) (fields []interface{}) {
 	for _, s := range strings.Split(headersToLog, ",") {
 		if v := h.Get(s); v != "" {
-			fields = append(fields, fmt.Sprintf("header_%s", s), v)
+			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
 		}
 	}
 	return fields
