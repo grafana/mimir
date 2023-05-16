@@ -171,10 +171,10 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 			return errors.Wrap(err, "populate chunk")
 		}
 		localStats.chunksTouched++
-		// Also account for the crc32 at the end. We ignore it, but the counter for "returned" chunks with fine-grained caching
-		// also includes the size of crc32. By including it we can have a more accurate ratio of touched/returned for small chunks,
-		// where the crc32 is a substantial part of the chunk.
-		localStats.chunksTouchedSizeSum += chunkEncDataLen + crc32.Size
+		// Also account for the crc32 at the end. We ignore the bytes, but the counter for "returned" chunks with fine-grained caching
+		// also includes the size of crc32 and the length varint size encoding. By including it we can have a more accurate ratio of touched/returned for small chunks,
+		// where the crc32 + length varint size are a substantial part of the chunk.
+		localStats.chunksTouchedSizeSum += varint.UvarintSize(chunkDataLen) + chunkEncDataLen + crc32.Size
 	}
 	return nil
 }
