@@ -633,14 +633,16 @@ func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T)
 	test.RequireSameShape(t, model.SampleHistogram{}, SampleHistogram{}, false)
 }
 
-// Check that Prometheus Label and MimirPb LabelAdapter types converted
-// into each other with unsafe.Pointer are compatible
+// Check that Prometheus Label and MimirPb LabelAdapter types
+// are compatible with https://go.dev/ref/spec#Conversions
+// and https://go.dev/ref/spec#Assignability
+// More strict than necessary but is checked in compile time.
 func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(t *testing.T) {
-	test.RequireSameShape(t, labels.Label{}, LabelAdapter{}, false)
+	_ = labels.Label(LabelAdapter{})
 }
 
-// Check that Prometheus histogram.Span and MimirPb BucketSpan types converted
-// into each other with unsafe.Pointer are compatible
+// Check that Prometheus histogram.Span and MimirPb BucketSpan types
+// are compatible, same as above.
 func TestPrometheusHistogramSpanInSyncWithMimirPbBucketSpan(t *testing.T) {
-	test.RequireSameShape(t, histogram.Span{}, BucketSpan{}, false)
+	_ = histogram.Span(BucketSpan{})
 }
