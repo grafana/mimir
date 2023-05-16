@@ -903,7 +903,7 @@ func filterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 	return filtered
 }
 
-// filterRuleGroupsByNotEmptyUsers filters out from the input configs all the tenants that have no rule groups.
+// filterRuleGroupsByNotEmptyUsers filters out all the tenants that have no rule groups.
 // The returned removed map may be nil if no user was removed from the input configs.
 //
 // This function doesn't modify the input configs in place (even if it could) in order to reduce the likelihood of introducing
