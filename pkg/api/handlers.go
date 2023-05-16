@@ -291,6 +291,7 @@ func NewQuerierHandler(
 	seriesQueryStats := usagestats.NewRequestsMiddleware("querier_series_query_requests")
 	metadataQueryStats := usagestats.NewRequestsMiddleware("querier_metadata_query_requests")
 	cardinalityQueryStats := usagestats.NewRequestsMiddleware("querier_cardinality_query_requests")
+	formattingQueryStats := usagestats.NewRequestsMiddleware("querier_formatting_requests")
 
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
@@ -304,6 +305,7 @@ func NewQuerierHandler(
 	router.Path(path.Join(prefix, "/api/v1/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
 	router.Path(path.Join(prefix, "/api/v1/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(prefix, "/api/v1/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
+	router.Path(path.Join(prefix, "/api/v1/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)

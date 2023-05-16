@@ -909,6 +909,9 @@ func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int,
 		return nil
 	}
 
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
 	cached, ok := r.shuffledSubringWithLookbackCache[subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}]
 	if !ok {
 		return nil

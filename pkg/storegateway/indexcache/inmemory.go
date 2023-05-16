@@ -295,21 +295,21 @@ func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l l
 	c.set(cacheKeyPostings{userID, blockID, copyLabel(l)}, v)
 }
 
-// FetchMultiPostings fetches multiple postings - each identified by a label -
-// and returns a map containing cache hits, along with a list of missing keys.
-func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
-	hits = map[labels.Label][]byte{}
+// FetchMultiPostings fetches multiple postings - each identified by a label.
+func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string, blockID ulid.ULID, keys []labels.Label) BytesResult {
+	hits := map[labels.Label][]byte{}
 
 	for _, key := range keys {
 		if b, ok := c.get(cacheKeyPostings{userID, blockID, key}); ok {
 			hits[key] = b
 			continue
 		}
-
-		misses = append(misses, key)
 	}
 
-	return hits, misses
+	return &MapIterator[labels.Label]{
+		Keys: keys,
+		M:    hits,
+	}
 }
 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v,
