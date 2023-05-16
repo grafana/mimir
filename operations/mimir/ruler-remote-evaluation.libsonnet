@@ -35,8 +35,11 @@
   ruler_querier_container::
     $.newQuerierContainer('ruler-querier', $.ruler_querier_args),
 
+  // Don't allow all ruler-queriers to be unavailable.
+  local querier_max_unavailable = std.min(1, if ($._config.autoscaling_ruler_querier_enabled) then $._config.autoscaling_ruler_querier_min_replicas - 1 else $._config.querier.replicas - 1),
+
   ruler_querier_deployment: if !$._config.ruler_remote_evaluation_enabled then {} else
-    $.newQuerierDeployment('ruler-querier', $.ruler_querier_container),
+    $.newQuerierDeployment('ruler-querier', $.ruler_querier_container, querier_max_unavailable),
 
   ruler_querier_service: if !$._config.ruler_remote_evaluation_enabled then {} else
     $.util.serviceFor($.ruler_querier_deployment, $._config.service_ignored_labels),
@@ -55,8 +58,11 @@
   ruler_query_frontend_container::
     $.newQueryFrontendContainer('ruler-query-frontend', $.ruler_query_frontend_args),
 
+  // Don't allow all ruler-query-frontends to be unavailable.
+  local query_frontend_max_unavailable = std.min(1, if ($._config.autoscaling_ruler_query_frontend_enabled) then $._config.autoscaling_ruler_query_frontend_min_replicas - 1 else $._config.queryFrontend.replicas - 1),
+
   ruler_query_frontend_deployment: if !$._config.ruler_remote_evaluation_enabled then {} else
-    $.newQueryFrontendDeployment('ruler-query-frontend', $.ruler_query_frontend_container),
+    $.newQueryFrontendDeployment('ruler-query-frontend', $.ruler_query_frontend_container, query_frontend_max_unavailable),
 
   ruler_query_frontend_service: if !$._config.ruler_remote_evaluation_enabled then {} else
     $.util.serviceFor($.ruler_query_frontend_deployment, $._config.service_ignored_labels) +

@@ -33,16 +33,19 @@
 
   local deployment = $.apps.v1.deployment,
 
-  newQueryFrontendDeployment(name, container)::
+  newQueryFrontendDeployment(name, container, max_unavailable)::
     deployment.new(name, 2, [container]) +
     $.mimirVolumeMounts +
     $.newMimirSpreadTopology(name, $._config.query_frontend_topology_spread_max_skew) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(max_unavailable),
+
+  // Don't allow all query-frontends to be unavailable.
+  local max_unavailable = std.min(1, if ($._config.autoscaling_query_frontend_enabled) then $._config.autoscaling_query_frontend_min_replicas - 1 else $._config.queryFrontend.replicas - 1),
 
   query_frontend_deployment: if !$._config.is_microservices_deployment_mode then null else
-    self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container),
+    self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, max_unavailable),
 
   query_frontend_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels),

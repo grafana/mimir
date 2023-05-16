@@ -43,13 +43,17 @@
 
   local deployment = $.apps.v1.deployment,
 
+  // Don't allow all distributors to be unavailable.
+  local replica_count = 3,
+  local max_unavailable = std.min(1, if ($._config.autoscaling_distributor_enabled) then $._config.autoscaling_distributor_min_replicas - 1 else replica_count - 1),
+
   distributor_deployment: if !$._config.is_microservices_deployment_mode then null else
-    deployment.new('distributor', 3, [$.distributor_container]) +
+    deployment.new('distributor', replica_count, [$.distributor_container]) +
     $.newMimirSpreadTopology('distributor', $._config.distributor_topology_spread_max_skew) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(max_unavailable),
 
   local service = $.core.v1.service,
 

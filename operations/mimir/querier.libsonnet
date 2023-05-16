@@ -51,16 +51,19 @@
 
   local deployment = $.apps.v1.deployment,
 
-  newQuerierDeployment(name, container)::
+  newQuerierDeployment(name, container, max_unavailable)::
     deployment.new(name, 6, [container]) +
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(max_unavailable),
+
+  // Don't allow all queriers to be unavailable.
+  local max_unavailable = std.min(1, if ($._config.autoscaling_querier_enabled) then $._config.autoscaling_querier_min_replicas - 1 else $._config.querier.replicas - 1),
 
   querier_deployment: if !$._config.is_microservices_deployment_mode then null else
-    self.newQuerierDeployment('querier', $.querier_container),
+    self.newQuerierDeployment('querier', $.querier_container, max_unavailable),
 
   local service = $.core.v1.service,
 
