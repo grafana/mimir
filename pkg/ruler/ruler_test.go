@@ -1027,15 +1027,17 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulers(t *test
 
 	// Pre-condition check: each ruler should have an updated view over the ring.
 	for _, reg := range regs {
-		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ring_members Number of members in the ring
-			# TYPE cortex_ring_members gauge
-			cortex_ring_members{name="ruler",state="ACTIVE"} 2
-			cortex_ring_members{name="ruler",state="JOINING"} 0
-			cortex_ring_members{name="ruler",state="LEAVING"} 0
-			cortex_ring_members{name="ruler",state="PENDING"} 0
-			cortex_ring_members{name="ruler",state="Unhealthy"} 0
-		`), "cortex_ring_members"))
+		test.Poll(t, time.Second, nil, func() interface{} {
+			return prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_ring_members Number of members in the ring
+				# TYPE cortex_ring_members gauge
+				cortex_ring_members{name="ruler",state="ACTIVE"} 2
+				cortex_ring_members{name="ruler",state="JOINING"} 0
+				cortex_ring_members{name="ruler",state="LEAVING"} 0
+				cortex_ring_members{name="ruler",state="PENDING"} 0
+				cortex_ring_members{name="ruler",state="Unhealthy"} 0
+			`), "cortex_ring_members")
+		})
 	}
 
 	// Create some rule groups in the storage.
