@@ -43,7 +43,7 @@ func (q *rulerSyncQueue) starting(_ context.Context) error {
 		for {
 			q.queueMx.Lock()
 			userIDs := q.queue
-			q.queue = q.queue[:0]
+			q.queue = nil
 			q.queueMx.Unlock()
 
 			if len(userIDs) > 0 {
