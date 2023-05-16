@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/services"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -19,7 +18,7 @@ type rulerSyncQueue struct {
 	services.Service
 
 	queueMx sync.Mutex
-	queue   []string
+	queue   map[string]struct{}
 
 	pollChan      chan []string
 	pollFrequency time.Duration
@@ -29,6 +28,7 @@ func newRulerSyncQueue(pollFrequency time.Duration) *rulerSyncQueue {
 	q := &rulerSyncQueue{
 		pollChan:      make(chan []string),
 		pollFrequency: pollFrequency,
+		queue:         map[string]struct{}{},
 	}
 
 	q.Service = services.NewBasicService(nil, q.running, nil)
@@ -41,8 +41,11 @@ func (q *rulerSyncQueue) running(ctx context.Context) error {
 
 	for {
 		q.queueMx.Lock()
-		userIDs := q.queue
-		q.queue = nil
+		userIDs := make([]string, 0, len(q.queue))
+		for userID := range q.queue {
+			userIDs = append(userIDs, userID)
+			delete(q.queue, userID)
+		}
 		q.queueMx.Unlock()
 
 		if len(userIDs) > 0 {
@@ -70,8 +73,8 @@ func (q *rulerSyncQueue) enqueue(userIDs ...string) {
 	defer q.queueMx.Unlock()
 
 	for _, userID := range userIDs {
-		if !slices.Contains(q.queue, userID) {
-			q.queue = append(q.queue, userID)
+		if _, ok := q.queue[userID]; !ok {
+			q.queue[userID] = struct{}{}
 		}
 	}
 }
