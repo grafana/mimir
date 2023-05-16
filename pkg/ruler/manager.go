@@ -103,9 +103,9 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 	}, nil
 }
 
-// SyncAllRuleGroups implements MultiTenantManager.
-// It's not safe to call this function concurrently with SyncAllRuleGroups() or SyncPartialRuleGroups().
-func (r *DefaultMultiTenantManager) SyncAllRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+// SyncFullRuleGroups implements MultiTenantManager.
+// It's not safe to call this function concurrently with SyncFullRuleGroups() or SyncPartialRuleGroups().
+func (r *DefaultMultiTenantManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
 		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
 	}
@@ -123,7 +123,7 @@ func (r *DefaultMultiTenantManager) SyncAllRuleGroups(ctx context.Context, ruleG
 }
 
 // SyncPartialRuleGroups implements MultiTenantManager.
-// It's not safe to call this function concurrently with SyncAllRuleGroups() or SyncPartialRuleGroups().
+// It's not safe to call this function concurrently with SyncFullRuleGroups() or SyncPartialRuleGroups().
 func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
 		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)

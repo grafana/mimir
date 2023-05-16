@@ -31,7 +31,7 @@ import (
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
-func TestDefaultMultiTenantManager_SyncAllRuleGroups(t *testing.T) {
+func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 	testutil.VerifyNoLeak(t)
 
 	const (
@@ -50,7 +50,7 @@ func TestDefaultMultiTenantManager_SyncAllRuleGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	// Initialise the manager with some rules and start it.
-	m.SyncAllRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 		user1: {user1Group1},
 		user2: {user2Group1},
 	})
@@ -62,8 +62,8 @@ func TestDefaultMultiTenantManager_SyncAllRuleGroups(t *testing.T) {
 	assertRuleGroupsMappedOnDisk(t, m, user1, rulespb.RuleGroupList{user1Group1})
 	assertRuleGroupsMappedOnDisk(t, m, user2, rulespb.RuleGroupList{user2Group1})
 
-	t.Run("calling SyncAllRuleGroups() with an empty map stops all managers", func(t *testing.T) {
-		m.SyncAllRuleGroups(ctx, nil)
+	t.Run("calling SyncFullRuleGroups() with an empty map stops all managers", func(t *testing.T) {
+		m.SyncFullRuleGroups(ctx, nil)
 
 		// Ensure the ruler manager has been stopped for all users.
 		assertManagerMockStopped(t, initialUser1Manager)
@@ -79,8 +79,8 @@ func TestDefaultMultiTenantManager_SyncAllRuleGroups(t *testing.T) {
 		assert.Equal(t, 0.0, promtest.ToFloat64(m.managersTotal))
 	})
 
-	t.Run("calling SyncAllRuleGroups() with the previous config restores the managers", func(t *testing.T) {
-		m.SyncAllRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+	t.Run("calling SyncFullRuleGroups() with the previous config restores the managers", func(t *testing.T) {
+		m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 			user1: {user1Group1},
 			user2: {user2Group1},
 		})
@@ -139,7 +139,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 	t.Cleanup(m.Stop)
 
 	// Initialise the manager with some rules and start it.
-	m.SyncAllRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 		user1: {user1Group1},
 		user2: {user2Group1},
 	})

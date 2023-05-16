@@ -84,11 +84,11 @@ func TestRuler_TenantFederationFlag(t *testing.T) {
 			cfg.TenantFederation.Enabled = tc.tenantFederationEnabled
 			existingRules := map[string]rulespb.RuleGroupList{userID: tc.existingRules}
 
-			t.Run("SyncAllRuleGroups()", func(t *testing.T) {
+			t.Run("SyncFullRuleGroups()", func(t *testing.T) {
 				r := prepareRulerManager(t, cfg)
 				t.Cleanup(r.Stop)
 
-				r.SyncAllRuleGroups(context.Background(), existingRules)
+				r.SyncFullRuleGroups(context.Background(), existingRules)
 				r.Start()
 
 				require.ElementsMatch(t, tc.expectedRunningGroupsNames, getLoadedRuleGroupNames(r))
