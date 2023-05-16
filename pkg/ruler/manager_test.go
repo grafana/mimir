@@ -210,6 +210,67 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 	})
 }
 
+func TestFilterRuleGroupsByNotEmptyUsers(t *testing.T) {
+	tests := map[string]struct {
+		configs         map[string]rulespb.RuleGroupList
+		expectedConfigs map[string]rulespb.RuleGroupList
+		expectedRemoved map[string]struct{}
+	}{
+		"should return an empty map on empty input": {
+			configs:         nil,
+			expectedConfigs: nil,
+		},
+		"should return the input map on no empty users": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+				},
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+			},
+			expectedConfigs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+				},
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+			},
+		},
+		"should remove users with no rule groups from the input map": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {},
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+				"user-3": {},
+			},
+			expectedConfigs: map[string]rulespb.RuleGroupList{
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+			},
+			expectedRemoved: map[string]struct{}{
+				"user-1": {},
+				"user-3": {},
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			actualConfigs, actualRemoved := filterRuleGroupsByNotEmptyUsers(testData.configs)
+			assert.Equal(t, testData.expectedConfigs, actualConfigs)
+			assert.Equal(t, testData.expectedRemoved, actualRemoved)
+		})
+	}
+}
+
 func getManager(m *DefaultMultiTenantManager, user string) RulesManager {
 	m.userManagerMtx.RLock()
 	defer m.userManagerMtx.RUnlock()

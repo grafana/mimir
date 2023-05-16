@@ -427,3 +427,39 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []err
 
 	return errs
 }
+
+// filterRuleGroupsByNotEmptyUsers filters out all the tenants that have no rule groups.
+// The returned removed map may be nil if no user was removed from the input configs.
+//
+// This function doesn't modify the input configs in place (even if it could) in order to reduce the likelihood of introducing
+// future bugs, in case the rule groups will be cached in memory.
+func filterRuleGroupsByNotEmptyUsers(configs map[string]rulespb.RuleGroupList) (filtered map[string]rulespb.RuleGroupList, removed map[string]struct{}) {
+	// Find tenants to remove.
+	for userID, ruleGroups := range configs {
+		if len(ruleGroups) > 0 {
+			continue
+		}
+
+		// Ensure the map is initialised.
+		if removed == nil {
+			removed = make(map[string]struct{})
+		}
+
+		removed[userID] = struct{}{}
+	}
+
+	// Nothing to do if there are no users to remove.
+	if len(removed) == 0 {
+		return configs, removed
+	}
+
+	// Filter out tenants to remove.
+	filtered = make(map[string]rulespb.RuleGroupList, len(configs)-len(removed))
+	for userID, ruleGroups := range configs {
+		if _, isRemoved := removed[userID]; !isRemoved {
+			filtered[userID] = ruleGroups
+		}
+	}
+
+	return filtered, removed
+}
