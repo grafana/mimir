@@ -36,7 +36,7 @@ func TestConcreteSeriesSet(t *testing.T) {
 		labels:     labels.FromStrings("foo", "bay"),
 		histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(5, generateTestHistogram(6))},
 	}
-	c := NewConcreteSeriesSet([]storage.Series{series3, series2, series1})
+	c := NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{series3, series2, series1})
 	require.True(t, c.Next())
 	require.Equal(t, series1, c.At())
 	require.True(t, c.Next())
