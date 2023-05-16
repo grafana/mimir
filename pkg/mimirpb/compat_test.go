@@ -223,6 +223,17 @@ func TestFromFPointsToSamples(t *testing.T) {
 	assert.Equal(t, expected, FromFPointsToSamples(input))
 }
 
+func BenchmarkFromFPointsToSamples(b *testing.B) {
+	n := 100
+	input := make([]promql.FPoint, n)
+	for i := 0; i < n; i++ {
+		input[i] = promql.FPoint{T: int64(i), F: float64(i)}
+	}
+	for i := 0; i < b.N; i++ {
+		FromFPointsToSamples(input)
+	}
+}
+
 func TestFromHPointsToHistograms(t *testing.T) {
 	input := []promql.HPoint{{T: 3, H: test.GenerateTestFloatHistogram(0)}, {T: 5, H: test.GenerateTestFloatHistogram(1)}}
 	expected := []FloatHistogramPair{
@@ -231,6 +242,17 @@ func TestFromHPointsToHistograms(t *testing.T) {
 	}
 
 	assert.Equal(t, expected, FromHPointsToHistograms(input))
+}
+
+func BenchmarkFromHPointsToHistograms(b *testing.B) {
+	n := 100
+	input := make([]promql.HPoint, n)
+	for i := 0; i < n; i++ {
+		input[i] = promql.HPoint{T: int64(i), H: test.GenerateTestFloatHistogram(i)}
+	}
+	for i := 0; i < b.N; i++ {
+		FromHPointsToHistograms(input)
+	}
 }
 
 func TestPreallocatingMetric(t *testing.T) {
@@ -454,6 +476,16 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 	assert.Equal(t, expected, p2)
 }
 
+func BenchmarkFromHistogramToHistogramProto(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		for i := 0; i < 100; i++ {
+			h := test.GenerateTestHistogram(int(i))
+			p := FromHistogramToHistogramProto(int64(i), h)
+			FromHistogramProtoToHistogram(&p)
+		}
+	}
+}
+
 func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	var ts int64 = 1
 	h := test.GenerateTestFloatHistogram(int(ts))
@@ -485,6 +517,16 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	p2 := Histogram{}
 	assert.NoError(t, p2.Unmarshal(d))
 	assert.Equal(t, expected, p2)
+}
+
+func BenchmarkFromFloatHistogramToHistogramProto(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		for i := 0; i < 100; i++ {
+			h := test.GenerateTestFloatHistogram(int(i))
+			p := FromFloatHistogramToHistogramProto(int64(i), h)
+			FromFloatHistogramProtoToFloatHistogram(&p)
+		}
+	}
 }
 
 func TestFromFloatHistogramToPromHistogram(t *testing.T) {
