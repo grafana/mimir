@@ -211,7 +211,7 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 		}),
 		loadRuleGroups: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ruler_load_rule_groups_seconds",
-			Help:    "Time spent loading from the object storage the rule groups owned by this ruler. This metric tracks the timing of both full and partial sync.",
+			Help:    "Time spent loading the rule groups owned by this ruler from the object storage. This metric tracks the timing of both full and partial sync.",
 			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 15, 30},
 		}),
 		ringCheckErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
