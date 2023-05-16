@@ -11828,7 +11828,7 @@
           "kind": "field",
           "name": "enable_state_cleanup",
           "required": false,
-          "desc": "Enables periodic cleanup of alertmanager state from object storage. When enabled, state is removed for any tenant which does not have a configuration.",
+          "desc": "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.",
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "alertmanager.enable-state-cleanup",
