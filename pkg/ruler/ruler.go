@@ -1234,14 +1234,21 @@ func (r *Ruler) NotifySyncRulesAsync(userID string) {
 // - This function doesn't wait for the sync to be started or completed on the remove ruler instance.
 // - This function doesn't return any error but just logs failures.
 func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
+	var (
+		errsMx = sync.Mutex{}
+		errs   = multierror.MultiError{}
+	)
+
 	// We need to inject a fake tenant (even if the gRPC endpoint doesn't need it) otherwise
 	// the client-side gRPC instrumentation fails.
 	ctx = user.InjectOrgID(ctx, "")
 
-	errs := multierror.MultiError{}
 	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient) error {
 		_, err := rulerClient.SyncRules(ctx, &SyncRulesRequest{UserIds: userIDs})
+
+		errsMx.Lock()
 		errs.Add(err)
+		errsMx.Unlock()
 
 		// Never return error because we don't want to prevent other rulers to be notified.
 		return nil
