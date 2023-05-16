@@ -1056,7 +1056,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulers(t *test
 	// Call NotifySyncRulesAsync() on 1 ruler.
 	rulers[0].NotifySyncRulesAsync("user-1")
 
-	// Wait until rules syncing triggered on both rulers (with reason "config change").
+	// Wait until rules syncing triggered on both rulers (with reason "API change").
 	for _, reg := range regs {
 		verifySyncRulesMetric(t, reg, 1, 1)
 	}
@@ -1072,7 +1072,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulers(t *test
 	}
 
 	// Post-condition check: there should have been no other rules syncing other than the initial one
-	// and the one driven by the config change.
+	// and the one driven by the API.
 	for _, reg := range regs {
 		verifySyncRulesMetric(t, reg, 1, 1)
 	}
@@ -1114,7 +1114,7 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 	require.Len(t, obj.Objects(), 3)
 
 	// Configure ruler with an high poll interval so that it will just sync
-	// once explicitly triggered by the config change.
+	// once explicitly triggered by the change via API.
 	cfg := defaultRulerConfig(t)
 	cfg.PollInterval = time.Hour
 	cfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
@@ -1216,7 +1216,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 	})
 }
 
-func verifySyncRulesMetric(t *testing.T, reg prometheus.Gatherer, initialCount, configChangeCount int) {
+func verifySyncRulesMetric(t *testing.T, reg prometheus.Gatherer, initialCount, apiChangeCount int) {
 	t.Helper()
 
 	test.Poll(t, time.Second, nil, func() interface{} {
@@ -1224,10 +1224,10 @@ func verifySyncRulesMetric(t *testing.T, reg prometheus.Gatherer, initialCount, 
 			# HELP cortex_ruler_sync_rules_total Total number of times the ruler sync operation triggered.
 			# TYPE cortex_ruler_sync_rules_total counter
 			cortex_ruler_sync_rules_total{reason="initial"} %d
-			cortex_ruler_sync_rules_total{reason="config-change"} %d
+			cortex_ruler_sync_rules_total{reason="api-change"} %d
 			cortex_ruler_sync_rules_total{reason="periodic"} 0
 			cortex_ruler_sync_rules_total{reason="ring-change"} 0
-		`, initialCount, configChangeCount)), "cortex_ruler_sync_rules_total")
+		`, initialCount, apiChangeCount)), "cortex_ruler_sync_rules_total")
 	})
 }
 

@@ -692,7 +692,7 @@ rules:
 
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
-			// Configure the ruler to only sync the rules based on notifications upon config changes.
+			// Configure the ruler to only sync the rules based on notifications upon API changes.
 			rulerCfg := tt.cfg
 			rulerCfg.PollInterval = time.Hour
 			rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
@@ -733,7 +733,7 @@ rules:
 }
 
 func TestAPI_DeleteNamespace(t *testing.T) {
-	// Configure the ruler to only sync the rules based on notifications upon config changes.
+	// Configure the ruler to only sync the rules based on notifications upon API changes.
 	cfg := defaultRulerConfig(t)
 	cfg.PollInterval = time.Hour
 	cfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
@@ -801,7 +801,7 @@ func TestAPI_DeleteNamespace(t *testing.T) {
 func TestAPI_DeleteRuleGroup(t *testing.T) {
 	const userID = "user-1"
 
-	// Configure the ruler to only sync the rules based on notifications upon config changes.
+	// Configure the ruler to only sync the rules based on notifications upon API changes.
 	cfg := defaultRulerConfig(t)
 	cfg.PollInterval = time.Hour
 	cfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond

@@ -60,10 +60,10 @@ const (
 	loadRulesConcurrency  = 10
 	fetchRulesConcurrency = 16
 
-	rulerSyncReasonInitial      rulesSyncReason = "initial"
-	rulerSyncReasonPeriodic     rulesSyncReason = "periodic"
-	rulerSyncReasonRingChange   rulesSyncReason = "ring-change"
-	rulerSyncReasonConfigChange rulesSyncReason = "config-change"
+	rulerSyncReasonInitial    rulesSyncReason = "initial"
+	rulerSyncReasonPeriodic   rulesSyncReason = "periodic"
+	rulerSyncReasonRingChange rulesSyncReason = "ring-change"
+	rulerSyncReasonAPIChange  rulesSyncReason = "api-change"
 
 	// rulerPeriodicSyncJitter is the jitter applied to the interval used by the periodic sync.
 	rulerPeriodicSyncJitter = 0.1
@@ -81,7 +81,7 @@ var (
 		rulerSyncReasonInitial,
 		rulerSyncReasonPeriodic,
 		rulerSyncReasonRingChange,
-		rulerSyncReasonConfigChange,
+		rulerSyncReasonAPIChange,
 	}
 )
 
@@ -518,7 +518,7 @@ func (r *Ruler) run(ctx context.Context) error {
 			}
 		case userIDs := <-r.inboundSyncQueue.poll():
 			// Sync rules for users who changed their configs.
-			r.syncRules(ctx, userIDs, rulerSyncReasonConfigChange, false)
+			r.syncRules(ctx, userIDs, rulerSyncReasonAPIChange, false)
 		case err := <-r.subservicesWatcher.Chan():
 			return errors.Wrap(err, "ruler subservice failed")
 		}
