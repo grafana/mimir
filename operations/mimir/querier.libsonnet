@@ -60,7 +60,11 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(max_unavailable),
 
   // Don't allow all queriers to be unavailable.
-  local max_unavailable = std.min(1, if ($._config.autoscaling_querier_enabled) then $._config.autoscaling_querier_min_replicas - 1 else $._config.querier.replicas - 1),
+  local max_unavailable =
+    if $._config.autoscaling_querier_enabled then
+      if $._config.autoscaling_querier_min_replicas <= 1 then 0 else 1
+    else
+      if $._config.querier.replicas <= 1 then 0 else 1,
 
   querier_deployment: if !$._config.is_microservices_deployment_mode then null else
     self.newQuerierDeployment('querier', $.querier_container, max_unavailable),

@@ -42,7 +42,11 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(max_unavailable),
 
   // Don't allow all query-frontends to be unavailable.
-  local max_unavailable = std.min(1, if ($._config.autoscaling_query_frontend_enabled) then $._config.autoscaling_query_frontend_min_replicas - 1 else $._config.queryFrontend.replicas - 1),
+  local max_unavailable =
+    if $._config.autoscaling_query_frontend_enabled then
+      if $._config.autoscaling_query_frontend_min_replicas <= 1 then 0 else 1
+    else
+      if $._config.queryFrontend.replicas <= 1 then 0 else 1,
 
   query_frontend_deployment: if !$._config.is_microservices_deployment_mode then null else
     self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, max_unavailable),
