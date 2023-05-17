@@ -73,9 +73,7 @@ func (q *rulerSyncQueue) enqueue(userIDs ...string) {
 	defer q.queueMx.Unlock()
 
 	for _, userID := range userIDs {
-		if _, ok := q.queue[userID]; !ok {
-			q.queue[userID] = struct{}{}
-		}
+		q.queue[userID] = struct{}{}
 	}
 }
 

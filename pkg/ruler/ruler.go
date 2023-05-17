@@ -1186,7 +1186,7 @@ func (r *Ruler) ListAllRules(w http.ResponseWriter, req *http.Request) {
 	<-done
 }
 
-// NotifySyncRulesAsync enqueue a request to notify other rulers to reload the configuration
+// NotifySyncRulesAsync enqueue a request to notify this and other rulers to reload the configuration
 // for a given user. This function returns immediately and the request will be executed asynchronously.
 //
 // This function MUST be exported to let GEM call it too.
