@@ -34,8 +34,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
-const FetcherConcurrency = 32
-
 // FetcherMetrics holds metrics tracked by the metadata fetcher. This struct and its fields are exported
 // to allow depending projects (eg. Cortex) to implement their own custom metadata fetcher while tracking
 // compatible metrics.
