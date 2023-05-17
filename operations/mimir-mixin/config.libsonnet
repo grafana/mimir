@@ -637,5 +637,8 @@
 
     // Used to inject rows into dashboards at specific places that support it.
     injectRows: {},
+
+    // Used to add additional services to dashboards that support it.
+    extraServiceNames: [],
   },
 }

@@ -88,8 +88,6 @@ func TestMimir(t *testing.T) {
 				},
 			},
 			BucketStore: tsdb.BucketStoreConfig{
-				ChunkPoolMinBucketSizeBytes: tsdb.ChunkPoolDefaultMinBucketSize,
-				ChunkPoolMaxBucketSizeBytes: tsdb.ChunkPoolDefaultMaxBucketSize,
 				IndexCache: tsdb.IndexCacheConfig{
 					BackendConfig: cache.BackendConfig{
 						Backend: tsdb.IndexCacheBackendInMemory,

@@ -1923,6 +1923,12 @@ alertmanager_client:
 # notifications.
 # CLI flag: -alertmanager.persist-interval
 [persist_interval: <duration> | default = 15m]
+
+# (advanced) Enables periodic cleanup of alertmanager stateful data
+# (notification logs and silences) from object storage. When enabled, data is
+# removed for any tenant that does not have a configuration.
+# CLI flag: -alertmanager.enable-state-cleanup
+[enable_state_cleanup: <boolean> | default = true]
 ```
 
 ### alertmanager_storage
@@ -2854,7 +2860,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to
 # disable.
 # CLI flag: -compactor.partial-block-deletion-delay
-[compactor_partial_block_deletion_delay: <duration> | default = 0s]
+[compactor_partial_block_deletion_delay: <duration> | default = 1d]
 
 # Enable block upload API for the tenant.
 # CLI flag: -compactor.block-upload-enabled
@@ -3204,16 +3210,16 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
   [ignore_blocks_within: <duration> | default = 10h]
 
-  # (advanced) Max size - in bytes - of a chunks pool, used to reduce memory
+  # (deprecated) Max size - in bytes - of a chunks pool, used to reduce memory
   # allocations. The pool is shared across all tenants. 0 to disable the limit.
   # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
   [max_chunk_pool_bytes: <int> | default = 2147483648]
 
-  # (advanced) Size - in bytes - of the smallest chunks pool bucket.
+  # (deprecated) Size - in bytes - of the smallest chunks pool bucket.
   # CLI flag: -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes
   [chunk_pool_min_bucket_size_bytes: <int> | default = 16000]
 
-  # (advanced) Size - in bytes - of the largest chunks pool bucket.
+  # (deprecated) Size - in bytes - of the largest chunks pool bucket.
   # CLI flag: -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes
   [chunk_pool_max_bucket_size_bytes: <int> | default = 50000000]
 
