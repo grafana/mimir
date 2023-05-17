@@ -139,7 +139,6 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels, modifiedExt
 
 type MetadataFetcher interface {
 	Fetch(ctx context.Context) (metas map[ulid.ULID]*metadata.Meta, partial map[ulid.ULID]error, err error)
-	UpdateOnChange(func([]metadata.Meta, error))
 }
 
 // GaugeVec hides something like a Prometheus GaugeVec or an extprom.TxGaugeVec.
