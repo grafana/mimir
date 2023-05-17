@@ -1667,20 +1667,20 @@ func (i *Ingester) queryStreamStreaming(ctx context.Context, db *userTSDB, from,
 	// The querier must remain open until we've finished streaming chunks.
 	defer q.Close()
 
-	allIterators, err := i.sendStreamingQuerySeries(q, from, through, matchers, shard, stream)
+	allSeries, err := i.sendStreamingQuerySeries(q, from, through, matchers, shard, stream)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	numSamples, err = i.sendStreamingQueryChunks(allIterators, stream, batchSize)
+	numSamples, err = i.sendStreamingQueryChunks(allSeries, stream, batchSize)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	return len(allIterators), numSamples, nil
+	return len(allSeries), numSamples, nil
 }
 
-func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) ([]chunks.Iterator, error) {
+func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) ([]storage.ChunkSeries, error) {
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	hints := initSelectHints(from, through)
@@ -1697,7 +1697,7 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 	// which we want to avoid, as that would increase memory consumption. We also don't need series' labels outside
 	// this method.
 	// TODO: pool slice?
-	var allIterators []chunks.Iterator
+	var allSeries []storage.ChunkSeries
 	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize) // TODO: use a different value for queryStreamBatchSize?
 
 	// TODO: enforce limits on number of series? Or is this enforced elsewhere already?
@@ -1705,7 +1705,7 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 		series := ss.At()
 
 		// TODO: pool iterators?
-		allIterators = append(allIterators, series.Iterator(nil))
+		allSeries = append(allSeries, series)
 
 		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
 			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
@@ -1737,19 +1737,22 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 		return nil, err
 	}
 
-	return allIterators, nil
+	return allSeries, nil
 }
 
-func (i *Ingester) sendStreamingQueryChunks(allIterators []chunks.Iterator, stream client.Ingester_QueryStreamServer, batchSize uint64) (int, error) {
+func (i *Ingester) sendStreamingQueryChunks(allSeries []storage.ChunkSeries, stream client.Ingester_QueryStreamServer, batchSize uint64) (int, error) {
 	numSamples := 0
 
 	seriesInBatch := make([]client.QueryStreamSeriesChunks, 0, batchSize)
 	batchSizeBytes := 0
 
-	for seriesIdx, it := range allIterators {
+	var it chunks.Iterator
+	for seriesIdx, series := range allSeries {
 		seriesChunks := client.QueryStreamSeriesChunks{
 			SeriesIndex: uint64(seriesIdx),
 		}
+
+		it = series.Iterator(it)
 
 		for it.Next() {
 			meta := it.At()
