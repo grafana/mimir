@@ -136,15 +136,10 @@ func (s *symbolsReader) Read(o uint32) (sym string, err error) {
 		if int(o) >= s.seen {
 			return "", fmt.Errorf("unknown symbol offset %d", o)
 		}
-		targetOffsetIdx := o / symbolFactor
-		if targetOffsetIdx > 1+s.at/symbolFactor {
-			s.at = targetOffsetIdx
-			d.ResetAt(s.offsets[int(targetOffsetIdx)])
-		} else {
-			for i := o - s.at; i > 0; i-- {
-				d.SkipUvarintBytes()
-				s.at++
-			}
+		d.ResetAt(s.offsets[int(o/symbolFactor)])
+		// Walk until we find the one we want.
+		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
+			d.SkipUvarintBytes()
 		}
 	} else {
 		// In v1, o is relative to the beginning of the whole index header file, so we

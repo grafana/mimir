@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore/tracing"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -1137,7 +1136,7 @@ func (s *symbolsLoadingIterator) symbolize(symbolizedSet seriesChunkRefsRefsSet)
 	for sym := range symbols {
 		allSymbols = append(allSymbols, sym)
 	}
-	slices.Sort(allSymbols)
+	//slices.Sort(allSymbols)
 
 	symReader := s.indexr.indexHeaderReader.SymbolsReader()
 	defer symReader.Close()
