@@ -242,20 +242,6 @@
             message: '%(product)s bucket index for tenant {{ $labels.user }} in %(alert_aggregation_variables)s has not been updated since {{ $value | humanizeDuration }}.' % $._config,
           },
         },
-        {
-          // Alert if a we consistently find partial blocks for a given tenant over a relatively large time range.
-          alert: $.alertName('TenantHasPartialBlocks'),
-          'for': '6h',
-          expr: |||
-            max by(%(alert_aggregation_labels)s, user) (cortex_bucket_blocks_partials_count) > 0
-          ||| % $._config,
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: '%(product)s tenant {{ $labels.user }} in %(alert_aggregation_variables)s has {{ $value }} partial blocks.' % $._config,
-          },
-        },
       ],
     },
   ],
