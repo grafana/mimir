@@ -1098,7 +1098,7 @@ func (s *symbolsLoadingIterator) Next() bool {
 		return false
 	}
 	set := s.from.At()
-	if len(set.series) > 128 {
+	if len(set.series) > 256 {
 		s.current, s.err = s.symbolize(set)
 	} else {
 		s.current, s.err = s.naiveSymbolize(set)
