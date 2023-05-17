@@ -890,9 +890,10 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
-	nextSet := newSeriesChunkRefsRefsSet(len(nextPostings), true)
+	nextSet := newSeriesChunkRefsRefsSet(len(nextPostings), true) // TODO dimitarvdimitrov rename var
 	lsetPool := pool.NewSlabPool[symbolizedLabel](symbolizedLabelsSetPool, 1024)
 	nextSet.releaser = lsetPool
+	defer nextSet.release() // TODO dimitarvdimitrov add comment
 	for pIdx, id := range nextPostings {
 		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats, lsetPool)
 		if err != nil {
@@ -920,8 +921,12 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		})
 	}
 
-	var symbolizedSet seriesChunkRefsSet
+	if len(nextSet.series) == 0 {
+		// Try with the next set of postings.
+		return s.Next()
+	}
 
+	var symbolizedSet seriesChunkRefsSet
 	if len(nextSet.series) > 256 {
 		// This approach comes with some overhead in data structures.
 		// It starts making more sense with more repeated
@@ -929,7 +934,6 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	} else {
 		symbolizedSet, s.err = s.naiveSymbolize(nextSet)
 	}
-	nextSet.release()
 
 	skipped, writeIdx := 0, 0
 	for pIdx, id := range nextPostings {
@@ -944,14 +948,6 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	symbolizedSet.series = symbolizedSet.series[:writeIdx]
-
-	if len(symbolizedSet.series) == 0 {
-		// The next set we attempted to build is empty, so we can directly release it.
-		symbolizedSet.release()
-
-		// Try with the next set of postings.
-		return s.Next()
-	}
 
 	s.currentSet = symbolizedSet
 	if s.skipChunks && cachedSeriesID.isSet() {
