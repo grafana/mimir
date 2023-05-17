@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
 func TestRulerSyncQueue_EnqueueAndPoll(t *testing.T) {
@@ -30,7 +31,7 @@ func TestRulerSyncQueue_EnqueueAndPoll(t *testing.T) {
 
 		select {
 		case actual := <-q.poll():
-			require.Equal(t, []string{"user-1", "user-2", "user-3"}, actual)
+			require.ElementsMatch(t, []string{"user-1", "user-2", "user-3"}, actual)
 		case <-time.After(time.Second):
 			require.Fail(t, "no message received on the channel returned by poll()")
 		}
@@ -50,7 +51,7 @@ func TestRulerSyncQueue_EnqueueAndPoll(t *testing.T) {
 
 		select {
 		case actual := <-q.poll():
-			require.Equal(t, []string{"user-1", "user-2"}, actual)
+			require.ElementsMatch(t, []string{"user-1", "user-2"}, actual)
 		case <-time.After(time.Second):
 			require.Fail(t, "no message received on the channel returned by poll()")
 		}
@@ -223,8 +224,13 @@ func TestRulerSyncQueueProcessor(t *testing.T) {
 			callsMx.Lock()
 			defer callsMx.Unlock()
 
-			// Make a shallow copy of the calls slice.
-			return append([][]string{}, calls...)
+			// Make a shallow copy of the calls slice, and sort it to get stable tests.
+			callsCopy := append([][]string{}, calls...)
+			for i := range callsCopy {
+				slices.Sort(callsCopy[i])
+			}
+
+			return callsCopy
 		})
 	})
 }
