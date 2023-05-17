@@ -24,6 +24,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 
 ## Endpoints
 
+{{% responsive-table %}}
 | API                                                                                   | Service                        | Endpoint                                                                  |
 | ------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
 | [Index page](#index-page)                                                             | _All services_                 | `GET /`                                                                   |
@@ -93,6 +94,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Tenant delete request](#tenant-delete-request)                                       | Compactor                      | `POST /compactor/delete_tenant`                                           |
 | [Tenant delete status](#tenant-delete-status)                                         | Compactor                      | `GET /compactor/delete_tenant_status`                                     |
 | [Overrides-exporter ring status](#overrides-exporter-ring-status)                     | Overrides-exporter             | `GET /overrides-exporter/ring`                                            |
+{{% /responsive-table %}}
 
 ### Path prefixes
 
