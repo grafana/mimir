@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore/tracing"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -1120,8 +1121,31 @@ func (s *symbolsLoadingIterator) Next() bool {
 }
 
 func (s *symbolsLoadingIterator) singlePassSymbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
+	// Some conservative map pre-allocation; the goal is to get an order of magnitude size of the map, so we minimize map growth.
+	symbols := make(map[uint32]string, len(symbolizedSet.series)/2)
+
+	for _, series := range symbolizedSet.series {
+		for _, symID := range series.lset {
+			symbols[symID.value] = ""
+			symbols[symID.name] = ""
+		}
+	}
+
+	allSymbols := make([]uint32, 0, len(symbols))
+	for sym := range symbols {
+		allSymbols = append(allSymbols, sym)
+	}
+	slices.Sort(allSymbols)
+
 	symReader := s.indexr.indexHeaderReader.SymbolsReader()
 	defer symReader.Close()
+	var err error
+	for _, sym := range allSymbols {
+		symbols[sym], err = symReader.Read(sym)
+		if err != nil {
+			return seriesChunkRefsSet{}, err
+		}
+	}
 
 	set := newSeriesChunkRefsSet(len(symbolizedSet.series), symbolizedSet.releasable)
 
@@ -1129,16 +1153,7 @@ func (s *symbolsLoadingIterator) singlePassSymbolize(symbolizedSet seriesChunkRe
 	for _, series := range symbolizedSet.series {
 		labelsBuilder.Reset()
 		for _, symID := range series.lset {
-			lName, err := symReader.Read(symID.name)
-			if err != nil {
-				return set, err
-			}
-			lVal, err := symReader.Read(symID.value)
-			if err != nil {
-				return set, err
-			}
-
-			labelsBuilder.Add(lName, lVal)
+			labelsBuilder.Add(symbols[symID.name], symbols[symID.value])
 		}
 
 		set.series = append(set.series, seriesChunkRefs{
