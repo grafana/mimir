@@ -1109,7 +1109,7 @@ func (s *symbolsLoadingIterator) Next() bool {
 		return false
 	}
 	set := s.from.At()
-	if len(set.series) > 256 {
+	if len(set.series) > 1 {
 		// This approach comes with some overhead in data structures.
 		// It starts making more sense with more repeated
 		s.current, s.err = s.singlePassSymbolize(set)
