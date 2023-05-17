@@ -327,6 +327,7 @@ app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 {{- if .component }}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
+{{- end -}}
 {{- if .rolloutZoneName }}
 {{-   if not .component }}
 {{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
