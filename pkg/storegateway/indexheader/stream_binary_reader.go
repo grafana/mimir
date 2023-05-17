@@ -8,6 +8,7 @@ package indexheader
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"sync"
 	"time"
@@ -220,6 +221,15 @@ func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 	r.valueSymbolsMx.Unlock()
 
 	return s, nil
+}
+
+type SymbolsReader interface {
+	io.Closer
+	Read(uint32) (string, error)
+}
+
+func (r *StreamBinaryReader) SymbolsReader() SymbolsReader {
+	return r.symbols.Reader()
 }
 
 func (r *StreamBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {

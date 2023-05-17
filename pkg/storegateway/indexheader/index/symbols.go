@@ -100,6 +100,59 @@ func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 	return sym, nil
 }
 
+func (s *Symbols) Reader() *symbolsReader {
+	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
+	return &symbolsReader{
+		d:           &d,
+		version:     s.version,
+		tableOffset: s.tableOffset,
+		offsets:     s.offsets,
+		seen:        s.seen,
+	}
+}
+
+type symbolsReader struct {
+	d           *streamencoding.Decbuf
+	version     int
+	tableOffset int
+
+	offsets []int
+	seen    int
+}
+
+func (s *symbolsReader) Close() error {
+	return s.d.Close()
+}
+
+func (s *symbolsReader) Read(o uint32) (sym string, err error) {
+	d := s.d
+	if err := d.Err(); err != nil {
+		return "", err
+	}
+
+	if s.version == index.FormatV2 {
+		if int(o) >= s.seen {
+			return "", fmt.Errorf("unknown symbol offset %d", o)
+		}
+		d.ResetAt(s.offsets[int(o/symbolFactor)])
+		// Walk until we find the one we want.
+		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
+			d.SkipUvarintBytes()
+		}
+	} else {
+		// In v1, o is relative to the beginning of the whole index header file, so we
+		// need to adjust for the fact our view into the file starts at the beginning
+		// of the symbol table.
+		offsetInTable := int(o) - s.tableOffset
+		d.ResetAt(offsetInTable)
+	}
+	sym = d.UvarintStr()
+	if d.Err() != nil {
+		return "", d.Err()
+	}
+	return sym, nil
+}
+
 func (s *Symbols) ReverseLookup(sym string) (o uint32, err error) {
 	if len(s.offsets) == 0 {
 		return 0, fmt.Errorf("unknown symbol %q - no symbols", sym)

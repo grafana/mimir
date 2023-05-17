@@ -48,9 +48,10 @@ type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, []*
 // bucketIndexReader is a custom index reader (not conforming index.Reader interface) that reads index that is stored in
 // object storage without having to fully download it.
 type bucketIndexReader struct {
-	block            *bucketBlock
-	postingsStrategy postingsSelectionStrategy
-	dec              *index.Decoder
+	block             *bucketBlock
+	postingsStrategy  postingsSelectionStrategy
+	dec               *index.Decoder
+	indexHeaderReader indexheader.Reader
 }
 
 func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
@@ -60,6 +61,7 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 		dec: &index.Decoder{
 			LookupSymbol: block.indexHeaderReader.LookupSymbol,
 		},
+		indexHeaderReader: block.indexHeaderReader,
 	}
 	return r
 }

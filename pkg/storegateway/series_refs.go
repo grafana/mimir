@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
+	"github.com/google/btree"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -71,6 +72,19 @@ type seriesChunkRefsSet struct {
 
 	// releasable holds whether the series slice (but not its content) can be released to a memory pool.
 	releasable bool
+}
+
+type seriesChunkRefsRefsSet struct {
+	// series sorted by labels.
+	series []seriesChunkRefsRefs
+
+	// releasable holds whether the series slice (but not its content) can be released to a memory pool.
+	releasable bool
+}
+
+type seriesChunkRefsRefs struct {
+	lset         []symbolizedLabel
+	chunksRanges []seriesChunkRefsRange
 }
 
 // newSeriesChunkRefsSet creates a new seriesChunkRefsSet with the given capacity.
@@ -679,7 +693,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	chunkMetasBuffer     []chunks.Meta
 
 	err        error
-	currentSet seriesChunkRefsSet
+	currentSet seriesChunkRefsRefsSet
 }
 
 func openBlockSeriesChunkRefsSetsIterator(
@@ -707,8 +721,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
-	var iterator seriesChunkRefsSetIterator
-	iterator = newLoadingSeriesChunkRefsSetIterator(
+	refsIterator := newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(ps, batchSize),
 		indexr,
@@ -724,6 +737,8 @@ func openBlockSeriesChunkRefsSetsIterator(
 		chunkRangesPerSeries,
 		logger,
 	)
+	var iterator seriesChunkRefsSetIterator
+	iterator = newSymbolsLoadingIterator(refsIterator, indexr)
 	if len(pendingMatchers) > 0 {
 		iterator = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, iterator, stats)
 	}
@@ -801,10 +816,11 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
 		} else {
-			if cachedSet, isCached := fetchCachedSeriesForPostings(ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
-				s.currentSet = cachedSet
-				return true
-			}
+			// TODO dimitarvdimitrov move the caching into its own iterator when skipChunks==true
+			//if cachedSet, isCached := fetchCachedSeriesForPostings(ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
+			//s.currentSet = cachedSet
+			//return true
+			//}
 		}
 	}
 
@@ -830,16 +846,17 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
-	nextSet := newSeriesChunkRefsSet(len(nextPostings), true)
-	var builder labels.ScratchBuilder
-
+	nextSet := seriesChunkRefsRefsSet{
+		series:     make([]seriesChunkRefsRefs, 0, len(nextPostings)),
+		releasable: true,
+	}
 	for _, id := range nextPostings {
-		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats, &builder)
+		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats)
 		if err != nil {
 			s.err = errors.Wrap(err, "read series")
 			return false
 		}
-		if lset.Len() == 0 {
+		if len(lset) == 0 {
 			// An empty label set means the series had no chunks in this block, so we skip it.
 			continue
 		}
@@ -852,27 +869,28 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 				continue
 			}
 		}
-		if !shardOwned(s.shard, s.seriesHasher, id, lset, loadStats) {
+		if !shardOwned(s.shard, s.seriesHasher, id, loadStats) {
 			continue
 		}
-		nextSet.series = append(nextSet.series, seriesChunkRefs{
+		nextSet.series = append(nextSet.series, seriesChunkRefsRefs{
 			lset:         lset,
 			chunksRanges: ranges,
 		})
 	}
 
-	if nextSet.len() == 0 {
+	if len(nextSet.series) == 0 {
 		// The next set we attempted to build is empty, so we can directly release it.
-		nextSet.release()
+		//nextSet.release() // TODO dimitarvdimitrov
 
 		// Try with the next set of postings.
 		return s.Next()
 	}
 
 	s.currentSet = nextSet
-	if s.skipChunks && cachedSeriesID.isSet() {
-		storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
-	}
+	// TODO dimitarvdimitrov move the caching into its own iterator when skipChunks==true
+	//if s.skipChunks && cachedSeriesID.isSet() {
+	//	storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
+	//}
 	return true
 }
 
@@ -882,7 +900,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 // clampLastChunkLength assumes that the chunks are sorted by their refs
 // (currently this is equivalent to also being sorted by their minTime) and that all series belong to the same block.
 // clampLastChunkLength is a noop if metas or series is empty.
-func clampLastChunkLength(series []seriesChunkRefs, nextSeriesChunkMetas []chunks.Meta) {
+func clampLastChunkLength(series []seriesChunkRefsRefs, nextSeriesChunkMetas []chunks.Meta) {
 	if len(series) == 0 || len(nextSeriesChunkMetas) == 0 {
 		return
 	}
@@ -1016,7 +1034,7 @@ func nextChunkRef(metas [][]chunks.Meta, gIdx int, cIdx int) (chunks.ChunkRef, b
 	return metas[gIdx+1][0].Ref, true
 }
 
-func (s *loadingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+func (s *loadingSeriesChunkRefsSetIterator) At() seriesChunkRefsRefsSet {
 	return s.currentSet
 }
 
@@ -1025,18 +1043,108 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 }
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
-func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, builder *labels.ScratchBuilder) (labels.Labels, []chunks.Meta, error) {
-	ok, err := loadedSeries.unsafeLoadSeries(ref, &s.symbolizedLsetBuffer, &s.chunkMetasBuffer, s.skipChunks, stats)
+func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats) ([]symbolizedLabel, []chunks.Meta, error) {
+	lbls := make([]symbolizedLabel, 0)
+	ok, err := loadedSeries.unsafeLoadSeries(ref, &lbls, &s.chunkMetasBuffer, s.skipChunks, stats)
 	if !ok || err != nil {
-		return labels.EmptyLabels(), nil, errors.Wrap(err, "loadSeries")
+		return nil, nil, errors.Wrap(err, "loadSeries")
 	}
 
-	lset, err := s.indexr.LookupLabelsSymbols(s.symbolizedLsetBuffer, builder)
+	return lbls, s.chunkMetasBuffer, nil
+}
+
+type symbolsLoadingIterator struct {
+	from    genericIterator[seriesChunkRefsRefsSet]
+	current seriesChunkRefsSet
+	err     error
+	indexr  *bucketIndexReader
+}
+
+func (s *symbolsLoadingIterator) Next() bool {
+	if !s.from.Next() {
+		return false
+	}
+	set := s.from.At()
+	s.current, s.err = s.symbolize(set)
+	return true
+}
+
+type symbol struct {
+	s   uint32
+	str string
+}
+
+func (s *symbol) Less(than btree.Item) bool {
+	otherSymbol, isSymbol := than.(*symbol)
+	if !isSymbol {
+		panic("other is not a *symbol")
+	}
+	return s.s < otherSymbol.s
+}
+
+func (s *symbolsLoadingIterator) symbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
+	set := newSeriesChunkRefsSet(len(symbolizedSet.series), symbolizedSet.releasable)
+	// TODO dimitarvdimitrov release symbolizedSet
+	tree := btree.New(2)
+
+	for _, series := range symbolizedSet.series {
+		for _, symID := range series.lset {
+			tree.ReplaceOrInsert(&symbol{s: symID.name})
+			tree.ReplaceOrInsert(&symbol{s: symID.value})
+		}
+	}
+
+	var err error
+	symReader := s.indexr.indexHeaderReader.SymbolsReader()
+	defer symReader.Close()
+
+	tree.Ascend(func(i btree.Item) bool {
+		sym := i.(*symbol)
+		sym.str, err = symReader.Read(sym.s)
+		return err == nil
+	})
 	if err != nil {
-		return labels.EmptyLabels(), nil, errors.Wrap(err, "lookup labels symbols")
+		return seriesChunkRefsSet{}, errors.Wrap(err, "reading symbols")
 	}
 
-	return lset, s.chunkMetasBuffer, nil
+	searchSym := &symbol{}
+	labelsBuilder := labels.NewScratchBuilder(16)
+	var lName, lVal string
+	for _, series := range symbolizedSet.series {
+		labelsBuilder.Reset()
+		for _, symID := range series.lset {
+			searchSym.s = symID.name
+			lName = tree.Get(searchSym).(*symbol).str
+			searchSym.s = symID.value
+			lVal = tree.Get(searchSym).(*symbol).str
+			labelsBuilder.Add(lName, lVal)
+		}
+
+		set.series = append(set.series, seriesChunkRefs{
+			lset:         labelsBuilder.Labels(),
+			chunksRanges: series.chunksRanges,
+		})
+	}
+
+	return set, nil
+}
+
+func (s *symbolsLoadingIterator) At() seriesChunkRefsSet {
+	return s.current
+}
+
+func (s *symbolsLoadingIterator) Err() error {
+	if s.err != nil {
+		return s.err
+	}
+	return s.from.Err()
+}
+
+func newSymbolsLoadingIterator(iterator genericIterator[seriesChunkRefsRefsSet], indexr *bucketIndexReader) seriesChunkRefsSetIterator {
+	return &symbolsLoadingIterator{
+		from:   iterator,
+		indexr: indexr,
+	}
 }
 
 type filteringSeriesChunkRefsSetIterator struct {
@@ -1215,13 +1323,13 @@ func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats
 	return hash
 }
 
-func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, lset labels.Labels, stats *queryStats) bool {
+func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, stats *queryStats) bool {
 	if shard == nil {
 		return true
 	}
-	hash := hasher.Hash(id, lset, stats)
+	hash, ok := hasher.CachedHash(id, stats)
 
-	return hash%shard.ShardCount == shard.ShardIndex
+	return !ok || hash%shard.ShardCount == shard.ShardIndex
 }
 
 // postingsSetsIterator splits the provided postings into sets, while retaining their original order.
