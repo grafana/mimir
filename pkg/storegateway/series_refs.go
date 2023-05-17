@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore/tracing"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -703,10 +704,10 @@ func openBlockSeriesChunkRefsSetsIterator(
 	indexr *bucketIndexReader, // Index reader for block.
 	indexCache indexcache.IndexCache,
 	blockMeta *metadata.Meta,
-	matchers []*labels.Matcher, // Series matchers.
+	matchers []*labels.Matcher,    // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHasher seriesHasher,
-	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
+	skipChunks bool,        // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	chunkRangesPerSeries int,
 	stats *safeQueryStats,
@@ -1090,43 +1091,39 @@ var freeLists = &sync.Pool{New: func() any { return btree.NewFreeList(1024) }}
 
 func (s *symbolsLoadingIterator) symbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
 	// TODO dimitarvdimitrov release symbolizedSet
-	freeList := freeLists.Get().(*btree.FreeList)
-	defer freeLists.Put(freeList)
-	tree := btree.NewWithFreeList(2, freeList)
-	defer tree.Clear(true)
+	symbols := map[uint32]string{}
+
 	//btree.NewFreeList()
 	for _, series := range symbolizedSet.series {
 		for _, symID := range series.lset {
-			tree.ReplaceOrInsert(&symbol{s: symID.name})
-			tree.ReplaceOrInsert(&symbol{s: symID.value})
+			symbols[symID.value] = ""
+			symbols[symID.name] = ""
 		}
 	}
 
-	var err error
+	allSymbols := make([]uint32, 0, len(symbols))
+	for sym := range symbols {
+		allSymbols = append(allSymbols, sym)
+	}
+	slices.Sort(allSymbols)
+
 	symReader := s.indexr.indexHeaderReader.SymbolsReader()
 	defer symReader.Close()
-
-	tree.Ascend(func(i btree.Item) bool {
-		sym := i.(*symbol)
-		sym.str, err = symReader.Read(sym.s)
-		return err == nil
-	})
-	if err != nil {
-		return seriesChunkRefsSet{}, errors.Wrap(err, "reading symbols")
+	var err error
+	for _, sym := range allSymbols {
+		symbols[sym], err = symReader.Read(sym)
+		if err != nil {
+			return seriesChunkRefsSet{}, err
+		}
 	}
+
 	set := newSeriesChunkRefsSet(len(symbolizedSet.series), symbolizedSet.releasable)
 
-	searchSym := &symbol{}
 	labelsBuilder := labels.NewScratchBuilder(16)
-	var lName, lVal string
 	for _, series := range symbolizedSet.series {
 		labelsBuilder.Reset()
 		for _, symID := range series.lset {
-			searchSym.s = symID.name
-			lName = tree.Get(searchSym).(*symbol).str
-			searchSym.s = symID.value
-			lVal = tree.Get(searchSym).(*symbol).str
-			labelsBuilder.Add(lName, lVal)
+			labelsBuilder.Add(symbols[symID.name], symbols[symID.value])
 		}
 
 		set.series = append(set.series, seriesChunkRefs{
