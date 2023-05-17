@@ -488,8 +488,6 @@ type MetaFetcher struct {
 
 	filters []MetadataFilter
 
-	listener func([]metadata.Meta, error)
-
 	logger log.Logger
 }
 
@@ -498,20 +496,7 @@ type MetaFetcher struct {
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
 func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*metadata.Meta, partial map[ulid.ULID]error, err error) {
-	metas, partial, err = f.wrapped.fetch(ctx, f.metrics, f.filters)
-	if f.listener != nil {
-		blocks := make([]metadata.Meta, 0, len(metas))
-		for _, meta := range metas {
-			blocks = append(blocks, *meta)
-		}
-		f.listener(blocks, err)
-	}
-	return metas, partial, err
-}
-
-// UpdateOnChange allows to add listener that will be update on every change.
-func (f *MetaFetcher) UpdateOnChange(listener func([]metadata.Meta, error)) {
-	f.listener = listener
+	return f.wrapped.fetch(ctx, f.metrics, f.filters)
 }
 
 // Special label that will have an ULID of the meta.json being referenced to.
