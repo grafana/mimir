@@ -29,6 +29,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/server"
@@ -101,6 +102,7 @@ type Config struct {
 	NoAuthTenant                    string                 `yaml:"no_auth_tenant" category:"advanced"`
 	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"experimental"`
 	MaxSeparateMetricsGroupsPerUser int                    `yaml:"max_separate_metrics_groups_per_user" category:"experimental"`
+	EnableGoRuntimeMetrics          bool                   `yaml:"enable_go_runtime_metrics" category:"advanced"`
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
@@ -155,6 +157,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
+	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -705,6 +708,15 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			fmt.Println("Error encoding config:", err)
 		}
 		os.Exit(0)
+	}
+
+	if cfg.EnableGoRuntimeMetrics {
+		// unregister default Go collector
+		reg.Unregister(collectors.NewGoCollector())
+		// register Go collector with all available runtime metrics
+		reg.MustRegister(collectors.NewGoCollector(
+			collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
+		))
 	}
 
 	// Swap out the default resolver to support multiple tenant IDs separated by a '|'

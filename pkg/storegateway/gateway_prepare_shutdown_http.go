@@ -6,11 +6,11 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 
-	"github.com/grafana/mimir/pkg/util/shutdownmarker"
-
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 )
 
 // PrepareShutdownHandler possibly changes the configuration of the store-gateway in such a way
@@ -24,8 +24,14 @@ import (
 // * `POST` enables this configuration
 // * `DELETE` disables this configuration
 func (g *StoreGateway) PrepareShutdownHandler(w http.ResponseWriter, req *http.Request) {
-	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
+	// Don't allow callers to change the shutdown configuration while we're in the middle
+	// of starting or shutting down.
+	if g.State() != services.Running {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
 
+	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 	switch req.Method {
 	case http.MethodGet:
 		exists, err := shutdownmarker.Exists(shutdownMarkerPath)
@@ -36,9 +42,9 @@ func (g *StoreGateway) PrepareShutdownHandler(w http.ResponseWriter, req *http.R
 		}
 
 		if exists {
-			util.WriteTextResponse(w, "set")
+			util.WriteTextResponse(w, "set\n")
 		} else {
-			util.WriteTextResponse(w, "unset")
+			util.WriteTextResponse(w, "unset\n")
 		}
 	case http.MethodPost:
 		if err := shutdownmarker.Create(shutdownMarkerPath); err != nil {
@@ -95,4 +101,13 @@ func (g *StoreGateway) setPrepareShutdownFromShutdownMarker() error {
 	}
 
 	return nil
+}
+
+// unsetPrepareShutdownMarker is executed when the store-gateway successfully shuts down and removes the
+// shutdown marker if it is present. It does not modify configuration in any way.
+func (g *StoreGateway) unsetPrepareShutdownMarker() {
+	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
+	if err := shutdownmarker.Remove(shutdownMarkerPath); err != nil {
+		level.Warn(g.logger).Log("msg", "failed to remove shutdown marker", "path", shutdownMarkerPath, "err", err)
+	}
 }

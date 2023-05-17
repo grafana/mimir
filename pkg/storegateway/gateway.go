@@ -288,8 +288,12 @@ func (g *StoreGateway) running(ctx context.Context) error {
 
 func (g *StoreGateway) stopping(_ error) error {
 	if g.subservices != nil {
-		return services.StopManagerAndAwaitStopped(context.Background(), g.subservices)
+		if err := services.StopManagerAndAwaitStopped(context.Background(), g.subservices); err != nil {
+			level.Warn(g.logger).Log("msg", "failed to stop store-gateway subservices", "err", err)
+		}
 	}
+
+	g.unsetPrepareShutdownMarker()
 	return nil
 }
 

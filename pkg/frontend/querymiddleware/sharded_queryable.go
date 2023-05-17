@@ -281,7 +281,7 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples, histograms))
 		}
 	}
-	return series.NewConcreteSeriesSet(set)
+	return series.NewConcreteSeriesSetFromUnsortedSeries(set)
 }
 
 // responseToSamples is needed to map back from api response to the underlying series data
