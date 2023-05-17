@@ -104,60 +104,58 @@ func (s *Symbols) Reader() *symbolsReader {
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
 	d.ResetAt(s.offsets[0])
 	return &symbolsReader{
-		d:           &d,
-		version:     s.version,
-		tableOffset: s.tableOffset,
-		offsets:     s.offsets,
-		seen:        s.seen,
+		d: &d,
+		s: s,
 	}
 }
 
 type symbolsReader struct {
-	at          uint32
-	d           *streamencoding.Decbuf
-	version     int
-	tableOffset int
-
-	offsets []int
-	seen    int
+	atSymbol uint32
+	d        *streamencoding.Decbuf
+	s        *Symbols
 }
 
-func (s *symbolsReader) Close() error {
-	return s.d.Close()
+func (r *symbolsReader) Close() error {
+	return r.d.Close()
 }
 
-func (s *symbolsReader) Read(o uint32) (sym string, err error) {
-	d := s.d
+func (r *symbolsReader) Read(o uint32) (string, error) {
+	d := r.d
 	if err := d.Err(); err != nil {
 		return "", err
 	}
 
-	if s.version == index.FormatV2 {
-		if int(o) >= s.seen {
+	if r.s.version == index.FormatV2 {
+		if int(o) >= r.s.seen {
 			return "", fmt.Errorf("unknown symbol offset %d", o)
 		}
-		targetOffsetIdx := o / symbolFactor
-		if targetOffsetIdx > 1+s.at/symbolFactor {
-			s.at = targetOffsetIdx
-			d.ResetAt(s.offsets[int(targetOffsetIdx)])
-		} else {
-			for i := o - s.at; i > 0; i-- {
-				d.SkipUvarintBytes()
-				s.at++
-			}
+		if o < r.atSymbol {
+			return "", fmt.Errorf("trying to reverse symbolsReader, at %d requesting %d", r.atSymbol, o)
+		}
+		if targetOffsetIdx, currentOffsetIdx := o/symbolFactor, r.atSymbol/symbolFactor; targetOffsetIdx > 2+currentOffsetIdx {
+			// Prefer directly skipping ahead instead of reading and discarding.
+			// We do this when there are more than 2*symbolFactor number of symbols we need to skip.
+			d.ResetAt(r.s.offsets[int(targetOffsetIdx)])
+			r.atSymbol = targetOffsetIdx * symbolFactor
+		}
+		// We've offset to the right group of symbolFactor symbols. Now skip until the requested symbol within that group.
+		for i := o - r.atSymbol; i > 0; i-- {
+			d.SkipUvarintBytes()
+			r.atSymbol++
 		}
 	} else {
 		// In v1, o is relative to the beginning of the whole index header file, so we
 		// need to adjust for the fact our view into the file starts at the beginning
 		// of the symbol table.
-		offsetInTable := int(o) - s.tableOffset
+		offsetInTable := int(o) - r.s.tableOffset
 		d.ResetAt(offsetInTable)
 	}
-	sym = d.UvarintStr()
-	if d.Err() != nil {
-		return "", d.Err()
+	sym := d.UvarintStr()
+	r.atSymbol++
+	if err := d.Err(); err != nil {
+		return "", err
 	}
-	s.at++
+
 	return sym, nil
 }
 
