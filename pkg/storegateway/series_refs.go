@@ -889,7 +889,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
 	nextSet := newSeriesChunkRefsRefsSet(len(nextPostings), true)
-	lsetPool := pool.NewSlabPool[symbolizedLabel](symbolizedLabelsSetPool, 1024)
+	lsetPool := pool.NewSlabPool[symbolizedLabel](symbolizedLabelsSetPool, 0)
 	for _, id := range nextPostings {
 		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats, lsetPool)
 		if err != nil {
