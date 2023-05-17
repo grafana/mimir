@@ -46,6 +46,12 @@ var (
 		// the slice with the right size.
 		New: nil,
 	})
+
+	symbolizedLabelsSetPool = pool.Interface(&sync.Pool{
+		// Intentionally return nil if the pool is empty, so that the caller can preallocate
+		// the slice with the right size.
+		New: nil,
+	})
 )
 
 const (
@@ -882,8 +888,9 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
 	nextSet := newSeriesChunkRefsRefsSet(len(nextPostings), true)
+	lsetPool := pool.NewSlabPool[symbolizedLabel](symbolizedLabelsSetPool, 1024)
 	for _, id := range nextPostings {
-		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats)
+		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats, lsetPool)
 		if err != nil {
 			s.err = errors.Wrap(err, "read series")
 			return false
@@ -1075,9 +1082,8 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 }
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
-func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats) ([]symbolizedLabel, []chunks.Meta, error) {
-	lbls := make([]symbolizedLabel, 0)
-	ok, err := loadedSeries.unsafeLoadSeries(ref, &lbls, &s.chunkMetasBuffer, s.skipChunks, stats)
+func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) ([]symbolizedLabel, []chunks.Meta, error) {
+	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, nil, &s.chunkMetasBuffer, s.skipChunks, stats, lsetPool)
 	if !ok || err != nil {
 		return nil, nil, errors.Wrap(err, "loadSeries")
 	}
