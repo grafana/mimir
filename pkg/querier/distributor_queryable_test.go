@@ -483,6 +483,10 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 	require.NoError(b, err)
 
+	overflowChunk, err := promChunk.Add(model.SamplePair{Timestamp: model.Now(), Value: 1})
+	require.NoError(b, err)
+	require.Nil(b, overflowChunk)
+
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
 		chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Earliest),
 	})

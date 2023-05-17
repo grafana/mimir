@@ -33,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -60,9 +59,6 @@ type BucketStores struct {
 
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
-
-	// Chunks bytes pool shared across all tenants.
-	chunksPool pool.Bytes
 
 	// partitioners shared across all tenants.
 	partitioners blockPartitioners
@@ -151,11 +147,6 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrap(err, "create chunks cache")
 	}
 	u.chunksCache = chunkscache.NewTracingCache(chunksCache, logger)
-
-	// Init the chunks bytes pool.
-	if u.chunksPool, err = newChunkBytesPool(cfg.BucketStore.ChunkPoolMinBucketSizeBytes, cfg.BucketStore.ChunkPoolMaxBucketSizeBytes, cfg.BucketStore.MaxChunkPoolBytes, reg); err != nil {
-		return nil, errors.Wrap(err, "create chunks bytes pool")
-	}
 
 	if reg != nil {
 		reg.MustRegister(u.metaFetcherMetrics)
@@ -468,7 +459,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithIndexCache(u.indexCache),
 		WithChunksCache(u.chunksCache),
 		WithQueryGate(u.queryGate),
-		WithChunkPool(u.chunksPool),
 		WithFineGrainedChunksCaching(u.cfg.BucketStore.ChunksCache.FineGrainedChunksCachingEnabled),
 	}
 
