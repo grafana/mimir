@@ -1065,8 +1065,12 @@ func (s *symbolsLoadingIterator) Next() bool {
 		return false
 	}
 	set := s.from.At()
-	s.current, s.err = s.symbolize(set)
-	return true
+	if len(set.series) > 128 {
+		s.current, s.err = s.symbolize(set)
+	} else {
+		s.current, s.err = s.naiveSymbolize(set)
+	}
+	return s.err == nil
 }
 
 type symbol struct {
@@ -1082,11 +1086,15 @@ func (s *symbol) Less(than btree.Item) bool {
 	return s.s < otherSymbol.s
 }
 
-func (s *symbolsLoadingIterator) symbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
-	set := newSeriesChunkRefsSet(len(symbolizedSet.series), symbolizedSet.releasable)
-	// TODO dimitarvdimitrov release symbolizedSet
-	tree := btree.New(2)
+var freeLists = &sync.Pool{New: func() any { return btree.NewFreeList(1024) }}
 
+func (s *symbolsLoadingIterator) symbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
+	// TODO dimitarvdimitrov release symbolizedSet
+	freeList := freeLists.Get().(*btree.FreeList)
+	defer freeLists.Put(freeList)
+	tree := btree.NewWithFreeList(2, freeList)
+	defer tree.Clear(true)
+	//btree.NewFreeList()
 	for _, series := range symbolizedSet.series {
 		for _, symID := range series.lset {
 			tree.ReplaceOrInsert(&symbol{s: symID.name})
@@ -1106,6 +1114,7 @@ func (s *symbolsLoadingIterator) symbolize(symbolizedSet seriesChunkRefsRefsSet)
 	if err != nil {
 		return seriesChunkRefsSet{}, errors.Wrap(err, "reading symbols")
 	}
+	set := newSeriesChunkRefsSet(len(symbolizedSet.series), symbolizedSet.releasable)
 
 	searchSym := &symbol{}
 	labelsBuilder := labels.NewScratchBuilder(16)
@@ -1138,6 +1147,26 @@ func (s *symbolsLoadingIterator) Err() error {
 		return s.err
 	}
 	return s.from.Err()
+}
+
+func (s *symbolsLoadingIterator) naiveSymbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
+	set := newSeriesChunkRefsSet(len(symbolizedSet.series), symbolizedSet.releasable)
+
+	labelsBuilder := labels.NewScratchBuilder(16)
+	for _, series := range symbolizedSet.series {
+		labelsBuilder.Reset()
+
+		lset, err := s.indexr.LookupLabelsSymbols(series.lset, &labelsBuilder)
+		if err != nil {
+			return seriesChunkRefsSet{}, err
+		}
+
+		set.series = append(set.series, seriesChunkRefs{
+			lset:         lset,
+			chunksRanges: series.chunksRanges,
+		})
+	}
+	return set, nil
 }
 
 func newSymbolsLoadingIterator(iterator genericIterator[seriesChunkRefsRefsSet], indexr *bucketIndexReader) seriesChunkRefsSetIterator {
