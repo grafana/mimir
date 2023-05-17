@@ -58,6 +58,17 @@
       "fieldCategory": "experimental"
     },
     {
+      "kind": "field",
+      "name": "enable_go_runtime_metrics",
+      "required": false,
+      "desc": "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.",
+      "fieldValue": null,
+      "fieldDefaultValue": false,
+      "fieldFlag": "enable-go-runtime-metrics",
+      "fieldType": "boolean",
+      "fieldCategory": "advanced"
+    },
+    {
       "kind": "block",
       "name": "api",
       "required": false,

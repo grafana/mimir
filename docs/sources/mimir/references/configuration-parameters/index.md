@@ -126,6 +126,11 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -max-separate-metrics-groups-per-user
 [max_separate_metrics_groups_per_user: <int> | default = 1000]
 
+# (advanced) Set to true to enable all Go runtime metrics, such as go_sched_*
+# and go_memstats_*.
+# CLI flag: -enable-go-runtime-metrics
+[enable_go_runtime_metrics: <boolean> | default = false]
+
 api:
   # (advanced) Allows to skip label name validation via
   # X-Mimir-SkipLabelNameValidation header on the http write path. Use with
