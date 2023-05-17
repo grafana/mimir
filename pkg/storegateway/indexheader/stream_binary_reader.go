@@ -225,6 +225,29 @@ func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 	return s, nil
 }
 
+type cachedLabelNamesSymbolsReader struct {
+	labelNames map[uint32]string
+	r          streamindex.SymbolsReader
+}
+
+func (c cachedLabelNamesSymbolsReader) Close() error {
+	return c.r.Close()
+}
+
+func (c cachedLabelNamesSymbolsReader) Read(u uint32) (string, error) {
+	if s, ok := c.labelNames[u]; ok {
+		return s, nil
+	}
+	return c.r.Read(u)
+}
+
+func (r *StreamBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
+	return cachedLabelNamesSymbolsReader{
+		labelNames: r.nameSymbols,
+		r:          r.symbols.Reader(),
+	}, nil
+}
+
 func (r *StreamBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
 	return r.postingsOffsetTable.LabelValuesOffsets(name, prefix, filter)
 }

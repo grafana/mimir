@@ -176,6 +176,19 @@ func (r *LazyBinaryReader) LookupSymbol(o uint32) (string, error) {
 	return r.reader.LookupSymbol(o)
 }
 
+// SymbolsReader implements Reader.
+func (r *LazyBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
+	r.readerMx.RLock()
+	defer r.readerMx.RUnlock()
+
+	if err := r.load(); err != nil {
+		return nil, err
+	}
+
+	r.usedAt.Store(time.Now().UnixNano())
+	return r.reader.SymbolsReader()
+}
+
 // LabelValuesOffsets implements Reader.
 func (r *LazyBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
 	r.readerMx.RLock()

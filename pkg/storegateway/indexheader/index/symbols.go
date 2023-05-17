@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"sort"
 	"unsafe"
 
@@ -195,6 +196,116 @@ func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, er
 	// and the Decbuf position is relative to the start of the Decbuf,
 	// we need to offset by the relative position of the symbols table in the index header.
 	return uint32(lastPosition + s.tableOffset), nil
+}
+
+// SymbolsReader sequentially reads symbols from a TSDB block index.
+type SymbolsReader interface {
+	io.Closer
+
+	// Read should return the string for the requested symbol.
+	// Read should be called only with increasing symbols IDs;
+	// this also means that it is not valid to call Read with the same symbol ID multiple times.
+	Read(uint32) (string, error)
+}
+
+func (s *Symbols) Reader() SymbolsReader {
+	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
+	d.ResetAt(s.offsets[0])
+
+	if s.version == index.FormatV2 {
+		return &SymbolsTableReaderV2{
+			d:             &d,
+			offsets:       s.offsets,
+			lastSymbolRef: uint32(s.seen - 1),
+		}
+	}
+	return &SymbolsTableReaderV1{
+		d:           &d,
+		tableOffset: s.tableOffset,
+	}
+}
+
+type SymbolsTableReaderV1 struct {
+	// atSymbol is the offset of the symbol in the symbols table
+	atSymbol    uint32
+	d           *streamencoding.Decbuf
+	tableOffset int
+}
+
+func (r *SymbolsTableReaderV1) Close() error {
+	return r.d.Close()
+}
+
+var errReverseSymbolsReader = errors.New("trying to read symbol at earlier position")
+
+func (r *SymbolsTableReaderV1) Read(o uint32) (string, error) {
+	d := r.d
+	if err := d.Err(); err != nil {
+		return "", err
+	}
+
+	if o < r.atSymbol {
+		return "", fmt.Errorf("%w: at %d requesting %d", errReverseSymbolsReader, r.atSymbol, o)
+	}
+
+	// In v1, o is relative to the beginning of the whole index header file, so we
+	// need to adjust for the fact our view into the file starts at the beginning
+	// of the symbol table.
+	d.ResetAt(int(o) - r.tableOffset)
+	sym := d.UvarintStr()
+	r.atSymbol = o + 1
+
+	if err := d.Err(); err != nil {
+		return "", err
+	}
+
+	return sym, nil
+}
+
+type SymbolsTableReaderV2 struct {
+	d *streamencoding.Decbuf
+	// atSymbol is the index the symbol currently pointed by the Decbuf head
+	atSymbol      uint32
+	lastSymbolRef uint32
+	offsets       []int
+}
+
+func (r *SymbolsTableReaderV2) Close() error {
+	return r.d.Close()
+}
+
+func (r *SymbolsTableReaderV2) Read(o uint32) (string, error) {
+	d := r.d
+	if err := d.Err(); err != nil {
+		return "", err
+	}
+
+	if o < r.atSymbol {
+		return "", fmt.Errorf("%w: at %d requesting %d", errReverseSymbolsReader, r.atSymbol, o)
+	}
+	if o > r.lastSymbolRef {
+		return "", fmt.Errorf("unknown symbol offset %d", o)
+	}
+
+	if targetOffsetIdx, currentOffsetIdx := o/symbolFactor, r.atSymbol/symbolFactor; targetOffsetIdx > currentOffsetIdx {
+		// Only ResetAt a bigger offset than the current one.
+		// We don't want to ResetAt an offset we've gone past: that will reverse the file reader, and we will do unnecessary reads.
+		d.ResetAt(r.offsets[int(targetOffsetIdx)])
+		r.atSymbol = targetOffsetIdx * symbolFactor
+	}
+	// We've offset to the right group of symbolFactor symbols. Now skip until the requested symbol within that group.
+	for i := o - r.atSymbol; i > 0; i-- {
+		d.SkipUvarintBytes()
+		r.atSymbol++
+	}
+	sym := d.UvarintStr()
+	r.atSymbol++
+
+	if err := d.Err(); err != nil {
+		return "", err
+	}
+
+	return sym, nil
 }
 
 func yoloString(b []byte) string {
