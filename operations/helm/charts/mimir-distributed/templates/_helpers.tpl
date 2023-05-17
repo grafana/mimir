@@ -212,12 +212,8 @@ helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 {{- if .component }}
-{{-   if .rolloutZoneName }}
-app.kubernetes.io/component: {{ .component }}-{{ .rolloutZoneName }}
-{{- else -}}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
-{{- end -}}
 {{- if .memberlist }}
 app.kubernetes.io/part-of: memberlist
 {{- end }}
@@ -266,12 +262,8 @@ app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 app.kubernetes.io/version: {{ .ctx.Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 {{- if .component }}
-{{-   if .rolloutZoneName }}
-app.kubernetes.io/component: {{ .component }}-{{ .rolloutZoneName }}
-{{- else -}}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
-{{- end -}}
 {{- if .memberlist }}
 app.kubernetes.io/part-of: memberlist
 {{- end }}
@@ -333,12 +325,8 @@ release: {{ .ctx.Release.Name }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 {{- if .component }}
-{{-   if .rolloutZoneName }}
-app.kubernetes.io/component: {{ .component }}-{{ .rolloutZoneName }}
-{{- else -}}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
-{{- end -}}
 {{- if .rolloutZoneName }}
 {{-   if not .component }}
 {{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
@@ -575,7 +563,7 @@ podAntiAffinity:
             operator: In
             values:
               - {{ .component }}
-          - key: app.kubernetes.io/component
+          - key: name
             operator: NotIn
             values:
               - {{ .component }}-{{ .rolloutZoneName }}
