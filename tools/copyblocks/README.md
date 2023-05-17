@@ -34,5 +34,5 @@ The currently supported services are Google Cloud Storage (GCS) and Azure Blob S
   --azure-destination-account-name <destination account name> \
   --azure-destination-account-key <destination account key> \
   --destination-bucket https://<destination account name>.blob.core.windows.net/<destination bucket name> \
-  --min-block-duration 24h
+  --min-block-duration 23h
 ```
