@@ -1273,7 +1273,8 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 }
 
 func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch int, pendingMatchers []*labels.Matcher, indexr *bucketIndexReader, b *bucketBlock, matchersPostings []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
-	symbolizedIterator := newLoadingSeriesChunkRefsSetIterator(
+	var iterator seriesChunkRefsSetIterator
+	iterator = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(matchersPostings, seriesPerBatch),
 		indexr,
@@ -1289,8 +1290,6 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 		1,
 		b.logger,
 	)
-	var iterator seriesChunkRefsSetIterator
-	iterator = newSymbolsLoadingIterator(symbolizedIterator, indexr)
 	if len(pendingMatchers) > 0 {
 		iterator = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, iterator, stats)
 	}

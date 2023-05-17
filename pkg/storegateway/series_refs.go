@@ -739,7 +739,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	chunkMetasBuffer     []chunks.Meta
 
 	err        error
-	currentSet seriesChunkRefsRefsSet
+	currentSet seriesChunkRefsSet
 }
 
 func openBlockSeriesChunkRefsSetsIterator(
@@ -767,7 +767,8 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
-	refsIterator := newLoadingSeriesChunkRefsSetIterator(
+	var iterator seriesChunkRefsSetIterator
+	iterator = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		newPostingsSetsIterator(ps, batchSize),
 		indexr,
@@ -783,8 +784,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 		chunkRangesPerSeries,
 		logger,
 	)
-	var iterator seriesChunkRefsSetIterator
-	iterator = newSymbolsLoadingIterator(refsIterator, indexr)
 	if len(pendingMatchers) > 0 {
 		iterator = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, iterator, stats)
 	}
@@ -862,11 +861,10 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
 		} else {
-			// TODO dimitarvdimitrov move the caching into its own iterator when skipChunks==true
-			//if cachedSet, isCached := fetchCachedSeriesForPostings(ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
-			//s.currentSet = cachedSet
-			//return true
-			//}
+			if cachedSet, isCached := fetchCachedSeriesForPostings(ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
+				s.currentSet = cachedSet
+				return true
+			}
 		}
 	}
 
@@ -895,7 +893,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	nextSet := newSeriesChunkRefsRefsSet(len(nextPostings), true)
 	lsetPool := pool.NewSlabPool[symbolizedLabel](symbolizedLabelsSetPool, 1024)
 	nextSet.releaser = lsetPool
-	for _, id := range nextPostings {
+	for pIdx, id := range nextPostings {
 		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats, lsetPool)
 		if err != nil {
 			s.err = errors.Wrap(err, "read series")
@@ -903,6 +901,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		}
 		if len(lset) == 0 {
 			// An empty label set means the series had no chunks in this block, so we skip it.
+			nextPostings[pIdx] = 0
 			continue
 		}
 		var ranges []seriesChunkRefsRange
@@ -911,11 +910,9 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 			ranges = metasToRanges(partitionChunks(metas, s.chunkRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
 			if len(ranges) == 0 {
 				// There are no chunks for this series in the requested time range; skip it
+				nextPostings[pIdx] = 0
 				continue
 			}
-		}
-		if !shardOwned(s.shard, s.seriesHasher, id, loadStats) {
-			continue
 		}
 		nextSet.series = append(nextSet.series, seriesChunkRefsRefs{
 			lset:         lset,
@@ -923,19 +920,43 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		})
 	}
 
-	if len(nextSet.series) == 0 {
+	var symbolizedSet seriesChunkRefsSet
+
+	if len(nextSet.series) > 256 {
+		// This approach comes with some overhead in data structures.
+		// It starts making more sense with more repeated
+		symbolizedSet, s.err = s.singlePassSymbolize(nextSet)
+	} else {
+		symbolizedSet, s.err = s.naiveSymbolize(nextSet)
+	}
+	nextSet.release()
+
+	skipped, writeIdx := 0, 0
+	for pIdx, id := range nextPostings {
+		if id == 0 {
+			skipped++
+			continue
+		}
+		if shardOwned(s.shard, s.seriesHasher, id, symbolizedSet.series[pIdx-skipped].lset, loadStats) {
+			symbolizedSet.series[writeIdx] = symbolizedSet.series[pIdx-skipped]
+			writeIdx++
+		}
+	}
+
+	symbolizedSet.series = symbolizedSet.series[:writeIdx]
+
+	if len(symbolizedSet.series) == 0 {
 		// The next set we attempted to build is empty, so we can directly release it.
-		nextSet.release() // TODO dimitarvdimitrov
+		symbolizedSet.release()
 
 		// Try with the next set of postings.
 		return s.Next()
 	}
 
-	s.currentSet = nextSet
-	// TODO dimitarvdimitrov move the caching into its own iterator when skipChunks==true
-	//if s.skipChunks && cachedSeriesID.isSet() {
-	//	storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
-	//}
+	s.currentSet = symbolizedSet
+	if s.skipChunks && cachedSeriesID.isSet() {
+		storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, symbolizedSet, s.logger)
+	}
 	return true
 }
 
@@ -1079,7 +1100,7 @@ func nextChunkRef(metas [][]chunks.Meta, gIdx int, cIdx int) (chunks.ChunkRef, b
 	return metas[gIdx+1][0].Ref, true
 }
 
-func (s *loadingSeriesChunkRefsSetIterator) At() seriesChunkRefsRefsSet {
+func (s *loadingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 	return s.currentSet
 }
 
@@ -1097,30 +1118,7 @@ func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, lo
 	return lbls, s.chunkMetasBuffer, nil
 }
 
-type symbolsLoadingIterator struct {
-	from    genericIterator[seriesChunkRefsRefsSet]
-	current seriesChunkRefsSet
-	err     error
-	indexr  *bucketIndexReader
-}
-
-func (s *symbolsLoadingIterator) Next() bool {
-	if !s.from.Next() {
-		return false
-	}
-	set := s.from.At()
-	if len(set.series) > 256 {
-		// This approach comes with some overhead in data structures.
-		// It starts making more sense with more repeated
-		s.current, s.err = s.singlePassSymbolize(set)
-	} else {
-		s.current, s.err = s.naiveSymbolize(set)
-	}
-	set.release()
-	return s.err == nil
-}
-
-func (s *symbolsLoadingIterator) singlePassSymbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
+func (s *loadingSeriesChunkRefsSetIterator) singlePassSymbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
 	// Some conservative map pre-allocation; the goal is to get an order of magnitude size of the map, so we minimize map growth.
 	symbols := make(map[uint32]string, len(symbolizedSet.series)/2)
 
@@ -1165,18 +1163,7 @@ func (s *symbolsLoadingIterator) singlePassSymbolize(symbolizedSet seriesChunkRe
 	return set, nil
 }
 
-func (s *symbolsLoadingIterator) At() seriesChunkRefsSet {
-	return s.current
-}
-
-func (s *symbolsLoadingIterator) Err() error {
-	if s.err != nil {
-		return s.err
-	}
-	return s.from.Err()
-}
-
-func (s *symbolsLoadingIterator) naiveSymbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
+func (s *loadingSeriesChunkRefsSetIterator) naiveSymbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
 	set := newSeriesChunkRefsSet(len(symbolizedSet.series), symbolizedSet.releasable)
 
 	labelsBuilder := labels.NewScratchBuilder(16)
@@ -1194,13 +1181,6 @@ func (s *symbolsLoadingIterator) naiveSymbolize(symbolizedSet seriesChunkRefsRef
 		})
 	}
 	return set, nil
-}
-
-func newSymbolsLoadingIterator(iterator genericIterator[seriesChunkRefsRefsSet], indexr *bucketIndexReader) seriesChunkRefsSetIterator {
-	return &symbolsLoadingIterator{
-		from:   iterator,
-		indexr: indexr,
-	}
 }
 
 type filteringSeriesChunkRefsSetIterator struct {
@@ -1379,13 +1359,13 @@ func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats
 	return hash
 }
 
-func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, stats *queryStats) bool {
+func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, lset labels.Labels, stats *queryStats) bool {
 	if shard == nil {
 		return true
 	}
-	hash, ok := hasher.CachedHash(id, stats)
+	hash := hasher.Hash(id, lset, stats)
 
-	return !ok || hash%shard.ShardCount == shard.ShardIndex
+	return hash%shard.ShardCount == shard.ShardIndex
 }
 
 // postingsSetsIterator splits the provided postings into sets, while retaining their original order.

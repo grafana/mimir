@@ -1289,7 +1289,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			)
 
 			// Tests
-			sets := readAllSeriesChunkRefsSet(newSymbolsLoadingIterator(loadingIterator, indexr))
+			sets := readAllSeriesChunkRefsSet(loadingIterator)
 			assert.NoError(t, loadingIterator.Err())
 			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, testCase.expectedSets, sets)
 		})

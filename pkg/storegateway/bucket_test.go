@@ -1163,7 +1163,7 @@ func loadSeries(ctx context.Context, tb test.TB, postings []storage.SeriesRef, i
 		log.NewNopLogger(),
 	)
 	series := make([]labels.Labels, 0, len(postings))
-	seriesIterator := newSeriesSetWithoutChunks(ctx, newSymbolsLoadingIterator(setIterator, indexr), newSafeQueryStats())
+	seriesIterator := newSeriesSetWithoutChunks(ctx, setIterator, newSafeQueryStats())
 	for seriesIterator.Next() {
 		lbls, _ := seriesIterator.At()
 		series = append(series, lbls)
