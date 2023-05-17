@@ -72,7 +72,7 @@ spec:
                 operator: In
                 values:
                 - store-gateway
-              - key: app.kubernetes.io/component
+              - key: name
                 operator: NotIn
                 values:
                 - store-gateway-zone-a
@@ -225,7 +225,7 @@ spec:
                 operator: In
                 values:
                 - store-gateway
-              - key: app.kubernetes.io/component
+              - key: name
                 operator: NotIn
                 values:
                 - store-gateway-zone-b
@@ -378,7 +378,7 @@ spec:
                 operator: In
                 values:
                 - store-gateway
-              - key: app.kubernetes.io/component
+              - key: name
                 operator: NotIn
                 values:
                 - store-gateway-zone-c

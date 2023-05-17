@@ -72,7 +72,7 @@ spec:
                 operator: In
                 values:
                 - alertmanager
-              - key: app.kubernetes.io/component
+              - key: name
                 operator: NotIn
                 values:
                 - alertmanager-zone-a
@@ -230,7 +230,7 @@ spec:
                 operator: In
                 values:
                 - alertmanager
-              - key: app.kubernetes.io/component
+              - key: name
                 operator: NotIn
                 values:
                 - alertmanager-zone-b
@@ -388,7 +388,7 @@ spec:
                 operator: In
                 values:
                 - alertmanager
-              - key: app.kubernetes.io/component
+              - key: name
                 operator: NotIn
                 values:
                 - alertmanager-zone-c

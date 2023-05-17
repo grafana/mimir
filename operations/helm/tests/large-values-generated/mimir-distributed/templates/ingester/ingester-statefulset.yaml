@@ -73,7 +73,7 @@ spec:
                 operator: In
                 values:
                 - ingester
-              - key: app.kubernetes.io/component
+              - key: name
                 operator: NotIn
                 values:
                 - ingester-zone-a
@@ -225,7 +225,7 @@ spec:
                 operator: In
                 values:
                 - ingester
-              - key: app.kubernetes.io/component
+              - key: name
                 operator: NotIn
                 values:
                 - ingester-zone-b
@@ -377,7 +377,7 @@ spec:
                 operator: In
                 values:
                 - ingester
-              - key: app.kubernetes.io/component
+              - key: name
                 operator: NotIn
                 values:
                 - ingester-zone-c
