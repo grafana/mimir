@@ -14,8 +14,6 @@
     'ruler.query-frontend.address': 'dns:///ruler-query-frontend.%(namespace)s.svc.cluster.local:9095' % $._config,
   },
 
-  local container = $.core.v1.container,
-  local deployment = $.apps.v1.deployment,
   local service = $.core.v1.service,
 
   local queryFrontendDisableResultCaching =
