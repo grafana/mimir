@@ -13,7 +13,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
-	"github.com/google/btree"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -93,6 +92,8 @@ type seriesChunkRefsRefsSet struct {
 
 	// releasable holds whether the series slice (but not its content) can be released to a memory pool.
 	releasable bool
+
+	releaser releaser
 }
 
 func newSeriesChunkRefsRefsSet(capacity int, releasable bool) seriesChunkRefsRefsSet {
@@ -116,6 +117,9 @@ func newSeriesChunkRefsRefsSet(capacity int, releasable bool) seriesChunkRefsRef
 }
 
 func (b seriesChunkRefsRefsSet) release() {
+	if b.releaser != nil {
+		b.releaser.Release()
+	}
 	if b.series == nil || !b.releasable {
 		return
 	}
@@ -890,6 +894,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	// after Next() will be called again.
 	nextSet := newSeriesChunkRefsRefsSet(len(nextPostings), true)
 	lsetPool := pool.NewSlabPool[symbolizedLabel](symbolizedLabelsSetPool, 1024)
+	nextSet.releaser = lsetPool
 	for _, id := range nextPostings {
 		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats, lsetPool)
 		if err != nil {
@@ -1105,7 +1110,9 @@ func (s *symbolsLoadingIterator) Next() bool {
 	}
 	set := s.from.At()
 	if len(set.series) > 256 {
-		s.current, s.err = s.symbolize(set)
+		// This approach comes with some overhead in data structures.
+		// It starts making more sense with more repeated
+		s.current, s.err = s.singlePassSymbolize(set)
 	} else {
 		s.current, s.err = s.naiveSymbolize(set)
 	}
@@ -1113,25 +1120,10 @@ func (s *symbolsLoadingIterator) Next() bool {
 	return s.err == nil
 }
 
-type symbol struct {
-	s   uint32
-	str string
-}
+func (s *symbolsLoadingIterator) singlePassSymbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
+	// Some conservative map pre-allocation; the goal is to get an order of magnitude size of the map, so we minimize map growth.
+	symbols := make(map[uint32]string, len(symbolizedSet.series)/2)
 
-func (s *symbol) Less(than btree.Item) bool {
-	otherSymbol, isSymbol := than.(*symbol)
-	if !isSymbol {
-		panic("other is not a *symbol")
-	}
-	return s.s < otherSymbol.s
-}
-
-var freeLists = &sync.Pool{New: func() any { return btree.NewFreeList(1024) }}
-
-func (s *symbolsLoadingIterator) symbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
-	symbols := map[uint32]string{}
-
-	//btree.NewFreeList()
 	for _, series := range symbolizedSet.series {
 		for _, symID := range series.lset {
 			symbols[symID.value] = ""
