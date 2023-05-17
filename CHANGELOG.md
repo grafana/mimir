@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Store-gateway: change expanded postings and postings index cache key format. These caches will be invalidated when rolling out the new Mimir version. #4770 #4978
+* [CHANGE] Store-gateway: change expanded postings, postings, and label values index cache key format. These caches will be invalidated when rolling out the new Mimir version. #4770 #4978 #5037
 * [CHANGE] Distributor: remove the "forwarding" feature as it isn't necessary anymore. #4876
 * [CHANGE] Query-frontend: Change the default value of `-query-frontend.query-sharding-max-regexp-size-bytes` from `0` to `4096`. #4932
 * [CHANGE] Querier: `-querier.query-ingesters-within` has been moved from a global flag to a per-tenant override. #4287
