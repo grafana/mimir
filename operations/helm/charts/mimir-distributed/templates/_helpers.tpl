@@ -217,6 +217,7 @@ app.kubernetes.io/component: {{ .component }}-{{ .rolloutZoneName }}
 {{- else -}}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
+{{- end -}}
 {{- if .memberlist }}
 app.kubernetes.io/part-of: memberlist
 {{- end }}
