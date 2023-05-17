@@ -1121,6 +1121,7 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassSymbolize(symbolizedSet se
 	for _, series := range symbolizedSet.series {
 		for _, symID := range series.lset {
 			symbols[symID.value] = ""
+			symbols[symID.name] = ""
 		}
 	}
 
@@ -1146,11 +1147,7 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassSymbolize(symbolizedSet se
 	for _, series := range symbolizedSet.series {
 		labelsBuilder.Reset()
 		for _, symID := range series.lset {
-			lName, err := s.indexr.dec.LookupSymbol(symID.name)
-			if err != nil {
-				return seriesChunkRefsSet{}, err
-			}
-			labelsBuilder.Add(lName, symbols[symID.value])
+			labelsBuilder.Add(symbols[symID.name], symbols[symID.value])
 		}
 
 		set.series = append(set.series, seriesChunkRefs{
