@@ -747,6 +747,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 
 		schedulerpb.RegisterSchedulerForQuerierServer(c.Server.GRPC, msch)
 		frontendv1pb.RegisterFrontendServer(c.Server.GRPC, msch)
+		ruler.RegisterRulerServer(c.Server.GRPC, msch)
 
 		require.NoError(t, services.StartAndAwaitRunning(ctx, serv))
 		defer func() {
@@ -776,6 +777,14 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 		_, err = schedulerClient.NotifyQuerierShutdown(ctx, &schedulerpb.NotifyQuerierShutdownRequest{QuerierID: "random-querier-id"})
 		require.NoError(t, err)
 		require.True(t, msch.querierShutdownCalled.Load())
+	}
+	{
+		// Verify that we can call rulerClient.SyncRules without user in the context, and we don't get any error.
+		require.False(t, msch.rulerSyncRulesCalled.Load())
+		rulerClient := ruler.NewRulerClient(conn)
+		_, err = rulerClient.SyncRules(ctx, &ruler.SyncRulesRequest{UserIds: []string{"random-user-id"}})
+		require.NoError(t, err)
+		require.True(t, msch.rulerSyncRulesCalled.Load())
 	}
 }
 
@@ -965,6 +974,7 @@ func getHostnameAndRandomPort(t *testing.T) (string, int) {
 type mockGrpcServiceHandler struct {
 	clientShutdownCalled  atomic.Bool
 	querierShutdownCalled atomic.Bool
+	rulerSyncRulesCalled  atomic.Bool
 }
 
 func (m *mockGrpcServiceHandler) NotifyClientShutdown(_ context.Context, _ *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
@@ -975,6 +985,15 @@ func (m *mockGrpcServiceHandler) NotifyClientShutdown(_ context.Context, _ *fron
 func (m *mockGrpcServiceHandler) NotifyQuerierShutdown(_ context.Context, _ *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
 	m.querierShutdownCalled.Store(true)
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
+}
+
+func (m *mockGrpcServiceHandler) SyncRules(_ context.Context, _ *ruler.SyncRulesRequest) (*ruler.SyncRulesResponse, error) {
+	m.rulerSyncRulesCalled.Store(true)
+	return &ruler.SyncRulesResponse{}, nil
+}
+
+func (m *mockGrpcServiceHandler) Rules(_ context.Context, _ *ruler.RulesRequest) (*ruler.RulesResponse, error) {
+	return &ruler.RulesResponse{}, nil
 }
 
 func (m *mockGrpcServiceHandler) Process(_ frontendv1pb.Frontend_ProcessServer) error {

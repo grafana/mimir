@@ -31,9 +31,7 @@ import (
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
-func TestDefaultMultiTenantManager_SyncRuleGroups(t *testing.T) {
-	testutil.VerifyNoLeak(t)
-
+func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 	const (
 		user1 = "user-1"
 		user2 = "user-2"
@@ -50,7 +48,7 @@ func TestDefaultMultiTenantManager_SyncRuleGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	// Initialise the manager with some rules and start it.
-	m.SyncRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 		user1: {user1Group1},
 		user2: {user2Group1},
 	})
@@ -62,8 +60,8 @@ func TestDefaultMultiTenantManager_SyncRuleGroups(t *testing.T) {
 	assertRuleGroupsMappedOnDisk(t, m, user1, rulespb.RuleGroupList{user1Group1})
 	assertRuleGroupsMappedOnDisk(t, m, user2, rulespb.RuleGroupList{user2Group1})
 
-	t.Run("calling SyncRuleGroups() with an empty map stops all managers", func(t *testing.T) {
-		m.SyncRuleGroups(ctx, nil)
+	t.Run("calling SyncFullRuleGroups() with an empty map stops all managers", func(t *testing.T) {
+		m.SyncFullRuleGroups(ctx, nil)
 
 		// Ensure the ruler manager has been stopped for all users.
 		assertManagerMockStopped(t, initialUser1Manager)
@@ -79,8 +77,8 @@ func TestDefaultMultiTenantManager_SyncRuleGroups(t *testing.T) {
 		assert.Equal(t, 0.0, promtest.ToFloat64(m.managersTotal))
 	})
 
-	t.Run("calling SyncRuleGroups() with the previous config restores the managers", func(t *testing.T) {
-		m.SyncRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+	t.Run("calling SyncFullRuleGroups() with the previous config restores the managers", func(t *testing.T) {
+		m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 			user1: {user1Group1},
 			user2: {user2Group1},
 		})
@@ -118,12 +116,164 @@ func TestDefaultMultiTenantManager_SyncRuleGroups(t *testing.T) {
 	})
 }
 
+func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
+	const (
+		user1 = "user-1"
+		user2 = "user-2"
+	)
+
+	var (
+		ctx         = context.Background()
+		logger      = testutil.NewTestingLogger(t)
+		user1Group1 = createRuleGroup("group-1", user1, createRecordingRule("count:metric_1", "count(metric_1)"))
+		user1Group2 = createRuleGroup("group-2", user1, createRecordingRule("count:metric_2", "count(metric_2)"))
+		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
+	)
+
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil)
+	require.NoError(t, err)
+	t.Cleanup(m.Stop)
+
+	// Initialise the manager with some rules and start it.
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+		user1: {user1Group1},
+		user2: {user2Group1},
+	})
+	m.Start()
+
+	initialUser1Manager := assertManagerMockRunningForUser(t, m, user1)
+	initialUser2Manager := assertManagerMockRunningForUser(t, m, user2)
+
+	// Ensure the right rule groups have been mapped on disk.
+	assertRuleGroupsMappedOnDisk(t, m, user1, rulespb.RuleGroupList{user1Group1})
+	assertRuleGroupsMappedOnDisk(t, m, user2, rulespb.RuleGroupList{user2Group1})
+
+	t.Run("calling SyncPartialRuleGroups() with an empty map should be a no-op", func(t *testing.T) {
+		m.SyncPartialRuleGroups(ctx, nil)
+
+		// Ensure the per-tenant manager has not changed.
+		currUser1Manager := assertManagerMockRunningForUser(t, m, user1)
+		currUser2Manager := assertManagerMockRunningForUser(t, m, user2)
+		assert.Equal(t, initialUser1Manager, currUser1Manager)
+		assert.Equal(t, initialUser2Manager, currUser2Manager)
+
+		// Ensure the right rule groups have been mapped on disk.
+		assertRuleGroupsMappedOnDisk(t, m, user1, rulespb.RuleGroupList{user1Group1})
+		assertRuleGroupsMappedOnDisk(t, m, user2, rulespb.RuleGroupList{user2Group1})
+
+		// Check metrics.
+		assert.Equal(t, 2.0, promtest.ToFloat64(m.managersTotal))
+	})
+
+	t.Run("calling SyncPartialRuleGroups() with a subset of users should re-sync them", func(t *testing.T) {
+		m.SyncPartialRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+			user1: {user1Group1, user1Group2},
+		})
+
+		// Ensure the per-tenant manager has not changed.
+		currUser1Manager := assertManagerMockRunningForUser(t, m, user1)
+		currUser2Manager := assertManagerMockRunningForUser(t, m, user2)
+		assert.Equal(t, initialUser1Manager, currUser1Manager)
+		assert.Equal(t, initialUser2Manager, currUser2Manager)
+
+		// Ensure the right rule groups have been mapped on disk.
+		assertRuleGroupsMappedOnDisk(t, m, user1, rulespb.RuleGroupList{user1Group1, user1Group2})
+		assertRuleGroupsMappedOnDisk(t, m, user2, rulespb.RuleGroupList{user2Group1})
+
+		// Check metrics.
+		assert.Equal(t, 2.0, promtest.ToFloat64(m.managersTotal))
+	})
+
+	t.Run("calling SyncPartialRuleGroups() with a user with no rule groups should stop its manager", func(t *testing.T) {
+		m.SyncPartialRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+			user1: nil,
+		})
+
+		// Ensure the ruler manager has been stopped for the user with no rule groups.
+		assertManagerMockStopped(t, initialUser1Manager)
+		assertManagerMockNotRunningForUser(t, m, user1)
+
+		// Ensure the ruler manager is still running for other users.
+		currUser2Manager := assertManagerMockRunningForUser(t, m, user2)
+		assert.Equal(t, initialUser2Manager, currUser2Manager)
+
+		// Ensure the right rule groups have been mapped on disk.
+		assertRuleGroupsMappedOnDisk(t, m, user1, nil)
+		assertRuleGroupsMappedOnDisk(t, m, user2, rulespb.RuleGroupList{user2Group1})
+
+		// Check metrics.
+		assert.Equal(t, 1.0, promtest.ToFloat64(m.managersTotal))
+	})
+}
+
+func TestFilterRuleGroupsByNotEmptyUsers(t *testing.T) {
+	tests := map[string]struct {
+		configs         map[string]rulespb.RuleGroupList
+		expectedConfigs map[string]rulespb.RuleGroupList
+		expectedRemoved map[string]struct{}
+	}{
+		"should return an empty map on empty input": {
+			configs:         nil,
+			expectedConfigs: nil,
+		},
+		"should return the input map on no empty users": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+				},
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+			},
+			expectedConfigs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					createRuleGroup("group-1", "user-1", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+				},
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+			},
+		},
+		"should remove users with no rule groups from the input map": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {},
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+				"user-3": {},
+			},
+			expectedConfigs: map[string]rulespb.RuleGroupList{
+				"user-2": {
+					createRuleGroup("group-1", "user-2", createRecordingRule("record:1", "1"), createAlertingRule("alert-2", "2"), createRecordingRule("record:3", "3")),
+					createRuleGroup("group-2", "user-2", createRecordingRule("record:4", "4"), createRecordingRule("record:5", "5")),
+				},
+			},
+			expectedRemoved: map[string]struct{}{
+				"user-1": {},
+				"user-3": {},
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			actualConfigs, actualRemoved := filterRuleGroupsByNotEmptyUsers(testData.configs)
+			assert.Equal(t, testData.expectedConfigs, actualConfigs)
+			assert.Equal(t, testData.expectedRemoved, actualRemoved)
+		})
+	}
+}
+
 func getManager(m *DefaultMultiTenantManager, user string) RulesManager {
 	m.userManagerMtx.RLock()
 	defer m.userManagerMtx.RUnlock()
 
 	return m.userManagers[user]
 }
+
 func assertManagerMockRunningForUser(t *testing.T, m *DefaultMultiTenantManager, userID string) *managerMock {
 	t.Helper()
 
