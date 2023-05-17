@@ -214,8 +214,8 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 }
 
 // NewMetaFetcher transforms BaseFetcher into actually usable *MetaFetcher.
-func (f *BaseFetcher) NewMetaFetcher(reg prometheus.Registerer, filters []MetadataFilter, logTags ...interface{}) *MetaFetcher {
-	return &MetaFetcher{metrics: NewFetcherMetrics(reg, nil, nil), wrapped: f, filters: filters, logger: log.With(f.logger, logTags...)}
+func (f *BaseFetcher) NewMetaFetcher(reg prometheus.Registerer, filters []MetadataFilter) *MetaFetcher {
+	return &MetaFetcher{metrics: NewFetcherMetrics(reg, nil, nil), wrapped: f, filters: filters}
 }
 
 var (
@@ -487,8 +487,6 @@ type MetaFetcher struct {
 	metrics *FetcherMetrics
 
 	filters []MetadataFilter
-
-	logger log.Logger
 }
 
 // Fetch returns all block metas as well as partial blocks (blocks without or with corrupted meta file) from the bucket.
