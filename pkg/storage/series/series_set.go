@@ -24,10 +24,16 @@ type ConcreteSeriesSet struct {
 	series []storage.Series
 }
 
-// NewConcreteSeriesSet instantiates an in-memory series set from a series
+// NewConcreteSeriesSetFromUnsortedSeries instantiates an in-memory series set from a series
 // Series will be sorted by labels.
-func NewConcreteSeriesSet(series []storage.Series) storage.SeriesSet {
+func NewConcreteSeriesSetFromUnsortedSeries(series []storage.Series) storage.SeriesSet {
 	sort.Sort(byLabels(series))
+	return NewConcreteSeriesSetFromSortedSeries(series)
+}
+
+// NewConcreteSeriesSetFromSortedSeries instantiates an in-memory series set from a slice
+// of sorted series.
+func NewConcreteSeriesSetFromSortedSeries(series []storage.Series) storage.SeriesSet {
 	return &ConcreteSeriesSet{
 		cur:    -1,
 		series: series,
@@ -270,7 +276,7 @@ func MatrixToSeriesSet(m model.Matrix) storage.SeriesSet {
 			// histograms: ss.Histograms, // cannot convert the decoded matrix form to the expected encoded format. this method is only used in tests so ignoring histogram support for now
 		})
 	}
-	return NewConcreteSeriesSet(series)
+	return NewConcreteSeriesSetFromUnsortedSeries(series)
 }
 
 // LabelsToSeriesSet creates a storage.SeriesSet from a []labels.Labels
@@ -281,7 +287,7 @@ func LabelsToSeriesSet(ls []labels.Labels) storage.SeriesSet {
 			labels: l,
 		})
 	}
-	return NewConcreteSeriesSet(series)
+	return NewConcreteSeriesSetFromUnsortedSeries(series)
 }
 
 func metricToLabels(m model.Metric) labels.Labels {

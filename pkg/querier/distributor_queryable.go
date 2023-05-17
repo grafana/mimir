@@ -169,7 +169,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	}
 
 	if len(serieses) > 0 {
-		sets = append(sets, series.NewConcreteSeriesSet(serieses))
+		sets = append(sets, series.NewConcreteSeriesSetFromUnsortedSeries(serieses))
 	}
 
 	if len(sets) == 0 {
@@ -178,7 +178,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	if len(sets) == 1 {
 		return sets[0]
 	}
-	// Sets need to be sorted. Both series.NewConcreteSeriesSet and newTimeSeriesSeriesSet take care of that.
+	// Sets need to be sorted. Both series.NewConcreteSeriesSetFromUnsortedSeries and newTimeSeriesSeriesSet take care of that.
 	return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 }
 
