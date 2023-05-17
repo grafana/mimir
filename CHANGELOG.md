@@ -62,7 +62,8 @@
 * [CHANGE] Alerts: Remove `MimirTenantHasPartialBlocks`. This is obsoleted by the changed default of `-compactor.partial-block-deletion-delay` to `1d`, which will auto remediate this alert. #5026
 * [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
 * [ENHANCEMENT] Alerts: `MimirIngesterTSDBWALCorrupted` now only fires when there are more than one corrupted WALs in single-zone deployments and when there are more than two zones affected in multi-zone deployments. #4920
-* [ENHANCEMENT] dashboards: fix holes in graph for lightly loaded clusters #4915
+* [ENHANCEMENT] Alerts: added labels to duplicated `MimirRolloutStuck` and `MimirCompactorHasNotUploadedBlocks` rules in order to distinguish them. #5023
+* [ENHANCEMENT] Dashboards: fix holes in graph for lightly loaded clusters #4915
 * [ENHANCEMENT] Dashboards: allow configuring additional services for the Rollout Progress dashboard. #5007
 
 ### Jsonnet
