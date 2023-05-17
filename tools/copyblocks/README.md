@@ -19,7 +19,7 @@ The currently supported services are Google Cloud Storage (GCS) and Azure Blob S
   --copy-period 24h \
   --source-bucket <source bucket name> \
   --destination-bucket <destination bucket name> \
-  --min-block-duration 24h
+  --min-block-duration 23h
 ```
 
 ### Example for Azure Blob Storage
