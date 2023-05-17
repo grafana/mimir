@@ -41,6 +41,12 @@ var (
 		// the slice with the right size.
 		New: nil,
 	})
+
+	seriesChunkRefsRefsSetPool = pool.Interface(&sync.Pool{
+		// Intentionally return nil if the pool is empty, so that the caller can preallocate
+		// the slice with the right size.
+		New: nil,
+	})
 )
 
 const (
@@ -81,6 +87,35 @@ type seriesChunkRefsRefsSet struct {
 
 	// releasable holds whether the series slice (but not its content) can be released to a memory pool.
 	releasable bool
+}
+
+func newSeriesChunkRefsRefsSet(capacity int, releasable bool) seriesChunkRefsRefsSet {
+	var prealloc []seriesChunkRefsRefs
+
+	// If it's releasable then we try to reuse a slice from the pool.
+	if releasable {
+		if reused := seriesChunkRefsRefsSetPool.Get(); reused != nil {
+			prealloc = *(reused.(*[]seriesChunkRefsRefs))
+		}
+	}
+
+	if prealloc == nil {
+		prealloc = make([]seriesChunkRefsRefs, 0, capacity)
+	}
+
+	return seriesChunkRefsRefsSet{
+		series:     prealloc,
+		releasable: releasable,
+	}
+}
+
+func (b seriesChunkRefsRefsSet) release() {
+	if b.series == nil || !b.releasable {
+		return
+	}
+
+	reuse := b.series[:0]
+	seriesChunkRefsRefsSetPool.Put(&reuse)
 }
 
 type seriesChunkRefsRefs struct {
@@ -704,10 +739,10 @@ func openBlockSeriesChunkRefsSetsIterator(
 	indexr *bucketIndexReader, // Index reader for block.
 	indexCache indexcache.IndexCache,
 	blockMeta *metadata.Meta,
-	matchers []*labels.Matcher,    // Series matchers.
+	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHasher seriesHasher,
-	skipChunks bool,        // If true chunks are not loaded and minTime/maxTime are ignored.
+	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	chunkRangesPerSeries int,
 	stats *safeQueryStats,
@@ -847,10 +882,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
-	nextSet := seriesChunkRefsRefsSet{
-		series:     make([]seriesChunkRefsRefs, 0, len(nextPostings)),
-		releasable: true,
-	}
+	nextSet := newSeriesChunkRefsRefsSet(len(nextPostings), true)
 	for _, id := range nextPostings {
 		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats)
 		if err != nil {
@@ -881,7 +913,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	if len(nextSet.series) == 0 {
 		// The next set we attempted to build is empty, so we can directly release it.
-		//nextSet.release() // TODO dimitarvdimitrov
+		nextSet.release() // TODO dimitarvdimitrov
 
 		// Try with the next set of postings.
 		return s.Next()
@@ -1071,6 +1103,7 @@ func (s *symbolsLoadingIterator) Next() bool {
 	} else {
 		s.current, s.err = s.naiveSymbolize(set)
 	}
+	set.release()
 	return s.err == nil
 }
 
@@ -1090,7 +1123,6 @@ func (s *symbol) Less(than btree.Item) bool {
 var freeLists = &sync.Pool{New: func() any { return btree.NewFreeList(1024) }}
 
 func (s *symbolsLoadingIterator) symbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
-	// TODO dimitarvdimitrov release symbolizedSet
 	symbols := map[uint32]string{}
 
 	//btree.NewFreeList()
