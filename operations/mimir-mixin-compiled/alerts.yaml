@@ -310,6 +310,7 @@ groups:
     for: 30m
     labels:
       severity: warning
+      workload_type: statefulset
   - alert: MimirRolloutStuck
     annotations:
       message: |
@@ -329,6 +330,7 @@ groups:
     for: 30m
     labels:
       severity: warning
+      workload_type: deployment
   - alert: RolloutOperatorNotReconciling
     annotations:
       message: |
@@ -849,10 +851,11 @@ groups:
     for: 15m
     labels:
       severity: critical
+      time_period: 24h
   - alert: MimirCompactorHasNotUploadedBlocks
     annotations:
       message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
-        }} has not uploaded any block in the last 24 hours.
+        }} has not uploaded any block since its start.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotuploadedblocks
     expr: |
       (max by(cluster, namespace, pod) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) == 0)
@@ -863,6 +866,7 @@ groups:
     for: 24h
     labels:
       severity: critical
+      time_period: since-start
   - alert: MimirCompactorSkippedBlocksWithOutOfOrderChunks
     annotations:
       message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
