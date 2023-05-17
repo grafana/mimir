@@ -228,8 +228,27 @@ type SymbolsReader interface {
 	Read(uint32) (string, error)
 }
 
+type cachedLabelNamesSymbolsReader struct {
+	labelNames map[uint32]string
+	r          SymbolsReader
+}
+
+func (c cachedLabelNamesSymbolsReader) Close() error {
+	return c.r.Close()
+}
+
+func (c cachedLabelNamesSymbolsReader) Read(u uint32) (string, error) {
+	if s, ok := c.labelNames[u]; ok {
+		return s, nil
+	}
+	return c.r.Read(u)
+}
+
 func (r *StreamBinaryReader) SymbolsReader() SymbolsReader {
-	return r.symbols.Reader()
+	return cachedLabelNamesSymbolsReader{
+		labelNames: r.nameSymbols,
+		r:          r.symbols.Reader(),
+	}
 }
 
 func (r *StreamBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
