@@ -107,6 +107,7 @@ func TestUpdateNotifierConfigs(t *testing.T) {
 	dir := t.TempDir()
 	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, "/alertmanager", managerMockFactory, nil, log.NewNopLogger())
 	m.notifiers["user"] = newRulerNotifier(&notifier.Options{}, nil)
+	defer m.notifiers["user"].sdCancel()
 	require.NoError(t, err)
 	assert.Empty(t, m.notifierCfg.AlertingConfig.AlertmanagerConfigs)
 

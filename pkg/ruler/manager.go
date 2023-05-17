@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -112,6 +113,7 @@ func NewDefaultMultiTenantManager(cfg Config, alertmanagerHTTPPrefix string, man
 	}
 
 	var dnsProvider *dns.Provider
+	var alertmanagerURL string
 	var err error
 	switch cfg.AlertmanagerDiscovery.Mode {
 	case alertmanagerdiscovery.ModeRing:
@@ -120,13 +122,15 @@ func NewDefaultMultiTenantManager(cfg Config, alertmanagerHTTPPrefix string, man
 		if err != nil {
 			return nil, err
 		}
+		alertmanagerURL = ""
 
 	default:
 		level.Info(logger).Log("msg", "using dns based alertmanager discovery")
 		dnsProvider = alertmanagerdiscovery.NewDNSProvider(reg, logger)
+		alertmanagerURL = cfg.AlertmanagerURL
 	}
 
-	m.discoveryConfigs, err = alertmanagerdiscovery.NewDiscoveryConfigs(cfg.AlertmanagerURL, cfg.AlertmanagerRefreshInterval, dnsProvider)
+	m.discoveryConfigs, err = alertmanagerdiscovery.NewDiscoveryConfigs(alertmanagerURL, cfg.AlertmanagerRefreshInterval, dnsProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -433,6 +437,9 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			// When ring discovery mode is enabled, the address we discover is the alertmanager's GRPC address
 			// So we need to convert the request to GRPC before sending
 			if r.cfg.AlertmanagerDiscovery.Mode == alertmanagerdiscovery.ModeRing {
+				if r.cfg.Notifier.BasicAuth.IsEnabled() {
+					req.SetBasicAuth(r.cfg.Notifier.BasicAuth.Username, strings.TrimSpace(r.cfg.Notifier.BasicAuth.Password.String()))
+				}
 				grpcReq, err := httpgrpcutil.ToGRPCRequest(req)
 				if err != nil {
 					return nil, err

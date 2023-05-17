@@ -11837,6 +11837,17 @@
         },
         {
           "kind": "field",
+          "name": "service_discovery_mode",
+          "required": false,
+          "desc": "Service discovery mode that rulers use to find alertmanager instances. When alertmanager ring-based service discovery is enabled, this option needs be set on alertmanagers and rulers. Supported values are: dns, ring.",
+          "fieldValue": null,
+          "fieldDefaultValue": "dns",
+          "fieldFlag": "alertmanager.service-discovery-mode",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "enable_state_cleanup",
           "required": false,
           "desc": "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.",
