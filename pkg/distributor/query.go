@@ -178,130 +178,125 @@ func mergeExemplarQueryResponses(results []interface{}) *ingester_client.Exempla
 	return &ingester_client.ExemplarQueryResponse{Timeseries: result}
 }
 
-// queryIngesterStream queries the ingesters using the new streaming API.
+type ingesterQueryResult struct {
+	// Why retain the batches rather than build a single slice? We don't need a single slice for each ingester, so building a single slice for each ingester is a waste of time.
+	chunkseriesBatches [][]ingester_client.TimeSeriesChunk
+	timeseriesBatches  [][]mimirpb.TimeSeries
+}
+
+// queryIngesterStream queries the ingesters using the gRPC streaming API.
 func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest) (*ingester_client.QueryStreamResponse, error) {
-	var (
-		queryLimiter = limiter.QueryLimiterFromContextWithFallback(ctx)
-		reqStats     = stats.FromContext(ctx)
-		results      = make(chan *ingester_client.QueryStreamResponse)
-		// Note we can't signal goroutines to stop by closing 'results', because it has multiple concurrent senders.
-		stop        = make(chan struct{}) // Signal all background goroutines to stop.
-		doneReading = make(chan struct{}) // Signal that the reader has stopped.
-	)
+	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
+	reqStats := stats.FromContext(ctx)
 
-	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
-	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
-
-	// Start reading and accumulating responses. stopReading chan will
-	// be closed when all calls to ingesters have finished.
-	go func() {
-		// We keep track of the number of chunks that were able to be deduplicated entirely
-		// via the accumulateChunks function (fast) instead of needing to merge samples one
-		// by one (slow). Useful to verify the performance impact of things that potentially
-		// result in different samples being written to each ingester.
-		var numDeduplicatedChunks int
-		var numTotalChunks int
-
-		defer func() {
-			close(doneReading)
-			d.ingesterChunksDeduplicated.Add(float64(numDeduplicatedChunks))
-			d.ingesterChunksTotal.Add(float64(numTotalChunks))
-		}()
-
-		for {
-			select {
-			case <-stop:
-				return
-			case response := <-results:
-				// Accumulate any chunk series
-				for _, series := range response.Chunkseries {
-					key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
-					existing := hashToChunkseries[key]
-					existing.Labels = series.Labels
-
-					numPotentialChunks := len(existing.Chunks) + len(series.Chunks)
-					existing.Chunks = accumulateChunks(existing.Chunks, series.Chunks)
-
-					numDeduplicatedChunks += numPotentialChunks - len(existing.Chunks)
-					numTotalChunks += len(series.Chunks)
-					hashToChunkseries[key] = existing
-				}
-
-				// Accumulate any time series
-				for _, series := range response.Timeseries {
-					key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
-					existing := hashToTimeSeries[key]
-					existing.Labels = series.Labels
-					if existing.Samples == nil {
-						existing.Samples = series.Samples
-					} else {
-						existing.Samples = mergeSamples(existing.Samples, series.Samples)
-					}
-					hashToTimeSeries[key] = existing
-				}
-			}
-		}
-	}()
-
-	// Fetch samples from multiple ingesters, and send them to the results chan
-	_, err := replicationSet.Do(ctx, 0, func(ctx context.Context, ing *ring.InstanceDesc) (interface{}, error) {
+	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc) (ingesterQueryResult, error) {
 		client, err := d.ingesterPool.GetClientFor(ing.Addr)
 		if err != nil {
-			return nil, err
+			return ingesterQueryResult{}, err
 		}
 
 		stream, err := client.(ingester_client.IngesterClient).QueryStream(ctx, req)
 		if err != nil {
-			return nil, err
+			return ingesterQueryResult{}, err
 		}
+
 		defer stream.CloseSend() //nolint:errcheck
+
+		result := ingesterQueryResult{}
 
 		for {
 			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
-				break
+				return result, nil
 			} else if err != nil {
-				return nil, err
+				return ingesterQueryResult{}, err
 			}
 
-			// Enforce the max chunks limits.
-			if chunkLimitErr := queryLimiter.AddChunks(resp.ChunksCount()); chunkLimitErr != nil {
-				return nil, validation.LimitError(chunkLimitErr.Error())
-			}
-
-			for _, series := range resp.Chunkseries {
-				if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
-					return nil, validation.LimitError(limitErr.Error())
+			if len(resp.Timeseries) > 0 {
+				for _, series := range resp.Timeseries {
+					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
+						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
+					}
 				}
-			}
 
-			if chunkBytesLimitErr := queryLimiter.AddChunkBytes(resp.ChunksSize()); chunkBytesLimitErr != nil {
-				return nil, validation.LimitError(chunkBytesLimitErr.Error())
-			}
-
-			for _, series := range resp.Timeseries {
-				if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
-					return nil, validation.LimitError(limitErr.Error())
+				result.timeseriesBatches = append(result.timeseriesBatches, resp.Timeseries)
+			} else if len(resp.Chunkseries) > 0 {
+				// Enforce the max chunks limits.
+				if chunkLimitErr := queryLimiter.AddChunks(resp.ChunksCount()); chunkLimitErr != nil {
+					return ingesterQueryResult{}, validation.LimitError(chunkLimitErr.Error())
 				}
-			}
 
-			// This goroutine could be left running after replicationSet.Do() returns,
-			// so check before writing to the results chan.
-			select {
-			case <-stop:
-				return nil, nil
-			case results <- resp:
+				for _, series := range resp.Chunkseries {
+					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
+						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
+					}
+				}
+
+				if chunkBytesLimitErr := queryLimiter.AddChunkBytes(resp.ChunksSize()); chunkBytesLimitErr != nil {
+					return ingesterQueryResult{}, validation.LimitError(chunkBytesLimitErr.Error())
+				}
+
+				result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
 			}
 		}
-		return nil, nil
-	})
-	close(stop)
+	}
+
+	cleanup := func(result ingesterQueryResult) {
+		// Nothing to do.
+	}
+
+	results, err := ring.DoUntilQuorum(ctx, replicationSet, queryIngester, cleanup)
 	if err != nil {
 		return nil, err
 	}
 
-	// Wait for reading loop to finish.
-	<-doneReading
+	// We keep track of the number of chunks that were able to be deduplicated entirely
+	// via the AccumulateChunks function (fast) instead of needing to merge samples one
+	// by one (slow). Useful to verify the performance impact of things that potentially
+	// result in different samples being written to each ingester.
+	deduplicatedChunks := 0
+	totalChunks := 0
+	defer func() {
+		d.ingesterChunksDeduplicated.Add(float64(deduplicatedChunks))
+		d.ingesterChunksTotal.Add(float64(totalChunks))
+	}()
+
+	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
+	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
+
+	for _, res := range results {
+		// Accumulate any chunk series
+		for _, batch := range res.chunkseriesBatches {
+			for _, series := range batch {
+				key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
+				existing := hashToChunkseries[key]
+				existing.Labels = series.Labels
+
+				numPotentialChunks := len(existing.Chunks) + len(series.Chunks)
+				existing.Chunks = accumulateChunks(existing.Chunks, series.Chunks)
+
+				deduplicatedChunks += numPotentialChunks - len(existing.Chunks)
+				totalChunks += len(series.Chunks)
+				hashToChunkseries[key] = existing
+			}
+		}
+
+		// Accumulate any time series
+		for _, batch := range res.timeseriesBatches {
+			for _, series := range batch {
+				key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
+				existing := hashToTimeSeries[key]
+				existing.Labels = series.Labels
+				if existing.Samples == nil {
+					existing.Samples = series.Samples
+				} else {
+					existing.Samples = mergeSamples(existing.Samples, series.Samples)
+				}
+				hashToTimeSeries[key] = existing
+			}
+		}
+	}
+
 	// Now turn the accumulated maps into slices.
 	resp := &ingester_client.QueryStreamResponse{
 		Chunkseries: make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
