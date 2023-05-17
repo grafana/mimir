@@ -30,8 +30,6 @@
       'store-gateway.sharding-ring.wait-stability-min-duration': '1m',
       // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
       'store-gateway.sharding-ring.unregister-on-shutdown': false,
-
-      'blocks-storage.bucket-store.max-chunk-pool-bytes': 12 * 1024 * 1024 * 1024,
     } +
     (if $._config.store_gateway_lazy_loading_enabled then {
        'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',

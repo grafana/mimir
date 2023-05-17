@@ -53,7 +53,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -65,10 +64,6 @@ const (
 	// because you barely get any improvements in compression when the number of samples is beyond this.
 	// Take a look at Figure 6 in this whitepaper http://www.vldb.org/pvldb/vol8/p1816-teller.pdf.
 	MaxSamplesPerChunk = 120
-
-	// Relatively large in order to reduce memory waste, yet small enough to avoid excessive allocations.
-	chunkBytesPoolMinSize = 64 * 1024        // 64 KiB
-	chunkBytesPoolMaxSize = 64 * 1024 * 1024 // 64 MiB
 
 	// Labels for metrics.
 	labelEncode = "encode"
@@ -96,7 +91,6 @@ type BucketStore struct {
 	indexCache      indexcache.IndexCache
 	chunksCache     chunkscache.Cache
 	indexReaderPool *indexheader.ReaderPool
-	chunkPool       pool.Bytes
 	seriesHashCache *hashcache.SeriesHashCache
 
 	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
@@ -208,13 +202,6 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	}
 }
 
-// WithChunkPool sets a pool.Bytes to use for chunks.
-func WithChunkPool(chunkPool pool.Bytes) BucketStoreOption {
-	return func(s *BucketStore) {
-		s.chunkPool = chunkPool
-	}
-}
-
 func WithFineGrainedChunksCaching(enabled bool) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.fineGrainedChunksCachingEnabled = enabled
@@ -250,7 +237,6 @@ func NewBucketStore(
 		dir:                         dir,
 		indexCache:                  noopCache{},
 		chunksCache:                 chunkscache.NoopCache{},
-		chunkPool:                   pool.NoopBytes{},
 		blocks:                      map[ulid.ULID]*bucketBlock{},
 		blockSet:                    newBucketBlockSet(),
 		blockSyncConcurrency:        blockSyncConcurrency,
@@ -443,7 +429,6 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 		s.bkt,
 		dir,
 		s.indexCache,
-		s.chunkPool,
 		indexHeaderReader,
 		s.partitioners,
 	)
@@ -1384,6 +1369,12 @@ func fetchCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 }
 
 func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, labelName string, matchers []*labels.Matcher, values []string, logger log.Logger) {
+	// This limit is a workaround for panics in decoding large responses. See https://github.com/golang/go/issues/59172
+	const valuesLimit = 655360
+	if len(values) > valuesLimit {
+		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "skipping storing label values response to cache because it exceeds number of values limit", "limit", valuesLimit, "values_count", len(values))
+		return
+	}
 	entry := labelValuesCacheEntry{
 		Values:      values,
 		LabelName:   labelName,
@@ -1481,7 +1472,6 @@ type bucketBlock struct {
 	meta       *metadata.Meta
 	dir        string
 	indexCache indexcache.IndexCache
-	chunkPool  pool.Bytes
 
 	indexHeaderReader indexheader.Reader
 
@@ -1507,7 +1497,6 @@ func newBucketBlock(
 	bkt objstore.BucketReader,
 	dir string,
 	indexCache indexcache.IndexCache,
-	chunkPool pool.Bytes,
 	indexHeadReader indexheader.Reader,
 	p blockPartitioners,
 ) (b *bucketBlock, err error) {
@@ -1517,7 +1506,6 @@ func newBucketBlock(
 		metrics:           metrics,
 		bkt:               bkt,
 		indexCache:        indexCache,
-		chunkPool:         chunkPool,
 		dir:               dir,
 		partitioners:      p,
 		meta:              meta,
@@ -1574,32 +1562,6 @@ func (b *bucketBlock) readIndexRange(ctx context.Context, off, length int64) ([]
 		return nil, errors.Wrap(err, "read range")
 	}
 	return buf.Bytes(), nil
-}
-
-func (b *bucketBlock) readChunkRange(ctx context.Context, seq int, off, length int64, chunkRanges byteRanges) (*[]byte, error) {
-	if seq < 0 || seq >= len(b.chunkObjs) {
-		return nil, errors.Errorf("unknown segment file for index %d", seq)
-	}
-
-	ctx = bucketcache.WithMemoryPool(ctx, chunkBytesSlicePool, chunkBytesSlabSize)
-	reader, err := b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
-	if err != nil {
-		return nil, errors.Wrap(err, "get range reader")
-	}
-	defer runutil.CloseWithLogOnErr(b.logger, reader, "readChunkRange close range reader")
-
-	// Get a buffer from the pool.
-	chunkBuffer, err := b.chunkPool.Get(chunkRanges.size())
-	if err != nil {
-		return nil, errors.Wrap(err, "allocate chunk bytes")
-	}
-
-	*chunkBuffer, err = readByteRanges(reader, *chunkBuffer, chunkRanges)
-	if err != nil {
-		return nil, err
-	}
-
-	return chunkBuffer, nil
 }
 
 func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length int64) (io.ReadCloser, error) {

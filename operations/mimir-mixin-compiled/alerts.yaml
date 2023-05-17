@@ -781,16 +781,6 @@ groups:
       min by(cluster, namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 7200
     labels:
       severity: critical
-  - alert: MimirTenantHasPartialBlocks
-    annotations:
-      message: Mimir tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace
-        }} has {{ $value }} partial blocks.
-      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirtenanthaspartialblocks
-    expr: |
-      max by(cluster, namespace, user) (cortex_bucket_blocks_partials_count) > 0
-    for: 6h
-    labels:
-      severity: warning
 - name: mimir_compactor_alerts
   rules:
   - alert: MimirCompactorHasNotSuccessfullyCleanedUpBlocks

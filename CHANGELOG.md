@@ -10,6 +10,12 @@
 * [CHANGE] Querier: `-querier.query-ingesters-within` has been moved from a global flag to a per-tenant override. #4287
 * [CHANGE] Querier: Use `-blocks-storage.tsdb.retention-period` instead of `-querier.query-ingesters-within` for calculating the lookback period for shuffle sharded ingesters. Setting `-querier.query-ingesters-within=0` no longer disables shuffle sharding on the read path. #4287
 * [CHANGE] Block upload: `/api/v1/upload/block/{block}/files` endpoint now allows file uploads with no `Content-Length`. #4956
+* [CHANGE] Store-gateway: deprecate configuration parameters for chunk pooling, they will be removed in Mimir 2.11. The following options are now also ignored: #4996
+  * `-blocks-storage.bucket-store.max-chunk-pool-bytes`
+  * `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
+  * `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
+* [CHANGE] Store-gateway: remove metrics `cortex_bucket_store_chunk_pool_requested_bytes_total` and `cortex_bucket_store_chunk_pool_returned_bytes_total`. #4996
+* [CHANGE] Compactor: change default of `-compactor.partial-block-deletion-delay` to `1d`. This will automatically clean up partial blocks that were a result of failed block upload or deletion. #5026
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metric `cortex_bucket_store_series_data_touched`. This label now applies to `data_type="chunks"` and `data_type="series"`. The `stage` label has 2 values: `processed` - the number of series that parsed - and `returned` - the number of series selected from the processed bytes to satisfy the query. #4797 #4830
@@ -34,11 +40,14 @@
 * [ENHANCEMENT] Add native histogram support for `cortex_request_duration_seconds` metric family. #4987
 * [ENHANCEMENT] Ruler: do not list rule groups in the object storage for disabled tenants. #5004
 * [ENHANCEMENT] Query-frontend and querier: add HTTP API endpoint `<prometheus-http-prefix>/api/v1/format_query` to format a PromQL query. #4373
+* [ENHANCEMENT] Alertmanager: Add configuration option to enable or disable the deletion of alertmanager state from object storage. This is useful when migrating alertmanager tenants from one cluster to another, because it avoids a condition where the state object is copied but then deleted before the configuration object is copied. #4989
+* [ENHANCEMENT] Querier: only use the minimum set of chunks from ingesters when querying, and cancel unnecessary requests to ingesters sooner if we know their results won't be used. #5016
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
 * [BUGFIX] Backend: Check that alertmanager's data-dir doesn't overlap with bucket-sync dir. #4921
 * [BUGFIX] Alertmanager: Allow to rate-limit webex, telegram and discord notifications. #4979
+* [BUGFIX] Store-gateway: panics when decoding LabelValues responses that contain more than 655360 values. These responses are no longer cached. #5021
 
 ### Documentation
 
@@ -49,9 +58,11 @@
 ### Mixin
 
 * [CHANGE] Alerts: Remove `MimirQuerierHighRefetchRate`. #4980
+* [CHANGE] Alerts: Remove `MimirTenantHasPartialBlocks`. This is obsoleted by the changed default of `-compactor.partial-block-deletion-delay` to `1d`, which will auto remediate this alert. #5026
 * [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
 * [ENHANCEMENT] Alerts: `MimirIngesterTSDBWALCorrupted` now only fires when there are more than one corrupted WALs in single-zone deployments and when there are more than two zones affected in multi-zone deployments. #4920
 * [ENHANCEMENT] dashboards: fix holes in graph for lightly loaded clusters #4915
+* [ENHANCEMENT] Dashboards: allow configuring additional services for the Rollout Progress dashboard. #5007
 
 ### Jsonnet
 

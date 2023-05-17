@@ -172,7 +172,6 @@ mimir:
     blocks_storage:
       backend: s3
       bucket_store:
-        max_chunk_pool_bytes: 12884901888 # 12GiB
         {{- if index .Values "chunks-cache" "enabled" }}
         chunks_cache:
           backend: memcached
