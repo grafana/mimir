@@ -86,9 +86,9 @@ type seriesChunkRefsSet struct {
 	releasable bool
 }
 
-type seriesChunkRefsRefsSet struct {
+type symbolizedseriesChunkRefsSet struct {
 	// series sorted by labels.
-	series []seriesChunkRefsRefs
+	series []symbolizedseriesChunkRefs
 
 	// releasable holds whether the series slice (but not its content) can be released to a memory pool.
 	releasable bool
@@ -96,27 +96,27 @@ type seriesChunkRefsRefsSet struct {
 	releaser releaser
 }
 
-func newSeriesChunkRefsRefsSet(capacity int, releasable bool) seriesChunkRefsRefsSet {
-	var prealloc []seriesChunkRefsRefs
+func newSymbolizedSeriesChunkRefsSet(capacity int, releasable bool) symbolizedseriesChunkRefsSet {
+	var prealloc []symbolizedseriesChunkRefs
 
 	// If it's releasable then we try to reuse a slice from the pool.
 	if releasable {
 		if reused := seriesChunkRefsRefsSetPool.Get(); reused != nil {
-			prealloc = *(reused.(*[]seriesChunkRefsRefs))
+			prealloc = *(reused.(*[]symbolizedseriesChunkRefs))
 		}
 	}
 
 	if prealloc == nil {
-		prealloc = make([]seriesChunkRefsRefs, 0, capacity)
+		prealloc = make([]symbolizedseriesChunkRefs, 0, capacity)
 	}
 
-	return seriesChunkRefsRefsSet{
+	return symbolizedseriesChunkRefsSet{
 		series:     prealloc,
 		releasable: releasable,
 	}
 }
 
-func (b seriesChunkRefsRefsSet) release() {
+func (b symbolizedseriesChunkRefsSet) release() {
 	if b.releaser != nil {
 		b.releaser.Release()
 	}
@@ -128,7 +128,7 @@ func (b seriesChunkRefsRefsSet) release() {
 	seriesChunkRefsRefsSetPool.Put(&reuse)
 }
 
-type seriesChunkRefsRefs struct {
+type symbolizedseriesChunkRefs struct {
 	lset         []symbolizedLabel
 	chunksRanges []seriesChunkRefsRange
 }
@@ -890,7 +890,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
-	nextSet := newSeriesChunkRefsRefsSet(len(nextPostings), true) // TODO dimitarvdimitrov rename var
+	nextSet := newSymbolizedSeriesChunkRefsSet(len(nextPostings), true) // TODO dimitarvdimitrov rename var
 	lsetPool := pool.NewSlabPool[symbolizedLabel](symbolizedLabelsSetPool, 1024)
 	nextSet.releaser = lsetPool
 	defer nextSet.release() // TODO dimitarvdimitrov add comment
@@ -915,7 +915,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 				continue
 			}
 		}
-		nextSet.series = append(nextSet.series, seriesChunkRefsRefs{
+		nextSet.series = append(nextSet.series, symbolizedseriesChunkRefs{
 			lset:         lset,
 			chunksRanges: ranges,
 		})
@@ -926,13 +926,13 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		return s.Next()
 	}
 
-	var symbolizedSet seriesChunkRefsSet
+	var stringifiedSet seriesChunkRefsSet
 	if len(nextSet.series) > 256 {
 		// This approach comes with some overhead in data structures.
 		// It starts making more sense with more repeated
-		symbolizedSet, s.err = s.singlePassSymbolize(nextSet)
+		stringifiedSet, s.err = s.singlePassStringify(nextSet)
 	} else {
-		symbolizedSet, s.err = s.naiveSymbolize(nextSet)
+		stringifiedSet, s.err = s.naiveStringify(nextSet)
 	}
 
 	skipped, writeIdx := 0, 0
@@ -941,17 +941,17 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 			skipped++
 			continue
 		}
-		if shardOwned(s.shard, s.seriesHasher, id, symbolizedSet.series[pIdx-skipped].lset, loadStats) {
-			symbolizedSet.series[writeIdx] = symbolizedSet.series[pIdx-skipped]
+		if shardOwned(s.shard, s.seriesHasher, id, stringifiedSet.series[pIdx-skipped].lset, loadStats) {
+			stringifiedSet.series[writeIdx] = stringifiedSet.series[pIdx-skipped]
 			writeIdx++
 		}
 	}
 
-	symbolizedSet.series = symbolizedSet.series[:writeIdx]
+	stringifiedSet.series = stringifiedSet.series[:writeIdx]
 
-	s.currentSet = symbolizedSet
+	s.currentSet = stringifiedSet
 	if s.skipChunks && cachedSeriesID.isSet() {
-		storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, symbolizedSet, s.logger)
+		storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, stringifiedSet, s.logger)
 	}
 	return true
 }
@@ -962,7 +962,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 // clampLastChunkLength assumes that the chunks are sorted by their refs
 // (currently this is equivalent to also being sorted by their minTime) and that all series belong to the same block.
 // clampLastChunkLength is a noop if metas or series is empty.
-func clampLastChunkLength(series []seriesChunkRefsRefs, nextSeriesChunkMetas []chunks.Meta) {
+func clampLastChunkLength(series []symbolizedseriesChunkRefs, nextSeriesChunkMetas []chunks.Meta) {
 	if len(series) == 0 || len(nextSeriesChunkMetas) == 0 {
 		return
 	}
@@ -1114,7 +1114,7 @@ func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, lo
 	return lbls, s.chunkMetasBuffer, nil
 }
 
-func (s *loadingSeriesChunkRefsSetIterator) singlePassSymbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
+func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet symbolizedseriesChunkRefsSet) (seriesChunkRefsSet, error) {
 	// Some conservative map pre-allocation; the goal is to get an order of magnitude size of the map, so we minimize map growth.
 	symbols := make(map[uint32]string, len(symbolizedSet.series)/2)
 
@@ -1159,7 +1159,7 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassSymbolize(symbolizedSet se
 	return set, nil
 }
 
-func (s *loadingSeriesChunkRefsSetIterator) naiveSymbolize(symbolizedSet seriesChunkRefsRefsSet) (seriesChunkRefsSet, error) {
+func (s *loadingSeriesChunkRefsSetIterator) naiveStringify(symbolizedSet symbolizedseriesChunkRefsSet) (seriesChunkRefsSet, error) {
 	set := newSeriesChunkRefsSet(len(symbolizedSet.series), symbolizedSet.releasable)
 
 	labelsBuilder := labels.NewScratchBuilder(16)
