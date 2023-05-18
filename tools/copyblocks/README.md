@@ -6,7 +6,7 @@ The currently supported services are Google Cloud Storage (GCS) and Azure Blob S
 ## Features
 
 - Prevents copying blocks multiple times to the same destination bucket by uploading block marker files to the source bucket
-- Runs continuously with periodic checks when supplied a time duration with `--copy-period`, otherwise runs one check then exits.
+- Runs continuously with periodic checks when supplied a time duration with `--copy-period`, otherwise runs one check then exits
 - Include or exclude users from having blocks copied (`--enabled-users` and `--disabled-users`)
 - Configurable minimum block duration (`--min-block-duration`) to avoid copying blocks that will be compacted
 - Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range
