@@ -46,6 +46,25 @@ var protobufResponseHistogram = mimirpb.FloatHistogram{
 	NegativeBuckets: []float64{400, 500, 600, 700},
 }
 
+var protobufResponseHistogram2 = mimirpb.FloatHistogram{
+	CounterResetHint: histogram.GaugeType,
+	Schema:           3,
+	ZeroThreshold:    1.23,
+	ZeroCount:        556,
+	Count:            9101,
+	Sum:              789.1,
+	PositiveSpans: []mimirpb.BucketSpan{
+		{Offset: 4, Length: 1},
+		{Offset: 3, Length: 2},
+	},
+	NegativeSpans: []mimirpb.BucketSpan{
+		{Offset: 7, Length: 3},
+		{Offset: 9, Length: 1},
+	},
+	PositiveBuckets: []float64{100, 200, 300},
+	NegativeBuckets: []float64{400, 500, 600, 700},
+}
+
 var protobufCodecScenarios = []struct {
 	name                  string
 	payload               mimirpb.QueryResponse
@@ -258,6 +277,11 @@ var protobufCodecScenarios = []struct {
 							TimestampMs: 1234,
 							Histogram:   protobufResponseHistogram,
 						},
+						{
+							Metric:      []string{"baz2", "blah2"},
+							TimestampMs: 1234,
+							Histogram:   protobufResponseHistogram2,
+						},
 					},
 				},
 			},
@@ -274,6 +298,10 @@ var protobufCodecScenarios = []struct {
 					{
 						Labels:     []mimirpb.LabelAdapter{{Name: "baz", Value: "blah"}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
+					},
+					{
+						Labels:     []mimirpb.LabelAdapter{{Name: "baz2", Value: "blah2"}},
+						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram2}},
 					},
 				},
 			},

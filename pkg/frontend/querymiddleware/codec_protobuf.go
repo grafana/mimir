@@ -278,7 +278,6 @@ func (f protobufFormatter) decodeVectorData(data *mimirpb.VectorData) (*Promethe
 	}
 
 	for i, sample := range data.Histograms {
-		sample := sample
 		l, err := labelsFromStringArray(sample.Metric)
 		if err != nil {
 			return nil, err
@@ -289,7 +288,7 @@ func (f protobufFormatter) decodeVectorData(data *mimirpb.VectorData) (*Promethe
 			Histograms: []mimirpb.FloatHistogramPair{
 				{
 					TimestampMs: sample.TimestampMs,
-					Histogram:   &sample.Histogram,
+					Histogram:   &data.Histograms[i].Histogram,
 				},
 			},
 		}
