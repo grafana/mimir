@@ -141,7 +141,7 @@ func TestRuleCommand_checkRules(t *testing.T) {
 		shouldFail bool
 	}{
 		{
-			name:       "completely rule name, not strict fals too",
+			name:       "completely bad rule name, not strict fails too",
 			rules:      []rulefmt.RuleNode{validRule1, completelyBadRuleName, validRule2},
 			strict:     false,
 			shouldFail: true,
@@ -159,7 +159,7 @@ func TestRuleCommand_checkRules(t *testing.T) {
 			shouldFail: true,
 		},
 		{
-			name:       "strictly rule name, not strict",
+			name:       "strictly bad rule name, not strict",
 			rules:      []rulefmt.RuleNode{validRule1, strictlyBadRuleName, validRule2},
 			strict:     false,
 			shouldFail: false,
