@@ -46,6 +46,25 @@ var protobufResponseHistogram = mimirpb.FloatHistogram{
 	NegativeBuckets: []float64{400, 500, 600, 700},
 }
 
+var protobufResponseHistogram2 = mimirpb.FloatHistogram{
+	CounterResetHint: histogram.GaugeType,
+	Schema:           3,
+	ZeroThreshold:    1.23,
+	ZeroCount:        556,
+	Count:            9101,
+	Sum:              789.1,
+	PositiveSpans: []mimirpb.BucketSpan{
+		{Offset: 4, Length: 1},
+		{Offset: 3, Length: 2},
+	},
+	NegativeSpans: []mimirpb.BucketSpan{
+		{Offset: 7, Length: 3},
+		{Offset: 9, Length: 1},
+	},
+	PositiveBuckets: []float64{100, 200, 300},
+	NegativeBuckets: []float64{400, 500, 600, 700},
+}
+
 var protobufCodecScenarios = []struct {
 	name                  string
 	payload               mimirpb.QueryResponse
@@ -236,7 +255,7 @@ var protobufCodecScenarios = []struct {
 				Result: []SampleStream{
 					{
 						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}},
-						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
 			},
@@ -258,6 +277,11 @@ var protobufCodecScenarios = []struct {
 							TimestampMs: 1234,
 							Histogram:   protobufResponseHistogram,
 						},
+						{
+							Metric:      []string{"baz2", "blah2"},
+							TimestampMs: 1234,
+							Histogram:   protobufResponseHistogram2,
+						},
 					},
 				},
 			},
@@ -273,7 +297,11 @@ var protobufCodecScenarios = []struct {
 					},
 					{
 						Labels:     []mimirpb.LabelAdapter{{Name: "baz", Value: "blah"}},
-						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
+					},
+					{
+						Labels:     []mimirpb.LabelAdapter{{Name: "baz2", Value: "blah2"}},
+						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram2}},
 					},
 				},
 			},
@@ -499,7 +527,7 @@ var protobufCodecScenarios = []struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric:     []string{"name-1", "value-1", "name-2", "value-2"},
-							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 						},
 					},
 				},
@@ -512,7 +540,7 @@ var protobufCodecScenarios = []struct {
 				Result: []SampleStream{
 					{
 						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
-						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
 			},
@@ -529,7 +557,7 @@ var protobufCodecScenarios = []struct {
 						{
 							Metric:     []string{"name-1", "value-1", "name-2", "value-2"},
 							Samples:    []mimirpb.Sample{{TimestampMs: 1000, Value: 200}},
-							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 						},
 					},
 				},
@@ -543,7 +571,7 @@ var protobufCodecScenarios = []struct {
 					{
 						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
 						Samples:    []mimirpb.Sample{{TimestampMs: 1000, Value: 200}},
-						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: protobufResponseHistogram}},
+						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
 			},

@@ -279,12 +279,7 @@ func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
 	if len(s) == 0 {
 		return nil
 	}
-	spans := make([]histogram.Span, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
+	return *(*[]histogram.Span)(unsafe.Pointer(&s))
 }
 
 func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Histogram {
@@ -333,40 +328,17 @@ func fromSpansToSpansProto(s []histogram.Span) []BucketSpan {
 	if len(s) == 0 {
 		return nil
 	}
-	spans := make([]BucketSpan, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
+	return *(*[]BucketSpan)(unsafe.Pointer(&s))
 }
 
-// FromFPointsToSamples converts []promql.FPoint to []Sample.
+// FromFPointsToSamples casts []promql.FPoint to []Sample. It uses unsafe.
 func FromFPointsToSamples(points []promql.FPoint) []Sample {
-	samples := make([]Sample, 0, len(points))
-	for _, point := range points {
-		samples = append(samples, Sample{
-			TimestampMs: point.T,
-			Value:       point.F,
-		})
-	}
-	return samples
+	return *(*[]Sample)(unsafe.Pointer(&points))
 }
 
-// FromHPointsToHistograms converts []promql.HPoint to []FloatHistogramPair.
+// FromHPointsToHistograms converts []promql.HPoint to []FloatHistogramPair. It uses unsafe.
 func FromHPointsToHistograms(points []promql.HPoint) []FloatHistogramPair {
-	samples := make([]FloatHistogramPair, 0, len(points))
-	for _, point := range points {
-		h := point.H
-		if h == nil {
-			continue
-		}
-		samples = append(samples, FloatHistogramPair{
-			TimestampMs: point.T,
-			Histogram:   *FloatHistogramFromPrometheusModel(point.H),
-		})
-	}
-	return samples
+	return *(*[]FloatHistogramPair)(unsafe.Pointer(&points))
 }
 
 // FromFloatHistogramToPromHistogram converts histogram.FloatHistogram to model.SampleHistogram.

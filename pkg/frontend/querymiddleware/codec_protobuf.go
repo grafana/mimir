@@ -158,7 +158,7 @@ func (protobufFormatter) encodeVectorData(data []SampleStream) (mimirpb.VectorDa
 
 			histograms = append(histograms, mimirpb.VectorHistogram{
 				Metric:      metric,
-				Histogram:   sample.Histogram,
+				Histogram:   *sample.Histogram,
 				TimestampMs: sample.TimestampMs,
 			})
 		}
@@ -288,7 +288,7 @@ func (f protobufFormatter) decodeVectorData(data *mimirpb.VectorData) (*Promethe
 			Histograms: []mimirpb.FloatHistogramPair{
 				{
 					TimestampMs: sample.TimestampMs,
-					Histogram:   sample.Histogram,
+					Histogram:   &data.Histograms[i].Histogram,
 				},
 			},
 		}

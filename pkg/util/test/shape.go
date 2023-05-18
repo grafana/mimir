@@ -11,34 +11,41 @@ import (
 	"github.com/xlab/treeprint"
 )
 
+const ignoredFieldName = "<name ignored>"
+
 // We use unsafe casting to convert between some Mimir and Prometheus types
 // For this to be safe, the two types need to have the same shape (same fields
 // in the same order). This function requires that this property is maintained.
 // The fields do not need to have the same names to make the conversion safe,
 // but we also check the names are the same here to ensure there's no confusion
-// (eg. two bool fields swapped).
-func RequireSameShape(t *testing.T, expectedType reflect.Type, actualType reflect.Type) {
-	expectedFormatted := prettyPrintType(expectedType)
-	actualFormatted := prettyPrintType(actualType)
+// (eg. two bool fields swapped) when ignoreName is false. However, when you
+// know the names are different, you can set ignoreName to true.
+func RequireSameShape(t *testing.T, expectedType, actualType any, ignoreName bool) {
+	expectedFormatted := prettyPrintType(reflect.TypeOf(expectedType), ignoreName)
+	actualFormatted := prettyPrintType(reflect.TypeOf(actualType), ignoreName)
 
 	require.Equal(t, expectedFormatted, actualFormatted)
 }
 
-func prettyPrintType(t reflect.Type) string {
+func prettyPrintType(t reflect.Type, ignoreName bool) string {
 	if t.Kind() != reflect.Struct {
 		panic(fmt.Sprintf("expected %s to be a struct but is %s", t.Name(), t.Kind()))
 	}
 
 	tree := treeprint.NewWithRoot("<root>")
-	addTypeToTree(t, tree)
+	addTypeToTree(t, tree, ignoreName)
 
 	return tree.String()
 }
 
-func addTypeToTree(t reflect.Type, tree treeprint.Tree) {
+func addTypeToTree(t reflect.Type, tree treeprint.Tree, ignoreName bool) {
 	if t.Kind() == reflect.Pointer {
-		name := fmt.Sprintf("%s: *%s", t.Name(), t.Elem().Kind())
-		addTypeToTree(t.Elem(), tree.AddBranch(name))
+		fieldName := t.Name()
+		if ignoreName {
+			fieldName = ignoredFieldName
+		}
+		name := fmt.Sprintf("%s: *%s", fieldName, t.Elem().Kind())
+		addTypeToTree(t.Elem(), tree.AddBranch(name), ignoreName)
 		return
 	}
 
@@ -48,21 +55,25 @@ func addTypeToTree(t reflect.Type, tree treeprint.Tree) {
 
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
+		fieldName := f.Name
+		if ignoreName {
+			fieldName = ignoredFieldName
+		}
 
 		switch f.Type.Kind() {
 		case reflect.Pointer:
-			name := fmt.Sprintf("+%v %s: *%s", f.Offset, f.Name, f.Type.Elem().Kind())
-			addTypeToTree(f.Type.Elem(), tree.AddBranch(name))
+			name := fmt.Sprintf("+%v %s: *%s", f.Offset, fieldName, f.Type.Elem().Kind())
+			addTypeToTree(f.Type.Elem(), tree.AddBranch(name), ignoreName)
 		case reflect.Slice:
-			name := fmt.Sprintf("+%v %s: []%s", f.Offset, f.Name, f.Type.Elem().Kind())
+			name := fmt.Sprintf("+%v %s: []%s", f.Offset, fieldName, f.Type.Elem().Kind())
 
 			if isPrimitive(f.Type.Elem().Kind()) {
 				tree.AddNode(name)
 			} else {
-				addTypeToTree(f.Type.Elem(), tree.AddBranch(name))
+				addTypeToTree(f.Type.Elem(), tree.AddBranch(name), ignoreName)
 			}
 		default:
-			name := fmt.Sprintf("+%v %s: %s", f.Offset, f.Name, f.Type.Kind())
+			name := fmt.Sprintf("+%v %s: %s", f.Offset, fieldName, f.Type.Kind())
 			tree.AddNode(name)
 		}
 	}
