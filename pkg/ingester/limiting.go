@@ -57,10 +57,12 @@ func (i *Ingester) updateResourceUtilization() {
 	}
 
 	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
-	i.cpuUtilization.Store(cpuUtil)
+	i.movingAvg.Add(cpuUtil)
+	cpuA := i.movingAvg.Value()
+	i.cpuUtilization.Store(cpuA)
 
 	level.Info(i.logger).Log("msg", "process resource utilization", "memory_utilization", memInfo.RSS,
-		"cpu_utilization", cpuUtil)
+		"smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
 }
 
 // checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.

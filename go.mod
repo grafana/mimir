@@ -52,6 +52,7 @@ require (
 
 require (
 	cloud.google.com/go/storage v1.28.1
+	github.com/VividCortex/ewma v1.2.0
 	github.com/alecthomas/chroma v0.10.0
 	github.com/aws/aws-sdk-go v1.44.280
 	github.com/dennwc/varint v1.0.0
