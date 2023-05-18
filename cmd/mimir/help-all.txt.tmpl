@@ -173,6 +173,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.
   -alertmanager.receivers-firewall-block-private-addresses
     	True to block private and local addresses in Alertmanager receiver integrations. It blocks private addresses defined by  RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses), as well as loopback, local unicast and local multicast addresses.
+  -alertmanager.service-discovery-mode string
+    	[experimental] Service discovery mode that rulers use to find alertmanager instances. When alertmanager ring-based service discovery is enabled, this option needs be set on alertmanagers and rulers. Supported values are: dns, ring. (default "dns")
   -alertmanager.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -alertmanager.sharding-ring.consul.cas-retry-delay duration

@@ -1924,6 +1924,13 @@ alertmanager_client:
 # CLI flag: -alertmanager.persist-interval
 [persist_interval: <duration> | default = 15m]
 
+# (experimental) Service discovery mode that rulers use to find alertmanager
+# instances. When alertmanager ring-based service discovery is enabled, this
+# option needs be set on alertmanagers and rulers. Supported values are: dns,
+# ring.
+# CLI flag: -alertmanager.service-discovery-mode
+[service_discovery_mode: <string> | default = "dns"]
+
 # (advanced) Enables periodic cleanup of alertmanager stateful data
 # (notification logs and silences) from object storage. When enabled, data is
 # removed for any tenant that does not have a configuration.

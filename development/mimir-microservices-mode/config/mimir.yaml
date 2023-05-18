@@ -89,6 +89,8 @@ ruler_storage:
     insecure:          true
 
 alertmanager:
+  # Uncomment to use ring based discovery of alertmanagers
+  # service_discovery_mode: "ring"
   fallback_config_file: './config/alertmanager.yaml'
   sharding_ring:
     replication_factor: 3

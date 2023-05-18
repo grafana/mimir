@@ -9,17 +9,20 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/dns"
+	"github.com/grafana/dskit/services"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
@@ -28,15 +31,25 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
 
+	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerdiscovery"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 type DefaultMultiTenantManager struct {
-	cfg            Config
-	notifierCfg    *config.Config
-	managerFactory ManagerFactory
+	services.Service
+	cfg Config
 
-	mapper *mapper
+	// Alertmanager discovery related fields
+	discoveryConfigsMtx    sync.Mutex                  // Guards dynamic config changes
+	discoveryConfigs       map[string]discovery.Config // Guarded by discoveryConfigsMtx
+	alertmanagerHTTPPrefix string                      // Used with ring based discovery
+	discoveryService       services.Service
+	discoveryWatcher       *services.FailureWatcher
+
+	managerFactory ManagerFactory
+	mapper         *mapper
 
 	// Struct for holding per-user Prometheus rules Managers.
 	userManagerMtx sync.RWMutex
@@ -46,8 +59,9 @@ type DefaultMultiTenantManager struct {
 	userManagerMetrics *ManagerMetrics
 
 	// Per-user notifiers with separate queues.
-	notifiersMtx sync.Mutex
-	notifiers    map[string]*rulerNotifier
+	notifiersMtx sync.Mutex                // Guards notifiers and their config
+	notifierCfg  *config.Config            // Guarded by notifiersMtx
+	notifiers    map[string]*rulerNotifier // Guarded by notifiersMtx
 
 	managersTotal                 prometheus.Gauge
 	lastReloadSuccessful          *prometheus.GaugeVec
@@ -59,25 +73,21 @@ type DefaultMultiTenantManager struct {
 	rulerIsRunning atomic.Bool
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
-	ncfg, err := buildNotifierConfig(&cfg, dnsResolver)
-	if err != nil {
-		return nil, err
-	}
-
+func NewDefaultMultiTenantManager(cfg Config, alertmanagerHTTPPrefix string, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger) (*DefaultMultiTenantManager, error) {
 	userManagerMetrics := NewManagerMetrics(logger)
 	if reg != nil {
 		reg.MustRegister(userManagerMetrics)
 	}
 
-	return &DefaultMultiTenantManager{
-		cfg:                cfg,
-		notifierCfg:        ncfg,
-		managerFactory:     managerFactory,
-		notifiers:          map[string]*rulerNotifier{},
-		mapper:             newMapper(cfg.RulePath, logger),
-		userManagers:       map[string]RulesManager{},
-		userManagerMetrics: userManagerMetrics,
+	m := &DefaultMultiTenantManager{
+		cfg:                    cfg,
+		alertmanagerHTTPPrefix: alertmanagerHTTPPrefix,
+		discoveryWatcher:       services.NewFailureWatcher(),
+		managerFactory:         managerFactory,
+		notifiers:              map[string]*rulerNotifier{},
+		mapper:                 newMapper(cfg.RulePath, logger),
+		userManagers:           map[string]RulesManager{},
+		userManagerMetrics:     userManagerMetrics,
 		managersTotal: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Namespace: "cortex",
 			Name:      "ruler_managers_total",
@@ -100,7 +110,67 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		}, []string{"user"}),
 		registry: reg,
 		logger:   logger,
-	}, nil
+	}
+
+	var dnsProvider *dns.Provider
+	var alertmanagerURL string
+	var err error
+	switch cfg.AlertmanagerDiscovery.Mode {
+	case alertmanagerdiscovery.ModeRing:
+		level.Info(logger).Log("msg", "using ring based alertmanager discovery")
+		m.discoveryService, err = alertmanagerdiscovery.NewRingProvider(cfg.AlertmanagerRing, "ruler", m, logger, reg)
+		if err != nil {
+			return nil, err
+		}
+		alertmanagerURL = ""
+
+	default:
+		level.Info(logger).Log("msg", "using dns based alertmanager discovery")
+		dnsProvider = alertmanagerdiscovery.NewDNSProvider(reg, logger)
+		alertmanagerURL = cfg.AlertmanagerURL
+	}
+
+	m.discoveryConfigs, err = alertmanagerdiscovery.NewDiscoveryConfigs(alertmanagerURL, cfg.AlertmanagerRefreshInterval, dnsProvider)
+	if err != nil {
+		return nil, err
+	}
+
+	m.notifierCfg, err = buildNotifierConfig(&cfg, m.discoveryConfigs)
+	if err != nil {
+		return nil, err
+	}
+
+	m.Service = services.NewBasicService(m.starting, m.running, m.stopping)
+	return m, nil
+}
+
+func (r *DefaultMultiTenantManager) starting(ctx context.Context) error {
+	if r.discoveryService != nil {
+		r.discoveryWatcher.WatchService(r.discoveryService)
+		return services.StartAndAwaitRunning(ctx, r.discoveryService)
+	}
+	return nil
+}
+
+func (r *DefaultMultiTenantManager) running(ctx context.Context) error {
+	if r.discoveryService != nil {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-r.discoveryWatcher.Chan():
+			return errors.Wrap(err, "alertmanager watcher subservice failed")
+		}
+	} else {
+		<-ctx.Done()
+		return nil
+	}
+}
+
+func (r *DefaultMultiTenantManager) stopping(_ error) error {
+	if r.discoveryService != nil {
+		return services.StopAndAwaitTerminated(context.Background(), r.discoveryService)
+	}
+	return nil
 }
 
 // SyncFullRuleGroups implements MultiTenantManager.
@@ -186,6 +256,59 @@ func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.C
 	r.userManagerMtx.RUnlock()
 
 	return err
+}
+
+// InstanceAdded handles the addition of an instance to the alertmanager ring.
+func (r *DefaultMultiTenantManager) InstanceAdded(instance servicediscovery.Instance) {
+	if instance.InUse {
+		r.discoveryConfigsMtx.Lock()
+		defer r.discoveryConfigsMtx.Unlock()
+		level.Info(r.logger).Log("msg", "adding alertmanager instance", "addr", instance.Address)
+		r.discoveryConfigs[r.alertManagerHTTPAddress(instance)] = alertmanagerdiscovery.NewDiscoveryConfig(instance.Address)
+		r.updateNotifierConfig()
+	}
+}
+
+// InstanceRemoved handles the removal of an instance from the alertmanager ring.
+func (r *DefaultMultiTenantManager) InstanceRemoved(instance servicediscovery.Instance) {
+	r.discoveryConfigsMtx.Lock()
+	defer r.discoveryConfigsMtx.Unlock()
+	level.Info(r.logger).Log("msg", "removing alertmanager instance", "addr", instance.Address)
+	delete(r.discoveryConfigs, r.alertManagerHTTPAddress(instance))
+	r.updateNotifierConfig()
+}
+
+// InstanceChanged handles a change to an instance in the alertmanager ring.
+func (r *DefaultMultiTenantManager) InstanceChanged(instance servicediscovery.Instance) {
+	if instance.InUse {
+		r.InstanceAdded(instance)
+	} else {
+		r.InstanceRemoved(instance)
+	}
+}
+
+// alertManagerHTTPAddress returns an alert manager HTTP address for the instance.
+func (r *DefaultMultiTenantManager) alertManagerHTTPAddress(instance servicediscovery.Instance) string {
+	return "http://" + instance.Address + r.alertmanagerHTTPPrefix
+}
+
+// updateNotifierConfig builds a new notifier config and applies it to existing notifiers.
+// Must lock discoveryConfigsMtx prior to calling.
+func (r *DefaultMultiTenantManager) updateNotifierConfig() {
+	ncfg, err := buildNotifierConfig(&r.cfg, r.discoveryConfigs)
+	if err != nil {
+		level.Error(r.logger).Log("msg", "unable to build updated notifier config", "err", err)
+		return
+	}
+
+	r.notifiersMtx.Lock()
+	defer r.notifiersMtx.Unlock()
+	r.notifierCfg = ncfg
+	for _, n := range r.notifiers {
+		if err = n.applyConfig(r.notifierCfg); err != nil {
+			level.Error(r.logger).Log("msg", "unable to update notifier config", "err", err)
+		}
+	}
 }
 
 // syncRulesToManager maps the rule files to disk, detects any changes and will create/update
@@ -310,6 +433,28 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			defer sp.Finish()
 			ctx = ot.ContextWithSpan(ctx, sp)
 			_ = ot.GlobalTracer().Inject(sp.Context(), ot.HTTPHeaders, ot.HTTPHeadersCarrier(req.Header))
+
+			// When ring discovery mode is enabled, the address we discover is the alertmanager's GRPC address
+			// So we need to convert the request to GRPC before sending
+			if r.cfg.AlertmanagerDiscovery.Mode == alertmanagerdiscovery.ModeRing {
+				if r.cfg.Notifier.BasicAuth.IsEnabled() {
+					req.SetBasicAuth(r.cfg.Notifier.BasicAuth.Username, strings.TrimSpace(r.cfg.Notifier.BasicAuth.Password.String()))
+				}
+				grpcReq, err := httpgrpcutil.ToGRPCRequest(req)
+				if err != nil {
+					return nil, err
+				}
+				grpcClient, err := httpgrpcutil.NewGRPCClient(req.Host)
+				if err != nil {
+					return nil, err
+				}
+				grpcResponse, err := grpcClient.Handle(ctx, grpcReq)
+				if err != nil {
+					return nil, errors.Wrap(err, "failed to send notification via grpc")
+				}
+				return httpgrpcutil.ToHTTPResponse(grpcResponse), nil
+			}
+
 			return ctxhttp.Do(ctx, client, req)
 		},
 	}, log.With(r.logger, "user", userID))

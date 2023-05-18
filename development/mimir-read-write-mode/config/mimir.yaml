@@ -53,6 +53,8 @@ query_scheduler:
   service_discovery_mode: "ring"
 
 alertmanager:
+  # Uncomment to use ring based discovery of alertmanagers
+  # service_discovery_mode: "ring"
   data_dir: /data/alertmanager
   fallback_config_file: ./config/alertmanager-fallback-config.yaml
   external_url: http://localhost:8006/alertmanager

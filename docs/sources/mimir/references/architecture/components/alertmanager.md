@@ -130,10 +130,28 @@ When an Alertmanager starts, it attempts to load the alerts state for a given te
 
 In the event of a cluster outage, this fallback mechanism recovers the backup of the previous state. Because backups are taken periodically, this fallback mechanism does not guarantee that the lastest state is restored.
 
-## Ruler configuration
+## Configuration
 
-You must configure the [ruler]({{< relref "ruler/index.md" >}}) with the addresses of Alertmanagers via the `-ruler.alertmanager-url` flag.
+When using alertmanagers, rulers need to discover the addresses of alertmanager instances.
+Alertmanager supports two service discovery mechanisms for this:
 
-Point the address to Alertmanager’s API.
-You can configure Alertmanager’s API prefix via the `-http.alertmanager-http-prefix` flag, which defaults to `/alertmanager`.
-For example, if Alertmanager is listening at `http://mimir-alertmanager.namespace.svc.cluster.local` and it is using the default API prefix, set `-ruler.alertmanager-url` to `http://mimir-alertmanager.namespace.svc.cluster.local/alertmanager`.
+- DNS-based service discovery
+- Ring-based service discovery
+
+### DNS-based service discovery
+
+To use the alertmanager with DNS-based service discovery, configure the [rulers]({{< relref "ruler/index.md" >}}) to connect to the alertmanager:
+
+1. Set `-ruler.alertmanager-url` (or its corresponding YAML configuration parameter). This is a comma-separated list of Alertmanager API URLs to send notifications to.
+
+> **Note**: Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.
+
+### Ring-based service discovery
+
+To use the alertmanager with ring-based service discovery, configure rulers to discover alertmanager instances via their ring:
+
+1. Set `-alertmanager.service-discovery-mode=ring` (or its corresponding YAML configuration parameter).
+
+### Additional configuration
+
+You can configure Alertmanager’s API prefix via the `-http.alertmanager-http-prefix` flag, which defaults to `/alertmanager`. For example, if Alertmanager is listening at `http://mimir-alertmanager.namespace.svc.cluster.local` and it is using the default API prefix, set `-ruler.alertmanager-url` to `http://mimir-alertmanager.namespace.svc.cluster.local/alertmanager`.

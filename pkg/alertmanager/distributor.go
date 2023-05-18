@@ -30,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager/merger"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -171,7 +172,7 @@ func (d *Distributor) doQuorum(userID string, w http.ResponseWriter, r *http.Req
 
 	var responses []*httpgrpc.HTTPResponse
 	var responsesMtx sync.Mutex
-	grpcHeaders := httpToHttpgrpcHeaders(r.Header)
+	grpcHeaders := httpgrpcutil.ToGRPCHeaders(r.Header)
 	err = ring.DoBatch(r.Context(), RingOp, d.alertmanagerRing, []uint32{shardByUser(userID)}, func(am ring.InstanceDesc, _ []int) error {
 		// Use a background context to make sure all alertmanagers get the request even if we return early.
 		localCtx := user.InjectOrgID(context.Background(), userID)
@@ -240,13 +241,13 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 		Method:  r.Method,
 		Url:     r.RequestURI,
 		Body:    body,
-		Headers: httpToHttpgrpcHeaders(r.Header),
+		Headers: httpgrpcutil.ToGRPCHeaders(r.Header),
 	}
 
 	sp, ctx := opentracing.StartSpanFromContext(r.Context(), "Distributor.doUnary")
 	defer sp.Finish()
 	// Until we have a mechanism to combine the results from multiple alertmanagers,
-	// we forward the request to only only of the alertmanagers.
+	// we forward the request to only one of the alertmanagers.
 	amDesc := replicationSet.Instances[rand.Intn(len(replicationSet.Instances))]
 	resp, err := d.doRequest(ctx, amDesc, req)
 	if err != nil {
@@ -293,17 +294,6 @@ func shardByUser(userID string) uint32 {
 	// Hasher never returns err.
 	_, _ = ringHasher.Write([]byte(userID))
 	return ringHasher.Sum32()
-}
-
-func httpToHttpgrpcHeaders(hs http.Header) []*httpgrpc.Header {
-	result := make([]*httpgrpc.Header, 0, len(hs))
-	for k, vs := range hs {
-		result = append(result, &httpgrpc.Header{
-			Key:    k,
-			Values: vs,
-		})
-	}
-	return result
 }
 
 func respondFromMultipleHTTPGRPCResponses(w http.ResponseWriter, logger log.Logger, responses []*httpgrpc.HTTPResponse, merger merger.Merger) {

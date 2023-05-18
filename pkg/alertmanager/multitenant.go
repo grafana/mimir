@@ -37,6 +37,7 @@ import (
 
 	"github.com/grafana/dskit/tenant"
 
+	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerdiscovery"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -88,6 +89,8 @@ type MultitenantAlertmanagerConfig struct {
 	// For the state persister.
 	Persister PersisterConfig `yaml:",inline"`
 
+	ServiceDiscovery alertmanagerdiscovery.Config `yaml:",inline"`
+
 	// Allow disabling of full_state object cleanup.
 	EnableStateCleanup bool `yaml:"enable_state_cleanup" category:"advanced"`
 }
@@ -116,6 +119,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	cfg.AlertmanagerClient.RegisterFlagsWithPrefix("alertmanager.alertmanager-client", f)
 	cfg.Persister.RegisterFlagsWithPrefix("alertmanager", f)
 	cfg.ShardingRing.RegisterFlags(f, logger)
+	cfg.ServiceDiscovery.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
 }
@@ -149,7 +153,7 @@ func (cfg *MultitenantAlertmanagerConfig) Validate() error {
 		return errZoneAwarenessEnabledWithoutZoneInfo
 	}
 
-	return nil
+	return cfg.ServiceDiscovery.Validate()
 }
 
 func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefix string, logger log.Logger) {
@@ -227,23 +231,27 @@ type Limits interface {
 	AlertmanagerMaxAlertsSizeBytes(tenant string) int
 }
 
-// A MultitenantAlertmanager manages Alertmanager instances for multiple
-// organizations.
+// A MultitenantAlertmanager manages Alertmanager instances for multiple organizations.
+//
+// When sharding is disabled, the request handling flow is:
+//
+//	ServeHTTP() -> serveRequest()
+//
+// When sharding is enabled, the request handling flow is:
+//
+//	ServeHTTP() -> distributor.DistributeRequest() -> (sends to other AM or even the current)
+//	  -> HandleRequest() -> grpcServer.Handle() -> handlerForGRPCServer.ServeHTTP() -> serveRequest()
 type MultitenantAlertmanager struct {
 	services.Service
 
 	cfg *MultitenantAlertmanagerConfig
 
 	// Ring used for sharding alertmanager instances.
-	// When sharding is disabled, the flow is:
-	//   ServeHTTP() -> serveRequest()
-	// When sharding is enabled:
-	//   ServeHTTP() -> distributor.DistributeRequest() -> (sends to other AM or even the current)
-	//     -> HandleRequest() (gRPC call) -> grpcServer() -> handlerForGRPCServer.ServeHTTP() -> serveRequest().
 	ringLifecycler *ring.BasicLifecycler
 	ring           *ring.Ring
 	distributor    *Distributor
-	grpcServer     *server.Server
+	// Used to decode and forward gRPC requests to an HTTP request handler
+	grpcServer *server.Server
 
 	// Last ring state. This variable is not protected with a mutex because it's always
 	// accessed by a single goroutine at a time.
@@ -418,12 +426,12 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	return am, nil
 }
 
-// handlerForGRPCServer acts as a handler for gRPC server to serve
-// the serveRequest() via the standard ServeHTTP.
+// handlerForGRPCServer acts as a gRPC request decoder, forwarding gRPC requests to serveRequest() via the standard ServeHTTP.
 type handlerForGRPCServer struct {
 	am *MultitenantAlertmanager
 }
 
+// ServeHTTP handles internal AlertmanagerServer gRPC requests and forwards them to serveRequest.
 func (h *handlerForGRPCServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	h.am.serveRequest(w, req)
 }
@@ -824,7 +832,7 @@ func (am *MultitenantAlertmanager) GetPositionForUser(userID string) int {
 	return position
 }
 
-// ServeHTTP serves the Alertmanager's web UI and API.
+// ServeHTTP handles gRPC requests to the Prometheus Alertmanager's web UI and API.
 func (am *MultitenantAlertmanager) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if am.State() != services.Running {
 		http.Error(w, "Alertmanager not ready", http.StatusServiceUnavailable)
@@ -834,7 +842,7 @@ func (am *MultitenantAlertmanager) ServeHTTP(w http.ResponseWriter, req *http.Re
 	am.distributor.DistributeRequest(w, req)
 }
 
-// HandleRequest implements gRPC Alertmanager service, which receives request from AlertManager-Distributor.
+// HandleRequest implements the gRPC AlertmanagerServer, which receives request from AlertManager-Distributor and forwards them to handlerForGRPCServer.
 func (am *MultitenantAlertmanager) HandleRequest(ctx context.Context, in *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	return am.grpcServer.Handle(ctx, in)
 }
