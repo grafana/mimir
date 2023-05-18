@@ -24,6 +24,11 @@ type ConcreteSeriesSet struct {
 	series []storage.Series
 }
 
+func NewConcreteSeriesSet(series []storage.Series) storage.SeriesSet {
+	sort.Sort(byLabels(series))
+	return NewConcreteSeriesSetFromSortedSeries(series)
+}
+
 // NewConcreteSeriesSetFromUnsortedSeries instantiates an in-memory series set from a slice
 // of unsorted series. The series will be sorted in place.
 func NewConcreteSeriesSetFromUnsortedSeries(series []storage.Series) storage.SeriesSet {
