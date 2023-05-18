@@ -189,6 +189,8 @@ func TestRuleCommand_checkRules(t *testing.T) {
 				// Setup.
 				f, err := os.Create(file)
 				require.NoError(t, err)
+				t.Cleanup(func() { _ = f.Close() })
+
 				contents := rules.RuleNamespace{
 					Namespace: "test",
 					Groups: []rwrulefmt.RuleGroup{{
