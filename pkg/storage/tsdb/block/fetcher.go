@@ -34,8 +34,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
-const FetcherConcurrency = 32
-
 // FetcherMetrics holds metrics tracked by the metadata fetcher. This struct and its fields are exported
 // to allow depending projects (eg. Cortex) to implement their own custom metadata fetcher while tracking
 // compatible metrics.
@@ -141,7 +139,6 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels, modifiedExt
 
 type MetadataFetcher interface {
 	Fetch(ctx context.Context) (metas map[ulid.ULID]*metadata.Meta, partial map[ulid.ULID]error, err error)
-	UpdateOnChange(func([]metadata.Meta, error))
 }
 
 // GaugeVec hides something like a Prometheus GaugeVec or an extprom.TxGaugeVec.
@@ -214,8 +211,8 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 }
 
 // NewMetaFetcher transforms BaseFetcher into actually usable *MetaFetcher.
-func (f *BaseFetcher) NewMetaFetcher(reg prometheus.Registerer, filters []MetadataFilter, logTags ...interface{}) *MetaFetcher {
-	return &MetaFetcher{metrics: NewFetcherMetrics(reg, nil, nil), wrapped: f, filters: filters, logger: log.With(f.logger, logTags...)}
+func (f *BaseFetcher) NewMetaFetcher(reg prometheus.Registerer, filters []MetadataFilter) *MetaFetcher {
+	return &MetaFetcher{metrics: NewFetcherMetrics(reg, nil, nil), wrapped: f, filters: filters}
 }
 
 var (
@@ -487,10 +484,6 @@ type MetaFetcher struct {
 	metrics *FetcherMetrics
 
 	filters []MetadataFilter
-
-	listener func([]metadata.Meta, error)
-
-	logger log.Logger
 }
 
 // Fetch returns all block metas as well as partial blocks (blocks without or with corrupted meta file) from the bucket.
@@ -498,20 +491,7 @@ type MetaFetcher struct {
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
 func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*metadata.Meta, partial map[ulid.ULID]error, err error) {
-	metas, partial, err = f.wrapped.fetch(ctx, f.metrics, f.filters)
-	if f.listener != nil {
-		blocks := make([]metadata.Meta, 0, len(metas))
-		for _, meta := range metas {
-			blocks = append(blocks, *meta)
-		}
-		f.listener(blocks, err)
-	}
-	return metas, partial, err
-}
-
-// UpdateOnChange allows to add listener that will be update on every change.
-func (f *MetaFetcher) UpdateOnChange(listener func([]metadata.Meta, error)) {
-	f.listener = listener
+	return f.wrapped.fetch(ctx, f.metrics, f.filters)
 }
 
 // Special label that will have an ULID of the meta.json being referenced to.

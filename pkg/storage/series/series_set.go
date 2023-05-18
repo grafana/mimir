@@ -24,18 +24,6 @@ type ConcreteSeriesSet struct {
 	series []storage.Series
 }
 
-// NewConcreteSeriesSet instantiates an in-memory series set from a series
-// Series will be sorted by labels.
-// While this is same as NewConcreteSeriesSetFromUnsortedSeries, it is here so that
-// testing streaming chunks PR becomes easier since some other dependencies depend on it later.
-func NewConcreteSeriesSet(series []storage.Series) storage.SeriesSet {
-	sort.Sort(byLabels(series))
-	return &ConcreteSeriesSet{
-		cur:    -1,
-		series: series,
-	}
-}
-
 // NewConcreteSeriesSetFromUnsortedSeries instantiates an in-memory series set from a slice
 // of unsorted series. The series will be sorted in place.
 func NewConcreteSeriesSetFromUnsortedSeries(series []storage.Series) storage.SeriesSet {

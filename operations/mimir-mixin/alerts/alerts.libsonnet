@@ -469,6 +469,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '30m',
           labels: {
             severity: 'warning',
+            workload_type: 'statefulset',
           },
           annotations: {
             message: |||
@@ -497,6 +498,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '30m',
           labels: {
             severity: 'warning',
+            workload_type: 'deployment',
           },
           annotations: {
             message: |||

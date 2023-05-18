@@ -923,6 +923,102 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 	}
 }
 
+func TestMultitenantAlertmanager_deleteUnusedRemoteUserStateDisabled(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		user1 = "user1"
+		user2 = "user2"
+	)
+
+	alertStore := prepareInMemoryAlertStore()
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	createInstance := func(i int) *MultitenantAlertmanager {
+		reg := prometheus.NewPedanticRegistry()
+		cfg := mockAlertmanagerConfig(t)
+
+		cfg.ShardingRing.ReplicationFactor = 1
+		cfg.ShardingRing.Common.InstanceID = fmt.Sprintf("instance-%d", i)
+		cfg.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.1-%d", i)
+
+		// Increase state write interval so that state gets written sooner, making test faster.
+		cfg.Persister.Interval = 500 * time.Millisecond
+
+		// Disable state cleanup.
+		cfg.EnableStateCleanup = false
+
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
+		})
+		require.NoError(t, services.StartAndAwaitRunning(ctx, am))
+
+		return am
+	}
+
+	// Create two instances. With replication factor of 1, this means that only one
+	// of the instances will own the user. This tests that an instance does not delete
+	// state for users that are configured, but are owned by other instances.
+	am1 := createInstance(1)
+	am2 := createInstance(2)
+
+	// Configure the users and wait for the state persister to write some state for both.
+	{
+		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+			User:      user1,
+			RawConfig: simpleConfigOne,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+			User:      user2,
+			RawConfig: simpleConfigOne,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+
+		err := am1.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+		err = am2.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			_, err1 := alertStore.GetFullState(context.Background(), user1)
+			_, err2 := alertStore.GetFullState(context.Background(), user2)
+			return err1 == nil && err2 == nil
+		}, 5*time.Second, 100*time.Millisecond, "timed out waiting for state to be persisted")
+	}
+
+	// Perform another sync to trigger cleanup; this should have no effect.
+	{
+		err := am1.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+		err = am2.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		_, err = alertStore.GetFullState(context.Background(), user1)
+		require.NoError(t, err)
+		_, err = alertStore.GetFullState(context.Background(), user2)
+		require.NoError(t, err)
+	}
+
+	// Delete one configuration and trigger cleanup; state should not be deleted.
+	{
+		require.NoError(t, alertStore.DeleteAlertConfig(ctx, user1))
+
+		err := am1.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+		err = am2.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		_, err = alertStore.GetFullState(context.Background(), user1)
+		require.NoError(t, err)
+		_, err = alertStore.GetFullState(context.Background(), user2)
+		require.NoError(t, err)
+	}
+}
+
 func createFile(t *testing.T, path string) string {
 	dir := filepath.Dir(path)
 	require.NoError(t, os.MkdirAll(dir, 0777))

@@ -70,3 +70,7 @@ type mockRulerServer struct{}
 func (m *mockRulerServer) Rules(context.Context, *RulesRequest) (*RulesResponse, error) {
 	return &RulesResponse{}, nil
 }
+
+func (m *mockRulerServer) SyncRules(context.Context, *SyncRulesRequest) (*SyncRulesResponse, error) {
+	return &SyncRulesResponse{}, nil
+}

@@ -84,6 +84,7 @@
           ||| % $._config,
           labels: {
             severity: 'critical',
+            time_period: '24h',
           },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not uploaded any block in the last 24 hours.' % $._config,
@@ -102,9 +103,10 @@
           ||| % $._config,
           labels: {
             severity: 'critical',
+            time_period: 'since-start',
           },
           annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not uploaded any block in the last 24 hours.' % $._config,
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not uploaded any block since its start.' % $._config,
           },
         },
         {
