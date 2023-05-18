@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,7 +22,6 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
@@ -34,13 +34,18 @@ import (
 )
 
 const (
-	delim = "/" // Used by Mimir to delimit tenants and blocks, and objects within blocks.
-)
-
-const (
 	serviceGCS = "gcs" // Google Cloud Storage
 	serviceABS = "abs" // Azure Blob Storage
+	delim      = "/"   // Used by Mimir to delimit tenants and blocks, and objects within blocks.
 )
+
+type bucket interface {
+	Get(ctx context.Context, objectName string) (io.ReadCloser, error)
+	Copy(ctx context.Context, objectName string, dstBucket bucket) error
+	ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error)
+	UploadMarkerFile(ctx context.Context, objectName string) error
+	Name() string
+}
 
 type config struct {
 	service           string
@@ -74,24 +79,6 @@ func (c *config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform copy; only log what would happen.")
 	c.azureConfig.RegisterFlags(f)
-}
-
-type azureConfig struct {
-	sourceAccountName      string
-	sourceAccountKey       string
-	destinationAccountName string
-	destinationAccountKey  string
-	copyStatusBackoff      backoff.Config
-}
-
-func (c *azureConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.sourceAccountName, "azure-source-account-name", "", "Account name for the azure source bucket.")
-	f.StringVar(&c.sourceAccountKey, "azure-source-account-key", "", "Account key for the azure source bucket.")
-	f.StringVar(&c.destinationAccountName, "azure-destination-account-name", "", "Account name for the azure destination bucket.")
-	f.StringVar(&c.destinationAccountKey, "azure-destination-account-key", "", "Account key for the azure destination bucket.")
-	f.DurationVar(&c.copyStatusBackoff.MinBackoff, "azure-copy-status-backoff-min-duration", 15*time.Second, "The minimum amount of time to back off per copy operation.")
-	f.DurationVar(&c.copyStatusBackoff.MaxBackoff, "azure-copy-status-backoff-max-duration", 20*time.Second, "The maximum amount of time to back off per copy operation.")
-	f.IntVar(&c.copyStatusBackoff.MaxRetries, "azure-copy-status-backoff-max-retries", 40, "The maximum number of retries while checking the copy status.")
 }
 
 type metrics struct {

@@ -6,10 +6,11 @@ The currently supported services are Google Cloud Storage (GCS) and Azure Blob S
 ## Features
 
 - Prevents copying blocks multiple times to the same destination bucket by uploading block marker files to the source bucket
-- Run as a one-time copy job, or run continuously with periodic checks (`--copy-period`)
+- Runs continuously with periodic checks when supplied a time duration with `--copy-period`, otherwise runs one check then exits.
 - Include or exclude users from having blocks copied (`--enabled-users` and `--disabled-users`)
-- Configurable minimum block duration (`--min-block-duration`) to avoid copying blocks that are too small
+- Configurable minimum block duration (`--min-block-duration`) to avoid copying blocks that will be compacted
 - Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range
+- Log what would be copied without actually copying anything with `--dry-run` 
 
 ### Example for Google Cloud Storage
 
@@ -31,8 +32,8 @@ The currently supported services are Google Cloud Storage (GCS) and Azure Blob S
   --source-bucket https://<source account name>.blob.core.windows.net/<source bucket name> \
   --azure-source-account-name <source account name> \
   --azure-source-account-key <source account key> \
+  --destination-bucket https://<destination account name>.blob.core.windows.net/<destination bucket name> \
   --azure-destination-account-name <destination account name> \
   --azure-destination-account-key <destination account key> \
-  --destination-bucket https://<destination account name>.blob.core.windows.net/<destination bucket name> \
   --min-block-duration 23h
 ```

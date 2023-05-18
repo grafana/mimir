@@ -4,11 +4,11 @@ package main
 
 import (
 	"context"
+	"flag"
 	"io"
 	"strings"
 	"time"
 
-	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
@@ -16,103 +16,24 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/grafana/dskit/backoff"
 	"github.com/pkg/errors"
-	"google.golang.org/api/iterator"
 )
 
-type bucket interface {
-	Get(ctx context.Context, objectName string) (io.ReadCloser, error)
-	Copy(ctx context.Context, objectName string, dstBucket bucket) error
-	ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error)
-	UploadMarkerFile(ctx context.Context, objectName string) error
-	Name() string
+type azureConfig struct {
+	sourceAccountName      string
+	sourceAccountKey       string
+	destinationAccountName string
+	destinationAccountKey  string
+	copyStatusBackoff      backoff.Config
 }
 
-type gcsBucket struct {
-	storage.BucketHandle
-	name string
-}
-
-func newGCSBucket(client *storage.Client, name string) bucket {
-	return &gcsBucket{
-		BucketHandle: *client.Bucket(name),
-		name:         name,
-	}
-}
-
-func (bkt *gcsBucket) Get(ctx context.Context, objectName string) (io.ReadCloser, error) {
-	obj := bkt.Object(objectName)
-	r, err := obj.NewReader(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return r, nil
-}
-
-func (bkt *gcsBucket) Copy(ctx context.Context, objectName string, dstBucket bucket) error {
-	d, ok := dstBucket.(*gcsBucket)
-	if !ok {
-		return errors.New("destination bucket wasn't a gcs bucket")
-	}
-	srcObj := bkt.Object(objectName)
-	dstObject := d.BucketHandle.Object(objectName)
-	copier := dstObject.CopierFrom(srcObj)
-	_, err := copier.Run(ctx)
-	return err
-}
-
-func (bkt *gcsBucket) ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error) {
-	if len(prefix) > 0 && prefix[len(prefix)-1:] != delim {
-		prefix = prefix + delim
-	}
-
-	q := &storage.Query{
-		Prefix: prefix,
-	}
-	if !recursive {
-		q.Delimiter = delim
-	}
-
-	var result []string
-
-	it := bkt.Objects(ctx, q)
-	for {
-		obj, err := it.Next()
-
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-
-		if err != nil {
-			return nil, errors.Wrapf(err, "listPrefix: error listing %v", prefix)
-		}
-
-		path := ""
-		if obj.Prefix != "" { // synthetic directory, only returned when recursive=false
-			path = obj.Prefix
-		} else {
-			path = obj.Name
-		}
-
-		if strings.HasPrefix(path, prefix) {
-			path = strings.TrimPrefix(path, prefix)
-		} else {
-			return nil, errors.Errorf("listPrefix: path has invalid prefix: %v, expected prefix: %v", path, prefix)
-		}
-
-		result = append(result, path)
-	}
-
-	return result, nil
-}
-
-func (bkt *gcsBucket) UploadMarkerFile(ctx context.Context, objectName string) error {
-	obj := bkt.Object(objectName)
-	w := obj.NewWriter(ctx)
-	return w.Close()
-}
-
-func (bkt *gcsBucket) Name() string {
-	return bkt.name
+func (c *azureConfig) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&c.sourceAccountName, "azure-source-account-name", "", "Account name for the azure source bucket.")
+	f.StringVar(&c.sourceAccountKey, "azure-source-account-key", "", "Account key for the azure source bucket.")
+	f.StringVar(&c.destinationAccountName, "azure-destination-account-name", "", "Account name for the azure destination bucket.")
+	f.StringVar(&c.destinationAccountKey, "azure-destination-account-key", "", "Account key for the azure destination bucket.")
+	f.DurationVar(&c.copyStatusBackoff.MinBackoff, "azure-copy-status-backoff-min-duration", 15*time.Second, "The minimum amount of time to back off per copy operation.")
+	f.DurationVar(&c.copyStatusBackoff.MaxBackoff, "azure-copy-status-backoff-max-duration", 20*time.Second, "The maximum amount of time to back off per copy operation.")
+	f.IntVar(&c.copyStatusBackoff.MaxRetries, "azure-copy-status-backoff-max-retries", 40, "The maximum number of retries while checking the copy status.")
 }
 
 type azureBucket struct {
