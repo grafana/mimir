@@ -10,7 +10,7 @@ The currently supported services are Google Cloud Storage (GCS) and Azure Blob S
 - Include or exclude users from having blocks copied (`--enabled-users` and `--disabled-users`)
 - Configurable minimum block duration (`--min-block-duration`) to avoid copying blocks that will be compacted
 - Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range
-- Log what would be copied without actually copying anything with `--dry-run` 
+- Log what would be copied without actually copying anything with `--dry-run`
 
 ### Example for Google Cloud Storage
 
