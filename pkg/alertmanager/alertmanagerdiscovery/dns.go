@@ -49,7 +49,7 @@ func NewDiscoveryConfigs(alertManagerUrls string, alertmanagerRefreshInterval ti
 				return nil, err
 			}
 			if isSD {
-				result[rawURL] = DNSDiscoveryConfig{
+				result[amURL.String()] = DNSDiscoveryConfig{
 					Resolver:        resolver,
 					RefreshInterval: alertmanagerRefreshInterval,
 					Host:            amURL.Host,
