@@ -80,6 +80,8 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-mixin
       - name: Check Mixin Tests
         run: make BUILD_IN_CONTAINER=false check-mixin-tests
+      - name: Check Mixin with Mimirtool rules check
+        run: make BUILD_IN_CONTAINER=false check-mixin-mimirtool-rules
       - name: Check Jsonnet Manifests
         run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
       - name: Check Jsonnet Getting Started
