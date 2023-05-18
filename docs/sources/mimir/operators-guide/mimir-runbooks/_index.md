@@ -668,29 +668,6 @@ How to **investigate**:
 - Ensure the compactor is successfully running
 - Look for any error in the compactor logs
 
-### MimirTenantHasPartialBlocks
-
-This alert fires when Mimir finds partial blocks for a given tenant. A partial block is a block missing the `meta.json` and this may usually happen in two circumstances:
-
-1. A block upload has been interrupted and not cleaned up or retried
-2. A block deletion has been interrupted and `deletion-mark.json` has been deleted before `meta.json`
-
-How to **investigate**:
-
-1. Look for partial blocks in the logs. Example Loki query: `{cluster="<cluster>",namespace="<namespace>",container="compactor"} |= "skipped partial block"`
-1. Pick a block and note its ID (`block` field in log entry) and tenant ID (`org_id` in log entry)
-1. Find the bucket used by the Mimir cluster, such as checking the configured `blocks_storage_bucket_name` if you are using Jsonnet.
-1. Find out which Mimir component operated on the block last (e.g. uploaded by ingester/compactor, or deleted by compactor)
-   1. Determine when the partial block was uploaded: `gsutil ls -l gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`. Alternatively you can use `ulidtime` command from Mimir tools directory `ulidtime ${BLOCK_ID}` to find block creation time.
-   1. Search in the logs around that time to find the log entry from when the compactor created the block ("compacted blocks" for log message)
-   1. From the compactor log entry you found, pick the job ID from the `groupKey` field, f.ex. `0@9748515562602778029-merge--1645711200000-1645718400000`
-   1. Then search the logs for the job ID and look for an entry with the message "compaction job failed", this will show that the compactor failed uploading the block
-   1. If you found a failed compaction job, as outlined in the previous step, try searching for a corresponding log message (for the same job ID) "compaction job succeeded". This will mean that the compaction job was retried successfully. Note: this should produce a different block ID from the failed upload.
-1. Investigate if it was a partial upload or partial delete
-   1. If it was a partial delete or an upload failed by a compactor you can safely mark the block for deletion, and compactor will delete the block. You can use `markblocks` command from Mimir tools directory: `markblocks -mark deletion -allow-partial -tenant <tenant> <blockID>` with correct backend (eg. GCS: `-backend gcs -gcs.bucket-name <bucket-name>`) configuration.
-   1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
-1. Prevent the issue from reoccurring by enabling automatic partial block cleanup. This can be enabled with the `-compactor.partial-block-deletion-delay` flag. It takes a duration as an argument. If a partial block persists past the specified duration, the compactor will automatically delete it. One can monitor automatic cleanup of partial blocks via the `cortex_compactor_blocks_marked_for_deletion_total{reason="partial"}` counter.
-
 ### MimirQueriesIncorrect
 
 _TODO: this runbook has not been written yet._

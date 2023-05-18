@@ -58,6 +58,17 @@
       "fieldCategory": "experimental"
     },
     {
+      "kind": "field",
+      "name": "enable_go_runtime_metrics",
+      "required": false,
+      "desc": "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.",
+      "fieldValue": null,
+      "fieldDefaultValue": false,
+      "fieldFlag": "enable-go-runtime-metrics",
+      "fieldType": "boolean",
+      "fieldCategory": "advanced"
+    },
+    {
       "kind": "block",
       "name": "api",
       "required": false,
@@ -3244,7 +3255,7 @@
           "required": false,
           "desc": "If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 86400000000000,
           "fieldFlag": "compactor.partial-block-deletion-delay",
           "fieldType": "duration"
         },
@@ -7079,7 +7090,7 @@
               "fieldDefaultValue": 2147483648,
               "fieldFlag": "blocks-storage.bucket-store.max-chunk-pool-bytes",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7090,7 +7101,7 @@
               "fieldDefaultValue": 16000,
               "fieldFlag": "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7101,7 +7112,7 @@
               "fieldDefaultValue": 50000000,
               "fieldFlag": "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -11844,6 +11855,17 @@
           "fieldDefaultValue": 900000000000,
           "fieldFlag": "alertmanager.persist-interval",
           "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "enable_state_cleanup",
+          "required": false,
+          "desc": "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "alertmanager.enable-state-cleanup",
+          "fieldType": "boolean",
           "fieldCategory": "advanced"
         }
       ],

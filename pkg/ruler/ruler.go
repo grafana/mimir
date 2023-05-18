@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
@@ -37,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -61,6 +63,7 @@ const (
 	rulerSyncReasonInitial    rulesSyncReason = "initial"
 	rulerSyncReasonPeriodic   rulesSyncReason = "periodic"
 	rulerSyncReasonRingChange rulesSyncReason = "ring-change"
+	rulerSyncReasonAPIChange  rulesSyncReason = "api-change"
 
 	// rulerPeriodicSyncJitter is the jitter applied to the interval used by the periodic sync.
 	rulerPeriodicSyncJitter = 0.1
@@ -71,6 +74,15 @@ const (
 
 	// errors
 	errListAllUser = "unable to list the ruler users"
+)
+
+var (
+	rulerSyncReasons = []rulesSyncReason{
+		rulerSyncReasonInitial,
+		rulerSyncReasonPeriodic,
+		rulerSyncReasonRingChange,
+		rulerSyncReasonAPIChange,
+	}
 )
 
 // Config is the configuration for the recording rules server.
@@ -112,13 +124,15 @@ type Config struct {
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
 
-	RingCheckPeriod time.Duration `yaml:"-"`
-
 	EnableQueryStats bool `yaml:"query_stats_enabled" category:"advanced"`
 
 	QueryFrontend QueryFrontendConfig `yaml:"query_frontend"`
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
+
+	// Allow to override timers for testing purposes.
+	RingCheckPeriod             time.Duration `yaml:"-"`
+	rulerSyncQueuePollFrequency time.Duration `yaml:"-"`
 }
 
 // Validate config and returns error on failure
@@ -174,6 +188,13 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.RingCheckPeriod = 5 * time.Second
 }
 
+func (cfg *Config) syncQueuePollFrequency() time.Duration {
+	if cfg.rulerSyncQueuePollFrequency > 0 {
+		return cfg.rulerSyncQueuePollFrequency
+	}
+	return defaultRulerSyncPollFrequency
+}
+
 type rulerMetrics struct {
 	listRules       prometheus.Histogram
 	loadRuleGroups  prometheus.Histogram
@@ -182,7 +203,7 @@ type rulerMetrics struct {
 }
 
 func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
-	return &rulerMetrics{
+	m := &rulerMetrics{
 		listRules: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ruler_list_rules_seconds",
 			Help:    "Time spent listing rules.",
@@ -190,7 +211,7 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 		}),
 		loadRuleGroups: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ruler_load_rule_groups_seconds",
-			Help:    "Time spent loading all rules for the rule groups in this ruler.",
+			Help:    "Time spent loading the rule groups owned by this ruler from the object storage. This metric tracks the timing of both full and partial sync.",
 			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 15, 30},
 		}),
 		ringCheckErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -202,19 +223,41 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 			Help: "Total number of times the ruler sync operation triggered.",
 		}, []string{"reason"}),
 	}
+
+	// Init metrics.
+	for _, reason := range rulerSyncReasons {
+		m.rulerSync.WithLabelValues(string(reason))
+	}
+
+	return m
 }
 
 // MultiTenantManager is the interface of interaction with a Manager that is tenant aware.
 type MultiTenantManager interface {
-	// SyncRuleGroups is used to sync the Manager with rules from the RuleStore.
-	// If existing user is missing in the ruleGroups map, its ruler manager will be stopped.
-	SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList)
+	// SyncFullRuleGroups is used to sync the Manager with rules from the RuleStore.
+	// If existing user is missing in the ruleGroupsByUser map, its ruler manager will be stopped.
+	SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList)
+
+	// SyncPartialRuleGroups syncs the rule groups for the input tenants.
+	//
+	// If a tenant is completely missing from the input ruleGroupsByUser map it doesn't mean their
+	// rule groups config don't exist anymore, so they shouldn't be removed from the ruler.
+	//
+	// If a tenant exists in the map then the list of rule groups must be all the rule groups owned
+	// by this tenant manager (not a partial view). If a tenant exists in the map but its list of rule
+	// groups is empty, then it means there are no rule groups owned by this ruler and it's safe to stop
+	// the tenant's ruler manager.
+	SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList)
+
 	// GetRules fetches rules for a particular tenant (userID).
 	GetRules(userID string) []*promRules.Group
+
 	// Stop stops all Manager components.
 	Stop()
+
 	// ValidateRuleGroup validates a rulegroup
 	ValidateRuleGroup(rulefmt.RuleGroup) []error
+
 	// Start evaluating rules.
 	Start()
 }
@@ -265,6 +308,15 @@ type Ruler struct {
 	// Pool of clients used to connect to other ruler replicas.
 	clientsPool ClientsPool
 
+	// Queue where we push rules syncing notifications to send to other ruler instances.
+	// This queue is also used to de-amplify the outbound notifications.
+	outboundSyncQueue          *rulerSyncQueue
+	outboundSyncQueueProcessor *rulerSyncQueueProcessor
+
+	// Queue where we pull rules syncing notifications received from other ruler instances.
+	// This queue is also used to de-amplify the inbound notifications.
+	inboundSyncQueue *rulerSyncQueue
+
 	allowedTenants *util.AllowedTenants
 
 	registry prometheus.Registerer
@@ -283,17 +335,21 @@ func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 
 func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, directStore, cachedStore rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {
 	ruler := &Ruler{
-		cfg:            cfg,
-		directStore:    directStore,
-		cachedStore:    cachedStore,
-		manager:        manager,
-		registry:       reg,
-		logger:         logger,
-		limits:         limits,
-		clientsPool:    clientPool,
-		allowedTenants: util.NewAllowedTenants(cfg.EnabledTenants, cfg.DisabledTenants),
-		metrics:        newRulerMetrics(reg),
+		cfg:               cfg,
+		directStore:       directStore,
+		cachedStore:       cachedStore,
+		manager:           manager,
+		registry:          reg,
+		logger:            logger,
+		limits:            limits,
+		clientsPool:       clientPool,
+		outboundSyncQueue: newRulerSyncQueue(cfg.syncQueuePollFrequency()),
+		inboundSyncQueue:  newRulerSyncQueue(cfg.syncQueuePollFrequency()),
+		allowedTenants:    util.NewAllowedTenants(cfg.EnabledTenants, cfg.DisabledTenants),
+		metrics:           newRulerMetrics(reg),
 	}
+
+	ruler.outboundSyncQueueProcessor = newRulerSyncQueueProcessor(ruler.outboundSyncQueue, ruler.notifySyncRules)
 
 	if len(cfg.EnabledTenants) > 0 {
 		level.Info(ruler.logger).Log("msg", "ruler using enabled users", "enabled", strings.Join(cfg.EnabledTenants, ", "))
@@ -349,7 +405,7 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 func (r *Ruler) starting(ctx context.Context) error {
 	var err error
 
-	if r.subservices, err = services.NewManager(r.lifecycler, r.ring, r.clientsPool); err != nil {
+	if r.subservices, err = services.NewManager(r.lifecycler, r.ring, r.clientsPool, r.outboundSyncQueue, r.outboundSyncQueueProcessor, r.inboundSyncQueue); err != nil {
 		return errors.Wrap(err, "unable to start ruler subservices")
 	}
 
@@ -370,7 +426,7 @@ func (r *Ruler) starting(ctx context.Context) error {
 	level.Info(r.logger).Log("msg", "ruler is JOINING in the ring")
 
 	// Here during joining, we can download rules from object storage and sync them to the local rule manager
-	r.syncRules(ctx, rulerSyncReasonInitial)
+	r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
 
 	if err = r.lifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
 		return errors.Wrapf(err, "switch instance to %s in the ring", ring.ACTIVE)
@@ -451,7 +507,8 @@ func (r *Ruler) run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-periodicTicker.C:
-			r.syncRules(ctx, rulerSyncReasonPeriodic)
+			// Sync rules for all users.
+			r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
 		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
 			// replication set which we use to compare with the previous state.
@@ -459,37 +516,70 @@ func (r *Ruler) run(ctx context.Context) error {
 
 			if ring.HasReplicationSetChanged(ringLastState, currRingState) {
 				ringLastState = currRingState
-				r.syncRules(ctx, rulerSyncReasonRingChange)
+				r.syncRules(ctx, nil, rulerSyncReasonRingChange, true)
 			}
+		case userIDs := <-r.inboundSyncQueue.poll():
+			// Sync rules for users who changed their configs.
+			r.syncRules(ctx, userIDs, rulerSyncReasonAPIChange, false)
 		case err := <-r.subservicesWatcher.Chan():
 			return errors.Wrap(err, "ruler subservice failed")
 		}
 	}
 }
 
+// syncRules synchronises the rules managed by this ruler instance.
+// If the input userIDs list is not empty, then this function will only
+// synchronise the rules for the input users.
+//
 // It's not safe to call this function concurrently.
 // We expect this function is only called from Ruler.run().
-func (r *Ruler) syncRules(ctx context.Context, reason rulesSyncReason) {
+func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyncReason, cacheLookupEnabled bool) {
+	var (
+		configs map[string]rulespb.RuleGroupList
+		err     error
+	)
+
 	level.Debug(r.logger).Log("msg", "syncing rules", "reason", reason)
 	r.metrics.rulerSync.WithLabelValues(string(reason)).Inc()
 
-	configs, err := r.listRuleGroupsToSyncForAllUsers(ctx, reason)
+	// List rule groups to sync.
+	if len(userIDs) > 0 {
+		configs, err = r.listRuleGroupsToSyncForUsers(ctx, userIDs, reason, cacheLookupEnabled)
+	} else {
+		configs, err = r.listRuleGroupsToSyncForAllUsers(ctx, reason, cacheLookupEnabled)
+	}
 	if err != nil {
-		level.Error(r.logger).Log("msg", "unable to list rules", "err", err)
+		level.Error(r.logger).Log("msg", "unable to list rules to sync", "err", err)
 		return
 	}
 
+	// Load rule groups to sync.
 	configs, err = r.loadRuleGroupsToSync(ctx, configs)
 	if err != nil {
-		level.Error(r.logger).Log("msg", "unable to load rules owned by this ruler", "err", err)
+		level.Error(r.logger).Log("msg", "unable to load rules to sync", "err", err)
 		return
 	}
 
 	// Filter out all rules for which their evaluation has been disabled for the given tenant.
 	configs = filterRuleGroupsByEnabled(configs, r.limits, r.logger)
 
-	// This will also delete local group files for users that are no longer in 'configs' map.
-	r.manager.SyncRuleGroups(ctx, configs)
+	// Sync the rule groups.
+	if len(userIDs) > 0 {
+		// The filtering done above (e.g. due to sharding, disabled tenants, ...) may have
+		// removed some tenants from the configs map. We want to add back all input tenants
+		// to the map but with an empty list of rule groups, so that these tenants will be
+		// removed from the ruler manager.
+		for _, userID := range userIDs {
+			if _, exists := configs[userID]; !exists {
+				configs[userID] = nil
+			}
+		}
+
+		r.manager.SyncPartialRuleGroups(ctx, configs)
+	} else {
+		// This will also delete local group files for users that are no longer in 'configs' map.
+		r.manager.SyncFullRuleGroups(ctx, configs)
+	}
 }
 
 // loadRuleGroupsToSync loads the input rule group configs. This function should be used only when
@@ -517,7 +607,7 @@ func (r *Ruler) loadRuleGroupsToSync(ctx context.Context, configs map[string]rul
 // listRuleGroupsToSyncForAllUsers lists all the rule groups that should be synched by this ruler instance.
 // This function should be used only when syncing the rule groups, because it expects the
 // storage view to be eventually consistent (due to optional caching).
-func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rulesSyncReason) (result map[string]rulespb.RuleGroupList, err error) {
+func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rulesSyncReason, cacheLookupEnabled bool) (result map[string]rulespb.RuleGroupList, err error) {
 	start := time.Now()
 	defer func() {
 		r.metrics.listRules.Observe(time.Since(start).Seconds())
@@ -525,16 +615,16 @@ func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rule
 
 	// In order to reduce API calls to the object storage among all ruler replicas,
 	// we support lookup of stale data for a short period.
-	users, err := r.cachedStore.ListAllUsers(ctx)
+	users, err := r.cachedStore.ListAllUsers(bucketcache.WithCacheLookupEnabled(ctx, cacheLookupEnabled))
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to list users of ruler")
 	}
 
-	result, err = r.listRuleGroupsToSyncForUsers(ctx, users, reason)
+	result, err = r.listRuleGroupsToSyncForUsers(ctx, users, reason, cacheLookupEnabled)
 	return
 }
 
-func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []string, reason rulesSyncReason) (map[string]rulespb.RuleGroupList, error) {
+func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []string, reason rulesSyncReason, cacheLookupEnabled bool) (map[string]rulespb.RuleGroupList, error) {
 	// Only users in userRings will be used to load the rules.
 	userRings := map[string]ring.ReadRing{}
 	for _, userID := range userIDs {
@@ -580,7 +670,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 	for i := 0; i < concurrency; i++ {
 		g.Go(func() error {
 			for userID := range userCh {
-				groups, err := r.cachedStore.ListRuleGroupsForUserAndNamespace(gctx, userID, "")
+				groups, err := r.cachedStore.ListRuleGroupsForUserAndNamespace(bucketcache.WithCacheLookupEnabled(gctx, cacheLookupEnabled), userID, "")
 				if err != nil {
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
@@ -826,11 +916,6 @@ func (r *Ruler) GetRules(ctx context.Context, rulesTypeFilter RulesRequest_RuleT
 		ring = r.ring.ShuffleShard(userID, shardSize)
 	}
 
-	rulers, err := ring.GetReplicationSetForOperation(RuleEvalRingOp)
-	if err != nil {
-		return nil, err
-	}
-
 	ctx, err = user.InjectIntoGRPCRequest(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("unable to inject user ID into grpc request, %v", err)
@@ -843,18 +928,15 @@ func (r *Ruler) GetRules(ctx context.Context, rulesTypeFilter RulesRequest_RuleT
 
 	// Concurrently fetch rules from all rulers. Since rules are not replicated,
 	// we need all requests to succeed.
-	addrs := rulers.GetAddresses()
-	err = concurrency.ForEachJob(ctx, len(addrs), len(addrs), func(ctx context.Context, idx int) error {
-		addr := addrs[idx]
-
-		rulerClient, err := r.clientsPool.GetClientFor(addr)
-		if err != nil {
-			return errors.Wrapf(err, "unable to get client for ruler %s", addr)
+	err = r.forEachRulerInTheRing(ctx, ring, RuleEvalRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error {
+		// Fail if we have not been able to get the client for a ruler.
+		if rulerClientErr != nil {
+			return err
 		}
 
 		newGrps, err := rulerClient.Rules(ctx, &RulesRequest{Filter: rulesTypeFilter})
 		if err != nil {
-			return errors.Wrapf(err, "unable to retrieve rules from ruler %s", addr)
+			return errors.Wrapf(err, "unable to retrieve rules from ruler %s", rulerAddr)
 		}
 
 		mergedMx.Lock()
@@ -867,7 +949,13 @@ func (r *Ruler) GetRules(ctx context.Context, rulesTypeFilter RulesRequest_RuleT
 	return merged, err
 }
 
-// Rules implements the rules service
+// SyncRules implements the gRPC Ruler service.
+func (r *Ruler) SyncRules(ctx context.Context, req *SyncRulesRequest) (*SyncRulesResponse, error) {
+	r.inboundSyncQueue.enqueue(req.GetUserIds()...)
+	return &SyncRulesResponse{}, nil
+}
+
+// Rules implements the gRPC Ruler service.
 func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1046,6 +1134,8 @@ func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
+	r.NotifySyncRulesAsync(userID)
+
 	level.Info(logger).Log("msg", "deleted all tenant rule groups", "user", userID)
 	w.WriteHeader(http.StatusOK)
 }
@@ -1094,4 +1184,75 @@ func (r *Ruler) ListAllRules(w http.ResponseWriter, req *http.Request) {
 	}
 	close(iter)
 	<-done
+}
+
+// NotifySyncRulesAsync enqueue a request to notify this and other rulers to reload the configuration
+// for a given user. This function returns immediately and the request will be executed asynchronously.
+//
+// This function MUST be exported to let GEM call it too.
+func (r *Ruler) NotifySyncRulesAsync(userID string) {
+	r.outboundSyncQueue.enqueue(userID)
+}
+
+// notifySyncRules calls the SyncRules() gRPC endpoint on each active ruler in the ring,
+// requesting to re-sync the rules for the input userIDs.
+//
+// This function acts as a fire and forget:
+// - This function doesn't wait for the sync to be started or completed on the remove ruler instance.
+// - This function doesn't return any error but just logs failures.
+func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
+	var (
+		errsMx = sync.Mutex{}
+		errs   = multierror.MultiError{}
+	)
+
+	// We need to inject a fake tenant (even if the gRPC endpoint doesn't need it) otherwise
+	// the client-side gRPC instrumentation fails.
+	ctx = user.InjectOrgID(ctx, "")
+
+	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error {
+		var err error
+
+		if rulerClientErr != nil {
+			err = rulerClientErr
+		} else {
+			_, err = rulerClient.SyncRules(ctx, &SyncRulesRequest{UserIds: userIDs})
+		}
+
+		errsMx.Lock()
+		errs.Add(err)
+		errsMx.Unlock()
+
+		// Never return error because we don't want to prevent other rulers to be notified.
+		return nil
+	}))
+
+	// The call is a fire and forget. If an error occurs, we just log it and move on.
+	// Rules will be synced periodically anyway.
+	if errs.Err() != nil {
+		level.Warn(r.logger).Log("msg", "failed to trigger rules sync on remote rulers upon user config change (the config will be re-synced periodically)", "err", errs.Err())
+	}
+}
+
+// forEachRulerInTheRing calls f() for each ruler in the ring which is part of the replication set for the input op.
+// The execution breaks on first error returned by f().
+func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error) error {
+	rulers, err := ring.GetReplicationSetForOperation(op)
+	if err != nil {
+		return err
+	}
+
+	addrs := rulers.GetAddresses()
+
+	// The execution breaks on first error encountered.
+	return concurrency.ForEachJob(ctx, len(addrs), len(addrs), func(ctx context.Context, idx int) error {
+		rulerAddr := addrs[idx]
+
+		rulerClient, err := r.clientsPool.GetClientFor(rulerAddr)
+		if err != nil {
+			return f(ctx, rulerAddr, nil, errors.Wrapf(err, "unable to get client for ruler %s", rulerAddr))
+		}
+
+		return f(ctx, rulerAddr, rulerClient, nil)
+	})
 }

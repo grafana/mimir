@@ -28,7 +28,7 @@ func (s *streamingChunkSeries) Labels() labels.Labels {
 }
 
 func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
-	var rawChunks []client.Chunk // TODO: guess a size for this?
+	var rawChunks []client.Chunk
 
 	for _, source := range s.sources {
 		c, err := source.StreamReader.GetChunks(source.SeriesIndex)
@@ -56,7 +56,7 @@ type SeriesChunksStreamReader struct {
 	expectedSeriesCount int
 }
 
-func NewSeriesStreamer(client client.Ingester_QueryStreamClient, expectedSeriesCount int) *SeriesChunksStreamReader {
+func NewSeriesStreamReader(client client.Ingester_QueryStreamClient, expectedSeriesCount int) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
@@ -76,27 +76,11 @@ func (s *SeriesChunksStreamReader) Close() {
 // To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's client.Ingester_QueryStreamClient.
 func (s *SeriesChunksStreamReader) StartBuffering() {
 	s.seriesBatchChan = make(chan []client.QueryStreamSeriesChunks, 1)
+
+	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
 	ctxDone := s.client.Context().Done()
 
-	// Why does this exist?
-	// We want to make sure that the goroutine below is never leaked.
-	// The goroutine below could be leaked if nothing is reading from the buffer but it's still trying to send
-	// more series to a full buffer: it would block forever.
-	// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
-	// This only works correctly if the context is cancelled when the query request is complete (or cancelled),
-	// which is true at the time of writing.
-	// TODO: inline this, it's only used in one place
-	writeToBufferOrAbort := func(batch []client.QueryStreamSeriesChunks) bool {
-		select {
-		case <-ctxDone:
-			return false
-		case s.seriesBatchChan <- batch:
-			return true
-		}
-	}
-
-	// Important: to ensure that this goroutine is not leaked, the function must only ever write to errorChan at most once.
 	go func() {
 		defer s.client.CloseSend() //nolint:errcheck
 		defer close(s.seriesBatchChan)
@@ -124,8 +108,18 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				return
 			}
 
-			if !writeToBufferOrAbort(msg.SeriesChunks) {
+			select {
+			case <-ctxDone:
+				// Why do we abort if the context is done?
+				// We want to make sure that this goroutine is never leaked.
+				// This goroutine could be leaked if nothing is reading from the buffer, but this method is still trying to send
+				// more series to a full buffer: it would block forever.
+				// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
+				// This only works correctly if the context is cancelled when the query request is complete or cancelled,
+				// which is true at the time of writing.
 				return
+			case s.seriesBatchChan <- msg.SeriesChunks:
+				// Batch sent successfully, nothing else to do for this batch.
 			}
 		}
 	}()

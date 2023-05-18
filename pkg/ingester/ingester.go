@@ -1693,9 +1693,9 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 		return nil, ss.Err()
 	}
 
-	// Why retain the chunks.Iterator rather than the storage.ChunkSeries? ChunkSeries holds a reference to the series' labels,
-	// which we want to avoid, as that would increase memory consumption. We also don't need series' labels outside
-	// this method.
+	// Why retain the storage.ChunkSeries instead of their chunks.Iterator? If we get the iterators here,
+	// we can't re-use them. Re-using iterators has a bigger impact on allocations/memory than trying to
+	// avoid holding labels reference in ChunkSeries.
 	// TODO: pool slice?
 	var allSeries []storage.ChunkSeries
 	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize) // TODO: use a different value for queryStreamBatchSize?
