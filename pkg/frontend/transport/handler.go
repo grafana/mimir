@@ -26,6 +26,7 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/httpgrpc/server"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -49,13 +50,15 @@ var (
 
 // Config for a Handler.
 type HandlerConfig struct {
-	LogQueriesLongerThan time.Duration `yaml:"log_queries_longer_than"`
-	MaxBodySize          int64         `yaml:"max_body_size" category:"advanced"`
-	QueryStatsEnabled    bool          `yaml:"query_stats_enabled" category:"advanced"`
+	LogQueriesLongerThan   time.Duration          `yaml:"log_queries_longer_than"`
+	LogQueryRequestHeaders flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
+	MaxBodySize            int64                  `yaml:"max_body_size" category:"advanced"`
+	QueryStatsEnabled      bool                   `yaml:"query_stats_enabled" category:"advanced"`
 }
 
 func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.LogQueriesLongerThan, "query-frontend.log-queries-longer-than", 0, "Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.")
+	f.Var(&cfg.LogQueryRequestHeaders, "query-frontend.log-query-request-headers", "Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.")
 	f.Int64Var(&cfg.MaxBodySize, "query-frontend.max-body-size", 10*1024*1024, "Max body size for downstream prometheus.")
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
 }
@@ -240,6 +243,10 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"time_taken", queryResponseTime.String(),
 	}, formatQueryString(queryString)...)
 
+	if len(f.cfg.LogQueryRequestHeaders) != 0 {
+		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
+	}
+
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
@@ -284,6 +291,10 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 	}, formatQueryString(queryString)...)
 
+	if len(f.cfg.LogQueryRequestHeaders) != 0 {
+		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
+	}
+
 	if queryErr != nil {
 		logStatus := "failed"
 		if errors.Is(queryErr, context.Canceled) {
@@ -306,6 +317,15 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 func formatQueryString(queryString url.Values) (fields []interface{}) {
 	for k, v := range queryString {
 		fields = append(fields, fmt.Sprintf("param_%s", k), strings.Join(v, ","))
+	}
+	return fields
+}
+
+func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []interface{}) {
+	for _, s := range headersToLog {
+		if v := h.Get(s); v != "" {
+			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
+		}
 	}
 	return fields
 }

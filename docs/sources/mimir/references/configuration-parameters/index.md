@@ -1103,6 +1103,11 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.log-queries-longer-than
 [log_queries_longer_than: <duration> | default = 0s]
 
+# (advanced) Comma-separated list of request header names to include in query
+# logs. Applies to both query stats and slow queries logs.
+# CLI flag: -query-frontend.log-query-request-headers
+[log_query_request_headers: <string> | default = ""]
+
 # (advanced) Max body size for downstream prometheus.
 # CLI flag: -query-frontend.max-body-size
 [max_body_size: <int> | default = 10485760]

@@ -3686,6 +3686,17 @@
         },
         {
           "kind": "field",
+          "name": "log_query_request_headers",
+          "required": false,
+          "desc": "Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.log-query-request-headers",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "max_body_size",
           "required": false,
           "desc": "Max body size for downstream prometheus.",
