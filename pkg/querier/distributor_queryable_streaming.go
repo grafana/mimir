@@ -56,7 +56,7 @@ type SeriesChunksStreamReader struct {
 	expectedSeriesCount int
 }
 
-func NewSeriesStreamer(client client.Ingester_QueryStreamClient, expectedSeriesCount int) *SeriesChunksStreamReader {
+func NewSeriesStreamReader(client client.Ingester_QueryStreamClient, expectedSeriesCount int) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,

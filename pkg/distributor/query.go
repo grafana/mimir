@@ -285,7 +285,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := querier.NewSeriesStreamer(stream, streamingSeriesCount)
+					streamReader := querier.NewSeriesStreamReader(stream, streamingSeriesCount)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}
