@@ -1,3 +1,4 @@
+{{- if .Values.ruler_querier_service.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -135,3 +136,4 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+{{- end }}
