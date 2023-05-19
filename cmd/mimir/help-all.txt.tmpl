@@ -1261,6 +1261,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
+  -ingester.read-path-utilization-target-ratio float
+    	[experimental] Read path target ratio , as a fraction of 1, for CPU/memory utilization based request limiting (default 0.8)
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration
@@ -1353,6 +1355,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
   -ingester.utilization-based-limiting-enabled
     	[experimental] Enable CPU/memory utilization based request limiting
+  -ingester.write-path-utilization-target-ratio float
+    	[experimental] Write path target ratio, as a fraction of 1, for CPU/memory utilization based request limiting (default 0.9)
   -log.format value
     	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
   -log.level value

@@ -192,9 +192,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UtilizationBasedLimitingEnabled, "ingester.utilization-based-limiting-enabled", false, "Enable CPU/memory utilization based request limiting")
 	f.Float64Var(&cfg.CPUUtilizationTarget, "ingester.cpu-utilization-target", 0, "CPU target, as a fraction of 1, for CPU/memory utilization based request limiting")
 	f.Uint64Var(&cfg.MemoryUtilizationTarget, "ingester.memory-utilization-target", 0, "Memory target, in bytes, for CPU/memory utilization based request limiting")
-	f.Float64Var(&cfg.ReadPathUtilizationRatio, "ingester.read-path-utilization-target-ratio", 0,
+	f.Float64Var(&cfg.ReadPathUtilizationRatio, "ingester.read-path-utilization-target-ratio", 0.8,
 		"Read path target ratio , as a fraction of 1, for CPU/memory utilization based request limiting")
-	f.Float64Var(&cfg.WritePathUtilizationRatio, "ingester.write-path-utilization-target-ratio", 0,
+	f.Float64Var(&cfg.WritePathUtilizationRatio, "ingester.write-path-utilization-target-ratio", 0.9,
 		"Write path target ratio, as a fraction of 1, for CPU/memory utilization based request limiting")
 }
 
@@ -295,6 +295,10 @@ type Ingester struct {
 	readPathMemoryThreshold uint64
 	// Read path CPU threshold as a fraction of 1
 	readPathCPUThreshold float64
+	// Write path memory threshold in bytes
+	writePathMemoryThreshold uint64
+	// Write path CPU threshold as a fraction of 1
+	writePathCPUThreshold float64
 	// Memory utilization in bytes
 	memoryUtilization atomic.Uint64
 	// CPU utilization as fraction
@@ -341,8 +345,10 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
 		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
 
-		readPathCPUThreshold:    cfg.ReadPathUtilizationRatio * cfg.CPUUtilizationTarget,
-		readPathMemoryThreshold: uint64(cfg.ReadPathUtilizationRatio * float64(cfg.MemoryUtilizationTarget)),
+		readPathCPUThreshold:     cfg.ReadPathUtilizationRatio * cfg.CPUUtilizationTarget,
+		readPathMemoryThreshold:  uint64(cfg.ReadPathUtilizationRatio * float64(cfg.MemoryUtilizationTarget)),
+		writePathCPUThreshold:    cfg.WritePathUtilizationRatio * cfg.CPUUtilizationTarget,
+		writePathMemoryThreshold: uint64(cfg.WritePathUtilizationRatio * float64(cfg.MemoryUtilizationTarget)),
 		// Use a minute long window, each sample being a second apart
 		movingAvg: ewma.NewMovingAverage(60),
 	}, nil
@@ -722,6 +728,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	defer pushReq.CleanUp()
 
 	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+	if err := i.checkWriteOverloaded(); err != nil {
 		return nil, err
 	}
 
@@ -1127,6 +1136,9 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
@@ -1181,6 +1193,9 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
 
 	labelName, startTimestampMs, endTimestampMs, matchers, err := client.FromLabelValuesRequest(req)
 	if err != nil {
@@ -1215,6 +1230,9 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
 	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
 
@@ -1252,6 +1270,9 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 // MetricsForLabelMatchers implements IngesterServer.
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (*client.MetricsForLabelMatchersResponse, error) {
 	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
 
@@ -1321,6 +1342,9 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1337,6 +1361,9 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 
 func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
 	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
 
@@ -1369,6 +1396,10 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return err
+	}
+
 	userID, err := tenant.TenantID(server.Context())
 	if err != nil {
 		return err
@@ -1397,6 +1428,10 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return err
+	}
+
 	userID, err := tenant.TenantID(srv.Context())
 	if err != nil {
 		return err
@@ -2955,7 +2990,7 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 	}
 }
 
-// MetricsMetadata returns all the metric metadata of a user.
+// MetricsMetadata returns all the metrics metadata of a user.
 func (i *Ingester) MetricsMetadata(ctx context.Context, _ *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
