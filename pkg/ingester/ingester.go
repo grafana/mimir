@@ -167,6 +167,8 @@ type Config struct {
 	UtilizationBasedLimitingEnabled bool    `yaml:"utilization_based_limiting_enabled" category:"experimental"`
 	CPUUtilizationTarget            float64 `yaml:"cpu_utilization_target" category:"experimental"`
 	MemoryUtilizationTarget         uint64  `yaml:"memory_utilization_target" category:"experimental"`
+	ReadPathUtilizationRatio        float64 `yaml:"read_path_utilization_target_ratio" category:"experimental"`
+	WritePathUtilizationRatio       float64 `yaml:"write_path_utilization_target_ratio" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -190,6 +192,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UtilizationBasedLimitingEnabled, "ingester.utilization-based-limiting-enabled", false, "Enable CPU/memory utilization based request limiting")
 	f.Float64Var(&cfg.CPUUtilizationTarget, "ingester.cpu-utilization-target", 0, "CPU target, as a fraction of 1, for CPU/memory utilization based request limiting")
 	f.Uint64Var(&cfg.MemoryUtilizationTarget, "ingester.memory-utilization-target", 0, "Memory target, in bytes, for CPU/memory utilization based request limiting")
+	f.Float64Var(&cfg.ReadPathUtilizationRatio, "ingester.read-path-utilization-target-ratio", 0,
+		"Read path target ratio , as a fraction of 1, for CPU/memory utilization based request limiting")
+	f.Float64Var(&cfg.WritePathUtilizationRatio, "ingester.write-path-utilization-target-ratio", 0,
+		"Write path target ratio, as a fraction of 1, for CPU/memory utilization based request limiting")
 }
 
 	if cfg.UtilizationBasedLimitingEnabled {
@@ -198,6 +204,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		}
 		if cfg.MemoryUtilizationTarget == 0 {
 			return fmt.Errorf("memory utilization target must be set")
+		}
+		if cfg.ReadPathUtilizationRatio == 0 {
+			return fmt.Errorf("read path utilization target ratio must be set")
+		}
+		if cfg.WritePathUtilizationRatio == 0 {
+			return fmt.Errorf("write path utilization target ratio must be set")
 		}
 	}
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -329,9 +341,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
 		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
 
-		// TODO: Parameterize thresholds
-		readPathCPUThreshold:    0.8 * cfg.CPUUtilizationTarget,
-		readPathMemoryThreshold: uint64(0.8 * float64(cfg.MemoryUtilizationTarget)),
+		readPathCPUThreshold:    cfg.ReadPathUtilizationRatio * cfg.CPUUtilizationTarget,
+		readPathMemoryThreshold: uint64(cfg.ReadPathUtilizationRatio * float64(cfg.MemoryUtilizationTarget)),
 		// Use a minute long window, each sample being a second apart
 		movingAvg: ewma.NewMovingAverage(60),
 	}, nil
