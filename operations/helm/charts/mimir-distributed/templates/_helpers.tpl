@@ -415,6 +415,8 @@ Examples:
   "overrides-exporter" "overrides_exporter"
   "querier" "querier"
   "query-frontend" "query_frontend"
+  "ruler-querier" "ruler_querier"
+  "ruler-query-frontend" "ruler_query_frontend"
   "query-scheduler" "query_scheduler"
   "results-cache" "results-cache"
   "ruler" "ruler"
