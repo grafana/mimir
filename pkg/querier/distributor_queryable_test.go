@@ -213,34 +213,50 @@ func TestDistributorQuerier_Select(t *testing.T) {
 	}
 }
 
-func TestDistributorQuerier_Select_MixedChunkseriesAndTimeseriesResults(t *testing.T) {
+func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults(t *testing.T) {
 	const (
 		mint = 0
 		maxt = 10000
 	)
 	s1 := []mimirpb.Sample{
-		{Value: 1, TimestampMs: 1000},
-		{Value: 2, TimestampMs: 2000},
-		{Value: 3, TimestampMs: 3000},
-		{Value: 4, TimestampMs: 4000},
-		{Value: 5, TimestampMs: 5000},
+		{TimestampMs: 1000, Value: 1},
+		{TimestampMs: 2000, Value: 2},
+		{TimestampMs: 3000, Value: 3},
+		{TimestampMs: 4000, Value: 4},
+		{TimestampMs: 5000, Value: 5},
 	}
 	s2 := []mimirpb.Sample{
-		{Value: 1, TimestampMs: 1000},
-		{Value: 2.5, TimestampMs: 2500},
-		{Value: 3, TimestampMs: 3000},
-		{Value: 5.5, TimestampMs: 5500},
+		{TimestampMs: 1000, Value: 1},
+		{TimestampMs: 2500, Value: 2.5},
+		{TimestampMs: 3000, Value: 3},
+		{TimestampMs: 5500, Value: 5.5},
+	}
+	s3 := []mimirpb.Sample{
+		{TimestampMs: 3000, Value: 3},
+		{TimestampMs: 6000, Value: 6},
+		{TimestampMs: 7000, Value: 7},
+	}
+	s4 := []mimirpb.Sample{
+		{TimestampMs: 8000, Value: 8},
+		{TimestampMs: 9000, Value: 9},
 	}
 
-	mergedSamplesS1S2 := []interface{}{
-		mimirpb.Sample{Value: 1, TimestampMs: 1000},
-		mimirpb.Sample{Value: 2, TimestampMs: 2000},
-		mimirpb.Sample{Value: 2.5, TimestampMs: 2500},
-		mimirpb.Sample{Value: 3, TimestampMs: 3000},
-		mimirpb.Sample{Value: 4, TimestampMs: 4000},
-		mimirpb.Sample{Value: 5, TimestampMs: 5000},
-		mimirpb.Sample{Value: 5.5, TimestampMs: 5500},
+	mergedSamplesS1S2S3 := []interface{}{
+		mimirpb.Sample{TimestampMs: 1000, Value: 1},
+		mimirpb.Sample{TimestampMs: 2000, Value: 2},
+		mimirpb.Sample{TimestampMs: 2500, Value: 2.5},
+		mimirpb.Sample{TimestampMs: 3000, Value: 3},
+		mimirpb.Sample{TimestampMs: 4000, Value: 4},
+		mimirpb.Sample{TimestampMs: 5000, Value: 5},
+		mimirpb.Sample{TimestampMs: 5500, Value: 5.5},
+		mimirpb.Sample{TimestampMs: 6000, Value: 6},
+		mimirpb.Sample{TimestampMs: 7000, Value: 7},
 	}
+
+	streamReader := createTestStreamReader([]client.QueryStreamSeriesChunks{
+		{SeriesIndex: 0, Chunks: convertToChunks(t, samplesToInterface(s4))},
+		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s3))},
+	})
 
 	d := &mockDistributor{}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -266,6 +282,21 @@ func TestDistributorQuerier_Select_MixedChunkseriesAndTimeseriesResults(t *testi
 					Samples: s1,
 				},
 			},
+
+			StreamingSeries: []StreamingSeries{
+				{
+					Labels: labels.FromStrings(labels.MetricName, "four"),
+					Sources: []StreamingSeriesSource{
+						{SeriesIndex: 0, StreamReader: streamReader},
+					},
+				},
+				{
+					Labels: labels.FromStrings(labels.MetricName, "two"),
+					Sources: []StreamingSeriesSource{
+						{SeriesIndex: 1, StreamReader: streamReader},
+					},
+				},
+			},
 		},
 		nil)
 
@@ -278,13 +309,16 @@ func TestDistributorQuerier_Select_MixedChunkseriesAndTimeseriesResults(t *testi
 	require.NoError(t, seriesSet.Err())
 
 	require.True(t, seriesSet.Next())
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "four"), samplesToInterface(s4))
+
+	require.True(t, seriesSet.Next())
 	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), samplesToInterface(s1))
 
 	require.True(t, seriesSet.Next())
 	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "three"), samplesToInterface(s1))
 
 	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), mergedSamplesS1S2)
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), mergedSamplesS1S2S3)
 
 	require.False(t, seriesSet.Next())
 	require.NoError(t, seriesSet.Err())
