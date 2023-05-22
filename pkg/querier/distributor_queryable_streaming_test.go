@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -150,7 +151,7 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 			}
 
 			require.Eventually(t, func() bool {
-				return mockClient.closed
+				return mockClient.closed.Load()
 			}, time.Second, 10*time.Millisecond)
 		})
 	}
@@ -194,7 +195,7 @@ func TestSeriesChunksStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 		}
 	}
 
-	require.True(t, mockClient.closed, "expected gRPC client to be closed after context cancelled")
+	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after context cancelled")
 }
 
 func TestSeriesChunksStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
@@ -272,7 +273,7 @@ func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 	require.Nil(t, s)
 	require.EqualError(t, err, "attempted to read series at index 0 from stream, but the stream has failed: expected to receive only 1 series, but received more than this")
 
-	require.True(t, mockClient.closed, "expected gRPC client to be closed after receiving more series than expected")
+	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
 }
 
 type streamingChunkSeriesTestIterator struct {
@@ -312,7 +313,7 @@ func (s streamingChunkSeriesTestIterator) Err() error {
 type mockQueryStreamClient struct {
 	ctx     context.Context
 	batches [][]client.QueryStreamSeriesChunks
-	closed  bool
+	closed  atomic.Bool
 }
 
 func (m *mockQueryStreamClient) Recv() (*client.QueryStreamResponse, error) {
@@ -337,7 +338,7 @@ func (m *mockQueryStreamClient) Trailer() metadata.MD {
 }
 
 func (m *mockQueryStreamClient) CloseSend() error {
-	m.closed = true
+	m.closed.Store(true)
 	return nil
 }
 
