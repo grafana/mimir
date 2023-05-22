@@ -7,6 +7,7 @@ package chunkcompat
 
 import (
 	"bytes"
+	"errors"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -14,14 +15,18 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/modelutil"
 )
 
 // StreamsToMatrix converts a slice of QueryStreamResponse to a model.Matrix.
 func StreamsToMatrix(from, through model.Time, responses []*client.QueryStreamResponse) (model.Matrix, error) {
 	result := model.Matrix{}
+	streamingSeries := []labels.Labels{}
+	haveReachedEndOfStreamingSeriesLabels := false
+
 	for _, response := range responses {
-		series, err := SeriesChunksToMatrix(from, through, response.Chunkseries)
+		series, err := TimeSeriesChunksToMatrix(from, through, response.Chunkseries)
 		if err != nil {
 			return nil, err
 		}
@@ -33,50 +38,41 @@ func StreamsToMatrix(from, through model.Time, responses []*client.QueryStreamRe
 			return nil, err
 		}
 		result = append(result, series...)
+
+		for _, s := range response.Series {
+			streamingSeries = append(streamingSeries, mimirpb.FromLabelAdaptersToLabels(s.Labels))
+		}
+
+		if response.IsEndOfSeriesStream {
+			haveReachedEndOfStreamingSeriesLabels = true
+		}
+
+		for _, s := range response.SeriesChunks {
+			if !haveReachedEndOfStreamingSeriesLabels {
+				return nil, errors.New("received series chunks before IsEndOfSeriesStream=true")
+			}
+
+			series, err := SeriesChunksToMatrix(from, through, streamingSeries[s.SeriesIndex], s.Chunks)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, series)
+		}
 	}
 	return result, nil
 }
 
 // SeriesChunksToMatrix converts slice of []client.TimeSeriesChunk to a model.Matrix.
-func SeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeriesChunk) (model.Matrix, error) {
+func TimeSeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeriesChunk) (model.Matrix, error) {
 	if serieses == nil {
 		return nil, nil
 	}
 
 	result := model.Matrix{}
 	for _, series := range serieses {
-		metric := mimirpb.FromLabelAdaptersToMetric(series.Labels)
-		chunks, err := FromChunks(mimirpb.FromLabelAdaptersToLabels(series.Labels), series.Chunks)
+		stream, err := SeriesChunksToMatrix(from, through, mimirpb.FromLabelAdaptersToLabels(series.Labels), series.Chunks)
 		if err != nil {
 			return nil, err
-		}
-
-		samples := []model.SamplePair{}
-		histograms := []mimirpb.Histogram{}
-		for _, chunk := range chunks {
-			sf, sh, err := chunk.Samples(from, through)
-			if err != nil {
-				return nil, err
-			}
-			samples = modelutil.MergeSampleSets(samples, sf)
-			histograms = modelutil.MergeHistogramSets(histograms, sh)
-		}
-
-		stream := &model.SampleStream{
-			Metric: metric,
-		}
-		if len(samples) > 0 {
-			stream.Values = samples
-		}
-		if len(histograms) > 0 {
-			histogramsDecoded := make([]model.SampleHistogramPair, 0, len(histograms))
-			for _, h := range histograms {
-				histogramsDecoded = append(histogramsDecoded, model.SampleHistogramPair{
-					Timestamp: model.Time(h.Timestamp),
-					Histogram: mimirpb.FromHistogramProtoToPromHistogram(&h),
-				})
-			}
-			stream.Histograms = histogramsDecoded
 		}
 		result = append(result, stream)
 	}
@@ -122,6 +118,44 @@ func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (
 		})
 	}
 	return result, nil
+}
+
+func SeriesChunksToMatrix(from, through model.Time, l labels.Labels, c []client.Chunk) (*model.SampleStream, error) {
+	metric := util.LabelsToMetric(l)
+	chunks, err := FromChunks(l, c)
+	if err != nil {
+		return nil, err
+	}
+
+	samples := []model.SamplePair{}
+	histograms := []mimirpb.Histogram{}
+	for _, chunk := range chunks {
+		sf, sh, err := chunk.Samples(from, through)
+		if err != nil {
+			return nil, err
+		}
+		samples = modelutil.MergeSampleSets(samples, sf)
+		histograms = modelutil.MergeHistogramSets(histograms, sh)
+	}
+
+	stream := &model.SampleStream{
+		Metric: metric,
+	}
+	if len(samples) > 0 {
+		stream.Values = samples
+	}
+	if len(histograms) > 0 {
+		histogramsDecoded := make([]model.SampleHistogramPair, 0, len(histograms))
+		for _, h := range histograms {
+			histogramsDecoded = append(histogramsDecoded, model.SampleHistogramPair{
+				Timestamp: model.Time(h.Timestamp),
+				Histogram: mimirpb.FromHistogramProtoToPromHistogram(&h),
+			})
+		}
+		stream.Histograms = histogramsDecoded
+	}
+
+	return stream, nil
 }
 
 // FromChunks converts []client.Chunk to []chunk.Chunk.

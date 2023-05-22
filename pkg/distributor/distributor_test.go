@@ -1030,9 +1030,9 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			var m model.Matrix
 			if len(resp.Chunkseries) == 0 {
-				m, err = chunkcompat.SeriesChunksToMatrix(0, 10, nil)
+				m, err = chunkcompat.TimeSeriesChunksToMatrix(0, 10, nil)
 			} else {
-				m, err = chunkcompat.SeriesChunksToMatrix(0, 10, resp.Chunkseries)
+				m, err = chunkcompat.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
 			}
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedResponse.String(), m.String())

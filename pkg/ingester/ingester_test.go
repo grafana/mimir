@@ -1746,19 +1746,27 @@ func Test_Ingester_Query(t *testing.T) {
 	// Run tests
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &client.QueryRequest{
-				StartTimestampMs: testData.from,
-				EndTimestampMs:   testData.to,
-				Matchers:         testData.matchers,
+			for _, streamingEnabled := range []bool{true, false} {
+				t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
+					req := &client.QueryRequest{
+						StartTimestampMs: testData.from,
+						EndTimestampMs:   testData.to,
+						Matchers:         testData.matchers,
+					}
+
+					if streamingEnabled {
+						req.StreamingChunksBatchSize = 64
+					}
+
+					s := stream{ctx: ctx}
+					err = i.QueryStream(req, &s)
+					require.NoError(t, err)
+
+					res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+					require.NoError(t, err)
+					assert.ElementsMatch(t, testData.expected, res)
+				})
 			}
-
-			s := stream{ctx: ctx}
-			err = i.QueryStream(req, &s)
-			require.NoError(t, err)
-
-			res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
-			require.NoError(t, err)
-			assert.ElementsMatch(t, testData.expected, res)
 		})
 	}
 }
