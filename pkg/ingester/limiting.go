@@ -12,6 +12,9 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 )
 
+// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
+const queryLimitingCode = http.StatusServiceUnavailable
+
 func (i *Ingester) updateResourceUtilization() {
 	if !i.cfg.UtilizationBasedLimitingEnabled {
 		return
@@ -87,10 +90,10 @@ func (i *Ingester) checkReadOverloaded() error {
 		"memory_utilization", memUtil, "cpu_utilization", cpuUtil)
 
 	if memPercent >= 100 {
-		return httpgrpc.Errorf(http.StatusTooManyRequests, "the ingester is currently too busy to process queries, try again later")
+		return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process queries, try again later")
 	}
 	if cpuPercent >= 100 {
-		return httpgrpc.Errorf(http.StatusTooManyRequests, "the ingester is currently too busy to process queries, try again later")
+		return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process queries, try again later")
 	}
 
 	return nil
@@ -118,12 +121,10 @@ func (i *Ingester) checkWriteOverloaded() error {
 		"memory_utilization", memUtil, "cpu_utilization", cpuUtil)
 
 	if memPercent >= 100 {
-		// TODO: This should be 5xx, to allow for retries?
-		return httpgrpc.Errorf(http.StatusTooManyRequests, "the ingester is currently too busy to process writes, try again later")
+		return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process writes, try again later")
 	}
 	if cpuPercent >= 100 {
-		// TODO: This should be 5xx, to allow for retries?
-		return httpgrpc.Errorf(http.StatusTooManyRequests, "the ingester is currently too busy to process writes, try again later")
+		return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process writes, try again later")
 	}
 
 	return nil
