@@ -197,12 +197,12 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 	if err != nil {
 		return nil, err
 	}
-	return b.NewMetaFetcher(reg, filters), nil
-}
 
-// NewMetaFetcher transforms BaseFetcher into actually usable *MetaFetcher.
-func (f *BaseFetcher) NewMetaFetcher(reg prometheus.Registerer, filters []MetadataFilter) *MetaFetcher {
-	return &MetaFetcher{metrics: NewFetcherMetrics(reg, nil, nil), wrapped: f, filters: filters}
+	return &MetaFetcher{
+		metrics: NewFetcherMetrics(reg, nil, nil),
+		wrapped: b,
+		filters: filters,
+	}, nil
 }
 
 var (
