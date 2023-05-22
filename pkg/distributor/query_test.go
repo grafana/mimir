@@ -6,19 +6,199 @@
 package distributor
 
 import (
+	"context"
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/user"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReached(t *testing.T) {
+	const maxChunksLimit = 30 // Chunks are duplicated due to replication factor.
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	limits := &validation.Limits{}
+	flagext.DefaultValues(limits)
+	limits.MaxChunksPerQuery = maxChunksLimit
+
+	// Prepare distributors.
+	ds, _, _ := prepare(t, prepConfig{
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+		limits:          limits,
+	})
+
+	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, maxChunksLimit))
+
+	// Push a number of series below the max chunks limit. Each series has 1 sample,
+	// so expect 1 chunk per series when querying back.
+	initialSeries := maxChunksLimit / 3
+	writeReq := makeWriteRequest(0, initialSeries, 0, false, false)
+	writeRes, err := ds[0].Push(ctx, writeReq)
+	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+	assert.Nil(t, err)
+
+	allSeriesMatchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+	}
+
+	// Since the number of series (and thus chunks) is equal to the limit (but doesn't
+	// exceed it), we expect a query running on all series to succeed.
+	queryRes, err := ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	require.NoError(t, err)
+	assert.Len(t, queryRes.Chunkseries, initialSeries)
+
+	// Push more series to exceed the limit once we'll query back all series.
+	writeReq = &mimirpb.WriteRequest{}
+	for i := 0; i < maxChunksLimit; i++ {
+		writeReq.Timeseries = append(writeReq.Timeseries,
+			makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: fmt.Sprintf("another_series_%d", i)}}, 0, 0),
+		)
+	}
+
+	writeRes, err = ds[0].Push(ctx, writeReq)
+	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+	assert.Nil(t, err)
+
+	// Since the number of series (and thus chunks) is exceeding to the limit, we expect
+	// a query running on all series to fail.
+	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "the query exceeded the maximum number of chunks")
+}
+
+func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReached(t *testing.T) {
+	const maxSeriesLimit = 10
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	limits := &validation.Limits{}
+	flagext.DefaultValues(limits)
+	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0))
+
+	// Prepare distributors.
+	ds, _, _ := prepare(t, prepConfig{
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+		limits:          limits,
+	})
+
+	// Push a number of series below the max series limit.
+	initialSeries := maxSeriesLimit
+	writeReq := makeWriteRequest(0, initialSeries, 0, false, true)
+	writeRes, err := ds[0].Push(ctx, writeReq)
+	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+	assert.Nil(t, err)
+
+	allSeriesMatchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+	}
+
+	// Since the number of series is equal to the limit (but doesn't
+	// exceed it), we expect a query running on all series to succeed.
+	queryRes, err := ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	require.NoError(t, err)
+	assert.Len(t, queryRes.Chunkseries, initialSeries)
+
+	// Push more series to exceed the limit once we'll query back all series.
+	writeReq = &mimirpb.WriteRequest{}
+	writeReq.Timeseries = append(writeReq.Timeseries,
+		makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "another_series"}}, 0, 0),
+	)
+
+	writeRes, err = ds[0].Push(ctx, writeReq)
+	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+	assert.Nil(t, err)
+
+	// Since the number of series is exceeding the limit, we expect
+	// a query running on all series to fail.
+	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
+}
+
+func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIsReached(t *testing.T) {
+	const seriesToAdd = 10
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	limits := &validation.Limits{}
+	flagext.DefaultValues(limits)
+
+	// Prepare distributors.
+	// Use replication factor of 1 so that we always wait the response from all ingesters.
+	// This guarantees us to always read the same chunks and have a stable test.
+	ds, _, _ := prepare(t, prepConfig{
+		numIngesters:      3,
+		happyIngesters:    3,
+		numDistributors:   1,
+		limits:            limits,
+		replicationFactor: 1,
+	})
+
+	allSeriesMatchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+	}
+	// Push a single series to allow us to calculate the chunk size to calculate the limit for the test.
+	writeReq := &mimirpb.WriteRequest{}
+	writeReq.Timeseries = append(writeReq.Timeseries,
+		makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "another_series"}}, 0, 0),
+	)
+	writeRes, err := ds[0].Push(ctx, writeReq)
+	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+	assert.Nil(t, err)
+	chunkSizeResponse, err := ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	require.NoError(t, err)
+
+	// Use the resulting chunks size to calculate the limit as (series to add + our test series) * the response chunk size.
+	responseChunkSize := chunkSizeResponse.ChunksSize()
+	maxBytesLimit := (seriesToAdd) * responseChunkSize
+
+	// Update the limiter with the calculated limits.
+	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0))
+
+	// Push a number of series below the max chunk bytes limit. Subtract one for the series added above.
+	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false, false)
+	writeRes, err = ds[0].Push(ctx, writeReq)
+	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+	assert.Nil(t, err)
+
+	// Since the number of chunk bytes is equal to the limit (but doesn't
+	// exceed it), we expect a query running on all series to succeed.
+	queryRes, err := ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	require.NoError(t, err)
+	assert.Len(t, queryRes.Chunkseries, seriesToAdd)
+
+	// Push another series to exceed the chunk bytes limit once we'll query back all series.
+	writeReq = &mimirpb.WriteRequest{}
+	writeReq.Timeseries = append(writeReq.Timeseries,
+		makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "another_series_1"}}, 0, 0),
+	)
+
+	writeRes, err = ds[0].Push(ctx, writeReq)
+	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+	assert.Nil(t, err)
+
+	// Since the aggregated chunk size is exceeding the limit, we expect
+	// a query running on all series to fail.
+	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, fmt.Sprintf(limiter.MaxChunkBytesHitMsgFormat, maxBytesLimit))
+}
 
 func TestMergeSamplesIntoFirstDuplicates(t *testing.T) {
 	a := []mimirpb.Sample{
