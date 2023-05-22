@@ -10,7 +10,8 @@ package cortex;
 
 option go_package = "client";
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "gogoproto/gogo.proto";
+import "github.com/weaveworks/common/httpgrpc/httpgrpc.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 
 option (gogoproto.marshaler_all) = true;
@@ -20,6 +21,8 @@ service Ingester {
   rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {};
   rpc QueryStream(QueryRequest) returns (stream QueryStreamResponse) {};
   rpc QueryExemplars(ExemplarQueryRequest) returns (ExemplarQueryResponse) {};
+
+  rpc PushStream(stream WriteRequestWithUser) returns (stream httpgrpc.HTTPResponse) {};
 
   rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse) {};
   rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse) {};
@@ -36,6 +39,11 @@ service Ingester {
   // that match the matchers.
   // The listing order of the labels is not guaranteed.
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {};
+}
+
+message WriteRequestWithUser {
+  cortexpb.WriteRequest request = 1;
+  string user = 2;
 }
 
 message LabelNamesAndValuesRequest {
@@ -96,12 +104,12 @@ message StreamChunk {
 
   enum Encoding {
     UNKNOWN = 0;
-    XOR     = 1;
+    XOR = 1;
     HISTOGRAM = 2;
     FLOAT_HISTOGRAM = 3;
   }
-  Encoding type  = 3;
-  bytes data     = 4 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"];
+  Encoding type = 3;
+  bytes data = 4 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"];
 }
 
 message QueryRequest {

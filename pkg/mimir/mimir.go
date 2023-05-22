@@ -738,6 +738,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
+			"/cortex.Ingester/PushStream",
 		}, cfg.NoAuthTenant)
 
 	// Inject the registerer in the Server config too.

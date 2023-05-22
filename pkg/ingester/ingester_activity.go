@@ -31,6 +31,10 @@ func NewIngesterActivityTracker(ing *Ingester, tracker *activitytracker.Activity
 	}
 }
 
+func (i *ActivityTrackerWrapper) PushStream(server client.Ingester_PushStreamServer) error {
+	return i.ing.PushStream(server)
+}
+
 func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	// No tracking in Push
 	return i.ing.Push(ctx, request)

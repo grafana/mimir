@@ -80,6 +80,11 @@ type Distributor struct {
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
 
+	ingesterWorkersMetrics *ingesterWorkerMetrics
+
+	ingesterWorkersLock sync.RWMutex
+	ingesterWorkers     map[string]*ingesterWorker
+
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
 	distributorsLifecycler *ring.BasicLifecycler
@@ -218,14 +223,16 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	subservices = append(subservices, haTracker)
 
 	d := &Distributor{
-		cfg:                   cfg,
-		log:                   log,
-		ingestersRing:         ingestersRing,
-		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
-		healthyInstancesCount: atomic.NewUint32(0),
-		limits:                limits,
-		HATracker:             haTracker,
-		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		cfg:                    cfg,
+		log:                    log,
+		ingestersRing:          ingestersRing,
+		ingesterPool:           NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
+		healthyInstancesCount:  atomic.NewUint32(0),
+		limits:                 limits,
+		HATracker:              haTracker,
+		ingestionRate:          util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		ingesterWorkers:        map[string]*ingesterWorker{},
+		ingesterWorkersMetrics: newIngesterWorkerMetrics(reg),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -1174,7 +1181,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 			}
 		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		err := d.sendStreaming(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1263,6 +1270,43 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
 	}
 	return errors.Wrap(err, "failed pushing to ingester")
+}
+
+func (d *Distributor) sendStreaming(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+	user, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		return err
+	}
+
+	d.ingesterWorkersLock.RLock()
+	w := d.ingesterWorkers[ingester.Addr]
+	d.ingesterWorkersLock.RUnlock()
+
+	if w == nil {
+		h, err := d.ingesterPool.GetClientFor(ingester.Addr)
+		if err != nil {
+			return err
+		}
+		c := h.(ingester_client.IngesterClient)
+
+		w = newIngesterWorker(c, d.log, d.ingesterWorkersMetrics)
+
+		d.ingesterWorkersLock.Lock()
+		if nw := d.ingesterWorkers[ingester.Addr]; nw == nil {
+			d.ingesterWorkers[ingester.Addr] = w
+		} else {
+			w = nw
+		}
+		d.ingesterWorkersLock.Unlock()
+	}
+
+	req := mimirpb.WriteRequest{
+		Timeseries: timeseries,
+		Metadata:   metadata,
+		Source:     source,
+	}
+
+	return w.push(ctx, user, &req)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.

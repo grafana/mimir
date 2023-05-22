@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -2562,6 +2563,37 @@ func (i *Ingester) checkRunning() error {
 		return nil
 	}
 	return status.Error(codes.Unavailable, s.String())
+}
+
+func (i *Ingester) PushStream(s client.Ingester_PushStreamServer) error {
+	okresp := &httpgrpc.HTTPResponse{Code: 200}
+
+	for i.State() == services.Running && s.Context().Err() == nil {
+		msg, err := s.Recv()
+		if err != nil {
+			return err
+		}
+
+		ctx := user.InjectOrgID(s.Context(), msg.User)
+		_, pushErr := i.Push(ctx, msg.Request)
+		resp := okresp
+		if pushErr != nil {
+			r, ok := httpgrpc.HTTPResponseFromError(pushErr)
+			if ok {
+				resp = r
+			} else {
+				resp = &httpgrpc.HTTPResponse{
+					Code: 500,
+					Body: []byte(fmt.Sprintf("unknown error %w", pushErr)),
+				}
+			}
+		}
+
+		if err := s.Send(resp); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Push implements client.IngesterServer
