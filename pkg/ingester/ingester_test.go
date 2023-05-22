@@ -2782,15 +2782,15 @@ func TestIngester_QueryStream(t *testing.T) {
 	}
 }
 
-const queryingWithManySamplesSampleCount = 100000
+func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
+	// Create ingester.
+	cfg := defaultIngesterTestConfig(t)
+	cfg.StreamChunksWhenUsingBlocks = false
 
-func setupQueryingManySamplesTest(ctx context.Context, t *testing.T, cfg Config) client.HealthAndIngesterClient {
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-	t.Cleanup(func() {
-		services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-	})
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
 	// Wait until it's healthy.
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
@@ -2798,9 +2798,12 @@ func setupQueryingManySamplesTest(ctx context.Context, t *testing.T, cfg Config)
 	})
 
 	// Push series.
-	samples := make([]mimirpb.Sample, 0, queryingWithManySamplesSampleCount)
+	ctx := user.InjectOrgID(context.Background(), userID)
 
-	for i := 0; i < queryingWithManySamplesSampleCount; i++ {
+	const samplesCount = 100000
+	samples := make([]mimirpb.Sample, 0, samplesCount)
+
+	for i := 0; i < samplesCount; i++ {
 		samples = append(samples, mimirpb.Sample{
 			Value:       float64(i),
 			TimestampMs: int64(i),
@@ -2821,7 +2824,7 @@ func setupQueryingManySamplesTest(ctx context.Context, t *testing.T, cfg Config)
 
 	// Create a GRPC server used to query back the data.
 	serv := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
-	t.Cleanup(serv.GracefulStop)
+	defer serv.GracefulStop()
 	client.RegisterIngesterServer(serv, i)
 
 	listener, err := net.Listen("tcp", "localhost:0")
@@ -2834,21 +2837,11 @@ func setupQueryingManySamplesTest(ctx context.Context, t *testing.T, cfg Config)
 	// Query back the series using GRPC streaming.
 	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig())
 	require.NoError(t, err)
-	t.Cleanup(func() { c.Close() }) //nolint:errcheck
-
-	return c
-}
-
-func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
-	// Create ingester.
-	cfg := defaultIngesterTestConfig(t)
-	cfg.StreamChunksWhenUsingBlocks = false
-	ctx := user.InjectOrgID(context.Background(), userID)
-	c := setupQueryingManySamplesTest(ctx, t, cfg)
+	defer c.Close()
 
 	s, err := c.QueryStream(ctx, &client.QueryRequest{
 		StartTimestampMs: 0,
-		EndTimestampMs:   queryingWithManySamplesSampleCount + 1,
+		EndTimestampMs:   samplesCount + 1,
 
 		Matchers: []*client.LabelMatcher{{
 			Type:  client.EQUAL,
@@ -2880,9 +2873,67 @@ func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
 
 	// As ingester doesn't guarantee sorting of series, we can get 2 (10k + 50k in first, 100k in second)
 	// or 3 messages (small series first, 100k second, small series last).
+
 	require.True(t, 2 <= recvMsgs && recvMsgs <= 3)
 	require.Equal(t, 3, series)
-	require.Equal(t, 10000+50000+queryingWithManySamplesSampleCount, totalSamples)
+	require.Equal(t, 10000+50000+samplesCount, totalSamples)
+}
+
+func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg Config) client.HealthAndIngesterClient {
+	const sampleCount = 1000 * 1000
+
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+	})
+
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	// Push series.
+	samples := make([]mimirpb.Sample, 0, sampleCount)
+
+	for i := 0; i < sampleCount; i++ {
+		samples = append(samples, mimirpb.Sample{
+			Value:       float64(i),
+			TimestampMs: int64(i),
+		})
+	}
+
+	// 100k samples in chunks use about 154 KiB
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "1"), samples[0:100000]))
+	require.NoError(t, err)
+
+	// 1M samples in chunks use about 1.51 MiB
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "2"), samples))
+	require.NoError(t, err)
+
+	// 500k samples in chunks need 775 KiB
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "3"), samples[0:500000]))
+	require.NoError(t, err)
+
+	// Create a GRPC server used to query back the data.
+	serv := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
+	t.Cleanup(serv.GracefulStop)
+	client.RegisterIngesterServer(serv, i)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	go func() {
+		require.NoError(t, serv.Serve(listener))
+	}()
+
+	// Query back the series using GRPC streaming.
+	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig())
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() }) //nolint:errcheck
+
+	return c
 }
 
 func TestIngester_QueryStream_ChunkseriesWithManySamples(t *testing.T) {
@@ -2890,11 +2941,12 @@ func TestIngester_QueryStream_ChunkseriesWithManySamples(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.StreamChunksWhenUsingBlocks = true
 	ctx := user.InjectOrgID(context.Background(), userID)
-	c := setupQueryingManySamplesTest(ctx, t, cfg)
+
+	c := setupQueryingManySamplesAsChunksTest(ctx, t, cfg)
 
 	s, err := c.QueryStream(ctx, &client.QueryRequest{
 		StartTimestampMs: 0,
-		EndTimestampMs:   queryingWithManySamplesSampleCount + 1,
+		EndTimestampMs:   1000001,
 
 		Matchers: []*client.LabelMatcher{{
 			Type:  client.EQUAL,
@@ -2934,7 +2986,72 @@ func TestIngester_QueryStream_ChunkseriesWithManySamples(t *testing.T) {
 	// or 3 messages (100k or 500k first, 1M second, and 500k or 100k last).
 	require.True(t, 2 <= recvMsgs && recvMsgs <= 3)
 	require.Equal(t, 3, series)
-	require.Equal(t, 100000+500000+queryingWithManySamplesSampleCount, totalSamples)
+	require.Equal(t, 100000+500000+1000000, totalSamples)
+}
+
+func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
+	// Create ingester.
+	cfg := defaultIngesterTestConfig(t)
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	c := setupQueryingManySamplesAsChunksTest(ctx, t, cfg)
+
+	s, err := c.QueryStream(ctx, &client.QueryRequest{
+		StartTimestampMs:         0,
+		EndTimestampMs:           1000001,
+		StreamingChunksBatchSize: 64,
+
+		Matchers: []*client.LabelMatcher{{
+			Type:  client.EQUAL,
+			Name:  model.MetricNameLabel,
+			Value: "foo",
+		}},
+	})
+	require.NoError(t, err)
+
+	resp, err := s.Recv()
+	require.NoError(t, err)
+
+	seriesLabelsMsg := client.QueryStreamResponse{
+		Series: []client.QueryStreamSeries{
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "1"))},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "2"))},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "3"))},
+		},
+		IsEndOfSeriesStream: true,
+	}
+
+	require.Equal(t, seriesLabelsMsg, *resp)
+
+	recvMsgs := 0
+	series := 0
+	totalSamples := 0
+
+	for {
+		resp, err := s.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		require.True(t, len(resp.SeriesChunks) > 0) // No empty messages.
+
+		recvMsgs++
+		series += len(resp.SeriesChunks)
+
+		for _, ts := range resp.SeriesChunks {
+			for _, c := range ts.Chunks {
+				ch, err := chunk.NewForEncoding(chunk.Encoding(c.Encoding))
+				require.NoError(t, err)
+				require.NoError(t, ch.UnmarshalFromBuf(c.Data))
+
+				totalSamples += ch.Len()
+			}
+		}
+	}
+
+	require.Equal(t, 3, recvMsgs) // 1 for each series: second series must be sent in a message of its own
+	require.Equal(t, 3, series)
+	require.Equal(t, 100000+500000+1000000, totalSamples)
 }
 
 func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {

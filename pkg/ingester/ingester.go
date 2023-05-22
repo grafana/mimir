@@ -1775,7 +1775,6 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 }
 
 func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream client.Ingester_QueryStreamServer, batchSize uint64) (int, error) {
-
 	var (
 		it             chunks.Iterator
 		seriesIdx      = -1
@@ -1784,6 +1783,7 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 		seriesInBatch  = make([]client.QueryStreamSeriesChunks, 0, batchSize)
 		batchSizeBytes = 0
 	)
+
 	for currNode != nil {
 		for _, series := range currNode.series {
 			seriesIdx++
@@ -1825,7 +1825,6 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 
 			msgSize := seriesChunks.Size()
 
-			// TODO: what values to use for queryStreamBatchMessageSize?
 			if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= int(batchSize) {
 				// Adding this series to the batch would make it too big, flush the data and add it to new batch instead.
 				err := client.SendQueryStream(stream, &client.QueryStreamResponse{
@@ -1842,6 +1841,7 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 			seriesInBatch = append(seriesInBatch, seriesChunks)
 			batchSizeBytes += msgSize
 		}
+
 		toBePutInPool := currNode
 		currNode = currNode.next
 		i.putChunkSeriesNode(toBePutInPool)
