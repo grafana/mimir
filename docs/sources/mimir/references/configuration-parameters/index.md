@@ -3033,12 +3033,6 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.meta-sync-concurrency
   [meta_sync_concurrency: <int> | default = 20]
 
-  # (deprecated) Minimum age of a block before it's being read. Set it to safe
-  # value (e.g 30m) if your object storage is eventually consistent. GCS and S3
-  # are (roughly) strongly consistent.
-  # CLI flag: -blocks-storage.bucket-store.consistency-delay
-  [consistency_delay: <duration> | default = 0s]
-
   index_cache:
     # The index cache backend type. Supported values: inmemory, memcached,
     # redis.
@@ -3453,11 +3447,6 @@ The `compactor` block configures the compactor component.
 # long term storage.
 # CLI flag: -compactor.meta-sync-concurrency
 [meta_sync_concurrency: <int> | default = 20]
-
-# (deprecated) Minimum age of fresh (non-compacted) blocks before they are being
-# processed.
-# CLI flag: -compactor.consistency-delay
-[consistency_delay: <duration> | default = 0s]
 
 # Directory to temporarily store blocks during compaction. This directory is not
 # required to be persisted between restarts.
