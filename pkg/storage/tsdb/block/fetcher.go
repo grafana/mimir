@@ -22,10 +22,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
-	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
@@ -655,27 +653,4 @@ func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.UL
 	f.mtx.Unlock()
 
 	return nil
-}
-
-var (
-	SelectorSupportedRelabelActions = map[relabel.Action]struct{}{relabel.Keep: {}, relabel.Drop: {}, relabel.HashMod: {}}
-)
-
-// ParseRelabelConfig parses relabel configuration.
-// If supportedActions not specified, all relabel actions are valid.
-func ParseRelabelConfig(contentYaml []byte, supportedActions map[relabel.Action]struct{}) ([]*relabel.Config, error) {
-	var relabelConfig []*relabel.Config
-	if err := yaml.Unmarshal(contentYaml, &relabelConfig); err != nil {
-		return nil, errors.Wrap(err, "parsing relabel configuration")
-	}
-
-	if supportedActions != nil {
-		for _, cfg := range relabelConfig {
-			if _, ok := supportedActions[cfg.Action]; !ok {
-				return nil, errors.Errorf("unsupported relabel action: %v", cfg.Action)
-			}
-		}
-	}
-
-	return relabelConfig, nil
 }
