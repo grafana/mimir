@@ -2594,12 +2594,12 @@ func TestIngester_QueryStream(t *testing.T) {
 			streamType:         QueryStreamChunks,
 			expectedStreamType: QueryStreamChunks,
 		},
-		"should support sharding when query samples": {
+		"should support sharding when returning samples": {
 			streamType:         QueryStreamSamples,
 			numShards:          16,
 			expectedStreamType: QueryStreamSamples,
 		},
-		"should support sharding when query chunks": {
+		"should support sharding when returning chunks": {
 			streamType:         QueryStreamChunks,
 			numShards:          16,
 			expectedStreamType: QueryStreamChunks,
@@ -2782,7 +2782,7 @@ func TestIngester_QueryStream(t *testing.T) {
 	}
 }
 
-func TestIngester_QueryStreamManySamples(t *testing.T) {
+func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
 	cfg.StreamChunksWhenUsingBlocks = false
@@ -2879,7 +2879,7 @@ func TestIngester_QueryStreamManySamples(t *testing.T) {
 	require.Equal(t, 10000+50000+samplesCount, totalSamples)
 }
 
-func TestIngester_QueryStreamManySamplesChunks(t *testing.T) {
+func TestIngester_QueryStream_ChunkseriesWithManySamples(t *testing.T) {
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
 	cfg.StreamChunksWhenUsingBlocks = true
