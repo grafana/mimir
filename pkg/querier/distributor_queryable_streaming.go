@@ -117,6 +117,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
 				// This only works correctly if the context is cancelled when the query request is complete or cancelled,
 				// which is true at the time of writing.
+				s.errorChan <- s.client.Context().Err()
 				return
 			case s.seriesBatchChan <- msg.SeriesChunks:
 				// Batch sent successfully, nothing else to do for this batch.
@@ -129,30 +130,28 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 // This method must be called with monotonically increasing values of seriesIndex.
 func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]client.Chunk, error) {
 	if len(s.seriesBatch) == 0 {
-		select {
-		case err, haveError := <-s.errorChan:
-			if haveError {
-				return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
-			}
+		batch, haveBatch := <-s.seriesBatchChan
 
-			// Streaming finished successfully with no errors. Discard the error channel and try reading from seriesBatchChan again.
-			s.errorChan = nil
-			return s.GetChunks(seriesIndex)
-
-		case s.seriesBatch = <-s.seriesBatchChan:
-			if len(s.seriesBatch) == 0 {
-				// If the context has been cancelled, report the cancellation.
-				// Note that we only check this if there are no series in the buffer as the context is always cancelled
-				// at the end of a successful request - so if we checked for an error even if there are series in the
-				// buffer, we might incorrectly report that the context has been cancelled, when in fact the request
-				// has concluded as expected.
-				if err := s.client.Context().Err(); err != nil {
-					return nil, err
+		if !haveBatch {
+			// If there's an error, report it.
+			select {
+			case err, haveError := <-s.errorChan:
+				if haveError {
+					return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
 				}
-
-				return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
+			default:
 			}
+
+			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
 		}
+
+		// This should never happen, but it guards against misbehaving ingesters.
+		// If we receive an empty batch, discard it and read the next one.
+		if len(batch) == 0 {
+			return s.GetChunks(seriesIndex)
+		}
+
+		s.seriesBatch = batch
 	}
 
 	series := s.seriesBatch[0]
