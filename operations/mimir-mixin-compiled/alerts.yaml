@@ -375,9 +375,9 @@ groups:
         container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
           /
         ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
-      ) *
+      )
       # Make sure that the pods are really all Mimir pods.
-      on(namespace, pod, container) group_left group(cortex_build_info{container=~"(ingester|mimir-write|mimir-backend)"}) by (namespace, pod, container)
+      and on(namespace, pod, container) group(cortex_build_info{container=~"(ingester|mimir-write|mimir-backend)"}) by (namespace, pod, container)
       > 0.65
     for: 15m
     labels:
@@ -394,9 +394,9 @@ groups:
         container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
           /
         ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
-      ) *
+      )
       # Make sure that the pods are really all Mimir pods.
-      on(namespace, pod, container) group_left group(cortex_build_info{container=~"(ingester|mimir-write|mimir-backend)"}) by (namespace, pod, container)
+      and on(namespace, pod, container) group(cortex_build_info{container=~"(ingester|mimir-write|mimir-backend)"}) by (namespace, pod, container)
       > 0.8
     for: 15m
     labels:
