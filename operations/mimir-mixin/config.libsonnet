@@ -232,7 +232,10 @@
             container_memory_rss{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
               /
             ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
-          ) > %(allocationpercent)s
+          ) *
+          # Make sure that the pods are really all Mimir pods.
+          on(namespace, pod, container) group_left group(cortex_build_info{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}) by (namespace, pod, container)
+          > %(allocationpercent)s
         |||,
       },
       baremetal: {
