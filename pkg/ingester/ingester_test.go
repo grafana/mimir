@@ -2090,26 +2090,34 @@ func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsiste
 	}
 }
 
-func TestIngester_Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+func TestIngester_QueryStream_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
+	for _, streamingEnabled := range []bool{true, false} {
+		i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+		defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Mock request
-	userID := "test"
-	ctx := user.InjectOrgID(context.Background(), userID)
-	req := &client.QueryRequest{}
+		// Mock request
+		userID := "test"
+		ctx := user.InjectOrgID(context.Background(), userID)
+		req := &client.QueryRequest{}
 
-	s := stream{ctx: ctx}
-	err = i.QueryStream(req, &s)
-	require.NoError(t, err)
+		if streamingEnabled {
+			req.StreamingChunksBatchSize = 64
+		} else {
+			req.StreamingChunksBatchSize = 0
+		}
 
-	assert.Empty(t, s.responses)
+		s := stream{ctx: ctx}
+		err = i.QueryStream(req, &s)
+		require.NoError(t, err)
 
-	// Check if the TSDB has been created
-	_, tsdbCreated := i.tsdbs[userID]
-	assert.False(t, tsdbCreated)
+		assert.Empty(t, s.responses)
+
+		// Check if the TSDB has been created
+		_, tsdbCreated := i.tsdbs[userID]
+		assert.False(t, tsdbCreated)
+	}
 }
 
 func TestIngester_LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
