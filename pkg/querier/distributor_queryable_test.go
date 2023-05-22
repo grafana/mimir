@@ -32,7 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) {
+func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T) {
 	now := time.Now()
 
 	tests := map[string]struct {
@@ -117,7 +117,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 	}
 }
 
-func TestDistributorQueryableFilterAlwaysReturnsTrue(t *testing.T) {
+func TestDistributorQueryable_UseQueryable_AlwaysReturnsTrue(t *testing.T) {
 	d := &mockDistributor{}
 	dq := newDistributorQueryable(d, nil, newMockConfigProvider(1*time.Hour), log.NewNopLogger())
 
@@ -134,7 +134,7 @@ func TestDistributorQueryableFilterAlwaysReturnsTrue(t *testing.T) {
 	require.True(t, dq.UseQueryable(now.Add(time.Hour).Add(1*time.Millisecond), queryMinT, queryMaxT))
 }
 
-func TestIngesterStreaming(t *testing.T) {
+func TestDistributorQuerier_Select(t *testing.T) {
 	const mint, maxt = 0, 10
 
 	// We need to make sure that there is at least one chunk present,
@@ -151,47 +151,69 @@ func TestIngesterStreaming(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	d := &mockDistributor{}
-	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		DistributorQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
-				{
-					Labels: []mimirpb.LabelAdapter{
-						{Name: "bar", Value: "baz"},
+	testCases := map[string]struct {
+		response DistributorQueryStreamResponse
+	}{
+		"chunk series": {
+			response: DistributorQueryStreamResponse{
+				Chunkseries: []client.TimeSeriesChunk{
+					{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: "bar", Value: "baz"},
+						},
+						Chunks: clientChunks,
 					},
-					Chunks: clientChunks,
-				},
-				{
-					Labels: []mimirpb.LabelAdapter{
-						{Name: "foo", Value: "bar"},
+					{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: "foo", Value: "bar"},
+						},
+						Chunks: clientChunks,
 					},
-					Chunks: clientChunks,
 				},
 			},
 		},
-		nil)
+		"streaming series": {
+			response: DistributorQueryStreamResponse{
+				StreamingSeries: []StreamingSeries{
+					{
+						Labels: labels.FromStrings("bar", "baz"),
+					},
+					{
+						Labels: labels.FromStrings("foo", "bar"),
+					},
+				},
+			},
+		},
+	}
 
-	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
-	querier, err := queryable.Querier(ctx, mint, maxt)
-	require.NoError(t, err)
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			d := &mockDistributor{}
+			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
 
-	seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt})
-	require.NoError(t, seriesSet.Err())
+			ctx := user.InjectOrgID(context.Background(), "0")
+			queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
+			querier, err := queryable.Querier(ctx, mint, maxt)
+			require.NoError(t, err)
 
-	require.True(t, seriesSet.Next())
-	series := seriesSet.At()
-	require.Equal(t, labels.FromStrings("bar", "baz"), series.Labels())
+			seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt})
+			require.NoError(t, seriesSet.Err())
 
-	require.True(t, seriesSet.Next())
-	series = seriesSet.At()
-	require.Equal(t, labels.FromStrings("foo", "bar"), series.Labels())
+			require.True(t, seriesSet.Next())
+			series := seriesSet.At()
+			require.Equal(t, labels.FromStrings("bar", "baz"), series.Labels())
 
-	require.False(t, seriesSet.Next())
-	require.NoError(t, seriesSet.Err())
+			require.True(t, seriesSet.Next())
+			series = seriesSet.At()
+			require.Equal(t, labels.FromStrings("foo", "bar"), series.Labels())
+
+			require.False(t, seriesSet.Next())
+			require.NoError(t, seriesSet.Err())
+		})
+	}
 }
 
-func TestIngesterStreamingMixedResults(t *testing.T) {
+func TestDistributorQuerier_Select_MixedChunkseriesAndTimeseriesResults(t *testing.T) {
 	const (
 		mint = 0
 		maxt = 10000
@@ -276,7 +298,7 @@ func genTestFloatHistogram(timestamp int64, value int) mimirpb.Histogram {
 	return mimirpb.FromFloatHistogramToHistogramProto(timestamp, test.GenerateTestFloatHistogram(value))
 }
 
-func TestIngesterStreamingMixedResultsHistograms(t *testing.T) {
+func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) {
 	const (
 		mint = 0
 		maxt = 10000
@@ -354,7 +376,7 @@ func TestIngesterStreamingMixedResultsHistograms(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 }
 
-func TestIngesterStreamingMixedTypedResults(t *testing.T) {
+func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) {
 	const (
 		mint = 0
 		maxt = 10000
@@ -472,7 +494,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 	})
 }
 
-func BenchmarkDistributorQueryable_Select(b *testing.B) {
+func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	const (
 		numSeries          = 10000
 		numLabelsPerSeries = 20
