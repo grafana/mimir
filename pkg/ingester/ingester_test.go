@@ -2801,14 +2801,7 @@ func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	const samplesCount = 100000
-	samples := make([]mimirpb.Sample, 0, samplesCount)
-
-	for i := 0; i < samplesCount; i++ {
-		samples = append(samples, mimirpb.Sample{
-			Value:       float64(i),
-			TimestampMs: int64(i),
-		})
-	}
+	samples := generateSamples(samplesCount)
 
 	// 10k samples encode to around 140 KiB,
 	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "1"), samples[0:10000]))
@@ -2895,14 +2888,7 @@ func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg
 	})
 
 	// Push series.
-	samples := make([]mimirpb.Sample, 0, sampleCount)
-
-	for i := 0; i < sampleCount; i++ {
-		samples = append(samples, mimirpb.Sample{
-			Value:       float64(i),
-			TimestampMs: int64(i),
-		})
-	}
+	samples := generateSamples(sampleCount)
 
 	// 100k samples in chunks use about 154 KiB
 	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "1"), samples[0:100000]))
@@ -2934,6 +2920,19 @@ func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck
 
 	return c
+}
+
+func generateSamples(sampleCount int) []mimirpb.Sample {
+	samples := make([]mimirpb.Sample, 0, sampleCount)
+
+	for i := 0; i < sampleCount; i++ {
+		samples = append(samples, mimirpb.Sample{
+			Value:       float64(i),
+			TimestampMs: int64(i),
+		})
+	}
+
+	return samples
 }
 
 func TestIngester_QueryStream_ChunkseriesWithManySamples(t *testing.T) {
@@ -3052,6 +3051,159 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 	require.Equal(t, 3, recvMsgs) // 1 for each series: second series must be sent in a message of its own
 	require.Equal(t, 3, series)
 	require.Equal(t, 100000+500000+1000000, totalSamples)
+}
+
+func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
+	// Create ingester.
+	cfg := defaultIngesterTestConfig(t)
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+	})
+
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	// Push series, alternating between different series that have chunks that encode to different sizes.
+	smallSampleSet := generateSamples(10000)   // 10k samples in chunks use about 15.4 KiB, so 64 series will take ~1 MiB
+	mediumSampleSet := generateSamples(600000) // 600k samples in chunks use about 924 KiB
+	largeSampleSet := generateSamples(1000000) // 1M samples in chunks use about 1.51 MiB
+	expectedSeries := []labels.Labels{}
+
+	for idx := 0; idx < 201; idx++ {
+		samples := smallSampleSet
+
+		if idx%80 == 0 {
+			samples = mediumSampleSet
+		} else if idx == 105 {
+			samples = largeSampleSet
+		}
+
+		l := labels.FromStrings(labels.MetricName, "foo", "l", fmt.Sprintf("%3v", idx))
+		expectedSeries = append(expectedSeries, l.Copy())
+
+		_, err = i.Push(ctx, writeRequestSingleSeries(l, samples))
+		require.NoError(t, err)
+	}
+
+	// Create a GRPC server used to query back the data.
+	serv := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
+	t.Cleanup(serv.GracefulStop)
+	client.RegisterIngesterServer(serv, i)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	go func() {
+		require.NoError(t, serv.Serve(listener))
+	}()
+
+	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig())
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() }) //nolint:errcheck
+
+	s, err := c.QueryStream(ctx, &client.QueryRequest{
+		StartTimestampMs:         0,
+		EndTimestampMs:           1000001,
+		StreamingChunksBatchSize: 64,
+
+		Matchers: []*client.LabelMatcher{{
+			Type:  client.EQUAL,
+			Name:  model.MetricNameLabel,
+			Value: "foo",
+		}},
+	})
+	require.NoError(t, err)
+
+	actualSeries := []labels.Labels{}
+	seriesBatchCount := 0
+
+	for {
+		resp, err := s.Recv()
+		require.NoError(t, err)
+
+		seriesBatchCount++
+		require.LessOrEqual(t, seriesBatchCount, 2, "expecting no more than two batches")
+
+		switch seriesBatchCount {
+		case 1:
+			require.Len(t, resp.Series, 128, "first batch should be maximum batch size")
+		case 2:
+			require.Len(t, resp.Series, 201-128, "second batch should contain remaining series")
+		}
+
+		for _, series := range resp.Series {
+			actualSeries = append(actualSeries, mimirpb.FromLabelAdaptersToLabels(series.Labels))
+		}
+
+		if resp.IsEndOfSeriesStream {
+			break
+		}
+	}
+
+	require.Equal(t, expectedSeries, actualSeries)
+
+	seriesReceivedCount := 0
+	actualSeriesPerChunksMessage := []int{}
+
+	// There are two limits when creating messages. As soon as either limit is reached for the batch, the batch is sent:
+	// 1. no message can be more than 1 MiB (unless it contains a single series whose chunks total more than 1 MiB)
+	// 2. no message can contain more series than the requested batch size
+	expectedSeriesPerChunksMessage := []int{
+		7,  // First series is ~924KiB, so with 6 small series takes us to 1 MiB
+		64, // Reaches maximum number of series per batch
+		9,  // 80th series needs to go in the next message as it would push us over a 1 MiB message
+		7,  // 80th series + 6 small series to get to 1 MiB message
+		18, // 105th series needs a message all of its own
+		1,  // 105th series
+		54, // 160th series needs to go in the next message as it would push us over a 1 MiB message
+		7,  // 160th series + 6 small series to get to 1 MiB message
+		34, // Remaining series
+	}
+
+	for {
+		resp, err := s.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		actualSeriesPerChunksMessage = append(actualSeriesPerChunksMessage, len(resp.SeriesChunks))
+
+		for _, s := range resp.SeriesChunks {
+			require.Equal(t, seriesReceivedCount, int(s.SeriesIndex))
+
+			expectedSampleCount := len(smallSampleSet)
+
+			if seriesReceivedCount%80 == 0 {
+				expectedSampleCount = len(mediumSampleSet)
+			} else if seriesReceivedCount == 105 {
+				expectedSampleCount = len(largeSampleSet)
+			}
+
+			actualSampleCount := 0
+
+			for _, c := range s.Chunks {
+				ch, err := chunk.NewForEncoding(chunk.Encoding(c.Encoding))
+				require.NoError(t, err)
+				require.NoError(t, ch.UnmarshalFromBuf(c.Data))
+
+				actualSampleCount += ch.Len()
+			}
+
+			require.Equal(t, expectedSampleCount, actualSampleCount)
+
+			seriesReceivedCount++
+		}
+	}
+
+	require.Equal(t, len(expectedSeries), seriesReceivedCount, "expected to receive chunks for all series")
+	require.Equal(t, expectedSeriesPerChunksMessage, actualSeriesPerChunksMessage)
 }
 
 func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
