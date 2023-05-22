@@ -333,7 +333,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 
 			r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
 			require.NoError(t, err)
-			defer services.StopAndAwaitTerminated(ctx, r)
+			defer services.StopAndAwaitTerminated(ctx, r) //nolint:errcheck
 
 			limits := &blocksStoreLimitsMock{
 				storeGatewayTenantShardSize: testData.tenantShardSize,
@@ -355,7 +355,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			assert.Equal(t, testData.expectedErr, err)
 			defer func() {
 				// Close all clients to ensure no goroutines are leaked.
-				for c, _ := range clients {
+				for c := range clients {
 					c.(io.Closer).Close() //nolint:errcheck
 				}
 			}()
@@ -426,7 +426,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 		require.NoError(t, err)
 		defer func() {
 			// Close all clients to ensure no goroutines are leaked.
-			for c, _ := range clients {
+			for c := range clients {
 				c.(io.Closer).Close() //nolint:errcheck
 			}
 		}()
