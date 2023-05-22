@@ -7009,7 +7009,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": true,
                   "fieldFlag": "blocks-storage.bucket-store.bucket-index.enabled",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "deprecated"
                 },
                 {
                   "kind": "field",

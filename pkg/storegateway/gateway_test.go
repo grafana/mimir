@@ -317,7 +317,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 
 					storageCfg := mockStorageConfig(t)
 					storageCfg.BucketStore.SyncInterval = time.Hour // Do not trigger the periodic sync in this test. We want the initial sync only.
-					storageCfg.BucketStore.BucketIndex.Enabled = bucketIndexEnabled
+					storageCfg.BucketStore.BucketIndex.DeprecatedEnabled = bucketIndexEnabled
 
 					limits := defaultLimitsConfig()
 					gatewayCfg := mockGatewayConfig()
@@ -417,7 +417,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 		storageCfg := mockStorageConfig(t)
 		storageCfg.BucketStore.SyncInterval = time.Hour // Do not trigger the periodic sync in this test. We want it to be triggered by ring topology changed.
-		storageCfg.BucketStore.BucketIndex.Enabled = true
+		storageCfg.BucketStore.BucketIndex.DeprecatedEnabled = true
 
 		limits := defaultLimitsConfig()
 		gatewayCfg := mockGatewayConfig()
@@ -1039,7 +1039,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 			// Create a store-gateway used to query back the series from the blocks.
 			gatewayCfg := mockGatewayConfig()
 			storageCfg := mockStorageConfig(t)
-			storageCfg.BucketStore.BucketIndex.Enabled = bucketIndexEnabled
+			storageCfg.BucketStore.BucketIndex.DeprecatedEnabled = bucketIndexEnabled
 
 			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -1148,7 +1148,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 	// Create a store-gateway.
 	gatewayCfg := mockGatewayConfig()
 	storageCfg := mockStorageConfig(t)
-	storageCfg.BucketStore.BucketIndex.Enabled = true
+	storageCfg.BucketStore.BucketIndex.DeprecatedEnabled = true
 
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -1224,7 +1224,7 @@ func TestStoreGateway_Series_QueryShardingShouldGuaranteeSeriesShardingConsisten
 	// Create a store-gateway.
 	gatewayCfg := mockGatewayConfig()
 	storageCfg := mockStorageConfig(t)
-	storageCfg.BucketStore.BucketIndex.Enabled = true
+	storageCfg.BucketStore.BucketIndex.DeprecatedEnabled = true
 
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -1301,7 +1301,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 	// Create a store-gateway.
 	gatewayCfg := mockGatewayConfig()
 	storageCfg := mockStorageConfig(t)
-	storageCfg.BucketStore.BucketIndex.Enabled = true
+	storageCfg.BucketStore.BucketIndex.DeprecatedEnabled = true
 
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -1481,7 +1481,7 @@ func mockStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 
-	cfg.BucketStore.BucketIndex.Enabled = false // mocks used in tests don't expect index reads
+	cfg.BucketStore.BucketIndex.DeprecatedEnabled = false // mocks used in tests don't expect index reads
 	cfg.BucketStore.IgnoreBlocksWithin = 0
 	cfg.BucketStore.SyncDir = tmpDir
 

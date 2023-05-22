@@ -429,7 +429,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 
 	// Instantiate a different blocks metadata fetcher based on whether bucket index is enabled or not.
 	var fetcher block.MetadataFetcher
-	if u.cfg.BucketStore.BucketIndex.Enabled {
+	if u.cfg.BucketStore.BucketIndex.DeprecatedEnabled {
 		fetcher = NewBucketIndexMetadataFetcher(
 			userID,
 			u.bucket,

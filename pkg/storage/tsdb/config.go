@@ -100,6 +100,7 @@ const (
 	minBucketSizeBytesFlag      = "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes"
 	maxBucketSizeBytesFlag      = "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes"
 	seriesSelectionStrategyFlag = "blocks-storage.bucket-store.series-selection-strategy"
+	bucketIndexFlagPrefix       = "blocks-storage.bucket-store.bucket-index."
 )
 
 // Validation errors
@@ -399,7 +400,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) 
 	cfg.IndexCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-cache.")
 	cfg.ChunksCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.chunks-cache.", logger)
 	cfg.MetadataCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.metadata-cache.")
-	cfg.BucketIndex.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.bucket-index.")
+	cfg.BucketIndex.RegisterFlagsWithPrefix(f, bucketIndexFlagPrefix)
 	cfg.IndexHeader.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header.")
 
 	f.StringVar(&cfg.SyncDir, "blocks-storage.bucket-store.sync-dir", "./tsdb-sync/", "Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time.")
@@ -439,6 +440,9 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	if err := cfg.MetadataCache.Validate(); err != nil {
 		return errors.Wrap(err, "metadata-cache configuration")
 	}
+	if err := cfg.BucketIndex.Validate(logger); err != nil {
+		return errors.Wrap(err, "bucket-index configuration")
+	}
 	if cfg.DeprecatedMaxChunkPoolBytes != uint64(2*units.Gibibyte) {
 		util.WarnDeprecatedConfig(maxChunksBytesPoolFlag, logger)
 	}
@@ -458,15 +462,23 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 }
 
 type BucketIndexConfig struct {
-	Enabled               bool          `yaml:"enabled"`
+	DeprecatedEnabled     bool          `yaml:"enabled" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.11.
 	UpdateOnErrorInterval time.Duration `yaml:"update_on_error_interval" category:"advanced"`
 	IdleTimeout           time.Duration `yaml:"idle_timeout" category:"advanced"`
 	MaxStalePeriod        time.Duration `yaml:"max_stale_period" category:"advanced"`
 }
 
 func (cfg *BucketIndexConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", true, "If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket.")
+	f.BoolVar(&cfg.DeprecatedEnabled, prefix+"enabled", true, "If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket.")
 	f.DurationVar(&cfg.UpdateOnErrorInterval, prefix+"update-on-error-interval", time.Minute, "How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier.")
 	f.DurationVar(&cfg.IdleTimeout, prefix+"idle-timeout", time.Hour, "How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier.")
 	f.DurationVar(&cfg.MaxStalePeriod, prefix+"max-stale-period", time.Hour, "The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, and this check is enforced in the querier (at query time).")
+}
+
+// Validate the config.
+func (cfg *BucketIndexConfig) Validate(logger log.Logger) error {
+	if !cfg.DeprecatedEnabled {
+		util.WarnDeprecatedConfig(bucketIndexFlagPrefix+"enabled", logger)
+	}
+	return nil
 }
