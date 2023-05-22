@@ -46,6 +46,8 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-query-frontend.cache-results=false"
+            - "-query-frontend.scheduler-address=dns:///{{ template "mimir.fullname" . }}-ruler-query-scheduler.{{ .Release.Namespace }}.svc"
+
           {{- range $key, $value := .Values.ruler_query_frontend.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}

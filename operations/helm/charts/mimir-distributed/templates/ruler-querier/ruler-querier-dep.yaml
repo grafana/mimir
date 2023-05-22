@@ -44,6 +44,7 @@ spec:
             - "-target=querier"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-querier.scheduler-address=dns:///{{ template "mimir.fullname" . }}-ruler-query-scheduler.{{ .Release.Namespace }}.svc"
           {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
             {{- if not .Values.ingester.zoneAwareReplication.migration.readPath }}
             - "-ingester.ring.zone-awareness-enabled=false"
