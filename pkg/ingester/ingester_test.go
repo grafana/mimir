@@ -2028,7 +2028,7 @@ func TestIngester_QueryStream_QuerySharding(t *testing.T) {
 	}
 }
 
-func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsistencyOverTheTime(t *testing.T) {
+func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsistencyOverTime(t *testing.T) {
 	const (
 		numSeries = 100
 		numShards = 2
@@ -2064,37 +2064,55 @@ func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsiste
 		require.NoError(t, err)
 	}
 
-	// Query all series, 1 shard at a time.
-	for shardID := 0; shardID < numShards; shardID++ {
-		shardLabel := sharding.FormatShardIDLabelValue(uint64(shardID), numShards)
-		expectedSeriesIDs := expectedSeriesIDByShard[shardLabel]
+	for _, streamingEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
+			// Query all series, 1 shard at a time.
+			for shardID := 0; shardID < numShards; shardID++ {
+				shardLabel := sharding.FormatShardIDLabelValue(uint64(shardID), numShards)
+				expectedSeriesIDs := expectedSeriesIDByShard[shardLabel]
 
-		req := &client.QueryRequest{
-			StartTimestampMs: math.MinInt64,
-			EndTimestampMs:   math.MaxInt64,
-			Matchers: []*client.LabelMatcher{
-				{Type: client.REGEX_MATCH, Name: "series_id", Value: ".+"},
-				{Type: client.EQUAL, Name: sharding.ShardLabel, Value: shardLabel},
-			},
-		}
+				req := &client.QueryRequest{
+					StartTimestampMs: math.MinInt64,
+					EndTimestampMs:   math.MaxInt64,
+					Matchers: []*client.LabelMatcher{
+						{Type: client.REGEX_MATCH, Name: "series_id", Value: ".+"},
+						{Type: client.EQUAL, Name: sharding.ShardLabel, Value: shardLabel},
+					},
+				}
 
-		s := stream{ctx: ctx}
-		err = i.QueryStream(req, &s)
-		require.NoError(t, err)
-		require.Greater(t, len(s.responses), 0)
+				if streamingEnabled {
+					req.StreamingChunksBatchSize = numSeries
+				}
 
-		for _, res := range s.responses {
-			require.Greater(t, len(res.Chunkseries), 0)
-
-			for _, series := range res.Chunkseries {
-				// Ensure the series below to the right shard.
-				seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-				seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
+				s := stream{ctx: ctx}
+				err = i.QueryStream(req, &s)
 				require.NoError(t, err)
+				require.Greater(t, len(s.responses), 0)
+				actualSeriesIDs := []int{}
 
-				assert.Contains(t, expectedSeriesIDs, seriesID, "series:", seriesLabels.String())
+				for _, res := range s.responses {
+					if streamingEnabled {
+						for _, series := range res.Series {
+							seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+							seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
+							require.NoError(t, err)
+
+							actualSeriesIDs = append(actualSeriesIDs, seriesID)
+						}
+					} else {
+						for _, series := range res.Chunkseries {
+							seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+							seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
+							require.NoError(t, err)
+
+							actualSeriesIDs = append(actualSeriesIDs, seriesID)
+						}
+					}
+				}
+
+				require.ElementsMatch(t, expectedSeriesIDs, actualSeriesIDs)
 			}
-		}
+		})
 	}
 }
 
