@@ -33,6 +33,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func TestMain(m *testing.M) {
+	test.VerifyNoLeakTestMain(m)
+}
+
 const (
 	chunkOffset     = 1 * time.Hour
 	chunkLength     = 3 * time.Hour

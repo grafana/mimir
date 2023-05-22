@@ -17,12 +17,9 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestStreamingChunkSeries_DeduplicatesIdenticalChunks(t *testing.T) {
-	test.VerifyNoLeak(t)
-
 	chunkIteratorFunc := func(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
 		return streamingChunkSeriesTestIterator{
 			chunks:  chunks,
