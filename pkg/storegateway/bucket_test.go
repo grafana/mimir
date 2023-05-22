@@ -1369,7 +1369,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
-	f, err := block.NewRawMetaFetcher(logger, ibkt)
+	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil)
 	assert.NoError(t, err)
 
 	runTestWithStore := func(t test.TB, st *BucketStore, reg prometheus.Gatherer) {
@@ -1587,7 +1587,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			// Reset the memory pool tracker.
 			seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-			metaFetcher, err := block.NewRawMetaFetcher(logger, instrumentedBucket)
+			metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
 			assert.NoError(t, err)
 
 			// Create the bucket store.

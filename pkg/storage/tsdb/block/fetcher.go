@@ -191,12 +191,6 @@ func NewBaseFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 	}, nil
 }
 
-// NewRawMetaFetcher returns basic meta fetcher without proper handling for eventual consistent backends or partial uploads.
-// NOTE: Not suitable to use in production.
-func NewRawMetaFetcher(logger log.Logger, bkt objstore.InstrumentedBucketReader) (*MetaFetcher, error) {
-	return NewMetaFetcher(logger, 1, bkt, "", nil, nil)
-}
-
 // NewMetaFetcher returns meta fetcher.
 func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter) (*MetaFetcher, error) {
 	b, err := NewBaseFetcher(logger, concurrency, bkt, dir, reg)
