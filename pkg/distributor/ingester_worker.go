@@ -146,7 +146,7 @@ func (w *ingesterWorker) processJobs() {
 
 	for {
 		// FIXME: don't create new time for each iteration
-		waitTimeout := time.NewTimer(5 * time.Second)
+		waitTimeout := time.NewTimer(1 * time.Minute)
 
 		select {
 		case r, ok := <-w.ch:
