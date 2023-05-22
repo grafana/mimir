@@ -50,7 +50,6 @@ func TestMetadataFetcherMetrics(t *testing.T) {
 		# TYPE cortex_blocks_meta_synced gauge
 		cortex_blocks_meta_synced{state="corrupted-meta-json"} 75
 		cortex_blocks_meta_synced{state="loaded"} 90
-		cortex_blocks_meta_synced{state="too-fresh"} 105
 `))
 	require.NoError(t, err)
 }
@@ -65,7 +64,6 @@ func populateMetadataFetcherMetrics(base float64) *prometheus.Registry {
 
 	m.synced.WithLabelValues("corrupted-meta-json").Set(base * 5)
 	m.synced.WithLabelValues("loaded").Set(base * 6)
-	m.synced.WithLabelValues("too-fresh").Set(base * 7)
 
 	return reg
 }
