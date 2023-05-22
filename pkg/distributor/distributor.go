@@ -1291,7 +1291,7 @@ func (d *Distributor) sendStreaming(ctx context.Context, ingester ring.InstanceD
 		Source:     source,
 	}
 
-	return w.push(ctx, user, &req)
+	return errors.Wrap(w.push(ctx, user, &req), "failed pushing to ingester")
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.

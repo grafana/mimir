@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -32,14 +33,17 @@ type ingesterResponse struct {
 type ingesterWorker struct {
 	client.HealthAndIngesterClient
 
+	closed  atomic.Bool
 	ch      chan ingesterRequest
 	logger  log.Logger
 	metrics *ingesterWorkerMetrics
 }
 
 type ingesterWorkerMetrics struct {
-	runningWorkers prometheus.Gauge
-	activeWorkers  prometheus.Gauge
+	runningWorkers   prometheus.Gauge
+	activeWorkers    prometheus.Gauge
+	requestsSent     prometheus.Counter
+	responseReceived prometheus.Counter
 }
 
 func newIngesterWorkerMetrics(r prometheus.Registerer) *ingesterWorkerMetrics {
@@ -51,6 +55,14 @@ func newIngesterWorkerMetrics(r prometheus.Registerer) *ingesterWorkerMetrics {
 		activeWorkers: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_distributor_active_ingester_workers",
 			Help: "Number of active (handling request) ingester workers",
+		}),
+		requestsSent: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_distributor_ingester_workers_requests_sent_total",
+			Help: "AAA",
+		}),
+		responseReceived: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_distributor_ingester_workers_responses_received_total",
+			Help: "BBB",
 		}),
 	}
 }
@@ -68,11 +80,17 @@ func newIngesterWorker(client client.HealthAndIngesterClient, logger log.Logger,
 }
 
 func (w *ingesterWorker) Close() error {
-	close(w.ch)
+	w.closed.Store(true)
 	return w.HealthAndIngesterClient.Close()
 }
 
+var closedErr = errors.New("client closed")
+
 func (w *ingesterWorker) push(ctx context.Context, user string, m *mimirpb.WriteRequest) error {
+	if w.closed.Load() {
+		return closedErr
+	}
+
 	r := ingesterRequest{
 		req:  m,
 		user: user,
@@ -110,6 +128,7 @@ func (w *ingesterWorker) push(ctx context.Context, user string, m *mimirpb.Write
 			return httpgrpc.ErrorFromHTTPResponse(out.resp)
 		}
 		return out.err
+
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -138,7 +157,7 @@ func (w *ingesterWorker) processJobs() {
 				return
 			}
 
-			if w.processRequest(s, r) {
+			if !w.processRequest(s, r) {
 				return
 			}
 
@@ -167,19 +186,23 @@ func (w *ingesterWorker) processRequest(s client.Ingester_PushStreamClient, r in
 		User:    r.user,
 	})
 	if err != nil {
-		r.ch <- ingesterResponse{
-			err: err,
-		}
+		level.Warn(w.logger).Log("msg", "error while sending request to ingester", "err", err)
+
+		r.ch <- ingesterResponse{err: err}
 		return false
 	}
 
+	w.metrics.requestsSent.Inc()
+
 	recv, err := s.Recv()
-	r.ch <- ingesterResponse{
-		resp: recv,
-		err:  err,
+	if recv != nil {
+		w.metrics.requestsSent.Inc()
 	}
 
+	r.ch <- ingesterResponse{resp: recv, err: err}
+
 	if err != nil {
+		level.Warn(w.logger).Log("msg", "error while receiving response from ingester", "err", err)
 		return false
 	}
 	return true
