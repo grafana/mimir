@@ -1619,7 +1619,7 @@ func removeIgnoredLogs(input []string) []string {
 
 	for i := 0; i < len(input); i++ {
 		log := input[i]
-		if strings.Contains(log, "block.MetaFetcher") || strings.Contains(log, "block.BaseFetcher") || strings.Contains(log, "instance not found in the ring") {
+		if strings.Contains(log, "block.MetaFetcher") || strings.Contains(log, "instance not found in the ring") {
 			continue
 		}
 
