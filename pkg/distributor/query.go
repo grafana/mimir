@@ -359,11 +359,13 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
+	expectedZonesWithResults := replicationSet.ZoneCount() - replicationSet.MaxUnavailableZones
+
 	// Now turn the accumulated maps into slices.
 	resp := querier.DistributorQueryStreamResponse{
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
-		StreamingSeries: mergeSeriesChunkStreams(results, replicationSet.ZoneCount()), // TODO: adjust zone count to only include zones we're actually using results from
+		StreamingSeries: mergeSeriesChunkStreams(results, expectedZonesWithResults),
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
@@ -424,7 +426,7 @@ type seriesChunksStream struct {
 	Series       []labels.Labels
 }
 
-func mergeSeriesChunkStreams(results []ingesterQueryResult, zoneCount int) []querier.StreamingSeries {
+func mergeSeriesChunkStreams(results []ingesterQueryResult, expectedZoneCount int) []querier.StreamingSeries {
 	tree := newSeriesChunkStreamsTree(results)
 	if tree == nil {
 		return nil
@@ -440,8 +442,8 @@ func mergeSeriesChunkStreams(results []ingesterQueryResult, zoneCount int) []que
 			// First time we've seen this series.
 			series := querier.StreamingSeries{
 				Labels: nextSeriesFromIngester,
-				// Why zoneCount? We assume each series is present exactly once in each zone.
-				Sources: make([]querier.StreamingSeriesSource, 1, zoneCount),
+				// Why expectedZoneCount? We assume each series is present exactly once in each zone.
+				Sources: make([]querier.StreamingSeriesSource, 1, expectedZoneCount),
 			}
 
 			series.Sources[0] = querier.StreamingSeriesSource{
