@@ -2570,7 +2570,12 @@ func (i *Ingester) PushStream(s client.Ingester_PushStreamServer) error {
 
 	for i.State() == services.Running && s.Context().Err() == nil {
 		msg, err := s.Recv()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+
 		if err != nil {
+			level.Warn(i.logger).Log("msg", "received err from PushStream", "err", err)
 			return err
 		}
 
@@ -2590,6 +2595,7 @@ func (i *Ingester) PushStream(s client.Ingester_PushStreamServer) error {
 		}
 
 		if err := s.Send(resp); err != nil {
+			level.Warn(i.logger).Log("msg", "got err when sending PushStream response", "err", err)
 			return err
 		}
 	}

@@ -2,11 +2,15 @@ package distributor
 
 import (
 	"context"
+	"errors"
+	"io"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
@@ -26,7 +30,8 @@ type ingesterResponse struct {
 }
 
 type ingesterWorker struct {
-	client  client.IngesterClient
+	client.HealthAndIngesterClient
+
 	ch      chan ingesterRequest
 	logger  log.Logger
 	metrics *ingesterWorkerMetrics
@@ -39,24 +44,32 @@ type ingesterWorkerMetrics struct {
 
 func newIngesterWorkerMetrics(r prometheus.Registerer) *ingesterWorkerMetrics {
 	return &ingesterWorkerMetrics{
-		runningWorkers: prometheus.NewGauge(prometheus.GaugeOpts{
+		runningWorkers: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_distributor_running_ingester_workers",
 			Help: "Number of running ingester workers (for all ingesters)",
 		}),
-		activeWorkers: prometheus.NewGauge(prometheus.GaugeOpts{
+		activeWorkers: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_distributor_active_ingester_workers",
 			Help: "Number of active (handling request) ingester workers",
 		}),
 	}
 }
 
-func newIngesterWorker(client client.IngesterClient, logger log.Logger, metrics *ingesterWorkerMetrics) *ingesterWorker {
+var _ ring_client.PoolClient = &ingesterWorker{}
+
+func newIngesterWorker(client client.HealthAndIngesterClient, logger log.Logger, metrics *ingesterWorkerMetrics) *ingesterWorker {
 	return &ingesterWorker{
-		client:  client,
+		HealthAndIngesterClient: client,
+
 		ch:      make(chan ingesterRequest),
 		logger:  logger,
 		metrics: metrics,
 	}
+}
+
+func (w *ingesterWorker) Close() error {
+	close(w.ch)
+	return w.HealthAndIngesterClient.Close()
 }
 
 func (w *ingesterWorker) push(ctx context.Context, user string, m *mimirpb.WriteRequest) error {
@@ -106,10 +119,9 @@ func (w *ingesterWorker) processJobs() {
 	w.metrics.runningWorkers.Inc()
 	defer w.metrics.runningWorkers.Dec()
 
-	s, err := w.client.PushStream(user.InjectOrgID(context.Background(), "dummy"))
+	s, err := w.HealthAndIngesterClient.PushStream(user.InjectOrgID(context.Background(), "dummy"))
 	if err != nil {
-		level.Warn(w.logger).Log("msg", "failed to initiate PushStream", "err", err)
-		// log error
+		level.Warn(w.logger).Log("msg", "failed to initiate PushStream, closing client", "err", err)
 		return
 	}
 
@@ -132,7 +144,14 @@ func (w *ingesterWorker) processJobs() {
 
 		case <-waitTimeout.C:
 			// no new request in some time, exit
-			_ = s.CloseSend()
+			err = s.CloseSend()
+			if err != nil {
+				level.Warn(w.logger).Log("msg", "failed to close PushStream stream", "err", err)
+			}
+			_, err := s.Recv()
+			if err == nil || !errors.Is(err, io.EOF) {
+				level.Warn(w.logger).Log("msg", "unexpected error when closing stream, expected EOF", "err", err)
+			}
 			return
 		}
 	}

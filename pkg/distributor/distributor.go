@@ -82,9 +82,6 @@ type Distributor struct {
 
 	ingesterWorkersMetrics *ingesterWorkerMetrics
 
-	ingesterWorkersLock sync.RWMutex
-	ingesterWorkers     map[string]*ingesterWorker
-
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
 	distributorsLifecycler *ring.BasicLifecycler
@@ -206,12 +203,6 @@ const (
 
 // New constructs a new Distributor
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
-	if cfg.IngesterClientFactory == nil {
-		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(addr, clientConfig)
-		}
-	}
-
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout
 
 	haTracker, err := newHATracker(cfg.HATrackerConfig, limits, reg, log)
@@ -226,12 +217,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		cfg:                    cfg,
 		log:                    log,
 		ingestersRing:          ingestersRing,
-		ingesterPool:           NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount:  atomic.NewUint32(0),
 		limits:                 limits,
 		HATracker:              haTracker,
 		ingestionRate:          util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
-		ingesterWorkers:        map[string]*ingesterWorker{},
 		ingesterWorkersMetrics: newIngesterWorkerMetrics(reg),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -345,6 +334,18 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		exemplarValidationMetrics: validation.NewExemplarValidationMetrics(reg),
 		metadataValidationMetrics: validation.NewMetadataValidationMetrics(reg),
 	}
+
+	if cfg.IngesterClientFactory == nil {
+		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
+			pc, err := ingester_client.MakeIngesterClient(addr, clientConfig)
+			if err != nil {
+				return nil, err
+			}
+			return newIngesterWorker(pc, d.log, d.ingesterWorkersMetrics), nil
+		}
+	}
+
+	d.ingesterPool = NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log)
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        instanceLimitsMetric,
@@ -1278,27 +1279,11 @@ func (d *Distributor) sendStreaming(ctx context.Context, ingester ring.InstanceD
 		return err
 	}
 
-	d.ingesterWorkersLock.RLock()
-	w := d.ingesterWorkers[ingester.Addr]
-	d.ingesterWorkersLock.RUnlock()
-
-	if w == nil {
-		h, err := d.ingesterPool.GetClientFor(ingester.Addr)
-		if err != nil {
-			return err
-		}
-		c := h.(ingester_client.IngesterClient)
-
-		w = newIngesterWorker(c, d.log, d.ingesterWorkersMetrics)
-
-		d.ingesterWorkersLock.Lock()
-		if nw := d.ingesterWorkers[ingester.Addr]; nw == nil {
-			d.ingesterWorkers[ingester.Addr] = w
-		} else {
-			w = nw
-		}
-		d.ingesterWorkersLock.Unlock()
+	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
+	if err != nil {
+		return err
 	}
+	w := h.(*ingesterWorker)
 
 	req := mimirpb.WriteRequest{
 		Timeseries: timeseries,
