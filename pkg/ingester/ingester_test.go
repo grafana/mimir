@@ -1982,49 +1982,64 @@ func TestIngester_QueryStream_QuerySharding(t *testing.T) {
 		}
 	}
 
-	// Query all series.
-	var actualTimeseries model.Matrix
+	for _, streamingEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
+			// Query all series.
+			var actualTimeseries model.Matrix
 
-	for shardIndex := 0; shardIndex < numShards; shardIndex++ {
-		req := &client.QueryRequest{
-			StartTimestampMs: math.MinInt64,
-			EndTimestampMs:   math.MaxInt64,
-			Matchers: []*client.LabelMatcher{
-				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"},
-				{Type: client.EQUAL, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
-					ShardIndex: uint64(shardIndex),
-					ShardCount: uint64(numShards),
-				}.LabelValue()},
-			},
-		}
+			for shardIndex := 0; shardIndex < numShards; shardIndex++ {
+				req := &client.QueryRequest{
+					StartTimestampMs: math.MinInt64,
+					EndTimestampMs:   math.MaxInt64,
+					Matchers: []*client.LabelMatcher{
+						{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"},
+						{Type: client.EQUAL, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
+							ShardIndex: uint64(shardIndex),
+							ShardCount: uint64(numShards),
+						}.LabelValue()},
+					},
+				}
 
-		s := stream{ctx: ctx}
-		err = i.QueryStream(req, &s)
-		require.NoError(t, err)
+				if streamingEnabled {
+					req.StreamingChunksBatchSize = 128
+				}
 
-		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
-		require.NoError(t, err)
-		actualTimeseries = append(actualTimeseries, res...)
-	}
+				s := stream{ctx: ctx}
+				err = i.QueryStream(req, &s)
+				require.NoError(t, err)
 
-	// We expect that all series have been returned.
-	assert.Len(t, actualTimeseries, numSeries)
+				res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+				require.NoError(t, err)
+				actualTimeseries = append(actualTimeseries, res...)
+			}
 
-	actualSeriesIDs := map[int]struct{}{}
+			// We expect that all series have been returned.
+			require.Len(t, actualTimeseries, numSeries)
 
-	for _, series := range actualTimeseries {
-		seriesID, err := strconv.Atoi(string(series.Metric[model.LabelName("series_id")]))
-		require.NoError(t, err)
+			actualSeriesIDs := []int{}
 
-		// We expect no duplicated series in the result.
-		_, exists := actualSeriesIDs[seriesID]
-		assert.False(t, exists)
-		actualSeriesIDs[seriesID] = struct{}{}
+			for _, series := range actualTimeseries {
+				seriesID, err := strconv.Atoi(string(series.Metric[model.LabelName("series_id")]))
+				require.NoError(t, err)
 
-		// We expect 1 sample with the same timestamp and value we've written.
-		require.Len(t, series.Values, 1)
-		assert.Equal(t, int64(seriesID), int64(series.Values[0].Timestamp))
-		assert.Equal(t, float64(seriesID), float64(series.Values[0].Value))
+				// We expect no duplicated series in the result.
+				assert.NotContains(t, actualSeriesIDs, seriesID, "series was returned multiple times")
+				actualSeriesIDs = append(actualSeriesIDs, seriesID)
+
+				// We expect 1 sample with the same timestamp and value we've written.
+				require.Len(t, series.Values, 1)
+				require.Equal(t, int64(seriesID), int64(series.Values[0].Timestamp))
+				require.Equal(t, float64(seriesID), float64(series.Values[0].Value))
+			}
+
+			expectedSeriesIDs := []int{}
+
+			for seriesID := 0; seriesID < numSeries; seriesID++ {
+				expectedSeriesIDs = append(expectedSeriesIDs, seriesID)
+			}
+
+			require.ElementsMatch(t, expectedSeriesIDs, actualSeriesIDs)
+		})
 	}
 }
 
