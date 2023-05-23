@@ -165,7 +165,7 @@ type MetaFetcher struct {
 	cached map[ulid.ULID]*metadata.Meta
 }
 
-// NewMetaFetcher returns meta fetcher.
+// NewMetaFetcher returns a MetaFetcher.
 func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter) (*MetaFetcher, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -190,7 +190,7 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 		syncs: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Subsystem: fetcherSubSys,
 			Name:      "base_syncs_total",
-			Help:      "Total blocks metadata synchronization attempts by Meta Fetcher",
+			Help:      "Total blocks metadata synchronization attempts by meta fetcher",
 		}),
 	}, nil
 }
