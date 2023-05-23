@@ -6,11 +6,15 @@
 package block
 
 import (
+	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
+	"github.com/thanos-io/objstore"
 )
 
 const (
@@ -59,4 +63,26 @@ func NoCompactMarkFilepath(blockID ulid.ULID) string {
 // pattern of block marker stored in the markers location.
 func IsNoCompactMarkFilename(name string) (ulid.ULID, bool) {
 	return isMarkFilename(name, NoCompactMarkFilename)
+}
+
+// ListBlockDeletionMarks looks for block deletion marks in the global markers location
+// and returns a map containing all blocks having a deletion mark and their location in the
+// bucket.
+func ListBlockDeletionMarks(ctx context.Context, bkt objstore.BucketReader) (map[ulid.ULID]struct{}, error) {
+	discovered := map[ulid.ULID]struct{}{}
+
+	// Find all markers in the storage.
+	err := bkt.Iter(ctx, MarkersPathname+"/", func(name string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		if blockID, ok := IsDeletionMarkFilename(path.Base(name)); ok {
+			discovered[blockID] = struct{}{}
+		}
+
+		return nil
+	})
+
+	return discovered, errors.Wrap(err, "list block deletion marks")
 }

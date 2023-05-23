@@ -721,10 +721,10 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				userBucket,
 				fetcherDir,
 				reg,
-				[]block.MetadataFilter{NewExcludeMarkedForDeletionFilter(userBucket)},
+				nil,
 			)
 			require.NoError(t, err)
-			metas, partials, err := fetcher.Fetch(ctx)
+			metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
 			require.NoError(t, err)
 			require.Empty(t, partials)
 
@@ -812,10 +812,10 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 		userBucket,
 		fetcherDir,
 		reg,
-		[]block.MetadataFilter{NewExcludeMarkedForDeletionFilter(userBucket)},
+		nil,
 	)
 	require.NoError(t, err)
-	metas, partials, err := fetcher.Fetch(ctx)
+	metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
 	require.NoError(t, err)
 	require.Empty(t, partials)
 
