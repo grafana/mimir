@@ -70,6 +70,27 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 	require.Equal(t, uint64(114), queryStats.FetchedChunkBytes)
 }
 
+func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	queryStats := &stats.Stats{}
+	series := streamingChunkSeries{
+		labels:            labels.FromStrings("the-name", "the-value"),
+		chunkIteratorFunc: nil,
+		mint:              1000,
+		maxt:              6000,
+		// Create a stream reader that will always return an error because we'll try to read a series when it has no series to read.
+		sources: []client.StreamingSeriesSource{
+			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{})},
+		},
+		queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
+		queryStats:        queryStats,
+	}
+
+	iterator := series.Iterator(nil)
+	require.NotNil(t, iterator)
+	require.EqualError(t, iterator.Err(), "attempted to read series at index 0 from stream, but the stream has already been exhausted")
+}
+
 func createTestChunk(t *testing.T, time int64, value float64) client.Chunk {
 	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 	require.NoError(t, err)
