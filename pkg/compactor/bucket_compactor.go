@@ -50,7 +50,6 @@ type Syncer struct {
 	fetcher                 block.MetadataFetcher
 	mtx                     sync.Mutex
 	blocks                  map[ulid.ULID]*metadata.Meta
-	partial                 map[ulid.ULID]error
 	metrics                 *syncerMetrics
 	deduplicateBlocksFilter DeduplicateFilter
 }
@@ -105,21 +104,12 @@ func (s *Syncer) SyncMetas(ctx context.Context) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	metas, partial, err := s.fetcher.Fetch(ctx)
+	metas, _, err := s.fetcher.Fetch(ctx)
 	if err != nil {
 		return err
 	}
 	s.blocks = metas
-	s.partial = partial
 	return nil
-}
-
-// Partial returns partial blocks since last sync.
-func (s *Syncer) Partial() map[ulid.ULID]error {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
-	return s.partial
 }
 
 // Metas returns loaded metadata blocks since last sync.
