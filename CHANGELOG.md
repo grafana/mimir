@@ -16,6 +16,7 @@
   * `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
 * [CHANGE] Store-gateway: remove metrics `cortex_bucket_store_chunk_pool_requested_bytes_total` and `cortex_bucket_store_chunk_pool_returned_bytes_total`. #4996
 * [CHANGE] Compactor: change default of `-compactor.partial-block-deletion-delay` to `1d`. This will automatically clean up partial blocks that were a result of failed block upload or deletion. #5026
+* [FEATURE] Query-frontend: add `-query-frontend.log-query-request-headers` to enable logging of request headers in query logs. #5030
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metric `cortex_bucket_store_series_data_touched`. This label now applies to `data_type="chunks"` and `data_type="series"`. The `stage` label has 2 values: `processed` - the number of series that parsed - and `returned` - the number of series selected from the processed bytes to satisfy the query. #4797 #4830
@@ -67,6 +68,7 @@
 * [ENHANCEMENT] Alerts: added labels to duplicated `MimirRolloutStuck` and `MimirCompactorHasNotUploadedBlocks` rules in order to distinguish them. #5023
 * [ENHANCEMENT] Dashboards: fix holes in graph for lightly loaded clusters #4915
 * [ENHANCEMENT] Dashboards: allow configuring additional services for the Rollout Progress dashboard. #5007
+* [BUGFIX] Dashboards: show cancelled requests in a different color to successful requests in throughput panels on dashboards. #5039
 
 ### Jsonnet
 
@@ -82,6 +84,7 @@
 
 ### Mimirtool
 
+* [CHANGE] check rules: will fail on duplicate rules when `--strict` is provided. #5035
 * [ENHANCEMENT] analyze prometheus: allow to specify `-prometheus-http-prefix`. #4966
 * [ENHANCEMENT] analyze grafana: allow to specify `--folder-title` to limit dashboards analysis based on their exact folder title. #4973
 

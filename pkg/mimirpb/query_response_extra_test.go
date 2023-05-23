@@ -5,7 +5,6 @@ package mimirpb
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/grafana/regexp"
@@ -78,8 +77,5 @@ func extractPrometheusStrings(t *testing.T, constantType string) []string {
 // FloatHistogram types converted into each other with unsafe.Pointer
 // are compatible
 func TestFloatHistogramProtobufTypeRemainsInSyncWithPrometheus(t *testing.T) {
-	protoType := reflect.TypeOf(FloatHistogram{})
-	prometheusType := reflect.TypeOf(histogram.FloatHistogram{})
-
-	test.RequireSameShape(t, prometheusType, protoType)
+	test.RequireSameShape(t, histogram.FloatHistogram{}, FloatHistogram{}, false)
 }
