@@ -1684,11 +1684,18 @@ func (i *Ingester) queryStreamStreaming(ctx context.Context, db *userTSDB, from,
 	return seriesCount, numSamples, nil
 }
 
+// chunkSeriesNode is used a build a linked list of slices of series.
+// This is useful to avoid lots of allocation when you don't know the
+// total number of series upfront.
+//
+// NOTE: Do not use this struct directly. Get it from getChunkSeriesNode()
+// and put it back using putChunkSeriesNode() when you are done using it.
 type chunkSeriesNode struct {
 	series []storage.ChunkSeries
 	next   *chunkSeriesNode
 }
 
+// Capacity of the slice in chunkSeriesNode.
 const chunkSeriesNodeSize = 1024
 
 func (i *Ingester) getChunkSeriesNode() *chunkSeriesNode {
@@ -1725,6 +1732,9 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 	// avoid holding labels reference in ChunkSeries.
 	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
 
+	// It is non-trivial to know the total number of series here, so we use a linked list of slices
+	// of series and re-use them for future use as well. Even if we did know total number of series
+	// here, maybe re-use of slices is a good idea.
 	allSeriesList := i.getChunkSeriesNode()
 	lastSeriesNode := allSeriesList
 	seriesCount := 0
