@@ -25,7 +25,6 @@ type MetadataFetcherMetrics struct {
 
 	// Ignored:
 	// blocks_meta_modified
-	// blocks_meta_base_syncs_total
 }
 
 func NewMetadataFetcherMetrics() *MetadataFetcherMetrics {

@@ -158,7 +158,6 @@ type MetaFetcher struct {
 
 	// Optional local directory to cache meta.json files.
 	cacheDir string
-	syncs    prometheus.Counter
 	g        singleflight.Group
 
 	mtx    sync.Mutex
@@ -187,11 +186,6 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 		cached:      map[ulid.ULID]*metadata.Meta{},
 		metrics:     NewFetcherMetrics(reg, nil, nil),
 		filters:     filters,
-		syncs: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Subsystem: fetcherSubSys,
-			Name:      "base_syncs_total",
-			Help:      "Total blocks metadata synchronization attempts by meta fetcher",
-		}),
 	}, nil
 }
 
@@ -286,8 +280,6 @@ type response struct {
 }
 
 func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
-	f.syncs.Inc()
-
 	var (
 		resp = response{
 			metas:   make(map[ulid.ULID]*metadata.Meta),
