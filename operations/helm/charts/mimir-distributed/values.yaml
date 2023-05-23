@@ -3278,14 +3278,17 @@ graphite:
     # -- Pod Disruption Budget
     podDisruptionBudget: {}
 
-    # -- SecurityContext override for graphite web pods
-    securityContext: {}
+    # -- SecurityContext override for graphite-web pods
+    # graohite-web pods need to run as root
+    # Because of that the graphite-web pods are incompatible with the PodSecurityPolicy of the
+    # mimir-distributed chart and with the Restricted policy of Pod Security Standards https://kubernetes.io/docs/concepts/security/pod-security-standards/
+    securityContext:
+      runAsNonRoot: true
+      fsGroup: 0
+      runAsGroup: 0
+      runAsUser: 0
 
-    containerSecurityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop: [ALL]
+    containerSecurityContext: {}
 
 
 # Graphite's aggregation cache. If you want to know more about it please check
