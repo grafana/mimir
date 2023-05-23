@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 )
 
@@ -16,7 +17,7 @@ type streamingChunkSeries struct {
 	chunkIteratorFunc chunkIteratorFunc
 	mint, maxt        int64
 	sources           []client.StreamingSeriesSource
-	queryChunkMetrics *QueryChunkMetrics
+	queryChunkMetrics *stats.QueryChunkMetrics
 }
 
 func (s *streamingChunkSeries) Labels() labels.Labels {

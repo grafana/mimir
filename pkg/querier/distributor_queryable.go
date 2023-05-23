@@ -12,8 +12,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -22,6 +20,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -40,27 +39,7 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-type QueryChunkMetrics struct {
-	IngesterChunksDeduplicated prometheus.Counter
-	IngesterChunksTotal        prometheus.Counter
-}
-
-func NewQueryChunkMetrics(reg prometheus.Registerer) *QueryChunkMetrics {
-	return &QueryChunkMetrics{
-		IngesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_query_ingester_chunks_deduped_total",
-			Help:      "Number of chunks deduplicated at query time from ingesters.",
-		}),
-		IngesterChunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_query_ingester_chunks_total",
-			Help:      "Number of chunks transferred at query time from ingesters.",
-		}),
-	}
-}
-
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryChunkMetrics *QueryChunkMetrics, logger log.Logger) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryChunkMetrics *stats.QueryChunkMetrics, logger log.Logger) QueryableWithFilter {
 	return distributorQueryable{
 		logger:            logger,
 		distributor:       distributor,
@@ -79,7 +58,7 @@ type distributorQueryable struct {
 	distributor       Distributor
 	iteratorFn        chunkIteratorFunc
 	cfgProvider       distributorQueryableConfigProvider
-	queryChunkMetrics *QueryChunkMetrics
+	queryChunkMetrics *stats.QueryChunkMetrics
 }
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -123,7 +102,7 @@ type distributorQuerier struct {
 	mint, maxt           int64
 	chunkIterFn          chunkIteratorFunc
 	queryIngestersWithin time.Duration
-	queryChunkMetrics    *QueryChunkMetrics
+	queryChunkMetrics    *stats.QueryChunkMetrics
 }
 
 // Select implements storage.Querier interface.
