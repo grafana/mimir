@@ -40,20 +40,17 @@ type FetcherMetrics struct {
 	SyncFailures prometheus.Counter
 	SyncDuration prometheus.Histogram
 
-	Synced   *extprom.TxGaugeVec
-	Modified *extprom.TxGaugeVec
+	Synced *extprom.TxGaugeVec
 }
 
 // Submit applies new values for metrics tracked by transaction GaugeVec.
 func (s *FetcherMetrics) Submit() {
 	s.Synced.Submit()
-	s.Modified.Submit()
 }
 
 // ResetTx starts new transaction for metrics tracked by transaction GaugeVec.
 func (s *FetcherMetrics) ResetTx() {
 	s.Synced.ResetTx()
-	s.Modified.ResetTx()
 }
 
 const (
@@ -118,18 +115,6 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels, modifiedExt
 			{MarkedForNoCompactionMeta},
 		}, syncedExtraLabels...)...,
 	)
-	m.Modified = extprom.NewTxGaugeVec(
-		reg,
-		prometheus.GaugeOpts{
-			Subsystem: fetcherSubSys,
-			Name:      "modified",
-			Help:      "Number of blocks whose metadata changed",
-		},
-		[]string{"modified"},
-		append([][]string{
-			{replicaRemovedMeta},
-		}, modifiedExtraLabels...)...,
-	)
 	return &m
 }
 
@@ -144,7 +129,7 @@ type GaugeVec interface {
 
 // Filter allows filtering or modifying metas from the provided map or returns error.
 type MetadataFilter interface {
-	Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error
+	Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec) error
 }
 
 // MetaFetcher is a struct that synchronizes filtered metadata of all block in the object storage with the local state.
@@ -430,7 +415,7 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (_ map[ulid.ULID]*metadata.Meta
 
 	for _, filter := range f.filters {
 		// NOTE: filter can update synced metric accordingly to the reason of the exclude.
-		if err := filter.Filter(ctx, metas, f.metrics.Synced, f.metrics.Modified); err != nil {
+		if err := filter.Filter(ctx, metas, f.metrics.Synced); err != nil {
 			return nil, nil, errors.Wrap(err, "filter metas")
 		}
 	}
@@ -495,7 +480,7 @@ func (f *IgnoreDeletionMarkFilter) DeletionMarkBlocks() map[ulid.ULID]*metadata.
 
 // Filter filters out blocks that are marked for deletion after a given delay.
 // It also returns the blocks that can be deleted since they were uploaded delay duration before current time.
-func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error {
+func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec) error {
 	deletionMarkMap := make(map[ulid.ULID]*metadata.DeletionMark)
 
 	// Make a copy of block IDs to check, in order to avoid concurrency issues

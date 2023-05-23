@@ -22,9 +22,6 @@ type MetadataFetcherMetrics struct {
 	syncFailures *prometheus.Desc
 	syncDuration *prometheus.Desc
 	synced       *prometheus.Desc
-
-	// Ignored:
-	// blocks_meta_modified
 }
 
 func NewMetadataFetcherMetrics() *MetadataFetcherMetrics {
