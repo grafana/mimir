@@ -372,8 +372,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	}
 
 	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
-	reqStats.AddFetchedChunkBytes(uint64(ingester_client.ChunksSize(resp.Chunkseries))) // TODO: accumulate this while streaming (this includes the size of labels - do we want to include those here too?)
-	reqStats.AddFetchedChunks(uint64(ingester_client.ChunksCount(resp.Chunkseries)))    // TODO: accumulate this while streaming
+	reqStats.AddFetchedChunkBytes(uint64(ingester_client.ChunksSize(resp.Chunkseries)))
+	reqStats.AddFetchedChunks(uint64(ingester_client.ChunksCount(resp.Chunkseries)))
 
 	return resp, nil
 }

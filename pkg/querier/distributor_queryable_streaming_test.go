@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func TestStreamingChunkSeries(t *testing.T) {
+func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 	chunkIteratorFunc := func(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
 		return streamingChunkSeriesTestIterator{
 			chunks:  chunks,
@@ -36,7 +36,7 @@ func TestStreamingChunkSeries(t *testing.T) {
 	chunkPresentInBothSources := createTestChunk(t, 2500, 7.89)
 
 	reg := prometheus.NewPedanticRegistry()
-
+	queryStats := &stats.Stats{}
 	series := streamingChunkSeries{
 		labels:            labels.FromStrings("the-name", "the-value"),
 		chunkIteratorFunc: chunkIteratorFunc,
@@ -47,6 +47,7 @@ func TestStreamingChunkSeries(t *testing.T) {
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToSecondSource, chunkPresentInBothSources}}})},
 		},
 		queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
+		queryStats:        queryStats,
 	}
 
 	iterator := series.Iterator(nil)
@@ -64,6 +65,9 @@ func TestStreamingChunkSeries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 4.0, m.SumCounters("cortex_distributor_query_ingester_chunks_total"))
 	require.Equal(t, 1.0, m.SumCounters("cortex_distributor_query_ingester_chunks_deduped_total"))
+
+	require.Equal(t, uint64(3), queryStats.FetchedChunksCount)
+	require.Equal(t, uint64(114), queryStats.FetchedChunkBytes)
 }
 
 func createTestChunk(t *testing.T, time int64, value float64) client.Chunk {
