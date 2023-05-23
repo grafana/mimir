@@ -89,7 +89,6 @@ std.manifestYamlDoc({
         target: 'querier',
         httpPort: 8004,
         extraArguments:
-          '-querier.prefer-streaming-chunks=true ' +
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
           if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else '',
       }),
@@ -358,7 +357,7 @@ std.manifestYamlDoc({
         '--remote-url=http://distributor-2:8001/api/v1/push',
         '--remote-write-concurrency=5',
         '--remote-write-interval=10s',
-        '--series-count=10000',
+        '--series-count=1000',
         '--tenants-count=1',
         '--query-enabled=true',
         '--query-interval=1s',
