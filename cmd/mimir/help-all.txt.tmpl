@@ -385,8 +385,6 @@ Usage of ./cmd/mimir/mimir:
     	Client write timeout. (default 3s)
   -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
     	TTL for caching individual chunks subranges. (default 24h0m0s)
-  -blocks-storage.bucket-store.consistency-delay duration
-    	[deprecated] Minimum age of a block before it's being read. Set it to safe value (e.g 30m) if your object storage is eventually consistent. GCS and S3 are (roughly) strongly consistent.
   -blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series int
     	[experimental] This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled. (default 1)
   -blocks-storage.bucket-store.ignore-blocks-within duration
@@ -877,8 +875,6 @@ Usage of ./cmd/mimir/mimir:
     	How many times to retry a failed compaction within a single compaction run. (default 3)
   -compactor.compactor-tenant-shard-size int
     	Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.
-  -compactor.consistency-delay duration
-    	[deprecated] Minimum age of fresh (non-compacted) blocks before they are being processed.
   -compactor.data-dir string
     	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
   -compactor.deletion-delay duration

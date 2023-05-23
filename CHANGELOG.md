@@ -16,6 +16,8 @@
   * `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
 * [CHANGE] Store-gateway: remove metrics `cortex_bucket_store_chunk_pool_requested_bytes_total` and `cortex_bucket_store_chunk_pool_returned_bytes_total`. #4996
 * [CHANGE] Compactor: change default of `-compactor.partial-block-deletion-delay` to `1d`. This will automatically clean up partial blocks that were a result of failed block upload or deletion. #5026
+* [CHANGE] Compactor: the deprecated configuration parameter `-compactor.consistency-delay` has been removed. #5050
+* [CHANGE] Store-gateway: the deprecated configuration parameter `-blocks-storage.bucket-store.consistency-delay` has been removed. #5050
 * [FEATURE] Query-frontend: add `-query-frontend.log-query-request-headers` to enable logging of request headers in query logs. #5030
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789

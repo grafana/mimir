@@ -56,7 +56,6 @@ import (
 func TestConfig_ShouldSupportYamlConfig(t *testing.T) {
 	yamlCfg := `
 block_ranges: [2h, 48h]
-consistency_delay: 1h
 block_sync_concurrency: 123
 data_dir: /tmp
 compaction_interval: 15m
@@ -67,7 +66,6 @@ compaction_retries: 123
 	flagext.DefaultValues(&cfg)
 	assert.NoError(t, yaml.Unmarshal([]byte(yamlCfg), &cfg))
 	assert.Equal(t, mimir_tsdb.DurationList{2 * time.Hour, 48 * time.Hour}, cfg.BlockRanges)
-	assert.Equal(t, time.Hour, cfg.DeprecatedConsistencyDelay)
 	assert.Equal(t, 123, cfg.BlockSyncConcurrency)
 	assert.Equal(t, "/tmp", cfg.DataDir)
 	assert.Equal(t, 15*time.Minute, cfg.CompactionInterval)
@@ -80,7 +78,6 @@ func TestConfig_ShouldSupportCliFlags(t *testing.T) {
 	cfg.RegisterFlags(fs, log.NewNopLogger())
 	require.NoError(t, fs.Parse([]string{
 		"-compactor.block-ranges=2h,48h",
-		"-compactor.consistency-delay=1h",
 		"-compactor.block-sync-concurrency=123",
 		"-compactor.data-dir=/tmp",
 		"-compactor.compaction-interval=15m",
@@ -88,7 +85,6 @@ func TestConfig_ShouldSupportCliFlags(t *testing.T) {
 	}))
 
 	assert.Equal(t, mimir_tsdb.DurationList{2 * time.Hour, 48 * time.Hour}, cfg.BlockRanges)
-	assert.Equal(t, time.Hour, cfg.DeprecatedConsistencyDelay)
 	assert.Equal(t, 123, cfg.BlockSyncConcurrency)
 	assert.Equal(t, "/tmp", cfg.DataDir)
 	assert.Equal(t, 15*time.Minute, cfg.CompactionInterval)
@@ -208,10 +204,6 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 		# TYPE cortex_compactor_garbage_collection_total counter
 		cortex_compactor_garbage_collection_total 0
 
-		# HELP cortex_compactor_meta_sync_consistency_delay_seconds Configured consistency delay in seconds.
-		# TYPE cortex_compactor_meta_sync_consistency_delay_seconds gauge
-		cortex_compactor_meta_sync_consistency_delay_seconds 0
-
 		# HELP cortex_compactor_meta_sync_duration_seconds Duration of the blocks metadata synchronization in seconds.
 		# TYPE cortex_compactor_meta_sync_duration_seconds histogram
 		cortex_compactor_meta_sync_duration_seconds_bucket{le="+Inf"} 0
@@ -274,7 +266,6 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 		"cortex_compactor_garbage_collection_duration_seconds",
 		"cortex_compactor_garbage_collection_failures_total",
 		"cortex_compactor_garbage_collection_total",
-		"cortex_compactor_meta_sync_consistency_delay_seconds",
 		"cortex_compactor_meta_sync_duration_seconds",
 		"cortex_compactor_meta_sync_failures_total",
 		"cortex_compactor_meta_syncs_total",
@@ -352,10 +343,6 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 		# TYPE cortex_compactor_garbage_collection_total counter
 		cortex_compactor_garbage_collection_total 0
 
-		# HELP cortex_compactor_meta_sync_consistency_delay_seconds Configured consistency delay in seconds.
-		# TYPE cortex_compactor_meta_sync_consistency_delay_seconds gauge
-		cortex_compactor_meta_sync_consistency_delay_seconds 0
-
 		# HELP cortex_compactor_meta_sync_duration_seconds Duration of the blocks metadata synchronization in seconds.
 		# TYPE cortex_compactor_meta_sync_duration_seconds histogram
 		cortex_compactor_meta_sync_duration_seconds_bucket{le="+Inf"} 0
@@ -418,7 +405,6 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 		"cortex_compactor_garbage_collection_duration_seconds",
 		"cortex_compactor_garbage_collection_failures_total",
 		"cortex_compactor_garbage_collection_total",
-		"cortex_compactor_meta_sync_consistency_delay_seconds",
 		"cortex_compactor_meta_sync_duration_seconds",
 		"cortex_compactor_meta_sync_failures_total",
 		"cortex_compactor_meta_syncs_total",

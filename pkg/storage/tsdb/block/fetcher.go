@@ -67,7 +67,6 @@ const (
 	// Synced label values.
 	labelExcludedMeta = "label-excluded"
 	timeExcludedMeta  = "time-excluded"
-	tooFreshMeta      = "too-fresh"
 	duplicateMeta     = "duplicate"
 	// Blocks that are marked for deletion can be loaded as well. This is done to make sure that we load blocks that are meant to be deleted,
 	// but don't have a replacement block yet.
@@ -111,7 +110,6 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels, modifiedExt
 			{CorruptedMeta},
 			{NoMeta},
 			{LoadedMeta},
-			{tooFreshMeta},
 			{FailedMeta},
 			{labelExcludedMeta},
 			{timeExcludedMeta},
@@ -228,7 +226,6 @@ func (f *BaseFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*metadata.Met
 
 	// TODO(bwplotka): If that causes problems (obj store rate limits), add longer ttl to cached items.
 	// For 1y and 100 block sources this generates ~1.5-3k HEAD RPM. AWS handles 330k RPM per prefix.
-	// TODO(bwplotka): Consider filtering by consistency delay here (can't do until compactor healthyOverride work).
 	ok, err := f.bkt.Exists(ctx, metaFile)
 	if err != nil {
 		return nil, errors.Wrapf(err, "meta.json file exists: %v", metaFile)
@@ -494,51 +491,6 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*metadata.
 
 // Special label that will have an ULID of the meta.json being referenced to.
 const BlockIDLabel = "__block_id"
-
-// ConsistencyDelayMetaFilter is a BaseFetcher filter that filters out blocks that are created before a specified consistency delay.
-// Not go-routine safe.
-type ConsistencyDelayMetaFilter struct {
-	logger           log.Logger
-	consistencyDelay time.Duration
-}
-
-// NewConsistencyDelayMetaFilter creates ConsistencyDelayMetaFilter.
-func NewConsistencyDelayMetaFilter(logger log.Logger, consistencyDelay time.Duration, reg prometheus.Registerer) *ConsistencyDelayMetaFilter {
-	if logger == nil {
-		logger = log.NewNopLogger()
-	}
-	_ = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "consistency_delay_seconds",
-		Help: "Configured consistency delay in seconds.",
-	}, func() float64 {
-		return consistencyDelay.Seconds()
-	})
-
-	return &ConsistencyDelayMetaFilter{
-		logger:           logger,
-		consistencyDelay: consistencyDelay,
-	}
-}
-
-// Filter filters out blocks that filters blocks that have are created before a specified consistency delay.
-func (f *ConsistencyDelayMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error {
-	for id, meta := range metas {
-		// TODO(khyatisoneji): Remove the checks about Thanos Source
-		//  by implementing delete delay to fetch metas.
-		// TODO(bwplotka): Check consistency delay based on file upload / modification time instead of ULID.
-		if ulid.Now()-id.Time() < uint64(f.consistencyDelay/time.Millisecond) &&
-			meta.Thanos.Source != metadata.BucketRepairSource &&
-			meta.Thanos.Source != metadata.CompactorSource &&
-			meta.Thanos.Source != metadata.CompactorRepairSource {
-
-			level.Debug(f.logger).Log("msg", "block is too fresh for now", "block", id)
-			synced.WithLabelValues(tooFreshMeta).Inc()
-			delete(metas, id)
-		}
-	}
-
-	return nil
-}
 
 // IgnoreDeletionMarkFilter is a filter that filters out the blocks that are marked for deletion after a given delay.
 // The delay duration is to make sure that the replacement block can be fetched before we filter out the old block.

@@ -252,7 +252,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	consistency := NewBlocksConsistencyChecker(
 		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
 		// to discover and load them (3 times the sync interval).
-		storageCfg.BucketStore.DeprecatedConsistencyDelay+(3*storageCfg.BucketStore.SyncInterval),
+		3*storageCfg.BucketStore.SyncInterval,
 		// To avoid any false positive in the consistency check, we do exclude blocks which have been
 		// recently marked for deletion, until the "ignore delay / 2". This means the consistency checker
 		// exclude such blocks about 50% of the time before querier and store-gateway stops querying them.

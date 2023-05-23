@@ -1481,7 +1481,6 @@ func mockStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 
-	cfg.BucketStore.DeprecatedConsistencyDelay = 0
 	cfg.BucketStore.BucketIndex.Enabled = false // mocks used in tests don't expect index reads
 	cfg.BucketStore.IgnoreBlocksWithin = 0
 	cfg.BucketStore.SyncDir = tmpDir
