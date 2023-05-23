@@ -132,9 +132,9 @@ func (r *symbolsReader) Read(o uint32) (string, error) {
 		if o < r.atSymbol {
 			return "", fmt.Errorf("trying to reverse symbolsReader, at %d requesting %d", r.atSymbol, o)
 		}
-		if targetOffsetIdx, currentOffsetIdx := o/symbolFactor, r.atSymbol/symbolFactor; targetOffsetIdx > 2+currentOffsetIdx {
-			// Prefer directly skipping ahead instead of reading and discarding.
-			// We do this when there are more than 2*symbolFactor number of symbols we need to skip.
+		if targetOffsetIdx, currentOffsetIdx := o/symbolFactor, r.atSymbol/symbolFactor; targetOffsetIdx > currentOffsetIdx {
+			// Only ResetAt a bigger offset than the current one.
+			// We don't want to ResetAt an offset we've gone past: that will reverse the file reader, and we will do unnecessary reads.
 			d.ResetAt(r.s.offsets[int(targetOffsetIdx)])
 			r.atSymbol = targetOffsetIdx * symbolFactor
 		}

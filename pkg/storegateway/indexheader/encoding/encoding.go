@@ -105,6 +105,11 @@ func (d *Decbuf) ResetAt(off int) {
 		return
 	}
 
+	if dist := off - d.Position(); dist >= 0 && dist < d.r.buffered() {
+		d.E = d.r.skip(dist)
+		return
+	}
+
 	d.E = d.r.resetAt(off)
 }
 
