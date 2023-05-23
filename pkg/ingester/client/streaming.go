@@ -31,7 +31,7 @@ type SeriesChunksStreamReader struct {
 	queryLimiter        *limiter.QueryLimiter
 }
 
-func NewSeriesStreamReader(client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter) *SeriesChunksStreamReader {
+func NewSeriesChunksStreamReader(client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
