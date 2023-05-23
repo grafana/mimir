@@ -564,10 +564,10 @@ podAntiAffinity:
             operator: In
             values:
               - {{ .component }}
-          - key: name
+          - key: zone
             operator: NotIn
             values:
-              - {{ .component }}-{{ .rolloutZoneName }}
+              - {{ .rolloutZoneName }}
       topologyKey: {{ .topologyKey | quote }}
 {{- else -}}
 {}
