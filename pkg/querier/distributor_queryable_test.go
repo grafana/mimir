@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
@@ -91,7 +92,7 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 			userID := "test"
 			ctx := user.InjectOrgID(context.Background(), userID)
 			configProvider := newMockConfigProvider(testData.queryIngestersWithin)
-			queryable := newDistributorQueryable(distributor, nil, configProvider, log.NewNopLogger())
+			queryable := newDistributorQueryable(distributor, nil, configProvider, nil, log.NewNopLogger())
 			querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
 
@@ -119,7 +120,7 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 
 func TestDistributorQueryable_UseQueryable_AlwaysReturnsTrue(t *testing.T) {
 	d := &mockDistributor{}
-	dq := newDistributorQueryable(d, nil, newMockConfigProvider(1*time.Hour), log.NewNopLogger())
+	dq := newDistributorQueryable(d, nil, newMockConfigProvider(1*time.Hour), nil, log.NewNopLogger())
 
 	now := time.Now()
 
@@ -192,7 +193,7 @@ func TestDistributorQuerier_Select(t *testing.T) {
 			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
+			queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
 			querier, err := queryable.Querier(ctx, mint, maxt)
 			require.NoError(t, err)
 
@@ -301,7 +302,7 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), NewQueryChunkMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -390,7 +391,7 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -484,7 +485,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -516,7 +517,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
 				Return(labelNames, nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := newDistributorQueryable(d, nil, newMockConfigProvider(0), log.NewNopLogger())
+			queryable := newDistributorQueryable(d, nil, newMockConfigProvider(0), nil, log.NewNopLogger())
 			querier, err := queryable.Querier(ctx, mint, maxt)
 			require.NoError(t, err)
 
@@ -571,7 +572,7 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 

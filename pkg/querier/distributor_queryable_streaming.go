@@ -22,6 +22,7 @@ type streamingChunkSeries struct {
 	chunkIteratorFunc chunkIteratorFunc
 	mint, maxt        int64
 	sources           []StreamingSeriesSource
+	queryChunkMetrics *QueryChunkMetrics
 }
 
 func (s *streamingChunkSeries) Labels() labels.Labels {
@@ -30,6 +31,7 @@ func (s *streamingChunkSeries) Labels() labels.Labels {
 
 func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 	var rawChunks []client.Chunk
+	totalChunks := 0
 
 	for _, source := range s.sources {
 		c, err := source.StreamReader.GetChunks(source.SeriesIndex)
@@ -38,8 +40,12 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 			return series.NewErrIterator(err)
 		}
 
+		totalChunks += len(c)
 		rawChunks = client.AccumulateChunks(rawChunks, c)
 	}
+
+	s.queryChunkMetrics.IngesterChunksTotal.Add(float64(totalChunks))
+	s.queryChunkMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(rawChunks)))
 
 	chunks, err := chunkcompat.FromChunks(s.labels, rawChunks)
 	if err != nil {

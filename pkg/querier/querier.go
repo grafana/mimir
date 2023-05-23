@@ -120,10 +120,10 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, queryChunkMetrics *QueryChunkMetrics, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
-	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, logger)
+	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, queryChunkMetrics, logger)
 
 	ns := make([]QueryableWithFilter, len(stores))
 	for ix, s := range stores {

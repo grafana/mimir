@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -37,6 +39,8 @@ func TestStreamingChunkSeries_DeduplicatesIdenticalChunks(t *testing.T) {
 	chunkUniqueToSecondSource := createTestChunk(t, 2000, 4.56)
 	chunkPresentInBothSources := createTestChunk(t, 2500, 7.89)
 
+	reg := prometheus.NewPedanticRegistry()
+
 	series := streamingChunkSeries{
 		labels:            labels.FromStrings("the-name", "the-value"),
 		chunkIteratorFunc: chunkIteratorFunc,
@@ -46,6 +50,7 @@ func TestStreamingChunkSeries_DeduplicatesIdenticalChunks(t *testing.T) {
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToFirstSource, chunkPresentInBothSources}}})},
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToSecondSource, chunkPresentInBothSources}}})},
 		},
+		queryChunkMetrics: NewQueryChunkMetrics(reg),
 	}
 
 	iterator := series.Iterator(nil)
@@ -58,6 +63,11 @@ func TestStreamingChunkSeries_DeduplicatesIdenticalChunks(t *testing.T) {
 	expectedChunks, err := chunkcompat.FromChunks(series.labels, []client.Chunk{chunkUniqueToFirstSource, chunkUniqueToSecondSource, chunkPresentInBothSources})
 	require.NoError(t, err)
 	require.ElementsMatch(t, testIterator.chunks, expectedChunks)
+
+	m, err := metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	require.Equal(t, 4.0, m.SumCounters("cortex_distributor_query_ingester_chunks_total"))
+	require.Equal(t, 1.0, m.SumCounters("cortex_distributor_query_ingester_chunks_deduped_total"))
 }
 
 func createTestChunk(t *testing.T, time int64, value float64) client.Chunk {

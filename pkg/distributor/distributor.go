@@ -43,6 +43,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
@@ -106,8 +107,6 @@ type Distributor struct {
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
-	ingesterChunksDeduplicated       prometheus.Counter
-	ingesterChunksTotal              prometheus.Counter
 	receivedRequests                 *prometheus.CounterVec
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
@@ -122,6 +121,7 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+	QueryChunkMetrics                *querier.QueryChunkMetrics
 
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
 	discardedSamplesRateLimited       *prometheus.CounterVec
@@ -228,6 +228,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		limits:                limits,
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		QueryChunkMetrics:     querier.NewQueryChunkMetrics(reg),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -235,16 +236,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:      "Time spent executing expression and exemplar queries.",
 			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}, []string{"method", "status_code"})),
-		ingesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_query_ingester_chunks_deduped_total",
-			Help:      "Number of chunks deduplicated at query time from ingesters.",
-		}),
-		ingesterChunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_query_ingester_chunks_total",
-			Help:      "Number of chunks transferred at query time from ingesters.",
-		}),
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_requests_total",

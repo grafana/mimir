@@ -12,6 +12,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -57,12 +59,33 @@ type StreamingSeriesSource struct {
 	SeriesIndex  uint64
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, logger log.Logger) QueryableWithFilter {
+type QueryChunkMetrics struct {
+	IngesterChunksDeduplicated prometheus.Counter
+	IngesterChunksTotal        prometheus.Counter
+}
+
+func NewQueryChunkMetrics(reg prometheus.Registerer) *QueryChunkMetrics {
+	return &QueryChunkMetrics{
+		IngesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_query_ingester_chunks_deduped_total",
+			Help:      "Number of chunks deduplicated at query time from ingesters.",
+		}),
+		IngesterChunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_query_ingester_chunks_total",
+			Help:      "Number of chunks transferred at query time from ingesters.",
+		}),
+	}
+}
+
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryChunkMetrics *QueryChunkMetrics, logger log.Logger) QueryableWithFilter {
 	return distributorQueryable{
-		logger:      logger,
-		distributor: distributor,
-		iteratorFn:  iteratorFn,
-		cfgProvider: cfgProvider,
+		logger:            logger,
+		distributor:       distributor,
+		iteratorFn:        iteratorFn,
+		cfgProvider:       cfgProvider,
+		queryChunkMetrics: queryChunkMetrics,
 	}
 }
 
@@ -71,10 +94,11 @@ type distributorQueryableConfigProvider interface {
 }
 
 type distributorQueryable struct {
-	logger      log.Logger
-	distributor Distributor
-	iteratorFn  chunkIteratorFunc
-	cfgProvider distributorQueryableConfigProvider
+	logger            log.Logger
+	distributor       Distributor
+	iteratorFn        chunkIteratorFunc
+	cfgProvider       distributorQueryableConfigProvider
+	queryChunkMetrics *QueryChunkMetrics
 }
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -99,6 +123,7 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 		maxt:                 maxt,
 		chunkIterFn:          d.iteratorFn,
 		queryIngestersWithin: queryIngestersWithin,
+		queryChunkMetrics:    d.queryChunkMetrics,
 	}, nil
 }
 
@@ -117,6 +142,7 @@ type distributorQuerier struct {
 	mint, maxt           int64
 	chunkIterFn          chunkIteratorFunc
 	queryIngestersWithin time.Duration
+	queryChunkMetrics    *QueryChunkMetrics
 }
 
 // Select implements storage.Querier interface.
@@ -197,6 +223,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			chunkIteratorFunc: q.chunkIterFn,
 			mint:              minT,
 			maxt:              maxT,
+			queryChunkMetrics: q.queryChunkMetrics,
 			sources:           s.Sources,
 		})
 	}

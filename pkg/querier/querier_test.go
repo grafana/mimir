@@ -220,7 +220,7 @@ func TestQuerier(t *testing.T) {
 				require.NoError(t, err)
 
 				queryables := []QueryableWithFilter{UseAlwaysQueryable(db)}
-				queryable, _, _ := New(cfg, overrides, distributor, queryables, nil, log.NewNopLogger(), nil)
+				queryable, _, _ := New(cfg, overrides, distributor, queryables, nil, nil, log.NewNopLogger(), nil)
 				testRangeQuery(t, queryable, through, query)
 			})
 		}
@@ -297,7 +297,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		Timeout:    1 * time.Minute,
 	})
 
-	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
+	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, nil, logger, nil)
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
@@ -383,7 +383,7 @@ func TestBatchMergeChunks(t *testing.T) {
 		Timeout:    1 * time.Minute,
 	})
 
-	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
+	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, nil, logger, nil)
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
@@ -519,7 +519,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 			// with no store queryable.
 			var storeQueryables []QueryableWithFilter
 
-			queryable, _, _ := New(cfg, overrides, distributor, storeQueryables, nil, log.NewNopLogger(), nil)
+			queryable, _, _ := New(cfg, overrides, distributor, storeQueryables, nil, nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
@@ -603,7 +603,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 			require.NoError(t, err)
 
-			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.queryStartTime, c.queryEndTime, time.Minute)
 			require.NoError(t, err)
@@ -621,7 +621,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 				assert.InDelta(t, util.TimeToMillis(c.expectedStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
 				assert.InDelta(t, util.TimeToMillis(c.expectedEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
 			} else {
-				// Ensure no query has been executed executed (because skipped).
+				// Ensure no query has been executed (because skipped).
 				assert.Len(t, distributor.Calls, 0)
 			}
 		})
@@ -675,7 +675,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 
 			// We don't need to query any data for this test, so an empty distributor is fine.
 			distributor := &emptyDistributor{}
-			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, nil, log.NewNopLogger(), nil)
 
 			// Create the PromQL engine to execute the query.
 			engine := promql.NewEngine(promql.EngineOpts{
@@ -796,7 +796,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(DistributorQueryStreamResponse{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, nil, log.NewNopLogger(), nil)
 				require.NoError(t, err)
 
 				query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
@@ -815,7 +815,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					assert.InDelta(t, util.TimeToMillis(testData.expectedQueryStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
 					assert.InDelta(t, util.TimeToMillis(testData.expectedQueryEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
 				} else {
-					// Ensure no query has been executed executed (because skipped).
+					// Ensure no query has been executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
 				}
 			})
@@ -824,7 +824,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, nil, log.NewNopLogger(), nil)
 				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
@@ -847,7 +847,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
 					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
 				} else {
-					// Ensure no query has been executed executed (because skipped).
+					// Ensure no query has been executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
 				}
 			})
@@ -859,7 +859,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, matchers).Return([]string{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, nil, log.NewNopLogger(), nil)
 				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
@@ -876,7 +876,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(args.Get(2).(model.Time)), delta)
 					assert.Equal(t, matchers, args.Get(3).([]*labels.Matcher))
 				} else {
-					// Ensure no query has been executed executed (because skipped).
+					// Ensure no query has been executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
 				}
 			})
@@ -885,7 +885,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelValuesForLabelName", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, nil, log.NewNopLogger(), nil)
 				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
@@ -900,7 +900,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
 					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
 				} else {
-					// Ensure no query has been executed executed (because skipped).
+					// Ensure no query has been executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
 				}
 			})
@@ -955,7 +955,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+				queryable, _, _ := New(cfg, overrides, distributor, storeQueryable, nil, nil, log.NewNopLogger(), nil)
 				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
@@ -1158,7 +1158,7 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
-			queryable, _, _ := New(cfg, overrides, distributor, []QueryableWithFilter{UseAlwaysQueryable(newMockBlocksStorageQueryable(querier))}, nil, log.NewNopLogger(), nil)
+			queryable, _, _ := New(cfg, overrides, distributor, []QueryableWithFilter{UseAlwaysQueryable(newMockBlocksStorageQueryable(querier))}, nil, nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
