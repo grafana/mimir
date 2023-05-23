@@ -1110,15 +1110,18 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 
 		rulerCfg := defaultRulerConfig(t)
 		rulerCfg.PollInterval = time.Hour
-		rulerCfg.SyncRulesOnChangesEnabled = false
 		rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
 		rulerCfg.Ring.NumTokens = 128
 		rulerCfg.Ring.Common.InstanceID = rulerAddr
 		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
 		rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
 
+		limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+			defaults.RulerSyncRulesOnChangesEnabled = false
+		})
+
 		regs[i] = prometheus.NewPedanticRegistry()
-		rulers[i] = prepareRuler(t, rulerCfg, store, withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withStart(), withPrometheusRegisterer(regs[i]))
+		rulers[i] = prepareRuler(t, rulerCfg, store, withLimits(limits), withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withStart(), withPrometheusRegisterer(regs[i]))
 	}
 
 	// Pre-condition check: each ruler should have synced the rules once (at startup).

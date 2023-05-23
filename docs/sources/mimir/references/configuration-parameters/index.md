@@ -1367,14 +1367,6 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.poll-interval
 [poll_interval: <duration> | default = 1m]
 
-# (advanced) True to enable a re-sync of the configured rule groups as soon as
-# they're changed via ruler's config API. This re-sync is in addition of the
-# periodic syncing configured through the parameter -ruler.poll-interval. When
-# enabled, it may take up to 20s before a configuration change triggers the
-# re-sync.
-# CLI flag: -ruler.sync-rules-on-changes-enabled
-[sync_rules_on_changes_enabled: <boolean> | default = true]
-
 # Directory to store temporary rule files loaded by the Prometheus rule
 # managers. This directory is not required to be persisted between restarts.
 # CLI flag: -ruler.rule-path
@@ -2841,6 +2833,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # evaluation on a per-tenant basis.
 # CLI flag: -ruler.alerting-rules-evaluation-enabled
 [ruler_alerting_rules_evaluation_enabled: <boolean> | default = true]
+
+# (advanced) True to enable a re-sync of the configured rule groups as soon as
+# they're changed via ruler's config API. This re-sync is in addition of the
+# periodic syncing. When enabled, it may take up to few tens of seconds before a
+# configuration change triggers the re-sync.
+# CLI flag: -ruler.sync-rules-on-changes-enabled
+[ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
