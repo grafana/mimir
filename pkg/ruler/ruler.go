@@ -74,6 +74,8 @@ const (
 
 	// errors
 	errListAllUser = "unable to list the ruler users"
+
+	rulerPollIntervalFlag = "ruler.poll-interval"
 )
 
 var (
@@ -95,6 +97,9 @@ type Config struct {
 	EvaluationInterval time.Duration `yaml:"evaluation_interval" category:"advanced"`
 	// How frequently to poll for updated rules.
 	PollInterval time.Duration `yaml:"poll_interval" category:"advanced"`
+	// Whether the event-based rule groups syncing in enabled.
+	SyncRulesOnChangesEnabled bool `yaml:"sync_rules_on_changes_enabled" category:"advanced"`
+
 	// Path to store rule files for prom manager.
 	RulePath string `yaml:"rule_path"`
 
@@ -163,7 +168,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ExternalURL.URL, _ = url.Parse("") // Must be non-nil
 	f.Var(&cfg.ExternalURL, "ruler.external.url", "URL of alerts return path.")
 	f.DurationVar(&cfg.EvaluationInterval, "ruler.evaluation-interval", 1*time.Minute, "How frequently to evaluate rules")
-	f.DurationVar(&cfg.PollInterval, "ruler.poll-interval", 1*time.Minute, "How frequently to poll for rule changes")
+	f.DurationVar(&cfg.PollInterval, rulerPollIntervalFlag, 1*time.Minute, "How frequently the configured rule groups are re-synced from the object storage.")
+	f.BoolVar(&cfg.SyncRulesOnChangesEnabled, "ruler.sync-rules-on-changes-enabled", true, fmt.Sprintf("True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing configured through the parameter -%s. When enabled, it may take up to %s before a configuration change triggers the re-sync.", rulerPollIntervalFlag, 2*defaultRulerSyncPollFrequency))
 
 	f.StringVar(&cfg.AlertmanagerURL, "ruler.alertmanager-url", "", "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.")
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
@@ -1191,6 +1197,10 @@ func (r *Ruler) ListAllRules(w http.ResponseWriter, req *http.Request) {
 //
 // This function MUST be exported to let GEM call it too.
 func (r *Ruler) NotifySyncRulesAsync(userID string) {
+	if !r.cfg.SyncRulesOnChangesEnabled {
+		return
+	}
+
 	r.outboundSyncQueue.enqueue(userID)
 }
 

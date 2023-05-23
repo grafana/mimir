@@ -9026,11 +9026,22 @@
           "kind": "field",
           "name": "poll_interval",
           "required": false,
-          "desc": "How frequently to poll for rule changes",
+          "desc": "How frequently the configured rule groups are re-synced from the object storage.",
           "fieldValue": null,
           "fieldDefaultValue": 60000000000,
           "fieldFlag": "ruler.poll-interval",
           "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "sync_rules_on_changes_enabled",
+          "required": false,
+          "desc": "True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing configured through the parameter -ruler.poll-interval. When enabled, it may take up to 20s before a configuration change triggers the re-sync.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "ruler.sync-rules-on-changes-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "advanced"
         },
         {
