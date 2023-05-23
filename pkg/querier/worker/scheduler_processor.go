@@ -154,8 +154,10 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 			defer inflightQuery.Store(false)
 
 			// Create a per-request context and cancel it once we're done processing the request.
-			// FIXME: should this go in github.com/weaveworks/common/httpgrpc/server/Server.Handle() instead?
-			// TODO: what about requests direct to the querier's HTTP Prometheus API endpoints?
+			// This is important for queries that stream chunks from ingesters to the querier, as SeriesChunksStreamReader relies
+			// on the context being cancelled to abort streaming and terminate a goroutine if the query is aborted. Requests that
+			// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
+			// net/http package.
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
