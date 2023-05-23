@@ -3,6 +3,8 @@ package tokendistributor
 import (
 	"fmt"
 	"math"
+
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -81,4 +83,41 @@ func (o *OwnershipInfo) StDev() (float64, float64) {
 	}
 	tokenStDev = math.Sqrt(tokenStDev / float64(len(o.TokenOwnershipMap)))
 	return instanceStDev, tokenStDev
+}
+
+func (o *OwnershipInfo) getStat() (float64, float64, float64, float64) {
+	min := math.MaxFloat64
+	max := 0.0
+	instanceStDev := 0.0
+	sum := 0.0
+	for _, ownership := range o.InstanceOwnershipMap {
+		if ownership < min {
+			min = ownership
+		}
+		if ownership > max {
+			max = ownership
+		}
+		instanceStDev += math.Pow(ownership-o.OptimaInstanceOwnership, 2.0)
+		sum += ownership
+	}
+	instanceStDev = math.Sqrt(instanceStDev / float64(len(o.InstanceOwnershipMap)))
+	return min, max, sum, instanceStDev
+}
+
+func (o *OwnershipInfo) Print() {
+	min, max, sum, stdev := o.getStat()
+	spread := (max - min) / max
+	fmt.Printf("Instance - opt: %15.3f, sum: %15.3f\n"+
+		"\tmin ownership: %15.3f, max ownership: %15.3f, spread: %6.3f, stdev: %15.3f\n", o.OptimalTokenOwnership, sum, min, max, spread, stdev)
+
+	instances := make([]Instance, 0, len(o.InstanceOwnershipMap))
+	for instance, _ := range o.InstanceOwnershipMap {
+		instances = append(instances, instance)
+	}
+
+	slices.Sort(instances)
+
+	for _, instance := range instances {
+		fmt.Printf("%10s,%15.3f\n", instance, o.InstanceOwnershipMap[instance])
+	}
 }

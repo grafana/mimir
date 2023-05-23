@@ -40,13 +40,8 @@ func (t *RandomTokenDistributor) AddInstance(instance Instance, zone Zone) (*Cir
 		t.addNewInstanceAndToken(instance, zone, candidateToken)
 	}
 
-	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
-	newInstanceZone, ok := zoneInfoByZone[zone]
-	if !ok {
-		newInstanceZone = newZoneInfo(zone)
-		zoneInfoByZone[zone] = newInstanceZone
-	}
-	newInstanceInfo := newInstanceInfo(instance, newInstanceZone, t.tokensPerInstance)
+	instanceInfoByInstance, _ := t.createInstanceAndZoneInfos(&zone, &instance)
+	newInstanceInfo := instanceInfoByInstance[instance]
 	instanceInfoByInstance[instance] = newInstanceInfo
 	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceInfo)
 	//fmt.Printf("\t\t\t%s", instanceInfoByInstance)

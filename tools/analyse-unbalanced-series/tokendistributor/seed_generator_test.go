@@ -1,6 +1,8 @@
 package tokendistributor
 
 import (
+	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -159,4 +161,28 @@ func TestPerfectlySpacedSeedGenerator_GenerateSingleZoneWithReplication(t *testi
 			require.True(t, allSeeds[j][i] < allSeeds[j+1][i])
 		}
 	}
+}
+
+func Test(t *testing.T) {
+	zonesCount := 3
+	tokensPerInstanceCount := 512
+	tokensPerZone := make([][]uint32, 0, zonesCount)
+	for z := 0; z < zonesCount; z++ {
+		tokensPerZone = append(tokensPerZone, make([]uint32, 0, tokensPerInstanceCount))
+		for t := 0; t < tokensPerInstanceCount; t++ {
+			token := uint32(math.Pow(2, 32)*(1.0-(3.0*float64(t)+float64(zonesCount)))/float64(zonesCount*tokensPerInstanceCount)) - 1
+			tokensPerZone[z] = append(tokensPerZone[z], token)
+		}
+		slices.Sort(tokensPerZone[z])
+	}
+
+	fmt.Printf("Perfect distance: %d\n", int(float64(math.MaxUint32)/float64(tokensPerInstanceCount)))
+	for z := 0; z < zonesCount; z++ {
+		fmt.Printf("Zone %c\n", rune('A'+z))
+		for t := 1; t < tokensPerInstanceCount; t++ {
+			fmt.Printf("\ttoken: %12d, next token: %12d, distance: %12d\n", tokensPerZone[z][t-1], tokensPerZone[z][t], tokensPerZone[z][t]-tokensPerZone[z][t-1])
+		}
+	}
+
+	fmt.Println(tokensPerZone)
 }

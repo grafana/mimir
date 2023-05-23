@@ -445,33 +445,33 @@ func simulateAddingAndRemovingInstances(logger log.Logger, candidateSelectionMod
 
 func main() {
 	logger := log.NewLogfmtLogger(os.Stdout)
-	numTokensPerInstanceScenarios := []int{4, 16, 64, 128}
-	replicationFactor := 3
-	zones := []tokdistr.Zone{tokdistr.Zone("zone-a"), tokdistr.Zone("zone-b"), tokdistr.Zone("zone-c")}
-	singleZones := []tokdistr.Zone{tokdistr.SingleZone}
-	instancesPerZone := initialInstanceCount / len(zones)
+	numTokensPerInstanceScenarios := []int{64}
+	//replicationFactor := 3
+	//zones := []tokdistr.Zone{tokdistr.Zone("zone-a"), tokdistr.Zone("zone-b"), tokdistr.Zone("zone-c")}
+	//singleZones := []tokdistr.Zone{tokdistr.SingleZone}
+	//instancesPerZone := initialInstanceCount / len(zones)
 	perfectlySpacedSeedGenerator := func(zones []tokdistr.Zone, replicationFactor, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator {
 		return tokdistr.NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxTokenValue)
 	}
-	randomSeedGenerator := func(zones []tokdistr.Zone, replicationFactor, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator {
+	/*randomSeedGenerator := func(zones []tokdistr.Zone, replicationFactor, tokensPerInstance int, maxTokenValue tokdistr.Token) tokdistr.SeedGenerator {
 		return tokdistr.NewRandomSeedGenerator(zones, replicationFactor, tokensPerInstance, maxTokenValue)
-	}
+	}*/
 
 	// simulation of ring creation with different number of tokens per instance, and with candidate selection or random token modes
 	// generate ring with different tokens per instance with candidate selection with RF 1 and zone-awareness disabled
 	generateRingWithoutZoneAwareness(logger, numTokensPerInstanceScenarios, 1, initialInstanceCount, perfectlySpacedSeedGenerator)
 	// generate ring with different tokens per instance with candidate selection with replication and zone-awareness enabled
-	generateRingWithoutZoneAwareness(logger, numTokensPerInstanceScenarios, replicationFactor, initialInstanceCount, perfectlySpacedSeedGenerator)
+	//generateRingWithoutZoneAwareness(logger, numTokensPerInstanceScenarios, replicationFactor, initialInstanceCount, perfectlySpacedSeedGenerator)
 	// generate ring with different tokens per instance with candidate selection with replication and zone-awareness enabled
-	generateRingWithZoneAwareness(logger, numTokensPerInstanceScenarios, replicationFactor, instancesPerZone, zones, perfectlySpacedSeedGenerator)
+	//generateRingWithZoneAwareness(logger, numTokensPerInstanceScenarios, replicationFactor, instancesPerZone, zones, perfectlySpacedSeedGenerator)
 	// generate ring with different tokens per instance with random tokens with RF 1 and zone-awareness disabled
-	generateRingWithoutZoneAwarenessAndRandomTokens(logger, numTokensPerInstanceScenarios, 1, initialInstanceCount, randomSeedGenerator)
+	//generateRingWithoutZoneAwarenessAndRandomTokens(logger, numTokensPerInstanceScenarios, 1, initialInstanceCount, randomSeedGenerator)
 	// generate ring with different tokens per instance with random tokens and zone-awareness enabled
-	generateRingWithoutZoneAwarenessAndRandomTokens(logger, numTokensPerInstanceScenarios, replicationFactor, initialInstanceCount, randomSeedGenerator)
+	//generateRingWithoutZoneAwarenessAndRandomTokens(logger, numTokensPerInstanceScenarios, replicationFactor, initialInstanceCount, randomSeedGenerator)
 	// generate ring with different tokens per instance with random tokens and zone-awareness enabled
-	generateRingWithZoneAwarenessAndRandomTokens(logger, numTokensPerInstanceScenarios, replicationFactor, instancesPerZone, zones, randomSeedGenerator)
+	//generateRingWithZoneAwarenessAndRandomTokens(logger, numTokensPerInstanceScenarios, replicationFactor, instancesPerZone, zones, randomSeedGenerator)
 
-	totalInstanceCount := initialInstanceCount
+	/*totalInstanceCount := initialInstanceCount
 	timeSeriesCount := 10_000_000
 	// simulation of timeseries distribution in a simulated ring with different number of tokens per instance, and with candidate selection or random token modes
 	// candidate selection, RF = 1, zone-awareness disabled
@@ -500,5 +500,5 @@ func main() {
 	// random tokens, RF = 3, zone-awareness disabled
 	simulateAddingAndRemovingInstances(logger, false, numTokensPerInstanceScenarios, totalInstanceCount, 3, totalInstanceCount, zones, true)
 	// random tokens, RF = 3, zone-awareness enabled
-	simulateAddingAndRemovingInstances(logger, false, numTokensPerInstanceScenarios, totalInstanceCount, 3, totalInstanceCount/len(zones), zones, true)
+	simulateAddingAndRemovingInstances(logger, false, numTokensPerInstanceScenarios, totalInstanceCount, 3, totalInstanceCount/len(zones), zones, true)*/
 }

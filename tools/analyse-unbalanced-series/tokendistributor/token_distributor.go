@@ -146,9 +146,15 @@ func (t *TokenDistributor) calculateDistanceAsFloat64(first, second navigableTok
 	return float64(first.getToken().distance(second.getToken(), t.maxTokenValue))
 }
 
-func (t *TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceInfo, map[Zone]*zoneInfo) {
+func (t *TokenDistributor) createInstanceAndZoneInfos(newInstanceZone *Zone, newInstance *Instance) (map[Instance]*instanceInfo, map[Zone]*zoneInfo) {
 	zoneInfoByZone := make(map[Zone]*zoneInfo)
-	instanceInfoByInstance := make(map[Instance]*instanceInfo, len(t.tokensByInstance))
+	size := len(t.tokensByInstance)
+	if newInstance != nil {
+		if _, ok := t.tokensByInstance[*newInstance]; !ok {
+			size++
+		}
+	}
+	instanceInfoByInstance := make(map[Instance]*instanceInfo, size)
 	for instance, tokens := range t.tokensByInstance {
 		zone, ok := t.zoneByInstance[instance]
 		if !ok {
@@ -163,7 +169,17 @@ func (t *TokenDistributor) createInstanceAndZoneInfos() (map[Instance]*instanceI
 			}
 		}
 		zoneInfoByZone[zone] = zoneInfo
-		instanceInfoByInstance[instance] = newInstanceInfo(instance, zoneInfoByZone[zone], len(tokens))
+		if _, ok = instanceInfoByInstance[instance]; !ok {
+			instanceInfoByInstance[instance] = newInstanceInfo(instance, zoneInfoByZone[zone], len(tokens))
+		}
+	}
+	if newInstance != nil {
+		if _, ok := zoneInfoByZone[*newInstanceZone]; !ok {
+			zoneInfoByZone[*newInstanceZone] = newZoneInfo(*newInstanceZone)
+		}
+		if _, ok := instanceInfoByInstance[*newInstance]; !ok {
+			instanceInfoByInstance[*newInstance] = newInstanceInfo(*newInstance, zoneInfoByZone[*newInstanceZone], t.tokensPerInstance)
+		}
 	}
 	return instanceInfoByInstance, zoneInfoByZone
 }
@@ -619,7 +635,7 @@ func (t *TokenDistributor) createPriorityQueue(candidateTokenInfoCircularList *C
 
 func (t *TokenDistributor) insertBefore(element, before *navigableToken[*tokenInfo], list *CircularList[*tokenInfo]) {
 	element.insertBefore(before)
-	if list.head == before {
+	if list.head == before && list.head.getData().getToken() > element.getData().getToken() {
 		list.head = element
 	}
 }
@@ -845,16 +861,8 @@ func (t *TokenDistributor) addCandidateAndUpdateTokenInfoCircularList(navigableC
 	// update candidate details, that might have been affected by previous insertions
 	t.populateCandidateTokenInfo(candidate, candidateInstance)
 
-	rs, err := t.replicationStrategy.getReplicaStart(candidate.getToken(), t.sortedTokens, t.instanceByToken)
-	if err != nil {
-		return err
-	}
-	if rs != candidate.replicaStart.getToken() {
-		fmt.Println("I am here")
-	}
-
 	// this is just a check to be used during the development phase
-	err = t.verifyReplicaStart(candidate)
+	err := t.verifyReplicaStart(candidate)
 	if err != nil {
 		return err
 	}
@@ -869,12 +877,12 @@ func (t *TokenDistributor) addCandidateAndUpdateTokenInfoCircularList(navigableC
 	candidateToken.setReplicaStart(candidate.getReplicaStart())
 	newReplicatedOwnership := t.calculateReplicatedOwnership(candidateToken, candidateToken.getReplicaStart().(navigableTokenInterface))
 
-	//oldTokenOwnership := newTokenInfo.getReplicatedOwnership()
+	//oldTokenOwnership := candidateToken.getReplicatedOwnership()
 	//oldInstanceOwnership := candidateInstance.ownership
 	candidateToken.setReplicatedOwnership(newReplicatedOwnership)
 	candidateInstance.ownership += newReplicatedOwnership
 	change += newReplicatedOwnership
-	//fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", newTokenInfo.getToken(), oldTokenOwnership, newTokenInfo.getReplicatedOwnership(), candidateInstance.instanceId, oldInstanceOwnership, candidateInstance.ownership)
+	//fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", candidateToken.getToken(), oldTokenOwnership, candidateToken.getReplicatedOwnership(), candidateInstance.instanceId, oldInstanceOwnership, candidateInstance.ownership)
 
 	// We insert the new element to the list before next
 	navigableToken := newNavigableTokenInfo(candidateToken)
@@ -1010,6 +1018,9 @@ func (t *TokenDistributor) addCandidateAndUpdateTokenInfoCircularList(navigableC
 		//old := currInstance.ownership
 		change += newOwnership - oldOwnership
 		currInstance.ownership += newOwnership - oldOwnership
+		/*if newOwnership != oldOwnership {
+			fmt.Printf("\tToken %d got a new replicated ownership %.2f->%.2f and its instance %s %.2f->%.2f\n", currToken.getToken(), oldOwnership, currToken.getReplicatedOwnership(), currInstance.instanceId, old, currInstance.ownership)
+		}*/
 	}
 
 	// Finally, we cancel all the "visited" info
@@ -1256,7 +1267,7 @@ func (t *TokenDistributor) RemoveInstance(instance Instance) (*OwnershipInfo, er
 	}
 	delete(t.tokensByInstance, instance)
 	delete(t.zoneByInstance, instance)
-	instanceInfoByInstance, _ := t.createInstanceAndZoneInfos()
+	instanceInfoByInstance, _ := t.createInstanceAndZoneInfos(nil, nil)
 	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, nil)
 	optimalTokenOwnership := t.getOptimalTokenOwnership(false)
 	ownershipInfo := t.createOwnershipInfo(tokenInfoCircularList, optimalTokenOwnership)
@@ -1270,14 +1281,8 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 		return nil, nil, &OwnershipInfo{}, nil
 	}
 
-	instanceInfoByInstance, zoneInfoByZone := t.createInstanceAndZoneInfos()
-	newInstanceZone, ok := zoneInfoByZone[zone]
-	if !ok {
-		newInstanceZone = newZoneInfo(zone)
-		zoneInfoByZone[zone] = newInstanceZone
-	}
-	newInstanceInfo := newInstanceInfo(instance, newInstanceZone, t.tokensPerInstance)
-	instanceInfoByInstance[instance] = newInstanceInfo
+	instanceInfoByInstance, _ := t.createInstanceAndZoneInfos(&zone, &instance)
+	newInstanceInfo := instanceInfoByInstance[instance]
 	tokenInfoCircularList := t.createTokenInfoCircularList(instanceInfoByInstance, newInstanceInfo)
 	//fmt.Printf("\t\t\t%s", instanceInfoByInstance)
 	optimalTokenOwnership := t.getOptimalTokenOwnership(true)
@@ -1293,9 +1298,9 @@ func (t *TokenDistributor) AddInstance(instance Instance, zone Zone) (*CircularL
 		bestCandidate := bestToken.navigableToken
 		t.addNewInstanceAndToken(instance, zone, bestToken.navigableToken.getData().getToken())
 		err := t.addCandidateAndUpdateTokenInfoCircularList(bestCandidate, tokenInfoCircularList)
-		/*fmt.Printf("Token %d added to the list\n", bestCandidate.getData().token)
-		fmt.Println(tokenInfoCircularList.StringVerobose())
-		fmt.Println("----------------------------")*/
+		//fmt.Printf("Token %d added to the list\n", bestCandidate.getData().token)
+		//fmt.Println(tokenInfoCircularList.StringVerobose())
+		//fmt.Println("----------------------------")
 		if err != nil {
 			return nil, nil, nil, err
 		}

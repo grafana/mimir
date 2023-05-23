@@ -37,14 +37,14 @@ func createTokenDistributorWithInitialEvenDistribution(start, maxTokenValue, tok
 }
 
 func createTokenInfoCircularList(tokenDistributor *TokenDistributor, instance Instance, zone Zone) (*CircularList[*tokenInfo], *instanceInfo) {
-	instanceInfoByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
+	instanceInfoByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos(&zone, &instance)
 	zoneInfo := zoneInfoByZone[zone]
 	newInstance := newInstanceInfo(instance, zoneInfo, tokensPerInstance)
 	return tokenDistributor.createTokenInfoCircularList(instanceInfoByInstance, newInstance), newInstance
 }
 
 func createNewInstanceAncCircularListsWithVerification(t *testing.T, tokenDistributor *TokenDistributor, newInstance Instance, newInstanceZone Zone, verify bool) (*CircularList[*tokenInfo], *CircularList[*candidateTokenInfo]) {
-	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos()
+	infoInstanceByInstance, zoneInfoByZone := tokenDistributor.createInstanceAndZoneInfos(&newInstanceZone, &newInstance)
 	optimalTokenOwnership := tokenDistributor.getOptimalTokenOwnership(true)
 	newInstanceInfo := newInstanceInfo(newInstance, zoneInfoByZone[newInstanceZone], tokenDistributor.tokensPerInstance)
 	newInstanceInfo.ownership = float64(tokenDistributor.tokensPerInstance) * optimalTokenOwnership
@@ -445,12 +445,13 @@ func TestTokenDistributor_GenerationReplicationWithoutZones(t *testing.T) {
 		fmt.Printf("Iteration %d...\n", it+1)
 		replicationStrategy := NewSimpleReplicationStrategy(replicationFactor, nil)
 		tokenDistributor := NewTokenDistributor(tokensPerInstance, len(zones), maxToken, replicationStrategy, NewPerfectlySpacedSeedGenerator(zones, replicationFactor, tokensPerInstance, maxToken))
-
+		var ownershipInfo *OwnershipInfo
 		for i := 0; i < numberOfInstancesPerZone; i++ {
 			instance := Instance(fmt.Sprintf("instance-%d", i))
-			_, _, ownershipInfo, _ := tokenDistributor.AddInstance(instance, SingleZone)
+			_, _, ownershipInfo, _ = tokenDistributor.AddInstance(instance, SingleZone)
 			require.NotNil(t, ownershipInfo)
-			fmt.Printf("Instance %s added\n", instance)
+			ownershipInfo.Print()
+			//fmt.Printf("Instance %s added\n", instance)
 		}
 		require.Len(t, tokenDistributor.sortedTokens, tokensPerInstance*numberOfInstancesPerZone)
 	}

@@ -100,6 +100,10 @@ func (pq *PriorityQueue[T]) Add(weightedNavigableToken *WeightedNavigableToken[T
 	pq.items = append(pq.items, weightedNavigableToken)
 }
 
+func (pq *PriorityQueue[T]) Clear() {
+	pq.items = pq.items[:0]
+}
+
 func (pq *PriorityQueue[T]) String() string {
 	if pq.Len() == 0 {
 		return "[]"
