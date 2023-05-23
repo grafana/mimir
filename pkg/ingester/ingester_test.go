@@ -63,7 +63,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -935,7 +934,7 @@ func TestIngester_Push(t *testing.T) {
 			}, s)
 			require.NoError(t, err)
 
-			res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
 			require.NoError(t, err)
 			if len(res) == 0 {
 				res = nil
@@ -1762,7 +1761,7 @@ func Test_Ingester_Query(t *testing.T) {
 					err = i.QueryStream(req, &s)
 					require.NoError(t, err)
 
-					res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+					res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
 					require.NoError(t, err)
 					assert.ElementsMatch(t, testData.expected, res)
 				})
@@ -2008,7 +2007,7 @@ func TestIngester_QueryStream_QuerySharding(t *testing.T) {
 				err = i.QueryStream(req, &s)
 				require.NoError(t, err)
 
-				res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+				res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
 				require.NoError(t, err)
 				actualTimeseries = append(actualTimeseries, res...)
 			}
@@ -5574,7 +5573,7 @@ func runTestQueryTimes(ctx context.Context, t *testing.T, ing *Ingester, ty labe
 	err = ing.QueryStream(req, &s)
 	require.NoError(t, err)
 
-	res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+	res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
 	require.NoError(t, err)
 	sort.Sort(res)
 	return res, req, nil
@@ -6699,7 +6698,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		err = i.QueryStream(req, &s)
 		require.NoError(t, err)
 
-		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expMatrix, res)
 	}
@@ -6835,7 +6834,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 		err = i.QueryStream(req, &s)
 		require.NoError(t, err)
 
-		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expMatrix, res)
 	}
@@ -7098,7 +7097,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		err = ing.QueryStream(req, &s)
 		require.NoError(t, err, msg)
 
-		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err, msg)
 		assert.ElementsMatch(t, expected, res, msg)
 	}

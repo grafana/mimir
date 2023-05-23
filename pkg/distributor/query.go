@@ -22,7 +22,6 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -56,8 +55,8 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 }
 
 // QueryStream queries multiple ingesters via the streaming interface and returns a big ol' set of chunks.
-func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (querier.DistributorQueryStreamResponse, error) {
-	var result querier.DistributorQueryStreamResponse
+func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
+	var result ingester_client.CombinedQueryStreamResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		req, err := ingester_client.ToQueryRequest(from, to, matchers)
 		if err != nil {
@@ -197,7 +196,7 @@ type ingesterQueryResult struct {
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
-func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest) (querier.DistributorQueryStreamResponse, error) {
+func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
@@ -284,7 +283,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := querier.NewSeriesStreamReader(stream, streamingSeriesCount, queryLimiter)
+					streamReader := ingester_client.NewSeriesStreamReader(stream, streamingSeriesCount, queryLimiter)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}
@@ -302,7 +301,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 	results, err := ring.DoUntilQuorum(ctx, replicationSet, queryIngester, cleanup)
 	if err != nil {
-		return querier.DistributorQueryStreamResponse{}, err
+		return ingester_client.CombinedQueryStreamResponse{}, err
 	}
 
 	// We keep track of the number of chunks that were able to be deduplicated entirely
@@ -360,7 +359,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	expectedZonesWithResults := replicationSet.ZoneCount() - replicationSet.MaxUnavailableZones
 
 	// Now turn the accumulated maps into slices.
-	resp := querier.DistributorQueryStreamResponse{
+	resp := ingester_client.CombinedQueryStreamResponse{
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
 		StreamingSeries: mergeSeriesChunkStreams(results, expectedZonesWithResults),
@@ -420,17 +419,17 @@ func sameSamples(a, b []mimirpb.Sample) bool {
 }
 
 type seriesChunksStream struct {
-	StreamReader *querier.SeriesChunksStreamReader
+	StreamReader *ingester_client.SeriesChunksStreamReader
 	Series       []labels.Labels
 }
 
-func mergeSeriesChunkStreams(results []ingesterQueryResult, expectedZoneCount int) []querier.StreamingSeries {
+func mergeSeriesChunkStreams(results []ingesterQueryResult, expectedZoneCount int) []ingester_client.StreamingSeries {
 	tree := newSeriesChunkStreamsTree(results)
 	if tree == nil {
 		return nil
 	}
 
-	allSeries := []querier.StreamingSeries{}
+	allSeries := []ingester_client.StreamingSeries{}
 
 	for tree.Next() {
 		nextIngester, nextSeriesFromIngester, nextSeriesIndex := tree.Winner()
@@ -438,13 +437,13 @@ func mergeSeriesChunkStreams(results []ingesterQueryResult, expectedZoneCount in
 
 		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
 			// First time we've seen this series.
-			series := querier.StreamingSeries{
+			series := ingester_client.StreamingSeries{
 				Labels: nextSeriesFromIngester,
 				// Why expectedZoneCount? We assume each series is present exactly once in each zone.
-				Sources: make([]querier.StreamingSeriesSource, 1, expectedZoneCount),
+				Sources: make([]ingester_client.StreamingSeriesSource, 1, expectedZoneCount),
 			}
 
-			series.Sources[0] = querier.StreamingSeriesSource{
+			series.Sources[0] = ingester_client.StreamingSeriesSource{
 				StreamReader: nextIngester.StreamReader,
 				SeriesIndex:  nextSeriesIndex,
 			}
@@ -452,7 +451,7 @@ func mergeSeriesChunkStreams(results []ingesterQueryResult, expectedZoneCount in
 			allSeries = append(allSeries, series)
 		} else {
 			// We've seen this series before.
-			allSeries[lastSeriesIndex].Sources = append(allSeries[lastSeriesIndex].Sources, querier.StreamingSeriesSource{
+			allSeries[lastSeriesIndex].Sources = append(allSeries[lastSeriesIndex].Sources, ingester_client.StreamingSeriesSource{
 				StreamReader: nextIngester.StreamReader,
 				SeriesIndex:  nextSeriesIndex,
 			})

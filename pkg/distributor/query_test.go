@@ -20,7 +20,6 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier"
 )
 
 func TestMergeSamplesIntoFirstDuplicates(t *testing.T) {
@@ -227,38 +226,38 @@ func BenchmarkMergeExemplars(b *testing.B) {
 }
 
 func TestMergingAndSortingSeries(t *testing.T) {
-	ingester1 := &querier.SeriesChunksStreamReader{}
-	ingester2 := &querier.SeriesChunksStreamReader{}
-	ingester3 := &querier.SeriesChunksStreamReader{}
+	ingester1 := &ingester_client.SeriesChunksStreamReader{}
+	ingester2 := &ingester_client.SeriesChunksStreamReader{}
+	ingester3 := &ingester_client.SeriesChunksStreamReader{}
 
 	testCases := map[string]struct {
 		results  []ingesterQueryResult
-		expected []querier.StreamingSeries
+		expected []ingester_client.StreamingSeries
 	}{
 		"no ingesters": {
 			results:  []ingesterQueryResult{},
-			expected: []querier.StreamingSeries{},
+			expected: []ingester_client.StreamingSeries{},
 		},
 		"single ingester, no streaming series": {
 			results: []ingesterQueryResult{
 				{},
 			},
-			expected: []querier.StreamingSeries{},
+			expected: []ingester_client.StreamingSeries{},
 		},
 		"single ingester, no series": {
 			results: []ingesterQueryResult{
 				{streamingSeries: seriesChunksStream{StreamReader: ingester1, Series: []labels.Labels{}}},
 			},
-			expected: []querier.StreamingSeries{},
+			expected: []ingester_client.StreamingSeries{},
 		},
 		"single ingester, single series": {
 			results: []ingesterQueryResult{
 				{streamingSeries: seriesChunksStream{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}}},
 			},
-			expected: []querier.StreamingSeries{
+			expected: []ingester_client.StreamingSeries{
 				{
 					Labels: labels.FromStrings("some-label", "some-value"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester1, SeriesIndex: 0},
 					},
 				},
@@ -270,10 +269,10 @@ func TestMergingAndSortingSeries(t *testing.T) {
 				{streamingSeries: seriesChunksStream{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}}},
 				{streamingSeries: seriesChunksStream{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}}},
 			},
-			expected: []querier.StreamingSeries{
+			expected: []ingester_client.StreamingSeries{
 				{
 					Labels: labels.FromStrings("some-label", "some-value"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester1, SeriesIndex: 0},
 						{StreamReader: ingester2, SeriesIndex: 0},
 						{StreamReader: ingester3, SeriesIndex: 0},
@@ -287,22 +286,22 @@ func TestMergingAndSortingSeries(t *testing.T) {
 				{streamingSeries: seriesChunksStream{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}}},
 				{streamingSeries: seriesChunksStream{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}}},
 			},
-			expected: []querier.StreamingSeries{
+			expected: []ingester_client.StreamingSeries{
 				{
 					Labels: labels.FromStrings("some-label", "value-a"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester1, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("some-label", "value-b"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester2, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("some-label", "value-c"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester3, SeriesIndex: 0},
 					},
 				},
@@ -314,22 +313,22 @@ func TestMergingAndSortingSeries(t *testing.T) {
 				{streamingSeries: seriesChunksStream{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}}},
 				{streamingSeries: seriesChunksStream{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}}},
 			},
-			expected: []querier.StreamingSeries{
+			expected: []ingester_client.StreamingSeries{
 				{
 					Labels: labels.FromStrings("some-label", "value-a"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester1, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("some-label", "value-b"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester2, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("some-label", "value-c"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester3, SeriesIndex: 0},
 					},
 				},
@@ -341,28 +340,28 @@ func TestMergingAndSortingSeries(t *testing.T) {
 				{streamingSeries: seriesChunksStream{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("label-a", "value-b"), labels.FromStrings("label-b", "value-a")}}},
 				{streamingSeries: seriesChunksStream{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("label-a", "value-c"), labels.FromStrings("label-b", "value-a")}}},
 			},
-			expected: []querier.StreamingSeries{
+			expected: []ingester_client.StreamingSeries{
 				{
 					Labels: labels.FromStrings("label-a", "value-a"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester1, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("label-a", "value-b"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester2, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("label-a", "value-c"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester3, SeriesIndex: 0},
 					},
 				},
 				{
 					Labels: labels.FromStrings("label-b", "value-a"),
-					Sources: []querier.StreamingSeriesSource{
+					Sources: []ingester_client.StreamingSeriesSource{
 						{StreamReader: ingester1, SeriesIndex: 1},
 						{StreamReader: ingester2, SeriesIndex: 1},
 						{StreamReader: ingester3, SeriesIndex: 1},
@@ -421,7 +420,7 @@ func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) 
 		rand.Shuffle(len(zoneSeries), func(i, j int) { zoneSeries[i], zoneSeries[j] = zoneSeries[j], zoneSeries[i] })
 
 		for ingester := 1; ingester <= ingestersPerZone; ingester++ {
-			streamReader := &querier.SeriesChunksStreamReader{}
+			streamReader := &ingester_client.SeriesChunksStreamReader{}
 			series := zoneSeries[(ingester-1)*seriesPerIngester : ingester*seriesPerIngester]
 			sort.Sort(byLabels(series))
 

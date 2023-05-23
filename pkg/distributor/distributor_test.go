@@ -49,7 +49,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
-	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1030,9 +1029,9 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			var m model.Matrix
 			if len(resp.Chunkseries) == 0 {
-				m, err = chunkcompat.TimeSeriesChunksToMatrix(0, 10, nil)
+				m, err = client.TimeSeriesChunksToMatrix(0, 10, nil)
 			} else {
-				m, err = chunkcompat.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
+				m, err = client.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
 			}
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedResponse.String(), m.String())

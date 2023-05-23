@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -86,7 +85,7 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 		t.Run(testName, func(t *testing.T) {
 			distributor := &mockDistributor{}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(DistributorQueryStreamResponse{}, nil)
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
 			userID := "test"
@@ -147,16 +146,16 @@ func TestDistributorQuerier_Select(t *testing.T) {
 	_, err = promChunk.Add(model.SamplePair{Timestamp: mint, Value: 0})
 	require.NoError(t, err)
 
-	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
+	clientChunks, err := client.ToChunks([]chunk.Chunk{
 		chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Earliest),
 	})
 	require.NoError(t, err)
 
 	testCases := map[string]struct {
-		response DistributorQueryStreamResponse
+		response client.CombinedQueryStreamResponse
 	}{
 		"chunk series": {
-			response: DistributorQueryStreamResponse{
+			response: client.CombinedQueryStreamResponse{
 				Chunkseries: []client.TimeSeriesChunk{
 					{
 						Labels: []mimirpb.LabelAdapter{
@@ -174,8 +173,8 @@ func TestDistributorQuerier_Select(t *testing.T) {
 			},
 		},
 		"streaming series": {
-			response: DistributorQueryStreamResponse{
-				StreamingSeries: []StreamingSeries{
+			response: client.CombinedQueryStreamResponse{
+				StreamingSeries: []client.StreamingSeries{
 					{
 						Labels: labels.FromStrings("bar", "baz"),
 					},
@@ -261,7 +260,7 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 
 	d := &mockDistributor{}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		DistributorQueryStreamResponse{
+		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
@@ -284,16 +283,16 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 				},
 			},
 
-			StreamingSeries: []StreamingSeries{
+			StreamingSeries: []client.StreamingSeries{
 				{
 					Labels: labels.FromStrings(labels.MetricName, "four"),
-					Sources: []StreamingSeriesSource{
+					Sources: []client.StreamingSeriesSource{
 						{SeriesIndex: 0, StreamReader: streamReader},
 					},
 				},
 				{
 					Labels: labels.FromStrings(labels.MetricName, "two"),
-					Sources: []StreamingSeriesSource{
+					Sources: []client.StreamingSeriesSource{
 						{SeriesIndex: 1, StreamReader: streamReader},
 					},
 				},
@@ -365,7 +364,7 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 
 	d := &mockDistributor{}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		DistributorQueryStreamResponse{
+		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
@@ -457,7 +456,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 
 	d := &mockDistributor{}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		DistributorQueryStreamResponse{
+		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
@@ -544,7 +543,7 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	require.NoError(b, err)
 	require.Nil(b, overflowChunk)
 
-	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
+	clientChunks, err := client.ToChunks([]chunk.Chunk{
 		chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Earliest),
 	})
 	require.NoError(b, err)
@@ -557,7 +556,7 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	commonLabelsBuilder.Sort()
 	commonLabels := commonLabelsBuilder.Labels()
 
-	response := DistributorQueryStreamResponse{Chunkseries: make([]client.TimeSeriesChunk, 0, numSeries)}
+	response := client.CombinedQueryStreamResponse{Chunkseries: make([]client.TimeSeriesChunk, 0, numSeries)}
 	for i := 0; i < numSeries; i++ {
 		lbls := labels.NewBuilder(commonLabels)
 		lbls.Set("series_id", strconv.Itoa(i))
@@ -664,7 +663,7 @@ func convertToChunks(t *testing.T, samples []interface{}) []client.Chunk {
 		require.Nil(t, overflow)
 	}
 
-	clientChunks, err := chunkcompat.ToChunks(chunks)
+	clientChunks, err := client.ToChunks(chunks)
 	require.NoError(t, err)
 
 	return clientChunks
@@ -678,9 +677,9 @@ func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Tim
 	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).(*client.ExemplarQueryResponse), args.Error(1)
 }
-func (m *mockDistributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (DistributorQueryStreamResponse, error) {
+func (m *mockDistributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	args := m.Called(ctx, from, to, matchers)
-	return args.Get(0).(DistributorQueryStreamResponse), args.Error(1)
+	return args.Get(0).(client.CombinedQueryStreamResponse), args.Error(1)
 }
 func (m *mockDistributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, lbl model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
 	args := m.Called(ctx, from, to, lbl, matchers)

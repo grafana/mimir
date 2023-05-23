@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package chunkcompat
+package client
 
 import (
 	"bytes"
@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
@@ -20,7 +19,7 @@ import (
 )
 
 // StreamsToMatrix converts a slice of QueryStreamResponse to a model.Matrix.
-func StreamsToMatrix(from, through model.Time, responses []*client.QueryStreamResponse) (model.Matrix, error) {
+func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse) (model.Matrix, error) {
 	result := model.Matrix{}
 	streamingSeries := []labels.Labels{}
 	haveReachedEndOfStreamingSeriesLabels := false
@@ -52,7 +51,7 @@ func StreamsToMatrix(from, through model.Time, responses []*client.QueryStreamRe
 				return nil, errors.New("received series chunks before IsEndOfSeriesStream=true")
 			}
 
-			series, err := SeriesChunksToMatrix(from, through, streamingSeries[s.SeriesIndex], s.Chunks)
+			series, err := seriesChunksToMatrix(from, through, streamingSeries[s.SeriesIndex], s.Chunks)
 			if err != nil {
 				return nil, err
 			}
@@ -62,15 +61,15 @@ func StreamsToMatrix(from, through model.Time, responses []*client.QueryStreamRe
 	return result, nil
 }
 
-// SeriesChunksToMatrix converts slice of []client.TimeSeriesChunk to a model.Matrix.
-func TimeSeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeriesChunk) (model.Matrix, error) {
+// TimeSeriesChunksToMatrix converts slice of []client.TimeSeriesChunk to a model.Matrix.
+func TimeSeriesChunksToMatrix(from, through model.Time, serieses []TimeSeriesChunk) (model.Matrix, error) {
 	if serieses == nil {
 		return nil, nil
 	}
 
 	result := model.Matrix{}
 	for _, series := range serieses {
-		stream, err := SeriesChunksToMatrix(from, through, mimirpb.FromLabelAdaptersToLabels(series.Labels), series.Chunks)
+		stream, err := seriesChunksToMatrix(from, through, mimirpb.FromLabelAdaptersToLabels(series.Labels), series.Chunks)
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +119,7 @@ func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (
 	return result, nil
 }
 
-func SeriesChunksToMatrix(from, through model.Time, l labels.Labels, c []client.Chunk) (*model.SampleStream, error) {
+func seriesChunksToMatrix(from, through model.Time, l labels.Labels, c []Chunk) (*model.SampleStream, error) {
 	metric := util.LabelsToMetric(l)
 	chunks, err := FromChunks(l, c)
 	if err != nil {
@@ -159,7 +158,7 @@ func SeriesChunksToMatrix(from, through model.Time, l labels.Labels, c []client.
 }
 
 // FromChunks converts []client.Chunk to []chunk.Chunk.
-func FromChunks(metric labels.Labels, in []client.Chunk) ([]chunk.Chunk, error) {
+func FromChunks(metric labels.Labels, in []Chunk) ([]chunk.Chunk, error) {
 	out := make([]chunk.Chunk, 0, len(in))
 	for _, i := range in {
 		o, err := chunk.NewForEncoding(chunk.Encoding(byte(i.Encoding)))
@@ -180,10 +179,10 @@ func FromChunks(metric labels.Labels, in []client.Chunk) ([]chunk.Chunk, error) 
 }
 
 // ToChunks converts []chunk.Chunk to []client.Chunk.
-func ToChunks(in []chunk.Chunk) ([]client.Chunk, error) {
-	out := make([]client.Chunk, 0, len(in))
+func ToChunks(in []chunk.Chunk) ([]Chunk, error) {
+	out := make([]Chunk, 0, len(in))
 	for _, i := range in {
-		wireChunk := client.Chunk{
+		wireChunk := Chunk{
 			StartTimestampMs: int64(i.From),
 			EndTimestampMs:   int64(i.Through),
 			Encoding:         int32(i.Data.Encoding()),

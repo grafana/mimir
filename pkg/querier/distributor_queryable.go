@@ -24,14 +24,13 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // Distributor is the read interface to the distributor, made an interface here
 // to reduce package coupling.
 type Distributor interface {
-	QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (DistributorQueryStreamResponse, error)
+	QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
 	QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error)
 	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, matchers ...*labels.Matcher) ([]string, error)
 	LabelNames(ctx context.Context, from model.Time, to model.Time, matchers ...*labels.Matcher) ([]string, error)
@@ -39,24 +38,6 @@ type Distributor interface {
 	MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error)
 	LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error)
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
-}
-
-// FIXME: does this belong in this package?
-// (it creates a dependency on this package from the distributor package)
-type DistributorQueryStreamResponse struct {
-	Chunkseries     []client.TimeSeriesChunk
-	Timeseries      []mimirpb.TimeSeries
-	StreamingSeries []StreamingSeries
-}
-
-type StreamingSeries struct {
-	Labels  labels.Labels
-	Sources []StreamingSeriesSource
-}
-
-type StreamingSeriesSource struct {
-	StreamReader *SeriesChunksStreamReader
-	SeriesIndex  uint64
 }
 
 type QueryChunkMetrics struct {
@@ -198,7 +179,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
 
-		chunks, err := chunkcompat.FromChunks(ls, result.Chunks)
+		chunks, err := client.FromChunks(ls, result.Chunks)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
