@@ -126,6 +126,11 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -max-separate-metrics-groups-per-user
 [max_separate_metrics_groups_per_user: <int> | default = 1000]
 
+# (advanced) Set to true to enable all Go runtime metrics, such as go_sched_*
+# and go_memstats_*.
+# CLI flag: -enable-go-runtime-metrics
+[enable_go_runtime_metrics: <boolean> | default = false]
+
 api:
   # (advanced) Allows to skip label name validation via
   # X-Mimir-SkipLabelNameValidation header on the http write path. Use with
@@ -1097,6 +1102,11 @@ The `frontend` block configures the query-frontend.
 # Set to < 0 to enable on all queries.
 # CLI flag: -query-frontend.log-queries-longer-than
 [log_queries_longer_than: <duration> | default = 0s]
+
+# (advanced) Comma-separated list of request header names to include in query
+# logs. Applies to both query stats and slow queries logs.
+# CLI flag: -query-frontend.log-query-request-headers
+[log_query_request_headers: <string> | default = ""]
 
 # (advanced) Max body size for downstream prometheus.
 # CLI flag: -query-frontend.max-body-size
@@ -2855,7 +2865,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to
 # disable.
 # CLI flag: -compactor.partial-block-deletion-delay
-[compactor_partial_block_deletion_delay: <duration> | default = 0s]
+[compactor_partial_block_deletion_delay: <duration> | default = 1d]
 
 # Enable block upload API for the tenant.
 # CLI flag: -compactor.block-upload-enabled
@@ -3022,12 +3032,6 @@ bucket_store:
   # object storage per tenant.
   # CLI flag: -blocks-storage.bucket-store.meta-sync-concurrency
   [meta_sync_concurrency: <int> | default = 20]
-
-  # (deprecated) Minimum age of a block before it's being read. Set it to safe
-  # value (e.g 30m) if your object storage is eventually consistent. GCS and S3
-  # are (roughly) strongly consistent.
-  # CLI flag: -blocks-storage.bucket-store.consistency-delay
-  [consistency_delay: <duration> | default = 0s]
 
   index_cache:
     # The index cache backend type. Supported values: inmemory, memcached,
@@ -3443,11 +3447,6 @@ The `compactor` block configures the compactor component.
 # long term storage.
 # CLI flag: -compactor.meta-sync-concurrency
 [meta_sync_concurrency: <int> | default = 20]
-
-# (deprecated) Minimum age of fresh (non-compacted) blocks before they are being
-# processed.
-# CLI flag: -compactor.consistency-delay
-[consistency_delay: <duration> | default = 0s]
 
 # Directory to temporarily store blocks during compaction. This directory is not
 # required to be persisted between restarts.

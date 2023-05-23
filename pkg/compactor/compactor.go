@@ -50,8 +50,6 @@ const (
 const (
 	blocksMarkedForDeletionName = "cortex_compactor_blocks_marked_for_deletion_total"
 	blocksMarkedForDeletionHelp = "Total number of blocks marked for deletion in compactor."
-
-	consistencyDelayFlag = "compactor.consistency-delay"
 )
 
 var (
@@ -84,20 +82,19 @@ type BlocksCompactorFactory func(
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
-	BlockRanges                mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
-	BlockSyncConcurrency       int                     `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency        int                     `yaml:"meta_sync_concurrency" category:"advanced"`
-	DeprecatedConsistencyDelay time.Duration           `yaml:"consistency_delay" category:"deprecated"` // Deprecated. Remove in Mimir 2.9.
-	DataDir                    string                  `yaml:"data_dir"`
-	CompactionInterval         time.Duration           `yaml:"compaction_interval" category:"advanced"`
-	CompactionRetries          int                     `yaml:"compaction_retries" category:"advanced"`
-	CompactionConcurrency      int                     `yaml:"compaction_concurrency" category:"advanced"`
-	CompactionWaitPeriod       time.Duration           `yaml:"first_level_compaction_wait_period" category:"experimental"`
-	CleanupInterval            time.Duration           `yaml:"cleanup_interval" category:"advanced"`
-	CleanupConcurrency         int                     `yaml:"cleanup_concurrency" category:"advanced"`
-	DeletionDelay              time.Duration           `yaml:"deletion_delay" category:"advanced"`
-	TenantCleanupDelay         time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
-	MaxCompactionTime          time.Duration           `yaml:"max_compaction_time" category:"advanced"`
+	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
+	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency   int                     `yaml:"meta_sync_concurrency" category:"advanced"`
+	DataDir               string                  `yaml:"data_dir"`
+	CompactionInterval    time.Duration           `yaml:"compaction_interval" category:"advanced"`
+	CompactionRetries     int                     `yaml:"compaction_retries" category:"advanced"`
+	CompactionConcurrency int                     `yaml:"compaction_concurrency" category:"advanced"`
+	CompactionWaitPeriod  time.Duration           `yaml:"first_level_compaction_wait_period" category:"experimental"`
+	CleanupInterval       time.Duration           `yaml:"cleanup_interval" category:"advanced"`
+	CleanupConcurrency    int                     `yaml:"cleanup_concurrency" category:"advanced"`
+	DeletionDelay         time.Duration           `yaml:"deletion_delay" category:"advanced"`
+	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
+	MaxCompactionTime     time.Duration           `yaml:"max_compaction_time" category:"advanced"`
 
 	// Compactor concurrency options
 	MaxOpeningBlocksConcurrency         int `yaml:"max_opening_blocks_concurrency" category:"advanced"`          // Number of goroutines opening blocks before compaction.
@@ -133,7 +130,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.retryMaxBackoff = time.Minute
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
-	f.DurationVar(&cfg.DeprecatedConsistencyDelay, consistencyDelayFlag, 0, "Minimum age of fresh (non-compacted) blocks before they are being processed.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data-compactor/", "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.")
@@ -181,9 +177,6 @@ func (cfg *Config) Validate(logger log.Logger) error {
 	}
 	if !util.StringsContain(CompactionOrders, cfg.CompactionJobsOrder) {
 		return errInvalidCompactionOrder
-	}
-	if cfg.DeprecatedConsistencyDelay > 0 {
-		util.WarnDeprecatedConfig(consistencyDelayFlag, logger)
 	}
 
 	return nil
@@ -724,7 +717,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 			mimir_tsdb.DeprecatedTenantIDExternalLabel,
 			mimir_tsdb.DeprecatedIngesterIDExternalLabel,
 		}),
-		block.NewConsistencyDelayMetaFilter(userLogger, c.compactorCfg.DeprecatedConsistencyDelay, reg),
 		excludeMarkedForDeletionFilter,
 		deduplicateBlocksFilter,
 		// removes blocks that should not be compacted due to being marked so.

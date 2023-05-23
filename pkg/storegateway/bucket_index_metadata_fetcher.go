@@ -121,8 +121,3 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 
 	return metas, nil, nil
 }
-
-func (f *BucketIndexMetadataFetcher) UpdateOnChange(callback func([]metadata.Meta, error)) {
-	// Unused by the store-gateway.
-	callback(nil, errors.New("UpdateOnChange is unsupported"))
-}

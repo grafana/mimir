@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Store-gateway: change expanded postings and postings index cache key format. These caches will be invalidated when rolling out the new Mimir version. #4770 #4978
+* [CHANGE] Store-gateway: change expanded postings, postings, and label values index cache key format. These caches will be invalidated when rolling out the new Mimir version. #4770 #4978 #5037
 * [CHANGE] Distributor: remove the "forwarding" feature as it isn't necessary anymore. #4876
 * [CHANGE] Query-frontend: Change the default value of `-query-frontend.query-sharding-max-regexp-size-bytes` from `0` to `4096`. #4932
 * [CHANGE] Querier: `-querier.query-ingesters-within` has been moved from a global flag to a per-tenant override. #4287
@@ -15,6 +15,10 @@
   * `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
   * `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
 * [CHANGE] Store-gateway: remove metrics `cortex_bucket_store_chunk_pool_requested_bytes_total` and `cortex_bucket_store_chunk_pool_returned_bytes_total`. #4996
+* [CHANGE] Compactor: change default of `-compactor.partial-block-deletion-delay` to `1d`. This will automatically clean up partial blocks that were a result of failed block upload or deletion. #5026
+* [CHANGE] Compactor: the deprecated configuration parameter `-compactor.consistency-delay` has been removed. #5050
+* [CHANGE] Store-gateway: the deprecated configuration parameter `-blocks-storage.bucket-store.consistency-delay` has been removed. #5050
+* [FEATURE] Query-frontend: add `-query-frontend.log-query-request-headers` to enable logging of request headers in query logs. #5030
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metric `cortex_bucket_store_series_data_touched`. This label now applies to `data_type="chunks"` and `data_type="series"`. The `stage` label has 2 values: `processed` - the number of series that parsed - and `returned` - the number of series selected from the processed bytes to satisfy the query. #4797 #4830
@@ -40,11 +44,16 @@
 * [ENHANCEMENT] Ruler: do not list rule groups in the object storage for disabled tenants. #5004
 * [ENHANCEMENT] Query-frontend and querier: add HTTP API endpoint `<prometheus-http-prefix>/api/v1/format_query` to format a PromQL query. #4373
 * [ENHANCEMENT] Alertmanager: Add configuration option to enable or disable the deletion of alertmanager state from object storage. This is useful when migrating alertmanager tenants from one cluster to another, because it avoids a condition where the state object is copied but then deleted before the configuration object is copied. #4989
+* [ENHANCEMENT] Querier: only use the minimum set of chunks from ingesters when querying, and cancel unnecessary requests to ingesters sooner if we know their results won't be used. #5016
+* [ENHANCEMENT] Add `-enable-go-runtime-metrics` flag to expose all go runtime metrics as Prometheus metrics. #5009
+* [ENHANCEMENT] Ruler: trigger a synchronization of tenant's rule groups as soon as they change the rules configuration via API. This synchronization is in addition of the periodic syncing done every `-ruler.poll-interval`. #4975
+* [ENHANCEMENT] Store-gateway: record index header loading time separately in `cortex_bucket_store_series_request_stage_duration_seconds{stage="load_index"}`. Now index header loading will be visible in the "Mimir / Queries" dashboard in the "Series request p99/average latency" panels. #5011
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
 * [BUGFIX] Backend: Check that alertmanager's data-dir doesn't overlap with bucket-sync dir. #4921
 * [BUGFIX] Alertmanager: Allow to rate-limit webex, telegram and discord notifications. #4979
+* [BUGFIX] Store-gateway: panics when decoding LabelValues responses that contain more than 655360 values. These responses are no longer cached. #5021
 
 ### Documentation
 
@@ -55,10 +64,13 @@
 ### Mixin
 
 * [CHANGE] Alerts: Remove `MimirQuerierHighRefetchRate`. #4980
+* [CHANGE] Alerts: Remove `MimirTenantHasPartialBlocks`. This is obsoleted by the changed default of `-compactor.partial-block-deletion-delay` to `1d`, which will auto remediate this alert. #5026
 * [ENHANCEMENT] Alertmanager dashboard: display active aggregation groups #4772
 * [ENHANCEMENT] Alerts: `MimirIngesterTSDBWALCorrupted` now only fires when there are more than one corrupted WALs in single-zone deployments and when there are more than two zones affected in multi-zone deployments. #4920
-* [ENHANCEMENT] dashboards: fix holes in graph for lightly loaded clusters #4915
+* [ENHANCEMENT] Alerts: added labels to duplicated `MimirRolloutStuck` and `MimirCompactorHasNotUploadedBlocks` rules in order to distinguish them. #5023
+* [ENHANCEMENT] Dashboards: fix holes in graph for lightly loaded clusters #4915
 * [ENHANCEMENT] Dashboards: allow configuring additional services for the Rollout Progress dashboard. #5007
+* [BUGFIX] Dashboards: show cancelled requests in a different color to successful requests in throughput panels on dashboards. #5039
 
 ### Jsonnet
 
@@ -69,10 +81,12 @@
 * [ENHANCEMENT] Ingester: configure `-blocks-storage.tsdb.wal-replay-concurrency` to CPU request minus 1. #4864
 * [ENHANCEMENT] Compactor: configure `-compactor.first-level-compaction-wait-period` to TSDB head compaction interval plus 10 minutes. #4872
 * [ENHANCEMENT] Store-gateway: set `GOMEMLIMIT` to the memory request value. This should reduce the likelihood the store-gateway may go out of memory, at the cost of an higher CPU utilization due to more frequent garbage collections when the memory utilization gets closer or above the configured requested memory. #4971
+* [ENHANCEMENT] Store-gateway: add `store_gateway_lazy_loading_enabled` configuration option which combines disabled lazy-loading and reducing blocks sync concurrency. Reducing blocks sync concurrency improves startup times with disabled lazy loading on HDDs. #5025
 * [BUGFIX] Backend: configure `-ruler.alertmanager-url` to `mimir-backend` when running in read-write deployment mode. #4892
 
 ### Mimirtool
 
+* [CHANGE] check rules: will fail on duplicate rules when `--strict` is provided. #5035
 * [ENHANCEMENT] analyze prometheus: allow to specify `-prometheus-http-prefix`. #4966
 * [ENHANCEMENT] analyze grafana: allow to specify `--folder-title` to limit dashboards analysis based on their exact folder title. #4973
 

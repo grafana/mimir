@@ -37,7 +37,7 @@ func partitionChunks(chunks []chunk.Chunk, mint, maxt int64, iteratorFunc chunkI
 		})
 	}
 
-	return seriesset.NewConcreteSeriesSet(series)
+	return seriesset.NewConcreteSeriesSetFromUnsortedSeries(series)
 }
 
 // Implements SeriesWithChunks

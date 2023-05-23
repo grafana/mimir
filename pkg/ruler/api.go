@@ -536,6 +536,8 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	a.ruler.NotifySyncRulesAsync(userID)
+
 	respondAccepted(w, logger)
 }
 
@@ -558,6 +560,8 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	a.ruler.NotifySyncRulesAsync(userID)
+
 	respondAccepted(w, logger)
 }
 
@@ -579,6 +583,8 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 		respondServerError(logger, w, err.Error())
 		return
 	}
+
+	a.ruler.NotifySyncRulesAsync(userID)
 
 	respondAccepted(w, logger)
 }

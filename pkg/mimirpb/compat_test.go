@@ -8,7 +8,6 @@ package mimirpb
 import (
 	stdlibjson "encoding/json"
 	"math"
-	"reflect"
 	"strconv"
 	"testing"
 	"unsafe"
@@ -223,14 +222,50 @@ func TestFromFPointsToSamples(t *testing.T) {
 	assert.Equal(t, expected, FromFPointsToSamples(input))
 }
 
+// Check that Prometheus FPoint and Mimir Sample types converted
+// into each other with unsafe.Pointer are compatible
+func TestPrometheusFPointInSyncWithMimirPbSample(t *testing.T) {
+	test.RequireSameShape(t, promql.FPoint{}, Sample{}, true)
+}
+
+func BenchmarkFromFPointsToSamples(b *testing.B) {
+	n := 100
+	input := make([]promql.FPoint, n)
+	for i := 0; i < n; i++ {
+		input[i] = promql.FPoint{T: int64(i), F: float64(i)}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		FromFPointsToSamples(input)
+	}
+}
+
 func TestFromHPointsToHistograms(t *testing.T) {
 	input := []promql.HPoint{{T: 3, H: test.GenerateTestFloatHistogram(0)}, {T: 5, H: test.GenerateTestFloatHistogram(1)}}
 	expected := []FloatHistogramPair{
-		{TimestampMs: 3, Histogram: *FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(0))},
-		{TimestampMs: 5, Histogram: *FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(1))},
+		{TimestampMs: 3, Histogram: FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(0))},
+		{TimestampMs: 5, Histogram: FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(1))},
 	}
 
 	assert.Equal(t, expected, FromHPointsToHistograms(input))
+}
+
+// Check that Prometheus HPoint and Mimir FloatHistogramPair types converted
+// into each other with unsafe.Pointer are compatible
+func TestPrometheusHPointInSyncWithMimirPbFloatHistogramPair(t *testing.T) {
+	test.RequireSameShape(t, promql.HPoint{}, FloatHistogramPair{}, true)
+}
+
+func BenchmarkFromHPointsToHistograms(b *testing.B) {
+	n := 100
+	input := make([]promql.HPoint, n)
+	for i := 0; i < n; i++ {
+		input[i] = promql.HPoint{T: int64(i), H: test.GenerateTestFloatHistogram(i)}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		FromHPointsToHistograms(input)
+	}
 }
 
 func TestPreallocatingMetric(t *testing.T) {
@@ -442,6 +477,8 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 		Timestamp:      ts,
 	}
 	assert.Equal(t, expected, p)
+	h2 := FromHistogramProtoToHistogram(&p)
+	assert.Equal(t, h, h2)
 
 	// Also check via JSON encode/decode
 	promP := remote.HistogramToHistogramProto(ts, h)
@@ -450,6 +487,21 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 	p2 := Histogram{}
 	assert.NoError(t, p2.Unmarshal(d))
 	assert.Equal(t, expected, p2)
+}
+
+func BenchmarkFromHistogramToHistogramProto(b *testing.B) {
+	n := 100
+	input := make([]*histogram.Histogram, n)
+	for i := 0; i < n; i++ {
+		input[i] = test.GenerateTestHistogram(int(i))
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, h := range input {
+			p := FromHistogramToHistogramProto(int64(i), h)
+			FromHistogramProtoToHistogram(&p)
+		}
+	}
 }
 
 func TestFromFloatHistogramToHistogramProto(t *testing.T) {
@@ -473,6 +525,8 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 		Timestamp:      ts,
 	}
 	assert.Equal(t, expected, p)
+	h2 := FromFloatHistogramProtoToFloatHistogram(&p)
+	assert.Equal(t, h, h2)
 
 	// Also check via JSON encode/decode
 	promP := remote.FloatHistogramToHistogramProto(ts, h)
@@ -481,6 +535,21 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	p2 := Histogram{}
 	assert.NoError(t, p2.Unmarshal(d))
 	assert.Equal(t, expected, p2)
+}
+
+func BenchmarkFromFloatHistogramToHistogramProto(b *testing.B) {
+	n := 100
+	input := make([]*histogram.FloatHistogram, n)
+	for i := 0; i < n; i++ {
+		input[i] = test.GenerateTestFloatHistogram(int(i))
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, h := range input {
+			p := FromFloatHistogramToHistogramProto(int64(i), h)
+			FromFloatHistogramProtoToFloatHistogram(&p)
+		}
+	}
 }
 
 func TestFromFloatHistogramToPromHistogram(t *testing.T) {
@@ -561,17 +630,19 @@ func TestFromFloatHistogramToPromHistogram(t *testing.T) {
 // Check that Prometheus and Mimir SampleHistogram types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T) {
-	protoType := reflect.TypeOf(SampleHistogram{})
-	prometheusType := reflect.TypeOf(model.SampleHistogram{})
-
-	test.RequireSameShape(t, prometheusType, protoType)
+	test.RequireSameShape(t, model.SampleHistogram{}, SampleHistogram{}, false)
 }
 
-// Check that Promtheus Label and MimirPb LabelAdapter types converted
-// into each other with unsafe.Pointer are compatible
+// Check that Prometheus Label and MimirPb LabelAdapter types
+// are compatible with https://go.dev/ref/spec#Conversions
+// and https://go.dev/ref/spec#Assignability
+// More strict than necessary but is checked in compile time.
 func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(t *testing.T) {
-	protoType := reflect.TypeOf(LabelAdapter{})
-	prometheusType := reflect.TypeOf(labels.Label{})
+	_ = labels.Label(LabelAdapter{})
+}
 
-	test.RequireSameShape(t, prometheusType, protoType)
+// Check that Prometheus histogram.Span and MimirPb BucketSpan types
+// are compatible, same as above.
+func TestPrometheusHistogramSpanInSyncWithMimirPbBucketSpan(t *testing.T) {
+	_ = histogram.Span(BucketSpan{})
 }

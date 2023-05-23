@@ -30,11 +30,16 @@
       'store-gateway.sharding-ring.wait-stability-min-duration': '1m',
       // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
       'store-gateway.sharding-ring.unregister-on-shutdown': false,
-
-      // Block index-headers are pre-downloaded but lazy mmaped and loaded at query time.
-      'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
-      'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
     } +
+    (if $._config.store_gateway_lazy_loading_enabled then {
+       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
+       'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
+     } else {
+       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'false',
+       // Force fewer random disk reads; this increases throughoput and reduces i/o wait on HDDs.
+       'blocks-storage.bucket-store.block-sync-concurrency': 4,
+       'blocks-storage.bucket-store.tenant-sync-concurrency': 1,
+     }) +
     $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +

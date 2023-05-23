@@ -103,22 +103,44 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 	}, nil
 }
 
-// SyncRuleGroups sync the input rulesGroups.
-// It's not safe to call this function concurrently.
-func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
+// SyncFullRuleGroups implements MultiTenantManager.
+// It's not safe to call this function concurrently with SyncFullRuleGroups() or SyncPartialRuleGroups().
+func (r *DefaultMultiTenantManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
-		removeFederatedRuleGroups(ruleGroups, r.logger)
+		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
 	}
 
-	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroups); err != nil {
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser); err != nil {
 		// We don't log it because the only error we could get here is a context canceled.
 		return
 	}
 
 	// Check for deleted users and remove them.
 	r.removeUsersIf(func(userID string) bool {
-		_, exists := ruleGroups[userID]
+		_, exists := ruleGroupsByUser[userID]
 		return !exists
+	})
+}
+
+// SyncPartialRuleGroups implements MultiTenantManager.
+// It's not safe to call this function concurrently with SyncFullRuleGroups() or SyncPartialRuleGroups().
+func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+	if !r.cfg.TenantFederation.Enabled {
+		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
+	}
+
+	// Filter out tenants with no rule groups.
+	ruleGroupsByUser, removedUsers := filterRuleGroupsByNotEmptyUsers(ruleGroupsByUser)
+
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser); err != nil {
+		// We don't log it because the only error we could get here is a context canceled.
+		return
+	}
+
+	// Check for deleted users and remove them.
+	r.removeUsersIf(func(userID string) bool {
+		_, removed := removedUsers[userID]
+		return removed
 	})
 }
 
@@ -404,4 +426,40 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []err
 	}
 
 	return errs
+}
+
+// filterRuleGroupsByNotEmptyUsers filters out all the tenants that have no rule groups.
+// The returned removed map may be nil if no user was removed from the input configs.
+//
+// This function doesn't modify the input configs in place (even if it could) in order to reduce the likelihood of introducing
+// future bugs, in case the rule groups will be cached in memory.
+func filterRuleGroupsByNotEmptyUsers(configs map[string]rulespb.RuleGroupList) (filtered map[string]rulespb.RuleGroupList, removed map[string]struct{}) {
+	// Find tenants to remove.
+	for userID, ruleGroups := range configs {
+		if len(ruleGroups) > 0 {
+			continue
+		}
+
+		// Ensure the map is initialised.
+		if removed == nil {
+			removed = make(map[string]struct{})
+		}
+
+		removed[userID] = struct{}{}
+	}
+
+	// Nothing to do if there are no users to remove.
+	if len(removed) == 0 {
+		return configs, removed
+	}
+
+	// Filter out tenants to remove.
+	filtered = make(map[string]rulespb.RuleGroupList, len(configs)-len(removed))
+	for userID, ruleGroups := range configs {
+		if _, isRemoved := removed[userID]; !isRemoved {
+			filtered[userID] = ruleGroups
+		}
+	}
+
+	return filtered, removed
 }

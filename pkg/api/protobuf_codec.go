@@ -148,7 +148,7 @@ func (c protobufCodec) encodeMatrixSeries(s promql.Series) mimirpb.MatrixSeries 
 	for _, p := range s.Histograms {
 		histograms = append(histograms, mimirpb.FloatHistogramPair{
 			TimestampMs: p.T,
-			Histogram:   *mimirpb.FloatHistogramFromPrometheusModel(p.H),
+			Histogram:   mimirpb.FloatHistogramFromPrometheusModel(p.H),
 		})
 	}
 

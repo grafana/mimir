@@ -158,7 +158,7 @@ func (q *mockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers .
 	}
 
 	// sorted
-	return series.NewConcreteSeriesSet(results)
+	return series.NewConcreteSeriesSetFromUnsortedSeries(results)
 }
 
 // shardLabelSeries allows extending a Series with new labels. This is helpful for adding cortex shard labels

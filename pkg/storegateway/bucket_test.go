@@ -872,6 +872,7 @@ type interceptedIndexReader struct {
 	onLabelNamesCalled         func() error
 	onLabelValuesCalled        func(name string) error
 	onLabelValuesOffsetsCalled func(name string) error
+	onIndexVersionCalled       func() error
 }
 
 func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
@@ -892,11 +893,21 @@ func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string
 	return iir.Reader.LabelValuesOffsets(name, prefix, filter)
 }
 
+func (iir *interceptedIndexReader) IndexVersion() (int, error) {
+	if iir.onIndexVersionCalled != nil {
+		if err := iir.onIndexVersionCalled(); err != nil {
+			return 0, err
+		}
+	}
+	return iir.Reader.IndexVersion()
+}
+
 func deadlineExceededIndexHeader() *interceptedIndexReader {
 	return &interceptedIndexReader{
 		onLabelNamesCalled:         func() error { return context.DeadlineExceeded },
 		onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
 		onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
+		onIndexVersionCalled:       func() error { return context.DeadlineExceeded },
 	}
 }
 
@@ -1358,7 +1369,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
-	f, err := block.NewRawMetaFetcher(logger, ibkt)
+	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil)
 	assert.NoError(t, err)
 
 	runTestWithStore := func(t test.TB, st *BucketStore, reg prometheus.Gatherer) {
@@ -1576,7 +1587,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			// Reset the memory pool tracker.
 			seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-			metaFetcher, err := block.NewRawMetaFetcher(logger, instrumentedBucket)
+			metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
 			assert.NoError(t, err)
 
 			// Create the bucket store.
