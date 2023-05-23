@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -84,7 +85,7 @@ func createTestStreamReader(batches ...[]client.QueryStreamSeriesChunks) *Series
 		batches: batches,
 	}
 
-	reader := NewSeriesStreamReader(mockClient, seriesCount)
+	reader := NewSeriesStreamReader(mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0))
 	reader.StartBuffering()
 
 	return reader
@@ -141,7 +142,7 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: testCase.batches}
-			reader := NewSeriesStreamReader(mockClient, 5)
+			reader := NewSeriesStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0))
 			reader.StartBuffering()
 
 			for i, expected := range [][]client.Chunk{series0, series1, series2, series3, series4} {
@@ -177,7 +178,7 @@ func TestSeriesChunksStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	mockClient := &mockQueryStreamClient{ctx: ctx, batches: batches}
 
-	reader := NewSeriesStreamReader(mockClient, 3)
+	reader := NewSeriesStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0))
 	cancel()
 	reader.StartBuffering()
 
@@ -206,7 +207,7 @@ func TestSeriesChunksStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 	}
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := NewSeriesStreamReader(mockClient, 1)
+	reader := NewSeriesStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0))
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(1)
@@ -223,7 +224,7 @@ func TestSeriesChunksStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 	}
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := NewSeriesStreamReader(mockClient, 1)
+	reader := NewSeriesStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0))
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -244,7 +245,7 @@ func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 	}
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := NewSeriesStreamReader(mockClient, 3)
+	reader := NewSeriesStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0))
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -266,7 +267,7 @@ func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 	}
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := NewSeriesStreamReader(mockClient, 1)
+	reader := NewSeriesStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0))
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -274,6 +275,54 @@ func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 	require.EqualError(t, err, "attempted to read series at index 0 from stream, but the stream has failed: expected to receive only 1 series, but received more than this")
 
 	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
+}
+
+func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
+	testCases := map[string]struct {
+		maxChunks     int
+		maxChunkBytes int
+		expectedError string
+	}{
+		"query under both limits": {
+			maxChunks:     4,
+			maxChunkBytes: 200,
+			expectedError: "",
+		},
+		"query selects too many chunks": {
+			maxChunks:     2,
+			maxChunkBytes: 200,
+			expectedError: "attempted to read series at index 0 from stream, but the stream has failed: the query exceeded the maximum number of chunks (limit: 2 chunks) (err-mimir-max-chunks-per-query). To adjust the related per-tenant limit, configure -querier.max-fetched-chunks-per-query, or contact your service administrator.",
+		},
+		"query selects too many chunk bytes": {
+			maxChunks:     4,
+			maxChunkBytes: 100,
+			expectedError: "attempted to read series at index 0 from stream, but the stream has failed: the query exceeded the aggregated chunks size limit (limit: 100 bytes) (err-mimir-max-chunks-bytes-per-query). To adjust the related per-tenant limit, configure -querier.max-fetched-chunk-bytes-per-query, or contact your service administrator.",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			batches := [][]client.QueryStreamSeriesChunks{
+				{
+					{SeriesIndex: 0, Chunks: []client.Chunk{createTestChunk(t, 1000, 1.23), createTestChunk(t, 2000, 4.56), createTestChunk(t, 3000, 7.89)}},
+				},
+			}
+
+			mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
+			reader := NewSeriesStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks))
+			reader.StartBuffering()
+
+			_, err := reader.GetChunks(0)
+
+			if testCase.expectedError == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, testCase.expectedError)
+			}
+
+			require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed")
+		})
+	}
 }
 
 type streamingChunkSeriesTestIterator struct {

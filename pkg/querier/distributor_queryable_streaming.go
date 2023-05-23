@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type streamingChunkSeries struct {
@@ -54,12 +55,14 @@ type SeriesChunksStreamReader struct {
 	errorChan           chan error
 	seriesBatch         []client.QueryStreamSeriesChunks
 	expectedSeriesCount int
+	queryLimiter        *limiter.QueryLimiter
 }
 
-func NewSeriesStreamReader(client client.Ingester_QueryStreamClient, expectedSeriesCount int) *SeriesChunksStreamReader {
+func NewSeriesStreamReader(client client.Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
+		queryLimiter:        queryLimiter,
 	}
 }
 
@@ -105,6 +108,27 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 			totalSeries += len(msg.SeriesChunks)
 			if totalSeries > s.expectedSeriesCount {
 				s.errorChan <- fmt.Errorf("expected to receive only %v series, but received more than this", s.expectedSeriesCount)
+				return
+			}
+
+			chunkCount := 0
+			chunkBytes := 0
+
+			for _, s := range msg.SeriesChunks {
+				chunkCount += len(s.Chunks)
+
+				for _, c := range s.Chunks {
+					chunkBytes += c.Size()
+				}
+			}
+
+			if err := s.queryLimiter.AddChunks(chunkCount); err != nil {
+				s.errorChan <- err
+				return
+			}
+
+			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
+				s.errorChan <- err
 				return
 			}
 

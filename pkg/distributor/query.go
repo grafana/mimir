@@ -246,7 +246,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				result.timeseriesBatches = append(result.timeseriesBatches, resp.Timeseries)
 			} else if len(resp.Chunkseries) > 0 {
 				// Enforce the max chunks limits.
-				// TODO: enforce chunk limit for streaming series
 				if chunkLimitErr := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); chunkLimitErr != nil {
 					return ingesterQueryResult{}, validation.LimitError(chunkLimitErr.Error())
 				}
@@ -285,7 +284,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := querier.NewSeriesStreamReader(stream, streamingSeriesCount)
+					streamReader := querier.NewSeriesStreamReader(stream, streamingSeriesCount, queryLimiter)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}
