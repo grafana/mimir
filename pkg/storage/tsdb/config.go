@@ -457,7 +457,7 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
 		return errors.New("invalid series-selection-strategy, set one of " + strings.Join(validSeriesSelectionStrategies, ", "))
 	}
-	if cfg.SelectionStrategies.WorstCaseSeriesPreference <= 0 {
+	if cfg.SeriesSelectionStrategyName == WorstCasePostingsStrategy && cfg.SelectionStrategies.WorstCaseSeriesPreference <= 0 {
 		return errors.New("invalid worst-case series preference; must be positive")
 	}
 	return nil
