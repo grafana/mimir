@@ -147,12 +147,14 @@ type MetadataFilter interface {
 	Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error
 }
 
-// BaseFetcher is a struct that synchronizes filtered metadata of all block in the object storage with the local state.
+// MetaFetcher is a struct that synchronizes filtered metadata of all block in the object storage with the local state.
 // Go-routine safe.
-type BaseFetcher struct {
+type MetaFetcher struct {
 	logger      log.Logger
 	concurrency int
 	bkt         objstore.InstrumentedBucketReader
+	metrics     *FetcherMetrics
+	filters     []MetadataFilter
 
 	// Optional local directory to cache meta.json files.
 	cacheDir string
@@ -163,8 +165,8 @@ type BaseFetcher struct {
 	cached map[ulid.ULID]*metadata.Meta
 }
 
-// NewBaseFetcher constructs BaseFetcher.
-func NewBaseFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer) (*BaseFetcher, error) {
+// NewMetaFetcher returns a MetaFetcher.
+func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter) (*MetaFetcher, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -177,38 +179,20 @@ func NewBaseFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 		}
 	}
 
-	return &BaseFetcher{
-		logger:      log.With(logger, "component", "block.BaseFetcher"),
+	return &MetaFetcher{
+		logger:      log.With(logger, "component", "block.MetaFetcher"),
 		concurrency: concurrency,
 		bkt:         bkt,
 		cacheDir:    cacheDir,
 		cached:      map[ulid.ULID]*metadata.Meta{},
+		metrics:     NewFetcherMetrics(reg, nil, nil),
+		filters:     filters,
 		syncs: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Subsystem: fetcherSubSys,
 			Name:      "base_syncs_total",
-			Help:      "Total blocks metadata synchronization attempts by base Fetcher",
+			Help:      "Total blocks metadata synchronization attempts by meta fetcher",
 		}),
 	}, nil
-}
-
-// NewRawMetaFetcher returns basic meta fetcher without proper handling for eventual consistent backends or partial uploads.
-// NOTE: Not suitable to use in production.
-func NewRawMetaFetcher(logger log.Logger, bkt objstore.InstrumentedBucketReader) (*MetaFetcher, error) {
-	return NewMetaFetcher(logger, 1, bkt, "", nil, nil)
-}
-
-// NewMetaFetcher returns meta fetcher.
-func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter) (*MetaFetcher, error) {
-	b, err := NewBaseFetcher(logger, concurrency, bkt, dir, reg)
-	if err != nil {
-		return nil, err
-	}
-	return b.NewMetaFetcher(reg, filters), nil
-}
-
-// NewMetaFetcher transforms BaseFetcher into actually usable *MetaFetcher.
-func (f *BaseFetcher) NewMetaFetcher(reg prometheus.Registerer, filters []MetadataFilter) *MetaFetcher {
-	return &MetaFetcher{metrics: NewFetcherMetrics(reg, nil, nil), wrapped: f, filters: filters}
 }
 
 var (
@@ -218,7 +202,7 @@ var (
 
 // loadMeta returns metadata from object storage or error.
 // It returns `ErrorSyncMetaNotFound` and `ErrorSyncMetaCorrupted` sentinel errors in those cases.
-func (f *BaseFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*metadata.Meta, error) {
+func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*metadata.Meta, error) {
 	var (
 		metaFile       = path.Join(id.String(), MetaFilename)
 		cachedBlockDir = filepath.Join(f.cacheDir, id.String())
@@ -301,7 +285,7 @@ type response struct {
 	corruptedMetas float64
 }
 
-func (f *BaseFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
+func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 	f.syncs.Inc()
 
 	var (
@@ -368,7 +352,7 @@ func (f *BaseFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 	})
 
 	if err := eg.Wait(); err != nil {
-		return nil, errors.Wrap(err, "BaseFetcher: iter bucket")
+		return nil, errors.Wrap(err, "MetaFetcher: iter bucket")
 	}
 
 	if len(resp.metaErrs) > 0 {
@@ -417,19 +401,22 @@ func (f *BaseFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 	return resp, nil
 }
 
-func (f *BaseFetcher) fetch(ctx context.Context, metrics *FetcherMetrics, filters []MetadataFilter) (_ map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]error, err error) {
+// Fetch returns all block metas as well as partial blocks (blocks without or with corrupted meta file) from the bucket.
+// It's caller responsibility to not change the returned metadata files. Maps can be modified.
+//
+// Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
+func (f *MetaFetcher) Fetch(ctx context.Context) (_ map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]error, err error) {
 	start := time.Now()
 	defer func() {
-		metrics.SyncDuration.Observe(time.Since(start).Seconds())
+		f.metrics.SyncDuration.Observe(time.Since(start).Seconds())
 		if err != nil {
-			metrics.SyncFailures.Inc()
+			f.metrics.SyncFailures.Inc()
 		}
 	}()
-	metrics.Syncs.Inc()
-	metrics.ResetTx()
+	f.metrics.Syncs.Inc()
+	f.metrics.ResetTx()
 
 	// Run this in thread safe run group.
-	// TODO(bwplotka): Consider custom singleflight with ttl.
 	v, err := f.g.Do("", func() (i interface{}, err error) {
 		// NOTE: First go routine context will go through.
 		return f.fetchMetadata(ctx)
@@ -445,19 +432,19 @@ func (f *BaseFetcher) fetch(ctx context.Context, metrics *FetcherMetrics, filter
 		metas[id] = m
 	}
 
-	metrics.Synced.WithLabelValues(FailedMeta).Set(float64(len(resp.metaErrs)))
-	metrics.Synced.WithLabelValues(NoMeta).Set(resp.noMetas)
-	metrics.Synced.WithLabelValues(CorruptedMeta).Set(resp.corruptedMetas)
+	f.metrics.Synced.WithLabelValues(FailedMeta).Set(float64(len(resp.metaErrs)))
+	f.metrics.Synced.WithLabelValues(NoMeta).Set(resp.noMetas)
+	f.metrics.Synced.WithLabelValues(CorruptedMeta).Set(resp.corruptedMetas)
 
-	for _, filter := range filters {
+	for _, filter := range f.filters {
 		// NOTE: filter can update synced metric accordingly to the reason of the exclude.
-		if err := filter.Filter(ctx, metas, metrics.Synced, metrics.Modified); err != nil {
+		if err := filter.Filter(ctx, metas, f.metrics.Synced, f.metrics.Modified); err != nil {
 			return nil, nil, errors.Wrap(err, "filter metas")
 		}
 	}
 
-	metrics.Synced.WithLabelValues(LoadedMeta).Set(float64(len(metas)))
-	metrics.Submit()
+	f.metrics.Synced.WithLabelValues(LoadedMeta).Set(float64(len(metas)))
+	f.metrics.Submit()
 
 	if len(resp.metaErrs) > 0 {
 		return metas, resp.partial, errors.Wrap(resp.metaErrs.Err(), "incomplete view")
@@ -467,26 +454,11 @@ func (f *BaseFetcher) fetch(ctx context.Context, metrics *FetcherMetrics, filter
 	return metas, resp.partial, nil
 }
 
-func (f *BaseFetcher) countCached() int {
+func (f *MetaFetcher) countCached() int {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
 
 	return len(f.cached)
-}
-
-type MetaFetcher struct {
-	wrapped *BaseFetcher
-	metrics *FetcherMetrics
-
-	filters []MetadataFilter
-}
-
-// Fetch returns all block metas as well as partial blocks (blocks without or with corrupted meta file) from the bucket.
-// It's caller responsibility to not change the returned metadata files. Maps can be modified.
-//
-// Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
-func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*metadata.Meta, partial map[ulid.ULID]error, err error) {
-	return f.wrapped.fetch(ctx, f.metrics, f.filters)
 }
 
 // Special label that will have an ULID of the meta.json being referenced to.
