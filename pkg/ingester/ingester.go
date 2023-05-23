@@ -1723,13 +1723,12 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 	// Why retain the storage.ChunkSeries instead of their chunks.Iterator? If we get the iterators here,
 	// we can't re-use them. Re-using iterators has a bigger impact on allocations/memory than trying to
 	// avoid holding labels reference in ChunkSeries.
-	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize) // TODO: use a different value for queryStreamBatchSize?
+	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
 
 	allSeriesList := i.getChunkSeriesNode()
 	lastSeriesNode := allSeriesList
 	seriesCount := 0
 
-	// TODO: enforce limits on number of series? Or is this enforced elsewhere already?
 	for ss.Next() {
 		series := ss.At()
 
