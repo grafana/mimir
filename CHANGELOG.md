@@ -9,6 +9,7 @@
 * [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. For now this feature can be disabled by setting `-timeseries-unmarshal-caching-optimization-enabled=false`. #5137
 * [ENHANCEMENT] Query-frontend: added "response_size_bytes" field to "query stats" log. #5196
+* [ENHANCEMENT] Querier: Refine error messages for per-tenant query limits, informing the user of the preferred strategy for not hitting the limit, in addition to how they may tweak the limit. #5059
 
 ### Mixin
 * [CHANGE] Dashboards: show all workloads in selected namespace on "rollout progress" dashboard. #5113
