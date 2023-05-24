@@ -793,7 +793,7 @@ func (t *Mimir) Run() error {
 
 	t.API.RegisterServiceMapHandler(http.HandlerFunc(t.servicesHandler))
 
-	// register ingester ring handlers, if they exists prefer the full ring
+	// register ingester ring handlers, if they exist prefer the full ring
 	// implementation provided by module.Ring over the BasicLifecycler
 	// available in ingesters
 	if t.Ring != nil {
