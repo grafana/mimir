@@ -2905,7 +2905,7 @@ func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
 }
 
 func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg Config) client.HealthAndIngesterClient {
-	const sampleCount = 1000 * 1000
+	const sampleCount = 1_000_000
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
