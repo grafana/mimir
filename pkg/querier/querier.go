@@ -81,11 +81,18 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.PreferStreamingChunks, "querier.prefer-streaming-chunks", false, "Stream chunks from ingesters if ingesters support this.")
 
 	// Why 512 series / ingester?
-	// Assuming the worst case scenario of loading a full 13 hours of chunks for a series from an ingester, a 15s scrape interval, 120 samples per chunk with average chunk size of 300 B,
-	// 1024 series would consume ~8 MB (26 chunks needed per series to cover 13 hours, so 7.8 KB needed per series).
-	// (Note that this will not hold true for native histograms, which can be substantially larger.)
-	// We have up to two active batches per ingester in SeriesChunksStreamReader (one in the channel and one already received from the channel), so we use 1024/2=512 series per buffer per ingester.
-	// 512 series / ingester was also a good balance between the CPU overhead of managing a batch of series with the memory cost of keeping it in memory in our testing.
+	//
+	// Assuming the worst case scenario of loading a full 13 hours of chunks for a series from an ingester, a 15s scrape
+	// interval, 120 samples per chunk with average chunk size of 300 B, 1024 series would consume ~8 MB (26 chunks needed
+	// per series to cover 13 hours, so 7.8 KB needed per series).
+	//
+	// Note that this will not hold true for native histograms, which can be substantially larger.
+	//
+	// We have up to two active batches per ingester in SeriesChunksStreamReader (one in the channel and one already
+	// received from the channel), so we use 1024/2=512 series per buffer per ingester.
+	//
+	// 512 series / ingester was also a good balance between the CPU overhead of managing a batch of series with the memory
+	// cost of keeping it in memory in our testing.
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 512, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 
 	// The querier.query-ingesters-within flag has been moved to the limits.go file
