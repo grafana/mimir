@@ -29,7 +29,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -320,9 +319,9 @@ func (d *BucketScanBlocksFinder) scanUserBlocks(ctx context.Context, userID stri
 		if prevMeta != nil {
 			blockMeta.UploadedAt = prevMeta.UploadedAt
 		} else {
-			attrs, err := userBucket.Attributes(ctx, path.Join(m.ULID.String(), metadata.MetaFilename))
+			attrs, err := userBucket.Attributes(ctx, path.Join(m.ULID.String(), block.MetaFilename))
 			if err != nil {
-				return nil, nil, errors.Wrapf(err, "read %s attributes of block %s for user %s", metadata.MetaFilename, m.ULID.String(), userID)
+				return nil, nil, errors.Wrapf(err, "read %s attributes of block %s for user %s", block.MetaFilename, m.ULID.String(), userID)
 			}
 
 			// Since the meta.json file is the last file of a block being uploaded and it's immutable

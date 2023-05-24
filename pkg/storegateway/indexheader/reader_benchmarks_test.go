@@ -18,7 +18,6 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -151,13 +150,13 @@ func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 		require.NoError(b, bkt.Close())
 	})
 
-	metaIndexV1, err := metadata.ReadFromDir("./testdata/index_format_v1")
+	metaIndexV1, err := block.ReadFromDir("./testdata/index_format_v1")
 	require.NoError(b, err)
 	test.Copy(b, "./testdata/index_format_v1", filepath.Join(bucketDir, metaIndexV1.ULID.String()))
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(bucketDir, metaIndexV1.ULID.String()), metadata.Thanos{
+	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(bucketDir, metaIndexV1.ULID.String()), block.Thanos{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}, &metaIndexV1.BlockMeta)
 
 	require.NoError(b, err)

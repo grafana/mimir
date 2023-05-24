@@ -12,7 +12,7 @@ import (
 
 	"github.com/oklog/ulid"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 const (
@@ -42,23 +42,23 @@ func isMarkFilename(name string, markFilename string) (ulid.ULID, bool) {
 // BlockDeletionMarkFilepath returns the path, relative to the tenant's bucket location,
 // of a block deletion mark in the bucket markers location.
 func BlockDeletionMarkFilepath(blockID ulid.ULID) string {
-	return markFilepath(blockID, metadata.DeletionMarkFilename)
+	return markFilepath(blockID, block.DeletionMarkFilename)
 }
 
 // IsBlockDeletionMarkFilename returns whether the input filename matches the expected pattern
 // of block deletion markers stored in the markers location.
 func IsBlockDeletionMarkFilename(name string) (ulid.ULID, bool) {
-	return isMarkFilename(name, metadata.DeletionMarkFilename)
+	return isMarkFilename(name, block.DeletionMarkFilename)
 }
 
 // NoCompactMarkFilepath returns the path, relative to the tenant's bucket location,
 // of a no-compact block mark in the bucket markers location.
 func NoCompactMarkFilepath(blockID ulid.ULID) string {
-	return markFilepath(blockID, metadata.NoCompactMarkFilename)
+	return markFilepath(blockID, block.NoCompactMarkFilename)
 }
 
 // IsNoCompactMarkFilename returns true if input filename matches the expected
 // pattern of block marker stored in the markers location.
 func IsNoCompactMarkFilename(name string) (ulid.ULID, bool) {
-	return isMarkFilename(name, metadata.NoCompactMarkFilename)
+	return isMarkFilename(name, block.NoCompactMarkFilename)
 }

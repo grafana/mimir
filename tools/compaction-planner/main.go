@@ -24,7 +24,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
@@ -75,7 +74,7 @@ func main() {
 		deleted[id] = true
 	}
 
-	metas := map[ulid.ULID]*metadata.Meta{}
+	metas := map[ulid.ULID]*block.Meta{}
 	for _, b := range idx.Blocks {
 		if deleted[b.ID] {
 			continue

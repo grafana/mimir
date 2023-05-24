@@ -20,7 +20,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -125,10 +125,10 @@ func CreateBlock(
 
 	blockDir := filepath.Join(dir, id.String())
 
-	if _, err = metadata.InjectThanos(log.NewNopLogger(), blockDir, metadata.Thanos{
+	if _, err = block.InjectThanos(log.NewNopLogger(), blockDir, block.Thanos{
 		Labels: extLset.Map(),
-		Source: metadata.TestSource,
-		Files:  []metadata.File{},
+		Source: block.TestSource,
+		Files:  []block.File{},
 	}, nil); err != nil {
 		return id, errors.Wrap(err, "finalize block")
 	}

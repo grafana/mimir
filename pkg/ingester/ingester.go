@@ -47,6 +47,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 
 	"github.com/grafana/dskit/tenant"
@@ -58,7 +59,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -1803,7 +1803,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			tsdbPromReg,
 			udir,
 			bucket.NewUserBucketClient(userID, i.bucket, i.limits),
-			metadata.ReceiveSource,
+			block.ReceiveSource,
 		)
 
 		// Initialise the shipper blocks cache.

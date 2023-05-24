@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/exp/slices"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 type BlockSeriesSpec struct {
@@ -59,7 +59,7 @@ func (s BlockSeriesSpecs) MaxTime() int64 {
 
 // GenerateBlockFromSpec generates a TSDB block with series and chunks provided by the input specs.
 // This utility is intended just to be used for testing. Do not use it for any production code.
-func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) (_ *metadata.Meta, returnErr error) {
+func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) (_ *block.Meta, returnErr error) {
 	blockID := ulid.MustNew(ulid.Now(), rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
@@ -154,7 +154,7 @@ func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) 
 	}
 
 	// Generate the meta.json file.
-	meta := &metadata.Meta{
+	meta := &block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    blockID,
 			MinTime: specs.MinTime(),
@@ -165,8 +165,8 @@ func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) 
 			},
 			Version: 1,
 		},
-		Thanos: metadata.Thanos{
-			Version: metadata.ThanosVersion1,
+		Thanos: block.Thanos{
+			Version: block.ThanosVersion1,
 		},
 	}
 

@@ -20,8 +20,8 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 type config struct {
@@ -138,23 +138,23 @@ func createMarker(markType string, logger log.Logger, details string) (func(b ul
 	switch markType {
 	case "no-compact":
 		return func(b ulid.ULID) ([]byte, error) {
-			return json.Marshal(metadata.NoCompactMark{
+			return json.Marshal(block.NoCompactMark{
 				ID:            b,
-				Version:       metadata.NoCompactMarkVersion1,
+				Version:       block.NoCompactMarkVersion1,
 				NoCompactTime: time.Now().Unix(),
-				Reason:        metadata.ManualNoCompactReason,
+				Reason:        block.ManualNoCompactReason,
 				Details:       details,
 			})
-		}, metadata.NoCompactMarkFilename
+		}, block.NoCompactMarkFilename
 	case "deletion":
 		return func(b ulid.ULID) ([]byte, error) {
-			return json.Marshal(metadata.DeletionMark{
+			return json.Marshal(block.DeletionMark{
 				ID:           b,
-				Version:      metadata.DeletionMarkVersion1,
+				Version:      block.DeletionMarkVersion1,
 				Details:      details,
 				DeletionTime: time.Now().Unix(),
 			})
-		}, metadata.DeletionMarkFilename
+		}, block.DeletionMarkFilename
 	default:
 		level.Error(logger).Log("msg", "Invalid -mark flag value. Should be no-compact or deletion.", "value", markType)
 		os.Exit(1)
@@ -208,7 +208,7 @@ func uploadMarks(
 			return nil
 		}
 
-		if !blockFiles[metadata.MetaFilename] && !allowPartialBlocks {
+		if !blockFiles[block.MetaFilename] && !allowPartialBlocks {
 			level.Warn(logger).Log("msg", "Block's meta.json file does not exist, skipping.", "block", b)
 			return nil
 		}

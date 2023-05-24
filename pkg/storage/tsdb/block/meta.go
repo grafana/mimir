@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
 
-package metadata
+package block
 
 // metadata package implements writing and reading wrapped meta.json where Thanos puts its metadata.
 // Those metadata contains external labels, downsampling resolution and source type.

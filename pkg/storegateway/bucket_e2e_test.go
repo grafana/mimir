@@ -32,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
@@ -93,7 +92,7 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 		dir1, dir2 := filepath.Join(dir, id1.String()), filepath.Join(dir, id2.String())
 
 		// Replace labels to the meta of the second block.
-		meta, err := metadata.ReadFromDir(dir2)
+		meta, err := block.ReadFromDir(dir2)
 		assert.NoError(t, err)
 		meta.Thanos.Labels = map[string]string{"ext2": "value2"}
 		assert.NoError(t, meta.WriteToDir(logger, dir2))

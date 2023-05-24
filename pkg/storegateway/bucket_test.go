@@ -56,7 +56,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -81,9 +80,9 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 	defer func() { assert.NoError(t, bkt.Close()) }()
 
 	blockID := ulid.MustNew(1, nil)
-	meta := &metadata.Meta{
+	meta := &block.Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: blockID},
-		Thanos: metadata.Thanos{
+		Thanos: block.Thanos{
 			Labels: map[string]string{}, // this is empty in Mimir
 		},
 	}
@@ -175,7 +174,7 @@ func TestBucketBlockSet_remove(t *testing.T) {
 	}
 
 	for _, in := range input {
-		var m metadata.Meta
+		var m block.Meta
 		m.ULID = in.id
 		m.MinTime = in.mint
 		m.MaxTime = in.maxt
@@ -194,7 +193,7 @@ func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 
 	b := &bucketBlock{
-		meta: &metadata.Meta{
+		meta: &block.Meta{
 			BlockMeta: tsdb.BlockMeta{
 				ULID: ulid.MustNew(1, nil),
 			},
@@ -1029,7 +1028,7 @@ func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender stor
 			indexCache:        noopCache{},
 			chunkObjs:         chunkObjects,
 			bkt:               bkt,
-			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
+			meta:              &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
 	}
@@ -1054,9 +1053,9 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	assert.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "tmp"), os.ModePerm))
 	id := createBlockFromHead(t, filepath.Join(tmpDir, "tmp"), h)
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, "tmp", id.String()), metadata.Thanos{
+	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, "tmp", id.String()), block.Thanos{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}, nil)
 	assert.NoError(t, err)
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
@@ -1327,9 +1326,9 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	)
 
 	extLset := labels.FromStrings("ext1", "1")
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.Thanos{
 		Labels: extLset.Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
 	blockDir := filepath.Join(tmpDir, "tmp")
@@ -1361,7 +1360,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		series = append(series, bSeries...)
 		expectedQueriesBlocks = append(expectedQueriesBlocks, hintspb.Block{Id: id.String()})
 
-		meta, err := metadata.InjectThanos(logger, filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanos(logger, filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 
 		assert.NoError(t, meta.WriteToDir(logger, filepath.Join(blockDir, id.String())))
@@ -1648,9 +1647,9 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	defer func() { assert.NoError(t, bkt.Close()) }()
 
 	logger := log.NewNopLogger()
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.Thanos{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{
@@ -1691,7 +1690,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		blockDir := filepath.Join(tmpDir, "tmp")
 		id := createBlockFromHead(t, blockDir, h)
 
-		meta, err := metadata.InjectThanos(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanos(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
 
@@ -1729,7 +1728,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		blockDir := filepath.Join(tmpDir, "tmp2")
 		id := createBlockFromHead(t, blockDir, h)
 
-		meta, err := metadata.InjectThanos(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanos(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
 
@@ -2110,12 +2109,12 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	blk := createBlockFromHead(t, headOpts.ChunkDirRoot, h)
 
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.Thanos{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(headOpts.ChunkDirRoot, blk.String()), thanosMeta, nil)
+	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(headOpts.ChunkDirRoot, blk.String()), thanosMeta, nil)
 	assert.NoError(t, err)
 
 	// Create a bucket and upload the block there.
@@ -2364,9 +2363,9 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 
 	prependLabels := labels.FromStrings("ext1", "1")
 	// Inject the Thanos meta to each block in the storage.
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.Thanos{
 		Labels: prependLabels.Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
 	// Create TSDB blocks.
@@ -2390,7 +2389,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	assert.NoError(t, head2.Close())
 
 	for _, blockID := range []ulid.ULID{block1, block2} {
-		_, err := metadata.InjectThanos(logger, filepath.Join(bktDir, blockID.String()), thanosMeta, nil)
+		_, err := block.InjectThanos(logger, filepath.Join(bktDir, blockID.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 	}
 

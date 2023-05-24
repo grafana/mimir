@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 func MockStorageBlock(t testing.TB, bucket objstore.Bucket, userID string, minT, maxT int64) tsdb.BlockMeta {
@@ -27,12 +27,12 @@ func MockStorageBlock(t testing.TB, bucket objstore.Bucket, userID string, minT,
 	return m.BlockMeta
 }
 
-func MockStorageBlockWithExtLabels(t testing.TB, bucket objstore.Bucket, userID string, minT, maxT int64, externalLabels map[string]string) metadata.Meta {
+func MockStorageBlockWithExtLabels(t testing.TB, bucket objstore.Bucket, userID string, minT, maxT int64, externalLabels map[string]string) block.Meta {
 	// Generate a block ID whose timestamp matches the maxT (for simplicity we assume it
 	// has been compacted and shipped in zero time, even if not realistic).
 	id := ulid.MustNew(uint64(maxT), rand.Reader)
 
-	meta := metadata.Meta{
+	meta := block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			Version: 1,
 			ULID:    id,
@@ -43,7 +43,7 @@ func MockStorageBlockWithExtLabels(t testing.TB, bucket objstore.Bucket, userID 
 				Sources: []ulid.ULID{id},
 			},
 		},
-		Thanos: metadata.Thanos{
+		Thanos: block.Thanos{
 			Labels: externalLabels,
 		},
 	}
@@ -62,37 +62,37 @@ func MockStorageBlockWithExtLabels(t testing.TB, bucket objstore.Bucket, userID 
 	return meta
 }
 
-func MockStorageDeletionMark(t testing.TB, bucket objstore.Bucket, userID string, meta tsdb.BlockMeta) *metadata.DeletionMark {
-	mark := metadata.DeletionMark{
+func MockStorageDeletionMark(t testing.TB, bucket objstore.Bucket, userID string, meta tsdb.BlockMeta) *block.DeletionMark {
+	mark := block.DeletionMark{
 		ID:           meta.ULID,
 		DeletionTime: time.Now().Add(-time.Minute).Unix(),
-		Version:      metadata.DeletionMarkVersion1,
+		Version:      block.DeletionMarkVersion1,
 	}
 
 	markContent, err := json.Marshal(mark)
 	require.NoError(t, err, "failed to marshal mocked deletion mark")
 
 	markContentReader := strings.NewReader(string(markContent))
-	markPath := fmt.Sprintf("%s/%s/%s", userID, meta.ULID.String(), metadata.DeletionMarkFilename)
+	markPath := fmt.Sprintf("%s/%s/%s", userID, meta.ULID.String(), block.DeletionMarkFilename)
 	require.NoError(t, bucket.Upload(context.Background(), markPath, markContentReader))
 
 	return &mark
 }
 
-func MockNoCompactMark(t testing.TB, bucket objstore.Bucket, userID string, meta tsdb.BlockMeta) *metadata.NoCompactMark {
-	mark := metadata.NoCompactMark{
+func MockNoCompactMark(t testing.TB, bucket objstore.Bucket, userID string, meta tsdb.BlockMeta) *block.NoCompactMark {
+	mark := block.NoCompactMark{
 		ID:            meta.ULID,
 		NoCompactTime: time.Now().Unix(),
-		Version:       metadata.DeletionMarkVersion1,
+		Version:       block.DeletionMarkVersion1,
 		Details:       "details",
-		Reason:        metadata.ManualNoCompactReason,
+		Reason:        block.ManualNoCompactReason,
 	}
 
 	markContent, err := json.Marshal(mark)
 	require.NoError(t, err, "failed to marshal mocked no-compact mark")
 
 	markContentReader := strings.NewReader(string(markContent))
-	markPath := fmt.Sprintf("%s/%s/%s", userID, meta.ULID.String(), metadata.NoCompactMarkFilename)
+	markPath := fmt.Sprintf("%s/%s/%s", userID, meta.ULID.String(), block.NoCompactMarkFilename)
 	require.NoError(t, bucket.Upload(context.Background(), markPath, markContentReader))
 
 	return &mark

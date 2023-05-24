@@ -27,7 +27,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -479,8 +478,8 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		blockID := blocks[jobIdx]
 
 		// We can safely delete only partial blocks with a deletion mark.
-		err := metadata.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &metadata.DeletionMark{})
-		if errors.Is(err, metadata.ErrorMarkerNotFound) {
+		err := block.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &block.DeletionMark{})
+		if errors.Is(err, block.ErrorMarkerNotFound) {
 			mu.Lock()
 			partialBlocksWithoutDeletionMarker = append(partialBlocksWithoutDeletionMarker, blockID)
 			mu.Unlock()

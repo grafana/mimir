@@ -16,7 +16,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // globalMarkersBucket is a bucket client which stores markers (eg. block deletion marks) in a per-tenant
@@ -172,7 +171,7 @@ func getGlobalMarkPathFromBlockMark(name string) string {
 }
 
 func isBlockDeletionMark(name string) (ulid.ULID, bool) {
-	if path.Base(name) != metadata.DeletionMarkFilename {
+	if path.Base(name) != block.DeletionMarkFilename {
 		return ulid.ULID{}, false
 	}
 
@@ -182,7 +181,7 @@ func isBlockDeletionMark(name string) (ulid.ULID, bool) {
 }
 
 func isNoCompactMark(name string) (ulid.ULID, bool) {
-	if path.Base(name) != metadata.NoCompactMarkFilename {
+	if path.Base(name) != block.NoCompactMarkFilename {
 		return ulid.ULID{}, false
 	}
 

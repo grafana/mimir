@@ -43,7 +43,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 func TestSyncer_GarbageCollect_e2e(t *testing.T) {
@@ -56,11 +55,11 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 
 		// Generate 10 source block metas and construct higher level blocks
 		// that are higher compactions of them.
-		var metas []*metadata.Meta
+		var metas []*block.Meta
 		var ids []ulid.ULID
 
 		for i := 0; i < 10; i++ {
-			var m metadata.Meta
+			var m block.Meta
 
 			m.Version = 1
 			m.ULID = ulid.MustNew(uint64(i), nil)
@@ -73,21 +72,21 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 			metas = append(metas, &m)
 		}
 
-		var m1 metadata.Meta
+		var m1 block.Meta
 		m1.Version = 1
 		m1.ULID = ulid.MustNew(100, nil)
 		m1.Compaction.Level = 2
 		m1.Compaction.Sources = ids[:4]
 		m1.Thanos.Downsample.Resolution = 0
 
-		var m2 metadata.Meta
+		var m2 block.Meta
 		m2.Version = 1
 		m2.ULID = ulid.MustNew(200, nil)
 		m2.Compaction.Level = 2
 		m2.Compaction.Sources = ids[4:8] // last two source IDs is not part of a level 2 block.
 		m2.Thanos.Downsample.Resolution = 0
 
-		var m3 metadata.Meta
+		var m3 block.Meta
 		m3.Version = 1
 		m3.ULID = ulid.MustNew(300, nil)
 		m3.Compaction.Level = 3
@@ -96,7 +95,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		m3.MinTime = 0
 		m3.MaxTime = 2 * time.Hour.Milliseconds()
 
-		var m4 metadata.Meta
+		var m4 block.Meta
 		m4.Version = 1
 		m4.ULID = ulid.MustNew(400, nil)
 		m4.Compaction.Level = 2
@@ -105,7 +104,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		m4.MinTime = 0
 		m4.MaxTime = 2 * time.Hour.Milliseconds()
 
-		var m5 metadata.Meta
+		var m5 block.Meta
 		m5.Version = 1
 		m5.ULID = ulid.MustNew(500, nil)
 		m5.Compaction.Level = 2
@@ -119,7 +118,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 			fmt.Println("create", m.ULID)
 			var buf bytes.Buffer
 			require.NoError(t, json.NewEncoder(&buf).Encode(&m))
-			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), metadata.MetaFilename), &buf))
+			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), block.MetaFilename), &buf))
 		}
 
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
@@ -142,7 +141,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 			if !ok {
 				return nil
 			}
-			deletionMarkFile := path.Join(id.String(), metadata.DeletionMarkFilename)
+			deletionMarkFile := path.Join(id.String(), block.DeletionMarkFilename)
 
 			exists, err := bkt.Exists(ctx, deletionMarkFile)
 			if err != nil {
@@ -371,7 +370,7 @@ func TestGroupCompactE2E(t *testing.T) {
 			metas[8].ULID: false,
 			metas[9].ULID: false,
 		}
-		others := map[string]metadata.Meta{}
+		others := map[string]block.Meta{}
 		require.NoError(t, bkt.Iter(ctx, "", func(n string) error {
 			id, ok := block.IsBlockDir(n)
 			if !ok {
@@ -441,7 +440,7 @@ type blockgenSpec struct {
 	res        int64
 }
 
-func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, blocksWithOutOfOrderChunks []blockgenSpec) (metas []*metadata.Meta) {
+func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, blocksWithOutOfOrderChunks []blockgenSpec) (metas []*block.Meta) {
 	prepareDir := t.TempDir()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -465,7 +464,7 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, b
 	return metas
 }
 
-func createBlock(ctx context.Context, t testing.TB, prepareDir string, b blockgenSpec) (id ulid.ULID, meta *metadata.Meta) {
+func createBlock(ctx context.Context, t testing.TB, prepareDir string, b blockgenSpec) (id ulid.ULID, meta *block.Meta) {
 	var err error
 	if b.numSamples == 0 {
 		id, err = createEmptyBlock(prepareDir, b.mint, b.maxt, b.extLset, b.res)
@@ -474,7 +473,7 @@ func createBlock(ctx context.Context, t testing.TB, prepareDir string, b blockge
 	}
 	require.NoError(t, err)
 
-	meta, err = metadata.ReadFromDir(filepath.Join(prepareDir, id.String()))
+	meta, err = block.ReadFromDir(filepath.Join(prepareDir, id.String()))
 	require.NoError(t, err)
 	return
 }
@@ -491,11 +490,11 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		defer cancel()
 
 		// Generate two blocks, and then another block that covers both of them.
-		var metas []*metadata.Meta
+		var metas []*block.Meta
 		var ids []ulid.ULID
 
 		for i := 0; i < 2; i++ {
-			var m metadata.Meta
+			var m block.Meta
 
 			m.Version = 1
 			m.ULID = ulid.MustNew(uint64(i), nil)
@@ -506,7 +505,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 			metas = append(metas, &m)
 		}
 
-		var m1 metadata.Meta
+		var m1 block.Meta
 		m1.Version = 1
 		m1.ULID = ulid.MustNew(100, nil)
 		m1.Compaction.Level = 2
@@ -518,7 +517,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 			fmt.Println("create", m.ULID)
 			var buf bytes.Buffer
 			require.NoError(t, json.NewEncoder(&buf).Encode(&m))
-			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), metadata.MetaFilename), &buf))
+			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), block.MetaFilename), &buf))
 		}
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
@@ -569,7 +568,7 @@ func listBlocksMarkedForDeletion(ctx context.Context, bkt objstore.Bucket) ([]ul
 		if !ok {
 			return nil
 		}
-		deletionMarkFile := path.Join(id.String(), metadata.DeletionMarkFilename)
+		deletionMarkFile := path.Join(id.String(), block.DeletionMarkFilename)
 
 		exists, err := bkt.Exists(ctx, deletionMarkFile)
 		if err != nil {
@@ -647,10 +646,10 @@ func createEmptyBlock(dir string, mint, maxt int64, extLset labels.Labels, resol
 		return ulid.ULID{}, errors.Wrap(err, "saving meta.json")
 	}
 
-	if _, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(dir, uid.String()), metadata.Thanos{
+	if _, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(dir, uid.String()), block.Thanos{
 		Labels:     extLset.Map(),
-		Downsample: metadata.ThanosDownsample{Resolution: resolution},
-		Source:     metadata.TestSource,
+		Downsample: block.ThanosDownsample{Resolution: resolution},
+		Source:     block.TestSource,
 	}, nil); err != nil {
 		return ulid.ULID{}, errors.Wrap(err, "finalize block")
 	}
@@ -737,11 +736,11 @@ func createBlockWithOptions(
 
 	blockDir := filepath.Join(dir, id.String())
 
-	if _, err = metadata.InjectThanos(log.NewNopLogger(), blockDir, metadata.Thanos{
+	if _, err = block.InjectThanos(log.NewNopLogger(), blockDir, block.Thanos{
 		Labels:     extLset.Map(),
-		Downsample: metadata.ThanosDownsample{Resolution: resolution},
-		Source:     metadata.TestSource,
-		Files:      []metadata.File{},
+		Downsample: block.ThanosDownsample{Resolution: resolution},
+		Source:     block.TestSource,
+		Files:      []block.File{},
 	}, nil); err != nil {
 		return id, errors.Wrap(err, "finalize block")
 	}

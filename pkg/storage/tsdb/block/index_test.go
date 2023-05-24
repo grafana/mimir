@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	e2eutil "github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
@@ -47,9 +46,9 @@ func TestRewrite(t *testing.T) {
 
 	defer func() { require.NoError(t, cr.Close()) }()
 
-	m := &metadata.Meta{
+	m := &Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: ULID(1)},
-		Thanos:    metadata.Thanos{},
+		Thanos:    Thanos{},
 	}
 
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, m.ULID.String()), os.ModePerm))

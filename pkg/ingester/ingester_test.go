@@ -60,7 +60,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
@@ -6648,8 +6647,8 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 			userTSDB := i.getTSDB(tenant)
 			require.Equal(t, 2, len(userTSDB.shippedBlocks), "there should be two uploaded blocks")
 
-			var oooMeta []metadata.Meta
-			var inOrderMeta []metadata.Meta
+			var oooMeta []block.Meta
+			var inOrderMeta []block.Meta
 			for ulid := range userTSDB.shippedBlocks {
 				meta, err := block.DownloadMeta(ctx, log.NewNopLogger(), bucket, ulid)
 				require.NoError(t, err)

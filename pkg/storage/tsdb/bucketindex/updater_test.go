@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
@@ -45,8 +44,8 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 	returnedIdx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
-		[]metadata.Meta{block1, block2},
-		[]*metadata.DeletionMark{block2Mark})
+		[]block.Meta{block1, block2},
+		[]*block.DeletionMark{block2Mark})
 
 	// Create new blocks, and update the index.
 	block3 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, map[string]string{"aaa": "bbb"})
@@ -56,8 +55,8 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 	returnedIdx, _, err = w.UpdateIndex(ctx, returnedIdx)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
-		[]metadata.Meta{block1, block2, block3, block4},
-		[]*metadata.DeletionMark{block2Mark, block4Mark})
+		[]block.Meta{block1, block2, block3, block4},
+		[]*block.DeletionMark{block2Mark, block4Mark})
 
 	// Hard delete a block and update the index.
 	require.NoError(t, block.Delete(ctx, log.NewNopLogger(), bucket.NewUserBucketClient(userID, bkt, nil), block2.ULID))
@@ -65,8 +64,8 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 	returnedIdx, _, err = w.UpdateIndex(ctx, returnedIdx)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
-		[]metadata.Meta{block1, block3, block4},
-		[]*metadata.DeletionMark{block4Mark})
+		[]block.Meta{block1, block3, block4},
+		[]*block.DeletionMark{block4Mark})
 }
 
 func TestUpdater_UpdateIndex_ShouldSkipPartialBlocks(t *testing.T) {
@@ -88,14 +87,14 @@ func TestUpdater_UpdateIndex_ShouldSkipPartialBlocks(t *testing.T) {
 	testutil.MockNoCompactMark(t, bkt, userID, block3.BlockMeta)
 
 	// Delete a block's meta.json to simulate a partial block.
-	require.NoError(t, bkt.Delete(ctx, path.Join(userID, block3.ULID.String(), metadata.MetaFilename)))
+	require.NoError(t, bkt.Delete(ctx, path.Join(userID, block3.ULID.String(), block.MetaFilename)))
 
 	w := NewUpdater(bkt, userID, nil, logger)
 	idx, partials, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, idx, bkt, userID,
-		[]metadata.Meta{block1, block2},
-		[]*metadata.DeletionMark{block2Mark})
+		[]block.Meta{block1, block2},
+		[]*block.DeletionMark{block2Mark})
 
 	assert.Len(t, partials, 1)
 	assert.True(t, errors.Is(partials[block3.ULID], ErrBlockMetaNotFound))
@@ -117,14 +116,14 @@ func TestUpdater_UpdateIndex_ShouldSkipBlocksWithCorruptedMeta(t *testing.T) {
 	block2Mark := testutil.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
 
 	// Overwrite a block's meta.json with invalid data.
-	require.NoError(t, bkt.Upload(ctx, path.Join(userID, block3.ULID.String(), metadata.MetaFilename), bytes.NewReader([]byte("invalid!}"))))
+	require.NoError(t, bkt.Upload(ctx, path.Join(userID, block3.ULID.String(), block.MetaFilename), bytes.NewReader([]byte("invalid!}"))))
 
 	w := NewUpdater(bkt, userID, nil, logger)
 	idx, partials, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, idx, bkt, userID,
-		[]metadata.Meta{block1, block2},
-		[]*metadata.DeletionMark{block2Mark})
+		[]block.Meta{block1, block2},
+		[]*block.DeletionMark{block2Mark})
 
 	assert.Len(t, partials, 1)
 	assert.True(t, errors.Is(partials[block3.ULID], ErrBlockMetaCorrupted))
@@ -146,14 +145,14 @@ func TestUpdater_UpdateIndex_ShouldSkipCorruptedDeletionMarks(t *testing.T) {
 	block2Mark := testutil.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
 
 	// Overwrite a block's deletion-mark.json with invalid data.
-	require.NoError(t, bkt.Upload(ctx, path.Join(userID, block2Mark.ID.String(), metadata.DeletionMarkFilename), bytes.NewReader([]byte("invalid!}"))))
+	require.NoError(t, bkt.Upload(ctx, path.Join(userID, block2Mark.ID.String(), block.DeletionMarkFilename), bytes.NewReader([]byte("invalid!}"))))
 
 	w := NewUpdater(bkt, userID, nil, logger)
 	idx, partials, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, idx, bkt, userID,
-		[]metadata.Meta{block1, block2, block3},
-		[]*metadata.DeletionMark{})
+		[]block.Meta{block1, block2, block3},
+		[]*block.DeletionMark{})
 	assert.Empty(t, partials)
 }
 
@@ -204,8 +203,8 @@ func TestUpdater_UpdateIndexFromVersion1ToVersion2(t *testing.T) {
 	returnedIdx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
-		[]metadata.Meta{block1, block2},
-		[]*metadata.DeletionMark{})
+		[]block.Meta{block1, block2},
+		[]*block.DeletionMark{})
 
 	// Now remove Compactor Shard ID from index.
 	for _, b := range returnedIdx.Blocks {
@@ -216,8 +215,8 @@ func TestUpdater_UpdateIndexFromVersion1ToVersion2(t *testing.T) {
 	returnedIdx, _, err = w.UpdateIndex(ctx, returnedIdx)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
-		[]metadata.Meta{block1WithoutCompactorShardID, block2WithoutCompactorShardID}, // No compactor shards in bucket index.
-		[]*metadata.DeletionMark{})
+		[]block.Meta{block1WithoutCompactorShardID, block2WithoutCompactorShardID}, // No compactor shards in bucket index.
+		[]*block.DeletionMark{})
 
 	// Now set index version to old version 1. Rerunning updater should rebuild index from scratch.
 	returnedIdx.Version = IndexVersion1
@@ -225,8 +224,8 @@ func TestUpdater_UpdateIndexFromVersion1ToVersion2(t *testing.T) {
 	returnedIdx, _, err = w.UpdateIndex(ctx, returnedIdx)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
-		[]metadata.Meta{block1, block2}, // Compactor shards are back.
-		[]*metadata.DeletionMark{})
+		[]block.Meta{block1, block2}, // Compactor shards are back.
+		[]*block.DeletionMark{})
 }
 
 func getBlockUploadedAt(t testing.TB, bkt objstore.Bucket, userID string, blockID ulid.ULID) int64 {
@@ -238,7 +237,7 @@ func getBlockUploadedAt(t testing.TB, bkt objstore.Bucket, userID string, blockI
 	return attrs.LastModified.Unix()
 }
 
-func assertBucketIndexEqual(t testing.TB, idx *Index, bkt objstore.Bucket, userID string, expectedBlocks []metadata.Meta, expectedDeletionMarks []*metadata.DeletionMark) {
+func assertBucketIndexEqual(t testing.TB, idx *Index, bkt objstore.Bucket, userID string, expectedBlocks []block.Meta, expectedDeletionMarks []*block.DeletionMark) {
 	assert.Equal(t, IndexVersion2, idx.Version)
 	assert.InDelta(t, time.Now().Unix(), idx.UpdatedAt, 2)
 

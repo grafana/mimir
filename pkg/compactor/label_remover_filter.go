@@ -11,7 +11,6 @@ import (
 	"github.com/oklog/ulid"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 type LabelRemoverFilter struct {
@@ -24,7 +23,7 @@ func NewLabelRemoverFilter(labels []string) *LabelRemoverFilter {
 }
 
 // Filter modifies external labels of existing blocks, removing given labels from the metadata of blocks that have it.
-func (f *LabelRemoverFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, _ block.GaugeVec) error {
+func (f *LabelRemoverFilter) Filter(_ context.Context, metas map[ulid.ULID]*block.Meta, _ block.GaugeVec) error {
 	for _, meta := range metas {
 		for _, l := range f.labels {
 			delete(meta.Thanos.Labels, l)

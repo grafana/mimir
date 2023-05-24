@@ -32,7 +32,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 const (
@@ -359,24 +358,24 @@ func uploadCopiedMarkerFile(ctx context.Context, bkt *storage.BucketHandle, tena
 	return errors.Wrap(w.Close(), "uploadCopiedMarkerFile")
 }
 
-func loadMetaJSONFile(ctx context.Context, bkt *storage.BucketHandle, tenantID string, blockID ulid.ULID) (metadata.Meta, error) {
+func loadMetaJSONFile(ctx context.Context, bkt *storage.BucketHandle, tenantID string, blockID ulid.ULID) (block.Meta, error) {
 	obj := bkt.Object(tenantID + delim + blockID.String() + delim + block.MetaFilename)
 	r, err := obj.NewReader(ctx)
 	if err != nil {
-		return metadata.Meta{}, errors.Wrapf(err, "failed to read %v", obj.ObjectName())
+		return block.Meta{}, errors.Wrapf(err, "failed to read %v", obj.ObjectName())
 	}
 
-	var m metadata.Meta
+	var m block.Meta
 
 	dec := json.NewDecoder(r)
 	err = dec.Decode(&m)
 	closeErr := r.Close() // do this before any return.
 
 	if err != nil {
-		return metadata.Meta{}, errors.Wrapf(err, "read %v", obj.ObjectName())
+		return block.Meta{}, errors.Wrapf(err, "read %v", obj.ObjectName())
 	}
 	if closeErr != nil {
-		return metadata.Meta{}, errors.Wrapf(err, "close reader for %v", obj.ObjectName())
+		return block.Meta{}, errors.Wrapf(err, "close reader for %v", obj.ObjectName())
 	}
 
 	return m, nil
