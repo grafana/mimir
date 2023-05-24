@@ -244,11 +244,11 @@ func (c cachedLabelNamesSymbolsReader) Read(u uint32) (string, error) {
 	return c.r.Read(u)
 }
 
-func (r *StreamBinaryReader) SymbolsReader() SymbolsReader {
+func (r *StreamBinaryReader) SymbolsReader() (SymbolsReader, error) {
 	return cachedLabelNamesSymbolsReader{
 		labelNames: r.nameSymbols,
 		r:          r.symbols.Reader(),
-	}
+	}, nil
 }
 
 func (r *StreamBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {

@@ -177,12 +177,12 @@ func (r *LazyBinaryReader) LookupSymbol(o uint32) (string, error) {
 }
 
 // SymbolsReader implements Reader.
-func (r *LazyBinaryReader) SymbolsReader() SymbolsReader {
+func (r *LazyBinaryReader) SymbolsReader() (SymbolsReader, error) {
 	r.readerMx.RLock()
 	defer r.readerMx.RUnlock()
 
 	if err := r.load(); err != nil {
-		return nil // TODO dimitarvdimitrov
+		return nil, err
 	}
 
 	r.usedAt.Store(time.Now().UnixNano())
