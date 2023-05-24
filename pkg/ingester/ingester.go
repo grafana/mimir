@@ -1796,7 +1796,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	// Create a new shipper for this database
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
-		userDB.shipper = NewShipper(
+		userDB.shipper = newShipper(
 			userLogger,
 			i.limits,
 			userID,
@@ -2123,7 +2123,7 @@ func (i *Ingester) compactionLoop(ctx context.Context) error {
 		case <-ticker.C:
 			i.compactBlocks(ctx, false, nil)
 
-			// Run it at a regular (configured) interval after the fist compaction.
+			// Run it at a regular (configured) interval after the first compaction.
 			if !tickerRunOnce {
 				ticker.Reset(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval)
 				tickerRunOnce = true
