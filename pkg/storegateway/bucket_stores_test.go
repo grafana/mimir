@@ -475,7 +475,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	// Generate a single block with 1 series and a lot of samples.
 	seriesWithOutOfOrderChunks := labels.FromStrings("case", "out_of_order", labels.MetricName, metricName)
 	seriesWithOverlappingChunks := labels.FromStrings("case", "overlapping", labels.MetricName, metricName)
-	specs := []*block.BlockSeriesSpec{
+	specs := []*block.SeriesSpec{
 		// Series with out of order chunks.
 		{
 			Labels: seriesWithOutOfOrderChunks,

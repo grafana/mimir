@@ -173,7 +173,7 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 
 	// Find all markers in the storage.
 	err := w.bkt.Iter(ctx, block.MarkersPathname+"/", func(name string) error {
-		if blockID, ok := block.IsBlockDeletionMarkFilename(path.Base(name)); ok {
+		if blockID, ok := block.IsDeletionMarkFilename(path.Base(name)); ok {
 			discovered[blockID] = struct{}{}
 		}
 		return nil

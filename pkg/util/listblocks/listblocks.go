@@ -31,7 +31,7 @@ func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketRea
 
 	// Find blocks marked for deletion
 	err := bkt.Iter(ctx, path.Join(user, block.MarkersPathname), func(s string) error {
-		if id, ok := block.IsBlockDeletionMarkFilename(path.Base(s)); ok {
+		if id, ok := block.IsDeletionMarkFilename(path.Base(s)); ok {
 			deletedBlocks[id] = true
 			deletionMarkerFiles = append(deletionMarkerFiles, s)
 		}

@@ -1357,7 +1357,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 	require.NoError(t, err)
 
 	// Mock two tenants, each with 2 overlapping blocks.
-	spec := []*block.BlockSeriesSpec{{
+	spec := []*block.SeriesSpec{{
 		Labels: labels.FromStrings(labels.MetricName, "series_1"),
 		Chunks: []chunks.Meta{tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 			newSample(1574776800000, 0, nil, nil),
@@ -2084,7 +2084,7 @@ func stopServiceFn(t *testing.T, serv services.Service) func() {
 
 func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 	// Generate a single block with out of order chunks.
-	specs := []*block.BlockSeriesSpec{
+	specs := []*block.SeriesSpec{
 		{
 			Labels: labels.FromStrings("case", "out_of_order"),
 			Chunks: []chunks.Meta{

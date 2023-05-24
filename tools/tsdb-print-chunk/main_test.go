@@ -22,7 +22,7 @@ func TestTSDBPrintChunk(t *testing.T) {
 	userID := "user"
 	tmpDir := t.TempDir()
 
-	spec := block.BlockSeriesSpec{
+	spec := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
 			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
@@ -38,7 +38,7 @@ func TestTSDBPrintChunk(t *testing.T) {
 		},
 	}
 
-	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.BlockSeriesSpec{&spec})
+	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.SeriesSpec{&spec})
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())

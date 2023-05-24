@@ -426,7 +426,7 @@ func listBlockMarkersForTenant(ctx context.Context, bkt *storage.BucketHandle, t
 	result := map[ulid.ULID]blockMarkers{}
 
 	for _, m := range markers {
-		if id, ok := block.IsBlockDeletionMarkFilename(m); ok {
+		if id, ok := block.IsDeletionMarkFilename(m); ok {
 			bm := result[id]
 			bm.deletion = true
 			result[id] = bm

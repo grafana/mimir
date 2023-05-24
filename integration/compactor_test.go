@@ -68,7 +68,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 	expectedSeries := make([]series, numBlocks)
 
 	for i := 0; i < numBlocks; i++ {
-		spec := block.BlockSeriesSpec{
+		spec := block.SeriesSpec{
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
@@ -97,7 +97,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		}
 		expectedSeries[i] = series{lbls: spec.Labels, samples: samples}
 
-		meta, err := block.GenerateBlockFromSpec(userID, inDir, []*block.BlockSeriesSpec{&spec})
+		meta, err := block.GenerateBlockFromSpec(userID, inDir, []*block.SeriesSpec{&spec})
 		require.NoError(t, err)
 
 		require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bktClient, filepath.Join(inDir, meta.ULID.String()), meta))

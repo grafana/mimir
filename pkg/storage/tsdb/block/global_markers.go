@@ -37,15 +37,15 @@ func isMarkFilename(name string, markFilename string) (ulid.ULID, bool) {
 	return id, err == nil
 }
 
-// BlockDeletionMarkFilepath returns the path, relative to the tenant's bucket location,
+// DeletionMarkFilepath returns the path, relative to the tenant's bucket location,
 // of a block deletion mark in the bucket markers location.
-func BlockDeletionMarkFilepath(blockID ulid.ULID) string {
+func DeletionMarkFilepath(blockID ulid.ULID) string {
 	return markFilepath(blockID, DeletionMarkFilename)
 }
 
-// IsBlockDeletionMarkFilename returns whether the input filename matches the expected pattern
+// IsDeletionMarkFilename returns whether the input filename matches the expected pattern
 // of block deletion markers stored in the markers location.
-func IsBlockDeletionMarkFilename(name string) (ulid.ULID, bool) {
+func IsDeletionMarkFilename(name string) (ulid.ULID, bool) {
 	return isMarkFilename(name, DeletionMarkFilename)
 }
 

@@ -1004,7 +1004,7 @@ func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[u
 			return err
 		}
 
-		if blockID, ok := block.IsBlockDeletionMarkFilename(path.Base(name)); ok {
+		if blockID, ok := block.IsDeletionMarkFilename(path.Base(name)); ok {
 			_, exists := metas[blockID]
 			if exists {
 				deletionMarkMap[blockID] = struct{}{}

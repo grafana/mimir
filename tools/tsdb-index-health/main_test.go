@@ -23,7 +23,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	userID := "user"
 	tmpDir := t.TempDir()
 
-	spec1 := block.BlockSeriesSpec{
+	spec1 := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
 			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
@@ -33,7 +33,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 			}),
 		},
 	}
-	spec2 := block.BlockSeriesSpec{
+	spec2 := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "zxcv", "foo", "bar"),
 		Chunks: []chunks.Meta{
 			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
@@ -49,7 +49,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 		},
 	}
 
-	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.BlockSeriesSpec{&spec1, &spec2})
+	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.SeriesSpec{&spec1, &spec2})
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())

@@ -28,7 +28,7 @@ func TestGlobalMarkersBucket_Delete_ShouldSucceedIfDeletionMarkDoesNotExistInThe
 
 	// Create a mocked block deletion mark in the global location.
 	blockID := ulid.MustNew(1, nil)
-	for _, globalPath := range []string{BlockDeletionMarkFilepath(blockID), NoCompactMarkFilepath(blockID)} {
+	for _, globalPath := range []string{DeletionMarkFilepath(blockID), NoCompactMarkFilepath(blockID)} {
 		bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 		bkt = BucketWithGlobalMarkers(bkt)
 
@@ -59,7 +59,7 @@ func TestGlobalMarkersBucket_DeleteShouldDeleteGlobalMarkIfBlockMarkerDoesntExis
 	}{
 		"deletion mark": {
 			blockMarker:  path.Join(blockID.String(), DeletionMarkFilename),
-			globalMarker: BlockDeletionMarkFilepath(blockID),
+			globalMarker: DeletionMarkFilepath(blockID),
 		},
 		"no compact": {
 			blockMarker:  path.Join(blockID.String(), NoCompactMarkFilename),
@@ -95,7 +95,7 @@ func TestUploadToGlobalMarkerPath(t *testing.T) {
 	}{
 		"deletion mark": {
 			blockMarker:  path.Join(blockID.String(), DeletionMarkFilename),
-			globalMarker: BlockDeletionMarkFilepath(blockID),
+			globalMarker: DeletionMarkFilepath(blockID),
 		},
 		"no compact": {
 			blockMarker:  path.Join(blockID.String(), NoCompactMarkFilename),
@@ -123,7 +123,7 @@ func TestGlobalMarkersBucket_ExistShouldReportTrueOnlyIfBothExist(t *testing.T) 
 	}{
 		"deletion mark": {
 			blockMarker:  path.Join(blockID.String(), DeletionMarkFilename),
-			globalMarker: BlockDeletionMarkFilepath(blockID),
+			globalMarker: DeletionMarkFilepath(blockID),
 		},
 		"no compact": {
 			blockMarker:  path.Join(blockID.String(), NoCompactMarkFilename),
@@ -192,7 +192,7 @@ func TestGlobalMarkersBucket_getGlobalMarkPathFromBlockMark(t *testing.T) {
 	}
 }
 
-func TestGlobalMarkersBucket_isBlockDeletionMark(t *testing.T) {
+func TestGlobalMarkersBucket_isDeletionMark(t *testing.T) {
 	block1 := ulid.MustNew(1, nil)
 
 	tests := []struct {
@@ -222,7 +222,7 @@ func TestGlobalMarkersBucket_isBlockDeletionMark(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actualID, actualOk := isBlockDeletionMark(tc.name)
+			actualID, actualOk := isDeletionMark(tc.name)
 			assert.Equal(t, tc.expectedOk, actualOk)
 			assert.Equal(t, tc.expectedID, actualID)
 		})

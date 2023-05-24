@@ -126,13 +126,13 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		{path: path.Join("user-2", block8.String(), block.MetaFilename), expectedExists: true},
 		// Should not delete a block with deletion mark who hasn't reached the deletion threshold yet.
 		{path: path.Join("user-1", block2.String(), block.MetaFilename), expectedExists: true},
-		{path: path.Join("user-1", block.BlockDeletionMarkFilepath(block2)), expectedExists: true},
+		{path: path.Join("user-1", block.DeletionMarkFilepath(block2)), expectedExists: true},
 		// Should delete a partial block with deletion mark who hasn't reached the deletion threshold yet.
 		{path: path.Join("user-1", block4.String(), block.DeletionMarkFilename), expectedExists: false},
-		{path: path.Join("user-1", block.BlockDeletionMarkFilepath(block4)), expectedExists: false},
+		{path: path.Join("user-1", block.DeletionMarkFilepath(block4)), expectedExists: false},
 		// Should delete a partial block with deletion mark who has reached the deletion threshold.
 		{path: path.Join("user-1", block5.String(), block.DeletionMarkFilename), expectedExists: false},
-		{path: path.Join("user-1", block.BlockDeletionMarkFilepath(block5)), expectedExists: false},
+		{path: path.Join("user-1", block.DeletionMarkFilepath(block5)), expectedExists: false},
 		// Should not delete a partial block without deletion mark.
 		{path: path.Join("user-1", block6.String(), "index"), expectedExists: true},
 		// Should completely delete blocks for user-3, marked for deletion

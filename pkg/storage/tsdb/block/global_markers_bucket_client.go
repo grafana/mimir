@@ -157,8 +157,8 @@ func (b *globalMarkersBucket) ReaderWithExpectedErrs(fn objstore.IsOpFailureExpe
 // getGlobalMarkPathFromBlockMark returns path to global mark, if name points to a block-local mark file. If name
 // doesn't point to a block-local mark file, returns empty string.
 func getGlobalMarkPathFromBlockMark(name string) string {
-	if blockID, ok := isBlockDeletionMark(name); ok {
-		return path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
+	if blockID, ok := isDeletionMark(name); ok {
+		return path.Clean(path.Join(path.Dir(name), "../", DeletionMarkFilepath(blockID)))
 	}
 
 	if blockID, ok := isNoCompactMark(name); ok {
@@ -168,7 +168,7 @@ func getGlobalMarkPathFromBlockMark(name string) string {
 	return ""
 }
 
-func isBlockDeletionMark(name string) (ulid.ULID, bool) {
+func isDeletionMark(name string) (ulid.ULID, bool) {
 	if path.Base(name) != DeletionMarkFilename {
 		return ulid.ULID{}, false
 	}

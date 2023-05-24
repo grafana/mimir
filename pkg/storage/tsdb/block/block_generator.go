@@ -30,14 +30,14 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-type BlockSeriesSpec struct {
+type SeriesSpec struct {
 	Labels labels.Labels
 	Chunks []chunks.Meta
 }
 
-type BlockSeriesSpecs []*BlockSeriesSpec
+type SeriesSpecs []*SeriesSpec
 
-func (s BlockSeriesSpecs) MinTime() int64 {
+func (s SeriesSpecs) MinTime() int64 {
 	minTime := int64(math.MaxInt64)
 
 	for _, series := range s {
@@ -51,7 +51,7 @@ func (s BlockSeriesSpecs) MinTime() int64 {
 	return minTime
 }
 
-func (s BlockSeriesSpecs) MaxTime() int64 {
+func (s SeriesSpecs) MaxTime() int64 {
 	maxTime := int64(math.MinInt64)
 
 	for _, series := range s {
@@ -67,7 +67,7 @@ func (s BlockSeriesSpecs) MaxTime() int64 {
 
 // GenerateBlockFromSpec generates a TSDB block with series and chunks provided by the input specs.
 // This utility is intended just to be used for testing. Do not use it for any production code.
-func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) (_ *Meta, returnErr error) {
+func GenerateBlockFromSpec(_ string, storageDir string, specs SeriesSpecs) (_ *Meta, returnErr error) {
 	blockID := ulid.MustNew(ulid.Now(), crypto_rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
