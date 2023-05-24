@@ -402,11 +402,7 @@ func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, ma
 
 func uploadCopiedMarkerFile(ctx context.Context, bkt bucket, tenantID string, blockID ulid.ULID, targetBucketName string) error {
 	err := bkt.UploadMarkerFile(ctx, tenantID+delim+CopiedToBucketMarkFilename(blockID, targetBucketName))
-	if err != nil {
-		return errors.Wrap(err, "uploadCopiedMarkerFile")
-
-	}
-	return nil
+	return errors.Wrap(err, "uploadCopiedMarkerFile")
 }
 
 func loadMetaJSONFile(ctx context.Context, bkt bucket, tenantID string, blockID ulid.ULID) (block.Meta, error) {
