@@ -73,7 +73,7 @@ const (
 	MarkedForNoCompactionMeta = "marked-for-no-compact"
 )
 
-func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels, modifiedExtraLabels [][]string) *FetcherMetrics {
+func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) *FetcherMetrics {
 	var m FetcherMetrics
 
 	m.Syncs = promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -166,7 +166,7 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 		bkt:         bkt,
 		cacheDir:    cacheDir,
 		cached:      map[ulid.ULID]*metadata.Meta{},
-		metrics:     NewFetcherMetrics(reg, nil, nil),
+		metrics:     NewFetcherMetrics(reg, nil),
 		filters:     filters,
 	}, nil
 }
