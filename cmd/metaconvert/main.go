@@ -26,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -147,7 +146,7 @@ func convertTenantBlocks(ctx context.Context, userBucketClient objstore.Bucket, 
 	})
 }
 
-func uploadMetadata(ctx context.Context, bkt objstore.Bucket, meta metadata.Meta, path string) error {
+func uploadMetadata(ctx context.Context, bkt objstore.Bucket, meta block.Meta, path string) error {
 	var body bytes.Buffer
 	if err := meta.Write(&body); err != nil {
 		return errors.Wrap(err, "encode meta.json")

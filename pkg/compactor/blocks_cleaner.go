@@ -27,7 +27,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -344,7 +343,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	}
 
 	// Tenant deletion mark file is inside Markers as well.
-	if deleted, err := bucket.DeletePrefix(ctx, userBucket, bucketindex.MarkersPathname, userLogger); err != nil {
+	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.MarkersPathname, userLogger); err != nil {
 		return errors.Wrap(err, "failed to delete marker files")
 	} else if deleted > 0 {
 		level.Info(userLogger).Log("msg", "deleted marker files for tenant marked for deletion", "count", deleted)
@@ -479,8 +478,8 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		blockID := blocks[jobIdx]
 
 		// We can safely delete only partial blocks with a deletion mark.
-		err := metadata.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &metadata.DeletionMark{})
-		if errors.Is(err, metadata.ErrorMarkerNotFound) {
+		err := block.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &block.DeletionMark{})
+		if errors.Is(err, block.ErrorMarkerNotFound) {
 			mu.Lock()
 			partialBlocksWithoutDeletionMarker = append(partialBlocksWithoutDeletionMarker, blockID)
 			mu.Unlock()

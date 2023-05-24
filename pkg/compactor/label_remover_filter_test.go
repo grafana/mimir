@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 func TestLabelRemoverFilter(t *testing.T) {
@@ -58,9 +58,9 @@ func TestLabelRemoverFilter(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			metas := map[ulid.ULID]*metadata.Meta{}
+			metas := map[ulid.ULID]*block.Meta{}
 			for id, lbls := range testData.input {
-				metas[id] = &metadata.Meta{Thanos: metadata.Thanos{Labels: lbls}}
+				metas[id] = &block.Meta{Thanos: block.ThanosMeta{Labels: lbls}}
 			}
 
 			f := NewLabelRemoverFilter(testData.labels)

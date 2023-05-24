@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -22,7 +22,7 @@ func TestTSDBPrintChunk(t *testing.T) {
 	userID := "user"
 	tmpDir := t.TempDir()
 
-	spec := testutil.BlockSeriesSpec{
+	spec := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
 			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
@@ -38,7 +38,7 @@ func TestTSDBPrintChunk(t *testing.T) {
 		},
 	}
 
-	meta, err := testutil.GenerateBlockFromSpec(userID, tmpDir, []*testutil.BlockSeriesSpec{&spec})
+	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.SeriesSpec{&spec})
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())

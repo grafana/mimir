@@ -18,8 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // LoadMetaFilesAndDeletionMarkers reads the bucket and loads the meta files for the provided user.
@@ -27,13 +25,13 @@ import (
 // If ulidMinTime is non-zero, then only blocks with ULID time higher than that are read,
 // this is useful to filter the results for users with high amount of blocks without reading the metas
 // (but it can be inexact since ULID time can differ from block min/max times range).
-func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (metas map[ulid.ULID]*metadata.Meta, deletionTimes map[ulid.ULID]time.Time, _ error) {
+func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (metas map[ulid.ULID]*block.Meta, deletionTimes map[ulid.ULID]time.Time, _ error) {
 	deletedBlocks := map[ulid.ULID]bool{}
 	deletionMarkerFiles := []string(nil)
 
 	// Find blocks marked for deletion
-	err := bkt.Iter(ctx, path.Join(user, bucketindex.MarkersPathname), func(s string) error {
-		if id, ok := bucketindex.IsBlockDeletionMarkFilename(path.Base(s)); ok {
+	err := bkt.Iter(ctx, path.Join(user, block.MarkersPathname), func(s string) error {
+		if id, ok := block.IsDeletionMarkFilename(path.Base(s)); ok {
 			deletedBlocks[id] = true
 			deletionMarkerFiles = append(deletionMarkerFiles, s)
 		}
@@ -95,7 +93,7 @@ func fetchDeletionTimes(ctx context.Context, bkt objstore.BucketReader, deletion
 
 		dec := json.NewDecoder(r)
 
-		m := metadata.DeletionMark{}
+		m := block.DeletionMark{}
 		if err := dec.Decode(&m); err != nil {
 			return err
 		}
@@ -108,9 +106,9 @@ func fetchDeletionTimes(ctx context.Context, bkt objstore.BucketReader, deletion
 	})
 }
 
-func fetchMetas(ctx context.Context, bkt objstore.BucketReader, metaFiles []string) (map[ulid.ULID]*metadata.Meta, error) {
+func fetchMetas(ctx context.Context, bkt objstore.BucketReader, metaFiles []string) (map[ulid.ULID]*block.Meta, error) {
 	mu := sync.Mutex{}
-	metas := map[ulid.ULID]*metadata.Meta{}
+	metas := map[ulid.ULID]*block.Meta{}
 
 	return metas, concurrency.ForEachJob(ctx, len(metaFiles), concurrencyLimit, func(ctx context.Context, idx int) error {
 		r, err := bkt.Get(ctx, metaFiles[idx])
@@ -123,7 +121,7 @@ func fetchMetas(ctx context.Context, bkt objstore.BucketReader, metaFiles []stri
 		}
 		defer r.Close()
 
-		m, err := metadata.Read(r)
+		m, err := block.ReadMeta(r)
 		if err != nil {
 			return err
 		}
@@ -136,8 +134,8 @@ func fetchMetas(ctx context.Context, bkt objstore.BucketReader, metaFiles []stri
 	})
 }
 
-func SortBlocks(metas map[ulid.ULID]*metadata.Meta) []*metadata.Meta {
-	var blocks []*metadata.Meta
+func SortBlocks(metas map[ulid.ULID]*block.Meta) []*block.Meta {
+	var blocks []*block.Meta
 
 	for _, b := range metas {
 		blocks = append(blocks, b)
@@ -181,7 +179,7 @@ func SortBlocks(metas map[ulid.ULID]*metadata.Meta) []*metadata.Meta {
 	return blocks
 }
 
-func GetFormattedBlockSize(b *metadata.Meta) string {
+func GetFormattedBlockSize(b *block.Meta) string {
 	if len(b.Thanos.Files) == 0 {
 		return ""
 	}
@@ -191,7 +189,7 @@ func GetFormattedBlockSize(b *metadata.Meta) string {
 	return humanize.IBytes(size)
 }
 
-func GetBlockSizeBytes(b *metadata.Meta) uint64 {
+func GetBlockSizeBytes(b *block.Meta) uint64 {
 	size := uint64(0)
 	for _, f := range b.Thanos.Files {
 		size += uint64(f.SizeBytes)

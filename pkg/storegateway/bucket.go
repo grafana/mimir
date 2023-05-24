@@ -44,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -299,7 +298,7 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 	}
 
 	var wg sync.WaitGroup
-	blockc := make(chan *metadata.Meta)
+	blockc := make(chan *block.Meta)
 
 	for i := 0; i < s.blockSyncConcurrency; i++ {
 		wg.Add(1)
@@ -383,7 +382,7 @@ func (s *BucketStore) getBlock(id ulid.ULID) *bucketBlock {
 	return s.blocks[id]
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -1470,7 +1469,7 @@ type bucketBlock struct {
 	logger     log.Logger
 	metrics    *BucketStoreMetrics
 	bkt        objstore.BucketReader
-	meta       *metadata.Meta
+	meta       *block.Meta
 	dir        string
 	indexCache indexcache.IndexCache
 
@@ -1494,7 +1493,7 @@ func newBucketBlock(
 	userID string,
 	logger log.Logger,
 	metrics *BucketStoreMetrics,
-	meta *metadata.Meta,
+	meta *block.Meta,
 	bkt objstore.BucketReader,
 	dir string,
 	indexCache indexcache.IndexCache,

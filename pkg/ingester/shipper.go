@@ -27,7 +27,6 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 type metrics struct {
@@ -79,7 +78,7 @@ type shipper struct {
 	dir         string
 	metrics     *metrics
 	bucket      objstore.Bucket
-	source      metadata.SourceType
+	source      block.SourceType
 }
 
 // newShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
@@ -92,7 +91,7 @@ func newShipper(
 	r prometheus.Registerer,
 	dir string,
 	bucket objstore.Bucket,
-	source metadata.SourceType,
+	source block.SourceType,
 ) *shipper {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -198,7 +197,7 @@ func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
 // upload method uploads the block to blocks storage. Block is uploaded with updated meta.json file with extra details.
 // This updated version of meta.json is however not persisted locally on the disk, to avoid race condition when TSDB
 // library could actually unload the block if it found meta.json file missing.
-func (s *shipper) upload(ctx context.Context, meta *metadata.Meta) error {
+func (s *shipper) upload(ctx context.Context, meta *block.Meta) error {
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
 	meta.Thanos.Source = s.source
@@ -215,7 +214,7 @@ func (s *shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 
 // blockMetasFromOldest returns the block meta of each block found in dir
 // sorted by minTime asc.
-func (s *shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
+func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 	fis, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, errors.Wrap(err, "read dir")
@@ -237,7 +236,7 @@ func (s *shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
 		if !fi.IsDir() {
 			continue
 		}
-		m, err := metadata.ReadFromDir(dir)
+		m, err := block.ReadMetaFromDir(dir)
 		if err != nil {
 			return nil, errors.Wrapf(err, "read metadata for block %v", dir)
 		}

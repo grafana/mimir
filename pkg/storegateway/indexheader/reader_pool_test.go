@@ -20,7 +20,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
 func TestReaderPool_NewBinaryReader(t *testing.T) {
@@ -52,7 +51,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block.
-	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),
@@ -91,7 +90,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block.
-	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),

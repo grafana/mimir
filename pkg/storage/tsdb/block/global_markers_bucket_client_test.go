@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package bucketindex
+package block
 
 import (
 	"bytes"
@@ -20,7 +20,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
@@ -29,7 +28,7 @@ func TestGlobalMarkersBucket_Delete_ShouldSucceedIfDeletionMarkDoesNotExistInThe
 
 	// Create a mocked block deletion mark in the global location.
 	blockID := ulid.MustNew(1, nil)
-	for _, globalPath := range []string{BlockDeletionMarkFilepath(blockID), NoCompactMarkFilepath(blockID)} {
+	for _, globalPath := range []string{DeletionMarkFilepath(blockID), NoCompactMarkFilepath(blockID)} {
 		bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 		bkt = BucketWithGlobalMarkers(bkt)
 
@@ -59,11 +58,11 @@ func TestGlobalMarkersBucket_DeleteShouldDeleteGlobalMarkIfBlockMarkerDoesntExis
 		globalMarker string
 	}{
 		"deletion mark": {
-			blockMarker:  path.Join(blockID.String(), metadata.DeletionMarkFilename),
-			globalMarker: BlockDeletionMarkFilepath(blockID),
+			blockMarker:  path.Join(blockID.String(), DeletionMarkFilename),
+			globalMarker: DeletionMarkFilepath(blockID),
 		},
 		"no compact": {
-			blockMarker:  path.Join(blockID.String(), metadata.NoCompactMarkFilename),
+			blockMarker:  path.Join(blockID.String(), NoCompactMarkFilename),
 			globalMarker: NoCompactMarkFilepath(blockID),
 		},
 	} {
@@ -95,11 +94,11 @@ func TestUploadToGlobalMarkerPath(t *testing.T) {
 		globalMarker string
 	}{
 		"deletion mark": {
-			blockMarker:  path.Join(blockID.String(), metadata.DeletionMarkFilename),
-			globalMarker: BlockDeletionMarkFilepath(blockID),
+			blockMarker:  path.Join(blockID.String(), DeletionMarkFilename),
+			globalMarker: DeletionMarkFilepath(blockID),
 		},
 		"no compact": {
-			blockMarker:  path.Join(blockID.String(), metadata.NoCompactMarkFilename),
+			blockMarker:  path.Join(blockID.String(), NoCompactMarkFilename),
 			globalMarker: NoCompactMarkFilepath(blockID),
 		},
 	} {
@@ -123,11 +122,11 @@ func TestGlobalMarkersBucket_ExistShouldReportTrueOnlyIfBothExist(t *testing.T) 
 		globalMarker string
 	}{
 		"deletion mark": {
-			blockMarker:  path.Join(blockID.String(), metadata.DeletionMarkFilename),
-			globalMarker: BlockDeletionMarkFilepath(blockID),
+			blockMarker:  path.Join(blockID.String(), DeletionMarkFilename),
+			globalMarker: DeletionMarkFilepath(blockID),
 		},
 		"no compact": {
-			blockMarker:  path.Join(blockID.String(), metadata.NoCompactMarkFilename),
+			blockMarker:  path.Join(blockID.String(), NoCompactMarkFilename),
 			globalMarker: NoCompactMarkFilepath(blockID),
 		},
 	} {
@@ -178,7 +177,7 @@ func TestGlobalMarkersBucket_getGlobalMarkPathFromBlockMark(t *testing.T) {
 		{name: "01FV060K6XXCS8BCD2CH6C3GBR/index", expected: ""},
 	}
 
-	for _, marker := range []string{metadata.DeletionMarkFilename, metadata.NoCompactMarkFilename} {
+	for _, marker := range []string{DeletionMarkFilename, NoCompactMarkFilename} {
 		tests = append(tests, testCase{name: marker, expected: ""})
 		tests = append(tests, testCase{name: "01FV060K6XXCS8BCD2CH6C3GBR/" + marker, expected: "markers/01FV060K6XXCS8BCD2CH6C3GBR-" + marker})
 		tests = append(tests, testCase{name: "/path/to/01FV060K6XXCS8BCD2CH6C3GBR/" + marker, expected: "/path/to/markers/01FV060K6XXCS8BCD2CH6C3GBR-" + marker})
@@ -193,7 +192,7 @@ func TestGlobalMarkersBucket_getGlobalMarkPathFromBlockMark(t *testing.T) {
 	}
 }
 
-func TestGlobalMarkersBucket_isBlockDeletionMark(t *testing.T) {
+func TestGlobalMarkersBucket_isDeletionMark(t *testing.T) {
 	block1 := ulid.MustNew(1, nil)
 
 	tests := []struct {
@@ -223,7 +222,7 @@ func TestGlobalMarkersBucket_isBlockDeletionMark(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actualID, actualOk := isBlockDeletionMark(tc.name)
+			actualID, actualOk := isDeletionMark(tc.name)
 			assert.Equal(t, tc.expectedOk, actualOk)
 			assert.Equal(t, tc.expectedID, actualID)
 		})

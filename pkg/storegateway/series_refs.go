@@ -25,7 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -688,7 +688,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	tenantID string,
 	indexr *bucketIndexReader, // Index reader for block.
 	indexCache indexcache.IndexCache,
-	blockMeta *metadata.Meta,
+	blockMeta *block.Meta,
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHasher seriesHasher,
@@ -746,7 +746,7 @@ func newLoadingSeriesChunkRefsSetIterator(
 	indexr *bucketIndexReader,
 	indexCache indexcache.IndexCache,
 	stats *safeQueryStats,
-	blockMeta *metadata.Meta,
+	blockMeta *block.Meta,
 	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
 	skipChunks bool,

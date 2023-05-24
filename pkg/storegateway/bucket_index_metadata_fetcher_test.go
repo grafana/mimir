@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
@@ -64,7 +63,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, nil, logger, reg, filters)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, map[ulid.ULID]*metadata.Meta{
+	assert.Equal(t, map[ulid.ULID]*block.Meta{
 		block1.ID: block1.ThanosMeta(),
 		block3.ID: block3.ThanosMeta(),
 	}, metas)
@@ -207,6 +206,6 @@ func (s *noShardingStrategy) FilterUsers(_ context.Context, userIDs []string) ([
 	return userIDs, nil
 }
 
-func (s *noShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
+func (s *noShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*block.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
 	return nil
 }
