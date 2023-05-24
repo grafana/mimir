@@ -901,7 +901,7 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesFetchSeriesAndChunksDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe(stats.streamingSeriesOtherDuration.Seconds())
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index").Observe(stats.streamingSeriesIndexLoadDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index_header").Observe(stats.streamingSeriesIndexHeaderLoadDuration.Seconds())
 }
 
 func (s *BucketStore) recordCachedPostingStats(stats *queryStats) {
@@ -1579,7 +1579,7 @@ func (b *bucketBlock) loadedIndexReader(postingsStrategy postingsSelectionStrate
 	// Call IndexVersion to lazy load the index header if it lazy-loaded.
 	_, _ = b.indexHeaderReader.IndexVersion()
 	stats.update(func(stats *queryStats) {
-		stats.streamingSeriesIndexLoadDuration += time.Since(loadStartTime)
+		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
 	})
 
 	return b.indexReader(postingsStrategy)
