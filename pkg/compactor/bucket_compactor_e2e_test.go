@@ -129,8 +129,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		ignoreDeletionMarkFilter := NewExcludeMarkedForDeletionFilter(nil)
-		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion)
+		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
 		require.NoError(t, err)
 
 		// Do one initial synchronization with the bucket.
@@ -239,7 +238,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion)
+		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
 		require.NoError(t, err)
 
 		comp, err := tsdb.NewLeveledCompactor(ctx, reg, logger, []int64{1000, 3000}, nil, nil, true)
@@ -480,7 +479,7 @@ func createBlock(ctx context.Context, t testing.TB, prepareDir string, b blockge
 	return
 }
 
-// Regression test for #2459 issue.
+// Regression test for Thanos issue #2459.
 func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T) {
 	logger := log.NewLogfmtLogger(os.Stderr)
 
@@ -532,7 +531,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		})
 		require.NoError(t, err)
 
-		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion)
+		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
 		require.NoError(t, err)
 
 		// Do one initial synchronization with the bucket.

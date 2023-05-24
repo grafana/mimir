@@ -741,7 +741,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		userBucket,
 		fetcher,
 		deduplicateBlocksFilter,
-		excludeMarkedForDeletionFilter,
 		c.blocksMarkedForDeletion,
 	)
 	if err != nil {

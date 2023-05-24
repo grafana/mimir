@@ -45,15 +45,14 @@ type DeduplicateFilter interface {
 // Syncer synchronizes block metas from a bucket into a local directory.
 // It sorts them into compaction groups based on equal label sets.
 type Syncer struct {
-	logger                         log.Logger
-	bkt                            objstore.Bucket
-	fetcher                        block.MetadataFetcher
-	mtx                            sync.Mutex
-	blocks                         map[ulid.ULID]*metadata.Meta
-	partial                        map[ulid.ULID]error
-	metrics                        *syncerMetrics
-	deduplicateBlocksFilter        DeduplicateFilter
-	excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter
+	logger                  log.Logger
+	bkt                     objstore.Bucket
+	fetcher                 block.MetadataFetcher
+	mtx                     sync.Mutex
+	blocks                  map[ulid.ULID]*metadata.Meta
+	partial                 map[ulid.ULID]error
+	metrics                 *syncerMetrics
+	deduplicateBlocksFilter DeduplicateFilter
 }
 
 type syncerMetrics struct {
@@ -87,18 +86,17 @@ func newSyncerMetrics(reg prometheus.Registerer, blocksMarkedForDeletion prometh
 
 // NewMetaSyncer returns a new Syncer for the given Bucket and directory.
 // Blocks must be at least as old as the sync delay for being considered.
-func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter, blocksMarkedForDeletion prometheus.Counter) (*Syncer, error) {
+func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, blocksMarkedForDeletion prometheus.Counter) (*Syncer, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Syncer{
-		logger:                         logger,
-		bkt:                            bkt,
-		fetcher:                        fetcher,
-		blocks:                         map[ulid.ULID]*metadata.Meta{},
-		metrics:                        newSyncerMetrics(reg, blocksMarkedForDeletion),
-		deduplicateBlocksFilter:        deduplicateBlocksFilter,
-		excludeMarkedForDeletionFilter: excludeMarkedForDeletionFilter,
+		logger:                  logger,
+		bkt:                     bkt,
+		fetcher:                 fetcher,
+		blocks:                  map[ulid.ULID]*metadata.Meta{},
+		metrics:                 newSyncerMetrics(reg, blocksMarkedForDeletion),
+		deduplicateBlocksFilter: deduplicateBlocksFilter,
 	}, nil
 }
 
@@ -141,21 +139,13 @@ func (s *Syncer) GarbageCollect(ctx context.Context) error {
 
 	begin := time.Now()
 
-	// Ignore filter exists before deduplicate filter.
-	deletionMarkMap := s.excludeMarkedForDeletionFilter.DeletionMarkBlocks()
+	// The deduplication filter is applied after all blocks marked for deletion have been excluded
+	// (with no deletion delay), so we expect that all duplicated blocks have not been marked for
+	// deletion yet. Even in the remote case these blocks have already been marked for deletion,
+	// the block.MarkForDeletion() call will correctly handle it.
 	duplicateIDs := s.deduplicateBlocksFilter.DuplicateIDs()
 
-	// GarbageIDs contains the duplicateIDs, since these blocks can be replaced with other blocks.
-	// We also remove ids present in deletionMarkMap since these blocks are already marked for deletion.
-	garbageIDs := []ulid.ULID{}
 	for _, id := range duplicateIDs {
-		if _, exists := deletionMarkMap[id]; exists {
-			continue
-		}
-		garbageIDs = append(garbageIDs, id)
-	}
-
-	for _, id := range garbageIDs {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
