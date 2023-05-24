@@ -12,16 +12,22 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+// StreamingSeries represents a single series used in evaluation of a query where the chunks for the series
+// are streamed from one or more ingesters.
 type StreamingSeries struct {
 	Labels  labels.Labels
 	Sources []StreamingSeriesSource
 }
 
+// StreamingSeriesSource holds the relationship between a stream of chunks from a SeriesChunksStreamReader
+// and the expected position of a series' chunks in that stream.
 type StreamingSeriesSource struct {
 	StreamReader *SeriesChunksStreamReader
 	SeriesIndex  uint64
 }
 
+// SeriesChunksStreamReader is responsible for managing the streaming of chunks from an ingester and buffering
+// chunks in memory until they are consumed by the PromQL engine.
 type SeriesChunksStreamReader struct {
 	client              Ingester_QueryStreamClient
 	seriesBatchChan     chan []QueryStreamSeriesChunks
