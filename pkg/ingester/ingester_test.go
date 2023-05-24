@@ -1168,11 +1168,6 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 }
 
 func BenchmarkIngesterPush(b *testing.B) {
-	limits := defaultLimitsTestConfig()
-	benchmarkIngesterPush(b, limits, false)
-}
-
-func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpected bool) {
 	registry := prometheus.NewRegistry()
 	ctx := user.InjectOrgID(context.Background(), userID)
 
@@ -1219,9 +1214,7 @@ func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpecte
 				allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
 			}
 			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, mimirpb.API))
-			if !errorsExpected {
-				require.NoError(b, err)
-			}
+			require.NoError(b, err)
 		}
 	}
 }
@@ -2984,7 +2977,7 @@ type mockQueryStreamServer struct {
 	ctx context.Context
 }
 
-func (m *mockQueryStreamServer) Send(response *client.QueryStreamResponse) error {
+func (m *mockQueryStreamServer) Send(*client.QueryStreamResponse) error {
 	return nil
 }
 

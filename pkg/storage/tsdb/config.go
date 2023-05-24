@@ -162,7 +162,7 @@ func (d *DurationList) ToMilliseconds() []int64 {
 
 // RegisterFlags registers the TSDB flags
 func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f, logger)
+	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f)
 	cfg.BucketStore.RegisterFlags(f, logger)
 	cfg.TSDB.RegisterFlags(f)
 }

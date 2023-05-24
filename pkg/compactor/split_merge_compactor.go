@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 )
 
-func splitAndMergeGrouperFactory(ctx context.Context, cfg Config, cfgProvider ConfigProvider, userID string, logger log.Logger, reg prometheus.Registerer) Grouper {
+func splitAndMergeGrouperFactory(_ context.Context, cfg Config, cfgProvider ConfigProvider, userID string, logger log.Logger, _ prometheus.Registerer) Grouper {
 	return NewSplitAndMergeGrouper(
 		userID,
 		cfg.BlockRanges.ToMilliseconds(),

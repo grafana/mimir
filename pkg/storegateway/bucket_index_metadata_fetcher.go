@@ -51,7 +51,7 @@ func NewBucketIndexMetadataFetcher(
 		cfgProvider: cfgProvider,
 		logger:      logger,
 		filters:     filters,
-		metrics:     block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}, nil),
+		metrics:     block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}),
 	}
 }
 

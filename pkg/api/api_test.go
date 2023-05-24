@@ -22,7 +22,7 @@ import (
 
 type FakeLogger struct{}
 
-func (fl *FakeLogger) Log(keyvals ...interface{}) error {
+func (fl *FakeLogger) Log(...interface{}) error {
 	return nil
 }
 
@@ -31,10 +31,10 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 	serverCfg := server.Config{
 		MetricsNamespace: "without_source_ip_extractor",
 	}
-	server, err := server.New(serverCfg)
+	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, serverCfg, server, &FakeLogger{})
+	api, err := New(cfg, serverCfg, srv, &FakeLogger{})
 	require.NoError(t, err)
 	require.Nil(t, api.sourceIPs)
 }
@@ -45,10 +45,10 @@ func TestNewApiWithSourceIPExtractor(t *testing.T) {
 		LogSourceIPs:     true,
 		MetricsNamespace: "with_source_ip_extractor",
 	}
-	server, err := server.New(serverCfg)
+	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, serverCfg, server, &FakeLogger{})
+	api, err := New(cfg, serverCfg, srv, &FakeLogger{})
 	require.NoError(t, err)
 	require.NotNil(t, api.sourceIPs)
 }
