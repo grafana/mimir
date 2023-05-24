@@ -3283,7 +3283,7 @@ graphite:
     # Because of that the graphite-web pods are incompatible with the PodSecurityPolicy of the
     # mimir-distributed chart and with the Restricted policy of Pod Security Standards https://kubernetes.io/docs/concepts/security/pod-security-standards/
     securityContext:
-      runAsNonRoot: true
+      runAsNonRoot: false
       fsGroup: 0
       runAsGroup: 0
       runAsUser: 0
