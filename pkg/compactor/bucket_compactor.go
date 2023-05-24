@@ -373,7 +373,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			newLabels[mimir_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(blockToUpload.shardIndex), uint64(job.SplittingShards()))
 		}
 
-		newMeta, err := block.InjectThanos(jobLogger, bdir, block.ThanosMeta{
+		newMeta, err := block.InjectThanosMeta(jobLogger, bdir, block.ThanosMeta{
 			Labels:       newLabels,
 			Downsample:   block.ThanosDownsample{Resolution: job.Resolution()},
 			Source:       block.CompactorSource,

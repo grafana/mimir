@@ -645,7 +645,7 @@ func createEmptyBlock(dir string, mint, maxt int64, extLset labels.Labels, resol
 		return ulid.ULID{}, errors.Wrap(err, "saving meta.json")
 	}
 
-	if _, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(dir, uid.String()), block.ThanosMeta{
+	if _, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(dir, uid.String()), block.ThanosMeta{
 		Labels:     extLset.Map(),
 		Downsample: block.ThanosDownsample{Resolution: resolution},
 		Source:     block.TestSource,
@@ -735,7 +735,7 @@ func createBlockWithOptions(
 
 	blockDir := filepath.Join(dir, id.String())
 
-	if _, err = block.InjectThanos(log.NewNopLogger(), blockDir, block.ThanosMeta{
+	if _, err = block.InjectThanosMeta(log.NewNopLogger(), blockDir, block.ThanosMeta{
 		Labels:     extLset.Map(),
 		Downsample: block.ThanosDownsample{Resolution: resolution},
 		Source:     block.TestSource,

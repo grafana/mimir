@@ -282,7 +282,7 @@ func CreateBlock(
 
 	blockDir := filepath.Join(dir, id.String())
 
-	if _, err = InjectThanos(log.NewNopLogger(), blockDir, ThanosMeta{
+	if _, err = InjectThanosMeta(log.NewNopLogger(), blockDir, ThanosMeta{
 		Labels: extLset.Map(),
 		Source: TestSource,
 		Files:  []File{},
