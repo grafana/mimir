@@ -46,15 +46,10 @@ func TestMetadataFetcherMetrics(t *testing.T) {
 		# TYPE cortex_blocks_meta_syncs_total counter
 		cortex_blocks_meta_syncs_total 15
 
-		# HELP cortex_blocks_meta_sync_consistency_delay_seconds Configured consistency delay in seconds.
-		# TYPE cortex_blocks_meta_sync_consistency_delay_seconds gauge
-		cortex_blocks_meta_sync_consistency_delay_seconds 300
-
 		# HELP cortex_blocks_meta_synced Reflects current state of synced blocks (over all tenants).
 		# TYPE cortex_blocks_meta_synced gauge
 		cortex_blocks_meta_synced{state="corrupted-meta-json"} 75
 		cortex_blocks_meta_synced{state="loaded"} 90
-		cortex_blocks_meta_synced{state="too-fresh"} 105
 `))
 	require.NoError(t, err)
 }
@@ -66,21 +61,18 @@ func populateMetadataFetcherMetrics(base float64) *prometheus.Registry {
 	m.syncs.Add(base * 1)
 	m.syncFailures.Add(base * 2)
 	m.syncDuration.Observe(3)
-	m.syncConsistencyDelay.Set(300)
 
 	m.synced.WithLabelValues("corrupted-meta-json").Set(base * 5)
 	m.synced.WithLabelValues("loaded").Set(base * 6)
-	m.synced.WithLabelValues("too-fresh").Set(base * 7)
 
 	return reg
 }
 
 type metadataFetcherMetricsMock struct {
-	syncs                prometheus.Counter
-	syncFailures         prometheus.Counter
-	syncDuration         prometheus.Histogram
-	syncConsistencyDelay prometheus.Gauge
-	synced               *prometheus.GaugeVec
+	syncs        prometheus.Counter
+	syncFailures prometheus.Counter
+	syncDuration prometheus.Histogram
+	synced       *prometheus.GaugeVec
 }
 
 func newMetadataFetcherMetricsMock(reg prometheus.Registerer) *metadataFetcherMetricsMock {
@@ -101,10 +93,6 @@ func newMetadataFetcherMetricsMock(reg prometheus.Registerer) *metadataFetcherMe
 		Name:      "sync_duration_seconds",
 		Help:      "Duration of the blocks metadata synchronization in seconds",
 		Buckets:   []float64{0.01, 1, 10, 100, 1000},
-	})
-	m.syncConsistencyDelay = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "consistency_delay_seconds",
-		Help: "Configured consistency delay in seconds.",
 	})
 	m.synced = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: "blocks_meta",

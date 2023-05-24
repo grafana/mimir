@@ -19,7 +19,7 @@ import (
 
 const duplicateMeta = "duplicate"
 
-// ShardAwareDeduplicateFilter is a BaseFetcher filter that filters out older blocks that have exactly the same data.
+// ShardAwareDeduplicateFilter is a MetaFetcher filter that filters out older blocks that have exactly the same data.
 // Not go-routine safe.
 type ShardAwareDeduplicateFilter struct {
 	// List of duplicate IDs after last Filter call.

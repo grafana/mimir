@@ -94,7 +94,6 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
 		blocks_meta_synced{state="min-time-excluded"} 1
-		blocks_meta_synced{state="too-fresh"} 0
 
 		# HELP blocks_meta_syncs_total Total blocks metadata synchronization attempts
 		# TYPE blocks_meta_syncs_total counter
@@ -146,7 +145,6 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
 		blocks_meta_synced{state="min-time-excluded"} 0
-		blocks_meta_synced{state="too-fresh"} 0
 
 		# HELP blocks_meta_syncs_total Total blocks metadata synchronization attempts
 		# TYPE blocks_meta_syncs_total counter
@@ -201,7 +199,6 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
 		blocks_meta_synced{state="min-time-excluded"} 0
-		blocks_meta_synced{state="too-fresh"} 0
 
 		# HELP blocks_meta_syncs_total Total blocks metadata synchronization attempts
 		# TYPE blocks_meta_syncs_total counter

@@ -3033,12 +3033,6 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.meta-sync-concurrency
   [meta_sync_concurrency: <int> | default = 20]
 
-  # (deprecated) Minimum age of a block before it's being read. Set it to safe
-  # value (e.g 30m) if your object storage is eventually consistent. GCS and S3
-  # are (roughly) strongly consistent.
-  # CLI flag: -blocks-storage.bucket-store.consistency-delay
-  [consistency_delay: <duration> | default = 0s]
-
   index_cache:
     # The index cache backend type. Supported values: inmemory, memcached,
     # redis.
@@ -3183,8 +3177,8 @@ bucket_store:
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
   bucket_index:
-    # If enabled, queriers and store-gateways discover blocks by reading a
-    # bucket index (created and updated by the compactor) instead of
+    # (deprecated) If enabled, queriers and store-gateways discover blocks by
+    # reading a bucket index (created and updated by the compactor) instead of
     # periodically scanning the bucket.
     # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
     [enabled: <boolean> | default = true]
@@ -3282,6 +3276,14 @@ bucket_store:
   # worst-case, worst-case-small-posting-lists, all.
   # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
   [series_selection_strategy: <string> | default = "all"]
+
+  series_selection_strategies:
+    # (experimental) This option is only used when
+    # blocks-storage.bucket-store.series-selection-strategy=worst-case.
+    # Increasing the series preference results in fetching more series than
+    # postings. Must be a positive floating point number.
+    # CLI flag: -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference
+    [worst_case_series_preference: <float> | default = 1]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
@@ -3453,11 +3455,6 @@ The `compactor` block configures the compactor component.
 # long term storage.
 # CLI flag: -compactor.meta-sync-concurrency
 [meta_sync_concurrency: <int> | default = 20]
-
-# (deprecated) Minimum age of fresh (non-compacted) blocks before they are being
-# processed.
-# CLI flag: -compactor.consistency-delay
-[consistency_delay: <duration> | default = 0s]
 
 # Directory to temporarily store blocks during compaction. This directory is not
 # required to be persisted between restarts.
