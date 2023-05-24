@@ -132,7 +132,7 @@ func fetchMetas(ctx context.Context, bkt objstore.Bucket, metaFiles []string) (m
 					return err
 				}
 
-				m, err := block.Read(r)
+				m, err := block.ReadMeta(r)
 				if err != nil {
 					if bkt.IsObjNotFoundErr(err) {
 						continue

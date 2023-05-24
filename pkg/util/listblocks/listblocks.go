@@ -121,7 +121,7 @@ func fetchMetas(ctx context.Context, bkt objstore.BucketReader, metaFiles []stri
 		}
 		defer r.Close()
 
-		m, err := block.Read(r)
+		m, err := block.ReadMeta(r)
 		if err != nil {
 			return err
 		}

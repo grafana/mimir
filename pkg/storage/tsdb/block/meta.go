@@ -199,11 +199,11 @@ func ReadMetaFromDir(dir string) (*Meta, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Read(f)
+	return ReadMeta(f)
 }
 
-// Read the block meta from the given reader.
-func Read(rc io.ReadCloser) (_ *Meta, err error) {
+// ReadMeta reads the block meta from the given reader.
+func ReadMeta(rc io.ReadCloser) (_ *Meta, err error) {
 	defer runutil.ExhaustCloseWithErrCapture(&err, rc, "close meta JSON")
 
 	var m Meta

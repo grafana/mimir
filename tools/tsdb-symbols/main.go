@@ -177,7 +177,7 @@ func readMetadata(dir string) (*block.Meta, error) {
 	}
 
 	// this also closes reader
-	return block.Read(f)
+	return block.ReadMeta(f)
 }
 
 // https://github.com/prometheus/prometheus/blob/release-2.30/tsdb/docs/format/index.md
