@@ -50,7 +50,6 @@ type Syncer struct {
 	fetcher                 block.MetadataFetcher
 	mtx                     sync.Mutex
 	blocks                  map[ulid.ULID]*metadata.Meta
-	partial                 map[ulid.ULID]error
 	metrics                 *syncerMetrics
 	deduplicateBlocksFilter DeduplicateFilter
 }
@@ -105,21 +104,12 @@ func (s *Syncer) SyncMetas(ctx context.Context) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	metas, partial, err := s.fetcher.Fetch(ctx)
+	metas, _, err := s.fetcher.Fetch(ctx)
 	if err != nil {
 		return err
 	}
 	s.blocks = metas
-	s.partial = partial
 	return nil
-}
-
-// Partial returns partial blocks since last sync.
-func (s *Syncer) Partial() map[ulid.ULID]error {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
-	return s.partial
 }
 
 // Metas returns loaded metadata blocks since last sync.
@@ -943,7 +933,7 @@ func (f *NoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]struct{} 
 
 // Filter finds blocks that should not be compacted, and fills f.noCompactMarkedMap. If f.removeNoCompactBlocks is true,
 // blocks are also removed from metas. (Thanos version of the filter doesn't do removal).
-func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
+func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec) error {
 	noCompactMarkedMap := make(map[ulid.ULID]struct{})
 
 	// Find all no-compact markers in the storage.
@@ -1007,7 +997,7 @@ func (f *ExcludeMarkedForDeletionFilter) DeletionMarkBlocks() map[ulid.ULID]stru
 
 // Filter filters out blocks that are marked for deletion.
 // It also builds the map returned by DeletionMarkBlocks() method.
-func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
+func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec) error {
 	deletionMarkMap := make(map[ulid.ULID]struct{})
 
 	// Find all markers in the storage.

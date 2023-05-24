@@ -3179,6 +3179,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_sync_rules_on_changes_enabled",
+          "required": false,
+          "desc": "True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "ruler.sync-rules-on-changes-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",
@@ -9027,7 +9038,7 @@
           "kind": "field",
           "name": "poll_interval",
           "required": false,
-          "desc": "How frequently to poll for rule changes",
+          "desc": "How frequently the configured rule groups are re-synced from the object storage.",
           "fieldValue": null,
           "fieldDefaultValue": 60000000000,
           "fieldFlag": "ruler.poll-interval",

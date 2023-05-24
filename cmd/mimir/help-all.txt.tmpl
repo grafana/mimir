@@ -2144,7 +2144,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.notification-timeout duration
     	HTTP timeout duration when sending notifications to the Alertmanager. (default 10s)
   -ruler.poll-interval duration
-    	How frequently to poll for rule changes (default 1m0s)
+    	How frequently the configured rule groups are re-synced from the object storage. (default 1m0s)
   -ruler.query-frontend.address string
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
   -ruler.query-frontend.grpc-client-config.backoff-max-period duration
@@ -2259,6 +2259,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
     	Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts. (default "./data-ruler/")
+  -ruler.sync-rules-on-changes-enabled
+    	True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync. (default true)
   -ruler.tenant-federation.enabled
     	Enable rule groups to query against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are federated rule groups that already exist, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int

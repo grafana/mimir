@@ -40,20 +40,17 @@ type FetcherMetrics struct {
 	SyncFailures prometheus.Counter
 	SyncDuration prometheus.Histogram
 
-	Synced   *extprom.TxGaugeVec
-	Modified *extprom.TxGaugeVec
+	Synced *extprom.TxGaugeVec
 }
 
 // Submit applies new values for metrics tracked by transaction GaugeVec.
 func (s *FetcherMetrics) Submit() {
 	s.Synced.Submit()
-	s.Modified.Submit()
 }
 
 // ResetTx starts new transaction for metrics tracked by transaction GaugeVec.
 func (s *FetcherMetrics) ResetTx() {
 	s.Synced.ResetTx()
-	s.Modified.ResetTx()
 }
 
 const (
@@ -74,9 +71,6 @@ const (
 
 	// MarkedForNoCompactionMeta is label for blocks which are loaded but also marked for no compaction. This label is also counted in `loaded` label metric.
 	MarkedForNoCompactionMeta = "marked-for-no-compact"
-
-	// Modified label values.
-	replicaRemovedMeta = "replica-label-removed"
 )
 
 func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels, modifiedExtraLabels [][]string) *FetcherMetrics {
@@ -118,18 +112,6 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels, modifiedExt
 			{MarkedForNoCompactionMeta},
 		}, syncedExtraLabels...)...,
 	)
-	m.Modified = extprom.NewTxGaugeVec(
-		reg,
-		prometheus.GaugeOpts{
-			Subsystem: fetcherSubSys,
-			Name:      "modified",
-			Help:      "Number of blocks whose metadata changed",
-		},
-		[]string{"modified"},
-		append([][]string{
-			{replicaRemovedMeta},
-		}, modifiedExtraLabels...)...,
-	)
 	return &m
 }
 
@@ -144,7 +126,7 @@ type GaugeVec interface {
 
 // Filter allows filtering or modifying metas from the provided map or returns error.
 type MetadataFilter interface {
-	Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error
+	Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec) error
 }
 
 // MetaFetcher is a struct that synchronizes filtered metadata of all block in the object storage with the local state.
@@ -158,7 +140,6 @@ type MetaFetcher struct {
 
 	// Optional local directory to cache meta.json files.
 	cacheDir string
-	syncs    prometheus.Counter
 	g        singleflight.Group
 
 	mtx    sync.Mutex
@@ -187,11 +168,6 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 		cached:      map[ulid.ULID]*metadata.Meta{},
 		metrics:     NewFetcherMetrics(reg, nil, nil),
 		filters:     filters,
-		syncs: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Subsystem: fetcherSubSys,
-			Name:      "base_syncs_total",
-			Help:      "Total blocks metadata synchronization attempts by meta fetcher",
-		}),
 	}, nil
 }
 
@@ -286,8 +262,6 @@ type response struct {
 }
 
 func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
-	f.syncs.Inc()
-
 	var (
 		resp = response{
 			metas:   make(map[ulid.ULID]*metadata.Meta),
@@ -438,7 +412,7 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (_ map[ulid.ULID]*metadata.Meta
 
 	for _, filter := range f.filters {
 		// NOTE: filter can update synced metric accordingly to the reason of the exclude.
-		if err := filter.Filter(ctx, metas, f.metrics.Synced, f.metrics.Modified); err != nil {
+		if err := filter.Filter(ctx, metas, f.metrics.Synced); err != nil {
 			return nil, nil, errors.Wrap(err, "filter metas")
 		}
 	}
@@ -503,7 +477,7 @@ func (f *IgnoreDeletionMarkFilter) DeletionMarkBlocks() map[ulid.ULID]*metadata.
 
 // Filter filters out blocks that are marked for deletion after a given delay.
 // It also returns the blocks that can be deleted since they were uploaded delay duration before current time.
-func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error {
+func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec) error {
 	deletionMarkMap := make(map[ulid.ULID]*metadata.DeletionMark)
 
 	// Make a copy of block IDs to check, in order to avoid concurrency issues

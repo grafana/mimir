@@ -139,6 +139,7 @@ type Limits struct {
 	RulerMaxRuleGroupsPerTenant          int            `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
 	RulerRecordingRulesEvaluationEnabled bool           `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled" category:"experimental"`
 	RulerAlertingRulesEvaluationEnabled  bool           `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled" category:"experimental"`
+	RulerSyncRulesOnChangesEnabled       bool           `yaml:"ruler_sync_rules_on_changes_enabled" json:"ruler_sync_rules_on_changes_enabled" category:"advanced"`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
@@ -239,6 +240,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.RulerMaxRuleGroupsPerTenant, "ruler.max-rule-groups-per-tenant", 70, "Maximum number of rule groups per-tenant. 0 to disable.")
 	f.BoolVar(&l.RulerRecordingRulesEvaluationEnabled, "ruler.recording-rules-evaluation-enabled", true, "Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis.")
 	f.BoolVar(&l.RulerAlertingRulesEvaluationEnabled, "ruler.alerting-rules-evaluation-enabled", true, "Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis.")
+	f.BoolVar(&l.RulerSyncRulesOnChangesEnabled, "ruler.sync-rules-on-changes-enabled", true, "True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
@@ -702,6 +704,11 @@ func (o *Overrides) RulerRecordingRulesEvaluationEnabled(userID string) bool {
 // RulerAlertingRulesEvaluationEnabled returns whether the alerting rules evaluation is enabled for a given user.
 func (o *Overrides) RulerAlertingRulesEvaluationEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).RulerAlertingRulesEvaluationEnabled
+}
+
+// RulerSyncRulesOnChangesEnabled returns whether the ruler's event-based sync is enabled.
+func (o *Overrides) RulerSyncRulesOnChangesEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).RulerSyncRulesOnChangesEnabled
 }
 
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.
