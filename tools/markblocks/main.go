@@ -21,7 +21,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 type config struct {
@@ -250,7 +249,7 @@ func createUserBucketWithGlobalMarkers(ctx context.Context, logger log.Logger, c
 		level.Error(logger).Log("msg", "Can't instantiate bucket.", "err", err)
 		os.Exit(1)
 	}
-	userBucket := bucketindex.BucketWithGlobalMarkers(
+	userBucket := block.BucketWithGlobalMarkers(
 		bucket.NewUserBucketClient(tenantID, bkt, nil),
 	)
 	return userBucket

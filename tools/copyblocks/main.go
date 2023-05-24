@@ -31,7 +31,6 @@ import (
 	"google.golang.org/api/iterator"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 const (
@@ -333,7 +332,7 @@ func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, ma
 
 	// Copy global markers too (skipping deletion mark because deleted blocks are not copied by this tool).
 	if markers.noCompact {
-		paths = append(paths, tenantID+delim+bucketindex.NoCompactMarkFilepath(blockID))
+		paths = append(paths, tenantID+delim+block.NoCompactMarkFilepath(blockID))
 	}
 
 	for _, fullPath := range paths {
@@ -419,7 +418,7 @@ type blockMarkers struct {
 }
 
 func listBlockMarkersForTenant(ctx context.Context, bkt *storage.BucketHandle, tenantID string, destinationBucket string) (map[ulid.ULID]blockMarkers, error) {
-	markers, err := listPrefix(ctx, bkt, tenantID+delim+bucketindex.MarkersPathname, false)
+	markers, err := listPrefix(ctx, bkt, tenantID+delim+block.MarkersPathname, false)
 	if err != nil {
 		return nil, err
 	}
@@ -427,13 +426,13 @@ func listBlockMarkersForTenant(ctx context.Context, bkt *storage.BucketHandle, t
 	result := map[ulid.ULID]blockMarkers{}
 
 	for _, m := range markers {
-		if id, ok := bucketindex.IsBlockDeletionMarkFilename(m); ok {
+		if id, ok := block.IsBlockDeletionMarkFilename(m); ok {
 			bm := result[id]
 			bm.deletion = true
 			result[id] = bm
 		}
 
-		if id, ok := bucketindex.IsNoCompactMarkFilename(m); ok {
+		if id, ok := block.IsNoCompactMarkFilename(m); ok {
 			bm := result[id]
 			bm.noCompact = true
 			result[id] = bm
@@ -506,7 +505,7 @@ const CopiedMarkFilename = "copied"
 // Returned path is relative to the tenant's bucket location.
 func CopiedToBucketMarkFilename(blockID ulid.ULID, targetBucket string) string {
 	// eg markers/01EZED0X3YZMNJ3NHGMJJKMHCR-copied-target-bucket
-	return fmt.Sprintf("%s/%s-%s-%s", bucketindex.MarkersPathname, blockID.String(), CopiedMarkFilename, targetBucket)
+	return fmt.Sprintf("%s/%s-%s-%s", block.MarkersPathname, blockID.String(), CopiedMarkFilename, targetBucket)
 }
 
 // IsCopiedToBucketMarkFilename returns whether the input filename matches the expected pattern

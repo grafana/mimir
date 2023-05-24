@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package bucketindex
+package block
 
 import (
 	"bytes"
@@ -14,8 +14,6 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 // globalMarkersBucket is a bucket client which stores markers (eg. block deletion marks) in a per-tenant
@@ -171,21 +169,21 @@ func getGlobalMarkPathFromBlockMark(name string) string {
 }
 
 func isBlockDeletionMark(name string) (ulid.ULID, bool) {
-	if path.Base(name) != block.DeletionMarkFilename {
+	if path.Base(name) != DeletionMarkFilename {
 		return ulid.ULID{}, false
 	}
 
 	// Parse the block ID in the path. If there's no block ID, then it's not the per-block
 	// deletion mark.
-	return block.IsBlockDir(path.Dir(name))
+	return IsBlockDir(path.Dir(name))
 }
 
 func isNoCompactMark(name string) (ulid.ULID, bool) {
-	if path.Base(name) != block.NoCompactMarkFilename {
+	if path.Base(name) != NoCompactMarkFilename {
 		return ulid.ULID{}, false
 	}
 
 	// Parse the block ID in the path. If there's no block ID, then it's not the per-block
 	// no-compact mark.
-	return block.IsBlockDir(path.Dir(name))
+	return IsBlockDir(path.Dir(name))
 }

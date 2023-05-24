@@ -65,7 +65,7 @@ func TestBlocksCleaner(t *testing.T) {
 
 func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	ctx := context.Background()
@@ -126,13 +126,13 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		{path: path.Join("user-2", block8.String(), block.MetaFilename), expectedExists: true},
 		// Should not delete a block with deletion mark who hasn't reached the deletion threshold yet.
 		{path: path.Join("user-1", block2.String(), block.MetaFilename), expectedExists: true},
-		{path: path.Join("user-1", bucketindex.BlockDeletionMarkFilepath(block2)), expectedExists: true},
+		{path: path.Join("user-1", block.BlockDeletionMarkFilepath(block2)), expectedExists: true},
 		// Should delete a partial block with deletion mark who hasn't reached the deletion threshold yet.
 		{path: path.Join("user-1", block4.String(), block.DeletionMarkFilename), expectedExists: false},
-		{path: path.Join("user-1", bucketindex.BlockDeletionMarkFilepath(block4)), expectedExists: false},
+		{path: path.Join("user-1", block.BlockDeletionMarkFilepath(block4)), expectedExists: false},
 		// Should delete a partial block with deletion mark who has reached the deletion threshold.
 		{path: path.Join("user-1", block5.String(), block.DeletionMarkFilename), expectedExists: false},
-		{path: path.Join("user-1", bucketindex.BlockDeletionMarkFilepath(block5)), expectedExists: false},
+		{path: path.Join("user-1", block.BlockDeletionMarkFilepath(block5)), expectedExists: false},
 		// Should not delete a partial block without deletion mark.
 		{path: path.Join("user-1", block6.String(), "index"), expectedExists: true},
 		// Should completely delete blocks for user-3, marked for deletion
@@ -214,7 +214,7 @@ func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 	const userID = "user-1"
 
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	ctx := context.Background()
@@ -279,7 +279,7 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 	const userID = "user-1"
 
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	ctx := context.Background()
@@ -336,7 +336,7 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 
 func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShard(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	createTSDBBlock(t, bucketClient, "user-1", 10, 20, 2, nil)
@@ -405,7 +405,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 
 func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	createTSDBBlock(t, bucketClient, "user-1", 10, 20, 2, nil)
@@ -456,7 +456,7 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 
 func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
@@ -514,7 +514,7 @@ func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 
 func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	ts := func(hours int) int64 {
 		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
@@ -700,7 +700,7 @@ func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, block u
 
 func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	ts := func(hours int) int64 {
 		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
@@ -770,7 +770,7 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 
 func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	ts := func(hours int) int64 {
 		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
@@ -856,7 +856,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 	logger := log.NewLogfmtLogger(logs)
 
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	ts := func(hours int) int64 {
 		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000

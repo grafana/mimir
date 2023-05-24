@@ -23,7 +23,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
@@ -166,7 +165,7 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 func TestNoCompactionMarkFilter(t *testing.T) {
 	ctx := context.Background()
 	// Use bucket with global markers to make sure that our custom filters work correctly.
-	bkt := bucketindex.BucketWithGlobalMarkers(objstore.NewInMemBucket())
+	bkt := block.BucketWithGlobalMarkers(objstore.NewInMemBucket())
 
 	block1 := ulid.MustParse("01DTVP434PA9VFXSW2JK000001") // No mark file.
 	block2 := ulid.MustParse("01DTVP434PA9VFXSW2JK000002") // Marked for no-compaction

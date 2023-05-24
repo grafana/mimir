@@ -47,7 +47,7 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 
 	// Create a bucket backed by filesystem.
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+	bkt = block.BucketWithGlobalMarkers(bkt)
 	userBkt := bucket.NewUserBucketClient(userID, bkt, nil)
 
 	shouldFetch := &block.DeletionMark{

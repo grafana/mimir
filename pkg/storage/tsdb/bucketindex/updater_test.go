@@ -34,7 +34,7 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	// Generate the initial index.
-	bkt = BucketWithGlobalMarkers(bkt)
+	bkt = block.BucketWithGlobalMarkers(bkt)
 	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
 	block.MockNoCompactMark(t, bkt, userID, block1.BlockMeta) // no-compact mark is ignored by bucket index updater.
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_5"})
@@ -77,7 +77,7 @@ func TestUpdater_UpdateIndex_ShouldSkipPartialBlocks(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	// Mock some blocks in the storage.
-	bkt = BucketWithGlobalMarkers(bkt)
+	bkt = block.BucketWithGlobalMarkers(bkt)
 	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, map[string]string{"hello": "world"})
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "3_of_10"})
 	block3 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, nil)
@@ -109,7 +109,7 @@ func TestUpdater_UpdateIndex_ShouldSkipBlocksWithCorruptedMeta(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	// Mock some blocks in the storage.
-	bkt = BucketWithGlobalMarkers(bkt)
+	bkt = block.BucketWithGlobalMarkers(bkt)
 	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "55_of_64"})
 	block3 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, nil)
@@ -138,7 +138,7 @@ func TestUpdater_UpdateIndex_ShouldSkipCorruptedDeletionMarks(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	// Mock some blocks in the storage.
-	bkt = BucketWithGlobalMarkers(bkt)
+	bkt = block.BucketWithGlobalMarkers(bkt)
 	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, nil)
 	block3 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_7"})
@@ -184,7 +184,7 @@ func TestUpdater_UpdateIndexFromVersion1ToVersion2(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	// Generate blocks with compactor shard ID.
-	bkt = BucketWithGlobalMarkers(bkt)
+	bkt = block.BucketWithGlobalMarkers(bkt)
 	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_4"})
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "3_of_4"})
 

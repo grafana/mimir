@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 // LoadMetaFilesAndDeletionMarkers reads the bucket and loads the meta files for the provided user.
@@ -31,8 +30,8 @@ func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketRea
 	deletionMarkerFiles := []string(nil)
 
 	// Find blocks marked for deletion
-	err := bkt.Iter(ctx, path.Join(user, bucketindex.MarkersPathname), func(s string) error {
-		if id, ok := bucketindex.IsBlockDeletionMarkFilename(path.Base(s)); ok {
+	err := bkt.Iter(ctx, path.Join(user, block.MarkersPathname), func(s string) error {
+		if id, ok := block.IsBlockDeletionMarkFilename(path.Base(s)); ok {
 			deletedBlocks[id] = true
 			deletionMarkerFiles = append(deletionMarkerFiles, s)
 		}

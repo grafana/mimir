@@ -42,13 +42,12 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
 		// Use bucket with global markers to make sure that our custom filters work correctly.
-		bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+		bkt = block.BucketWithGlobalMarkers(bkt)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
@@ -181,7 +180,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 func TestGroupCompactE2E(t *testing.T) {
 	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
 		// Use bucket with global markers to make sure that our custom filters work correctly.
-		bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+		bkt = block.BucketWithGlobalMarkers(bkt)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
@@ -484,7 +483,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 
 	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
 		// Use bucket with global markers to make sure that our custom filters work correctly.
-		bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+		bkt = block.BucketWithGlobalMarkers(bkt)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()

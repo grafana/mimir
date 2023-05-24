@@ -31,7 +31,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 type DeduplicateFilter interface {
@@ -936,12 +935,12 @@ func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID
 	noCompactMarkedMap := make(map[ulid.ULID]struct{})
 
 	// Find all no-compact markers in the storage.
-	err := f.bkt.Iter(ctx, bucketindex.MarkersPathname+"/", func(name string) error {
+	err := f.bkt.Iter(ctx, block.MarkersPathname+"/", func(name string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		if blockID, ok := bucketindex.IsNoCompactMarkFilename(path.Base(name)); ok {
+		if blockID, ok := block.IsNoCompactMarkFilename(path.Base(name)); ok {
 			_, exists := metas[blockID]
 			if exists {
 				noCompactMarkedMap[blockID] = struct{}{}
@@ -1000,12 +999,12 @@ func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[u
 	deletionMarkMap := make(map[ulid.ULID]struct{})
 
 	// Find all markers in the storage.
-	err := f.bkt.Iter(ctx, bucketindex.MarkersPathname+"/", func(name string) error {
+	err := f.bkt.Iter(ctx, block.MarkersPathname+"/", func(name string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		if blockID, ok := bucketindex.IsBlockDeletionMarkFilename(path.Base(name)); ok {
+		if blockID, ok := block.IsBlockDeletionMarkFilename(path.Base(name)); ok {
 			_, exists := metas[blockID]
 			if exists {
 				deletionMarkMap[blockID] = struct{}{}

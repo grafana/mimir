@@ -33,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -414,7 +413,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	// Wrap the bucket client to write block deletion marks in the global location too.
-	c.bucketClient = bucketindex.BucketWithGlobalMarkers(c.bucketClient)
+	c.bucketClient = block.BucketWithGlobalMarkers(c.bucketClient)
 
 	// Initialize the compactors ring if sharding is enabled.
 	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, c.logger, c.registerer)

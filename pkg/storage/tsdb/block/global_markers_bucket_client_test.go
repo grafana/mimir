@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package bucketindex
+package block
 
 import (
 	"bytes"
@@ -20,7 +20,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
@@ -59,11 +58,11 @@ func TestGlobalMarkersBucket_DeleteShouldDeleteGlobalMarkIfBlockMarkerDoesntExis
 		globalMarker string
 	}{
 		"deletion mark": {
-			blockMarker:  path.Join(blockID.String(), block.DeletionMarkFilename),
+			blockMarker:  path.Join(blockID.String(), DeletionMarkFilename),
 			globalMarker: BlockDeletionMarkFilepath(blockID),
 		},
 		"no compact": {
-			blockMarker:  path.Join(blockID.String(), block.NoCompactMarkFilename),
+			blockMarker:  path.Join(blockID.String(), NoCompactMarkFilename),
 			globalMarker: NoCompactMarkFilepath(blockID),
 		},
 	} {
@@ -95,11 +94,11 @@ func TestUploadToGlobalMarkerPath(t *testing.T) {
 		globalMarker string
 	}{
 		"deletion mark": {
-			blockMarker:  path.Join(blockID.String(), block.DeletionMarkFilename),
+			blockMarker:  path.Join(blockID.String(), DeletionMarkFilename),
 			globalMarker: BlockDeletionMarkFilepath(blockID),
 		},
 		"no compact": {
-			blockMarker:  path.Join(blockID.String(), block.NoCompactMarkFilename),
+			blockMarker:  path.Join(blockID.String(), NoCompactMarkFilename),
 			globalMarker: NoCompactMarkFilepath(blockID),
 		},
 	} {
@@ -123,11 +122,11 @@ func TestGlobalMarkersBucket_ExistShouldReportTrueOnlyIfBothExist(t *testing.T) 
 		globalMarker string
 	}{
 		"deletion mark": {
-			blockMarker:  path.Join(blockID.String(), block.DeletionMarkFilename),
+			blockMarker:  path.Join(blockID.String(), DeletionMarkFilename),
 			globalMarker: BlockDeletionMarkFilepath(blockID),
 		},
 		"no compact": {
-			blockMarker:  path.Join(blockID.String(), block.NoCompactMarkFilename),
+			blockMarker:  path.Join(blockID.String(), NoCompactMarkFilename),
 			globalMarker: NoCompactMarkFilepath(blockID),
 		},
 	} {
@@ -178,7 +177,7 @@ func TestGlobalMarkersBucket_getGlobalMarkPathFromBlockMark(t *testing.T) {
 		{name: "01FV060K6XXCS8BCD2CH6C3GBR/index", expected: ""},
 	}
 
-	for _, marker := range []string{block.DeletionMarkFilename, block.NoCompactMarkFilename} {
+	for _, marker := range []string{DeletionMarkFilename, NoCompactMarkFilename} {
 		tests = append(tests, testCase{name: marker, expected: ""})
 		tests = append(tests, testCase{name: "01FV060K6XXCS8BCD2CH6C3GBR/" + marker, expected: "markers/01FV060K6XXCS8BCD2CH6C3GBR-" + marker})
 		tests = append(tests, testCase{name: "/path/to/01FV060K6XXCS8BCD2CH6C3GBR/" + marker, expected: "/path/to/markers/01FV060K6XXCS8BCD2CH6C3GBR-" + marker})

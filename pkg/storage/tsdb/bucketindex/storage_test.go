@@ -50,7 +50,7 @@ func TestReadIndex_ShouldReturnTheParsedIndexOnSuccess(t *testing.T) {
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Mock some blocks in the storage.
-	bkt = BucketWithGlobalMarkers(bkt)
+	bkt = block.BucketWithGlobalMarkers(bkt)
 	block.MockStorageBlock(t, bkt, userID, 10, 20)
 	block.MockStorageBlock(t, bkt, userID, 20, 30)
 	block.MockStorageDeletionMark(t, bkt, userID, block.MockStorageBlock(t, bkt, userID, 30, 40))
@@ -80,7 +80,7 @@ func BenchmarkReadIndex(b *testing.B) {
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(b)
 
 	// Mock some blocks and deletion marks in the storage.
-	bkt = BucketWithGlobalMarkers(bkt)
+	bkt = block.BucketWithGlobalMarkers(bkt)
 	for i := 0; i < numBlocks; i++ {
 		minT := int64(i * 10)
 		maxT := int64((i + 1) * 10)
