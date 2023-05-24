@@ -3080,7 +3080,7 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, 3, recvMsgs) // 1 for each series: second series must be sent in a message of its own
+	require.Equal(t, 3, recvMsgs) // 1 for each series: second series must be sent in a message of its own as it will be over 1 MiB
 	require.Equal(t, 3, series)
 	require.Equal(t, 100000+500000+1000000, totalSamples)
 }
