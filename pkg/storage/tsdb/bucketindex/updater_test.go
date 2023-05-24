@@ -35,10 +35,10 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 
 	// Generate the initial index.
 	bkt = BucketWithGlobalMarkers(bkt)
-	block1 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
-	testutil.MockNoCompactMark(t, bkt, userID, block1.BlockMeta) // no-compact mark is ignored by bucket index updater.
-	block2 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_5"})
-	block2Mark := testutil.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
+	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
+	block.MockNoCompactMark(t, bkt, userID, block1.BlockMeta) // no-compact mark is ignored by bucket index updater.
+	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_5"})
+	block2Mark := block.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
 
 	w := NewUpdater(bkt, userID, nil, logger)
 	returnedIdx, _, err := w.UpdateIndex(ctx, nil)
@@ -48,9 +48,9 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 		[]*block.DeletionMark{block2Mark})
 
 	// Create new blocks, and update the index.
-	block3 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, map[string]string{"aaa": "bbb"})
-	block4 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 40, 50, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_5"})
-	block4Mark := testutil.MockStorageDeletionMark(t, bkt, userID, block4.BlockMeta)
+	block3 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, map[string]string{"aaa": "bbb"})
+	block4 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 40, 50, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_5"})
+	block4Mark := block.MockStorageDeletionMark(t, bkt, userID, block4.BlockMeta)
 
 	returnedIdx, _, err = w.UpdateIndex(ctx, returnedIdx)
 	require.NoError(t, err)
@@ -78,13 +78,13 @@ func TestUpdater_UpdateIndex_ShouldSkipPartialBlocks(t *testing.T) {
 
 	// Mock some blocks in the storage.
 	bkt = BucketWithGlobalMarkers(bkt)
-	block1 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, map[string]string{"hello": "world"})
-	block2 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "3_of_10"})
-	block3 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, nil)
-	block2Mark := testutil.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
+	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, map[string]string{"hello": "world"})
+	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "3_of_10"})
+	block3 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, nil)
+	block2Mark := block.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
 
 	// No compact marks are ignored by bucket index.
-	testutil.MockNoCompactMark(t, bkt, userID, block3.BlockMeta)
+	block.MockNoCompactMark(t, bkt, userID, block3.BlockMeta)
 
 	// Delete a block's meta.json to simulate a partial block.
 	require.NoError(t, bkt.Delete(ctx, path.Join(userID, block3.ULID.String(), block.MetaFilename)))
@@ -110,10 +110,10 @@ func TestUpdater_UpdateIndex_ShouldSkipBlocksWithCorruptedMeta(t *testing.T) {
 
 	// Mock some blocks in the storage.
 	bkt = BucketWithGlobalMarkers(bkt)
-	block1 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
-	block2 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "55_of_64"})
-	block3 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, nil)
-	block2Mark := testutil.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
+	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
+	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "55_of_64"})
+	block3 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, nil)
+	block2Mark := block.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
 
 	// Overwrite a block's meta.json with invalid data.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, block3.ULID.String(), block.MetaFilename), bytes.NewReader([]byte("invalid!}"))))
@@ -139,10 +139,10 @@ func TestUpdater_UpdateIndex_ShouldSkipCorruptedDeletionMarks(t *testing.T) {
 
 	// Mock some blocks in the storage.
 	bkt = BucketWithGlobalMarkers(bkt)
-	block1 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
-	block2 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, nil)
-	block3 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_7"})
-	block2Mark := testutil.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
+	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
+	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, nil)
+	block3 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_7"})
+	block2Mark := block.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
 
 	// Overwrite a block's deletion-mark.json with invalid data.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, block2Mark.ID.String(), block.DeletionMarkFilename), bytes.NewReader([]byte("invalid!}"))))
@@ -185,8 +185,8 @@ func TestUpdater_UpdateIndexFromVersion1ToVersion2(t *testing.T) {
 
 	// Generate blocks with compactor shard ID.
 	bkt = BucketWithGlobalMarkers(bkt)
-	block1 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_4"})
-	block2 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "3_of_4"})
+	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_4"})
+	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "3_of_4"})
 
 	block1WithoutCompactorShardID := block1
 	block1WithoutCompactorShardID.Thanos.Labels = nil

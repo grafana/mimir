@@ -30,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -69,7 +68,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 	expectedSeries := make([]series, numBlocks)
 
 	for i := 0; i < numBlocks; i++ {
-		spec := testutil.BlockSeriesSpec{
+		spec := block.BlockSeriesSpec{
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
@@ -98,7 +97,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		}
 		expectedSeries[i] = series{lbls: spec.Labels, samples: samples}
 
-		meta, err := testutil.GenerateBlockFromSpec(userID, inDir, []*testutil.BlockSeriesSpec{&spec})
+		meta, err := block.GenerateBlockFromSpec(userID, inDir, []*block.BlockSeriesSpec{&spec})
 		require.NoError(t, err)
 
 		require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bktClient, filepath.Join(inDir, meta.ULID.String()), meta))

@@ -48,7 +48,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -1358,7 +1357,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 	require.NoError(t, err)
 
 	// Mock two tenants, each with 2 overlapping blocks.
-	spec := []*testutil.BlockSeriesSpec{{
+	spec := []*block.BlockSeriesSpec{{
 		Labels: labels.FromStrings(labels.MetricName, "series_1"),
 		Chunks: []chunks.Meta{tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 			newSample(1574776800000, 0, nil, nil),
@@ -1366,13 +1365,13 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 		})},
 	}}
 
-	user1Meta1, err := testutil.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
+	user1Meta1, err := block.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
 	require.NoError(t, err)
-	user1Meta2, err := testutil.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
+	user1Meta2, err := block.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
 	require.NoError(t, err)
-	user2Meta1, err := testutil.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
+	user2Meta1, err := block.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
 	require.NoError(t, err)
-	user2Meta2, err := testutil.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
+	user2Meta2, err := block.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
 	require.NoError(t, err)
 
 	// Mock the last modified timestamp returned for each of the block's meta.json.
@@ -2085,7 +2084,7 @@ func stopServiceFn(t *testing.T, serv services.Service) func() {
 
 func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 	// Generate a single block with out of order chunks.
-	specs := []*testutil.BlockSeriesSpec{
+	specs := []*block.BlockSeriesSpec{
 		{
 			Labels: labels.FromStrings("case", "out_of_order"),
 			Chunks: []chunks.Meta{
@@ -2101,9 +2100,9 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 
 	storageDir := t.TempDir()
 	// We need two blocks to start compaction.
-	meta1, err := testutil.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
 	require.NoError(t, err)
-	meta2, err := testutil.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
 	require.NoError(t, err)
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package testutil
+package block
 
 import (
 	"context"
@@ -18,8 +18,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/exp/slices"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 type BlockSeriesSpec struct {
@@ -59,7 +57,7 @@ func (s BlockSeriesSpecs) MaxTime() int64 {
 
 // GenerateBlockFromSpec generates a TSDB block with series and chunks provided by the input specs.
 // This utility is intended just to be used for testing. Do not use it for any production code.
-func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) (_ *block.Meta, returnErr error) {
+func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) (_ *Meta, returnErr error) {
 	blockID := ulid.MustNew(ulid.Now(), rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
@@ -154,7 +152,7 @@ func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) 
 	}
 
 	// Generate the meta.json file.
-	meta := &block.Meta{
+	meta := &Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    blockID,
 			MinTime: specs.MinTime(),
@@ -165,8 +163,8 @@ func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) 
 			},
 			Version: 1,
 		},
-		Thanos: block.Thanos{
-			Version: block.ThanosVersion1,
+		Thanos: Thanos{
+			Version: ThanosVersion1,
 		},
 	}
 
