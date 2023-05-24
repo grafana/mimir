@@ -20,7 +20,7 @@ assert_failed() {
 }
 
 # In this test we customize some labels. We expect to not find any reference to default labels.
-FORBIDDEN_LABELS="cluster instance node"
+FORBIDDEN_LABELS="cluster pod node"
 
 for LABEL in ${FORBIDDEN_LABELS}; do
   QUERY_REGEX="[^\$a-z_]${LABEL}[^a-z_]"

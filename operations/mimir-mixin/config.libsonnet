@@ -233,8 +233,8 @@
               /
             ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
           )
-          # Make sure that the pods are really all Mimir pods.
-          and on(namespace, pod, container) group(cortex_build_info{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}) by (namespace, pod, container)
+          # Make sure that we really only target Mimir containers
+          and on(%(group_by)s) group(cortex_build_info{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}) by (%(group_by)s)
           > %(allocationpercent)s
         |||,
       },
