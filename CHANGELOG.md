@@ -49,6 +49,7 @@
 * [ENHANCEMENT] Add `-enable-go-runtime-metrics` flag to expose all go runtime metrics as Prometheus metrics. #5009
 * [ENHANCEMENT] Ruler: trigger a synchronization of tenant's rule groups as soon as they change the rules configuration via API. This synchronization is in addition of the periodic syncing done every `-ruler.poll-interval`. #4975
 * [ENHANCEMENT] Store-gateway: record index header loading time separately in `cortex_bucket_store_series_request_stage_duration_seconds{stage="load_index"}`. Now index header loading will be visible in the "Mimir / Queries" dashboard in the "Series request p99/average latency" panels. #5011
+* [ENHANCEMENT] Update Docker base images from `alpine:3.17.3` to `alpine:3.18.0`. #5065
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
