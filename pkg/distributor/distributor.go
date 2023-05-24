@@ -568,7 +568,7 @@ func shardByAllLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
 	return h
 }
 
-// Remove the label labelname from a slice of LabelPairs if it exists.
+// Remove the label labelName from a slice of LabelAdapters if it exists.
 func removeLabel(labelName string, labels *[]mimirpb.LabelAdapter) {
 	for i := 0; i < len(*labels); i++ {
 		pair := (*labels)[i]

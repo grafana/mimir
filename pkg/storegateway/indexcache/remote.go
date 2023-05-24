@@ -325,5 +325,5 @@ func (c *RemoteIndexCache) FetchLabelValues(ctx context.Context, userID string, 
 
 func labelValuesCacheKey(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) string {
 	hash := blake2b.Sum256([]byte(matchersKey))
-	return "LV:" + userID + ":" + blockID.String() + ":" + labelName + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	return "LV2:" + userID + ":" + blockID.String() + ":" + labelName + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }

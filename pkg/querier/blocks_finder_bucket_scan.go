@@ -45,7 +45,6 @@ type BucketScanBlocksFinderConfig struct {
 	TenantsConcurrency       int
 	MetasConcurrency         int
 	CacheDir                 string
-	ConsistencyDelay         time.Duration
 	IgnoreDeletionMarksDelay time.Duration
 }
 
@@ -375,8 +374,6 @@ func (d *BucketScanBlocksFinder) createMetaFetcher(userID string) (block.Metadat
 	userReg := prometheus.NewRegistry()
 
 	// The following filters have been intentionally omitted:
-	// - Consistency delay filter: omitted because we should discover all uploaded blocks.
-	//   The consistency delay is taken in account when running the consistency check at query time.
 	// - Deduplicate filter: omitted because it could cause troubles with the consistency check if
 	//   we "hide" source blocks because recently compacted by the compactor before the store-gateway instances
 	//   discover and load the compacted ones.

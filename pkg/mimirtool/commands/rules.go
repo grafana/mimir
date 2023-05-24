@@ -149,7 +149,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 		Action(r.lint)
 	checkCmd := rulesCmd.
 		Command("check", "Run various best practice checks against rules.").
-		Action(r.checkRecordingRuleNames)
+		Action(r.checkRules)
 	deleteNamespaceCmd := rulesCmd.
 		Command("delete-namespace", "Delete a namespace from the ruler.").
 		Action(r.deleteNamespace)
@@ -722,7 +722,7 @@ func (r *RuleCommand) lint(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (r *RuleCommand) checkRecordingRuleNames(k *kingpin.ParseContext) error {
+func (r *RuleCommand) checkRules(_ *kingpin.ParseContext) error {
 	err := r.setupFiles()
 	if err != nil {
 		return errors.Wrap(err, "check operation unsuccessful, unable to load rules files")
@@ -733,6 +733,11 @@ func (r *RuleCommand) checkRecordingRuleNames(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "check operation unsuccessful, unable to parse rules files")
 	}
 
+	lvl := log.WarnLevel
+	if r.Strict {
+		lvl = log.ErrorLevel
+	}
+
 	for _, ruleNamespace := range namespaces {
 		n := ruleNamespace.CheckRecordingRules(r.Strict)
 		if n != 0 {
@@ -740,14 +745,24 @@ func (r *RuleCommand) checkRecordingRuleNames(k *kingpin.ParseContext) error {
 		}
 		duplicateRules := checkDuplicates(ruleNamespace.Groups)
 		if len(duplicateRules) != 0 {
-			fmt.Printf("%d duplicate rule(s) found.\n", len(duplicateRules))
+			log.WithFields(log.Fields{
+				"namespace":       ruleNamespace.Namespace,
+				"error":           "rules should emit unique series, to avoid producing inconsistencies while recording expressions",
+				"duplicate_rules": len(duplicateRules),
+			}).Logf(lvl, "duplicate rules found")
 			for _, n := range duplicateRules {
-				fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
-				for i, l := range n.label {
-					fmt.Printf("\t%s: %s\n", i, l)
+				fields := log.Fields{
+					"namespace": ruleNamespace.Namespace,
+					"metric":    n.metric,
 				}
+				for i, l := range n.label {
+					fields["label["+i+"]"] = l
+				}
+				log.WithFields(fields).Logf(lvl, "duplicate rule")
 			}
-			fmt.Println("Might cause inconsistency while recording expressions.")
+			if r.Strict {
+				return fmt.Errorf("%d duplicate rules found in namespace %q", len(duplicateRules), ruleNamespace.Namespace)
+			}
 		}
 	}
 

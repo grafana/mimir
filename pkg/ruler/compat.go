@@ -144,6 +144,7 @@ type RulesLimits interface {
 	RulerMaxRulesPerRuleGroup(userID string) int
 	RulerRecordingRulesEvaluationEnabled(userID string) bool
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
+	RulerSyncRulesOnChangesEnabled(userID string) bool
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter) rules.QueryFunc {

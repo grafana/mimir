@@ -142,9 +142,11 @@ The following features are currently deprecated and will be **removed in Mimir 2
 - Ingester
   - `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`
 
-The following features are currently deprecated and will be **removed in Mimir 2.11**:
+The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.11**:
 
 - Store-gateway
   - `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
   - `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
   - `-blocks-storage.bucket-store.max-chunk-pool-bytes`
+- Querier, ruler, store-gateway
+  - `-blocks-storage.bucket-store.bucket-index.enabled`

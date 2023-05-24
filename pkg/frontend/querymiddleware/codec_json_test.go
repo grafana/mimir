@@ -269,7 +269,7 @@ func TestPrometheusCodec_JSONEncoding(t *testing.T) {
 				Data: &PrometheusData{
 					ResultType: model.ValMatrix.String(),
 					Result: []SampleStream{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1_234, Histogram: responseHistogram}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1_234, Histogram: &responseHistogram}}},
 					},
 				},
 			},
@@ -316,7 +316,7 @@ func TestPrometheusCodec_JSONEncoding(t *testing.T) {
 						{
 							Labels:     []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
 							Samples:    []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}},
-							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 3_000, Histogram: responseHistogram}}},
+							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 3_000, Histogram: &responseHistogram}}},
 					},
 				},
 			},

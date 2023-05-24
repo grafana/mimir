@@ -715,7 +715,7 @@ var protobufCodecScenarios = map[string]struct {
 							Histograms: []mimirpb.FloatHistogramPair{
 								{
 									TimestampMs: 1234,
-									Histogram: mimirpb.FloatHistogram{
+									Histogram: &mimirpb.FloatHistogram{
 										CounterResetHint: histogram.GaugeType,
 										Schema:           3,
 										ZeroThreshold:    1.23,
@@ -827,7 +827,7 @@ var protobufCodecScenarios = map[string]struct {
 							Histograms: []mimirpb.FloatHistogramPair{
 								{
 									TimestampMs: 1234,
-									Histogram: mimirpb.FloatHistogram{
+									Histogram: &mimirpb.FloatHistogram{
 										CounterResetHint: histogram.GaugeType,
 										Schema:           3,
 										ZeroThreshold:    1.23,
@@ -848,7 +848,7 @@ var protobufCodecScenarios = map[string]struct {
 								},
 								{
 									TimestampMs: 12340,
-									Histogram: mimirpb.FloatHistogram{
+									Histogram: &mimirpb.FloatHistogram{
 										CounterResetHint: histogram.GaugeType,
 										Schema:           4,
 										ZeroThreshold:    1.203,
