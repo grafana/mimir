@@ -98,34 +98,3 @@ func (i *Ingester) checkReadOverloaded() error {
 
 	return nil
 }
-
-// checkWriteOverloaded checks whether the ingester write path is overloaded wrt. CPU and/or memory.
-func (i *Ingester) checkWriteOverloaded() error {
-	if !i.cfg.UtilizationBasedLimitingEnabled {
-		return nil
-	}
-
-	memUtil := i.memoryUtilization.Load()
-	cpuUtil := i.cpuUtilization.Load()
-	lastUpdate := i.lastResourceUtilizationUpdate.Load()
-	if lastUpdate.IsZero() {
-		return nil
-	}
-
-	memPercent := 100 * (float64(memUtil) / float64(i.writePathMemoryThreshold))
-	cpuPercent := 100 * (cpuUtil / i.writePathCPUThreshold)
-
-	level.Info(i.logger).Log("msg", "write path resource based limiting",
-		"memory_threshold", i.writePathMemoryThreshold, "memory_percentage_of_threshold", memPercent,
-		"cpu_threshold", i.writePathCPUThreshold, "cpu_percentage_of_threshold", cpuPercent,
-		"memory_utilization", memUtil, "cpu_utilization", cpuUtil)
-
-	if memPercent >= 100 {
-		return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process writes, try again later")
-	}
-	if cpuPercent >= 100 {
-		return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process writes, try again later")
-	}
-
-	return nil
-}

@@ -978,11 +978,6 @@ instance_limits:
 # utilization based request limiting
 # CLI flag: -ingester.read-path-utilization-target-ratio
 [read_path_utilization_target_ratio: <float> | default = 0.8]
-
-# (experimental) Write path target ratio, as a fraction of 1, for CPU/memory
-# utilization based request limiting
-# CLI flag: -ingester.write-path-utilization-target-ratio
-[write_path_utilization_target_ratio: <float> | default = 0.9]
 ```
 
 ### querier

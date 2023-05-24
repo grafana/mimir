@@ -50,7 +50,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -59,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -168,7 +168,6 @@ type Config struct {
 	CPUUtilizationTarget            float64 `yaml:"cpu_utilization_target" category:"experimental"`
 	MemoryUtilizationTarget         uint64  `yaml:"memory_utilization_target" category:"experimental"`
 	ReadPathUtilizationRatio        float64 `yaml:"read_path_utilization_target_ratio" category:"experimental"`
-	WritePathUtilizationRatio       float64 `yaml:"write_path_utilization_target_ratio" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -194,8 +193,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Uint64Var(&cfg.MemoryUtilizationTarget, "ingester.memory-utilization-target", 0, "Memory target, in bytes, for CPU/memory utilization based request limiting")
 	f.Float64Var(&cfg.ReadPathUtilizationRatio, "ingester.read-path-utilization-target-ratio", 0.8,
 		"Read path target ratio , as a fraction of 1, for CPU/memory utilization based request limiting")
-	f.Float64Var(&cfg.WritePathUtilizationRatio, "ingester.write-path-utilization-target-ratio", 0.9,
-		"Write path target ratio, as a fraction of 1, for CPU/memory utilization based request limiting")
 }
 
 	if cfg.UtilizationBasedLimitingEnabled {
@@ -207,9 +204,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		}
 		if cfg.ReadPathUtilizationRatio == 0 {
 			return fmt.Errorf("read path utilization target ratio must be set")
-		}
-		if cfg.WritePathUtilizationRatio == 0 {
-			return fmt.Errorf("write path utilization target ratio must be set")
 		}
 	}
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -295,10 +289,6 @@ type Ingester struct {
 	readPathMemoryThreshold uint64
 	// Read path CPU threshold as a fraction of 1
 	readPathCPUThreshold float64
-	// Write path memory threshold in bytes
-	writePathMemoryThreshold uint64
-	// Write path CPU threshold as a fraction of 1
-	writePathCPUThreshold float64
 	// Memory utilization in bytes
 	memoryUtilization atomic.Uint64
 	// CPU utilization as fraction
@@ -345,10 +335,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
 		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
 
-		readPathCPUThreshold:     cfg.ReadPathUtilizationRatio * cfg.CPUUtilizationTarget,
-		readPathMemoryThreshold:  uint64(cfg.ReadPathUtilizationRatio * float64(cfg.MemoryUtilizationTarget)),
-		writePathCPUThreshold:    cfg.WritePathUtilizationRatio * cfg.CPUUtilizationTarget,
-		writePathMemoryThreshold: uint64(cfg.WritePathUtilizationRatio * float64(cfg.MemoryUtilizationTarget)),
+		readPathCPUThreshold:    cfg.ReadPathUtilizationRatio * cfg.CPUUtilizationTarget,
+		readPathMemoryThreshold: uint64(cfg.ReadPathUtilizationRatio * float64(cfg.MemoryUtilizationTarget)),
 		// Use a minute long window, each sample being a second apart
 		movingAvg: ewma.NewMovingAverage(60),
 	}, nil
@@ -728,9 +716,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	defer pushReq.CleanUp()
 
 	if err := i.checkRunning(); err != nil {
-		return nil, err
-	}
-	if err := i.checkWriteOverloaded(); err != nil {
 		return nil, err
 	}
 

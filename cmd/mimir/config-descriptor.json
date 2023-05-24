@@ -2707,17 +2707,6 @@
           "fieldFlag": "ingester.read-path-utilization-target-ratio",
           "fieldType": "float",
           "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "write_path_utilization_target_ratio",
-          "required": false,
-          "desc": "Write path target ratio, as a fraction of 1, for CPU/memory utilization based request limiting",
-          "fieldValue": null,
-          "fieldDefaultValue": 0.9,
-          "fieldFlag": "ingester.write-path-utilization-target-ratio",
-          "fieldType": "float",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
