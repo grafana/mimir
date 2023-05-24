@@ -747,7 +747,7 @@ func (l *bucketIndexLoadedSeries) addSeries(ref storage.SeriesRef, data []byte) 
 	l.seriesMx.Unlock()
 }
 
-// unsafeLoadSeries populates the given symbolized labels for the series identified by the reference the series has at least one chunk in the block.
+// unsafeLoadSeries returns symbolized labels for the series identified by the reference if the series has at least one chunk in the block.
 // unsafeLoadSeries also populates the given chunk metas slice if skipChunks is set to false. The returned chunkMetas will be in the same
 // order as in the index, which at this point is ordered by minTime and by their ref. The returned chunk metas are all the chunk for the series.
 // unsafeLoadSeries returns false, when there are no series data.
@@ -755,7 +755,7 @@ func (l *bucketIndexLoadedSeries) addSeries(ref storage.SeriesRef, data []byte) 
 // Error is returned on decoding error or if the reference does not resolve to a known series.
 //
 // It's NOT safe to call this function concurrently with addSeries().
-func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) (ok bool, _ []symbolizedLabel, err error) {
+func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, chks *[]chunks.Meta, skipChunks bool, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) (ok bool, _ []symbolizedLabel, err error) {
 	b, ok := l.series[ref]
 	if !ok {
 		return false, nil, errors.Errorf("series %d not found", ref)
