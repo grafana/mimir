@@ -28,8 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
-	e2eutil "github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/test"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
@@ -98,7 +96,7 @@ func TestDelete(t *testing.T) {
 
 	bkt := objstore.NewInMemBucket()
 	{
-		b1, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+		b1, err := CreateBlock(ctx, tmpDir, fiveLabels,
 			100, 0, 1000, labels.FromStrings("ext1", "val1"))
 		require.NoError(t, err)
 		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), nil))
@@ -112,7 +110,7 @@ func TestDelete(t *testing.T) {
 		require.Equal(t, 0, len(bkt.Objects()))
 	}
 	{
-		b2, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+		b2, err := CreateBlock(ctx, tmpDir, fiveLabels,
 			100, 0, 1000, labels.FromStrings("ext1", "val1"))
 		require.NoError(t, err)
 		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil))
@@ -131,7 +129,7 @@ func TestUpload(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	bkt := objstore.NewInMemBucket()
-	b1, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+	b1, err := CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),
@@ -241,7 +239,7 @@ func TestUpload(t *testing.T) {
 
 	t.Run("upload with no external labels works just fine", func(t *testing.T) {
 		// Upload with no external labels should be blocked.
-		b2, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+		b2, err := CreateBlock(ctx, tmpDir, []labels.Labels{
 			labels.FromStrings("a", "1"),
 			labels.FromStrings("a", "2"),
 			labels.FromStrings("a", "3"),
@@ -272,7 +270,7 @@ func TestUpload(t *testing.T) {
 
 	t.Run("upload with supplied meta.json", func(t *testing.T) {
 		// Upload with no external labels should be blocked.
-		b3, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+		b3, err := CreateBlock(ctx, tmpDir, []labels.Labels{
 			labels.FromStrings("a", "1"),
 			labels.FromStrings("a", "2"),
 			labels.FromStrings("a", "3"),
@@ -348,7 +346,7 @@ func TestMarkForDeletion(t *testing.T) {
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
-			id, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+			id, err := CreateBlock(ctx, tmpDir, fiveLabels,
 				100, 0, 1000, labels.FromStrings("ext1", "val1"))
 			require.NoError(t, err)
 
@@ -397,7 +395,7 @@ func TestMarkForNoCompact(t *testing.T) {
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
-			id, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+			id, err := CreateBlock(ctx, tmpDir, fiveLabels,
 				100, 0, 1000, labels.FromStrings("ext1", "val1"))
 			require.NoError(t, err)
 
@@ -421,7 +419,7 @@ func TestUploadCleanup(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	bkt := objstore.NewInMemBucket()
-	b1, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+	b1, err := CreateBlock(ctx, tmpDir, fiveLabels,
 		100, 0, 1000, labels.FromStrings("ext1", "val1"))
 	require.NoError(t, err)
 

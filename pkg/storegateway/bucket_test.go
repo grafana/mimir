@@ -62,7 +62,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -2233,14 +2232,14 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	// Create two blocks. Some series exists in both blocks, some don't.
 	// Samples for the overlapping series are equal between the two blocks
 	// (simulate the case of uncompacted blocks from ingesters).
-	_, err := testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
+	_, err := block.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
-	_, err = testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
+	_, err = block.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),

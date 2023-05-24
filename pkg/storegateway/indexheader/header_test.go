@@ -24,7 +24,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -83,7 +82,7 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 		labels.FromStrings("a", "1", "longer-string", "2"),
 	}
 
-	idIndexV2, err := testhelper.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	idIndexV2, err := block.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), nil))
 
@@ -303,7 +302,7 @@ func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, bl
 		}
 	}
 
-	id, err := testhelper.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	id, err := block.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id.String()), nil))
 

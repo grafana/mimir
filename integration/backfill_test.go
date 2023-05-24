@@ -33,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
 func TestMimirtoolBackfill(t *testing.T) {
@@ -44,7 +43,7 @@ func TestMimirtoolBackfill(t *testing.T) {
 	tmpDir := t.TempDir()
 	blockEnd := time.Now().Truncate(2 * time.Hour)
 
-	block1, err := testhelper.CreateBlock(
+	block1, err := block.CreateBlock(
 		context.Background(), tmpDir,
 		[]labels.Labels{
 			labels.FromStrings("test", "test1", "a", "1"),
@@ -54,7 +53,7 @@ func TestMimirtoolBackfill(t *testing.T) {
 		100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), labels.EmptyLabels())
 	require.NoError(t, err)
 
-	block2, err := testhelper.CreateBlock(
+	block2, err := block.CreateBlock(
 		context.Background(), tmpDir,
 		[]labels.Labels{
 			labels.FromStrings("test", "test2", "a", "1"),
@@ -151,7 +150,7 @@ overrides:
 
 	{
 		// Let's try to upload a block without meta.json.
-		b, err := testhelper.CreateBlock(
+		b, err := block.CreateBlock(
 			context.Background(), tmpDir,
 			[]labels.Labels{
 				labels.FromStrings("test", "bad", "a", "1"),
@@ -171,7 +170,7 @@ overrides:
 		// Let's try block with external labels. Mimir currently rejects those.
 		extLabels := labels.FromStrings("ext", "labels")
 
-		b, err := testhelper.CreateBlock(
+		b, err := block.CreateBlock(
 			context.Background(), tmpDir,
 			[]labels.Labels{
 				labels.FromStrings("test", "bad", "a", "1"),
@@ -224,7 +223,7 @@ func TestBackfillSlowUploadSpeed(t *testing.T) {
 	tmpDir := t.TempDir()
 	blockEnd := time.Now().Truncate(2 * time.Hour)
 
-	block, err := testhelper.CreateBlock(
+	block, err := block.CreateBlock(
 		context.Background(), tmpDir,
 		[]labels.Labels{
 			labels.FromStrings("test", "test1", "a", "1"),

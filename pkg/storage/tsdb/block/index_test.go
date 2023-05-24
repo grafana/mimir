@@ -18,8 +18,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
-
-	e2eutil "github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
 func TestRewrite(t *testing.T) {
@@ -27,7 +25,7 @@ func TestRewrite(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	b, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	b, err := CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),

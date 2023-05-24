@@ -36,7 +36,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
 func verifyUploadedMeta(t *testing.T, bkt *bucket.ClientMock, expMeta block.Meta) {
@@ -1630,7 +1629,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// create a test block
 			now := time.Now()
-			blockID, err := testhelper.CreateBlock(ctx, tmpDir, tc.lbls(), 300, now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), labels.EmptyLabels())
+			blockID, err := block.CreateBlock(ctx, tmpDir, tc.lbls(), 300, now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), labels.EmptyLabels())
 			require.NoError(t, err)
 			testDir := filepath.Join(tmpDir, blockID.String())
 			meta, err := block.ReadFromDir(testDir)
