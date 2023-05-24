@@ -110,6 +110,7 @@ func (s *Symbols) Reader() *symbolsReader {
 }
 
 type symbolsReader struct {
+	// atSymbol is the sequence of the symbol in V2, and the offset of the symbol in V1
 	atSymbol uint32
 	d        *streamencoding.Decbuf
 	s        *Symbols
@@ -125,12 +126,12 @@ func (r *symbolsReader) Read(o uint32) (string, error) {
 		return "", err
 	}
 
+	if o < r.atSymbol {
+		return "", fmt.Errorf("trying to reverse symbolsReader, at %d requesting %d", r.atSymbol, o)
+	}
 	if r.s.version == index.FormatV2 {
 		if int(o) >= r.s.seen {
 			return "", fmt.Errorf("unknown symbol offset %d", o)
-		}
-		if o < r.atSymbol {
-			return "", fmt.Errorf("trying to reverse symbolsReader, at %d requesting %d", r.atSymbol, o)
 		}
 		if targetOffsetIdx, currentOffsetIdx := o/symbolFactor, r.atSymbol/symbolFactor; targetOffsetIdx > currentOffsetIdx {
 			// Only ResetAt a bigger offset than the current one.
@@ -149,6 +150,7 @@ func (r *symbolsReader) Read(o uint32) (string, error) {
 		// of the symbol table.
 		offsetInTable := int(o) - r.s.tableOffset
 		d.ResetAt(offsetInTable)
+		r.atSymbol = o
 	}
 	sym := d.UvarintStr()
 	r.atSymbol++

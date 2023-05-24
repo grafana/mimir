@@ -223,8 +223,13 @@ func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 	return s, nil
 }
 
+// SymbolsReader sequentially reads symbols from a TSDB block index.
 type SymbolsReader interface {
 	io.Closer
+
+	// Read should return the string for the requested symbol.
+	// Read should be called only with increasing symbols IDs;
+	// this also means that is is not valid to call Read with the same symbol ID multiple times.
 	Read(uint32) (string, error)
 }
 
