@@ -153,9 +153,9 @@ func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULI
 	return nil, false
 }
 
-func (noopCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+func (noopCache) StoreSeriesForPostings(string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey, []byte) {
 }
-func (noopCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey) ([]byte, bool) {
+func (noopCache) FetchSeriesForPostings(context.Context, string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey) ([]byte, bool) {
 	return nil, false
 }
 

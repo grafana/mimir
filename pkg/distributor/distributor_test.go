@@ -3299,7 +3299,7 @@ func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
 	return result
 }
 
-func (i *mockIngester) Check(ctx context.Context, in *grpc_health_v1.HealthCheckRequest, opts ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
+func (i *mockIngester) Check(context.Context, *grpc_health_v1.HealthCheckRequest, ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -3312,7 +3312,7 @@ func (i *mockIngester) Close() error {
 	return nil
 }
 
-func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	time.Sleep(i.pushDelay)
 
 	i.Lock()
@@ -3388,7 +3388,7 @@ func makeWireChunk(c chunk.EncodedChunk) client.Chunk {
 	return chunk
 }
 
-func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest, opts ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
+func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, _ ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
 	time.Sleep(i.queryDelay)
 
 	i.Lock()
@@ -3500,7 +3500,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 	}, nil
 }
 
-func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest, opts ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
+func (i *mockIngester) MetricsForLabelMatchers(_ context.Context, req *client.MetricsForLabelMatchersRequest, _ ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -3526,7 +3526,7 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 	return &response, nil
 }
 
-func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesRequest, opts ...grpc.CallOption) (*client.LabelNamesResponse, error) {
+func (i *mockIngester) LabelNames(_ context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -3554,7 +3554,7 @@ func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 	return &response, nil
 }
 
-func (i *mockIngester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest, opts ...grpc.CallOption) (*client.MetricsMetadataResponse, error) {
+func (i *mockIngester) MetricsMetadata(context.Context, *client.MetricsMetadataRequest, ...grpc.CallOption) (*client.MetricsMetadataResponse, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -3621,7 +3621,7 @@ func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesRespo
 	return result, nil
 }
 
-func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.LabelValuesCardinalityRequest, opts ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
+func (i *mockIngester) LabelValuesCardinality(_ context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -3716,7 +3716,7 @@ func (i *noopIngester) Close() error {
 	return nil
 }
 
-func (i *noopIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+func (i *noopIngester) Push(context.Context, *mimirpb.WriteRequest, ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	return nil, nil
 }
 
@@ -3739,11 +3739,11 @@ func (s *stream) Recv() (*client.QueryStreamResponse, error) {
 	return result, nil
 }
 
-func (i *mockIngester) AllUserStats(ctx context.Context, in *client.UserStatsRequest, opts ...grpc.CallOption) (*client.UsersStatsResponse, error) {
+func (i *mockIngester) AllUserStats(context.Context, *client.UserStatsRequest, ...grpc.CallOption) (*client.UsersStatsResponse, error) {
 	return &i.stats, nil
 }
 
-func (i *mockIngester) UserStats(ctx context.Context, in *client.UserStatsRequest, opts ...grpc.CallOption) (*client.UserStatsResponse, error) {
+func (i *mockIngester) UserStats(context.Context, *client.UserStatsRequest, ...grpc.CallOption) (*client.UserStatsResponse, error) {
 	if !i.happy {
 		return nil, errFail
 	}

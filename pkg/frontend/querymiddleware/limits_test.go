@@ -447,10 +447,6 @@ func (m mockLimits) MaxQueryLookback(string) time.Duration {
 	return m.maxQueryLookback
 }
 
-func (m mockLimits) MaxQueryLength(string) time.Duration {
-	return m.maxQueryLength
-}
-
 func (m mockLimits) MaxTotalQueryLength(string) time.Duration {
 	if m.maxTotalQueryLength == time.Duration(0) {
 		return m.maxQueryLength
@@ -489,31 +485,31 @@ func (m mockLimits) SplitInstantQueriesByInterval(string) time.Duration {
 	return m.splitInstantQueriesInterval
 }
 
-func (m mockLimits) CompactorSplitAndMergeShards(userID string) int {
+func (m mockLimits) CompactorSplitAndMergeShards(string) int {
 	return m.compactorShards
 }
 
-func (m mockLimits) CompactorBlocksRetentionPeriod(userID string) time.Duration {
+func (m mockLimits) CompactorBlocksRetentionPeriod(string) time.Duration {
 	return m.compactorBlocksRetentionPeriod
 }
 
-func (m mockLimits) OutOfOrderTimeWindow(userID string) time.Duration {
+func (m mockLimits) OutOfOrderTimeWindow(string) time.Duration {
 	return m.outOfOrderTimeWindow
 }
 
-func (m mockLimits) ResultsCacheTTL(userID string) time.Duration {
+func (m mockLimits) ResultsCacheTTL(string) time.Duration {
 	return m.resultsCacheTTL
 }
 
-func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(userID string) time.Duration {
+func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(string) time.Duration {
 	return m.resultsCacheOutOfOrderWindowTTL
 }
 
-func (m mockLimits) CreationGracePeriod(userID string) time.Duration {
+func (m mockLimits) CreationGracePeriod(string) time.Duration {
 	return m.creationGracePeriod
 }
 
-func (m mockLimits) NativeHistogramsIngestionEnabled(userID string) bool {
+func (m mockLimits) NativeHistogramsIngestionEnabled(string) bool {
 	return m.nativeHistogramsIngestionEnabled
 }
 

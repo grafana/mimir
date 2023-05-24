@@ -41,7 +41,7 @@ func main() {
 	}{}
 
 	logger := gokitlog.NewNopLogger()
-	cfg.bucket.RegisterFlags(flag.CommandLine, logger)
+	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.Parse()
 

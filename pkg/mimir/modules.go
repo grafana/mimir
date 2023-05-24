@@ -383,7 +383,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	t.MetadataSupplier = t.Distributor
 
 	// Register the default endpoints that are always enabled for the querier module
-	t.API.RegisterQueryable(t.QuerierQueryable, t.Distributor)
+	t.API.RegisterQueryable(t.Distributor)
 
 	return nil, nil
 }

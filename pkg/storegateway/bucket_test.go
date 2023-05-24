@@ -371,7 +371,7 @@ type cacheNotExpectingToStoreLabelNames struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(string, ulid.ULID, indexcache.LabelMatchersKey, []byte) {
 	c.t.Fatalf("StoreLabelNames should not be called")
 }
 
@@ -491,7 +491,7 @@ type cacheNotExpectingToStoreLabelValues struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey indexcache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(string, ulid.ULID, string, indexcache.LabelMatchersKey, []byte) {
 	c.t.Fatalf("StoreLabelValues should not be called")
 }
 
@@ -926,13 +926,13 @@ func (w *contextNotifyingOnDoneWaiting) Done() <-chan struct{} {
 
 type corruptedExpandedPostingsCache struct{ noopCache }
 
-func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
+func (c corruptedExpandedPostingsCache) FetchExpandedPostings(context.Context, string, ulid.ULID, indexcache.LabelMatchersKey, string) ([]byte, bool) {
 	return []byte(codecHeaderSnappy + "corrupted"), true
 }
 
 type corruptedPostingsCache struct{ noopCache }
 
-func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) indexcache.BytesResult {
+func (c corruptedPostingsCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) indexcache.BytesResult {
 	res := make(map[labels.Label][]byte)
 	for _, k := range keys {
 		res[k] = []byte("corrupted or unknown")
@@ -945,7 +945,7 @@ type cacheNotExpectingToStoreExpandedPostings struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(string, ulid.ULID, indexcache.LabelMatchersKey, string, []byte) {
 	c.t.Fatalf("StoreExpandedPostings should not be called")
 }
 
@@ -955,7 +955,7 @@ type spyPostingsCache struct {
 	storedPostingsVal         map[labels.Label][]byte
 }
 
-func (c *spyPostingsCache) StoreExpandedPostings(userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+func (c *spyPostingsCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ string, v []byte) {
 	c.storedExpandedPostingsVal = v
 }
 
@@ -1879,8 +1879,8 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 		}
 	}
 
-	tb, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t, 5000)
-	tb.Cleanup(close)
+	tb, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
+	tb.Cleanup(cleanup)
 	runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
 }
 
@@ -2347,14 +2347,14 @@ func mustMarshalAny(pb proto.Message) *types.Any {
 func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
 	tb := test.NewTB(t)
 
-	closers := []func(){}
+	cleanupFuncs := []func(){}
 
 	tmpDir := t.TempDir()
 
 	bktDir := filepath.Join(tmpDir, "bkt")
 	bkt, err := filesystem.NewBucket(bktDir)
 	assert.NoError(t, err)
-	closers = append(closers, func() { assert.NoError(t, bkt.Close()) })
+	cleanupFuncs = append(cleanupFuncs, func() { assert.NoError(t, bkt.Close()) })
 
 	var (
 		logger   = log.NewNopLogger()
@@ -2425,18 +2425,18 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	assert.NoError(tb, err)
 	assert.NoError(tb, store.SyncBlocks(context.Background()))
 
-	closers = append(closers, func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
+	cleanupFuncs = append(cleanupFuncs, func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
 
 	return tb, store, seriesSet1, seriesSet2, block1, block2, func() {
-		for _, close := range closers {
-			close()
+		for _, cleanup := range cleanupFuncs {
+			cleanup()
 		}
 	}
 }
 
 func TestLabelNamesAndValuesHints(t *testing.T) {
-	_, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t, 5000)
-	defer close()
+	_, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
+	defer cleanup()
 
 	type labelNamesValuesCase struct {
 		name string
@@ -2575,8 +2575,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 }
 
 func TestLabelNames_Cancelled(t *testing.T) {
-	_, store, _, _, _, _, close := setupStoreForHintsTest(t, 5000)
-	defer close()
+	_, store, _, _, _, _, cleanup := setupStoreForHintsTest(t, 5000)
+	defer cleanup()
 
 	req := &storepb.LabelNamesRequest{
 		Start: 0,
@@ -2601,8 +2601,8 @@ func TestLabelNames_Cancelled(t *testing.T) {
 }
 
 func TestLabelValues_Cancelled(t *testing.T) {
-	_, store, _, _, _, _, close := setupStoreForHintsTest(t, 5000)
-	defer close()
+	_, store, _, _, _, _, cleanup := setupStoreForHintsTest(t, 5000)
+	defer cleanup()
 
 	req := &storepb.LabelValuesRequest{
 		Label: "ext1",

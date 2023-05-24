@@ -93,7 +93,7 @@ func newMinTimeMetaFilter(limit time.Duration) *minTimeMetaFilter {
 	return &minTimeMetaFilter{limit: limit}
 }
 
-func (f *minTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
+func (f *minTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, _ block.GaugeVec) error {
 	if f.limit <= 0 {
 		return nil
 	}

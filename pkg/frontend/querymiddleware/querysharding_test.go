@@ -752,8 +752,8 @@ func requireValidSamples(t *testing.T, result []SampleStream) {
 				return
 			}
 		}
-		for _, histogram := range stream.Histograms {
-			if !math.IsNaN(histogram.Histogram.Sum) {
+		for _, h := range stream.Histograms {
+			if !math.IsNaN(h.Histogram.Sum) {
 				return
 			}
 		}
@@ -1997,11 +1997,11 @@ func (m *querierMock) Select(sorted bool, _ *storage.SelectHints, matchers ...*l
 	return newSeriesIteratorMock(filtered)
 }
 
-func (m *querierMock) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m *querierMock) LabelValues(_ string, _ ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }
 
-func (m *querierMock) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m *querierMock) LabelNames(_ ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }
 

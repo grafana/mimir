@@ -45,7 +45,7 @@ func newFakePersistableState() *fakePersistableState {
 	}
 }
 
-func (f *fakePersistableState) WaitReady(ctx context.Context) error {
+func (f *fakePersistableState) WaitReady(context.Context) error {
 	<-f.readyc
 	return nil
 }
@@ -62,7 +62,7 @@ type fakeStore struct {
 	writes    []fakeStoreWrite
 }
 
-func (f *fakeStore) SetFullState(ctx context.Context, user string, desc alertspb.FullStateDesc) error {
+func (f *fakeStore) SetFullState(_ context.Context, user string, desc alertspb.FullStateDesc) error {
 	f.writesMtx.Lock()
 	defer f.writesMtx.Unlock()
 	f.writes = append(f.writes, fakeStoreWrite{user, desc})

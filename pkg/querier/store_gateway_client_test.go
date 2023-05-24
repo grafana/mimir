@@ -55,7 +55,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 		stream, err := client.(*storeGatewayClient).Series(ctx, &storepb.SeriesRequest{})
 		assert.NoError(t, err)
 
-		// Read the entire response from the stream.
+		// nolint:revive // Read the entire response from the stream.
 		for _, err = stream.Recv(); err == nil; {
 		}
 	}
@@ -74,7 +74,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 
 type mockStoreGatewayServer struct{}
 
-func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, _ storegatewaypb.StoreGateway_SeriesServer) error {
 	return nil
 }
 

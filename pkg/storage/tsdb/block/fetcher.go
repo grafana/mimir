@@ -503,7 +503,7 @@ func (f *IgnoreDeletionMarkFilter) DeletionMarkBlocks() map[ulid.ULID]*metadata.
 
 // Filter filters out blocks that are marked for deletion after a given delay.
 // It also returns the blocks that can be deleted since they were uploaded delay duration before current time.
-func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error {
+func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, _ GaugeVec) error {
 	deletionMarkMap := make(map[ulid.ULID]*metadata.DeletionMark)
 
 	// Make a copy of block IDs to check, in order to avoid concurrency issues

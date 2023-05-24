@@ -1041,15 +1041,15 @@ func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(user string) 
 	return m.blockUploadMaxBlockSizeBytes[user]
 }
 
-func (m *mockConfigProvider) S3SSEType(user string) string {
+func (m *mockConfigProvider) S3SSEType(string) string {
 	return ""
 }
 
-func (m *mockConfigProvider) S3SSEKMSKeyID(userID string) string {
+func (m *mockConfigProvider) S3SSEKMSKeyID(string) string {
 	return ""
 }
 
-func (m *mockConfigProvider) S3SSEKMSEncryptionContext(userID string) string {
+func (m *mockConfigProvider) S3SSEKMSEncryptionContext(string) string {
 	return ""
 }
 

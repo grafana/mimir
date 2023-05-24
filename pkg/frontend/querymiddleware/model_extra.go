@@ -41,52 +41,52 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
 func (q *PrometheusRangeQueryRequest) WithID(id int64) Request {
-	new := *q
-	new.Id = id
-	return &new
+	newRequest := *q
+	newRequest.Id = id
+	return &newRequest
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
 func (q *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Request {
-	new := *q
-	new.Start = start
-	new.End = end
-	return &new
+	newRequest := *q
+	newRequest.Start = start
+	newRequest.End = end
+	return &newRequest
 }
 
 // WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
 func (q *PrometheusRangeQueryRequest) WithQuery(query string) Request {
-	new := *q
-	new.Query = query
-	return &new
+	newRequest := *q
+	newRequest.Query = query
+	return &newRequest
 }
 
 // WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
 // added Hint value for TotalQueries.
 func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
-	new := *q
-	if new.Hints == nil {
-		new.Hints = &Hints{TotalQueries: totalQueries}
+	newRequest := *q
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{TotalQueries: totalQueries}
 	} else {
-		*new.Hints = *(q.Hints)
-		new.Hints.TotalQueries = totalQueries
+		*newRequest.Hints = *(q.Hints)
+		newRequest.Hints.TotalQueries = totalQueries
 	}
-	return &new
+	return &newRequest
 }
 
 // WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
 // with an added Hint value for EstimatedCardinality.
 func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
-	new := *q
-	if new.Hints == nil {
-		new.Hints = &Hints{
+	newRequest := *q
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{
 			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
 		}
 	} else {
-		*new.Hints = *(q.Hints)
-		new.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+		*newRequest.Hints = *(q.Hints)
+		newRequest.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
 	}
-	return &new
+	return &newRequest
 }
 
 // LogToSpan logs the current `PrometheusRangeQueryRequest` parameters to the specified span.
@@ -112,45 +112,45 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 }
 
 func (r *PrometheusInstantQueryRequest) WithID(id int64) Request {
-	new := *r
-	new.Id = id
-	return &new
+	newRequest := *r
+	newRequest.Id = id
+	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, endTime int64) Request {
-	new := *r
-	new.Time = startTime
-	return &new
+func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, _ int64) Request {
+	newRequest := *r
+	newRequest.Time = startTime
+	return &newRequest
 }
 
 func (r *PrometheusInstantQueryRequest) WithQuery(s string) Request {
-	new := *r
-	new.Query = s
-	return &new
+	newRequest := *r
+	newRequest.Query = s
+	return &newRequest
 }
 
 func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
-	new := *r
-	if new.Hints == nil {
-		new.Hints = &Hints{TotalQueries: totalQueries}
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{TotalQueries: totalQueries}
 	} else {
-		*new.Hints = *(r.Hints)
-		new.Hints.TotalQueries = totalQueries
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.TotalQueries = totalQueries
 	}
-	return &new
+	return &newRequest
 }
 
 func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
-	new := *r
-	if new.Hints == nil {
-		new.Hints = &Hints{
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{
 			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
 		}
 	} else {
-		*new.Hints = *(r.Hints)
-		new.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
 	}
-	return &new
+	return &newRequest
 }
 
 func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {

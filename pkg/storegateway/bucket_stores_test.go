@@ -755,11 +755,11 @@ type userShardingStrategy struct {
 	users []string
 }
 
-func (u *userShardingStrategy) FilterUsers(ctx context.Context, userIDs []string) ([]string, error) {
+func (u *userShardingStrategy) FilterUsers(context.Context, []string) ([]string, error) {
 	return u.users, nil
 }
 
-func (u *userShardingStrategy) FilterBlocks(ctx context.Context, userID string, metas map[ulid.ULID]*metadata.Meta, loaded map[ulid.ULID]struct{}, synced block.GaugeVec) error {
+func (u *userShardingStrategy) FilterBlocks(_ context.Context, userID string, metas map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
 	if util.StringsContain(u.users, userID) {
 		return nil
 	}
@@ -952,7 +952,7 @@ type indexCacheMissingLabelValues struct {
 	indexcache.IndexCache
 }
 
-func (indexCacheMissingLabelValues) FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey indexcache.LabelMatchersKey) ([]byte, bool) {
+func (indexCacheMissingLabelValues) FetchLabelValues(context.Context, string, ulid.ULID, string, indexcache.LabelMatchersKey) ([]byte, bool) {
 	return nil, false
 }
 

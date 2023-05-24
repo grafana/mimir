@@ -175,10 +175,10 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.TenantFederation.RegisterFlags(f)
 
 	c.Ruler.RegisterFlags(f, logger)
-	c.RulerStorage.RegisterFlags(f, logger)
+	c.RulerStorage.RegisterFlags(f)
 	c.Vault.RegisterFlags(f)
 	c.Alertmanager.RegisterFlags(f, logger)
-	c.AlertmanagerStorage.RegisterFlags(f, logger)
+	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
@@ -186,7 +186,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.UsageStats.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
 
-	c.Common.RegisterFlags(f, logger)
+	c.Common.RegisterFlags(f)
 }
 
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
@@ -257,7 +257,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid store-gateway config")
 	}
-	if err := c.Compactor.Validate(log); err != nil {
+	if err := c.Compactor.Validate(); err != nil {
 		return errors.Wrap(err, "invalid compactor config")
 	}
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
@@ -284,6 +284,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -626,8 +627,8 @@ type CommonConfigInheritance struct {
 }
 
 // RegisterFlags registers flag.
-func (c *CommonConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	c.Storage.RegisterFlagsWithPrefix("common.storage.", f, logger)
+func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
+	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.

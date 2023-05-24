@@ -470,10 +470,10 @@ Outer:
 			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) < 0 {
 				toReturn.chunksRanges = append(toReturn.chunksRanges, chksA[aChunksOffset])
 				break
-			} else {
-				toReturn.chunksRanges = append(toReturn.chunksRanges, chksB[bChunksOffset])
-				bChunksOffset++
 			}
+
+			toReturn.chunksRanges = append(toReturn.chunksRanges, chksB[bChunksOffset])
+			bChunksOffset++
 		}
 	}
 

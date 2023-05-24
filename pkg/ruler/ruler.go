@@ -950,7 +950,7 @@ func (r *Ruler) GetRules(ctx context.Context, rulesTypeFilter RulesRequest_RuleT
 }
 
 // SyncRules implements the gRPC Ruler service.
-func (r *Ruler) SyncRules(ctx context.Context, req *SyncRulesRequest) (*SyncRulesResponse, error) {
+func (r *Ruler) SyncRules(_ context.Context, req *SyncRulesRequest) (*SyncRulesResponse, error) {
 	r.inboundSyncQueue.enqueue(req.GetUserIds()...)
 	return &SyncRulesResponse{}, nil
 }

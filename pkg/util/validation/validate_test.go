@@ -26,15 +26,15 @@ type validateLabelsCfg struct {
 	maxLabelValueLength    int
 }
 
-func (v validateLabelsCfg) MaxLabelNamesPerSeries(userID string) int {
+func (v validateLabelsCfg) MaxLabelNamesPerSeries(_ string) int {
 	return v.maxLabelNamesPerSeries
 }
 
-func (v validateLabelsCfg) MaxLabelNameLength(userID string) int {
+func (v validateLabelsCfg) MaxLabelNameLength(_ string) int {
 	return v.maxLabelNameLength
 }
 
-func (v validateLabelsCfg) MaxLabelValueLength(userID string) int {
+func (v validateLabelsCfg) MaxLabelValueLength(_ string) int {
 	return v.maxLabelValueLength
 }
 
@@ -43,11 +43,11 @@ type validateMetadataCfg struct {
 	maxMetadataLength         int
 }
 
-func (vm validateMetadataCfg) EnforceMetadataMetricName(userID string) bool {
+func (vm validateMetadataCfg) EnforceMetadataMetricName(_ string) bool {
 	return vm.enforceMetadataMetricName
 }
 
-func (vm validateMetadataCfg) MaxMetadataLength(userID string) int {
+func (vm validateMetadataCfg) MaxMetadataLength(_ string) int {
 	return vm.maxMetadataLength
 }
 
@@ -348,11 +348,11 @@ type sampleValidationConfig struct {
 	maxNativeHistogramBuckets int
 }
 
-func (c sampleValidationConfig) CreationGracePeriod(userID string) time.Duration {
+func (c sampleValidationConfig) CreationGracePeriod(_ string) time.Duration {
 	return 0
 }
 
-func (c sampleValidationConfig) MaxNativeHistogramBuckets(userID string) int {
+func (c sampleValidationConfig) MaxNativeHistogramBuckets(_ string) int {
 	return c.maxNativeHistogramBuckets
 }
 

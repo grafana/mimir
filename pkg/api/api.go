@@ -19,7 +19,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
 
@@ -365,12 +364,9 @@ type Distributor interface {
 	UserStatsHandler(w http.ResponseWriter, r *http.Request)
 }
 
-// RegisterQueryable registers the the default routes associated with the querier
+// RegisterQueryable registers the default routes associated with the querier
 // module.
-func (a *API) RegisterQueryable(
-	queryable storage.SampleAndChunkQueryable,
-	distributor Distributor,
-) {
+func (a *API) RegisterQueryable(distributor Distributor) {
 	// these routes are always registered to the default server
 	a.RegisterRoute("/api/v1/user_stats", http.HandlerFunc(distributor.UserStatsHandler), true, true, "GET")
 }

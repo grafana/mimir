@@ -46,7 +46,7 @@ type config struct {
 func main() {
 	logger := gokitlog.NewNopLogger()
 	cfg := config{}
-	cfg.bucket.RegisterFlags(flag.CommandLine, logger)
+	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.BoolVar(&cfg.showDeleted, "show-deleted", false, "Show deleted blocks")
 	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")

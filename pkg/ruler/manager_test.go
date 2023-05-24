@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/rules"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -359,7 +358,7 @@ func (m *managerMock) Stop() {
 	close(m.done)
 }
 
-func (m *managerMock) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc rules.GroupEvalIterationFunc) error {
+func (m *managerMock) Update(time.Duration, []string, labels.Labels, string, promRules.GroupEvalIterationFunc) error {
 	return nil
 }
 
