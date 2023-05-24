@@ -539,8 +539,8 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 
-	assertBlockExists := func(user string, block ulid.ULID, expectExists bool) {
-		exists, err := bucketClient.Exists(ctx, path.Join(user, block.String(), block.MetaFilename))
+	assertBlockExists := func(user string, blockID ulid.ULID, expectExists bool) {
+		exists, err := bucketClient.Exists(ctx, path.Join(user, blockID.String(), block.MetaFilename))
 		require.NoError(t, err)
 		assert.Equal(t, expectExists, exists)
 	}
@@ -688,12 +688,12 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	}
 }
 
-func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, block ulid.ULID, metaJSONExists bool, markedForDeletion bool) {
-	exists, err := bucketClient.Exists(context.Background(), path.Join(user, block.String(), block.MetaFilename))
+func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, blockID ulid.ULID, metaJSONExists bool, markedForDeletion bool) {
+	exists, err := bucketClient.Exists(context.Background(), path.Join(user, blockID.String(), block.MetaFilename))
 	require.NoError(t, err)
 	require.Equal(t, metaJSONExists, exists)
 
-	exists, err = bucketClient.Exists(context.Background(), path.Join(user, block.String(), block.DeletionMarkFilename))
+	exists, err = bucketClient.Exists(context.Background(), path.Join(user, blockID.String(), block.DeletionMarkFilename))
 	require.NoError(t, err)
 	require.Equal(t, markedForDeletion, exists)
 }
@@ -723,8 +723,8 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 
-	makeBlockPartial := func(user string, block ulid.ULID) {
-		err := bucketClient.Delete(ctx, path.Join(user, block.String(), block.MetaFilename))
+	makeBlockPartial := func(user string, blockID ulid.ULID) {
+		err := bucketClient.Delete(ctx, path.Join(user, blockID.String(), block.MetaFilename))
 		require.NoError(t, err)
 	}
 
@@ -793,13 +793,13 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 
-	makeBlockPartial := func(user string, block ulid.ULID) {
-		err := bucketClient.Delete(ctx, path.Join(user, block.String(), block.MetaFilename))
+	makeBlockPartial := func(user string, blockID ulid.ULID) {
+		err := bucketClient.Delete(ctx, path.Join(user, blockID.String(), block.MetaFilename))
 		require.NoError(t, err)
 	}
 
-	corruptMeta := func(user string, block ulid.ULID) {
-		err := bucketClient.Upload(ctx, path.Join(user, block.String(), block.MetaFilename), strings.NewReader("corrupted file contents"))
+	corruptMeta := func(user string, blockID ulid.ULID) {
+		err := bucketClient.Upload(ctx, path.Join(user, blockID.String(), block.MetaFilename), strings.NewReader("corrupted file contents"))
 		require.NoError(t, err)
 	}
 

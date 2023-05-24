@@ -85,10 +85,10 @@ func BenchmarkReadIndex(b *testing.B) {
 		minT := int64(i * 10)
 		maxT := int64((i + 1) * 10)
 
-		block := block.MockStorageBlock(b, bkt, userID, minT, maxT)
+		meta := block.MockStorageBlock(b, bkt, userID, minT, maxT)
 
 		if i < numBlockDeletionMarks {
-			block.MockStorageDeletionMark(b, bkt, userID, block)
+			block.MockStorageDeletionMark(b, bkt, userID, meta)
 		}
 	}
 

@@ -41,8 +41,6 @@ const (
 )
 
 const (
-	// MetaFilename is the known JSON filename for meta information.
-	MetaFilename = "meta.json"
 	// TSDBVersion1 is a enumeration of TSDB meta versions supported by Thanos.
 	TSDBVersion1 = 1
 	// ThanosVersion1 is a enumeration of Thanos section of TSDB meta supported by Thanos.
