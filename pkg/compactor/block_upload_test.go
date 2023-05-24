@@ -1632,7 +1632,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			blockID, err := block.CreateBlock(ctx, tmpDir, tc.lbls(), 300, now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), labels.EmptyLabels())
 			require.NoError(t, err)
 			testDir := filepath.Join(tmpDir, blockID.String())
-			meta, err := block.ReadFromDir(testDir)
+			meta, err := block.ReadMetaFromDir(testDir)
 			require.NoError(t, err)
 			if tc.populateFileList {
 				stats, err := block.GatherFileStats(testDir)

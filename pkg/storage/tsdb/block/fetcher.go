@@ -199,7 +199,7 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 
 	// Best effort load from local dir.
 	if f.cacheDir != "" {
-		m, err := ReadFromDir(cachedBlockDir)
+		m, err := ReadMetaFromDir(cachedBlockDir)
 		if err == nil {
 			return m, nil
 		}

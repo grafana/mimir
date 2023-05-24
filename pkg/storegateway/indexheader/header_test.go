@@ -86,7 +86,7 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), nil))
 
-	metaIndexV1, err := block.ReadFromDir("./testdata/index_format_v1")
+	metaIndexV1, err := block.ReadMetaFromDir("./testdata/index_format_v1")
 	require.NoError(t, err)
 	test.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, metaIndexV1.ULID.String()))
 
@@ -231,7 +231,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *bloc
 	}
 	*/
 
-	m, err := block.ReadFromDir("./testdata/index_format_v2")
+	m, err := block.ReadMetaFromDir("./testdata/index_format_v2")
 	require.NoError(t, err)
 	test.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
 

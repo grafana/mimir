@@ -236,7 +236,7 @@ func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 		if !fi.IsDir() {
 			continue
 		}
-		m, err := block.ReadFromDir(dir)
+		m, err := block.ReadMetaFromDir(dir)
 		if err != nil {
 			return nil, errors.Wrapf(err, "read metadata for block %v", dir)
 		}

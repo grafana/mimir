@@ -307,7 +307,7 @@ func verifyBlock(t *testing.T, client objstore.Bucket, ulid ulid.ULID, localPath
 		require.Equal(t, fi.Size(), a.Size)
 	}
 
-	localMeta, err := block.ReadFromDir(localPath)
+	localMeta, err := block.ReadMetaFromDir(localPath)
 	require.NoError(t, err)
 
 	remoteMeta, err := block.DownloadMeta(context.Background(), log.NewNopLogger(), bucket.NewPrefixedBucketClient(client, "blocks/anonymous"), ulid)

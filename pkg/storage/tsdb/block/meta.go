@@ -126,7 +126,7 @@ type ThanosDownsample struct {
 // InjectThanosMeta sets Thanos meta to the block meta JSON and saves it to the disk.
 // NOTE: It should be used after writing any block by any Thanos component, otherwise we will miss crucial metadata.
 func InjectThanosMeta(logger log.Logger, bdir string, meta ThanosMeta, downsampledMeta *tsdb.BlockMeta) (*Meta, error) {
-	newMeta, err := ReadFromDir(bdir)
+	newMeta, err := ReadMetaFromDir(bdir)
 	if err != nil {
 		return nil, errors.Wrap(err, "read new meta")
 	}
@@ -193,8 +193,8 @@ func renameFile(logger log.Logger, from, to string) error {
 	return pdir.Close()
 }
 
-// ReadFromDir reads the given meta from <dir>/meta.json.
-func ReadFromDir(dir string) (*Meta, error) {
+// ReadMetaFromDir reads the given meta from <dir>/meta.json.
+func ReadMetaFromDir(dir string) (*Meta, error) {
 	f, err := os.Open(filepath.Join(dir, filepath.Clean(MetaFilename)))
 	if err != nil {
 		return nil, err

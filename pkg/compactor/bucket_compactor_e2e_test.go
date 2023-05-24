@@ -472,7 +472,7 @@ func createBlock(ctx context.Context, t testing.TB, prepareDir string, b blockge
 	}
 	require.NoError(t, err)
 
-	meta, err = block.ReadFromDir(filepath.Join(prepareDir, id.String()))
+	meta, err = block.ReadMetaFromDir(filepath.Join(prepareDir, id.String()))
 	require.NoError(t, err)
 	return
 }

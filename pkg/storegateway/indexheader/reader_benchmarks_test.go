@@ -149,7 +149,7 @@ func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 		require.NoError(b, bkt.Close())
 	})
 
-	metaIndexV1, err := block.ReadFromDir("./testdata/index_format_v1")
+	metaIndexV1, err := block.ReadMetaFromDir("./testdata/index_format_v1")
 	require.NoError(b, err)
 	test.Copy(b, "./testdata/index_format_v1", filepath.Join(bucketDir, metaIndexV1.ULID.String()))
 

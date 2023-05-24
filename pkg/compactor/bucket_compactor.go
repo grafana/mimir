@@ -512,7 +512,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 		return errors.Wrapf(err, "download block %s", ie.id)
 	}
 
-	meta, err := block.ReadFromDir(bdir)
+	meta, err := block.ReadMetaFromDir(bdir)
 	if err != nil {
 		return errors.Wrapf(err, "read meta from %s", bdir)
 	}

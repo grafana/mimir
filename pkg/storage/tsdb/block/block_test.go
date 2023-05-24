@@ -186,7 +186,7 @@ func TestUpload(t *testing.T) {
 
 	t.Run("missing meta.json file, but valid metadata supplied as argument", func(t *testing.T) {
 		// Read meta.json from original block
-		meta, err := ReadFromDir(path.Join(tmpDir, b1.String()))
+		meta, err := ReadMetaFromDir(path.Join(tmpDir, b1.String()))
 		require.NoError(t, err)
 
 		// Make sure meta.json doesn't exist in "test"
@@ -209,7 +209,7 @@ func TestUpload(t *testing.T) {
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
 		require.Equal(t, 568, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
 
-		origMeta, err := ReadFromDir(path.Join(tmpDir, "test", b1.String()))
+		origMeta, err := ReadMetaFromDir(path.Join(tmpDir, "test", b1.String()))
 		require.NoError(t, err)
 
 		uploadedMeta, err := DownloadMeta(context.Background(), log.NewNopLogger(), bkt, b1)
@@ -257,7 +257,7 @@ func TestUpload(t *testing.T) {
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b2.String(), IndexFilename)]))
 		require.Equal(t, 547, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
 
-		origMeta, err := ReadFromDir(path.Join(tmpDir, b2.String()))
+		origMeta, err := ReadMetaFromDir(path.Join(tmpDir, b2.String()))
 		require.NoError(t, err)
 
 		uploadedMeta, err := DownloadMeta(context.Background(), log.NewNopLogger(), bkt, b2)
@@ -280,7 +280,7 @@ func TestUpload(t *testing.T) {
 		require.NoError(t, err)
 
 		// Prepare metadata that will be uploaded to the bucket.
-		updatedMeta, err := ReadFromDir(path.Join(tmpDir, b3.String()))
+		updatedMeta, err := ReadMetaFromDir(path.Join(tmpDir, b3.String()))
 		require.NoError(t, err)
 		require.Empty(t, updatedMeta.Thanos.Labels)
 		require.Equal(t, TestSource, updatedMeta.Thanos.Source)
@@ -292,7 +292,7 @@ func TestUpload(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify that original (on-disk) meta.json is not changed
-		origMeta, err := ReadFromDir(path.Join(tmpDir, b3.String()))
+		origMeta, err := ReadMetaFromDir(path.Join(tmpDir, b3.String()))
 		require.NoError(t, err)
 		require.Empty(t, origMeta.Thanos.Labels)
 		require.Equal(t, TestSource, origMeta.Thanos.Source)

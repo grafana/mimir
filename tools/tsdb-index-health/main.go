@@ -31,7 +31,7 @@ func main() {
 	}
 
 	for _, b := range flag.Args() {
-		meta, err := block.ReadFromDir(b)
+		meta, err := block.ReadMetaFromDir(b)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to read meta from block dir", b, "error:", err)
 			continue

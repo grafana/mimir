@@ -91,7 +91,7 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 		dir1, dir2 := filepath.Join(dir, id1.String()), filepath.Join(dir, id2.String())
 
 		// Replace labels to the meta of the second block.
-		meta, err := block.ReadFromDir(dir2)
+		meta, err := block.ReadMetaFromDir(dir2)
 		assert.NoError(t, err)
 		meta.Thanos.Labels = map[string]string{"ext2": "value2"}
 		assert.NoError(t, meta.WriteToDir(logger, dir2))
