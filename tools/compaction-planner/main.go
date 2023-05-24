@@ -96,7 +96,7 @@ func main() {
 		compactor.NewNoCompactionMarkFilter(bucket.NewUserBucketClient(cfg.userID, bkt, nil), true),
 	} {
 		log.Printf("Filtering using %T\n", f)
-		err = f.Filter(ctx, metas, synced, nil)
+		err = f.Filter(ctx, metas, synced)
 		if err != nil {
 			log.Fatalln("filter failed:", err)
 		}

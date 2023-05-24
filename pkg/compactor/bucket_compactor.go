@@ -45,15 +45,13 @@ type DeduplicateFilter interface {
 // Syncer synchronizes block metas from a bucket into a local directory.
 // It sorts them into compaction groups based on equal label sets.
 type Syncer struct {
-	logger                         log.Logger
-	bkt                            objstore.Bucket
-	fetcher                        block.MetadataFetcher
-	mtx                            sync.Mutex
-	blocks                         map[ulid.ULID]*metadata.Meta
-	partial                        map[ulid.ULID]error
-	metrics                        *syncerMetrics
-	deduplicateBlocksFilter        DeduplicateFilter
-	excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter
+	logger                  log.Logger
+	bkt                     objstore.Bucket
+	fetcher                 block.MetadataFetcher
+	mtx                     sync.Mutex
+	blocks                  map[ulid.ULID]*metadata.Meta
+	metrics                 *syncerMetrics
+	deduplicateBlocksFilter DeduplicateFilter
 }
 
 type syncerMetrics struct {
@@ -87,18 +85,17 @@ func newSyncerMetrics(reg prometheus.Registerer, blocksMarkedForDeletion prometh
 
 // NewMetaSyncer returns a new Syncer for the given Bucket and directory.
 // Blocks must be at least as old as the sync delay for being considered.
-func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter, blocksMarkedForDeletion prometheus.Counter) (*Syncer, error) {
+func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, blocksMarkedForDeletion prometheus.Counter) (*Syncer, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Syncer{
-		logger:                         logger,
-		bkt:                            bkt,
-		fetcher:                        fetcher,
-		blocks:                         map[ulid.ULID]*metadata.Meta{},
-		metrics:                        newSyncerMetrics(reg, blocksMarkedForDeletion),
-		deduplicateBlocksFilter:        deduplicateBlocksFilter,
-		excludeMarkedForDeletionFilter: excludeMarkedForDeletionFilter,
+		logger:                  logger,
+		bkt:                     bkt,
+		fetcher:                 fetcher,
+		blocks:                  map[ulid.ULID]*metadata.Meta{},
+		metrics:                 newSyncerMetrics(reg, blocksMarkedForDeletion),
+		deduplicateBlocksFilter: deduplicateBlocksFilter,
 	}, nil
 }
 
@@ -107,21 +104,12 @@ func (s *Syncer) SyncMetas(ctx context.Context) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	metas, partial, err := s.fetcher.Fetch(ctx)
+	metas, _, err := s.fetcher.Fetch(ctx)
 	if err != nil {
 		return err
 	}
 	s.blocks = metas
-	s.partial = partial
 	return nil
-}
-
-// Partial returns partial blocks since last sync.
-func (s *Syncer) Partial() map[ulid.ULID]error {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
-	return s.partial
 }
 
 // Metas returns loaded metadata blocks since last sync.
@@ -141,21 +129,13 @@ func (s *Syncer) GarbageCollect(ctx context.Context) error {
 
 	begin := time.Now()
 
-	// Ignore filter exists before deduplicate filter.
-	deletionMarkMap := s.excludeMarkedForDeletionFilter.DeletionMarkBlocks()
+	// The deduplication filter is applied after all blocks marked for deletion have been excluded
+	// (with no deletion delay), so we expect that all duplicated blocks have not been marked for
+	// deletion yet. Even in the remote case these blocks have already been marked for deletion,
+	// the block.MarkForDeletion() call will correctly handle it.
 	duplicateIDs := s.deduplicateBlocksFilter.DuplicateIDs()
 
-	// GarbageIDs contains the duplicateIDs, since these blocks can be replaced with other blocks.
-	// We also remove ids present in deletionMarkMap since these blocks are already marked for deletion.
-	garbageIDs := []ulid.ULID{}
 	for _, id := range duplicateIDs {
-		if _, exists := deletionMarkMap[id]; exists {
-			continue
-		}
-		garbageIDs = append(garbageIDs, id)
-	}
-
-	for _, id := range garbageIDs {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -953,7 +933,7 @@ func (f *NoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]struct{} 
 
 // Filter finds blocks that should not be compacted, and fills f.noCompactMarkedMap. If f.removeNoCompactBlocks is true,
 // blocks are also removed from metas. (Thanos version of the filter doesn't do removal).
-func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, _ block.GaugeVec) error {
+func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec) error {
 	noCompactMarkedMap := make(map[ulid.ULID]struct{})
 
 	// Find all no-compact markers in the storage.
@@ -1017,7 +997,7 @@ func (f *ExcludeMarkedForDeletionFilter) DeletionMarkBlocks() map[ulid.ULID]stru
 
 // Filter filters out blocks that are marked for deletion.
 // It also builds the map returned by DeletionMarkBlocks() method.
-func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, _ block.GaugeVec) error {
+func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec) error {
 	deletionMarkMap := make(map[ulid.ULID]struct{})
 
 	// Find all markers in the storage.

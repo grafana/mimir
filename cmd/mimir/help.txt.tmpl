@@ -115,8 +115,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
-  -blocks-storage.bucket-store.bucket-index.enabled
-    	If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket. (default true)
   -blocks-storage.bucket-store.chunks-cache.backend string
     	Backend for chunks cache, if not empty. Supported values: memcached, redis.
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
