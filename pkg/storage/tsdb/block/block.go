@@ -283,7 +283,7 @@ func GetSegmentFiles(blockDir string) []string {
 	return result
 }
 
-// GatherFileStats returns metadata.File entry for files inside TSDB block (index, chunks, meta.json).
+// GatherFileStats returns File entry for files inside TSDB block (index, chunks, meta.json).
 func GatherFileStats(blockDir string) (res []File, _ error) {
 	files, err := os.ReadDir(filepath.Join(blockDir, ChunksDirname))
 	if err != nil {

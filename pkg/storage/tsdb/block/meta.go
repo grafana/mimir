@@ -5,11 +5,6 @@
 
 package block
 
-// metadata package implements writing and reading wrapped meta.json where Thanos puts its metadata.
-// Those metadata contains external labels, downsampling resolution and source type.
-// This package is minimal and separated because it used by testutils which limits test helpers we can use in
-// this package.
-
 import (
 	"encoding/json"
 	"fmt"
