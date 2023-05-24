@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-func MatchesSelectors(m *dto.Metric, selectors labels.Labels) bool {
+func MatchesSelectors(m *dto.Metric, selectors []labels.Label) bool {
 	for _, l := range selectors {
 		found := false
 		for _, lp := range m.GetLabel() {

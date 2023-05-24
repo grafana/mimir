@@ -4,6 +4,7 @@ package alertmanager
 
 import (
 	"encoding/json"
+	"fmt"
 	tmplhtml "html/template"
 	"net/url"
 	tmpltext "text/template"
@@ -57,12 +58,31 @@ func grafanaExploreURL(grafanaURL, datasource, from, to, expr string) (string, e
 	return grafanaURL + "/explore?left=" + url.QueryEscape(string(res)), err
 }
 
+// queryFromGeneratorURL returns a PromQL expression parsed out from a GeneratorURL in Prometheus alert
+func queryFromGeneratorURL(generatorURL string) (string, error) {
+	u, err := url.Parse(generatorURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse generator URL: %w", err)
+	}
+	// See https://github.com/prometheus/prometheus/blob/259bb5c69263635887541964d1bfd7acc46682c6/util/strutil/strconv.go#L28
+	queryParam, ok := u.Query()["g0.expr"]
+	if !ok || len(queryParam) < 1 {
+		return "", fmt.Errorf("query not found in the generator URL")
+	}
+	query, err := url.QueryUnescape(queryParam[0])
+	if err != nil {
+		return "", fmt.Errorf("failed to URL decode the query: %w", err)
+	}
+	return query, nil
+}
+
 // withCustomFunctions returns template.Option which adds additional template functions
 // to the default ones.
 func withCustomFunctions(userID string) template.Option {
 	funcs := tmpltext.FuncMap{
-		"tenantID":          func() string { return userID },
-		"grafanaExploreURL": grafanaExploreURL,
+		"tenantID":              func() string { return userID },
+		"grafanaExploreURL":     grafanaExploreURL,
+		"queryFromGeneratorURL": queryFromGeneratorURL,
 	}
 	return func(text *tmpltext.Template, html *tmplhtml.Template) {
 		text.Funcs(funcs)

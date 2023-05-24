@@ -238,7 +238,7 @@ How to **investigate**:
       - If queries are waiting in queue
         - Consider scaling up number of queriers if they're not auto-scaled; if auto-scaled, check auto-scaling parameters
       - If queries are not waiting in queue
-        - Consider [enabling query sharding]({{< relref "../architecture/query-sharding/index.md#how-to-enable-query-sharding" >}}) if not already enabled, to increase query parallelism
+        - Consider [enabling query sharding]({{< relref "../../references/architecture/query-sharding/index.md#how-to-enable-query-sharding" >}}) if not already enabled, to increase query parallelism
         - If query sharding already enabled, consider increasing total number of query shards (`query_sharding_total_shards`) for tenants submitting slow queries, so their queries can be further parallelized
 
 #### Alertmanager
@@ -450,9 +450,9 @@ How to **investigate**:
 
 ### MimirIngesterTSDBWALCorrupted
 
-This alert fires when a Mimir ingester finds a corrupted TSDB WAL (stored on disk) while replaying it at ingester startup or when creation of a checkpoint comes across a WAL corruption.
+This alert fires when more than one Mimir ingester finds a corrupted TSDB WAL (stored on disk) while replaying it at ingester startup or when creation of a checkpoint comes across a WAL corruption.
 
-If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism causes data loss because all WAL records after the corrupted segment are discarded, and so their samples are lost while replaying the WAL. If this happens only on 1 ingester then Mimir doesn't suffer any data loss because of the replication factor, but if it happens on multiple ingesters some data loss is possible.
+If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism causes data loss because all WAL records after the corrupted segment are discarded, and so their samples are lost while replaying the WAL. If this happens only on 1 ingester or only on one zone in a multi-zone cluster, then Mimir doesn't suffer any data loss because of the replication factor. But if it happens on multiple ingesters, multiple zones, or both, some data loss is possible.
 
 To investigate how the ingester dealt with the WAL corruption, it's recommended you search the logs, e.g. with the following Grafana Loki query:
 
@@ -521,15 +521,6 @@ How to **investigate**:
 
 - Look for any scan error in the querier logs (ie. networking or rate limiting issues)
 
-### MimirQuerierHighRefetchRate
-
-This alert fires when there's an high number of queries for which series have been refetched from a different store-gateway because of missing blocks. This could happen for a short time whenever a store-gateway ring resharding occurs (e.g. during/after an outage or while rolling out store-gateway) but store-gateways should reconcile in a short time. This alert fires if the issue persist for an unexpected long time and thus it should be investigated.
-
-How to **investigate**:
-
-- Ensure there are no errors related to blocks scan or sync in the queriers and store-gateways
-- Check store-gateway logs to see if all store-gateway have successfully completed a blocks sync
-
 ### MimirStoreGatewayHasNotSyncTheBucket
 
 This alert fires when a Mimir store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket for a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
@@ -595,7 +586,7 @@ How to **investigate**:
   - Invalid result block:
     - **How to detect**: Search compactor logs for `invalid result block`.
     - **What it means**: The compactor successfully validated the source blocks. But the validation of the result block after the compaction did not succeed. The result block was not uploaded and the compaction job will be retried.
-  - Out-of-order chunks
+  - Out-of-order chunks:
     - **How to detect**: Search compactor logs for `invalid result block` and `out-of-order chunks`.
     - This is caused by a bug in the ingester - see [mimir#1537](https://github.com/grafana/mimir/issues/1537). Ingesters upload blocks where the MinT and MaxT of some chunks don't match the first and last samples in the chunk. When the faulty chunks' MinT and MaxT overlap with other chunks, the compactor merges the chunks. Because one chunk's MinT and MaxT are incorrect the merge may be performed incorrectly, leading to OoO samples.
     - **How to mitigate**: Mark the faulty blocks to avoid compacting them in the future:
@@ -607,6 +598,22 @@ How to **investigate**:
           ```
           ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Leading to out-of-order chunks when compacting with other blocks" <block-1> <block-2>...
           ```
+  - Result block exceeds symbol table maximum size:
+    - **How to detect**: Search compactor logs for `symbol table size exceeds`.
+    - **What it means**: The compactor successfully validated the source blocks. But the resulting block is impossible to write due to the error above.
+    - This is caused by too many series being stored in the blocks, which indicates that `-compactor.split-and-merge-shards` is too low for the tenant. Could be also an indication of very high churn in labels causing label cardinality explosion.
+    - **How to mitigate**: These blocks are not possible to compact, mark the source blocks indicated in the error message with `no-compact`.
+      - Find all affected source blocks in the compactor logs by searching for `symbol table size exceeds`.
+      - The log lines contain the block IDs in a list of paths, such as:
+        ```
+        [/data/compact/0@17241709254077376921-merge-3_of_4-1683244800000-1683331200000/01GZS91PMTAWAWAKRYQVNV1FPP /data/compact/0@17241709254077376921-merge-3_of_4-1683244800000-1683331200000/01GZSC5803FN1V1ZFY6Q8PWV1E]
+        ```
+        Where the filenames are the block IDs: `01GZS91PMTAWAWAKRYQVNV1FPP` and `01GZSC5803FN1V1ZFY6Q8PWV1E`
+      - Mark the source blocks for no compaction (in this example the object storage backend is GCS):
+        ```
+        ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" <block-1> <block-2>...
+        ```
+    - Further reading: [Compaction algorithm]({{< relref "../../references/architecture/components/compactor/index.md#compaction-algorithm" >}}).
 
 - Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor/index.md" >}}) and set it to view the last 7 days.
 
@@ -660,29 +667,6 @@ How to **investigate**:
 
 - Ensure the compactor is successfully running
 - Look for any error in the compactor logs
-
-### MimirTenantHasPartialBlocks
-
-This alert fires when Mimir finds partial blocks for a given tenant. A partial block is a block missing the `meta.json` and this may usually happen in two circumstances:
-
-1. A block upload has been interrupted and not cleaned up or retried
-2. A block deletion has been interrupted and `deletion-mark.json` has been deleted before `meta.json`
-
-How to **investigate**:
-
-1. Look for partial blocks in the logs. Example Loki query: `{cluster="<cluster>",namespace="<namespace>",container="compactor"} |= "skipped partial block"`
-1. Pick a block and note its ID (`block` field in log entry) and tenant ID (`org_id` in log entry)
-1. Find the bucket used by the Mimir cluster, such as checking the configured `blocks_storage_bucket_name` if you are using Jsonnet.
-1. Find out which Mimir component operated on the block last (e.g. uploaded by ingester/compactor, or deleted by compactor)
-   1. Determine when the partial block was uploaded: `gsutil ls -l gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`. Alternatively you can use `ulidtime` command from Mimir tools directory `ulidtime ${BLOCK_ID}` to find block creation time.
-   1. Search in the logs around that time to find the log entry from when the compactor created the block ("compacted blocks" for log message)
-   1. From the compactor log entry you found, pick the job ID from the `groupKey` field, f.ex. `0@9748515562602778029-merge--1645711200000-1645718400000`
-   1. Then search the logs for the job ID and look for an entry with the message "compaction job failed", this will show that the compactor failed uploading the block
-   1. If you found a failed compaction job, as outlined in the previous step, try searching for a corresponding log message (for the same job ID) "compaction job succeeded". This will mean that the compaction job was retried successfully. Note: this should produce a different block ID from the failed upload.
-1. Investigate if it was a partial upload or partial delete
-   1. If it was a partial delete or an upload failed by a compactor you can safely mark the block for deletion, and compactor will delete the block. You can use `markblocks` command from Mimir tools directory: `markblocks -mark deletion -allow-partial -tenant <tenant> <blockID>` with correct backend (eg. GCS: `-backend gcs -gcs.bucket-name <bucket-name>`) configuration.
-   1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
-1. Prevent the issue from reoccurring by enabling automatic partial block cleanup. This can be enabled with the `-compactor.partial-block-deletion-delay` flag. It takes a duration as an argument. If a partial block persists past the specified duration, the compactor will automatically delete it. One can monitor automatic cleanup of partial blocks via the `cortex_compactor_blocks_marked_for_deletion_total{reason="partial"}` counter.
 
 ### MimirQueriesIncorrect
 
@@ -1168,21 +1152,6 @@ How to **investigate**:
   1. The alert fired because of a bug in Mimir: fix it.
   1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.
 
-### MimirDistributorForwardingErrorRate
-
-This alert fires when the Distributor is trying to forward samples to a forwarding target, but the forwarding requests
-result in errors at a high rate.
-
-How it **works**:
-
-- The alert compares the total rate of forwarding requests to the rate of forwarding requests which result in an error.
-
-How to **investigate**:
-
-- Check the `Mimir / Writes` dashboard, it should have a row named `Distributor Forwarding` which also shows the type of error if an HTTP status code was returned.
-- Check the Distributor logs, depending on the type of errors which occur the Distributor might log information about the errors.
-- Check what the forwarding targets are in use, this can be seen in the runtime config under the key `forwarding_endpoint`, then check the logs of the forwarding target(s).
-
 ### MimirRingMembersMismatch
 
 This alert fires when the number of ring members does not match the number of running replicas.
@@ -1239,6 +1208,13 @@ This non-critical error occurs when Mimir receives a write request that contains
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-series` option.
 
 > **Note:** Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+
+### err-mimir-max-native-histogram-buckets
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram that has too many observation buckets.
+The limit protects the system from using too much memory. To configure the limit on a per-tenant basis, use the `-validation.max-native-histogram-buckets` option.
+
+> **Note:** The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
 
 ### err-mimir-label-invalid
 
@@ -1549,7 +1525,6 @@ A [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range
 Mimir has a limit on the query length.
 This limit is applied to range queries before they are split (according to time) or sharded by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
 To configure the limit on a per-tenant basis, use the `-query-frontend.max-total-query-length` option (or `max_total_query_length` in the runtime configuration).
-If this limit is set to 0, it takes its value from `-store.max-query-length`.
 
 ### err-mimir-max-query-expression-size-bytes
 
@@ -1658,12 +1633,12 @@ How it **works**:
 - Mimir has been designed to guarantee query results correctness and never return partial query results. Either a query succeeds returning fully consistent results or it fails.
 - Queriers, and rulers running with the "internal" evaluation mode, run a consistency check to ensure all expected blocks have been queried from the long-term storage via the store-gateways.
 - If any expected block has not been queried via the store-gateways, then the query fails with this error.
-- See [Anatomy of a query request]({{< relref "../architecture/components/querier.md#anatomy-of-a-query-request" >}}) to learn more.
+- See [Anatomy of a query request]({{< relref "../../references/architecture/components/querier.md#anatomy-of-a-query-request" >}}) to learn more.
 
 How to **fix** it:
 
 - Ensure all store-gateways are healthy.
-- Ensure all store-gateways are successfully synching owned blocks (see [`MimirStoreGatewayHasNotSyncTheBucket`](#MimirStoreGatewayHasNotSyncTheBucket)).
+- Ensure all store-gateways are successfully synching owned blocks (see [`MimirStoreGatewayHasNotSyncTheBucket`](#mimirstoregatewayhasnotsyncthebucket)).
 
 ### err-mimir-bucket-index-too-old
 

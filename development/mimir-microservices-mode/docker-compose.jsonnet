@@ -18,6 +18,15 @@ std.manifestYamlDoc({
     // - memberlist (consul is not started at all)
     // - multi (uses consul as primary and memberlist as secondary, but this can be switched in runtime via runtime.yaml)
     ring: 'memberlist',
+
+    // If true, a load generator is started.
+    enable_load_generator: true,
+
+    // If true, start and enable scraping by these components.
+    // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
+    enable_grafana_agent: false,
+    enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
+    enable_otel_collector: false,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -29,23 +38,27 @@ std.manifestYamlDoc({
     self.compactor +
     self.rulers(2) +
     self.alertmanagers(3) +
+    self.nginx +
     self.minio +
-    self.prometheus +
+    (if $._config.enable_prometheus then self.prometheus else {}) +
     self.grafana +
-    self.grafana_agent +
-    self.otel_collector +
+    (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
+    (if $._config.enable_otel_collector then self.otel_collector else {}) +
     self.jaeger +
     (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
     (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
+    (if $._config.enable_load_generator then self.load_generator else {}) +
     {},
 
   distributor:: {
     'distributor-1': mimirService({
+      name: 'distributor-1',
       target: 'distributor',
       httpPort: 8000,
     }),
 
     'distributor-2': mimirService({
+      name: 'distributor-2',
       target: 'distributor',
       httpPort: 8001,
     }),
@@ -53,6 +66,7 @@ std.manifestYamlDoc({
 
   ingesters:: {
     'ingester-1': mimirService({
+      name: 'ingester-1',
       target: 'ingester',
       httpPort: 8002,
       jaegerApp: 'ingester-1',
@@ -60,6 +74,7 @@ std.manifestYamlDoc({
     }),
 
     'ingester-2': mimirService({
+      name: 'ingester-2',
       target: 'ingester',
       httpPort: 8003,
       jaegerApp: 'ingester-2',
@@ -70,6 +85,7 @@ std.manifestYamlDoc({
   read_components::
     {
       querier: mimirService({
+        name: 'querier',
         target: 'querier',
         httpPort: 8004,
         extraArguments:
@@ -78,6 +94,7 @@ std.manifestYamlDoc({
       }),
 
       'query-frontend': mimirService({
+        name: 'query-frontend',
         target: 'query-frontend',
         httpPort: 8007,
         jaegerApp: 'query-frontend',
@@ -89,6 +106,7 @@ std.manifestYamlDoc({
     } + (
       if $._config.use_query_scheduler then {
         'query-scheduler': mimirService({
+          name: 'query-scheduler',
           target: 'query-scheduler',
           httpPort: 8011,
           extraArguments: '-query-frontend.max-total-query-length=8760h',
@@ -98,6 +116,7 @@ std.manifestYamlDoc({
 
   compactor:: {
     compactor: mimirService({
+      name: 'compactor',
       target: 'compactor',
       httpPort: 8006,
     }),
@@ -105,6 +124,7 @@ std.manifestYamlDoc({
 
   rulers(count):: if count <= 0 then {} else {
     ['ruler-%d' % id]: mimirService({
+      name: 'ruler-' + id,
       target: 'ruler',
       httpPort: 8020 + id,
       jaegerApp: 'ruler-%d' % id,
@@ -114,6 +134,7 @@ std.manifestYamlDoc({
 
   alertmanagers(count):: if count <= 0 then {} else {
     ['alertmanager-%d' % id]: mimirService({
+      name: 'alertmanager-' + id,
       target: 'alertmanager',
       httpPort: 8030 + id,
       extraArguments: '-alertmanager.web.external-url=http://localhost:%d/alertmanager' % (8030 + id),
@@ -124,19 +145,21 @@ std.manifestYamlDoc({
 
   store_gateways:: {
     'store-gateway-1': mimirService({
+      name: 'store-gateway-1',
       target: 'store-gateway',
       httpPort: 8008,
       jaegerApp: 'store-gateway-1',
     }),
 
     'store-gateway-2': mimirService({
+      name: 'store-gateway-2',
       target: 'store-gateway',
       httpPort: 8009,
       jaegerApp: 'store-gateway-2',
     }),
   },
 
-  local all_caches = ['-blocks-storage.bucket-store.index-cache', '-blocks-storage.bucket-store.chunks-cache', '-blocks-storage.bucket-store.metadata-cache', '-query-frontend.results-cache'],
+  local all_caches = ['-blocks-storage.bucket-store.index-cache', '-blocks-storage.bucket-store.chunks-cache', '-blocks-storage.bucket-store.metadata-cache', '-query-frontend.results-cache', '-ruler-storage.cache'],
 
   local all_rings = ['-ingester.ring', '-distributor.ring', '-compactor.ring', '-store-gateway.sharding-ring', '-ruler.ring', '-alertmanager.sharding-ring'],
 
@@ -145,6 +168,7 @@ std.manifestYamlDoc({
   local mimirService(serviceOptions) = {
     local defaultOptions = {
       local s = self,
+      name: error 'missing name',
       target: error 'missing target',
       jaegerApp: self.target,
       httpPort: error 'missing httpPort',
@@ -191,6 +215,7 @@ std.manifestYamlDoc({
       for key in std.objectFields(options.env)
       if options.env[key] != null
     ],
+    hostname: options.name,
     // Only publish HTTP and debug port, but not gRPC one.
     ports: ['%d:%d' % [options.httpPort, options.httpPort]] +
            if $._config.debug then [
@@ -209,12 +234,32 @@ std.manifestYamlDoc({
     },
   },
 
+  nginx:: {
+    nginx: {
+      hostname: 'nginx',
+      image: 'nginxinc/nginx-unprivileged:1.22-alpine',
+      environment: [
+        'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
+        'DISTRIBUTOR_HOST=distributor-1:8000',
+        'ALERT_MANAGER_HOST=alertmanager-1:8031',
+        'RULER_HOST=ruler-1:8021',
+        'QUERY_FRONTEND_HOST=query-frontend:8007',
+        'COMPACTOR_HOST=compactor:8007',
+      ],
+      ports: ['8080:8080'],
+      volumes: ['../common/config:/etc/nginx/templates'],
+    },
+  },
+
   minio:: {
     minio: {
       image: 'minio/minio',
-      command: ['server', '/data'],
+      command: ['server', '--console-address', ':9001', '/data'],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
-      ports: ['9000:9000'],
+      ports: [
+        '9000:9000',
+        '9001:9001',
+      ],
       volumes: ['.data-minio:/data:delegated'],
     },
   },
@@ -302,6 +347,24 @@ std.manifestYamlDoc({
       command: ['--config=/etc/otel-collector/otel-collector.yaml'],
       volumes: ['./config:/etc/otel-collector'],
       ports: ['8083:8083'],
+    },
+  },
+
+  load_generator:: {
+    'load-generator': {
+      image: 'pracucci/cortex-load-generator:add-query-support-8633d4e',
+      command: [
+        '--remote-url=http://distributor-2:8001/api/v1/push',
+        '--remote-write-concurrency=5',
+        '--remote-write-interval=10s',
+        '--series-count=1000',
+        '--tenants-count=1',
+        '--query-enabled=true',
+        '--query-interval=1s',
+        '--query-url=http://querier:8004/prometheus',
+        '--server-metrics-port=9900',
+      ],
+      ports: ['9900:9900'],
     },
   },
 

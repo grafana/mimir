@@ -48,7 +48,7 @@ type mockQuerier struct {
 	seriesSet storage.SeriesSet
 }
 
-func (m mockQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (m mockQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 	if sp == nil {
 		panic("mockQuerier: select params must be set")
 	}
@@ -60,7 +60,7 @@ type mockChunkQuerier struct {
 	seriesSet storage.SeriesSet
 }
 
-func (m mockChunkQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+func (m mockChunkQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
 	if sp == nil {
 		panic("mockChunkQuerier: select params must be set")
 	}
@@ -71,7 +71,7 @@ func TestSampledRemoteRead(t *testing.T) {
 	q := &mockSampleAndChunkQueryable{
 		queryableFn: func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 			return mockQuerier{
-				seriesSet: series.NewConcreteSeriesSet([]storage.Series{
+				seriesSet: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
 					series.NewConcreteSeries(
 						labels.FromStrings("foo", "bar"),
 						[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
@@ -295,7 +295,7 @@ func TestStreamedRemoteRead(t *testing.T) {
 			q := &mockSampleAndChunkQueryable{
 				chunkQueryableFn: func(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
 					return mockChunkQuerier{
-						seriesSet: series.NewConcreteSeriesSet([]storage.Series{
+						seriesSet: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
 							series.NewConcreteSeries(
 								labels.FromStrings("foo", "bar"),
 								tc.samples,

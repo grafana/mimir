@@ -235,7 +235,6 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 
 	var cfg Config
 	flagext.DefaultValues(&cfg)
-	cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 	// Mock distributor to return chunks containing samples outside the queried range.
 	distributor := &mockDistributor{}
@@ -283,7 +282,9 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		},
 		nil)
 
-	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+	limits := defaultLimitsConfig()
+	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
@@ -326,8 +327,12 @@ func TestBatchMergeChunks(t *testing.T) {
 
 	var cfg Config
 	flagext.DefaultValues(&cfg)
-	cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
-	cfg.BatchIterators = true    // Always use the Batch iterator - regression test
+	cfg.BatchIterators = true // Always use the Batch iterator - regression test
+
+	limits := defaultLimitsConfig()
+	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
 
 	s1 := []mimirpb.Sample{}
 	s2 := []mimirpb.Sample{}
@@ -367,9 +372,6 @@ func TestBatchMergeChunks(t *testing.T) {
 			},
 		},
 		nil)
-
-	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:     logger,
@@ -501,11 +503,12 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	})
 	cfg := Config{}
 	for _, c := range testCases {
-		cfg.QueryIngestersWithin = c.queryIngestersWithin
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
 
-			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+			limits := defaultLimitsConfig()
+			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
+			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
 			// We don't have to actually query the storage in this test, so we initialize the querier
@@ -777,10 +780,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = testData.maxQueryLookback
+			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
@@ -933,11 +936,11 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.QueryIngestersWithin = 0 // Always query ingesters in this test.
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
 			limits.MaxLabelsQueryLength = testData.maxLabelsQueryLength
+			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
@@ -1018,13 +1021,10 @@ func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matc
 
 var errDistributorError = fmt.Errorf("errDistributorError")
 
-func (m *errDistributor) Query(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (model.Matrix, error) {
+func (m *errDistributor) QueryStream(context.Context, model.Time, model.Time, ...*labels.Matcher) (*client.QueryStreamResponse, error) {
 	return nil, errDistributorError
 }
-func (m *errDistributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (*client.QueryStreamResponse, error) {
-	return nil, errDistributorError
-}
-func (m *errDistributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
+func (m *errDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
 	return nil, errDistributorError
 }
 func (m *errDistributor) LabelValuesForLabelName(context.Context, model.Time, model.Time, model.LabelName, ...*labels.Matcher) ([]string, error) {
@@ -1033,15 +1033,15 @@ func (m *errDistributor) LabelValuesForLabelName(context.Context, model.Time, mo
 func (m *errDistributor) LabelNames(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]string, error) {
 	return nil, errDistributorError
 }
-func (m *errDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
+func (m *errDistributor) MetricsForLabelMatchers(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]labels.Labels, error) {
 	return nil, errDistributorError
 }
 
-func (m *errDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
+func (m *errDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMetadata, error) {
 	return nil, errDistributorError
 }
 
-func (m *errDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
+func (m *errDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, errDistributorError
 }
 
@@ -1051,15 +1051,11 @@ func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Ma
 	return nil, errors.New("method is not implemented")
 }
 
-func (d *emptyDistributor) Query(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (model.Matrix, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (*client.QueryStreamResponse, error) {
+func (d *emptyDistributor) QueryStream(context.Context, model.Time, model.Time, ...*labels.Matcher) (*client.QueryStreamResponse, error) {
 	return &client.QueryStreamResponse{}, nil
 }
 
-func (d *emptyDistributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
+func (d *emptyDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
 	return nil, nil
 }
 
@@ -1071,15 +1067,15 @@ func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time, .
 	return nil, nil
 }
 
-func (d *emptyDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
+func (d *emptyDistributor) MetricsForLabelMatchers(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]labels.Labels, error) {
 	return nil, nil
 }
 
-func (d *emptyDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
+func (d *emptyDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMetadata, error) {
 	return nil, nil
 }
 
-func (d *emptyDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
+func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, nil
 }
 
@@ -1135,12 +1131,14 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	for _, c := range testCases {
-		cfg.QueryIngestersWithin = c.queryIngestersWithin
 		cfg.QueryStoreAfter = c.queryStoreAfter
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
 
-			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+			limits := defaultLimitsConfig()
+			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
+			overrides, err := validation.NewOverrides(limits, nil)
+
 			require.NoError(t, err)
 
 			// Mock the blocks storage to return an empty SeriesSet (we just need to check whether
@@ -1217,29 +1215,29 @@ func TestStoreQueryable(t *testing.T) {
 	require.True(t, m.useQueryableCalled) // storeQueryable wraps QueryableWithFilter, so it must call its UseQueryable method.
 }
 
-func TestConfig_Validate(t *testing.T) {
+func TestConfig_ValidateLimits(t *testing.T) {
 	tests := map[string]struct {
-		setup    func(cfg *Config)
+		setup    func(cfg *Config, limits *validation.Limits)
 		expected error
 	}{
 		"should pass with default config": {
-			setup: func(cfg *Config) {},
+			setup: func(cfg *Config, limits *validation.Limits) {},
 		},
 		"should pass if 'query store after' is enabled and shuffle-sharding is disabled": {
-			setup: func(cfg *Config) {
+			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.QueryStoreAfter = time.Hour
 			},
 		},
 		"should pass if both 'query store after' and 'query ingesters within' are set and 'query store after' < 'query ingesters within'": {
-			setup: func(cfg *Config) {
+			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.QueryStoreAfter = time.Hour
-				cfg.QueryIngestersWithin = 2 * time.Hour
+				limits.QueryIngestersWithin = model.Duration(2 * time.Hour)
 			},
 		},
 		"should fail if both 'query store after' and 'query ingesters within' are set and 'query store after' > 'query ingesters within'": {
-			setup: func(cfg *Config) {
+			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.QueryStoreAfter = 3 * time.Hour
-				cfg.QueryIngestersWithin = 2 * time.Hour
+				limits.QueryIngestersWithin = model.Duration(2 * time.Hour)
 			},
 			expected: errBadLookbackConfigs,
 		},
@@ -1249,8 +1247,9 @@ func TestConfig_Validate(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			cfg := &Config{}
 			flagext.DefaultValues(cfg)
-			testData.setup(cfg)
-			assert.Equal(t, testData.expected, cfg.Validate())
+			limits := defaultLimitsConfig()
+			testData.setup(cfg, &limits)
+			assert.Equal(t, testData.expected, cfg.ValidateLimits(limits))
 		})
 	}
 }
@@ -1293,7 +1292,7 @@ func newMockBlocksStorageQueryable(querier storage.Querier) *mockBlocksStorageQu
 }
 
 // Querier implements storage.Queryable.
-func (m *mockBlocksStorageQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (m *mockBlocksStorageQueryable) Querier(context.Context, int64, int64) (storage.Querier, error) {
 	return m.querier, nil
 }
 

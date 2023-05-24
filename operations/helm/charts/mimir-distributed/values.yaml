@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r234-74bc8fb
+  tag: r239-071bdf6
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -172,7 +172,6 @@ mimir:
     blocks_storage:
       backend: s3
       bucket_store:
-        max_chunk_pool_bytes: 12884901888 # 12GiB
         {{- if index .Values "chunks-cache" "enabled" }}
         chunks_cache:
           backend: memcached
@@ -209,6 +208,8 @@ mimir:
       {{- end }}
       tsdb:
         dir: /data/tsdb
+        head_compaction_interval: 15m
+        wal_replay_concurrency: 3
 
     {{- if .Values.enterprise.enabled }}
     cluster_name: "{{ .Release.Name }}"
@@ -220,6 +221,7 @@ mimir:
       max_closing_blocks_concurrency: 2
       max_opening_blocks_concurrency: 4
       symbols_flushers_concurrency: 4
+      first_level_compaction_wait_period: 25m
       data_dir: "/data"
       sharding_ring:
         wait_stability_min_duration: 1m
@@ -514,6 +516,7 @@ alertmanager:
     # If undefined (the default) or set to null, no storageClassName spec is
     #   set, choosing the default provisioner.
     #
+    # A per-zone storageClass configuration in `alertmanager.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
   readinessProbe:
@@ -625,6 +628,11 @@ alertmanager:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Alertmanager data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-b
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -633,6 +641,11 @@ alertmanager:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Alertmanager data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-c
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -641,6 +654,11 @@ alertmanager:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Alertmanager data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
+      storageClass: null
 
 distributor:
   replicas: 1
@@ -798,6 +816,8 @@ ingester:
     # If undefined (the default) or set to null, no storageClassName spec is
     #   set, choosing the default provisioner.
     #
+    # A per-zone storageClass configuration in `ingester.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
+    #
     # storageClass: "-"
 
   readinessProbe:
@@ -842,12 +862,15 @@ ingester:
   #     - name: zone-a
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
+  #       storageClass: storage-class-us-central1-a
   #     - name: zone-a
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
+  #       storageClass: storage-class-us-central1-b
   #     - name: zone-c
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-c
+  #       storageClass: storage-class-us-central1-c
   #
   zoneAwareReplication:
     # -- Enable zone-aware replication for ingester
@@ -881,6 +904,11 @@ ingester:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Ingester data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-b
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -889,6 +917,11 @@ ingester:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Ingester data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-c
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -897,6 +930,11 @@ ingester:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- Ingester data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
+      storageClass: null
 
 overrides_exporter:
   enabled: true
@@ -1341,6 +1379,7 @@ store_gateway:
     # If undefined (the default) or set to null, no storageClassName spec is
     #   set, choosing the default provisioner.
     #
+    # A per-zone storageClass configuration in `store_gateway.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
   readinessProbe:
@@ -1416,6 +1455,11 @@ store_gateway:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- StoreGateway data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-b
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -1424,6 +1468,11 @@ store_gateway:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- StoreGateway data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
+      storageClass: null
     # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
     - name: zone-c
       # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -1432,6 +1481,11 @@ store_gateway:
       nodeSelector: null
       # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
       extraAffinity: {}
+      # -- StoreGateway data Persistent Volume Storage Class
+      # If defined, storageClassName: <storageClass>
+      # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
+      # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
+      storageClass: null
 
 compactor:
   replicas: 1
@@ -2141,6 +2195,7 @@ nginx:
           "" "{{ include "mimir.noAuthTenant" . }}";
         }
 
+        proxy_read_timeout 300;
         server {
           listen 8080;
 
@@ -2484,6 +2539,7 @@ gateway:
             "" "{{ include "mimir.noAuthTenant" . }}";
           }
 
+          proxy_read_timeout 300;
           server {
             listen {{ include "mimir.serverHttpListenPort" . }};
 
@@ -2834,7 +2890,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r234-47c054ac
+    tag: r239-89825cf8
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3360,7 +3416,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r234-74bc8fb
+    tag: r239-071bdf6
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3380,7 +3436,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r234-74bc8fb
+    tag: r239-071bdf6
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

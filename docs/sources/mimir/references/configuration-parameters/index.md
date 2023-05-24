@@ -126,6 +126,11 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -max-separate-metrics-groups-per-user
 [max_separate_metrics_groups_per_user: <int> | default = 1000]
 
+# (advanced) Set to true to enable all Go runtime metrics, such as go_sched_*
+# and go_memstats_*.
+# CLI flag: -enable-go-runtime-metrics
+[enable_go_runtime_metrics: <boolean> | default = false]
+
 api:
   # (advanced) Allows to skip label name validation via
   # X-Mimir-SkipLabelNameValidation header on the http write path. Use with
@@ -329,6 +334,10 @@ overrides_exporter:
     # (advanced) IP address to advertise in the ring. Default is auto-detected.
     # CLI flag: -overrides-exporter.ring.instance-addr
     [instance_addr: <string> | default = ""]
+
+    # (advanced) Enable using a IPv6 instance address. (default false)
+    # CLI flag: -overrides-exporter.ring.instance-enable-ipv6
+    [instance_enable_ipv6: <boolean> | default = false]
 
     # (advanced) Minimum time to wait for ring stability at startup, if set to
     # positive value. Set to 0 to disable.
@@ -560,9 +569,19 @@ grpc_tls_config:
 # CLI flag: -server.log-source-ips-regex
 [log_source_ips_regex: <string> | default = ""]
 
+# Optionally log request headers.
+# CLI flag: -server.log-request-headers
+[log_request_headers: <boolean> | default = false]
+
 # (advanced) Optionally log requests at info level instead of debug level.
+# Applies to request headers as well if server.log-request-headers is enabled.
 # CLI flag: -server.log-request-at-info-level-enabled
 [log_request_at_info_level_enabled: <boolean> | default = false]
+
+# Comma separated list of headers to exclude from loggin. Only used if
+# server.log-request-headers is true.
+# CLI flag: -server.log-request-headers-exclude-list
+[log_request_exclude_headers_list: <string> | default = ""]
 
 # (advanced) Base path to serve all API routes from (e.g. /v1/)
 # CLI flag: -server.path-prefix
@@ -722,6 +741,10 @@ ring:
   # CLI flag: -distributor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -distributor.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
 instance_limits:
   # (advanced) Max ingestion rate (samples/sec) that this distributor will
   # accept. This limit is per-distributor, not per-tenant. Additional push
@@ -741,34 +764,6 @@ instance_limits:
   # per-tenant. Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
-
-forwarding:
-  # (experimental) Enables the feature to forward certain metrics in
-  # remote_write requests, depending on defined rules.
-  # CLI flag: -distributor.forwarding.enabled
-  [enabled: <boolean> | default = false]
-
-  # (experimental) Maximum concurrency at which forwarding requests get
-  # performed.
-  # CLI flag: -distributor.forwarding.request-concurrency
-  [request_concurrency: <int> | default = 10]
-
-  # (experimental) Timeout for requests to ingestion endpoints to which we
-  # forward metrics.
-  # CLI flag: -distributor.forwarding.request-timeout
-  [request_timeout: <duration> | default = 2s]
-
-  # (experimental) If disabled then forwarding requests are always considered to
-  # be successful, errors are ignored.
-  # CLI flag: -distributor.forwarding.propagate-errors
-  [propagate_errors: <boolean> | default = true]
-
-  # Configures the gRPC client used to communicate between the distributors and
-  # the configured remote write endpoints used by the metrics forwarding
-  # feature.
-  # The CLI flags prefix for this block configuration is:
-  # distributor.forwarding.grpc-client
-  [grpc_client: <grpc_client>]
 ```
 
 ### ingester
@@ -871,6 +866,10 @@ ring:
   # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -ingester.ring.instance-addr
   [instance_addr: <string> | default = ""]
+
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -ingester.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
 
   # (advanced) The availability zone where this instance is running.
   # CLI flag: -ingester.ring.instance-availability-zone
@@ -977,11 +976,6 @@ The `querier` block configures the querier.
 # -querier.iterators flag.
 # CLI flag: -querier.batch-iterators
 [batch_iterators: <boolean> | default = true]
-
-# (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
-# means all queries are sent to ingester.
-# CLI flag: -querier.query-ingesters-within
-[query_ingesters_within: <duration> | default = 13h]
 
 # (advanced) The time after which a metric should be queried from storage and
 # not just ingesters. 0 means all queries are sent to store. If this option is
@@ -1108,6 +1102,11 @@ The `frontend` block configures the query-frontend.
 # Set to < 0 to enable on all queries.
 # CLI flag: -query-frontend.log-queries-longer-than
 [log_queries_longer_than: <duration> | default = 0s]
+
+# (advanced) Comma-separated list of request header names to include in query
+# logs. Applies to both query stats and slow queries logs.
+# CLI flag: -query-frontend.log-query-request-headers
+[log_query_request_headers: <string> | default = ""]
 
 # (advanced) Max body size for downstream prometheus.
 # CLI flag: -query-frontend.max-body-size
@@ -1334,6 +1333,10 @@ ring:
   # CLI flag: -query-scheduler.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -query-scheduler.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
 # (experimental) The maximum number of query-scheduler instances to use,
 # regardless how many replicas are running. This option can be set only when
 # -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all
@@ -1359,7 +1362,8 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.evaluation-interval
 [evaluation_interval: <duration> | default = 1m]
 
-# (advanced) How frequently to poll for rule changes
+# (advanced) How frequently the configured rule groups are re-synced from the
+# object storage.
 # CLI flag: -ruler.poll-interval
 [poll_interval: <duration> | default = 1m]
 
@@ -1553,6 +1557,10 @@ ring:
   # CLI flag: -ruler.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -ruler.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
   # (advanced) Number of tokens for each ruler.
   # CLI flag: -ruler.ring.num-tokens
   [num_tokens: <int> | default = 128]
@@ -1648,6 +1656,20 @@ local:
   # Directory to scan for rules
   # CLI flag: -ruler-storage.local.directory
   [directory: <string> | default = ""]
+
+cache:
+  # Backend for ruler storage cache, if not empty. The cache is supported for
+  # any storage backend except "local". Supported values: memcached, redis.
+  # CLI flag: -ruler-storage.cache.backend
+  [backend: <string> | default = ""]
+
+  # The memcached block configures the Memcached-based caching backend.
+  # The CLI flags prefix for this block configuration is: ruler-storage.cache
+  [memcached: <memcached>]
+
+  # The redis block configures the Redis-based caching backend.
+  # The CLI flags prefix for this block configuration is: ruler-storage.cache
+  [redis: <redis>]
 ```
 
 ### alertmanager
@@ -1750,6 +1772,10 @@ sharding_ring:
   # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -alertmanager.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
+
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -alertmanager.sharding-ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
 
   # (advanced) The replication factor to use when sharding the alertmanager.
   # CLI flag: -alertmanager.sharding-ring.replication-factor
@@ -1903,6 +1929,12 @@ alertmanager_client:
 # notifications.
 # CLI flag: -alertmanager.persist-interval
 [persist_interval: <duration> | default = 15m]
+
+# (advanced) Enables periodic cleanup of alertmanager stateful data
+# (notification logs and silences) from object storage. When enabled, data is
+# removed for any tenant that does not have a configuration.
+# CLI flag: -alertmanager.enable-state-cleanup
+[enable_state_cleanup: <boolean> | default = true]
 ```
 
 ### alertmanager_storage
@@ -1977,7 +2009,6 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
-- `distributor.forwarding.grpc-client`
 - `ingester.client`
 - `querier.frontend-client`
 - `query-frontend.grpc-client-config`
@@ -2547,6 +2578,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-metadata-length
 [max_metadata_length: <int> | default = 1024]
 
+# Maximum number of buckets per native histogram sample. 0 to disable the limit.
+# CLI flag: -validation.max-native-histogram-buckets
+[max_native_histogram_buckets: <int> | default = 0]
+
 # (advanced) Controls how far into the future incoming samples are accepted
 # compared to the wall clock. Any sample with timestamp `t` will be rejected if
 # `t > (now + validation.create-grace-period)`. Also used by query-frontend to
@@ -2565,7 +2600,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) List of metric relabel configurations. Note that in most
 # situations, it is more effective to use metrics relabeling directly in the
-# Prometheus server, e.g. remote_write.write_relabel_configs.
+# Prometheus server, e.g. remote_write.write_relabel_configs. Labels available
+# during the relabeling phase and cleaned afterwards: __meta_tenant_id
 [metric_relabel_configs: <relabel_config...> | default = ]
 
 # The maximum number of in-memory series per tenant, across the cluster before
@@ -2665,8 +2701,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-query-lookback
 [max_query_lookback: <duration> | default = 0s]
 
-# Limit the time range for partial queries at the querier level. Defaults to the
-# value of -store.max-query-length if set to 0.
+# Limit the time range for partial queries at the querier level.
 # CLI flag: -querier.max-partial-query-length
 [max_partial_query_length: <duration> | default = 0s]
 
@@ -2716,16 +2751,20 @@ The `limits` block configures default and per-tenant limits imposed by component
 # expression matcher longer than the configured number of bytes. 0 to disable
 # the limit.
 # CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
-[query_sharding_max_regexp_size_bytes: <int> | default = 0]
+[query_sharding_max_regexp_size_bytes: <int> | default = 4096]
 
 # (experimental) Split instant queries by an interval and execute in parallel. 0
 # to disable it.
 # CLI flag: -query-frontend.split-instant-queries-by-interval
 [split_instant_queries_by_interval: <duration> | default = 0s]
 
+# (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
+# means all queries are sent to ingester.
+# CLI flag: -querier.query-ingesters-within
+[query_ingesters_within: <duration> | default = 13h]
+
 # Limit the total query time range (end - start time). This limit is enforced in
-# the query-frontend on the received query. Defaults to the value of
-# -store.max-query-length if set to 0.
+# the query-frontend on the received query.
 # CLI flag: -query-frontend.max-total-query-length
 [max_total_query_length: <duration> | default = 0s]
 
@@ -2795,6 +2834,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.alerting-rules-evaluation-enabled
 [ruler_alerting_rules_evaluation_enabled: <boolean> | default = true]
 
+# (advanced) True to enable a re-sync of the configured rule groups as soon as
+# they're changed via ruler's config API. This re-sync is in addition of the
+# periodic syncing. When enabled, it may take up to few tens of seconds before a
+# configuration change triggers the re-sync.
+# CLI flag: -ruler.sync-rules-on-changes-enabled
+[ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.
@@ -2827,7 +2873,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to
 # disable.
 # CLI flag: -compactor.partial-block-deletion-delay
-[compactor_partial_block_deletion_delay: <duration> | default = 0s]
+[compactor_partial_block_deletion_delay: <duration> | default = 1d]
 
 # Enable block upload API for the tenant.
 # CLI flag: -compactor.block-upload-enabled
@@ -2840,6 +2886,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Verify chunks when uploading blocks via the upload API for the tenant.
 # CLI flag: -compactor.block-upload-verify-chunks
 [compactor_block_upload_verify_chunks: <boolean> | default = true]
+
+# (advanced) Maximum size in bytes of a block that is allowed to be uploaded or
+# validated. 0 = no limit.
+# CLI flag: -compactor.block-upload-max-block-size-bytes
+[compactor_block_upload_max_block_size_bytes: <int> | default = 0]
 
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
@@ -2878,7 +2929,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # is given in JSON format. Rate limit has the same meaning as
 # -alertmanager.notification-rate-limit, but only applies for specific
 # integration. Allowed integration names: webhook, email, pagerduty, opsgenie,
-# wechat, slack, victorops, pushover, sns.
+# wechat, slack, victorops, pushover, sns, webex, telegram, discord.
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
@@ -2915,19 +2966,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # alerts will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
-
-# Remote-write endpoint where metrics specified in forwarding_rules are
-# forwarded to. If set, takes precedence over endpoints specified in forwarding
-# rules.
-[forwarding_endpoint: <string> | default = ""]
-
-# If set, forwarding drops samples that are older than this duration. If unset
-# or 0, no samples get dropped.
-[forwarding_drop_older_than: <int> | default = ]
-
-# Rules based on which the Distributor decides whether a metric should be
-# forwarded to an alternative remote_write API endpoint.
-[forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
 ```
 
 ### blocks_storage
@@ -3002,12 +3040,6 @@ bucket_store:
   # object storage per tenant.
   # CLI flag: -blocks-storage.bucket-store.meta-sync-concurrency
   [meta_sync_concurrency: <int> | default = 20]
-
-  # (deprecated) Minimum age of a block before it's being read. Set it to safe
-  # value (e.g 30m) if your object storage is eventually consistent. GCS and S3
-  # are (roughly) strongly consistent.
-  # CLI flag: -blocks-storage.bucket-store.consistency-delay
-  [consistency_delay: <duration> | default = 0s]
 
   index_cache:
     # The index cache backend type. Supported values: inmemory, memcached,
@@ -3153,8 +3185,8 @@ bucket_store:
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
   bucket_index:
-    # If enabled, queriers and store-gateways discover blocks by reading a
-    # bucket index (created and updated by the compactor) instead of
+    # (deprecated) If enabled, queriers and store-gateways discover blocks by
+    # reading a bucket index (created and updated by the compactor) instead of
     # periodically scanning the bucket.
     # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
     [enabled: <boolean> | default = true]
@@ -3185,16 +3217,16 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
   [ignore_blocks_within: <duration> | default = 10h]
 
-  # (advanced) Max size - in bytes - of a chunks pool, used to reduce memory
+  # (deprecated) Max size - in bytes - of a chunks pool, used to reduce memory
   # allocations. The pool is shared across all tenants. 0 to disable the limit.
   # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
   [max_chunk_pool_bytes: <int> | default = 2147483648]
 
-  # (advanced) Size - in bytes - of the smallest chunks pool bucket.
+  # (deprecated) Size - in bytes - of the smallest chunks pool bucket.
   # CLI flag: -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes
   [chunk_pool_min_bucket_size_bytes: <int> | default = 16000]
 
-  # (advanced) Size - in bytes - of the largest chunks pool bucket.
+  # (deprecated) Size - in bytes - of the largest chunks pool bucket.
   # CLI flag: -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes
   [chunk_pool_max_bucket_size_bytes: <int> | default = 50000000]
 
@@ -3252,6 +3284,14 @@ bucket_store:
   # worst-case, worst-case-small-posting-lists, all.
   # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
   [series_selection_strategy: <string> | default = "all"]
+
+  series_selection_strategies:
+    # (experimental) This option is only used when
+    # blocks-storage.bucket-store.series-selection-strategy=worst-case.
+    # Increasing the series preference results in fetching more series than
+    # postings. Must be a positive floating point number.
+    # CLI flag: -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference
+    [worst_case_series_preference: <float> | default = 1]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
@@ -3424,11 +3464,6 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.meta-sync-concurrency
 [meta_sync_concurrency: <int> | default = 20]
 
-# (deprecated) Minimum age of fresh (non-compacted) blocks before they are being
-# processed.
-# CLI flag: -compactor.consistency-delay
-[consistency_delay: <duration> | default = 0s]
-
 # Directory to temporarily store blocks during compaction. This directory is not
 # required to be persisted between restarts.
 # CLI flag: -compactor.data-dir
@@ -3581,6 +3616,10 @@ sharding_ring:
   # CLI flag: -compactor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -compactor.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
   # (advanced) Minimum time to wait for ring stability at startup. 0 to disable.
   # CLI flag: -compactor.ring.wait-stability-min-duration
   [wait_stability_min_duration: <duration> | default = 0s]
@@ -3706,6 +3745,10 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
 
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -store-gateway.sharding-ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
   # The availability zone where this instance is running. Required if
   # zone-awareness is enabled.
   # CLI flag: -store-gateway.sharding-ring.instance-availability-zone
@@ -3724,6 +3767,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.metadata-cache`
 - `query-frontend.results-cache`
+- `ruler-storage.cache`
 
 &nbsp;
 
@@ -3852,6 +3896,7 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.metadata-cache`
 - `query-frontend.results-cache`
+- `ruler-storage.cache`
 
 &nbsp;
 

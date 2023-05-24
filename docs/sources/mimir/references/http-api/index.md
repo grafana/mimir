@@ -20,77 +20,81 @@ This document groups API endpoints by service. Note that the API endpoints are e
 
 - **Microservices mode**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
-- **Read-Write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../../operators-guide/architecture/deployment-modes/index.md" >}}) for the grouping of components.
+- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../../references/architecture/deployment-modes/index.md" >}}) for the grouping of components.
 
 ## Endpoints
 
-| API                                                                                   | Service                        | Endpoint                                                                  |
+{{% responsive-table %}}
+| API | Service | Endpoint |
 | ------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
-| [Index page](#index-page)                                                             | _All services_                 | `GET /`                                                                   |
-| [Configuration](#configuration)                                                       | _All services_                 | `GET /config`                                                             |
-| [Status Configuration](#status-configuration)                                         | _All services_                 | `GET /api/v1/status/config`                                               |
-| [Status Flags](#status-flags)                                                         | _All services_                 | `GET /api/v1/status/flags`                                                |
-| [Runtime Configuration](#runtime-configuration)                                       | _All services_                 | `GET /runtime_config`                                                     |
-| [Services' status](#services-status)                                                  | _All services_                 | `GET /services`                                                           |
-| [Readiness probe](#readiness-probe)                                                   | _All services_                 | `GET /ready`                                                              |
-| [Metrics](#metrics)                                                                   | _All services_                 | `GET /metrics`                                                            |
-| [Pprof](#pprof)                                                                       | _All services_                 | `GET /debug/pprof`                                                        |
-| [Fgprof](#fgprof)                                                                     | _All services_                 | `GET /debug/fgprof`                                                       |
-| [Build information](#build-information)                                               | _All services_                 | `GET /api/v1/status/buildinfo`                                            |
-| [Memberlist cluster](#memberlist-cluster)                                             | _All services_                 | `GET /memberlist`                                                         |
-| [Get tenant limits](#get-tenant-limits)                                               | _All services_                 | `GET /api/v1/user_limits`                                                 |
-| [Remote write](#remote-write)                                                         | Distributor                    | `POST /api/v1/push`                                                       |
-| [OTLP](#otlp)                                                                         | Distributor                    | `POST /otlp/v1/metrics`                                                   |
-| [Tenants stats](#tenants-stats)                                                       | Distributor                    | `GET /distributor/all_user_stats`                                         |
-| [HA tracker status](#ha-tracker-status)                                               | Distributor                    | `GET /distributor/ha_tracker`                                             |
-| [Flush chunks / blocks](#flush-chunks--blocks)                                        | Ingester                       | `GET,POST /ingester/flush`                                                |
-| [Prepare for Shutdown](#prepare-for-shutdown)                                         | Ingester                       | `GET,POST,DELETE /ingester/prepare-shutdown`                              |
-| [Shutdown](#shutdown)                                                                 | Ingester                       | `GET,POST /ingester/shutdown`                                             |
-| [Ingesters ring status](#ingesters-ring-status)                                       | Distributor,Ingester           | `GET /ingester/ring`                                                      |
-| [Instant query](#instant-query)                                                       | Querier, Query-frontend        | `GET,POST <prometheus-http-prefix>/api/v1/query`                          |
-| [Range query](#range-query)                                                           | Querier, Query-frontend        | `GET,POST <prometheus-http-prefix>/api/v1/query_range`                    |
-| [Exemplar query](#exemplar-query)                                                     | Querier, Query-frontend        | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars`                |
-| [Get series by label matchers](#get-series-by-label-matchers)                         | Querier, Query-frontend        | `GET,POST <prometheus-http-prefix>/api/v1/series`                         |
-| [Get label names](#get-label-names)                                                   | Querier, Query-frontend        | `GET,POST <prometheus-http-prefix>/api/v1/labels`                         |
-| [Get label values](#get-label-values)                                                 | Querier, Query-frontend        | `GET <prometheus-http-prefix>/api/v1/label/{name}/values`                 |
-| [Get metric metadata](#get-metric-metadata)                                           | Querier, Query-frontend        | `GET <prometheus-http-prefix>/api/v1/metadata`                            |
-| [Remote read](#remote-read)                                                           | Querier, Query-frontend        | `POST <prometheus-http-prefix>/api/v1/read`                               |
-| [Label names cardinality](#label-names-cardinality)                                   | Querier, Query-frontend        | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names`       |
-| [Label values cardinality](#label-values-cardinality)                                 | Querier, Query-frontend        | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values`      |
-| [Build information](#build-information)                                               | Querier, Query-frontend, Ruler | `GET <prometheus-http-prefix>/api/v1/status/buildinfo`                    |
-| [Get tenant ingestion stats](#get-tenant-ingestion-stats)                             | Querier                        | `GET /api/v1/user_stats`                                                  |
-| [Query-scheduler ring status](#query-scheduler-ring-status)                           | Query-scheduler                | `GET /query-scheduler/ring`                                               |
-| [Ruler ring status](#ruler-ring-status)                                               | Ruler                          | `GET /ruler/ring`                                                         |
-| [Ruler rules ](#ruler-rules)                                                          | Ruler                          | `GET /ruler/rule_groups`                                                  |
-| [List Prometheus rules](#list-prometheus-rules)                                       | Ruler                          | `GET <prometheus-http-prefix>/api/v1/rules`                               |
-| [List Prometheus alerts](#list-prometheus-alerts)                                     | Ruler                          | `GET <prometheus-http-prefix>/api/v1/alerts`                              |
-| [List rule groups](#list-rule-groups)                                                 | Ruler                          | `GET <prometheus-http-prefix>/config/v1/rules`                            |
-| [Get rule groups by namespace](#get-rule-groups-by-namespace)                         | Ruler                          | `GET <prometheus-http-prefix>/config/v1/rules/{namespace}`                |
-| [Get rule group](#get-rule-group)                                                     | Ruler                          | `GET <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}`    |
-| [Set rule group](#set-rule-group)                                                     | Ruler                          | `POST <prometheus-http-prefix>/config/v1/rules/{namespace}`               |
-| [Delete rule group](#delete-rule-group)                                               | Ruler                          | `DELETE <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
-| [Delete namespace](#delete-namespace)                                                 | Ruler                          | `DELETE <prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-| [Delete tenant configuration](#delete-tenant-configuration)                           | Ruler                          | `POST /ruler/delete_tenant_config`                                        |
-| [Alertmanager status](#alertmanager-status)                                           | Alertmanager                   | `GET /multitenant_alertmanager/status`                                    |
-| [Alertmanager configs](#alertmanager-configs)                                         | Alertmanager                   | `GET /multitenant_alertmanager/configs`                                   |
-| [Alertmanager ring status](#alertmanager-ring-status)                                 | Alertmanager                   | `GET /multitenant_alertmanager/ring`                                      |
-| [Alertmanager UI](#alertmanager-ui)                                                   | Alertmanager                   | `GET <alertmanager-http-prefix>`                                          |
-| [Build Information](#build-information)                                               | Alertmanager                   | `GET <alertmanager-http-prefix>/api/v1/status/buildinfo`                  |
-| [Alertmanager Delete Tenant Configuration](#alertmanager-delete-tenant-configuration) | Alertmanager                   | `POST /multitenant_alertmanager/delete_tenant_config`                     |
-| [Get Alertmanager configuration](#get-alertmanager-configuration)                     | Alertmanager                   | `GET /api/v1/alerts`                                                      |
-| [Set Alertmanager configuration](#set-alertmanager-configuration)                     | Alertmanager                   | `POST /api/v1/alerts`                                                     |
-| [Delete Alertmanager configuration](#delete-alertmanager-configuration)               | Alertmanager                   | `DELETE /api/v1/alerts`                                                   |
-| [Store-gateway ring status](#store-gateway-ring-status)                               | Store-gateway                  | `GET /store-gateway/ring`                                                 |
-| [Store-gateway tenants](#store-gateway-tenants)                                       | Store-gateway                  | `GET /store-gateway/tenants`                                              |
-| [Store-gateway tenant blocks](#store-gateway-tenant-blocks)                           | Store-gateway                  | `GET /store-gateway/tenant/{tenant}/blocks`                               |
-| [Compactor ring status](#compactor-ring-status)                                       | Compactor                      | `GET /compactor/ring`                                                     |
-| [Start block upload](#start-block-upload)                                             | Compactor                      | `POST /api/v1/upload/block/{block}/start`                                 |
-| [Upload block file](#upload-block-file)                                               | Compactor                      | `POST /api/v1/upload/block/{block}/files?path={path}`                     |
-| [Complete block upload](#complete-block-upload)                                       | Compactor                      | `POST /api/v1/upload/block/{block}/finish`                                |
-| [Check block upload](#check-block-upload)                                             | Compactor                      | `GET /api/v1/upload/block/{block}/check`                                  |
-| [Tenant delete request](#tenant-delete-request)                                       | Compactor                      | `POST /compactor/delete_tenant`                                           |
-| [Tenant delete status](#tenant-delete-status)                                         | Compactor                      | `GET /compactor/delete_tenant_status`                                     |
-| [Overrides-exporter ring status](#overrides-exporter-ring-status)                     | Overrides-exporter             | `GET /overrides-exporter/ring`                                            |
+| [Index page](#index-page) | _All services_ | `GET /` |
+| [Configuration](#configuration) | _All services_ | `GET /config` |
+| [Status Configuration](#status-configuration) | _All services_ | `GET /api/v1/status/config` |
+| [Status Flags](#status-flags) | _All services_ | `GET /api/v1/status/flags` |
+| [Runtime Configuration](#runtime-configuration) | _All services_ | `GET /runtime_config` |
+| [Services' status](#services-status) | _All services_ | `GET /services` |
+| [Readiness probe](#readiness-probe) | _All services_ | `GET /ready` |
+| [Metrics](#metrics) | _All services_ | `GET /metrics` |
+| [Pprof](#pprof) | _All services_ | `GET /debug/pprof` |
+| [Fgprof](#fgprof) | _All services_ | `GET /debug/fgprof` |
+| [Build information](#build-information) | _All services_ | `GET /api/v1/status/buildinfo` |
+| [Memberlist cluster](#memberlist-cluster) | _All services_ | `GET /memberlist` |
+| [Get tenant limits](#get-tenant-limits) | _All services_ | `GET /api/v1/user_limits` |
+| [Remote write](#remote-write) | Distributor | `POST /api/v1/push` |
+| [OTLP](#otlp) | Distributor | `POST /otlp/v1/metrics` |
+| [Tenants stats](#tenants-stats) | Distributor | `GET /distributor/all_user_stats` |
+| [HA tracker status](#ha-tracker-status) | Distributor | `GET /distributor/ha_tracker` |
+| [Flush chunks / blocks](#flush-chunks--blocks) | Ingester | `GET,POST /ingester/flush` |
+| [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
+| [Shutdown](#shutdown) | Ingester | `GET,POST /ingester/shutdown` |
+| [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
+| [Instant query](#instant-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
+| [Range query](#range-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
+| [Exemplar query](#exemplar-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
+| [Get series by label matchers](#get-series-by-label-matchers) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/series` |
+| [Get label names](#get-label-names) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/labels` |
+| [Get label values](#get-label-values) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/label/{name}/values` |
+| [Get metric metadata](#get-metric-metadata) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
+| [Remote read](#remote-read) | Querier, Query-frontend | `POST <prometheus-http-prefix>/api/v1/read` |
+| [Label names cardinality](#label-names-cardinality) | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names` |
+| [Label values cardinality](#label-values-cardinality) | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values` |
+| [Build information](#build-information) | Querier, Query-frontend, Ruler | `GET <prometheus-http-prefix>/api/v1/status/buildinfo` |
+| [Format query](#format-query) | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/format_query` |
+| [Get tenant ingestion stats](#get-tenant-ingestion-stats) | Querier | `GET /api/v1/user_stats` |
+| [Query-scheduler ring status](#query-scheduler-ring-status) | Query-scheduler | `GET /query-scheduler/ring` |
+| [Ruler ring status](#ruler-ring-status) | Ruler | `GET /ruler/ring` |
+| [Ruler rules ](#ruler-rules) | Ruler | `GET /ruler/rule_groups` |
+| [List Prometheus rules](#list-prometheus-rules) | Ruler | `GET <prometheus-http-prefix>/api/v1/rules` |
+| [List Prometheus alerts](#list-prometheus-alerts) | Ruler | `GET <prometheus-http-prefix>/api/v1/alerts` |
+| [List rule groups](#list-rule-groups) | Ruler | `GET <prometheus-http-prefix>/config/v1/rules` |
+| [Get rule groups by namespace](#get-rule-groups-by-namespace) | Ruler | `GET <prometheus-http-prefix>/config/v1/rules/{namespace}` |
+| [Get rule group](#get-rule-group) | Ruler | `GET <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
+| [Set rule group](#set-rule-group) | Ruler | `POST <prometheus-http-prefix>/config/v1/rules/{namespace}` |
+| [Delete rule group](#delete-rule-group) | Ruler | `DELETE <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
+| [Delete namespace](#delete-namespace) | Ruler | `DELETE <prometheus-http-prefix>/config/v1/rules/{namespace}` |
+| [Delete tenant configuration](#delete-tenant-configuration) | Ruler | `POST /ruler/delete_tenant_config` |
+| [Alertmanager status](#alertmanager-status) | Alertmanager | `GET /multitenant_alertmanager/status` |
+| [Alertmanager configs](#alertmanager-configs) | Alertmanager | `GET /multitenant_alertmanager/configs` |
+| [Alertmanager ring status](#alertmanager-ring-status) | Alertmanager | `GET /multitenant_alertmanager/ring` |
+| [Alertmanager UI](#alertmanager-ui) | Alertmanager | `GET <alertmanager-http-prefix>` |
+| [Build Information](#build-information) | Alertmanager | `GET <alertmanager-http-prefix>/api/v1/status/buildinfo` |
+| [Alertmanager Delete Tenant Configuration](#alertmanager-delete-tenant-configuration) | Alertmanager | `POST /multitenant_alertmanager/delete_tenant_config` |
+| [Get Alertmanager configuration](#get-alertmanager-configuration) | Alertmanager | `GET /api/v1/alerts` |
+| [Set Alertmanager configuration](#set-alertmanager-configuration) | Alertmanager | `POST /api/v1/alerts` |
+| [Delete Alertmanager configuration](#delete-alertmanager-configuration) | Alertmanager | `DELETE /api/v1/alerts` |
+| [Store-gateway ring status](#store-gateway-ring-status) | Store-gateway | `GET /store-gateway/ring` |
+| [Store-gateway tenants](#store-gateway-tenants) | Store-gateway | `GET /store-gateway/tenants` |
+| [Store-gateway tenant blocks](#store-gateway-tenant-blocks) | Store-gateway | `GET /store-gateway/tenant/{tenant}/blocks` |
+| [Prepare for Shutdown](#prepare-for-shutdown) | Store-gateway | `GET,POST,DELETE /store-gateway/prepare-shutdown` |
+| [Compactor ring status](#compactor-ring-status) | Compactor | `GET /compactor/ring` |
+| [Start block upload](#start-block-upload) | Compactor | `POST /api/v1/upload/block/{block}/start` |
+| [Upload block file](#upload-block-file) | Compactor | `POST /api/v1/upload/block/{block}/files?path={path}` |
+| [Complete block upload](#complete-block-upload) | Compactor | `POST /api/v1/upload/block/{block}/finish` |
+| [Check block upload](#check-block-upload) | Compactor | `GET /api/v1/upload/block/{block}/check` |
+| [Tenant delete request](#tenant-delete-request) | Compactor | `POST /compactor/delete_tenant` |
+| [Tenant delete status](#tenant-delete-status) | Compactor | `GET /compactor/delete_tenant_status` |
+| [Overrides-exporter ring status](#overrides-exporter-ring-status) | Overrides-exporter | `GET /overrides-exporter/ring` |
+{{% /responsive-table %}}
 
 ### Path prefixes
 
@@ -239,6 +243,19 @@ GET <alertmanager-http-prefix>/api/v1/status/buildinfo
 
 This endpoint returns in JSON format information about the build and enabled features. The format returned is not identical, but is similar to the [Prometheus Build Information endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#build-information).
 
+### Format query
+
+```
+GET <prometheus-http-prefix>/api/v1/format_query?query={query}
+POST <prometheus-http-prefix>/api/v1/format_query
+```
+
+Formats the PromQL query.
+
+This endpoint is compatible with the Prometheus format query endpoint.
+
+For more information about formatting queries, refer to [Prometheus' documentation](https://prometheus.io/docs/prometheus/latest/querying/api/#formatting-query-expressions).
+
 ### Memberlist cluster
 
 ```
@@ -266,7 +283,7 @@ The endpoint is only available if Grafana Mimir is configured with the `-runtime
 
 ## Distributor
 
-The following endpoints relate to the [distributor]({{< relref "../../operators-guide/architecture/components/distributor.md" >}}).
+The following endpoints relate to the [distributor]({{< relref "../../references/architecture/components/distributor.md" >}}).
 
 ### Remote write
 
@@ -332,7 +349,7 @@ This endpoint displays a web page with the current status of the HA tracker, inc
 
 ## Ingester
 
-The following endpoints relate to the [ingester]({{< relref "../../operators-guide/architecture/components/ingester.md" >}}).
+The following endpoints relate to the [ingester]({{< relref "../../references/architecture/components/ingester.md" >}}).
 
 ### Flush chunks / blocks
 
@@ -408,7 +425,7 @@ This endpoint displays a web page with the ingesters hash ring status, including
 
 ## Querier / Query-frontend
 
-The following endpoints are exposed both by the [querier]({{< relref "../../operators-guide/architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../../operators-guide/architecture/components/query-frontend/index.md" >}}).
+The following endpoints are exposed both by the [querier]({{< relref "../../references/architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../../references/architecture/components/query-frontend/index.md" >}}).
 
 ### Instant query
 
@@ -641,10 +658,12 @@ List all tenant rules. This endpoint is not part of ruler-API and is always avai
 ### List Prometheus rules
 
 ```
-GET <prometheus-http-prefix>/api/v1/rules
+GET <prometheus-http-prefix>/api/v1/rules?type={alert|record}
 ```
 
 Prometheus-compatible rules endpoint to list alerting and recording rules that are currently loaded.
+
+The `type` parameter is optional. If set, only the specified type of rule is returned.
 
 For more information, refer to Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules).
 
@@ -984,6 +1003,26 @@ GET /store-gateway/tenant/{tenant}/blocks
 ```
 
 Displays a web page listing the blocks for a given tenant.
+
+### Prepare for Shutdown
+
+```
+GET,POST,DELETE /store-gateway/prepare-shutdown
+```
+
+This endpoint changes in-memory store-gateway configuration to prepare for permanently stopping a store-gateway
+instance but does not actually stop any part of the latter.
+
+After a `POST` to the `prepare-shutdown` endpoint returns, when the store-gateway process is stopped with `SIGINT` / `SIGTERM`,
+the store-gateway will be unregistered from the ring.
+
+A `GET` to the `prepare-shutdown` endpoint returns the status of this configuration, either `set` or `unset`.
+
+A `DELETE` to the `prepare-shutdown` endpoint reverts the configuration of the store-gateway to its previous state
+(with respect to unregistering).
+
+This API endpoint is usually used by Kubernetes-specific scale down automations such as the
+[rollout-operator](https://github.com/grafana/rollout-operator).
 
 ## Compactor
 

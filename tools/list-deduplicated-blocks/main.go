@@ -41,7 +41,7 @@ func main() {
 	}{}
 
 	logger := gokitlog.NewNopLogger()
-	cfg.bucket.RegisterFlags(flag.CommandLine, logger)
+	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.Parse()
 
@@ -80,7 +80,7 @@ func main() {
 		[]string{"state"}, []string{"duplicate"})
 
 	log.Println("Running filter")
-	err = df.Filter(ctx, metasMap, s, nil)
+	err = df.Filter(ctx, metasMap, s)
 	if err != nil {
 		log.Fatalln("deduplication failed:", err)
 	}

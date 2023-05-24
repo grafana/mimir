@@ -44,7 +44,6 @@ blocks_storage:
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
-    consistency_delay: 5s
     index_header_lazy_loading_enabled: true
     sync_interval: 1m
 
@@ -77,6 +76,10 @@ ruler:
 
 ruler_storage:
   backend: s3
+
+  cache:
+    # Cache is configured via CLI flags. See docker-compose.jsonnet
+
   s3:
     bucket_name:       mimir-ruler
     endpoint:          minio:9000
@@ -107,7 +110,6 @@ alertmanager_storage:
 compactor:
   compaction_interval: 30s
   data_dir:            /tmp/mimir-compactor
-  consistency_delay:   1m
   cleanup_interval:    1m
   tenant_cleanup_delay: 1m
   sharding_ring:
@@ -153,7 +155,7 @@ query_scheduler:
 
 limits:
   # Limit max query time range to 31d
-  max_query_length: 744h
+  max_partial_query_length: 744h
   max_global_exemplars_per_user: 5000
   query_sharding_total_shards: 16
   query_sharding_max_sharded_queries: 32

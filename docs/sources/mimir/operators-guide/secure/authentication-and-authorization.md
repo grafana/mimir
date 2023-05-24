@@ -19,7 +19,7 @@ To protect Grafana Mimir from accidental or malicious calls, you must add a laye
 
 For more information about Prometheus remote write configuration, refer to [remote write](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 
-## With an authenticating reverse proxy
+### With an authenticating reverse proxy
 
 To use bearer authentication with a token stored in a file, the remote write configuration block includes the following parameters:
 
@@ -37,7 +37,7 @@ basic_auth:
   password_file: <PATH TO AUTHENTICATION PROXY PASSWORD FILE>
 ```
 
-## Without an authenticating reverse proxy
+### Without an authenticating reverse proxy
 
 To configure the `X-Scope-OrgID` header directly, the remote write configuration block includes the following parameters:
 

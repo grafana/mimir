@@ -34,6 +34,10 @@ const (
 	// fine-grained chunks cache is enabled (byte slices have variable size and contain many chunks) or disabled (byte slices
 	// are at most 16KB each).
 	chunkBytesSlabSize = 160 * 1024
+
+	// Selected so that most series fit it and at the same time it's not too large for requests with few series.
+	// Most series are less than 4096 B.
+	seriesBytesSlabSize = 16 * 1024
 )
 
 var (
@@ -218,7 +222,7 @@ func (b *seriesChunksSeriesSet) Next() bool {
 // At returns the current series. The result from At() MUST not be retained after calling Next()
 func (b *seriesChunksSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
 	if b.currOffset >= b.currSet.len() {
-		return nil, nil
+		return labels.EmptyLabels(), nil
 	}
 
 	return b.currSet.series[b.currOffset].lset, b.currSet.series[b.currOffset].chks

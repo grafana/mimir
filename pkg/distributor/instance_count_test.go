@@ -13,17 +13,17 @@ import (
 
 type nopDelegate struct{}
 
-func (n nopDelegate) OnRingInstanceRegister(lifecycler *ring.BasicLifecycler, ringDesc ring.Desc, instanceExists bool, instanceID string, instanceDesc ring.InstanceDesc) (ring.InstanceState, ring.Tokens) {
+func (n nopDelegate) OnRingInstanceRegister(_ *ring.BasicLifecycler, _ ring.Desc, _ bool, _ string, instanceDesc ring.InstanceDesc) (ring.InstanceState, ring.Tokens) {
 	return instanceDesc.State, instanceDesc.GetTokens()
 }
 
-func (n nopDelegate) OnRingInstanceTokens(lifecycler *ring.BasicLifecycler, tokens ring.Tokens) {
+func (n nopDelegate) OnRingInstanceTokens(*ring.BasicLifecycler, ring.Tokens) {
 }
 
-func (n nopDelegate) OnRingInstanceStopping(lifecycler *ring.BasicLifecycler) {
+func (n nopDelegate) OnRingInstanceStopping(*ring.BasicLifecycler) {
 }
 
-func (n nopDelegate) OnRingInstanceHeartbeat(lifecycler *ring.BasicLifecycler, ringDesc *ring.Desc, instanceDesc *ring.InstanceDesc) {
+func (n nopDelegate) OnRingInstanceHeartbeat(*ring.BasicLifecycler, *ring.Desc, *ring.InstanceDesc) {
 }
 
 func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {

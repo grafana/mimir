@@ -11,7 +11,11 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
+
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
 func TestBigEndianPostingsCount(t *testing.T) {
@@ -203,6 +207,20 @@ func TestSpeculativeFetchedDataStrategy(t *testing.T) {
 				{totalSize: 4 * 1024},
 			},
 		},
+		"x": {
+			input: []postingGroup{
+				{totalSize: 4 * 1024 * 1024},
+				{totalSize: 32*1024 + 4},
+				{totalSize: 32*1024 + 4},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 32*1024 + 4},
+				{totalSize: 32*1024 + 4},
+			},
+			expectedOmitted: []postingGroup{
+				{totalSize: 4 * 1024 * 1024},
+			},
+		},
 	}
 
 	for testName, testCase := range testCases {
@@ -210,6 +228,85 @@ func TestSpeculativeFetchedDataStrategy(t *testing.T) {
 			actualSelected, actualOmitted := speculativeFetchedDataStrategy{}.selectPostings(testCase.input)
 			assert.ElementsMatch(t, testCase.expectedSelected, actualSelected)
 			assert.ElementsMatch(t, testCase.expectedOmitted, actualOmitted)
+		})
+	}
+}
+
+func TestLabelValuesPostingsStrategy(t *testing.T) {
+	testCases := map[string]struct {
+		postingLists           []streamindex.PostingListOffset
+		input                  []postingGroup
+		expectedSelected       []postingGroup
+		expectedOmitted        []postingGroup
+		expectedToPreferSeries bool
+	}{
+		"posting lists are shortcuttable and per-value lists are very large": {
+			postingLists: []streamindex.PostingListOffset{
+				{Off: index.Range{Start: 0, End: 1024 * 1024}},
+			},
+			input: []postingGroup{
+				{totalSize: 128},
+				{totalSize: 256},
+				{totalSize: 1024 * 1024},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 128},
+				{totalSize: 256},
+			},
+			expectedOmitted: []postingGroup{
+				{totalSize: 1024 * 1024},
+			},
+			expectedToPreferSeries: true,
+		},
+		"posting lists are small enough to not be able to do shortcuts, but per-value lists are very large": {
+			postingLists: []streamindex.PostingListOffset{
+				{Off: index.Range{Start: 0, End: 1024 * 1024}},
+			},
+			input: []postingGroup{
+				{totalSize: 128},
+				{totalSize: 256},
+				{totalSize: 1024},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 128},
+				{totalSize: 256},
+				{totalSize: 1024},
+			},
+			expectedOmitted:        nil,
+			expectedToPreferSeries: true,
+		},
+		"posting lists are shortcuttable, but per-value posting list is much smaller than series, so we prefer per-value postings": {
+			postingLists: []streamindex.PostingListOffset{
+				{Off: index.Range{Start: 0, End: 1024}},
+			},
+			input: []postingGroup{
+				{totalSize: 4 * 1024 * 1024},
+				{totalSize: 33 * 1024},
+				{totalSize: 33 * 1024},
+			},
+			expectedSelected: []postingGroup{
+				{totalSize: 4 * 1024 * 1024},
+				{totalSize: 33 * 1024},
+				{totalSize: 33 * 1024},
+			},
+			expectedOmitted:        nil,
+			expectedToPreferSeries: false,
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			strategy := labelValuesPostingsStrategy{
+				matchersStrategy: worstCaseFetchedDataStrategy{1},
+				allLabelValues:   testCase.postingLists,
+			}
+			actualSelected, actualOmitted := strategy.selectPostings(testCase.input)
+			assert.ElementsMatch(t, testCase.expectedSelected, actualSelected)
+			assert.ElementsMatch(t, testCase.expectedOmitted, actualOmitted)
+
+			// The posting values don't matter. Only their size does.
+			actualPreferSeries := strategy.preferSeriesToPostings(make([]storage.SeriesRef, numSeriesInSmallestIntersectingPostingGroup(actualSelected)))
+			assert.Equal(t, testCase.expectedToPreferSeries, actualPreferSeries)
 		})
 	}
 }

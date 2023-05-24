@@ -477,11 +477,12 @@ mimirtool analyze grafana --address=<url>
 
 ##### Configuration
 
-| Environment variable | Flag        | Description                                                                                                                     |
-| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `GRAFANA_ADDRESS`    | `--address` | Sets the address of the Grafana instance.                                                                                       |
-| `GRAFANA_API_KEY`    | `--key`     | Sets the API Key for the Grafana instance. To create a key, refer to [Authentication API](/docs/grafana/latest/http_api/auth/). |
-| -                    | `--output`  | Sets the output file path, which by default is `metrics-in-grafana.json`.                                                       |
+| Environment variable | Flag             | Description                                                                                                                                                           |
+| -------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GRAFANA_ADDRESS`    | `--address`      | Sets the address of the Grafana instance.                                                                                                                             |
+| `GRAFANA_API_KEY`    | `--key`          | Sets the API Key for the Grafana instance. To create a key, refer to [Authentication API](/docs/grafana/latest/http_api/auth/).                                       |
+| -                    | `--output`       | Sets the output file path, which by default is `metrics-in-grafana.json`.                                                                                             |
+| -                    | `--folder-title` | Sets the folder filter to limit dashboards analysis for unused metrics based on their exact folder title. When repeated any of the matching folders will be analyzed. |
 
 ##### Example output file
 
@@ -599,14 +600,15 @@ mimirtool analyze prometheus --address=<url> --id=<tenant_id>
 
 ##### Configuration
 
-| Environment variable | Flag                     | Description                                                                                                              |
-| -------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `MIMIR_ADDRESS`      | `--address`              | Sets the address of the Prometheus instance.                                                                             |
-| `MIMIR_TENANT_ID`    | `--id`                   | Sets the basic auth username. If you're using Grafana Cloud this variable is your instance ID.                           |
-| `MIMIR_API_KEY`      | `--key`                  | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.                              |
-| -                    | `--grafana-metrics-file` | `mimirtool analyze grafana` or `mimirtool analyze dashboard` output file, which by default is `metrics-in-grafana.json`. |
-| -                    | `--ruler-metrics-file`   | `mimirtool analyze ruler` or `mimirtool analyze rule-file` output file, which by default is `metrics-in-ruler.json`.     |
-| -                    | `--output`               | Sets the output file path, which by default is `prometheus-metrics.json`.                                                |
+| Environment variable | Flag                       | Description                                                                                                              |
+| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `MIMIR_ADDRESS`      | `--address`                | Sets the address of the Prometheus instance.                                                                             |
+| `MIMIR_TENANT_ID`    | `--id`                     | Sets the basic auth username. If you're using Grafana Cloud this variable is your instance ID.                           |
+| `MIMIR_API_KEY`      | `--key`                    | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.                              |
+| -                    | `--grafana-metrics-file`   | `mimirtool analyze grafana` or `mimirtool analyze dashboard` output file, which by default is `metrics-in-grafana.json`. |
+| -                    | `--ruler-metrics-file`     | `mimirtool analyze ruler` or `mimirtool analyze rule-file` output file, which by default is `metrics-in-ruler.json`.     |
+| -                    | `--output`                 | Sets the output file path, which by default is `prometheus-metrics.json`.                                                |
+| -                    | `--prometheus-http-prefix` | Sets the HTTP URL path under which the Prometheus api will be served.                                                    |
 
 ##### Example output
 
@@ -716,7 +718,7 @@ the `--update-defaults` flag, `mimirtool config convert` will not update the val
 
 ##### Example
 
-The following example shows a command that converts Cortex [query-frontend]({{< relref "../architecture/components/query-frontend" >}}) YAML configuration file and CLI flag to a Mimir-compatible YAML and CLI flag.
+The following example shows a command that converts Cortex [query-frontend]({{< relref "../../references/architecture/components/query-frontend" >}}) YAML configuration file and CLI flag to a Mimir-compatible YAML and CLI flag.
 
 ```bash
 mimirtool config convert --yaml-file=cortex.yaml --flags-file=cortex.flags --yaml-out=mimir.yaml --flags-out=mimir.flags

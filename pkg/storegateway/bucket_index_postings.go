@@ -19,6 +19,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 // rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
@@ -406,15 +408,18 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 // It returns the number of postings in the smallest intersecting (non-subtractive) postingGroup.
 // It returns 0 if there was no intersecting posting group that also wasn't the all-postings group.
 func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
+	var minGroupSize int64
 	for _, g := range groups {
 		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
 			// The size of each posting list contains 4 bytes with the number of entries.
 			// We shouldn't count these as series.
 			groupSize := g.totalSize - int64(len(g.keys)*4)
-			return groupSize / tsdb.BytesPerPostingInAPostingList
+			if minGroupSize == 0 || minGroupSize > groupSize {
+				minGroupSize = groupSize
+			}
 		}
 	}
-	return 0
+	return minGroupSize / tsdb.BytesPerPostingInAPostingList
 }
 
 // speculativeFetchedDataStrategy selects postings lists in a very similar way to worstCaseFetchedDataStrategy,
@@ -462,4 +467,53 @@ func (s speculativeFetchedDataStrategy) selectPostings(groups []postingGroup) (s
 		}
 	}
 	return groups, nil
+}
+
+// labelValuesPostingsStrategy works in a similar way to worstCaseFetchedDataStrategy.
+// The differences are:
+//   - it doesn't a factor for the posting list size
+//   - as the bounded maximum for fetched data it also takes into account the provided allLabelValues;
+//     this is useful in LabelValues calls where we have to decide between fetching (some expanded postings + series),
+//     (expanded postings + series), or (expanded postings + postings for each label value).
+type labelValuesPostingsStrategy struct {
+	matchersStrategy postingsSelectionStrategy
+	allLabelValues   []streamindex.PostingListOffset
+}
+
+func (w labelValuesPostingsStrategy) name() string {
+	return "lv-" + w.matchersStrategy.name()
+}
+
+func (w labelValuesPostingsStrategy) selectPostings(matchersGroups []postingGroup) (partialMatchersGroups, omittedMatchersGroups []postingGroup) {
+	partialMatchersGroups, omittedMatchersGroups = w.matchersStrategy.selectPostings(matchersGroups)
+
+	maxPossibleSeriesSize := numSeriesInSmallestIntersectingPostingGroup(partialMatchersGroups) * tsdb.EstimatedSeriesP99Size
+	completeMatchersSize := postingGroupsTotalSize(matchersGroups)
+
+	completeMatchersPlusLabelValuesSize := completeMatchersSize + postingsListsTotalSize(w.allLabelValues)
+	completeMatchersPlusSeriesSize := completeMatchersSize + maxPossibleSeriesSize
+	partialMatchersPlusSeriesSize := postingGroupsTotalSize(partialMatchersGroups) + maxPossibleSeriesSize
+
+	if util_math.Min(completeMatchersPlusSeriesSize, completeMatchersPlusLabelValuesSize) < partialMatchersPlusSeriesSize {
+		return matchersGroups, nil
+	}
+	return partialMatchersGroups, omittedMatchersGroups
+}
+
+func (w labelValuesPostingsStrategy) preferSeriesToPostings(postings []storage.SeriesRef) bool {
+	return int64(len(postings)*tsdb.EstimatedSeriesP99Size) < postingsListsTotalSize(w.allLabelValues)
+}
+
+func postingGroupsTotalSize(groups []postingGroup) (n int64) {
+	for _, g := range groups {
+		n += g.totalSize
+	}
+	return
+}
+
+func postingsListsTotalSize(postingLists []streamindex.PostingListOffset) (n int64) {
+	for _, l := range postingLists {
+		n += l.Off.End - l.Off.Start
+	}
+	return
 }

@@ -7,7 +7,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: test-enterprise-legacy-label-values-enterprise-metrics-make-minio-buckets
+  name: test-enterprise-legacy-label-values-enterprise-metrics-make-minio-buckets-5.0.7
   namespace: "citestns"
   labels:
     app: mimir-distributed-make-bucket-job

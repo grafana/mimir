@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -141,8 +142,11 @@ func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context,
 }
 
 // LoadRuleGroups implements rules.RuleStore.
-func (b *BucketRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) error {
-	ch := make(chan *rulespb.RuleGroupDesc)
+func (b *BucketRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) (missing rulespb.RuleGroupList, err error) {
+	var (
+		ch        = make(chan *rulespb.RuleGroupDesc)
+		missingMx sync.Mutex
+	)
 
 	// Given we store one file per rule group. With this, we create a pool of workers that will
 	// download all rule groups in parallel. We limit the number of workers to avoid a
@@ -150,19 +154,26 @@ func (b *BucketRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[s
 	g, gCtx := errgroup.WithContext(ctx)
 	for i := 0; i < loadConcurrency; i++ {
 		g.Go(func() error {
-			for gr := range ch {
-				user, namespace, group := gr.GetUser(), gr.GetNamespace(), gr.GetName()
-				if user == "" || namespace == "" || group == "" {
-					return fmt.Errorf("invalid rule group: user=%q, namespace=%q, group=%q", user, namespace, group)
+			for inputGroup := range ch {
+				user, namespace, groupName := inputGroup.GetUser(), inputGroup.GetNamespace(), inputGroup.GetName()
+				if user == "" || namespace == "" || groupName == "" {
+					return fmt.Errorf("invalid rule group: user=%q, namespace=%q, group=%q", user, namespace, groupName)
 				}
 
-				gr, err := b.getRuleGroup(gCtx, user, namespace, group, gr) // reuse group pointer from the map.
-				if err != nil {
-					return errors.Wrapf(err, "get rule group user=%q, namespace=%q, name=%q", user, namespace, group)
-				}
+				// Reuse group pointer from the map.
+				loadedGroup, err := b.getRuleGroup(gCtx, user, namespace, groupName, inputGroup)
 
-				if user != gr.User || namespace != gr.Namespace || group != gr.Name {
-					return fmt.Errorf("mismatch between requested rule group and loaded rule group, requested: user=%q, namespace=%q, group=%q, loaded: user=%q, namespace=%q, group=%q", user, namespace, group, gr.User, gr.Namespace, gr.Name)
+				switch {
+				case errors.Is(err, rulestore.ErrGroupNotFound):
+					missingMx.Lock()
+					missing = append(missing, inputGroup)
+					missingMx.Unlock()
+
+				case err != nil:
+					return errors.Wrapf(err, "get rule group user=%q, namespace=%q, name=%q", user, namespace, groupName)
+
+				case user != loadedGroup.User || namespace != loadedGroup.Namespace || groupName != loadedGroup.Name:
+					return fmt.Errorf("mismatch between requested rule group and loaded rule group, requested: user=%q, namespace=%q, group=%q, loaded: user=%q, namespace=%q, group=%q", user, namespace, groupName, loadedGroup.User, loadedGroup.Namespace, loadedGroup.Name)
 				}
 			}
 
@@ -186,7 +197,7 @@ outer:
 	}
 	close(ch)
 
-	return g.Wait()
+	return missing, g.Wait()
 }
 
 // GetRuleGroup implements rules.RuleStore.

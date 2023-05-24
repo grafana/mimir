@@ -1562,9 +1562,8 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 
 func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 	const (
-		engineLookbackDelta = 5 * time.Minute
-		thirtyDays          = 30 * 24 * time.Hour
-		sevenDays           = 7 * 24 * time.Hour
+		thirtyDays = 30 * 24 * time.Hour
+		sevenDays  = 7 * 24 * time.Hour
 	)
 	now := time.Now()
 
@@ -1904,7 +1903,7 @@ type storeGatewayClientMock struct {
 	mockedLabelValuesErr      error
 }
 
-func (m *storeGatewayClientMock) Series(ctx context.Context, in *storepb.SeriesRequest, opts ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
+func (m *storeGatewayClientMock) Series(context.Context, *storepb.SeriesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
 	seriesClient := &storeGatewaySeriesClientMock{
 		mockedResponses: m.mockedSeriesResponses,
 	}
@@ -1960,7 +1959,7 @@ type cancelerStoreGatewayClientMock struct {
 	cancel        func()
 }
 
-func (m *cancelerStoreGatewayClientMock) Series(ctx context.Context, in *storepb.SeriesRequest, opts ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
+func (m *cancelerStoreGatewayClientMock) Series(ctx context.Context, _ *storepb.SeriesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
 	if m.produceSeries {
 		series := &cancelerStoreGatewaySeriesClientMock{
 			ctx:    ctx,
@@ -2049,14 +2048,14 @@ func mockHintsResponse(ids ...ulid.ULID) *storepb.SeriesResponse {
 		hints.AddQueriedBlock(id)
 	}
 
-	any, err := types.MarshalAny(hints)
+	marshalled, err := types.MarshalAny(hints)
 	if err != nil {
 		panic(err)
 	}
 
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_Hints{
-			Hints: any,
+			Hints: marshalled,
 		},
 	}
 }
@@ -2067,12 +2066,12 @@ func mockNamesHints(ids ...ulid.ULID) *types.Any {
 		hints.AddQueriedBlock(id)
 	}
 
-	any, err := types.MarshalAny(hints)
+	marshalled, err := types.MarshalAny(hints)
 	if err != nil {
 		panic(err)
 	}
 
-	return any
+	return marshalled
 }
 
 func mockValuesHints(ids ...ulid.ULID) *types.Any {
@@ -2081,20 +2080,20 @@ func mockValuesHints(ids ...ulid.ULID) *types.Any {
 		hints.AddQueriedBlock(id)
 	}
 
-	any, err := types.MarshalAny(hints)
+	marshalled, err := types.MarshalAny(hints)
 	if err != nil {
 		panic(err)
 	}
 
-	return any
+	return marshalled
 }
 
 func namesFromSeries(series ...labels.Labels) []string {
 	namesMap := map[string]struct{}{}
 	for _, s := range series {
-		for _, l := range s {
+		s.Range(func(l labels.Label) {
 			namesMap[l.Name] = struct{}{}
-		}
+		})
 	}
 
 	names := []string{}
@@ -2109,10 +2108,8 @@ func namesFromSeries(series ...labels.Labels) []string {
 func valuesFromSeries(name string, series ...labels.Labels) []string {
 	valuesMap := map[string]struct{}{}
 	for _, s := range series {
-		for _, l := range s {
-			if l.Name == name {
-				valuesMap[l.Value] = struct{}{}
-			}
+		if value := s.Get(name); value != "" {
+			valuesMap[value] = struct{}{}
 		}
 	}
 

@@ -31,12 +31,13 @@ type queryStats struct {
 	cachedPostingsDecompressionErrors  int
 	cachedPostingsDecompressionTimeSum time.Duration
 
-	seriesTouched          int
-	seriesTouchedSizeSum   int
+	seriesProcessed        int
+	seriesProcessedSizeSum int
+	seriesOmitted          int
 	seriesFetched          int
 	seriesFetchedSizeSum   int
-	seriesFetchCount       int
 	seriesFetchDurationSum time.Duration
+	seriesRefetches        int
 
 	seriesHashCacheRequests int
 	seriesHashCacheHits     int
@@ -74,6 +75,7 @@ type queryStats struct {
 	streamingSeriesEncodeResponseDuration       time.Duration
 	streamingSeriesSendResponseDuration         time.Duration
 	streamingSeriesOtherDuration                time.Duration
+	streamingSeriesIndexHeaderLoadDuration      time.Duration
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
@@ -96,12 +98,13 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.cachedPostingsDecompressionErrors += o.cachedPostingsDecompressionErrors
 	s.cachedPostingsDecompressionTimeSum += o.cachedPostingsDecompressionTimeSum
 
-	s.seriesTouched += o.seriesTouched
-	s.seriesTouchedSizeSum += o.seriesTouchedSizeSum
+	s.seriesProcessed += o.seriesProcessed
+	s.seriesProcessedSizeSum += o.seriesProcessedSizeSum
+	s.seriesOmitted += o.seriesOmitted
 	s.seriesFetched += o.seriesFetched
 	s.seriesFetchedSizeSum += o.seriesFetchedSizeSum
-	s.seriesFetchCount += o.seriesFetchCount
 	s.seriesFetchDurationSum += o.seriesFetchDurationSum
+	s.seriesRefetches += o.seriesRefetches
 
 	s.seriesHashCacheRequests += o.seriesHashCacheRequests
 	s.seriesHashCacheHits += o.seriesHashCacheHits
@@ -129,6 +132,8 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.streamingSeriesEncodeResponseDuration += o.streamingSeriesEncodeResponseDuration
 	s.streamingSeriesSendResponseDuration += o.streamingSeriesSendResponseDuration
 	s.streamingSeriesOtherDuration += o.streamingSeriesOtherDuration
+
+	s.streamingSeriesIndexHeaderLoadDuration += o.streamingSeriesIndexHeaderLoadDuration
 
 	return &s
 }
@@ -166,6 +171,6 @@ func (s *safeQueryStats) export() *queryStats {
 	s.unsafeStatsMx.Lock()
 	defer s.unsafeStatsMx.Unlock()
 
-	copy := *s.unsafeStats
-	return &copy
+	copied := *s.unsafeStats
+	return &copied
 }

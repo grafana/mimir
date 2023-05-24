@@ -973,6 +973,7 @@ type mockConfigProvider struct {
 	splitGroups                  map[string]int
 	blockUploadEnabled           map[string]bool
 	blockUploadValidationEnabled map[string]bool
+	blockUploadMaxBlockSizeBytes map[string]int64
 	userPartialBlockDelay        map[string]time.Duration
 	userPartialBlockDelayInvalid map[string]bool
 	verifyChunks                 map[string]bool
@@ -985,6 +986,7 @@ func newMockConfigProvider() *mockConfigProvider {
 		splitGroups:                  make(map[string]int),
 		blockUploadEnabled:           make(map[string]bool),
 		blockUploadValidationEnabled: make(map[string]bool),
+		blockUploadMaxBlockSizeBytes: make(map[string]int64),
 		userPartialBlockDelay:        make(map[string]time.Duration),
 		userPartialBlockDelayInvalid: make(map[string]bool),
 		verifyChunks:                 make(map[string]bool),
@@ -1035,15 +1037,19 @@ func (m *mockConfigProvider) CompactorBlockUploadVerifyChunks(tenantID string) b
 	return m.verifyChunks[tenantID]
 }
 
-func (m *mockConfigProvider) S3SSEType(user string) string {
+func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(user string) int64 {
+	return m.blockUploadMaxBlockSizeBytes[user]
+}
+
+func (m *mockConfigProvider) S3SSEType(string) string {
 	return ""
 }
 
-func (m *mockConfigProvider) S3SSEKMSKeyID(userID string) string {
+func (m *mockConfigProvider) S3SSEKMSKeyID(string) string {
 	return ""
 }
 
-func (m *mockConfigProvider) S3SSEKMSEncryptionContext(userID string) string {
+func (m *mockConfigProvider) S3SSEKMSEncryptionContext(string) string {
 	return ""
 }
 

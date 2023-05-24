@@ -7,7 +7,7 @@ weight: 10
 
 # Migrate from single zone to zone-aware replication
 
-This document explains how to migrate stateful components from single zone to [zone-aware replication](/docs/mimir/v2.7.x/operators-guide/configure/configure-zone-aware-replication/) with Helm. The three components in question are the [alertmanager](/docs/mimir/v2.7.x/operators-guide/architecture/components/alertmanager/), the [store-gateway](/docs/mimir/v2.7.x/operators-guide/architecture/components/store-gateway/) and the [ingester](/docs/mimir/v2.7.x/operators-guide/architecture/components/ingester/).
+This document explains how to migrate stateful components from single zone to [zone-aware replication](/docs/mimir/{{< param "mimir_docs_version" >}}/operators-guide/configure/configure-zone-aware-replication/) with Helm. The three components in question are the [alertmanager](/docs/mimir/{{< param "mimir_docs_version" >}}/operators-guide/architecture/components/alertmanager/), the [store-gateway](/docs/mimir/{{< param "mimir_docs_version" >}}/operators-guide/architecture/components/store-gateway/) and the [ingester](/docs/mimir/{{< param "mimir_docs_version" >}}/operators-guide/architecture/components/ingester/).
 
 The migration path of Alertmanager and store-gateway is straight forward, however migrating ingesters is more complicated.
 
@@ -164,6 +164,12 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
+1. Ensure that the Service and StatefulSet resources of the non zone-aware alertmanagers have been deleted.
+   The previous step also removes the Service and StatefulSet manifests of the old non zone-aware alertmanagers.
+   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster
+   even if the Helm chart no longer renders them. If the old resources still exist, delete them manually.
+   If not deleted, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
+
 1. Wait until old non zone-aware alertmanagers are terminated.
 
 ## Migrate store-gateways to zone-aware replication
@@ -252,6 +258,12 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
+1. Ensure that the Service and StatefulSet resources of the non zone-aware store-gateways have been deleted.
+   The previous step also removes the Service and StatefulSet manifests of the old non zone-aware store-gateways.
+   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster
+   even if the Helm chart no longer renders them. If the old resources still exist, delete them manually.
+   If not deleted, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
+
 1. Wait until all store-gateways are running and ready.
 
 ### Migrate store-gateways without downtime
@@ -321,6 +333,12 @@ Before starting this procedure, set up your zones according to [Configure zone-a
    These values are actually the default, which means that removing the values `store_gateway.zoneAwareReplication.enabled` and `rollout_operator.enabled` is also a valid step.
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
+
+1. Ensure that the Service and StatefulSet resources of the non zone-aware store-gateways have been deleted.
+   The previous step also removes the Service and StatefulSet manifests of the old non zone-aware store-gateways.
+   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster
+   even if the Helm chart no longer renders them. If the old resources still exist, delete them manually.
+   If not deleted, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
 
 1. Wait for non zone-aware store-gateways to terminate.
 
@@ -495,6 +513,12 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    These values are actually the default, which means that removing the values `ingester.zoneAwareReplication.enabled` and `rollout_operator.enabled` is also a valid step.
 
+1. Ensure that the Service and StatefulSet resources of the non zone-aware ingesters have been deleted.
+   The previous step also removes the Service and StatefulSet manifests of the old non zone-aware ingesters.
+   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster
+   even if the Helm chart no longer renders them. If the old resources still exist, delete them manually.
+   If not deleted, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
+
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
 ### Migrate ingesters without downtime
@@ -584,7 +608,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    1. If the current `<N>` above in `ingester.zoneAwareReplication.migration.replicas` is less than `ingester.replicas`, go back and increase `<N>` with at most 21 and repeat these four steps.
 
-1. If you are using [shuffle sharding](/docs/mimir/v2.7.x/operators-guide/configure/configure-shuffle-sharding/), it must be turned off on the read path at this point.
+1. If you are using [shuffle sharding](/docs/mimir/{{< param "mimir_docs_version" >}}/operators-guide/configure/configure-shuffle-sharding/), it must be turned off on the read path at this point.
 
    1. Update your configuration with these values and keep them until otherwise instructed.
 
@@ -724,11 +748,17 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
+1. Ensure that the Service and StatefulSet resources of the non zone-aware ingesters have been deleted.
+   The previous step also removes the Service and StatefulSet manifests of the old non zone-aware ingesters.
+   In some cases, such as when using Helm from Tanka, these resources will not be automatically deleted from your Kubernetes cluster
+   even if the Helm chart no longer renders them. If the old resources still exist, delete them manually.
+   If not deleted, some of the pods may be scraped multiple times when using the Prometheus operator for metamonitoring.
+
 1. Wait at least 3 hours.
 
    The 3 hours is calculated from 2h TSDB block range period + `blocks_storage.tsdb.head_compaction_idle_timeout` Grafana Mimir parameters to give enough time for ingesters to remove stale series from memory. Stale series will be there due to series being moved between ingesters.
 
-1. If you are using [shuffle sharding](/docs/mimir/v2.7.x/operators-guide/configure/configure-shuffle-sharding/):
+1. If you are using [shuffle sharding](/docs/mimir/{{< param "mimir_docs_version" >}}/operators-guide/configure/configure-shuffle-sharding/):
 
    1. Wait an extra 12 hours.
 

@@ -33,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/util/test"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type fakePusher struct {
@@ -42,14 +41,14 @@ type fakePusher struct {
 	err      error
 }
 
-func (p *fakePusher) Push(ctx context.Context, r *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+func (p *fakePusher) Push(_ context.Context, r *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	p.request = r
 	return p.response, p.err
 }
 
 func TestPusherAppendable(t *testing.T) {
 	pusher := &fakePusher{}
-	pa := NewPusherAppendable(pusher, "user-1", nil, promauto.With(nil).NewCounter(prometheus.CounterOpts{}), promauto.With(nil).NewCounter(prometheus.CounterOpts{}))
+	pa := NewPusherAppendable(pusher, "user-1", promauto.With(nil).NewCounter(prometheus.CounterOpts{}), promauto.With(nil).NewCounter(prometheus.CounterOpts{}))
 
 	type sample struct {
 		series         string
@@ -242,11 +241,7 @@ func TestPusherErrors(t *testing.T) {
 
 			writes := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-			limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-				defaults.RulerEvaluationDelay = 0
-			})
-
-			pa := NewPusherAppendable(pusher, "user-1", limits, writes, failures)
+			pa := NewPusherAppendable(pusher, "user-1", writes, failures)
 
 			lbls, err := parser.ParseMetric("foo_bar")
 			require.NoError(t, err)
@@ -368,7 +363,7 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 	const userID = "tenant-1"
 
-	dummyRules := []*rulespb.RuleDesc{mockRecordingRuleDesc("sum:up", "sum(up)")}
+	dummyRules := []*rulespb.RuleDesc{createRecordingRule("sum:up", "sum(up)")}
 
 	testCases := map[string]struct {
 		ruleGroup rulespb.RuleGroupDesc
@@ -438,7 +433,7 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// load rules into manager and start
-			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, nil, "", nil))
+			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
 			go manager.Run()
 
 			select {

@@ -41,7 +41,7 @@ func main() {
 	logger := gokitlog.NewNopLogger()
 
 	// Loads bucket index, and plans compaction for all loaded meta files.
-	cfg.bucket.RegisterFlags(flag.CommandLine, logger)
+	cfg.bucket.RegisterFlags(flag.CommandLine)
 	cfg.blockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
 	flag.Var(&cfg.blockRanges, "block-ranges", "List of compaction time ranges.")
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
@@ -96,7 +96,7 @@ func main() {
 		compactor.NewNoCompactionMarkFilter(bucket.NewUserBucketClient(cfg.userID, bkt, nil), true),
 	} {
 		log.Printf("Filtering using %T\n", f)
-		err = f.Filter(ctx, metas, synced, nil)
+		err = f.Filter(ctx, metas, synced)
 		if err != nil {
 			log.Fatalln("filter failed:", err)
 		}

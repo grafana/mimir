@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
 .DEFAULT_GOAL := all
 
 # Version number
@@ -57,7 +57,7 @@ MIXIN_OUT_PATH := operations/mimir-mixin-compiled
 MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
 
 # path to the mimir jsonnet manifests
-JSONNET_MANIFESTS_PATH := operations/mimir
+JSONNET_MANIFESTS_PATHS := operations/mimir development
 
 # path to the mimir doc sources
 DOC_SOURCES_PATH := docs/sources/mimir
@@ -68,7 +68,7 @@ DOC_TEMPLATES := $(DOC_SOURCES_PATH)/references/configuration-parameters/index.t
 # Documents to run through embedding
 DOC_EMBED := $(DOC_SOURCES_PATH)/configure/configure-the-query-frontend-work-with-prometheus.md \
 	$(DOC_SOURCES_PATH)/configure/mirror-requests-to-a-second-cluster/index.md \
-	$(DOC_SOURCES_PATH)/operators-guide/architecture/components/overrides-exporter.md \
+	$(DOC_SOURCES_PATH)/references/architecture/components/overrides-exporter.md \
 	$(DOC_SOURCES_PATH)/get-started/_index.md \
 	$(DOC_SOURCES_PATH)/operators-guide/deploy-grafana-mimir/jsonnet/deploy.md
 
@@ -178,7 +178,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= chore-upgrade-go-1203-5c4c29f01
+LATEST_BUILD_IMAGE_TAG ?= charleskorn-golangci-lint-upgrade-beafb9184
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -528,6 +528,12 @@ check-mixin-mixtool: check-mixin-jb
 check-mixin-runbooks: build-mixin
 	@tools/lint-runbooks.sh
 
+check-mixin-mimirtool-rules: build-mixin
+	@echo "Checking 'mimirtool rules check':"
+	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
+		go run ./cmd/mimirtool rules check --rule-dirs "$(MIXIN_OUT_PATH)$$suffix"; \
+	done
+
 mixin-serve: ## Runs Grafana loading the mixin dashboards compiled at operations/mimir-mixin-compiled.
 	@./operations/mimir-mixin-tools/serve/run.sh
 
@@ -538,10 +544,10 @@ mixin-screenshots: ## Generates mixin dashboards screenshots.
 check-jsonnet-manifests: ## Check the jsonnet manifests.
 check-jsonnet-manifests: format-jsonnet-manifests
 	@echo "Checking diff:"
-	@./tools/find-diff-or-untracked.sh "$(JSONNET_MANIFESTS_PATH)" || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
+	@./tools/find-diff-or-untracked.sh $(JSONNET_MANIFESTS_PATHS) || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
 
 format-jsonnet-manifests: ## Format the jsonnet manifests.
-	@find $(JSONNET_MANIFESTS_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
+	@find $(JSONNET_MANIFESTS_PATHS) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
 
 check-jsonnet-getting-started: ## Check the jsonnet getting started examples.
 	# Start from a clean setup.

@@ -58,6 +58,17 @@
       "fieldCategory": "experimental"
     },
     {
+      "kind": "field",
+      "name": "enable_go_runtime_metrics",
+      "required": false,
+      "desc": "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.",
+      "fieldValue": null,
+      "fieldDefaultValue": false,
+      "fieldFlag": "enable-go-runtime-metrics",
+      "fieldType": "boolean",
+      "fieldCategory": "advanced"
+    },
+    {
       "kind": "block",
       "name": "api",
       "required": false,
@@ -538,14 +549,34 @@
         },
         {
           "kind": "field",
+          "name": "log_request_headers",
+          "required": false,
+          "desc": "Optionally log request headers.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.log-request-headers",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "log_request_at_info_level_enabled",
           "required": false,
-          "desc": "Optionally log requests at info level instead of debug level.",
+          "desc": "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "server.log-request-at-info-level-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "log_request_exclude_headers_list",
+          "required": false,
+          "desc": "Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.log-request-headers-exclude-list",
+          "fieldType": "string"
         },
         {
           "kind": "field",
@@ -1387,6 +1418,17 @@
               "fieldFlag": "distributor.ring.instance-addr",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -1434,267 +1476,6 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
-        },
-        {
-          "kind": "block",
-          "name": "forwarding",
-          "required": false,
-          "desc": "",
-          "blockEntries": [
-            {
-              "kind": "field",
-              "name": "enabled",
-              "required": false,
-              "desc": "Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "distributor.forwarding.enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "request_concurrency",
-              "required": false,
-              "desc": "Maximum concurrency at which forwarding requests get performed.",
-              "fieldValue": null,
-              "fieldDefaultValue": 10,
-              "fieldFlag": "distributor.forwarding.request-concurrency",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "request_timeout",
-              "required": false,
-              "desc": "Timeout for requests to ingestion endpoints to which we forward metrics.",
-              "fieldValue": null,
-              "fieldDefaultValue": 2000000000,
-              "fieldFlag": "distributor.forwarding.request-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "propagate_errors",
-              "required": false,
-              "desc": "If disabled then forwarding requests are always considered to be successful, errors are ignored.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "distributor.forwarding.propagate-errors",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "block",
-              "name": "grpc_client",
-              "required": false,
-              "desc": "",
-              "blockEntries": [
-                {
-                  "kind": "field",
-                  "name": "max_recv_msg_size",
-                  "required": false,
-                  "desc": "gRPC client max receive message size (bytes).",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 104857600,
-                  "fieldFlag": "distributor.forwarding.grpc-client.grpc-max-recv-msg-size",
-                  "fieldType": "int",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "max_send_msg_size",
-                  "required": false,
-                  "desc": "gRPC client max send message size (bytes).",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 104857600,
-                  "fieldFlag": "distributor.forwarding.grpc-client.grpc-max-send-msg-size",
-                  "fieldType": "int",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "grpc_compression",
-                  "required": false,
-                  "desc": "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "distributor.forwarding.grpc-client.grpc-compression",
-                  "fieldType": "string",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "rate_limit",
-                  "required": false,
-                  "desc": "Rate limit for gRPC client; 0 means disabled.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 0,
-                  "fieldFlag": "distributor.forwarding.grpc-client.grpc-client-rate-limit",
-                  "fieldType": "float",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "rate_limit_burst",
-                  "required": false,
-                  "desc": "Rate limit burst for gRPC client.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 0,
-                  "fieldFlag": "distributor.forwarding.grpc-client.grpc-client-rate-limit-burst",
-                  "fieldType": "int",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "backoff_on_ratelimits",
-                  "required": false,
-                  "desc": "Enable backoff and retry when we hit ratelimits.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "distributor.forwarding.grpc-client.backoff-on-ratelimits",
-                  "fieldType": "boolean",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "block",
-                  "name": "backoff_config",
-                  "required": false,
-                  "desc": "",
-                  "blockEntries": [
-                    {
-                      "kind": "field",
-                      "name": "min_period",
-                      "required": false,
-                      "desc": "Minimum delay when backing off.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 100000000,
-                      "fieldFlag": "distributor.forwarding.grpc-client.backoff-min-period",
-                      "fieldType": "duration",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_period",
-                      "required": false,
-                      "desc": "Maximum delay when backing off.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 10000000000,
-                      "fieldFlag": "distributor.forwarding.grpc-client.backoff-max-period",
-                      "fieldType": "duration",
-                      "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "max_retries",
-                      "required": false,
-                      "desc": "Number of times to backoff and retry before failing.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 10,
-                      "fieldFlag": "distributor.forwarding.grpc-client.backoff-retries",
-                      "fieldType": "int",
-                      "fieldCategory": "advanced"
-                    }
-                  ],
-                  "fieldValue": null,
-                  "fieldDefaultValue": null
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_enabled",
-                  "required": false,
-                  "desc": "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "distributor.forwarding.grpc-client.tls-enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_cert_path",
-                  "required": false,
-                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "distributor.forwarding.grpc-client.tls-cert-path",
-                  "fieldType": "string",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_key_path",
-                  "required": false,
-                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "distributor.forwarding.grpc-client.tls-key-path",
-                  "fieldType": "string",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_ca_path",
-                  "required": false,
-                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "distributor.forwarding.grpc-client.tls-ca-path",
-                  "fieldType": "string",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_server_name",
-                  "required": false,
-                  "desc": "Override the expected name on the server certificate.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "distributor.forwarding.grpc-client.tls-server-name",
-                  "fieldType": "string",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_insecure_skip_verify",
-                  "required": false,
-                  "desc": "Skip validating server certificate.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "distributor.forwarding.grpc-client.tls-insecure-skip-verify",
-                  "fieldType": "boolean",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_cipher_suites",
-                  "required": false,
-                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "distributor.forwarding.grpc-client.tls-cipher-suites",
-                  "fieldType": "string",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "tls_min_version",
-                  "required": false,
-                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "distributor.forwarding.grpc-client.tls-min-version",
-                  "fieldType": "string",
-                  "fieldCategory": "advanced"
-                }
-              ],
-              "fieldValue": null,
-              "fieldDefaultValue": null
-            }
-          ],
-          "fieldValue": null,
-          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -1726,17 +1507,6 @@
           "fieldDefaultValue": true,
           "fieldFlag": "querier.batch-iterators",
           "fieldType": "boolean",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "query_ingesters_within",
-          "required": false,
-          "desc": "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.",
-          "fieldValue": null,
-          "fieldDefaultValue": 46800000000000,
-          "fieldFlag": "querier.query-ingesters-within",
-          "fieldType": "duration",
           "fieldCategory": "advanced"
         },
         {
@@ -2596,6 +2366,17 @@
             },
             {
               "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "instance_availability_zone",
               "required": false,
               "desc": "The availability zone where this instance is running.",
@@ -2961,6 +2742,16 @@
         },
         {
           "kind": "field",
+          "name": "max_native_histogram_buckets",
+          "required": false,
+          "desc": "Maximum number of buckets per native histogram sample. 0 to disable the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.max-native-histogram-buckets",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "creation_grace_period",
           "required": false,
           "desc": "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t \u003e (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable.",
@@ -2995,7 +2786,7 @@
           "kind": "field",
           "name": "metric_relabel_configs",
           "required": false,
-          "desc": "List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs.",
+          "desc": "List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id",
           "fieldValue": null,
           "fieldDefaultValue": null,
           "fieldType": "relabel_config...",
@@ -3151,7 +2942,7 @@
           "kind": "field",
           "name": "max_partial_query_length",
           "required": false,
-          "desc": "Limit the time range for partial queries at the querier level. Defaults to the value of -store.max-query-length if set to 0.",
+          "desc": "Limit the time range for partial queries at the querier level.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-partial-query-length",
@@ -3224,7 +3015,7 @@
           "required": false,
           "desc": "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 4096,
           "fieldFlag": "query-frontend.query-sharding-max-regexp-size-bytes",
           "fieldType": "int",
           "fieldCategory": "experimental"
@@ -3242,9 +3033,20 @@
         },
         {
           "kind": "field",
+          "name": "query_ingesters_within",
+          "required": false,
+          "desc": "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.",
+          "fieldValue": null,
+          "fieldDefaultValue": 46800000000000,
+          "fieldFlag": "querier.query-ingesters-within",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "max_total_query_length",
           "required": false,
-          "desc": "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -store.max-query-length if set to 0.",
+          "desc": "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.max-total-query-length",
@@ -3377,6 +3179,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_sync_rules_on_changes_enabled",
+          "required": false,
+          "desc": "True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "ruler.sync-rules-on-changes-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",
@@ -3431,7 +3244,7 @@
           "required": false,
           "desc": "If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 86400000000000,
           "fieldFlag": "compactor.partial-block-deletion-delay",
           "fieldType": "duration"
         },
@@ -3464,6 +3277,17 @@
           "fieldDefaultValue": true,
           "fieldFlag": "compactor.block-upload-verify-chunks",
           "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "compactor_block_upload_max_block_size_bytes",
+          "required": false,
+          "desc": "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.block-upload-max-block-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -3526,7 +3350,7 @@
           "kind": "field",
           "name": "alertmanager_notification_rate_limit_per_integration",
           "required": false,
-          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns.",
+          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord.",
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldFlag": "alertmanager.notification-rate-limit-per-integration",
@@ -3591,33 +3415,6 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-alerts-size-bytes",
           "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "forwarding_endpoint",
-          "required": false,
-          "desc": "Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
-          "name": "forwarding_drop_older_than",
-          "required": false,
-          "desc": "If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "forwarding_rules",
-          "required": false,
-          "desc": "Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint.",
-          "fieldValue": null,
-          "fieldDefaultValue": {},
-          "fieldType": "map of string to validation.ForwardingRule"
         }
       ],
       "fieldValue": null,
@@ -3897,6 +3694,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.log-queries-longer-than",
           "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "log_query_request_headers",
+          "required": false,
+          "desc": "Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.log-query-request-headers",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -5472,17 +5280,6 @@
               "fieldFlag": "blocks-storage.bucket-store.meta-sync-concurrency",
               "fieldType": "int",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "consistency_delay",
-              "required": false,
-              "desc": "Minimum age of a block before it's being read. Set it to safe value (e.g 30m) if your object storage is eventually consistent. GCS and S3 are (roughly) strongly consistent.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "blocks-storage.bucket-store.consistency-delay",
-              "fieldType": "duration",
-              "fieldCategory": "deprecated"
             },
             {
               "kind": "block",
@@ -7223,7 +7020,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": true,
                   "fieldFlag": "blocks-storage.bucket-store.bucket-index.enabled",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "deprecated"
                 },
                 {
                   "kind": "field",
@@ -7282,7 +7080,7 @@
               "fieldDefaultValue": 2147483648,
               "fieldFlag": "blocks-storage.bucket-store.max-chunk-pool-bytes",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7293,7 +7091,7 @@
               "fieldDefaultValue": 16000,
               "fieldFlag": "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7304,7 +7102,7 @@
               "fieldDefaultValue": 50000000,
               "fieldFlag": "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7414,6 +7212,27 @@
               "fieldFlag": "blocks-storage.bucket-store.series-selection-strategy",
               "fieldType": "string",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "series_selection_strategies",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "worst_case_series_preference",
+                  "required": false,
+                  "desc": "This option is only used when blocks-storage.bucket-store.series-selection-strategy=worst-case. Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference",
+                  "fieldType": "float",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -7755,17 +7574,6 @@
           "fieldFlag": "compactor.meta-sync-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "consistency_delay",
-          "required": false,
-          "desc": "Minimum age of fresh (non-compacted) blocks before they are being processed.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "compactor.consistency-delay",
-          "fieldType": "duration",
-          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -8336,6 +8144,17 @@
             },
             {
               "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "compactor.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "wait_stability_min_duration",
               "required": false,
               "desc": "Minimum time to wait for ring stability at startup. 0 to disable.",
@@ -8839,6 +8658,17 @@
             },
             {
               "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "store-gateway.sharding-ring.instance-enable-ipv6",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "instance_availability_zone",
               "required": false,
               "desc": "The availability zone where this instance is running. Required if zone-awareness is enabled.",
@@ -9208,7 +9038,7 @@
           "kind": "field",
           "name": "poll_interval",
           "required": false,
-          "desc": "How frequently to poll for rule changes",
+          "desc": "How frequently the configured rule groups are re-synced from the object storage.",
           "fieldValue": null,
           "fieldDefaultValue": 60000000000,
           "fieldFlag": "ruler.poll-interval",
@@ -9809,6 +9639,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ruler.ring.instance-addr",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
             {
@@ -10722,6 +10563,512 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "cache",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "backend",
+              "required": false,
+              "desc": "Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except \"local\". Supported values: memcached, redis.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.cache.backend",
+              "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "memcached",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "addresses",
+                  "required": false,
+                  "desc": "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.addresses",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "timeout",
+                  "required": false,
+                  "desc": "The socket read/write timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 200000000,
+                  "fieldFlag": "ruler-storage.cache.memcached.timeout",
+                  "fieldType": "duration"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "The connection timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 200000000,
+                  "fieldFlag": "ruler-storage.cache.memcached.connect-timeout",
+                  "fieldType": "duration"
+                },
+                {
+                  "kind": "field",
+                  "name": "min_idle_connections_headroom_percentage",
+                  "required": false,
+                  "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": -1,
+                  "fieldFlag": "ruler-storage.cache.memcached.min-idle-connections-headroom-percentage",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections",
+                  "required": false,
+                  "desc": "The maximum number of idle connections that will be maintained per address.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_async_concurrency",
+                  "required": false,
+                  "desc": "The maximum number of concurrent asynchronous operations can occur.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 50,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-async-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_async_buffer_size",
+                  "required": false,
+                  "desc": "The maximum number of enqueued asynchronous operations allowed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 25000,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-async-buffer-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_multi_concurrency",
+                  "required": false,
+                  "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-get-multi-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_multi_batch_size",
+                  "required": false,
+                  "desc": "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-get-multi-batch-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_item_size",
+                  "required": false,
+                  "desc": "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1048576,
+                  "fieldFlag": "ruler-storage.cache.memcached.max-item-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_enabled",
+                  "required": false,
+                  "desc": "Enable connecting to Memcached with TLS.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_insecure_skip_verify",
+                  "required": false,
+                  "desc": "Skip validating server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cipher_suites",
+                  "required": false,
+                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-cipher-suites",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_min_version",
+                  "required": false,
+                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.memcached.tls-min-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "redis",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "endpoint",
+                  "required": false,
+                  "desc": "Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.endpoint",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "username",
+                  "required": false,
+                  "desc": "Username to use when connecting to Redis.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.username",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "password",
+                  "required": false,
+                  "desc": "Password to use when connecting to Redis.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.password",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "db",
+                  "required": false,
+                  "desc": "Database index.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler-storage.cache.redis.db",
+                  "fieldType": "int"
+                },
+                {
+                  "kind": "field",
+                  "name": "master_name",
+                  "required": false,
+                  "desc": "Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.master-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dial_timeout",
+                  "required": false,
+                  "desc": "Client dial timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.dial-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "read_timeout",
+                  "required": false,
+                  "desc": "Client read timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.read-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "write_timeout",
+                  "required": false,
+                  "desc": "Client write timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.write-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connection_pool_size",
+                  "required": false,
+                  "desc": "Maximum number of connections in the pool.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.redis.connection-pool-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "min_idle_connections",
+                  "required": false,
+                  "desc": "Minimum number of idle connections.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10,
+                  "fieldFlag": "ruler-storage.cache.redis.min-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "idle_timeout",
+                  "required": false,
+                  "desc": "Amount of time after which client closes idle connections.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 300000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.idle-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_connection_age",
+                  "required": false,
+                  "desc": "Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler-storage.cache.redis.max-connection-age",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_item_size",
+                  "required": false,
+                  "desc": "The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 16777216,
+                  "fieldFlag": "ruler-storage.cache.redis.max-item-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_async_concurrency",
+                  "required": false,
+                  "desc": "The maximum number of concurrent asynchronous operations can occur.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 50,
+                  "fieldFlag": "ruler-storage.cache.redis.max-async-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_async_buffer_size",
+                  "required": false,
+                  "desc": "The maximum number of enqueued asynchronous operations allowed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 25000,
+                  "fieldFlag": "ruler-storage.cache.redis.max-async-buffer-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_multi_concurrency",
+                  "required": false,
+                  "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.redis.max-get-multi-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_multi_batch_size",
+                  "required": false,
+                  "desc": "The maximum size per batch for mget operations.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.cache.redis.max-get-multi-batch-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_enabled",
+                  "required": false,
+                  "desc": "Enable connecting to Redis with TLS.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.redis.tls-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_insecure_skip_verify",
+                  "required": false,
+                  "desc": "Skip validating server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.redis.tls-insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cipher_suites",
+                  "required": false,
+                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-cipher-suites",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_min_version",
+                  "required": false,
+                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.cache.redis.tls-min-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -11192,6 +11539,17 @@
             },
             {
               "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager.sharding-ring.instance-enable-ipv6",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "replication_factor",
               "required": false,
               "desc": "The replication factor to use when sharding the alertmanager.",
@@ -11497,6 +11855,17 @@
           "fieldDefaultValue": 900000000000,
           "fieldFlag": "alertmanager.persist-interval",
           "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "enable_state_cleanup",
+          "required": false,
+          "desc": "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "alertmanager.enable-state-cleanup",
+          "fieldType": "boolean",
           "fieldCategory": "advanced"
         }
       ],
@@ -13156,6 +13525,17 @@
               "fieldFlag": "query-scheduler.ring.instance-addr",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "query-scheduler.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -13615,6 +13995,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "overrides-exporter.ring.instance-addr",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_enable_ipv6",
+              "required": false,
+              "desc": "Enable using a IPv6 instance address. (default false)",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "overrides-exporter.ring.instance-enable-ipv6",
+              "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
             {

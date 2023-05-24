@@ -41,11 +41,9 @@ import (
 
 	"github.com/grafana/dskit/tenant"
 
-	"github.com/grafana/mimir/pkg/distributor/forwarding"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -53,7 +51,7 @@ import (
 
 var (
 	// Validation errors.
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
+	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
 )
 
 const (
@@ -63,6 +61,9 @@ const (
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
 	// in the ring will be automatically removed after.
 	ringAutoForgetUnhealthyPeriods = 10
+
+	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
+	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
 )
 
 const (
@@ -78,7 +79,6 @@ type Distributor struct {
 	ingestersRing ring.ReadRing
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
-	forwarder     forwarding.Forwarder
 
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
@@ -93,7 +93,7 @@ type Distributor struct {
 	requestRateLimiter   *limiter.RateLimiter
 	ingestionRateLimiter *limiter.RateLimiter
 
-	// Manager for subservices (HA Tracker, distributor ring, forwarder and client pool)
+	// Manager for subservices (HA Tracker, distributor ring and client pool)
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
@@ -163,14 +163,9 @@ type Config struct {
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
-	// Configuration for forwarding of metrics to alternative ingestion endpoint.
-	Forwarding forwarding.Config
-
 	// This allows downstream projects to wrap the distributor push function
 	// and access the deserialized write requests before/after they are pushed.
-	// These functions will only receive samples that don't get forwarded to an
-	// alternative remote_write endpoint by the distributor's forwarding feature,
-	// or dropped by HA deduplication.
+	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
 }
 
@@ -182,7 +177,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PoolConfig.RegisterFlags(f)
 	cfg.HATrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
-	cfg.Forwarding.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
@@ -196,12 +190,7 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInvalidTenantShardSize
 	}
 
-	err := cfg.HATrackerConfig.Validate()
-	if err != nil {
-		return err
-	}
-
-	return cfg.Forwarding.Validate()
+	return cfg.HATrackerConfig.Validate()
 }
 
 const (
@@ -257,17 +246,17 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_requests_total",
-			Help:      "The total number of received requests, excluding rejected, forwarded and deduped requests.",
+			Help:      "The total number of received requests, excluding rejected and deduped requests.",
 		}, []string{"user"}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_samples_total",
-			Help:      "The total number of received samples, excluding rejected, forwarded and deduped samples.",
+			Help:      "The total number of received samples, excluding rejected and deduped samples.",
 		}, []string{"user"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_exemplars_total",
-			Help:      "The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.",
+			Help:      "The total number of received exemplars, excluding rejected and deduped exemplars.",
 		}, []string{"user"}),
 		receivedMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -277,17 +266,17 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_requests_in_total",
-			Help:      "The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.",
+			Help:      "The total number of requests that have come in to the distributor, including rejected or deduped requests.",
 		}, []string{"user"}),
 		incomingSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_samples_in_total",
-			Help:      "The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.",
+			Help:      "The total number of samples that have come in to the distributor, including rejected or deduped samples.",
 		}, []string{"user"}),
 		incomingExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_exemplars_in_total",
-			Help:      "The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.",
+			Help:      "The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.",
 		}, []string{"user"}),
 		incomingMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -424,12 +413,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 	d.activeGroups = activeGroupsCleanupService
 
-	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log, limits, d.activeGroups)
-	// The forwarder is an optional feature, if it's disabled then d.forwarder will be nil.
-	if d.forwarder != nil {
-		subservices = append(subservices, d.forwarder)
-	}
-
 	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.push)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
@@ -539,10 +522,6 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.sampleValidationMetrics.DeleteUserMetrics(userID)
 	d.exemplarValidationMetrics.DeleteUserMetrics(userID)
 	d.metadataValidationMetrics.DeleteUserMetrics(userID)
-
-	if d.forwarder != nil {
-		d.forwarder.DeleteMetricsForUser(userID)
-	}
 }
 
 func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
@@ -589,7 +568,7 @@ func shardByAllLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
 	return h
 }
 
-// Remove the label labelname from a slice of LabelPairs if it exists.
+// Remove the label labelName from a slice of LabelAdapters if it exists.
 func removeLabel(labelName string, labels *[]mimirpb.LabelAdapter) {
 	for i := 0; i < len(*labels); i++ {
 		pair := (*labels)[i]
@@ -710,7 +689,6 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
-	middlewares = append(middlewares, d.prePushForwardingMiddleware)
 	middlewares = append(middlewares, d.cfg.PushWrappers...)
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
@@ -814,16 +792,20 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 		}
 
 		var removeTsIndexes []int
+		lb := labels.NewBuilder(labels.EmptyLabels())
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
 
 			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
-				l, keep := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
+				lb.Reset(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+				lb.Set(metaLabelTenantID, userID)
+				keep := relabel.ProcessBuilder(lb, mrc...)
 				if !keep {
 					removeTsIndexes = append(removeTsIndexes, tsIdx)
 					continue
 				}
-				ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
+				lb.Del(metaLabelTenantID)
+				ts.Labels = mimirpb.FromLabelsToLabelAdapters(lb.Labels())
 			}
 
 			for _, labelName := range d.limits.DropLabels(userID) {
@@ -998,49 +980,6 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 	}
 }
 
-// prePushForwardingMiddleware is used as push.Func middleware in front of push method.
-// It forwards time series to configured remote_write endpoints if the forwarding rules say so.
-func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
-	if d.forwarder == nil {
-		// Forwarding is disabled, no need to wrap "next".
-		return next
-	}
-
-	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return nil, err
-		}
-
-		var errCh <-chan error
-		req.Timeseries, errCh = d.forwardSamples(ctx, userID, req.Timeseries)
-		resp, nextErr := next(ctx, pushReq)
-		errs := []error{nextErr}
-
-	LOOP:
-		for {
-			select {
-			case err, ok := <-errCh:
-				if ok {
-					if err != nil {
-						errs = append(errs, err)
-					}
-				} else {
-					break LOOP
-				}
-			case <-ctx.Done():
-				return resp, ctx.Err()
-			}
-		}
-
-		return resp, httpgrpcutil.PrioritizeRecoverableErr(errs...)
-	}
-}
-
 // metricsMiddleware updates metrics which are expected to account for all received data,
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
@@ -1139,29 +1078,6 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
-}
-
-func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, <-chan error) {
-	forwardingErrCh := make(chan error)
-	forwardingRules := d.limits.ForwardingRules(userID)
-	endpoint := d.limits.ForwardingEndpoint(userID)
-	if endpoint == "" || len(forwardingRules) == 0 {
-		close(forwardingErrCh)
-		return ts, forwardingErrCh
-	}
-
-	forwardingDropOlderThan := d.limits.ForwardingDropOlderThan(userID)
-
-	var dropSamplesBeforeTimestamp int64
-	if forwardingDropOlderThan > 0 {
-		dropSamplesBeforeTimestamp = time.Now().Add(-forwardingDropOlderThan).UnixMilli()
-	}
-
-	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
-	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
-	ts, forwardingErrCh = d.forwarder.Forward(ctx, endpoint, dropSamplesBeforeTimestamp, forwardingRules, ts, userID)
-
-	return ts, forwardingErrCh
 }
 
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.

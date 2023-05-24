@@ -137,69 +137,7 @@ local filename = 'mimir-writes.json';
         )
       )
     )
-    .addRowIf(
-      $._config.forwarding_enabled,
-      $.row('Distributor Forwarding')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.queryPanel(
-          [
-            |||
-              (sum(rate(cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval])))
-              -
-              (
-                sum(rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]))
-                or vector(0)
-              )
-            ||| % {
-              distributorMatcher: $.jobMatcher($._config.job_names.distributor),
-            },
-            |||
-              label_replace(
-                sum by (status_code) (
-                  rate(
-                    cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]
-                  )
-                ),
-                "status_code",
-                "error",
-                "status_code",
-                "failed"
-              )
-            ||| % {
-              distributorMatcher: $.jobMatcher($._config.job_names.distributor),
-            },
-          ], [
-            'success',
-            '{{ status_code }}',
-          ],
-        ) + $.stack + {
-          aliasColors: {
-            '1xx': '#EAB839',
-            '2xx': '#7EB26D',
-            '3xx': '#6ED0E0',
-            '4xx': '#EF843C',
-            '5xx': '#E24D42',
-            success: '#7EB26D',
-            'error': '#E24D42',
-          },
-        },
-      )
-      .addPanel(
-        $.panel('Latency') +
-        $.latencyPanel('cortex_distributor_forward_requests_latency_seconds', '{%s}' % $.jobMatcher($._config.job_names.distributor))
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_distributor_forward_requests_latency_seconds_bucket{%s}[$__rate_interval])))' % [
-            $._config.per_instance_label,
-            $.jobMatcher($._config.job_names.distributor),
-          ],
-          '{{ %s }}' % $._config.per_instance_label
-        )
-      )
-    )
+    .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
     .addRow(
       $.row('Ingester')
       .addPanel(
@@ -326,9 +264,15 @@ local filename = 'mimir-writes.json';
         $.stack,
       )
       .addPanel(
-        $.panel('WAL truncations latency (includes checkpointing)') +
-        $.queryPanel('sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{%s}[$__rate_interval])) / sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)], 'avg') +
-        { yaxes: $.yaxes('s') } +
+        $.timeseriesPanel('WAL truncations latency (includes checkpointing)') +
+        $.queryPanel(
+          |||
+            sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{%s}[$__rate_interval]))
+            /
+            sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{%s}[$__rate_interval])) >= 0
+          ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)], 'avg'
+        ) +
+        { fieldConfig: { defaults: { noValue: '0', unit: 's' } } } +
         $.panelDescription(
           'WAL truncations latency (including checkpointing)',
           |||

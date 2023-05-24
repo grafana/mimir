@@ -22,7 +22,7 @@ type DashboardAnalyzeCommand struct {
 	datasourceUID string
 }
 
-func (cmd *DashboardAnalyzeCommand) run(k *kingpin.ParseContext) error {
+func (cmd *DashboardAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
 

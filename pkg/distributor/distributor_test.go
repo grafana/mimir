@@ -39,21 +39,18 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
-	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	"github.com/grafana/mimir/pkg/distributor/forwarding"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -413,21 +410,21 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		cortex_distributor_received_metadata_total{user="userA"} 5
 		cortex_distributor_received_metadata_total{user="userB"} 10
 
-		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
+		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
 		# TYPE cortex_distributor_received_samples_total counter
 		cortex_distributor_received_samples_total{user="userA"} 5
 		cortex_distributor_received_samples_total{user="userB"} 10
 
-		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
 		# TYPE cortex_distributor_received_exemplars_total counter
 		cortex_distributor_received_exemplars_total{user="userA"} 5
 		cortex_distributor_received_exemplars_total{user="userB"} 10
 
-		# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
+		# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected or deduped samples.
 		# TYPE cortex_distributor_samples_in_total counter
 		cortex_distributor_samples_in_total{user="userA"} 5
 
-		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
+		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
 		cortex_distributor_exemplars_in_total{user="userA"} 5
 		`), metrics...))
@@ -451,18 +448,18 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# TYPE cortex_distributor_received_metadata_total counter
 		cortex_distributor_received_metadata_total{user="userB"} 10
 
-		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
+		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
 		# TYPE cortex_distributor_received_samples_total counter
 		cortex_distributor_received_samples_total{user="userB"} 10
 
-		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
 		# TYPE cortex_distributor_received_exemplars_total counter
 		cortex_distributor_received_exemplars_total{user="userB"} 10
 
-		# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
+		# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected or deduped samples.
 		# TYPE cortex_distributor_samples_in_total counter
 
-		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
+		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
 		`), metrics...))
 }
@@ -1050,179 +1047,6 @@ func TestDistributor_PushQuery(t *testing.T) {
 	}
 }
 
-func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReached(t *testing.T) {
-	const maxChunksLimit = 30 // Chunks are duplicated due to replication factor.
-
-	ctx := user.InjectOrgID(context.Background(), "user")
-	limits := &validation.Limits{}
-	flagext.DefaultValues(limits)
-	limits.MaxChunksPerQuery = maxChunksLimit
-
-	// Prepare distributors.
-	ds, _, _ := prepare(t, prepConfig{
-		numIngesters:    3,
-		happyIngesters:  3,
-		numDistributors: 1,
-		limits:          limits,
-	})
-
-	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, maxChunksLimit))
-
-	// Push a number of series below the max chunks limit. Each series has 1 sample,
-	// so expect 1 chunk per series when querying back.
-	initialSeries := maxChunksLimit / 3
-	writeReq := makeWriteRequest(0, initialSeries, 0, false, false)
-	writeRes, err := ds[0].Push(ctx, writeReq)
-	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-	assert.Nil(t, err)
-
-	allSeriesMatchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
-	}
-
-	// Since the number of series (and thus chunks) is equal to the limit (but doesn't
-	// exceed it), we expect a query running on all series to succeed.
-	queryRes, err := ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-	require.NoError(t, err)
-	assert.Len(t, queryRes.Chunkseries, initialSeries)
-
-	// Push more series to exceed the limit once we'll query back all series.
-	writeReq = &mimirpb.WriteRequest{}
-	for i := 0; i < maxChunksLimit; i++ {
-		writeReq.Timeseries = append(writeReq.Timeseries,
-			makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: fmt.Sprintf("another_series_%d", i)}}, 0, 0),
-		)
-	}
-
-	writeRes, err = ds[0].Push(ctx, writeReq)
-	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-	assert.Nil(t, err)
-
-	// Since the number of series (and thus chunks) is exceeding to the limit, we expect
-	// a query running on all series to fail.
-	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "the query exceeded the maximum number of chunks")
-}
-
-func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReached(t *testing.T) {
-	const maxSeriesLimit = 10
-
-	ctx := user.InjectOrgID(context.Background(), "user")
-	limits := &validation.Limits{}
-	flagext.DefaultValues(limits)
-	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0))
-
-	// Prepare distributors.
-	ds, _, _ := prepare(t, prepConfig{
-		numIngesters:    3,
-		happyIngesters:  3,
-		numDistributors: 1,
-		limits:          limits,
-	})
-
-	// Push a number of series below the max series limit.
-	initialSeries := maxSeriesLimit
-	writeReq := makeWriteRequest(0, initialSeries, 0, false, true)
-	writeRes, err := ds[0].Push(ctx, writeReq)
-	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-	assert.Nil(t, err)
-
-	allSeriesMatchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
-	}
-
-	// Since the number of series is equal to the limit (but doesn't
-	// exceed it), we expect a query running on all series to succeed.
-	queryRes, err := ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-	require.NoError(t, err)
-	assert.Len(t, queryRes.Chunkseries, initialSeries)
-
-	// Push more series to exceed the limit once we'll query back all series.
-	writeReq = &mimirpb.WriteRequest{}
-	writeReq.Timeseries = append(writeReq.Timeseries,
-		makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "another_series"}}, 0, 0),
-	)
-
-	writeRes, err = ds[0].Push(ctx, writeReq)
-	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-	assert.Nil(t, err)
-
-	// Since the number of series is exceeding the limit, we expect
-	// a query running on all series to fail.
-	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
-}
-
-func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIsReached(t *testing.T) {
-	const seriesToAdd = 10
-
-	ctx := user.InjectOrgID(context.Background(), "user")
-	limits := &validation.Limits{}
-	flagext.DefaultValues(limits)
-
-	// Prepare distributors.
-	// Use replication factor of 1 so that we always wait the response from all ingesters.
-	// This guarantees us to always read the same chunks and have a stable test.
-	ds, _, _ := prepare(t, prepConfig{
-		numIngesters:      3,
-		happyIngesters:    3,
-		numDistributors:   1,
-		limits:            limits,
-		replicationFactor: 1,
-	})
-
-	allSeriesMatchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
-	}
-	// Push a single series to allow us to calculate the chunk size to calculate the limit for the test.
-	writeReq := &mimirpb.WriteRequest{}
-	writeReq.Timeseries = append(writeReq.Timeseries,
-		makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "another_series"}}, 0, 0),
-	)
-	writeRes, err := ds[0].Push(ctx, writeReq)
-	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-	assert.Nil(t, err)
-	chunkSizeResponse, err := ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-	require.NoError(t, err)
-
-	// Use the resulting chunks size to calculate the limit as (series to add + our test series) * the response chunk size.
-	responseChunkSize := chunkSizeResponse.ChunksSize()
-	maxBytesLimit := (seriesToAdd) * responseChunkSize
-
-	// Update the limiter with the calculated limits.
-	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0))
-
-	// Push a number of series below the max chunk bytes limit. Subtract one for the series added above.
-	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false, false)
-	writeRes, err = ds[0].Push(ctx, writeReq)
-	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-	assert.Nil(t, err)
-
-	// Since the number of chunk bytes is equal to the limit (but doesn't
-	// exceed it), we expect a query running on all series to succeed.
-	queryRes, err := ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-	require.NoError(t, err)
-	assert.Len(t, queryRes.Chunkseries, seriesToAdd)
-
-	// Push another series to exceed the chunk bytes limit once we'll query back all series.
-	writeReq = &mimirpb.WriteRequest{}
-	writeReq.Timeseries = append(writeReq.Timeseries,
-		makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "another_series_1"}}, 0, 0),
-	)
-
-	writeRes, err = ds[0].Push(ctx, writeReq)
-	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-	assert.Nil(t, err)
-
-	// Since the aggregated chunk size is exceeding the limit, we expect
-	// a query running on all series to fail.
-	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, fmt.Sprintf(limiter.MaxChunkBytesHitMsgFormat, maxBytesLimit))
-}
-
 func TestDistributor_Push_LabelRemoval(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 
@@ -1498,10 +1322,15 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 func TestDistributor_Push_HistogramValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 
+	// For testing bucket limit
+	testHistogram := util_test.GenerateTestFloatHistogram(0)
+	require.Equal(t, 8, len(testHistogram.PositiveBuckets)+len(testHistogram.NegativeBuckets), "selftest, check generator drift")
+
 	tests := map[string]struct {
-		req    *mimirpb.WriteRequest
-		errMsg string
-		errID  globalerror.ID
+		req         *mimirpb.WriteRequest
+		errMsg      string
+		errID       globalerror.ID
+		bucketLimit int
 	}{
 		"valid histogram": {
 			req: makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, generateTestHistogram(0)),
@@ -1519,6 +1348,16 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			errMsg: "received a sample whose timestamp is too far in the future",
 			errID:  globalerror.SampleTooFarInFuture,
 		},
+		"buckets at limit": {
+			req:         makeWriteRequestFloatHistogram([]string{model.MetricNameLabel, "test"}, 1000, testHistogram),
+			bucketLimit: 8,
+		},
+		"buckets over limit": {
+			req:         makeWriteRequestFloatHistogram([]string{model.MetricNameLabel, "test"}, 1000, testHistogram),
+			bucketLimit: 7,
+			errMsg:      "received a native histogram sample with too many buckets, timestamp",
+			errID:       globalerror.MaxNativeHistogramBuckets,
+		},
 	}
 
 	for testName, tc := range tests {
@@ -1526,6 +1365,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			limits := &validation.Limits{}
 			flagext.DefaultValues(limits)
 			limits.CreationGracePeriod = model.Duration(time.Minute)
+			limits.MaxNativeHistogramBuckets = tc.bucketLimit
 
 			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:     2,
@@ -1538,6 +1378,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			_, err := ds[0].Push(ctx, tc.req)
 			if tc.errMsg != "" {
 				fromError, _ := status.FromError(err)
+				require.Equal(t, int32(400), fromError.Proto().Code)
 				assert.Contains(t, fromError.Message(), tc.errMsg)
 				assert.Contains(t, fromError.Message(), tc.errID)
 			} else {
@@ -1678,6 +1519,19 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 	}
 }
 
+func mkLabels(n int, extra ...string) labels.Labels {
+	builder := labels.NewScratchBuilder(n + len(extra)/2)
+	builder.Add(model.MetricNameLabel, "foo")
+	for i := 0; i < n; i++ {
+		builder.Add(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+	}
+	for i := 0; i < len(extra); i += 2 {
+		builder.Add(extra[i], extra[i+1])
+	}
+	builder.Sort()
+	return builder.Labels()
+}
+
 func BenchmarkDistributor_Push(b *testing.B) {
 	const (
 		numSeriesPerRequest = 1000
@@ -1696,12 +1550,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					metrics[i] = lbls.Labels()
+					metrics[i] = mkLabels(10)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1722,12 +1571,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					metrics[i] = lbls.Labels()
+					metrics[i] = mkLabels(10)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1747,12 +1591,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
-					for i := 1; i < 31; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					metrics[i] = lbls.Labels()
+					metrics[i] = mkLabels(31)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1772,15 +1611,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
 					// Add a label with a very long name.
-					lbls.Set(fmt.Sprintf("xxx_%0.2000d", 1), "xxx")
-
-					metrics[i] = lbls.Labels()
+					metrics[i] = mkLabels(10, fmt.Sprintf("xxx_%0.2000d", 1), "xxx")
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1800,15 +1632,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
 					// Add a label with a very long value.
-					lbls.Set("xxx", fmt.Sprintf("xxx_%0.2000d", 1))
-
-					metrics[i] = lbls.Labels()
+					metrics[i] = mkLabels(10, "xxx", fmt.Sprintf("xxx_%0.2000d", 1))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1828,12 +1653,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					metrics[i] = lbls.Labels()
+					metrics[i] = mkLabels(10)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().Add(time.Hour).UnixNano() / int64(time.Millisecond),
@@ -1843,6 +1663,39 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				return metrics, samples
 			},
 			expectedErr: "received a sample whose timestamp is too far in the future",
+		},
+		"all samples go to metric_relabel_configs": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MetricRelabelConfigs = []*relabel.Config{
+					{
+						SourceLabels: []model.LabelName{"__name__"},
+						Action:       relabel.DefaultRelabelConfig.Action,
+						Regex:        relabel.DefaultRelabelConfig.Regex,
+						Replacement:  relabel.DefaultRelabelConfig.Replacement,
+						TargetLabel:  "__tmp_name",
+					},
+				}
+			},
+			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
+				metrics := make([]labels.Labels, numSeriesPerRequest)
+				samples := make([]mimirpb.Sample, numSeriesPerRequest)
+
+				for i := 0; i < numSeriesPerRequest; i++ {
+					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
+					for i := 0; i < 10; i++ {
+						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+					}
+
+					metrics[i] = lbls.Labels()
+					samples[i] = mimirpb.Sample{
+						Value:       float64(i),
+						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+					}
+				}
+
+				return metrics, samples
+			},
+			expectedErr: "",
 		},
 	}
 
@@ -2343,349 +2196,6 @@ func TestDistributor_LabelNamesAndValues_ExpectedAllPossibleLabelNamesAndValuesT
 	require.NoError(t, err)
 	require.Len(t, response.Items, 1)
 	require.Equal(t, 10000, len(response.Items[0].Values))
-}
-
-func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
-	type testcase struct {
-		name                  string
-		request               *mimirpb.WriteRequest
-		ingestSample          bool
-		expectIngestedMetrics []string
-		expectedMetrics       string
-	}
-
-	metric := "test_metric"
-	testcases := []testcase{
-		{
-			name:                  "do ingest with only samples",
-			request:               makeWriteRequest(123456789000, 5, 0, false, false, metric),
-			ingestSample:          true,
-			expectIngestedMetrics: []string{metric},
-			expectedMetrics: `
-			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
-			# TYPE cortex_distributor_received_requests_total counter
-			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
-			# TYPE cortex_distributor_received_samples_total counter
-			cortex_distributor_received_samples_total{user="user"} 5
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 0
-			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
-			# TYPE cortex_distributor_requests_in_total counter
-			cortex_distributor_requests_in_total{user="user"} 1
-			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
-			# TYPE cortex_distributor_samples_in_total counter
-			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 0
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 0
-`,
-		}, {
-			name:                  "don't ingest with only samples",
-			request:               makeWriteRequest(123456789000, 5, 0, false, false, metric),
-			ingestSample:          false,
-			expectIngestedMetrics: []string{},
-			expectedMetrics: `
-			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
-			# TYPE cortex_distributor_received_requests_total counter
-			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
-			# TYPE cortex_distributor_received_samples_total counter
-			cortex_distributor_received_samples_total{user="user"} 0
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 0
-			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
-			# TYPE cortex_distributor_requests_in_total counter
-			cortex_distributor_requests_in_total{user="user"} 1
-			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
-			# TYPE cortex_distributor_samples_in_total counter
-			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 0
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 0
-`,
-		}, {
-			name:                  "do ingest with metadata",
-			request:               makeWriteRequest(123456789000, 5, 5, false, false, metric),
-			ingestSample:          true,
-			expectIngestedMetrics: []string{metric},
-			expectedMetrics: `
-			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
-			# TYPE cortex_distributor_received_requests_total counter
-			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
-			# TYPE cortex_distributor_received_samples_total counter
-			cortex_distributor_received_samples_total{user="user"} 5
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 5
-			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
-			# TYPE cortex_distributor_requests_in_total counter
-			cortex_distributor_requests_in_total{user="user"} 1
-			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
-			# TYPE cortex_distributor_samples_in_total counter
-			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 0
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 5
-`,
-		}, {
-			name:                  "don't ingest with metadata",
-			request:               makeWriteRequest(123456789000, 5, 5, false, false, metric),
-			ingestSample:          false,
-			expectIngestedMetrics: []string{},
-			expectedMetrics: `
-			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
-			# TYPE cortex_distributor_received_requests_total counter
-			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
-			# TYPE cortex_distributor_received_samples_total counter
-			cortex_distributor_received_samples_total{user="user"} 0
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 5
-			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
-			# TYPE cortex_distributor_requests_in_total counter
-			cortex_distributor_requests_in_total{user="user"} 1
-			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
-			# TYPE cortex_distributor_samples_in_total counter
-			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 0
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 5
-`,
-		}, {
-			name:                  "do ingest with exemplars",
-			request:               makeWriteRequest(123456789000, 5, 0, true, false, metric),
-			ingestSample:          true,
-			expectIngestedMetrics: []string{metric},
-			expectedMetrics: `
-			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
-			# TYPE cortex_distributor_received_requests_total counter
-			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
-			# TYPE cortex_distributor_received_samples_total counter
-			cortex_distributor_received_samples_total{user="user"} 5
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 5
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 0
-			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
-			# TYPE cortex_distributor_requests_in_total counter
-			cortex_distributor_requests_in_total{user="user"} 1
-			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
-			# TYPE cortex_distributor_samples_in_total counter
-			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 5
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 0
-`,
-		}, {
-			name:                  "don't ingest with exemplars",
-			request:               makeWriteRequest(123456789000, 5, 0, true, false, metric),
-			ingestSample:          false,
-			expectIngestedMetrics: []string{},
-			expectedMetrics: `
-			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
-			# TYPE cortex_distributor_received_requests_total counter
-			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
-			# TYPE cortex_distributor_received_samples_total counter
-			cortex_distributor_received_samples_total{user="user"} 0
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 0
-			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
-			# TYPE cortex_distributor_requests_in_total counter
-			cortex_distributor_requests_in_total{user="user"} 1
-			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
-			# TYPE cortex_distributor_samples_in_total counter
-			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 5
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 0
-`,
-		}, {
-			name:                  "do ingest with histograms",
-			request:               makeWriteRequest(123456789000, 5, 0, false, true, metric),
-			ingestSample:          true,
-			expectIngestedMetrics: []string{metric},
-			expectedMetrics: `
-			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
-			# TYPE cortex_distributor_received_requests_total counter
-			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
-			# TYPE cortex_distributor_received_samples_total counter
-			cortex_distributor_received_samples_total{user="user"} 10
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 0
-			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
-			# TYPE cortex_distributor_requests_in_total counter
-			cortex_distributor_requests_in_total{user="user"} 1
-			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
-			# TYPE cortex_distributor_samples_in_total counter
-			cortex_distributor_samples_in_total{user="user"} 10
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 0
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 0
-`,
-		}, {
-			name:                  "don't ingest with histograms",
-			request:               makeWriteRequest(123456789000, 5, 0, false, true, metric),
-			ingestSample:          false,
-			expectIngestedMetrics: []string{},
-			expectedMetrics: `
-			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
-			# TYPE cortex_distributor_received_requests_total counter
-			cortex_distributor_received_requests_total{user="user"} 1
-			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
-			# TYPE cortex_distributor_received_samples_total counter
-			cortex_distributor_received_samples_total{user="user"} 0
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
-			# TYPE cortex_distributor_received_exemplars_total counter
-			cortex_distributor_received_exemplars_total{user="user"} 0
-			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
-			# TYPE cortex_distributor_received_metadata_total counter
-			cortex_distributor_received_metadata_total{user="user"} 0
-			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
-			# TYPE cortex_distributor_requests_in_total counter
-			cortex_distributor_requests_in_total{user="user"} 1
-			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
-			# TYPE cortex_distributor_samples_in_total counter
-			cortex_distributor_samples_in_total{user="user"} 10
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
-			# TYPE cortex_distributor_exemplars_in_total counter
-			cortex_distributor_exemplars_in_total{user="user"} 0
-			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
-			# TYPE cortex_distributor_metadata_in_total counter
-			cortex_distributor_metadata_in_total{user="user"} 0
-`,
-		},
-	}
-
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := user.InjectOrgID(context.Background(), "user")
-			limits := &validation.Limits{
-				ForwardingRules: validation.ForwardingRules{metric: validation.ForwardingRule{}},
-			}
-			flagext.DefaultValues(limits)
-			limits.IngestionRate = 20
-			limits.IngestionBurstSize = 20
-			limits.MaxGlobalExemplarsPerUser = 10
-			limits.ForwardingEndpoint = "non-empty endpoint"
-
-			var forwardReqCnt atomic.Uint32
-			forwardReqCallback := func(_ []mimirpb.PreallocTimeseries) { forwardReqCnt.Inc() }
-			getForwarder := func() forwarding.Forwarder {
-				var mutator func([]mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries
-				if tc.ingestSample {
-					mutator = ingestAllTimeseriesMutator
-				}
-				return newMockForwarder(mutator, forwardReqCallback)
-			}
-
-			distributors, ingesters, regs := prepare(t, prepConfig{
-				numIngesters:      1,
-				happyIngesters:    1,
-				replicationFactor: 1,
-				numDistributors:   1,
-				limits:            limits,
-				forwarding:        true,
-				getForwarder:      getForwarder,
-			})
-
-			response, err := distributors[0].Push(ctx, tc.request)
-			assert.NoError(t, err)
-			assert.Equal(t, emptyResponse, response)
-			assert.Equal(t, 1, int(forwardReqCnt.Load()))
-
-			ingestedMetrics := getIngestedMetrics(ctx, t, &ingesters[0])
-			assert.Equal(t, tc.expectIngestedMetrics, ingestedMetrics)
-
-			require.NoError(t, testutil.GatherAndCompare(
-				regs[0],
-				strings.NewReader(tc.expectedMetrics),
-				"cortex_distributor_received_requests_total",
-				"cortex_distributor_received_samples_total",
-				"cortex_distributor_received_exemplars_total",
-				"cortex_distributor_received_metadata_total",
-				"cortex_distributor_requests_in_total",
-				"cortex_distributor_samples_in_total",
-				"cortex_distributor_exemplars_in_total",
-				"cortex_distributor_metadata_in_total",
-			))
-		})
-	}
-}
-
-// getIngestedMetrics takes a mock ingester and returns all the metric names which it has ingested.
-func getIngestedMetrics(ctx context.Context, t *testing.T, ingester *mockIngester) []string {
-	labelsClient, err := ingester.LabelNamesAndValues(ctx, nil)
-	assert.NoError(t, err)
-
-	labels, err := labelsClient.Recv()
-	assert.NoError(t, err)
-
-	resultsUniq := make(map[string]struct{}, len(labels.Items))
-	for _, label := range labels.Items {
-		if label.LabelName == "__name__" {
-			for _, value := range label.Values {
-				resultsUniq[value] = struct{}{}
-			}
-		}
-	}
-
-	results := make([]string, 0, len(resultsUniq))
-	for result := range resultsUniq {
-		results = append(results, result)
-	}
-
-	return results
 }
 
 func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (context.Context, []*Distributor) {
@@ -3198,6 +2708,40 @@ func TestRelabelMiddleware(t *testing.T) {
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "label4", "value4"), nil, nil),
 			},
 			expectErrs: []bool{false, false, false, false},
+		}, {
+			name: metaLabelTenantID + " available and cleaned up afterwards",
+			ctx:  ctxWithUser,
+			relabelConfigs: []*relabel.Config{
+				{
+					SourceLabels: []model.LabelName{metaLabelTenantID},
+					Action:       relabel.DefaultRelabelConfig.Action,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					TargetLabel:  "tenant_id",
+					Replacement:  "$1",
+				},
+			},
+			reqs: []*mimirpb.WriteRequest{{
+				Timeseries: []mimirpb.PreallocTimeseries{makeWriteRequestTimeseries(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "metric1"},
+						{Name: "label1", Value: "value1"},
+					},
+					123,
+					1.23,
+				)},
+			}},
+			expectedReqs: []*mimirpb.WriteRequest{{
+				Timeseries: []mimirpb.PreallocTimeseries{makeWriteRequestTimeseries(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "metric1"},
+						{Name: "label1", Value: "value1"},
+						{Name: "tenant_id", Value: "user"},
+					},
+					123,
+					1.23,
+				)},
+			}},
+			expectErrs: []bool{false},
 		},
 	}
 
@@ -3244,233 +2788,6 @@ func TestRelabelMiddleware(t *testing.T) {
 	}
 }
 
-func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
-	ctx := user.InjectOrgID(context.Background(), "user")
-	const replica1 = "replicaA"
-	const replica2 = "replicaB"
-	const cluster1 = "clusterA"
-	writeReqReplica1 := makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t,
-		"__name__", "foo",
-		"__replica__", replica1, // Will be dropped by ha-dedupe.
-		"bar", "baz", // Will be dropped by drop_label rule.
-		"cluster", cluster1,
-		"sample", "value", // Will be targeted by relabel rule.
-	), nil, nil)
-	writeReqReplica2 := makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t,
-		"__name__", "foo",
-		"__replica__", replica2, // Will be dropped by ha-dedupe.
-		"bar", "baz", // Will be dropped by drop_label rule.
-		"cluster", cluster1,
-		"sample", "value", // Will be targeted by relabel rule.
-	), nil, nil)
-	expectedWriteReq := makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t,
-		"__name__", "foo",
-		"cluster", cluster1,
-		"sample", "value",
-		"target", "prefix_value", // Result of relabel rule.
-	), nil, nil)
-
-	// Capture the submitted write requests which the middlewares pass into the mock push function.
-	var submittedWriteReqs []*mimirpb.WriteRequest
-	mockPush := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
-		writeReq, err := pushReq.WriteRequest()
-		require.NoError(t, err)
-		submittedWriteReqs = append(submittedWriteReqs, writeReq)
-		return nil, nil
-	}
-
-	// Setup a callback in the mock forwarder to capture the time series which get passed into it by the middleware.
-	var forwardedTs [][]mimirpb.PreallocTimeseries
-	forwardReqCallback := func(ts []mimirpb.PreallocTimeseries) {
-		forwardedTs = append(forwardedTs, ts)
-	}
-	getForwarder := func() forwarding.Forwarder {
-		return newMockForwarder(ingestAllTimeseriesMutator, forwardReqCallback)
-	}
-
-	// Setup limits with HA enabled and forwarding rules for the metric "foo".
-	var limits validation.Limits
-	flagext.DefaultValues(&limits)
-	limits.AcceptHASamples = true
-	limits.MaxLabelValueLength = 15
-	limits.ForwardingEndpoint = "non-empty forwarding endpoint"
-	limits.ForwardingRules = validation.ForwardingRules{
-		"foo": validation.ForwardingRule{},
-	}
-	limits.MetricRelabelConfigs = []*relabel.Config{
-		{
-			SourceLabels: []model.LabelName{"sample"},
-			Action:       relabel.DefaultRelabelConfig.Action,
-			Regex:        relabel.DefaultRelabelConfig.Regex,
-			TargetLabel:  "target",
-			Replacement:  "prefix_$1",
-		},
-	}
-	limits.DropLabels = []string{"bar"}
-
-	// Prepare distributor and wrap the mock push function with its middlewares.
-	ds, _, _ := prepare(t, prepConfig{
-		numDistributors: 1,
-		limits:          &limits,
-		enableTracker:   true,
-		forwarding:      true,
-		getForwarder:    getForwarder,
-	})
-	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
-
-	// Submit the two write requests into the wrapped mock push function, it should:
-	// 1) Perform HA-deduplication
-	// 2) Apply relabel rules
-	// 3) Apply drop_label rules
-	// 4) Forward the result via the mock forwarder
-	// 5) Submit the result to the mock push function
-	_, err := wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica1))
-	assert.NoError(t, err)
-	_, err = wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica2))
-	resp, ok := httpgrpc.HTTPResponseFromError(err)
-	assert.True(t, ok)
-	assert.Equal(t, int32(202), resp.Code) // 202 due to HA-dedupe.
-
-	// Check that the write requests which have been submitted to the push function look as expected,
-	// there should only be one and it should have all of the expected modifications.
-	assert.Equal(t, []*mimirpb.WriteRequest{expectedWriteReq}, submittedWriteReqs)
-
-	// Check that the time series which have been forwarded via the mock forwarder look as expected,
-	// there should only be one slice of timeseries and it should have all of the expected modifications.
-	assert.Equal(t, [][]mimirpb.PreallocTimeseries{expectedWriteReq.Timeseries}, forwardedTs)
-}
-
-func TestValidationBeforeForwarding(t *testing.T) {
-	ctx := user.InjectOrgID(context.Background(), "user")
-	writeReq := makeWriteRequestForGenerators(5, func(id int) []mimirpb.LabelAdapter {
-		return [][]mimirpb.LabelAdapter{
-			{
-				{
-					Name:  model.MetricNameLabel,
-					Value: "foo",
-				}, {
-					Name:  "some_valid_label1",
-					Value: "some_value",
-				},
-			}, {
-				{
-					Name:  model.MetricNameLabel,
-					Value: "foo",
-				}, {
-					Name:  "some_invalid_label%!?",
-					Value: "some_value",
-				},
-			}, {
-				{
-					Name:  model.MetricNameLabel,
-					Value: "foo",
-				}, {
-					Name:  "this_label_is_too_long_because_it_has_really_a_lot_of_characters",
-					Value: "some_value",
-				},
-			}, {
-				{
-					Name:  model.MetricNameLabel,
-					Value: "foo",
-				}, {
-					Name:  "some_valid_label2",
-					Value: "some_value",
-				},
-			}, {
-				{
-					Name:  model.MetricNameLabel,
-					Value: "foo",
-				}, {
-					Name:  "some_label",
-					Value: "some_value_with_tooooooooo_many_characters",
-				},
-			},
-		}[id]
-	}, nil, nil)
-	expectedWriteReq := makeWriteRequestForGenerators(2, func(id int) []mimirpb.LabelAdapter {
-		return [][]mimirpb.LabelAdapter{
-			{
-				{
-					Name:  model.MetricNameLabel,
-					Value: "foo",
-				}, {
-					Name:  "some_valid_label1",
-					Value: "some_value",
-				},
-			}, {
-				{
-					Name:  model.MetricNameLabel,
-					Value: "foo",
-				}, {
-					Name:  "some_valid_label2",
-					Value: "some_value",
-				},
-			},
-		}[id]
-	}, nil, nil)
-
-	// The values and timestamps are generated by increasing the previous value by 1,
-	// but since validation removes samples 1 and 2 we need to increase the values by 2.
-	expectedWriteReq.Timeseries[1].Samples[0].Value += 2
-	expectedWriteReq.Timeseries[1].Samples[0].TimestampMs += 2
-	// We need to do something similar to samples for histograms, but because the data type has more fields to update it's neater to regenerate it
-	expectedWriteReq.Timeseries[1].Histograms = makeWriteRequestFloatHistograms(103, generateTestFloatHistogram(3))
-
-	// Capture the submitted write requests which the middlewares pass into the mock push function.
-	var submittedWriteReqs []*mimirpb.WriteRequest
-	mockPush := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
-		writeReq, err := pushReq.WriteRequest()
-		require.NoError(t, err)
-		submittedWriteReqs = append(submittedWriteReqs, writeReq)
-		return nil, nil
-	}
-
-	// Setup a callback in the mock forwarder to capture the time series which get passed into it by the middleware.
-	var forwardedTs [][]mimirpb.PreallocTimeseries
-	forwardReqCallback := func(ts []mimirpb.PreallocTimeseries) {
-		forwardedTs = append(forwardedTs, ts)
-	}
-	getForwarder := func() forwarding.Forwarder {
-		return newMockForwarder(ingestAllTimeseriesMutator, forwardReqCallback)
-	}
-
-	// Setup limits with validation settings which will result in some of the test samples getting filtered.
-	var limits validation.Limits
-	flagext.DefaultValues(&limits)
-	limits.MaxLabelNameLength = 30
-	limits.MaxLabelValueLength = 30
-	limits.ForwardingEndpoint = "non-empty forwarding endpoint"
-	limits.ForwardingRules = validation.ForwardingRules{
-		"foo": validation.ForwardingRule{},
-	}
-
-	// Prepare distributor and wrap the mock push function with its middlewares.
-	ds, _, _ := prepare(t, prepConfig{
-		numDistributors: 1,
-		limits:          &limits,
-		enableTracker:   true,
-		forwarding:      true,
-		getForwarder:    getForwarder,
-	})
-	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
-
-	// Submit the write request into the wrapped mock push function,
-	// before samples get forwarded the invalid ones should be removed.
-	_, err := wrappedMockPush(ctx, push.NewParsedRequest(writeReq))
-	assert.ErrorContains(t, err, "received a series with an invalid label")
-	resp, ok := httpgrpc.HTTPResponseFromError(err)
-	require.True(t, ok)
-	assert.Equal(t, int32(400), resp.Code) // 400 because some samples failed validation.
-
-	// Check that the write requests which have been submitted to the push function look as expected,
-	// there should only be one and it should have all of the expected modifications.
-	assert.Equal(t, []*mimirpb.WriteRequest{expectedWriteReq}, submittedWriteReqs)
-
-	// Check that the time series which have been forwarded via the mock forwarder look as expected,
-	// there should only be one slice of timeseries and it should have all of the expected modifications.
-	assert.Equal(t, [][]mimirpb.PreallocTimeseries{expectedWriteReq.Timeseries}, forwardedTs)
-}
-
 func mustNewMatcher(t labels.MatchType, n, v string) *labels.Matcher {
 	m, err := labels.NewMatcher(t, n, v)
 	if err != nil {
@@ -3507,8 +2824,6 @@ type prepConfig struct {
 	ingestersSeriesCountTotal          uint64
 	ingesterZones                      []string
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
-	forwarding                         bool
-	getForwarder                       func() forwarding.Forwarder
 
 	timeOut bool
 }
@@ -3620,12 +2935,6 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DefaultLimits.MaxIngestionRate = cfg.maxIngestionRate
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
 
-		if cfg.forwarding {
-			distributorCfg.Forwarding.Enabled = true
-			distributorCfg.Forwarding.RequestTimeout = 10 * time.Second
-			distributorCfg.Forwarding.RequestConcurrency = 5
-		}
-
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
 
 		if cfg.enableTracker {
@@ -3650,10 +2959,6 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		reg := prometheus.NewPedanticRegistry()
 		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
-
-		if cfg.forwarding && cfg.getForwarder != nil {
-			d.forwarder = cfg.getForwarder()
-		}
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
 
@@ -3994,7 +3299,7 @@ func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
 	return result
 }
 
-func (i *mockIngester) Check(ctx context.Context, in *grpc_health_v1.HealthCheckRequest, opts ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
+func (i *mockIngester) Check(context.Context, *grpc_health_v1.HealthCheckRequest, ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -4007,7 +3312,7 @@ func (i *mockIngester) Close() error {
 	return nil
 }
 
-func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	time.Sleep(i.pushDelay)
 
 	i.Lock()
@@ -4083,7 +3388,7 @@ func makeWireChunk(c chunk.EncodedChunk) client.Chunk {
 	return chunk
 }
 
-func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest, opts ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
+func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, _ ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
 	time.Sleep(i.queryDelay)
 
 	i.Lock()
@@ -4195,7 +3500,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 	}, nil
 }
 
-func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest, opts ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
+func (i *mockIngester) MetricsForLabelMatchers(_ context.Context, req *client.MetricsForLabelMatchersRequest, _ ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -4221,7 +3526,7 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 	return &response, nil
 }
 
-func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesRequest, opts ...grpc.CallOption) (*client.LabelNamesResponse, error) {
+func (i *mockIngester) LabelNames(_ context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -4249,7 +3554,7 @@ func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 	return &response, nil
 }
 
-func (i *mockIngester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest, opts ...grpc.CallOption) (*client.MetricsMetadataResponse, error) {
+func (i *mockIngester) MetricsMetadata(context.Context, *client.MetricsMetadataRequest, ...grpc.CallOption) (*client.MetricsMetadataResponse, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -4316,7 +3621,7 @@ func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesRespo
 	return result, nil
 }
 
-func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.LabelValuesCardinalityRequest, opts ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
+func (i *mockIngester) LabelValuesCardinality(_ context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -4411,7 +3716,7 @@ func (i *noopIngester) Close() error {
 	return nil
 }
 
-func (i *noopIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+func (i *noopIngester) Push(context.Context, *mimirpb.WriteRequest, ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	return nil, nil
 }
 
@@ -4434,11 +3739,11 @@ func (s *stream) Recv() (*client.QueryStreamResponse, error) {
 	return result, nil
 }
 
-func (i *mockIngester) AllUserStats(ctx context.Context, in *client.UserStatsRequest, opts ...grpc.CallOption) (*client.UsersStatsResponse, error) {
+func (i *mockIngester) AllUserStats(context.Context, *client.UserStatsRequest, ...grpc.CallOption) (*client.UsersStatsResponse, error) {
 	return &i.stats, nil
 }
 
-func (i *mockIngester) UserStats(ctx context.Context, in *client.UserStatsRequest, opts ...grpc.CallOption) (*client.UserStatsResponse, error) {
+func (i *mockIngester) UserStats(context.Context, *client.UserStatsRequest, ...grpc.CallOption) (*client.UserStatsResponse, error) {
 	if !i.happy {
 		return nil, errFail
 	}
@@ -4462,48 +3767,6 @@ outer:
 		return false
 	}
 	return true
-}
-
-type mockForwarder struct {
-	services.Service
-
-	// Optional callback which takes the given timeseries and returns a modified version of it,
-	// the modified version gets returned by Forward().
-	timeseriesMutator func([]mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries
-
-	// Optional callback to run in place of the actual forwarding request.
-	forwardReqCallback func([]mimirpb.PreallocTimeseries)
-}
-
-func newMockForwarder(timeseriesMutator func([]mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries, forwardReqCallback func([]mimirpb.PreallocTimeseries)) forwarding.Forwarder {
-	return &mockForwarder{
-		timeseriesMutator:  timeseriesMutator,
-		forwardReqCallback: forwardReqCallback,
-	}
-}
-
-func (m *mockForwarder) Forward(ctx context.Context, endpoint string, dontForwardBefore int64, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries, user string) ([]mimirpb.PreallocTimeseries, chan error) {
-	errCh := make(chan error)
-
-	go func() {
-		defer close(errCh)
-
-		if m.forwardReqCallback != nil {
-			m.forwardReqCallback(ts)
-		}
-	}()
-
-	if m.timeseriesMutator != nil {
-		return m.timeseriesMutator(ts), errCh
-	}
-
-	return nil, errCh
-}
-
-func (m *mockForwarder) DeleteMetricsForUser(user string) {}
-
-func ingestAllTimeseriesMutator(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
-	return ts
 }
 
 func TestDistributorValidation(t *testing.T) {
@@ -4831,25 +4094,25 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 	}
 	getExpectedMetrics := func(cfg expectedMetricsCfg) (string, []string) {
 		return fmt.Sprintf(`
-				# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
+				# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected or deduped requests.
 				# TYPE cortex_distributor_requests_in_total counter
 				cortex_distributor_requests_in_total{user="%s"} %d
-				# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
+				# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected or deduped samples.
 				# TYPE cortex_distributor_samples_in_total counter
 				cortex_distributor_samples_in_total{user="%s"} %d
-				# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
+				# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
 				# TYPE cortex_distributor_exemplars_in_total counter
 				cortex_distributor_exemplars_in_total{user="%s"} %d
 				# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
 				# TYPE cortex_distributor_metadata_in_total counter
 				cortex_distributor_metadata_in_total{user="%s"} %d
-				# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
+				# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected and deduped requests.
 				# TYPE cortex_distributor_received_requests_total counter
 				cortex_distributor_received_requests_total{user="%s"} %d
-				# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
+				# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
 				# TYPE cortex_distributor_received_samples_total counter
 				cortex_distributor_received_samples_total{user="%s"} %d
-				# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+				# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
 				# TYPE cortex_distributor_received_exemplars_total counter
 				cortex_distributor_received_exemplars_total{user="%s"} %d
 				# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
@@ -5003,42 +4266,6 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		))
 	})
 
-	t.Run("Some samples get forwarded", func(t *testing.T) {
-		cfg := getDefaultConfig()
-		cfg.limits.ForwardingEndpoint = "non-empty forwarding endpoint"
-		cfg.limits.ForwardingRules = validation.ForwardingRules{"any_metric": {}} // Needs to be len()>0 to enable forwarding.
-		cfg.forwarding = true
-		cfg.getForwarder = func() forwarding.Forwarder {
-			// This mock forwarder will return half of all samples for ingestion.
-			return newMockForwarder(
-				func(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
-					return ts[:len(ts)/2]
-				}, nil,
-			)
-		}
-		dist, reg := getDistributor(cfg)
-		req := makeWriteRequestForGenerators(10, uniqueMetricsGen, exemplarLabelGen, metaDataGen)
-
-		_, err := dist.Push(getCtx(), req)
-		require.NoError(t, err)
-
-		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   10,
-			receivedExemplars: 5,
-			receivedMetadata:  10})
-
-		require.NoError(t, testutil.GatherAndCompare(
-			reg,
-			strings.NewReader(expectedMetrics),
-			metricNames...,
-		))
-	})
-
 	t.Run("Drop examplars via limit", func(t *testing.T) {
 		cfg := getDefaultConfig()
 		cfg.limits.MaxGlobalExemplarsPerUser = 0
@@ -5094,6 +4321,65 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			receivedSamples:   10,
 			receivedExemplars: 5,
 			receivedMetadata:  10})
+
+		require.NoError(t, testutil.GatherAndCompare(
+			reg,
+			strings.NewReader(expectedMetrics),
+			metricNames...,
+		))
+	})
+
+	t.Run("Drop half of samples via native histogram bucket limit", func(t *testing.T) {
+		cfg := getDefaultConfig()
+		cfg.limits.MaxNativeHistogramBuckets = 2
+		dist, reg := getDistributor(cfg)
+
+		validHistogram := mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 2},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			NegativeDeltas: []int64{1},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			PositiveDeltas: []int64{1},
+			Timestamp:      100,
+		}
+		invalidHistogram := mimirpb.Histogram{
+			Count:          &mimirpb.Histogram_CountInt{CountInt: 3},
+			Sum:            10,
+			Schema:         1,
+			ZeroThreshold:  0.001,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+			NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			NegativeDeltas: []int64{1},
+			PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 2}},
+			PositiveDeltas: []int64{1, 2},
+			Timestamp:      100,
+		}
+
+		req := mimirpb.NewWriteRequest(nil, mimirpb.API)
+		for sampleIdx := 0; sampleIdx < 20; sampleIdx++ {
+			lbs := mimirpb.FromLabelAdaptersToLabels(uniqueMetricsGen(sampleIdx))
+			if sampleIdx%2 == 0 {
+				req.AddHistogramSeries([]labels.Labels{lbs}, []mimirpb.Histogram{validHistogram}, nil)
+			} else {
+				req.AddHistogramSeries([]labels.Labels{lbs}, []mimirpb.Histogram{invalidHistogram}, nil)
+			}
+		}
+
+		dist.Push(getCtx(), req) //nolint:errcheck
+
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         20,
+			exemplarsIn:       0,
+			metadataIn:        0,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 0,
+			receivedMetadata:  0})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,

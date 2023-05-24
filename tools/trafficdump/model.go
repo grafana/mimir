@@ -140,14 +140,16 @@ func writeJSONString(b *bytes.Buffer, s string) {
 
 func writeLabels(b *bytes.Buffer, lbls labels.Labels) {
 	b.WriteByte('{')
-	for i, l := range lbls {
+	i := 0
+	lbls.Range(func(l labels.Label) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
 		writeJSONString(b, l.Name)
 		b.WriteByte(':')
 		writeJSONString(b, l.Value)
-	}
+		i++
+	})
 	b.WriteByte('}')
 }
 
@@ -159,7 +161,7 @@ type sampleWithLabels struct {
 
 func (s sampleWithLabels) marshalToBuffer(b *bytes.Buffer) {
 	b.WriteString("[")
-	if s.lbls != nil {
+	if !s.lbls.IsEmpty() {
 		writeLabels(b, s.lbls)
 		b.WriteString(",")
 	}

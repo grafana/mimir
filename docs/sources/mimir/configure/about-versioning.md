@@ -52,6 +52,8 @@ The following features are currently experimental:
     - `-ruler.recording-rules-evaluation-enabled`
     - `-ruler.alerting-rules-evaluation-enabled`
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
+  - Ruler storage cache
+    - `-ruler-storage.cache.*`
 - Distributor
   - Metrics relabeling
   - OTLP ingestion path
@@ -139,3 +141,12 @@ The following features are currently deprecated and will be **removed in Mimir 2
 
 - Ingester
   - `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`
+
+The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.11**:
+
+- Store-gateway
+  - `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
+  - `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
+  - `-blocks-storage.bucket-store.max-chunk-pool-bytes`
+- Querier, ruler, store-gateway
+  - `-blocks-storage.bucket-store.bucket-index.enabled`

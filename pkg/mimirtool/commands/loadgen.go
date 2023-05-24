@@ -115,7 +115,7 @@ func (c *LoadgenCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registere
 	return nil
 }
 
-func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
+func (c *LoadgenCommand) run(_ *kingpin.ParseContext) error {
 	if c.writeURL == "" && c.queryURL == "" {
 		return errors.New("either a -write-url or -query-url flag must be provided to run the loadgen command")
 	}

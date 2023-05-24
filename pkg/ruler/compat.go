@@ -115,7 +115,7 @@ type PusherAppendable struct {
 	failedWrites prometheus.Counter
 }
 
-func NewPusherAppendable(pusher Pusher, userID string, limits RulesLimits, totalWrites, failedWrites prometheus.Counter) *PusherAppendable {
+func NewPusherAppendable(pusher Pusher, userID string, totalWrites, failedWrites prometheus.Counter) *PusherAppendable {
 	return &PusherAppendable{
 		pusher:       pusher,
 		userID:       userID,
@@ -144,6 +144,7 @@ type RulesLimits interface {
 	RulerMaxRulesPerRuleGroup(userID string) int
 	RulerRecordingRulesEvaluationEnabled(userID string) bool
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
+	RulerSyncRulesOnChangesEnabled(userID string) bool
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter) rules.QueryFunc {
@@ -172,7 +173,6 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 
 			// Return unwrapped error.
 			return result, origErr
-
 		} else if err != nil {
 			// When remote querier enabled, consider anything an error except those with 4xx status code.
 			st, ok := status.FromError(err)
@@ -288,7 +288,7 @@ func DefaultTenantManagerFactory(
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, logger)
 
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
+			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
 			Queryable:                  embeddedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),

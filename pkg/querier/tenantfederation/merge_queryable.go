@@ -315,7 +315,7 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 		job := jobs[idx]
 		seriesSets[idx] = &addLabelsSeriesSet{
 			upstream: job.querier.Select(sortSeries, hints, filteredMatchers...),
-			labels: labels.Labels{
+			labels: []labels.Label{
 				{
 					Name:  m.idLabelName,
 					Value: job.id,
@@ -335,7 +335,7 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 
 type addLabelsSeriesSet struct {
 	upstream   storage.SeriesSet
-	labels     labels.Labels
+	labels     []labels.Label
 	currSeries storage.Series
 }
 
@@ -379,7 +379,7 @@ func rewriteLabelName(s string) string {
 }
 
 // this outputs a more readable error format
-func labelsToString(labels labels.Labels) string {
+func labelsToString(labels []labels.Label) string {
 	parts := make([]string, len(labels))
 	for pos, l := range labels {
 		parts[pos] = rewriteLabelName(l.Name) + " " + l.Value

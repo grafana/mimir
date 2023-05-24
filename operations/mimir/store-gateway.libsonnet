@@ -3,6 +3,7 @@
   local pvc = $.core.v1.persistentVolumeClaim,
   local statefulSet = $.apps.v1.statefulSet,
   local volumeMount = $.core.v1.volumeMount,
+  local envVar = $.core.v1.envVar,
 
   // The store-gateway runs a statefulset.
   local store_gateway_data_pvc =
@@ -29,14 +30,16 @@
       'store-gateway.sharding-ring.wait-stability-min-duration': '1m',
       // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
       'store-gateway.sharding-ring.unregister-on-shutdown': false,
-
-      // Block index-headers are pre-downloaded but lazy mmaped and loaded at query time.
-      'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
-      'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
-
-      'blocks-storage.bucket-store.max-chunk-pool-bytes': 12 * 1024 * 1024 * 1024,
-
     } +
+    (if $._config.store_gateway_lazy_loading_enabled then {
+       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
+       'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
+     } else {
+       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'false',
+       // Force fewer random disk reads; this increases throughoput and reduces i/o wait on HDDs.
+       'blocks-storage.bucket-store.block-sync-concurrency': 4,
+       'blocks-storage.bucket-store.tenant-sync-concurrency': 1,
+     }) +
     $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
@@ -50,6 +53,10 @@
     container.withPorts($.store_gateway_ports) +
     container.withArgsMixin($.util.mapToFlags($.store_gateway_args)) +
     container.withVolumeMountsMixin([volumeMount.new('store-gateway-data', '/data')]) +
+    container.withEnvMixin([
+      // Dynamically set GOMEMLIMIT based on memory request.
+      envVar.new('GOMEMLIMIT', std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory)))),
+    ]) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
     $.util.readinessProbe +

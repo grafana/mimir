@@ -6,16 +6,20 @@
 package storegateway
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
@@ -27,10 +31,13 @@ import (
 	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -59,12 +66,14 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 
 // ExpandedPostings returns postings in expanded list instead of index.Postings.
 // This is because we need to have them buffered anyway to perform efficient lookup
-// on object storage.
-// Found posting IDs (ps) are not strictly required to point to a valid Series, e.g. during
-// background garbage collections.
+// on object storage. The returned postings are sorted.
 //
-// Reminder: A posting is a reference (represented as a uint64) to a series reference, which in turn points to the first
-// chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
+// Depending on the postingsSelectionStrategy there may be some pendingMatchers returned.
+// If pendingMatchers is not empty, then the returned postings may or may not match the pendingMatchers.
+// The caller is responsible for filtering the series of the postings with the pendingMatchers.
+//
+// Reminder: A posting is a reference (represented as a uint64) to a series, which points to the first
+// byte of a series in the index for a given block of data. Postings can be fetched by
 // single label name=value.
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
 	var (
@@ -142,7 +151,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 }
 
 func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef, pendingMatchers []*labels.Matcher) {
-	data, err := diffVarintSnappyWithMatchersEncode(index.NewListPostings(refs), len(refs), pendingMatchers)
+	data, err := diffVarintSnappyWithMatchersEncode(index.NewListPostings(refs), len(refs), key, pendingMatchers)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return
@@ -156,9 +165,13 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 		return nil, nil, false
 	}
 
-	p, pendingMatchers, err := r.decodePostings(data, stats)
+	p, requestMatcherKey, pendingMatchers, err := r.decodePostings(data, stats)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't decode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
+		return nil, nil, false
+	}
+	if requestMatcherKey != key {
+		level.Warn(r.block.logger).Log("msg", "request matchers key from cache item doesn't match request", "matchers_key", key, "block", r.block.meta.ULID, "found_key", requestMatcherKey)
 		return nil, nil, false
 	}
 
@@ -282,6 +295,14 @@ func extractLabels(groups []postingGroup) []labels.Label {
 	return keys
 }
 
+func extractLabelValues(offsets []streamindex.PostingListOffset) []string {
+	vals := make([]string, len(offsets))
+	for i := range offsets {
+		vals[i] = offsets[i].LabelValue
+	}
+	return vals
+}
+
 var allPostingsKey = func() labels.Label {
 	n, v := index.AllPostingsKey()
 	return labels.Label{Name: n, Value: v}
@@ -400,25 +421,25 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	output := make([]index.Postings, len(keys))
 
 	// Fetch postings from the cache with a single call.
-	fromCache, _ := r.block.indexCache.FetchMultiPostings(ctx, r.block.userID, r.block.meta.ULID, keys)
+	fromCache := r.block.indexCache.FetchMultiPostings(ctx, r.block.userID, r.block.meta.ULID, keys)
 
 	// Iterate over all groups and fetch posting from cache.
 	// If we have a miss, mark key to be fetched in `ptrs` slice.
 	// Overlaps are well handled by partitioner, so we don't need to deduplicate keys.
 	for ix, key := range keys {
 		// Get postings for the given key from cache first.
-		if b, ok := fromCache[key]; ok {
+		if b, _ := fromCache.Next(); b != nil {
 			stats.update(func(stats *queryStats) {
 				stats.postingsTouched++
 				stats.postingsTouchedSizeSum += len(b)
 			})
 
-			l, pendingMatchers, err := r.decodePostings(b, stats)
+			l, cachedLabelsKey, pendingMatchers, err := r.decodePostings(b, stats)
 			if len(pendingMatchers) > 0 {
 				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
 					key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
 			}
-			if err == nil {
+			if err == nil && cachedLabelsKey == encodeLabelForPostingsCache(key) {
 				output[ix] = l
 				continue
 			}
@@ -427,6 +448,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				"msg", "can't decode cached postings",
 				"err", err,
 				"key", fmt.Sprintf("%+v", key),
+				"labels_key", cachedLabelsKey,
 				"block", r.block.meta.ULID,
 				"bytes_len", len(b),
 				"bytes_head_hex", hex.EncodeToString(b[:util_math.Min(8, len(b))]),
@@ -494,8 +516,6 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 					return err
 				}
 
-				dataToCache := pBytes
-
 				compressionTime := time.Duration(0)
 				compressions, compressionErrors, compressedSize := 0, 0, 0
 
@@ -506,21 +526,26 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				compressions++
 				s := time.Now()
 				bep := newBigEndianPostings(pBytes[4:])
-				data, err := diffVarintSnappyEncode(bep, bep.length())
+				dataToCache, err := diffVarintSnappyWithMatchersEncode(bep, bep.length(), encodeLabelForPostingsCache(keys[p.keyID]), nil)
 				compressionTime = time.Since(s)
 				if err == nil {
-					dataToCache = data
-					compressedSize = len(data)
+					compressedSize = len(dataToCache)
+					r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
 				} else {
 					compressionErrors = 1
+					level.Warn(r.block.logger).Log(
+						"msg", "couldn't encode postings for cache",
+						"err", err,
+						"user", r.block.userID,
+						"block", r.block.meta.ULID,
+						"label", keys[p.keyID],
+					)
 				}
 
 				// Return postings. Truncate first 4 bytes which are length of posting.
 				// Access to output is not protected by a mutex because each goroutine
 				// is expected to handle a different set of keys.
 				output[p.keyID] = newBigEndianPostings(pBytes[4:])
-
-				r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
 
 				// If we just fetched it we still have to update the stats for touched postings.
 				stats.update(func(stats *queryStats) {
@@ -540,43 +565,43 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	return output, g.Wait()
 }
 
-func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, []*labels.Matcher, error) {
+func encodeLabelForPostingsCache(l labels.Label) indexcache.LabelMatchersKey {
+	var sb strings.Builder
+	sb.Grow(len(l.Name) + 1 + len(l.Value))
+	sb.WriteString(l.Name)
+	sb.WriteByte('=')
+	sb.WriteString(l.Value)
+	return indexcache.LabelMatchersKey(sb.String())
+}
+
+func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, indexcache.LabelMatchersKey, []*labels.Matcher, error) {
 	// Even if this instance is not using compression, there may be compressed
 	// entries in the cache written by other stores.
 	var (
-		l        index.Postings
-		matchers []*labels.Matcher
-		err      error
+		l               index.Postings
+		key             indexcache.LabelMatchersKey
+		pendingMatchers []*labels.Matcher
+		err             error
 	)
-	switch {
-	case isDiffVarintSnappyEncodedPostings(b):
-		s := time.Now()
-		l, err = diffVarintSnappyDecode(b)
-
-		stats.update(func(stats *queryStats) {
-			stats.cachedPostingsDecompressions++
-			stats.cachedPostingsDecompressionTimeSum += time.Since(s)
-			if err != nil {
-				stats.cachedPostingsDecompressionErrors++
-			}
-		})
-
-	case isDiffVarintSnappyWithMatchersEncodedPostings(b):
-		s := time.Now()
-		l, matchers, err = diffVarintSnappyMatchersDecode(b)
-
-		stats.update(func(stats *queryStats) {
-			stats.cachedPostingsDecompressions++
-			stats.cachedPostingsDecompressionTimeSum += time.Since(s)
-			if err != nil {
-				stats.cachedPostingsDecompressionErrors++
-			}
-		})
-	default:
-		_, l, err = r.dec.Postings(b)
+	if !isDiffVarintSnappyWithMatchersEncodedPostings(b) {
+		return nil, "", nil, errors.New("didn't find expected prefix for postings key")
 	}
-	return l, matchers, err
+
+	s := time.Now()
+	l, key, pendingMatchers, err = diffVarintSnappyMatchersDecode(b)
+
+	stats.update(func(stats *queryStats) {
+		stats.cachedPostingsDecompressions++
+		stats.cachedPostingsDecompressionTimeSum += time.Since(s)
+		if err != nil {
+			stats.cachedPostingsDecompressionErrors++
+		}
+	})
+
+	return l, key, pendingMatchers, err
 }
+
+// preloadSeries expects the provided ids to be sorted.
 func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
 	span, ctx := tracing.StartSpan(ctx, "preloadSeries()")
 	defer span.Finish()
@@ -594,7 +619,7 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 	}
 
 	parts := r.block.partitioners.series.Partition(len(ids), func(i int) (start, end uint64) {
-		return uint64(ids[i]), uint64(ids[i] + maxSeriesSize)
+		return uint64(ids[i]), uint64(ids[i] + tsdb.MaxSeriesSize)
 	})
 	g, ctx := errgroup.WithContext(ctx)
 	for _, p := range parts {
@@ -608,47 +633,72 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 	return loaded, g.Wait()
 }
 
-func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
-	begin := time.Now()
+var seriesOffsetReaders = &sync.Pool{New: func() any {
+	return &offsetTrackingReader{r: bufio.NewReaderSize(nil, 32*1024)}
+}}
 
-	b, err := r.block.readIndexRange(ctx, int64(start), int64(end-start))
+// loadSeries expects the provided ids to be sorted.
+func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
+	defer r.recordLoadSeriesStats(stats, refetch, len(ids), start, end, time.Now())
+
+	reader, err := r.block.indexRangeReader(ctx, int64(start), int64(end-start))
 	if err != nil {
 		return errors.Wrap(err, "read series range")
 	}
+	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "loadSeries close range reader")
 
-	stats.update(func(stats *queryStats) {
-		stats.seriesFetchCount++
-		stats.seriesFetched += len(ids)
-		stats.seriesFetchDurationSum += time.Since(begin)
-		stats.seriesFetchedSizeSum += int(end - start)
-	})
+	offsetReader := seriesOffsetReaders.Get().(*offsetTrackingReader)
+	defer seriesOffsetReaders.Put(offsetReader)
+
+	offsetReader.Reset(start, reader)
+	defer offsetReader.Release()
+
+	// Use a slab pool to reduce allocations by sharding one large slice of bytes instead of allocating each series' bytes separately.
+	// But in order to avoid a race condition with an async cache, we never release the pool and let the GC collect it.
+	bytesPool := pool.NewSlabPool[byte](pool.NoopPool{}, seriesBytesSlabSize)
 
 	for i, id := range ids {
-		c := b[uint64(id)-start:]
-
-		l, n := binary.Uvarint(c)
-		if n < 1 {
-			return errors.New("reading series length failed")
+		// We iterate the series in order assuming they are sorted.
+		err := offsetReader.SkipTo(uint64(id))
+		if err != nil {
+			return err
 		}
-		if len(c) < n+int(l) {
+		seriesSize, err := binary.ReadUvarint(offsetReader)
+		if err != nil {
+			return err
+		}
+		seriesBytes := bytesPool.Get(int(seriesSize))
+		n, err := io.ReadFull(offsetReader, seriesBytes)
+		if errors.Is(err, io.ErrUnexpectedEOF) {
 			if i == 0 && refetch {
-				return errors.Errorf("invalid remaining size, even after refetch, remaining: %d, expected %d", len(c), n+int(l))
+				return errors.Errorf("invalid remaining size, even after refetch, read %d, expected %d", n, seriesSize)
 			}
 
+			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", seriesSize, "max_series_size", tsdb.MaxSeriesSize)
 			// Inefficient, but should be rare.
-			r.block.metrics.seriesRefetches.Inc()
-			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "id", id, "series length", n+int(l), "maxSeriesSize", maxSeriesSize)
-
 			// Fetch plus to get the size of next one if exists.
-			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+uint64(n+int(l)+1), loaded, stats)
+			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+binary.MaxVarintLen64+seriesSize+1, loaded, stats)
+		} else if err != nil {
+			return errors.Wrapf(err, "fetching series %d from block %s", id, r.block.meta.ULID)
 		}
-		c = c[n : n+int(l)]
+		loaded.addSeries(id, seriesBytes)
 
-		loaded.addSeries(id, c)
-
-		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, c)
+		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes)
 	}
 	return nil
+}
+
+func (r *bucketIndexReader) recordLoadSeriesStats(stats *safeQueryStats, refetch bool, numSeries int, start, end uint64, loadStartTime time.Time) {
+	stats.update(func(stats *queryStats) {
+		if !refetch {
+			// only the root loadSeries will record the time
+			stats.seriesFetchDurationSum += time.Since(loadStartTime)
+		} else {
+			stats.seriesRefetches++
+		}
+		stats.seriesFetched += numSeries
+		stats.seriesFetchedSizeSum += int(end - start)
+	})
 }
 
 // Close released the underlying resources of the reader.
@@ -658,20 +708,20 @@ func (r *bucketIndexReader) Close() error {
 }
 
 // LookupLabelsSymbols populates label set strings from symbolized label set.
-func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel) (labels.Labels, error) {
-	lbls := make(labels.Labels, len(symbolized))
-	for ix, s := range symbolized {
+func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel, builder *labels.ScratchBuilder) (labels.Labels, error) {
+	builder.Reset()
+	for _, s := range symbolized {
 		ln, err := r.dec.LookupSymbol(s.name)
 		if err != nil {
-			return nil, errors.Wrap(err, "lookup label name")
+			return labels.EmptyLabels(), errors.Wrap(err, "lookup label name")
 		}
 		lv, err := r.dec.LookupSymbol(s.value)
 		if err != nil {
-			return nil, errors.Wrap(err, "lookup label value")
+			return labels.EmptyLabels(), errors.Wrap(err, "lookup label value")
 		}
-		lbls[ix] = labels.Label{Name: ln, Value: lv}
+		builder.Add(ln, lv)
 	}
-	return lbls, nil
+	return builder.Labels(), nil
 }
 
 // bucketIndexLoadedSeries holds the result of a series load operation.
@@ -708,7 +758,7 @@ func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, lset *
 	if !ok {
 		return false, errors.Errorf("series %d not found", ref)
 	}
-	stats.seriesTouched++
-	stats.seriesTouchedSizeSum += len(b)
+	stats.seriesProcessed++
+	stats.seriesProcessedSizeSum += len(b)
 	return decodeSeries(b, lset, chks, skipChunks)
 }

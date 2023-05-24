@@ -361,5 +361,17 @@ func getMaxTime(blocks []*metadata.Meta) int64 {
 // defaultGroupKeyWithoutShardID returns the default group key excluding ShardIDLabelName
 // when computing it.
 func defaultGroupKeyWithoutShardID(meta metadata.Thanos) string {
-	return defaultGroupKey(meta.Downsample.Resolution, labels.NewBuilder(labels.FromMap(meta.Labels)).Del(mimir_tsdb.CompactorShardIDExternalLabel).Labels())
+	return defaultGroupKey(meta.Downsample.Resolution, labelsWithoutShard(meta.Labels))
+}
+
+// Return labels built from base, but without any label with name equal to mimir_tsdb.CompactorShardIDExternalLabel.
+func labelsWithoutShard(base map[string]string) labels.Labels {
+	b := labels.NewScratchBuilder(len(base))
+	for k, v := range base {
+		if k != mimir_tsdb.CompactorShardIDExternalLabel {
+			b.Add(k, v)
+		}
+	}
+	b.Sort()
+	return b.Labels()
 }

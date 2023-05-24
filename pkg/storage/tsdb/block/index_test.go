@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -84,3 +85,5 @@ func TestRewrite(t *testing.T) {
 		require.Equal(t, 1, len(chks))
 	}
 }
+
+func ULID(i int) ulid.ULID { return ulid.MustNew(uint64(i), nil) }

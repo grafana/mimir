@@ -199,9 +199,6 @@
     // Whether grafana cloud alertmanager instance-mapper is enabled
     alertmanager_im_enabled: false,
 
-    // Whether the Distributor's forwarding feature is enabled.
-    forwarding_enabled: false,
-
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
 
@@ -637,5 +634,11 @@
     // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
     // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
     recording_rules_range_interval: '1m',
+
+    // Used to inject rows into dashboards at specific places that support it.
+    injectRows: {},
+
+    // Used to add additional services to dashboards that support it.
+    extraServiceNames: [],
   },
 }

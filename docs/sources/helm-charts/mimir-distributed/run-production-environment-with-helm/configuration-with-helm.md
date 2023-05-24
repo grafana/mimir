@@ -10,7 +10,7 @@ aliases:
 
 # Manage the configuration of Grafana Mimir with Helm
 
-The `mimir-distributed` Helm chart provides interfaces to set Grafana Mimir [configuration parameters](/docs/mimir/v2.7.x/references/configuration-parameters/) and customize how Grafana Mimir is deployed on a Kubernetes cluster. This document describes the configuration parameters.
+The `mimir-distributed` Helm chart provides interfaces to set Grafana Mimir [configuration parameters](/docs/mimir/{{< param "mimir_docs_version" >}}/references/configuration-parameters/) and customize how Grafana Mimir is deployed on a Kubernetes cluster. This document describes the configuration parameters.
 
 ## Overview
 

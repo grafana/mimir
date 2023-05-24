@@ -170,7 +170,7 @@ func (m *mockSeriesSet) Warnings() storage.Warnings {
 }
 
 // Select implements the storage.Querier interface.
-func (m mockTenantQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (m mockTenantQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mockTenantQuerier.select")
 	defer log.Span.Finish()
 	var matrix model.Matrix
@@ -857,34 +857,34 @@ func assertEqualWarnings(t *testing.T, exp []string, act storage.Warnings) {
 func TestSetLabelsRetainExisting(t *testing.T) {
 	for _, tc := range []struct {
 		labels           labels.Labels
-		additionalLabels labels.Labels
+		additionalLabels []labels.Label
 		expected         labels.Labels
 	}{
 		// Test adding labels at the end.
 		{
 			labels:           labels.FromStrings("a", "b"),
-			additionalLabels: labels.FromStrings("c", "d"),
+			additionalLabels: []labels.Label{{Name: "c", Value: "d"}},
 			expected:         labels.FromStrings("a", "b", "c", "d"),
 		},
 
 		// Test adding labels at the beginning.
 		{
 			labels:           labels.FromStrings("c", "d"),
-			additionalLabels: labels.FromStrings("a", "b"),
+			additionalLabels: []labels.Label{{Name: "a", Value: "b"}},
 			expected:         labels.FromStrings("a", "b", "c", "d"),
 		},
 
 		// Test we do override existing labels and expose the original value.
 		{
 			labels:           labels.FromStrings("a", "b"),
-			additionalLabels: labels.FromStrings("a", "c"),
+			additionalLabels: []labels.Label{{Name: "a", Value: "c"}},
 			expected:         labels.FromStrings("a", "c", "original_a", "b"),
 		},
 
 		// Test we do override existing labels but don't do it recursively.
 		{
 			labels:           labels.FromStrings("a", "b", "original_a", "i am lost"),
-			additionalLabels: labels.FromStrings("a", "d"),
+			additionalLabels: []labels.Label{{Name: "a", Value: "d"}},
 			expected:         labels.FromStrings("a", "d", "original_a", "b"),
 		},
 	} {

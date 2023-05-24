@@ -20,7 +20,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:chore-upgrade-go-1203-5c4c29f01
+      image: grafana/mimir-build-image:charleskorn-golangci-lint-upgrade-beafb9184
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -64,7 +64,7 @@ jobs:
   lint-jsonnet:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:chore-upgrade-go-1203-5c4c29f01
+      image: grafana/mimir-build-image:charleskorn-golangci-lint-upgrade-beafb9184
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -80,6 +80,8 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-mixin
       - name: Check Mixin Tests
         run: make BUILD_IN_CONTAINER=false check-mixin-tests
+      - name: Check Mixin with Mimirtool rules check
+        run: make BUILD_IN_CONTAINER=false check-mixin-mimirtool-rules
       - name: Check Jsonnet Manifests
         run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
       - name: Check Jsonnet Getting Started
@@ -90,7 +92,7 @@ jobs:
   lint-helm:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:chore-upgrade-go-1203-5c4c29f01
+      image: grafana/mimir-build-image:charleskorn-golangci-lint-upgrade-beafb9184
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -119,7 +121,7 @@ jobs:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
     container:
-      image: grafana/mimir-build-image:chore-upgrade-go-1203-5c4c29f01
+      image: grafana/mimir-build-image:charleskorn-golangci-lint-upgrade-beafb9184
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -154,7 +156,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:chore-upgrade-go-1203-5c4c29f01
+      image: grafana/mimir-build-image:charleskorn-golangci-lint-upgrade-beafb9184
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -190,15 +192,15 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 4 groups.
+      # Split tests into 6 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3]
-        test_group_total: [4]
+        test_group_id:    [0, 1, 2, 3, 4, 5]
+        test_group_total: [6]
     steps:
       - name: Upgrade golang
         uses: actions/setup-go@v3
         with:
-          go-version: 1.20.3
+          go-version: 1.20.4
       - name: Check out repository
         uses: actions/checkout@v3
       - name: Run Git Config
@@ -227,7 +229,7 @@ jobs:
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
         # to a timeout
-        run: go run ./tools/pre-pull-images | xargs -n1 docker pull
+        run: go run ./tools/pre-pull-images | xargs -n1 -P4 docker pull
       - name: Integration Tests
         run: |
           export IMAGE_TAG=$(make image-tag)
@@ -244,7 +246,7 @@ jobs:
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:chore-upgrade-go-1203-5c4c29f01
+      image: grafana/mimir-build-image:charleskorn-golangci-lint-upgrade-beafb9184
     steps:
       - name: Check out repository
         uses: actions/checkout@v3

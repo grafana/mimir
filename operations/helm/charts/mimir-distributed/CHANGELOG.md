@@ -28,6 +28,12 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Set `nginx` and `gateway` Nginx read timeout (`proxy_read_timeout`) to 300 seconds (increase from default 60 seconds), so that it doesn't interfere with the querier's default 120 seconds timeout (`mimir.structuredConfig.querier.timeout`). #4924
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.5.0`. #4930
+* [ENHANCEMENT] Store-gateway: set `GOMEMLIMIT` to the memory request value. This should reduce the likelihood the store-gateway may go out of memory, at the cost of an higher CPU utilization due to more frequent garbage collections when the memory utilization gets closer or above the configured requested memory. #4971
+
+## 4.4.1
+
 * [CHANGE] Change number of Memcached max idle connections to 150. #4591
 * [CHANGE] Set `unregister_on_shutdown` for `store-gateway` to `false` by default. #4690
 * [FEATURE] Add support for Vault Agent. When enabled, the Pod annotations for TLS configurable components are updated to allow a running Vault Agent to fetch secrets from Vault and to inject them into a Pod. The annotations are updated for the following components: `admin-api`, `alertmanager`, `compactor`, `distributor`, `gateway`, `ingester`, `overrides-exporter`, `querier`, `query-frontend`, `query-scheduler`, `ruler`, `store-gateway`. #4660
@@ -39,11 +45,20 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Allow definition of multiple topology spread constraints. #4584
 * [ENHANCEMENT] Expose image repo path as helm vars for containers created by grafana-agent-operator #4645
 * [ENHANCEMENT] Update minio subchart to `5.0.7`. #4705
-* [BUGFIX] Helm-Chart: fix route to service port mapping. #4727
+* [ENHANCEMENT] Configure ingester TSDB head compaction interval to 15m. #4870
+* [ENHANCEMENT] Configure ingester TSDB WAL replay concurrency to 3. #4864
+* [ENHANCEMENT] Configure compactor's first level compaction wait period to 25m. #4872
+* [ENHANCEMENT] You can now configure `storageClass` per zone for Alertmanager, StoreGateway and Ingester. #4234
+* [ENHANCEMENT] Add suffix to minio create buckets job to avoid mimir-distributed helm chart fail to upgrade when minio image version changes. #4936
+* [BUGFIX] Helm-Chart: fix route to service port mapping. #4728
 * [BUGFIX] Include podAnnotations on the tokengen Job. #4540
 * [BUGFIX] Add http port in ingester and store-gateway headless services. #4573
 * [BUGFIX] Set `gateway` and `nginx` HPA MetricTarget type to Utilization to align with usage of averageUtilization. #4642
 * [BUGFIX] Add missing imagePullSecrets configuration to the `graphite-web` deployment template. #4716
+
+## 4.3.1
+
+* [BUGFIX] Updated Go version in Mimir and GEM images to 1.20.3 to fix CVE-2023-24538. #4803
 
 ## 4.3.0
 
@@ -61,6 +76,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Generate the pod security context on the pod level in graphite web deployment, instead of on container level. #4272
 * [BUGFIX] Fix kube-state-metrics metricRelabelings dropping pods and deployments. #4485
 * [BUGFIX] Allow for single extraArg flags in templated memcached args. #4407
+
+## 4.2.1
+
+* [BUGFIX] Updated Go version in Mimir and GEM images to 1.20.3 and 1.19.8 to fix CVE-2023-24538. #4818
 
 ## 4.2.0
 

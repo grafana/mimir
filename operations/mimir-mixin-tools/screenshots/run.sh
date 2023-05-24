@@ -55,7 +55,7 @@ docker pull grafana/grafana:latest
 GRAFANA_PID="$!"
 
 # Give Grafana some time to startup. It's an hack, but an easy one.
-sleep 5
+sleep 10
 
 # Start application to take screenshots.
 echo "Start screenshot taker container with name ${DOCKER_APP_NAME}"

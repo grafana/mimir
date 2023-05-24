@@ -105,7 +105,7 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 	if bucketIndexEnabled {
 		require.NoError(t, f.FilterWithBucketIndex(ctx, inputMetas, idx, synced))
 	} else {
-		require.NoError(t, f.Filter(ctx, inputMetas, synced, nil))
+		require.NoError(t, f.Filter(ctx, inputMetas, synced))
 	}
 
 	assert.Equal(t, 1.0, promtest.ToFloat64(synced.WithLabelValues(block.MarkedForDeletionMeta)))
@@ -138,12 +138,12 @@ func TestTimeMetaFilter(t *testing.T) {
 
 	// Test negative limit.
 	f := newMinTimeMetaFilter(-10 * time.Minute)
-	require.NoError(t, f.Filter(context.Background(), inputMetas, synced, nil))
+	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 	assert.Equal(t, inputMetas, inputMetas)
 	assert.Equal(t, 0.0, promtest.ToFloat64(synced.WithLabelValues(minTimeExcludedMeta)))
 
 	f = newMinTimeMetaFilter(limit)
-	require.NoError(t, f.Filter(context.Background(), inputMetas, synced, nil))
+	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 
 	assert.Equal(t, expectedMetas, inputMetas)
 	assert.Equal(t, 2.0, promtest.ToFloat64(synced.WithLabelValues(minTimeExcludedMeta)))

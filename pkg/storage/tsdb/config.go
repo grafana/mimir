@@ -64,15 +64,20 @@ const (
 	// This is an estimation that should cover >99% of series with less than 30 labels and around 50 chunks per series.
 	EstimatedSeriesP99Size = 512
 
+	// MaxSeriesSize is an estimated worst case for a series size in the index. A valid series may still be larger than this.
+	// This was calculated assuming a rate of 1 sample/sec, in a 24h block we have 744 chunks per series.
+	// The worst case scenario of each meta ref is 8*3=24 bytes, so 744*24 = 17856 bytes, which is 448 bytes away form 17 KiB.
+	MaxSeriesSize = 17 * 1024
+
 	// BytesPerPostingInAPostingList is the number of bytes that each posting (series ID) takes in a
 	// posting list in the index. Each posting is 4 bytes (uint32) which are the offset of the series in the index file.
 	BytesPerPostingInAPostingList = 4
 
 	// ChunkPoolDefaultMinBucketSize is the default minimum bucket size (bytes) of the chunk pool.
-	ChunkPoolDefaultMinBucketSize = EstimatedMaxChunkSize
+	ChunkPoolDefaultMinBucketSize = EstimatedMaxChunkSize // Deprecated. TODO: Remove in Mimir 2.11.
 
 	// ChunkPoolDefaultMaxBucketSize is the default maximum bucket size (bytes) of the chunk pool.
-	ChunkPoolDefaultMaxBucketSize = 50e6
+	ChunkPoolDefaultMaxBucketSize = 50e6 // Deprecated. TODO: Remove in Mimir 2.11.
 
 	// DefaultPostingOffsetInMemorySampling represents default value for --store.index-header-posting-offsets-in-mem-sampling.
 	// 32 value is chosen as it's a good balance for common setups. Sampling that is not too large (too many CPU cycles) and
@@ -88,9 +93,14 @@ const (
 	headStripeSizeHelp            = "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance."
 	headChunksWriteQueueSizeHelp  = "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue."
 
-	consistencyDelayFlag                      = "blocks-storage.bucket-store.consistency-delay"
 	maxTSDBOpeningConcurrencyOnStartupFlag    = "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup"
 	defaultMaxTSDBOpeningConcurrencyOnStartup = 10
+
+	maxChunksBytesPoolFlag      = "blocks-storage.bucket-store.max-chunk-pool-bytes"
+	minBucketSizeBytesFlag      = "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes"
+	maxBucketSizeBytesFlag      = "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes"
+	seriesSelectionStrategyFlag = "blocks-storage.bucket-store.series-selection-strategy"
+	bucketIndexFlagPrefix       = "blocks-storage.bucket-store.bucket-index."
 )
 
 // Validation errors
@@ -152,7 +162,7 @@ func (d *DurationList) ToMilliseconds() []int64 {
 
 // RegisterFlags registers the TSDB flags
 func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f, logger)
+	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f)
 	cfg.BucketStore.RegisterFlags(f, logger)
 	cfg.TSDB.RegisterFlags(f)
 }
@@ -325,24 +335,23 @@ func (cfg *TSDBConfig) IsBlocksShippingEnabled() bool {
 
 // BucketStoreConfig holds the config information for Bucket Stores used by the querier and store-gateway.
 type BucketStoreConfig struct {
-	SyncDir                    string              `yaml:"sync_dir"`
-	SyncInterval               time.Duration       `yaml:"sync_interval" category:"advanced"`
-	MaxConcurrent              int                 `yaml:"max_concurrent" category:"advanced"`
-	TenantSyncConcurrency      int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
-	BlockSyncConcurrency       int                 `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency        int                 `yaml:"meta_sync_concurrency" category:"advanced"`
-	DeprecatedConsistencyDelay time.Duration       `yaml:"consistency_delay" category:"deprecated"` // Deprecated. Remove in Mimir 2.9.
-	IndexCache                 IndexCacheConfig    `yaml:"index_cache"`
-	ChunksCache                ChunksCacheConfig   `yaml:"chunks_cache"`
-	MetadataCache              MetadataCacheConfig `yaml:"metadata_cache"`
-	IgnoreDeletionMarksDelay   time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
-	BucketIndex                BucketIndexConfig   `yaml:"bucket_index"`
-	IgnoreBlocksWithin         time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
+	SyncDir                  string              `yaml:"sync_dir"`
+	SyncInterval             time.Duration       `yaml:"sync_interval" category:"advanced"`
+	MaxConcurrent            int                 `yaml:"max_concurrent" category:"advanced"`
+	TenantSyncConcurrency    int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
+	BlockSyncConcurrency     int                 `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency      int                 `yaml:"meta_sync_concurrency" category:"advanced"`
+	IndexCache               IndexCacheConfig    `yaml:"index_cache"`
+	ChunksCache              ChunksCacheConfig   `yaml:"chunks_cache"`
+	MetadataCache            MetadataCacheConfig `yaml:"metadata_cache"`
+	IgnoreDeletionMarksDelay time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
+	BucketIndex              BucketIndexConfig   `yaml:"bucket_index"`
+	IgnoreBlocksWithin       time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
 	// Chunk pool.
-	MaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes" category:"advanced"`
-	ChunkPoolMinBucketSizeBytes int    `yaml:"chunk_pool_min_bucket_size_bytes" category:"advanced"`
-	ChunkPoolMaxBucketSizeBytes int    `yaml:"chunk_pool_max_bucket_size_bytes" category:"advanced"`
+	DeprecatedMaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes" category:"deprecated"`             // Deprecated. TODO: Remove in Mimir 2.11.
+	DeprecatedChunkPoolMinBucketSizeBytes int    `yaml:"chunk_pool_min_bucket_size_bytes" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.11.
+	DeprecatedChunkPoolMaxBucketSizeBytes int    `yaml:"chunk_pool_max_bucket_size_bytes" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.11.
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
@@ -367,6 +376,9 @@ type BucketStoreConfig struct {
 	StreamingBatchSize          int    `yaml:"streaming_series_batch_size" category:"advanced"`
 	ChunkRangesPerSeries        int    `yaml:"fine_grained_chunks_caching_ranges_per_series" category:"experimental"`
 	SeriesSelectionStrategyName string `yaml:"series_selection_strategy" category:"experimental"`
+	SelectionStrategies         struct {
+		WorstCaseSeriesPreference float64 `yaml:"worst_case_series_preference" category:"experimental"`
+	} `yaml:"series_selection_strategies"`
 }
 
 const (
@@ -388,20 +400,19 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) 
 	cfg.IndexCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-cache.")
 	cfg.ChunksCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.chunks-cache.", logger)
 	cfg.MetadataCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.metadata-cache.")
-	cfg.BucketIndex.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.bucket-index.")
+	cfg.BucketIndex.RegisterFlagsWithPrefix(f, bucketIndexFlagPrefix)
 	cfg.IndexHeader.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header.")
 
 	f.StringVar(&cfg.SyncDir, "blocks-storage.bucket-store.sync-dir", "./tsdb-sync/", "Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time.")
 	f.DurationVar(&cfg.SyncInterval, "blocks-storage.bucket-store.sync-interval", 15*time.Minute, "How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction).")
-	f.Uint64Var(&cfg.MaxChunkPoolBytes, "blocks-storage.bucket-store.max-chunk-pool-bytes", uint64(2*units.Gibibyte), "Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit.")
-	f.IntVar(&cfg.ChunkPoolMinBucketSizeBytes, "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes", ChunkPoolDefaultMinBucketSize, "Size - in bytes - of the smallest chunks pool bucket.")
-	f.IntVar(&cfg.ChunkPoolMaxBucketSizeBytes, "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes", ChunkPoolDefaultMaxBucketSize, "Size - in bytes - of the largest chunks pool bucket.")
+	f.Uint64Var(&cfg.DeprecatedMaxChunkPoolBytes, maxChunksBytesPoolFlag, uint64(2*units.Gibibyte), "Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit.")
+	f.IntVar(&cfg.DeprecatedChunkPoolMinBucketSizeBytes, minBucketSizeBytesFlag, ChunkPoolDefaultMinBucketSize, "Size - in bytes - of the smallest chunks pool bucket.")
+	f.IntVar(&cfg.DeprecatedChunkPoolMaxBucketSizeBytes, maxBucketSizeBytesFlag, ChunkPoolDefaultMaxBucketSize, "Size - in bytes - of the largest chunks pool bucket.")
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.bucket-store.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
 	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 100, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 10, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 20, "Maximum number of concurrent blocks synching per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from object storage per tenant.")
-	f.DurationVar(&cfg.DeprecatedConsistencyDelay, consistencyDelayFlag, 0, "Minimum age of a block before it's being read. Set it to safe value (e.g 30m) if your object storage is eventually consistent. GCS and S3 are (roughly) strongly consistent.")
 	f.DurationVar(&cfg.IgnoreDeletionMarksDelay, "blocks-storage.bucket-store.ignore-deletion-marks-delay", time.Hour*1, "Duration after which the blocks marked for deletion will be filtered out while fetching blocks. "+
 		"The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet.")
 	f.DurationVar(&cfg.IgnoreBlocksWithin, "blocks-storage.bucket-store.ignore-blocks-within", 10*time.Hour, "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.")
@@ -411,7 +422,8 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) 
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.IntVar(&cfg.ChunkRangesPerSeries, "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series", 1, "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled.")
-	f.StringVar(&cfg.SeriesSelectionStrategyName, "blocks-storage.bucket-store.series-selection-strategy", AllPostingsStrategy, "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): "+strings.Join(validSeriesSelectionStrategies, ", ")+".")
+	f.StringVar(&cfg.SeriesSelectionStrategyName, seriesSelectionStrategyFlag, AllPostingsStrategy, "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): "+strings.Join(validSeriesSelectionStrategies, ", ")+".")
+	f.Float64Var(&cfg.SelectionStrategies.WorstCaseSeriesPreference, "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference", 1.0, "This option is only used when "+seriesSelectionStrategyFlag+"="+WorstCasePostingsStrategy+". Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.")
 }
 
 // Validate the config.
@@ -428,25 +440,45 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	if err := cfg.MetadataCache.Validate(); err != nil {
 		return errors.Wrap(err, "metadata-cache configuration")
 	}
-	if cfg.DeprecatedConsistencyDelay > 0 {
-		util.WarnDeprecatedConfig(consistencyDelayFlag, logger)
+	if err := cfg.BucketIndex.Validate(logger); err != nil {
+		return errors.Wrap(err, "bucket-index configuration")
+	}
+	if cfg.DeprecatedMaxChunkPoolBytes != uint64(2*units.Gibibyte) {
+		util.WarnDeprecatedConfig(maxChunksBytesPoolFlag, logger)
+	}
+	if cfg.DeprecatedChunkPoolMinBucketSizeBytes != ChunkPoolDefaultMinBucketSize {
+		util.WarnDeprecatedConfig(minBucketSizeBytesFlag, logger)
+	}
+	if cfg.DeprecatedChunkPoolMaxBucketSizeBytes != ChunkPoolDefaultMaxBucketSize {
+		util.WarnDeprecatedConfig(maxBucketSizeBytesFlag, logger)
 	}
 	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
 		return errors.New("invalid series-selection-strategy, set one of " + strings.Join(validSeriesSelectionStrategies, ", "))
+	}
+	if cfg.SeriesSelectionStrategyName == WorstCasePostingsStrategy && cfg.SelectionStrategies.WorstCaseSeriesPreference <= 0 {
+		return errors.New("invalid worst-case series preference; must be positive")
 	}
 	return nil
 }
 
 type BucketIndexConfig struct {
-	Enabled               bool          `yaml:"enabled"`
+	DeprecatedEnabled     bool          `yaml:"enabled" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.11.
 	UpdateOnErrorInterval time.Duration `yaml:"update_on_error_interval" category:"advanced"`
 	IdleTimeout           time.Duration `yaml:"idle_timeout" category:"advanced"`
 	MaxStalePeriod        time.Duration `yaml:"max_stale_period" category:"advanced"`
 }
 
 func (cfg *BucketIndexConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", true, "If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket.")
+	f.BoolVar(&cfg.DeprecatedEnabled, prefix+"enabled", true, "If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket.")
 	f.DurationVar(&cfg.UpdateOnErrorInterval, prefix+"update-on-error-interval", time.Minute, "How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier.")
 	f.DurationVar(&cfg.IdleTimeout, prefix+"idle-timeout", time.Hour, "How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier.")
 	f.DurationVar(&cfg.MaxStalePeriod, prefix+"max-stale-period", time.Hour, "The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, and this check is enforced in the querier (at query time).")
+}
+
+// Validate the config.
+func (cfg *BucketIndexConfig) Validate(logger log.Logger) error {
+	if !cfg.DeprecatedEnabled {
+		util.WarnDeprecatedConfig(bucketIndexFlagPrefix+"enabled", logger)
+	}
+	return nil
 }

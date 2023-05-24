@@ -269,7 +269,7 @@ func TestPrometheusCodec_JSONEncoding(t *testing.T) {
 				Data: &PrometheusData{
 					ResultType: model.ValMatrix.String(),
 					Result: []SampleStream{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1_234, Histogram: responseHistogram}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1_234, Histogram: &responseHistogram}}},
 					},
 				},
 			},
@@ -316,7 +316,7 @@ func TestPrometheusCodec_JSONEncoding(t *testing.T) {
 						{
 							Labels:     []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
 							Samples:    []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}},
-							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 3_000, Histogram: responseHistogram}}},
+							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 3_000, Histogram: &responseHistogram}}},
 					},
 				},
 			},
@@ -392,7 +392,10 @@ func findHistogramMatchingLabels(metrics dskit_metrics.MetricFamilyMap, name str
 		return nil, fmt.Errorf("no metric with name %v found", name)
 	}
 
-	l := labels.FromStrings(labelValuePairs...)
+	l := []labels.Label{}
+	for i := 0; i < len(labelValuePairs); i += 2 {
+		l = append(l, labels.Label{Name: labelValuePairs[i], Value: labelValuePairs[i+1]})
+	}
 	var matchingMetrics []*dto.Metric
 
 	for _, metric := range metricFamily.Metric {

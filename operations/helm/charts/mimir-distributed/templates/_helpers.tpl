@@ -499,7 +499,8 @@ Return value:
     zoneName: {
       affinity: <affinity>,
       nodeSelector: <nodeSelector>,
-      replicas: <N>
+      replicas: <N>,
+      storageClass: <S>
     },
     ...
   }
@@ -510,7 +511,7 @@ which allows us to keep generating everything for the default zone.
 {{- define "mimir.zoneAwareReplicationMap" -}}
 {{- $zonesMap := (dict) -}}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
-{{- $defaultZone := (dict "affinity" $componentSection.affinity "nodeSelector" $componentSection.nodeSelector "replicas" $componentSection.replicas) -}}
+{{- $defaultZone := (dict "affinity" $componentSection.affinity "nodeSelector" $componentSection.nodeSelector "replicas" $componentSection.replicas "storageClass" $componentSection.storageClass) -}}
 
 {{- if $componentSection.zoneAwareReplication.enabled -}}
 {{- $numberOfZones := len $componentSection.zoneAwareReplication.zones -}}
@@ -529,6 +530,7 @@ which allows us to keep generating everything for the default zone.
   "affinity" (($rolloutZone.extraAffinity | default (dict)) | mergeOverwrite (include "mimir.zoneAntiAffinity" (dict "component" $.component "rolloutZoneName" $rolloutZone.name "topologyKey" $componentSection.zoneAwareReplication.topologyKey ) | fromYaml ) )
   "nodeSelector" ($rolloutZone.nodeSelector | default (dict) )
   "replicas" $replicaPerZone
+  "storageClass" $rolloutZone.storageClass
   ) -}}
 {{- end -}}
 {{- if $componentSection.zoneAwareReplication.migration.enabled -}}
@@ -592,4 +594,26 @@ Params:
 
 {{- define "mimir.var_dump" -}}
 {{- . | mustToPrettyJson | printf "\nThe JSON output of the dumped var is: \n%s" | fail }}
+{{- end -}}
+
+
+{{/*
+siToBytes is used to convert Kubernetes byte units to bytes.
+Only works for limited set of SI prefixes: Ki, Mi, Gi, Ti.
+
+mimir.siToBytes takes 1 argument
+  .value = the input value with SI unit
+*/}}
+{{- define "mimir.siToBytes" -}}
+    {{- if (hasSuffix "Ki" .value) -}}
+        {{- trimSuffix "Ki" .value | float64 | mul 1024 | ceil | int64 -}}
+    {{- else if (hasSuffix "Mi" .value) -}}
+        {{- trimSuffix "Mi" .value | float64 | mul 1048576 | ceil | int64 -}}
+    {{- else if (hasSuffix "Gi" .value) -}}
+        {{- trimSuffix "Gi" .value | float64 | mul 1073741824 | ceil | int64 -}}
+    {{- else if (hasSuffix "Ti" .value) -}}
+        {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
+    {{- else -}}
+        {{- .value }}
+    {{- end -}}
 {{- end -}}

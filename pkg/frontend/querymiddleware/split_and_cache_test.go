@@ -81,7 +81,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 			mockProtobufResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.FloatHistogramPair{
 				{
 					TimestampMs: dayThreeStartTime.Unix() * 1000,
-					Histogram:   thirdDayHistogram,
+					Histogram:   &thirdDayHistogram,
 				},
 			}))
 
@@ -108,7 +108,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 			mockProtobufResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.FloatHistogramPair{
 				{
 					TimestampMs: dayFourEndTime.Unix() * 1000,
-					Histogram:   fourthDayHistogram,
+					Histogram:   &fourthDayHistogram,
 				},
 			}))
 
@@ -121,11 +121,11 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 			[]mimirpb.FloatHistogramPair{
 				{
 					TimestampMs: dayThreeStartTime.Unix() * 1000,
-					Histogram:   thirdDayHistogram,
+					Histogram:   &thirdDayHistogram,
 				},
 				{
 					TimestampMs: dayFourEndTime.Unix() * 1000,
-					Histogram:   fourthDayHistogram,
+					Histogram:   &fourthDayHistogram,
 				},
 			},
 		))
@@ -262,7 +262,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 					Histograms: []mimirpb.FloatHistogramPair{
 						{
 							TimestampMs: 1634292000000,
-							Histogram: mimirpb.FloatHistogram{
+							Histogram: &mimirpb.FloatHistogram{
 								CounterResetHint: histogram.GaugeType,
 								Schema:           3,
 								ZeroThreshold:    1.23,
@@ -370,7 +370,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 					Histograms: []mimirpb.FloatHistogramPair{
 						{
 							TimestampMs: 1634292000000,
-							Histogram: mimirpb.FloatHistogram{
+							Histogram: &mimirpb.FloatHistogram{
 								CounterResetHint: histogram.GaugeType,
 								Schema:           3,
 								ZeroThreshold:    1.23,
@@ -1762,7 +1762,7 @@ func Test_evaluateAtModifier(t *testing.T) {
 				[2m:])
 			[10m:])`, nil,
 		},
-		{"sum by (foo) (bar[buzz])", "foo{}", apierror.New(apierror.TypeBadData, `1:19: parse error: bad duration syntax: ""`)},
+		{"sum by (foo) (bar[buzz])", "foo{}", apierror.New(apierror.TypeBadData, `invalid parameter "query": 1:19: parse error: bad duration syntax: ""`)},
 	} {
 		tt := tt
 		t.Run(tt.in, func(t *testing.T) {

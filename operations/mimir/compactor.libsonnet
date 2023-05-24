@@ -4,26 +4,6 @@
   local container = $.core.v1.container,
   local statefulSet = $.apps.v1.statefulSet,
 
-  local parseDuration(duration) =
-    if std.endsWith(duration, 's') then
-      std.parseInt(std.substr(duration, 0, std.length(duration) - 1))
-    else if std.endsWith(duration, 'm') then
-      std.parseInt(std.substr(duration, 0, std.length(duration) - 1)) * 60
-    else if std.endsWith(duration, 'h') then
-      std.parseInt(std.substr(duration, 0, std.length(duration) - 1)) * 3600
-    else
-      error 'unable to parse duration %s' % duration,
-
-  local formatDuration(seconds) =
-    if seconds <= 60 then
-      '%ds' % seconds
-    else if seconds <= 3600 && seconds % 60 == 0 then
-      '%dm' % (seconds / 60)
-    else if seconds % 3600 == 0 then
-      '%dh' % (seconds / 3600)
-    else
-      '%dm%ds' % [seconds / 60, seconds % 60],
-
   compactor_args::
     $._config.usageStatsConfig +
     $._config.grpcConfig +
@@ -60,19 +40,30 @@
       'compactor.ring.prefix': '',
       'compactor.ring.wait-stability-min-duration': '1m',  // Wait until ring is stable before switching to ACTIVE.
 
+      // The compactor wait period is the amount of time that compactors will wait before compacting
+      // 1st level blocks (uploaded by ingesters) since the last block was uploaded. In the worst
+      // case scenario, we have 1 ingester whose TSDB head compaction started at time 0 and another
+      // ingester who started at time -blocks-storage.tsdb.head-compaction-interval. So the total
+      // time we should wait is -blocks-storage.tsdb.head-compaction-interval + a small delta (10m) to
+      // account for am ingester slower than others to compact and upload blocks.
+      'compactor.first-level-compaction-wait-period': $.util.formatDuration(
+        $.util.parseDuration($.ingester_args['blocks-storage.tsdb.head-compaction-interval']) +
+        $.util.parseDuration('10m')
+      ),
+
       // Delete blocks sooner in order to keep the number of live blocks lower in the storage.
-      'compactor.deletion-delay': formatDuration(
+      'compactor.deletion-delay': $.util.formatDuration(
         // Bucket index is updated every cleanup interval.
-        parseDuration($._config.compactor_cleanup_interval) +
+        $.util.parseDuration($._config.compactor_cleanup_interval) +
         // Wait until after the ignore deletion marks delay.
-        parseDuration(
+        $.util.parseDuration(
           if std.objectHas($.store_gateway_args, 'blocks-storage.bucket-store.ignore-deletion-marks-delay') then
             $.store_gateway_args['blocks-storage.bucket-store.ignore-deletion-marks-delay']
           else
             '1h'  // Default config.
         ) +
         // Wait until store-gateway have updated. Add 3x the sync interval (instead of 1x) to account for delays and temporarily failures.
-        (parseDuration(
+        ($.util.parseDuration(
            if std.objectHas($.store_gateway_args, 'blocks-storage.bucket-store.sync-interval') then
              $.store_gateway_args['blocks-storage.bucket-store.sync-interval']
            else

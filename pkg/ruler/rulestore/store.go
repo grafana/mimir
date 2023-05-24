@@ -35,11 +35,18 @@ type RuleStore interface {
 	ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string) (rulespb.RuleGroupList, error)
 
 	// LoadRuleGroups loads rules for each rule group in the map.
-	// Parameter with groups to load *MUST* be coming from one of the List methods.
-	// NOTE: The RuleGroupList map passed to this method *MAY* be filtered for
-	// sharding purposes. It *MUST* populate the rules if the List methods have
-	// not populated the rule groups with their actual rules.
-	LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) error
+	//
+	// Requirements:
+	// - The groupsToLoad parameter  *MUST* be coming from one of the List methods.
+	//   The groupsToLoad map can be filtered for sharding purposes before calling
+	//   LoadRuleGroups.
+	//
+	// Specifications:
+	// - LoadRuleGroups() *MUST* populate the rules if the List methods have
+	//   not populated the rule groups with their actual rules.
+	// - If, and only if, a rule group can't be loaded because missing in the storage
+	//   then LoadRuleGroups() *MUST* not return error but return the missing rule groups.
+	LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) (missing rulespb.RuleGroupList, err error)
 
 	GetRuleGroup(ctx context.Context, userID, namespace, group string) (*rulespb.RuleGroupDesc, error)
 	SetRuleGroup(ctx context.Context, userID, namespace string, group *rulespb.RuleGroupDesc) error

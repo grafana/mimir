@@ -863,10 +863,11 @@ func checkReplicaDeletionState(t *testing.T, duration time.Duration, c *haTracke
 
 // fromLabelPairsToLabels converts dto.LabelPair into labels.Labels.
 func fromLabelPairsToLabels(pairs []*dto.LabelPair) labels.Labels {
-	builder := labels.NewBuilder(nil)
+	builder := labels.NewScratchBuilder(len(pairs))
 	for _, pair := range pairs {
-		builder.Set(pair.GetName(), pair.GetValue())
+		builder.Add(pair.GetName(), pair.GetValue())
 	}
+	builder.Sort()
 	return builder.Labels()
 }
 

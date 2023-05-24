@@ -13,7 +13,7 @@ After=network-online.target
 Restart=always
 User=mimir
 EnvironmentFile=$OS_ENV_DIR/mimir
-ExecStart=/usr/local/bin/mimir --log.level $LOG_LEVEL $CUSTOM_ARGS
+ExecStart=/usr/local/bin/mimir --config.file=/etc/mimir/config.yml --runtime-config.file=/etc/mimir/runtime_config.yml --log.level $LOG_LEVEL $CUSTOM_ARGS
 ExecReload=/bin/kill -HUP $MAINPID
 TimeoutStopSec=20s
 SendSIGKILL=no

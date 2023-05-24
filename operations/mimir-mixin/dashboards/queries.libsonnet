@@ -24,11 +24,12 @@ local filename = 'mimir-queries.json';
         ),
       )
       .addPanel(
-        $.panel('Queue length (per user)') +
+        $.timeseriesPanel('Queue length (per user)') +
         $.queryPanel(
           'sum by(user) (cortex_query_frontend_queue_length{%s}) > 0' % [$.jobMatcher($._config.job_names.query_frontend)],
           '{{user}}'
-        ),
+        ) +
+        { fieldConfig: { defaults: { noValue: '0', unit: 'short' } } }
       )
     )
     .addRow(
@@ -45,11 +46,12 @@ local filename = 'mimir-queries.json';
         ),
       )
       .addPanel(
-        $.panel('Queue length (per user)') +
+        $.timeseriesPanel('Queue length (per user)') +
         $.queryPanel(
           'sum by(user) (cortex_query_scheduler_queue_length{%s}) > 0' % [$.jobMatcher($._config.job_names.query_scheduler)],
           '{{user}}'
-        ),
+        ) +
+        { fieldConfig: { defaults: { noValue: '0', unit: 'short' } } }
       )
     )
     .addRow(
@@ -238,7 +240,7 @@ local filename = 'mimir-queries.json';
         $.panel('Data touched / sec') +
         $.queryPanel(|||
           sum by(data_type) (
-            # Exclude "chunks processed" to only count "chunks processed", other than postings and series.
+            # Exclude "chunks processed" to only count "chunks returned", other than postings and series.
             rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component="store-gateway", stage!="processed",%(jobMatcher)s}[$__rate_interval])
           )
         ||| % { jobMatcher: $.jobMatcher($._config.job_names.store_gateway) }, '{{data_type}}') +

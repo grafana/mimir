@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/golang/snappy"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tenant"
@@ -119,7 +118,7 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 		cfg.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataConfig.BlockIndexAttributesTTL)
 		cfg.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataConfig.BucketIndexMaxSize, metadataConfig.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
 
-		codec := snappyIterCodec{bucketcache.JSONIterCodec{}}
+		codec := bucketcache.SnappyIterCodec{IterCodec: bucketcache.JSONIterCodec{}}
 		cfg.CacheIter("tenants-iter", metadataCache, isTenantsDir, metadataConfig.TenantsListTTL, codec)
 		cfg.CacheIter("tenant-blocks-iter", metadataCache, isTenantBlocksDir, metadataConfig.TenantBlocksListTTL, codec)
 		cfg.CacheIter("chunks-iter", metadataCache, isChunksDir, metadataConfig.ChunksListTTL, codec)
@@ -153,7 +152,11 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 		return bkt, nil
 	}
 
-	return bucketcache.NewCachingBucket(bkt, cfg, logger, reg)
+	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
+	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
+	// ID. This is still fine, as far as all other caching bucket implementations specify their
+	// own unique ID.
+	return bucketcache.NewCachingBucket("", bkt, cfg, logger, reg)
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
@@ -191,24 +194,4 @@ func isTenantBlocksDir(name string) bool {
 
 func isChunksDir(name string) bool {
 	return strings.HasSuffix(name, "/chunks")
-}
-
-type snappyIterCodec struct {
-	bucketcache.IterCodec
-}
-
-func (i snappyIterCodec) Encode(files []string) ([]byte, error) {
-	b, err := i.IterCodec.Encode(files)
-	if err != nil {
-		return nil, err
-	}
-	return snappy.Encode(nil, b), nil
-}
-
-func (i snappyIterCodec) Decode(cachedData []byte) ([]string, error) {
-	b, err := snappy.Decode(nil, cachedData)
-	if err != nil {
-		return nil, errors.Wrap(err, "snappyIterCodec")
-	}
-	return i.IterCodec.Decode(b)
 }

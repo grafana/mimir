@@ -29,6 +29,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/server"
@@ -101,6 +102,7 @@ type Config struct {
 	NoAuthTenant                    string                 `yaml:"no_auth_tenant" category:"advanced"`
 	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"experimental"`
 	MaxSeparateMetricsGroupsPerUser int                    `yaml:"max_separate_metrics_groups_per_user" category:"experimental"`
+	EnableGoRuntimeMetrics          bool                   `yaml:"enable_go_runtime_metrics" category:"advanced"`
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
@@ -138,6 +140,8 @@ type Config struct {
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"
+	// Enable native histograms for enabled scrapers with 10% bucket growth.
+	c.Server.MetricsNativeHistogramFactor = 1.1
 	c.Server.ExcludeRequestInLog = true
 	c.Server.DisableRequestSuccessLog = true
 
@@ -153,6 +157,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
+	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -170,10 +175,10 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.TenantFederation.RegisterFlags(f)
 
 	c.Ruler.RegisterFlags(f, logger)
-	c.RulerStorage.RegisterFlags(f, logger)
+	c.RulerStorage.RegisterFlags(f)
 	c.Vault.RegisterFlags(f)
 	c.Alertmanager.RegisterFlags(f, logger)
-	c.AlertmanagerStorage.RegisterFlags(f, logger)
+	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
@@ -181,7 +186,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.UsageStats.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
 
-	c.Common.RegisterFlags(f, logger)
+	c.Common.RegisterFlags(f)
 }
 
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
@@ -252,7 +257,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid store-gateway config")
 	}
-	if err := c.Compactor.Validate(log); err != nil {
+	if err := c.Compactor.Validate(); err != nil {
 		return errors.Wrap(err, "invalid compactor config")
 	}
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
@@ -274,6 +279,19 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
+	}
+	// validate the default limits
+	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ValidateLimits validates the runtime limits that can be set for each tenant against static configs
+func (c *Config) ValidateLimits(limits validation.Limits) error {
+	if err := c.Querier.ValidateLimits(limits); err != nil {
+		return errors.Wrap(err, "invalid limits config for querier")
 	}
 	return nil
 }
@@ -419,7 +437,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Alertmanager.
-	if c.isAnyModuleEnabled(AlertManager) {
+	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		paths = append(paths, pathConfig{
 			name:       "alertmanager data directory",
 			cfgValue:   c.Alertmanager.DataDir,
@@ -609,8 +627,8 @@ type CommonConfigInheritance struct {
 }
 
 // RegisterFlags registers flag.
-func (c *CommonConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	c.Storage.RegisterFlagsWithPrefix("common.storage.", f, logger)
+func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
+	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -669,7 +687,8 @@ type Mimir struct {
 	QueryFrontendTripperware querymiddleware.Tripperware
 	QueryFrontendCodec       querymiddleware.Codec
 	Ruler                    *ruler.Ruler
-	RulerStorage             rulestore.RuleStore
+	RulerDirectStorage       rulestore.RuleStore
+	RulerCachedStorage       rulestore.RuleStore
 	Alertmanager             *alertmanager.MultitenantAlertmanager
 	Compactor                *compactor.MultitenantCompactor
 	StoreGateway             *storegateway.StoreGateway
@@ -692,6 +711,15 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		os.Exit(0)
 	}
 
+	if cfg.EnableGoRuntimeMetrics {
+		// unregister default Go collector
+		reg.Unregister(collectors.NewGoCollector())
+		// register Go collector with all available runtime metrics
+		reg.MustRegister(collectors.NewGoCollector(
+			collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
+		))
+	}
+
 	// Swap out the default resolver to support multiple tenant IDs separated by a '|'
 	if cfg.TenantFederation.Enabled {
 		tenant.WithDefaultResolver(tenant.NewMultiResolver())
@@ -707,6 +735,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/grpc.health.v1.Health/Check",
 			"/frontend.Frontend/Process",
 			"/frontend.Frontend/NotifyClientShutdown",
+			"/ruler.Ruler/SyncRules",
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
@@ -765,7 +794,7 @@ func (t *Mimir) Run() error {
 
 	t.API.RegisterServiceMapHandler(http.HandlerFunc(t.servicesHandler))
 
-	// register ingester ring handlers, if they exists prefer the full ring
+	// register ingester ring handlers, if they exist prefer the full ring
 	// implementation provided by module.Ring over the BasicLifecycler
 	// available in ingesters
 	if t.Ring != nil {

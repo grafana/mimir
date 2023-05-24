@@ -65,7 +65,12 @@ func (l *runtimeConfigTenantLimits) AllByUserID() map[string]*validation.Limits 
 	return nil
 }
 
-func loadRuntimeConfig(r io.Reader) (interface{}, error) {
+// runtimeConfigLoader loads and validates the per-tenant limits
+type runtimeConfigLoader struct {
+	validate func(limits validation.Limits) error
+}
+
+func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 	var overrides = &runtimeConfigValues{}
 
 	decoder := yaml.NewDecoder(r)
@@ -79,6 +84,17 @@ func loadRuntimeConfig(r io.Reader) (interface{}, error) {
 	// Ensure the provided YAML config is not composed of multiple documents,
 	if err := decoder.Decode(&runtimeConfigValues{}); !errors.Is(err, io.EOF) {
 		return nil, errMultipleDocuments
+	}
+
+	if l.validate != nil {
+		for _, limits := range overrides.TenantLimits {
+			if limits == nil {
+				continue
+			}
+			if err := l.validate(*limits); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return overrides, nil

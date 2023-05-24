@@ -470,10 +470,10 @@ Outer:
 			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) < 0 {
 				toReturn.chunksRanges = append(toReturn.chunksRanges, chksA[aChunksOffset])
 				break
-			} else {
-				toReturn.chunksRanges = append(toReturn.chunksRanges, chksB[bChunksOffset])
-				bChunksOffset++
 			}
+
+			toReturn.chunksRanges = append(toReturn.chunksRanges, chksB[bChunksOffset])
+			bChunksOffset++
 		}
 	}
 
@@ -725,15 +725,19 @@ func openBlockSeriesChunkRefsSetsIterator(
 		logger,
 	)
 	if len(pendingMatchers) > 0 {
-		iterator = &filteringSeriesChunkRefsSetIterator{from: iterator, matchers: pendingMatchers}
+		iterator = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, iterator, stats)
 	}
 
-	// Track the time spent loading series and chunk refs.
+	return seriesStreamingFetchRefsDurationIterator(iterator, stats), nil
+}
+
+// seriesStreamingFetchRefsDurationIterator tracks the time spent loading series and chunk refs.
+func seriesStreamingFetchRefsDurationIterator(iterator seriesChunkRefsSetIterator, stats *safeQueryStats) genericIterator[seriesChunkRefsSet] {
 	return newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration, _ bool) {
 		stats.update(func(stats *queryStats) {
 			stats.streamingSeriesFetchRefsDuration += duration
 		})
-	}), nil
+	})
 }
 
 func newLoadingSeriesChunkRefsSetIterator(
@@ -827,9 +831,10 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
 	nextSet := newSeriesChunkRefsSet(len(nextPostings), true)
+	var builder labels.ScratchBuilder
 
 	for _, id := range nextPostings {
-		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats)
+		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats, &builder)
 		if err != nil {
 			s.err = errors.Wrap(err, "read series")
 			return false
@@ -1020,13 +1025,13 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 }
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
-func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats) (labels.Labels, []chunks.Meta, error) {
+func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, builder *labels.ScratchBuilder) (labels.Labels, []chunks.Meta, error) {
 	ok, err := loadedSeries.unsafeLoadSeries(ref, &s.symbolizedLsetBuffer, &s.chunkMetasBuffer, s.skipChunks, stats)
 	if !ok || err != nil {
 		return labels.EmptyLabels(), nil, errors.Wrap(err, "loadSeries")
 	}
 
-	lset, err := s.indexr.LookupLabelsSymbols(s.symbolizedLsetBuffer)
+	lset, err := s.indexr.LookupLabelsSymbols(s.symbolizedLsetBuffer, builder)
 	if err != nil {
 		return labels.EmptyLabels(), nil, errors.Wrap(err, "lookup labels symbols")
 	}
@@ -1035,10 +1040,19 @@ func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, lo
 }
 
 type filteringSeriesChunkRefsSetIterator struct {
+	stats    *safeQueryStats
 	from     seriesChunkRefsSetIterator
 	matchers []*labels.Matcher
 
 	current seriesChunkRefsSet
+}
+
+func newFilteringSeriesChunkRefsSetIterator(matchers []*labels.Matcher, from seriesChunkRefsSetIterator, stats *safeQueryStats) *filteringSeriesChunkRefsSetIterator {
+	return &filteringSeriesChunkRefsSetIterator{
+		stats:    stats,
+		from:     from,
+		matchers: matchers,
+	}
 }
 
 func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
@@ -1062,6 +1076,9 @@ func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
 			writeIdx++
 		}
 	}
+	m.stats.update(func(stats *queryStats) {
+		stats.seriesOmitted += next.len() - writeIdx
+	})
 	next.series = next.series[:writeIdx]
 
 	if next.len() == 0 {
@@ -1207,6 +1224,7 @@ func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.S
 	return hash%shard.ShardCount == shard.ShardIndex
 }
 
+// postingsSetsIterator splits the provided postings into sets, while retaining their original order.
 type postingsSetsIterator struct {
 	postings []storage.SeriesRef
 

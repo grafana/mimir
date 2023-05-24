@@ -51,7 +51,7 @@ func NewBucketIndexMetadataFetcher(
 		cfgProvider: cfgProvider,
 		logger:      logger,
 		filters:     filters,
-		metrics:     block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}, nil),
+		metrics:     block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}),
 	}
 }
 
@@ -108,7 +108,7 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 		if customFilter, ok := filter.(MetadataFilterWithBucketIndex); ok {
 			err = customFilter.FilterWithBucketIndex(ctx, metas, idx, f.metrics.Synced)
 		} else {
-			err = filter.Filter(ctx, metas, f.metrics.Synced, f.metrics.Modified)
+			err = filter.Filter(ctx, metas, f.metrics.Synced)
 		}
 
 		if err != nil {
@@ -120,9 +120,4 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 	f.metrics.Submit()
 
 	return metas, nil, nil
-}
-
-func (f *BucketIndexMetadataFetcher) UpdateOnChange(callback func([]metadata.Meta, error)) {
-	// Unused by the store-gateway.
-	callback(nil, errors.New("UpdateOnChange is unsupported"))
 }

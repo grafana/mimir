@@ -47,7 +47,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -89,7 +88,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 		},
 	}
 
-	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, nil, blockPartitioners{})
+	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, blockPartitioners{})
 	assert.NoError(t, err)
 
 	cases := []struct {
@@ -191,10 +190,9 @@ func TestBucketBlockSet_remove(t *testing.T) {
 }
 
 // Regression tests against: https://github.com/thanos-io/thanos/issues/1983.
-func TestReadIndexCache_LoadSeries(t *testing.T) {
+func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 
-	s := NewBucketStoreMetrics(nil)
 	b := &bucketBlock{
 		meta: &metadata.Meta{
 			BlockMeta: tsdb.BlockMeta{
@@ -203,7 +201,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 		},
 		bkt:        bkt,
 		logger:     log.NewNopLogger(),
-		metrics:    s,
+		metrics:    NewBucketStoreMetrics(nil),
 		indexCache: noopCache{},
 	}
 
@@ -223,32 +221,33 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	}
 
 	// Success with no refetches.
+	stats := newSafeQueryStats()
 	loaded := newBucketIndexLoadedSeries()
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 100, loaded, newSafeQueryStats()))
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 100, loaded, stats))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2:  []byte("aaaaaaaaaa"),
 		13: []byte("bbbbbbbbbb"),
 		24: []byte("cccccccccc"),
 	}, loaded.series)
-	assert.Equal(t, float64(0), promtest.ToFloat64(s.seriesRefetches))
+	assert.Equal(t, 0, stats.export().seriesRefetches)
 
 	// Success with 2 refetches.
 	loaded = newBucketIndexLoadedSeries()
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 15, loaded, newSafeQueryStats()))
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 15, loaded, stats))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2:  []byte("aaaaaaaaaa"),
 		13: []byte("bbbbbbbbbb"),
 		24: []byte("cccccccccc"),
 	}, loaded.series)
-	assert.Equal(t, float64(2), promtest.ToFloat64(s.seriesRefetches))
+	assert.Equal(t, 2, stats.export().seriesRefetches)
 
 	// Success with refetch on first element.
 	loaded = newBucketIndexLoadedSeries()
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2}, false, 2, 5, loaded, newSafeQueryStats()))
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2}, false, 2, 5, loaded, stats))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2: []byte("aaaaaaaaaa"),
 	}, loaded.series)
-	assert.Equal(t, float64(3), promtest.ToFloat64(s.seriesRefetches))
+	assert.Equal(t, 3, stats.export().seriesRefetches)
 
 	buf.Reset()
 	buf.PutByte(0)
@@ -258,7 +257,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	assert.NoError(t, bkt.Upload(context.Background(), filepath.Join(b.meta.ULID.String(), block.IndexFilename), bytes.NewReader(buf.Get())))
 
 	// Fail, but no recursion at least.
-	assert.Error(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 1, 15, newBucketIndexLoadedSeries(), newSafeQueryStats()))
+	assert.Error(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 1, 15, newBucketIndexLoadedSeries(), stats))
 }
 
 func TestBlockLabelNames(t *testing.T) {
@@ -272,7 +271,7 @@ func TestBlockLabelNames(t *testing.T) {
 	slices.Sort(jNotFooLabelNames)
 
 	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
-	newTestBucketBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(series))
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -372,18 +371,18 @@ type cacheNotExpectingToStoreLabelNames struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(string, ulid.ULID, indexcache.LabelMatchersKey, []byte) {
 	c.t.Fatalf("StoreLabelNames should not be called")
 }
 
 func TestBlockLabelValues(t *testing.T) {
-	const series = 500
+	const series = 100_000
 
-	newTestBucketBlock := prepareTestBlockWithBinaryReader(test.NewTB(t), appendTestSeries(series))
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
-		names, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		names, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 	})
@@ -391,12 +390,12 @@ func TestBlockLabelValues(t *testing.T) {
 	t.Run("index reader error with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
-			Reader:              b.indexHeaderReader,
-			onLabelValuesCalled: func(name string) error { return context.DeadlineExceeded },
+			Reader:                     b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: func(name string) error { return context.DeadlineExceeded },
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
 
-		_, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		_, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.Error(t, err)
 	})
 
@@ -415,12 +414,12 @@ func TestBlockLabelValues(t *testing.T) {
 		}
 		b.indexCache = newInMemoryIndexCache(t)
 
-		names, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		names, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 
 		// hit the cache now
-		names, err = blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", nil, log.NewNopLogger(), newSafeQueryStats())
+		names, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 	})
@@ -436,7 +435,7 @@ func TestBlockLabelValues(t *testing.T) {
 		// This test relies on the fact that p~=foo.* has to call LabelValues(p) when doing ExpandedPostings().
 		// We make that call fail in order to make the entire LabelValues(p~=foo.*) call fail.
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "p", "foo.*")}
-		_, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		_, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
 		require.Error(t, err)
 	})
 
@@ -445,26 +444,45 @@ func TestBlockLabelValues(t *testing.T) {
 		b.indexCache = newInMemoryIndexCache(t)
 
 		pFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}
-		values, err := blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
 
 		qFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "q", "foo")}
-		values, err = blockLabelValues(context.Background(), b.indexReader(selectAllStrategy{}), "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar"}, values)
 
-		// we remove the indexHeaderReader to ensure that results come from a cache
-		// if this panics, then we know that it's trying to read actual values
-		indexrWithoutHeaderReader := b.indexReader(selectAllStrategy{})
-		indexrWithoutHeaderReader.block.indexHeaderReader = nil
+		// we break the indexHeaderReader to ensure that results come from a cache
+		b.indexHeaderReader = deadlineExceededIndexHeader()
 
-		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
-		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar"}, values)
+	})
+
+	t.Run("happy case cached with weak matchers", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = newInMemoryIndexCache(t)
+
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "p", "foo"),
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "1234.+"),
+			labels.MustNewMatcher(labels.MatchRegexp, "j", ".+"), // this is too weak and doesn't bring much value, it should be shortcut
+		}
+		values, err := blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
+
+		// we break the indexHeaderReader to ensure that results come from a cache
+		b.indexHeaderReader = deadlineExceededIndexHeader()
+
+		values, err = blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
 	})
 }
 
@@ -473,7 +491,7 @@ type cacheNotExpectingToStoreLabelValues struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey indexcache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(string, ulid.ULID, string, indexcache.LabelMatchersKey, []byte) {
 	c.t.Fatalf("StoreLabelValues should not be called")
 }
 
@@ -506,297 +524,341 @@ func (o omitMatchersStrategy) selectPostings(groups []postingGroup) (selected, o
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
-	const series = 500
+	const series = 50000
 
-	bucketBlockFactories := map[string]func() *bucketBlock{
-		"binary reader": prepareTestBlockWithBinaryReader(tb, appendTestSeries(series)),
-		"stream reader": prepareTestBlockWithStreamReader(tb, appendTestSeries(series)),
-	}
+	newTestBucketBlock := prepareTestBlock(tb, appendTestSeries(series))
 
-	for name, newTestBucketBlock := range bucketBlockFactories {
-		t.Run(name, func(t *testing.T) {
-			t.Run("happy cases", func(t *testing.T) {
-				benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
-			})
+	t.Run("happy cases", func(t *testing.T) {
+		benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
+	})
 
-			t.Run("corrupted or undecodable postings cache doesn't fail", func(t *testing.T) {
-				b := newTestBucketBlock()
-				b.indexCache = corruptedPostingsCache{}
+	t.Run("happy cases with index cache", func(t *testing.T) {
+		newBlockWithIndexCache := func() *bucketBlock {
+			b := newTestBucketBlock()
+			b.indexCache = newInMemoryIndexCache(t)
+			return b
+		}
+		benchmarkExpandedPostings(test.NewTB(t), newBlockWithIndexCache, series)
+	})
 
-				// cache provides undecodable values
-				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-				require.NoError(t, err)
-				require.Equal(t, series, len(refs))
-			})
+	t.Run("corrupted or undecodable postings cache doesn't fail", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = corruptedPostingsCache{}
 
-			t.Run("promise", func(t *testing.T) {
-				expectedErr := fmt.Errorf("failed as expected")
+		// cache provides undecodable values
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+	})
 
-				labelValuesCalls := map[string]*sync.WaitGroup{"i": {}, "n": {}, "fail": {}}
-				for _, c := range labelValuesCalls {
-					// we expect one call for each label name
-					c.Add(1)
-				}
+	t.Run("promise", func(t *testing.T) {
+		expectedErr := fmt.Errorf("failed as expected")
 
-				releaseCalls := make(chan struct{})
-				onlabelValuesCalled := func(labelName string) error {
-					// this will panic if unexpected label is called, or called too many (>1) times
-					labelValuesCalls[labelName].Done()
-					<-releaseCalls
-					if labelName == "fail" {
-						return expectedErr
-					}
-					return nil
-				}
+		labelValuesCalls := map[string]*sync.WaitGroup{"i": {}, "n": {}, "fail": {}}
+		for _, c := range labelValuesCalls {
+			// we expect one call for each label name
+			c.Add(1)
+		}
 
-				b := newTestBucketBlock()
-				b.indexHeaderReader = &interceptedIndexReader{
-					Reader:                     b.indexHeaderReader,
-					onLabelValuesOffsetsCalled: onlabelValuesCalled,
-				}
+		releaseCalls := make(chan struct{})
+		onlabelValuesCalled := func(labelName string) error {
+			// this will panic if unexpected label is called, or called too many (>1) times
+			labelValuesCalls[labelName].Done()
+			<-releaseCalls
+			if labelName == "fail" {
+				return expectedErr
+			}
+			return nil
+		}
 
-				// we're building a scenario where:
-				// - first three calls (0, 1, 2) will be called concurrently with same matchers
-				//   - call 0 will create the promise, but it's expandedPostings call won't return until we have received all calls
-				//   - call 1 will wait on the promise
-				//   - call 2 will cancel the context once we see it waiting on the promise, so it should stop waiting
-				//
-				// - call 3 will be called concurrently with the first three, but with different matchers, so we can see that results are not mixed
-				//
-				// - calls 4 and 5 are called concurrently with a matcher that causes LabelValues to artificially fail, the error should be stored in the promise
-				var (
-					ress    [6][]storage.SeriesRef
-					errs    [6]error
-					results sync.WaitGroup
-				)
-				results.Add(6)
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader:                     b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: onlabelValuesCalled,
+		}
 
-				deduplicatedCallMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")} // all series match this, but we need to call LabelValues("i")
-				otherMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^0_.*$")}          // one fifth of series match this, but we need to call LabelValues("n")
-				failingMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "fail", "^.*$")}       // LabelValues() is mocked to fail with "fail" label
+		// we're building a scenario where:
+		// - first three calls (0, 1, 2) will be called concurrently with same matchers
+		//   - call 0 will create the promise, but it's expandedPostings call won't return until we have received all calls
+		//   - call 1 will wait on the promise
+		//   - call 2 will cancel the context once we see it waiting on the promise, so it should stop waiting
+		//
+		// - call 3 will be called concurrently with the first three, but with different matchers, so we can see that results are not mixed
+		//
+		// - calls 4 and 5 are called concurrently with a matcher that causes LabelValues to artificially fail, the error should be stored in the promise
+		var (
+			ress    [6][]storage.SeriesRef
+			errs    [6]error
+			results sync.WaitGroup
+		)
+		results.Add(6)
 
-				// first call will create the promise
-				go func() {
-					defer results.Done()
-					indexr := b.indexReader(selectAllStrategy{})
-					defer indexr.Close()
+		deduplicatedCallMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")} // all series match this, but we need to call LabelValues("i")
+		otherMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^0_.*$")}          // one fifth of series match this, but we need to call LabelValues("n")
+		failingMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "fail", "^.*$")}       // LabelValues() is mocked to fail with "fail" label
 
-					ress[0], _, errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers, newSafeQueryStats())
-				}()
-				// wait for this call to actually create a promise and call LabelValues
-				labelValuesCalls["i"].Wait()
+		// first call will create the promise
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader(selectAllStrategy{})
+			defer indexr.Close()
 
-				// second call will wait on the promise
-				secondContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
-				go func() {
-					defer results.Done()
-					indexr := b.indexReader(selectAllStrategy{})
-					defer indexr.Close()
+			ress[0], _, errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers, newSafeQueryStats())
+		}()
+		// wait for this call to actually create a promise and call LabelValues
+		labelValuesCalls["i"].Wait()
 
-					ress[1], _, errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers, newSafeQueryStats())
-				}()
-				// wait until this is waiting on the promise
-				<-secondContext.waitingDone
+		// second call will wait on the promise
+		secondContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader(selectAllStrategy{})
+			defer indexr.Close()
 
-				// third call will have context canceled before promise returns
-				thirdCallInnerContext, thirdContextCancel := context.WithCancel(context.Background())
-				thirdContext := &contextNotifyingOnDoneWaiting{Context: thirdCallInnerContext, waitingDone: make(chan struct{})}
-				go func() {
-					defer results.Done()
-					indexr := b.indexReader(selectAllStrategy{})
-					defer indexr.Close()
+			ress[1], _, errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers, newSafeQueryStats())
+		}()
+		// wait until this is waiting on the promise
+		<-secondContext.waitingDone
 
-					ress[2], _, errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers, newSafeQueryStats())
-				}()
-				// wait until this is waiting on the promise
-				<-thirdContext.waitingDone
-				// and cancel its context
-				thirdContextCancel()
+		// third call will have context canceled before promise returns
+		thirdCallInnerContext, thirdContextCancel := context.WithCancel(context.Background())
+		thirdContext := &contextNotifyingOnDoneWaiting{Context: thirdCallInnerContext, waitingDone: make(chan struct{})}
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader(selectAllStrategy{})
+			defer indexr.Close()
 
-				// fourth call will create its own promise
-				go func() {
-					defer results.Done()
-					indexr := b.indexReader(selectAllStrategy{})
-					defer indexr.Close()
+			ress[2], _, errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers, newSafeQueryStats())
+		}()
+		// wait until this is waiting on the promise
+		<-thirdContext.waitingDone
+		// and cancel its context
+		thirdContextCancel()
 
-					ress[3], _, errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers, newSafeQueryStats())
-				}()
-				// wait for this call to actually create a promise and call LabelValues
-				labelValuesCalls["n"].Wait()
+		// fourth call will create its own promise
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader(selectAllStrategy{})
+			defer indexr.Close()
 
-				// fifth call will create its own promise which will fail
-				go func() {
-					defer results.Done()
-					indexr := b.indexReader(selectAllStrategy{})
-					defer indexr.Close()
+			ress[3], _, errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers, newSafeQueryStats())
+		}()
+		// wait for this call to actually create a promise and call LabelValues
+		labelValuesCalls["n"].Wait()
 
-					ress[4], _, errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers, newSafeQueryStats())
-				}()
-				// wait for this call to actually create a promise and call LabelValues
-				labelValuesCalls["fail"].Wait()
+		// fifth call will create its own promise which will fail
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader(selectAllStrategy{})
+			defer indexr.Close()
 
-				// sixth call will wait on the promise to see it fail
-				sixthContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
-				go func() {
-					defer results.Done()
-					indexr := b.indexReader(selectAllStrategy{})
-					defer indexr.Close()
+			ress[4], _, errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers, newSafeQueryStats())
+		}()
+		// wait for this call to actually create a promise and call LabelValues
+		labelValuesCalls["fail"].Wait()
 
-					ress[5], _, errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers, newSafeQueryStats())
-				}()
-				// wait until this is waiting on the promise
-				<-sixthContext.waitingDone
+		// sixth call will wait on the promise to see it fail
+		sixthContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader(selectAllStrategy{})
+			defer indexr.Close()
 
-				// let all calls return and wait for the results
-				close(releaseCalls)
-				results.Wait()
+			ress[5], _, errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers, newSafeQueryStats())
+		}()
+		// wait until this is waiting on the promise
+		<-sixthContext.waitingDone
 
-				require.Equal(t, series, len(ress[0]), "First result should have %d series (all of them)", series)
-				require.NoError(t, errs[0], "First results should not fail")
+		// let all calls return and wait for the results
+		close(releaseCalls)
+		results.Wait()
 
-				require.Equal(t, series, len(ress[1]), "Second result should have %d series (all of them)", series)
-				require.NoError(t, errs[1], "Second results should not fail")
+		require.Equal(t, series, len(ress[0]), "First result should have %d series (all of them)", series)
+		require.NoError(t, errs[0], "First results should not fail")
 
-				require.Nil(t, ress[2], "Third result should not have series")
-				require.ErrorIs(t, errs[2], context.Canceled, "Third result should have a context.Canceled error")
+		require.Equal(t, series, len(ress[1]), "Second result should have %d series (all of them)", series)
+		require.NoError(t, errs[1], "Second results should not fail")
 
-				require.Equal(t, series/5, len(ress[3]), "Fourth result should have %d series (one fifth of total)", series/5)
-				require.NoError(t, errs[3], "Fourth results should not fail")
+		require.Nil(t, ress[2], "Third result should not have series")
+		require.ErrorIs(t, errs[2], context.Canceled, "Third result should have a context.Canceled error")
 
-				require.Nil(t, ress[4], "Fifth result should not have series")
-				require.ErrorIs(t, errs[4], expectedErr, "failed", "Fifth result should fail as 'failed'")
+		require.Equal(t, series/5, len(ress[3]), "Fourth result should have %d series (one fifth of total)", series/5)
+		require.NoError(t, errs[3], "Fourth results should not fail")
 
-				require.Nil(t, ress[5], "Sixth result should not have series")
-				require.ErrorIs(t, errs[5], expectedErr, "failed", "Sixth result should fail as 'failed'")
-			})
+		require.Nil(t, ress[4], "Fifth result should not have series")
+		require.ErrorIs(t, errs[4], expectedErr, "failed", "Fifth result should fail as 'failed'")
 
-			t.Run("cached", func(t *testing.T) {
-				labelValuesCalls := map[string]int{}
-				onLabelValuesCalled := func(name string) error {
-					labelValuesCalls[name]++
-					return nil
-				}
+		require.Nil(t, ress[5], "Sixth result should not have series")
+		require.ErrorIs(t, errs[5], expectedErr, "failed", "Sixth result should fail as 'failed'")
+	})
 
-				b := newTestBucketBlock()
-				b.indexHeaderReader = &interceptedIndexReader{
-					Reader:                     b.indexHeaderReader,
-					onLabelValuesOffsetsCalled: onLabelValuesCalled,
-				}
-				b.indexCache = newInMemoryIndexCache(t)
+	t.Run("cached", func(t *testing.T) {
+		labelValuesCalls := map[string]int{}
+		onLabelValuesCalled := func(name string) error {
+			labelValuesCalls[name]++
+			return nil
+		}
 
-				// first call succeeds and caches value
-				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-				require.NoError(t, err)
-				require.Equal(t, series, len(refs))
-				require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have called LabelValues once for label 'i'.")
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader:                     b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: onLabelValuesCalled,
+		}
+		b.indexCache = newInMemoryIndexCache(t)
 
-				// second call uses cached value, so it doesn't call LabelValues again
-				refs, _, err = b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-				require.NoError(t, err)
-				require.Equal(t, series, len(refs))
-				require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have used cached value, so it shouldn't call LabelValues again for label 'i'.")
+		// first call succeeds and caches value
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+		require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have called LabelValues once for label 'i'.")
 
-				// different matcher on same label should not be cached
-				differentMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
-				refs, _, err = b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), differentMatchers, newSafeQueryStats())
-				require.NoError(t, err)
-				require.Equal(t, series, len(refs))
-				require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
-			})
+		// second call uses cached value, so it doesn't call LabelValues again
+		refs, _, err = b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+		require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have used cached value, so it shouldn't call LabelValues again for label 'i'.")
 
-			t.Run("corrupt cached expanded postings don't make request fail", func(t *testing.T) {
-				b := newTestBucketBlock()
-				b.indexCache = corruptedExpandedPostingsCache{}
+		// different matcher on same label should not be cached
+		differentMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
+		refs, _, err = b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), differentMatchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+		require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
+	})
 
-				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-				require.NoError(t, err)
-				require.Equal(t, series, len(refs))
-			})
+	t.Run("corrupt cached expanded postings don't make request fail", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = corruptedExpandedPostingsCache{}
 
-			t.Run("expandedPostings returning error is not cached", func(t *testing.T) {
-				b := newTestBucketBlock()
-				b.indexHeaderReader = &interceptedIndexReader{
-					Reader: b.indexHeaderReader,
-					onLabelValuesOffsetsCalled: func(_ string) error {
-						return context.Canceled // alwaysFails
-					},
-				}
-				b.indexCache = cacheNotExpectingToStoreExpandedPostings{t: t}
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+	})
 
-				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-				_, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-				require.Error(t, err)
-			})
+	t.Run("expandedPostings returning error is not cached", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: func(_ string) error {
+				return context.Canceled // alwaysFails
+			},
+		}
+		b.indexCache = cacheNotExpectingToStoreExpandedPostings{t: t}
 
-			t.Run("requesting a label value that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
-				b := newTestBucketBlock()
-				b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
-				mockBucket := &bucket.ClientMock{}
-				b.bkt = mockBucket
-				matchers := []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
-					// With a regular EqualsMatcher we can look up the value of the label in the postings
-					// offset table and see if it has any matches. If it matches no series, then
-					// we don't need to fetch the rest of the postings lists from the caceh or the bucket.
-					labels.MustNewMatcher(labels.MatchEqual, "i", "non-existent-value"),
-				}
-				postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-				require.NoError(t, err)
-				require.Empty(t, postings)
-				mockBucket.Mock.AssertNotCalled(t, "Get")
-				mockBucket.Mock.AssertNotCalled(t, "GetRange")
-			})
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		_, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.Error(t, err)
+	})
 
-			t.Run("requesting a label value (with regex) that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
-				b := newTestBucketBlock()
-				b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
-				mockBucket := &bucket.ClientMock{}
-				b.bkt = mockBucket
-				matchers := []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
-					// Since prometheus regular expressions are anchored at each end, some regular expressions have a
-					// known set of values. For those regular expressions we can short-circuit the cache and bucket lookups too.
-					labels.MustNewMatcher(labels.MatchRegexp, "i", "non-existent-value-(1|2)"),
-				}
-				postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
-				require.NoError(t, err)
-				require.Empty(t, postings)
-				mockBucket.Mock.AssertNotCalled(t, "Get")
-				mockBucket.Mock.AssertNotCalled(t, "GetRange")
-			})
+	t.Run("colliding request matchers are detected", func(t *testing.T) {
+		b := newTestBucketBlock()
+		spyCache := &spyPostingsCache{}
+		b.indexCache = spyCache
 
-			t.Run("postings selection strategy is respected", func(t *testing.T) {
-				b := newTestBucketBlock()
-				ctx := context.Background()
-				stats := newSafeQueryStats()
+		// Store a value in the cache which is for these two matchers
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),   // selects all series
+			labels.MustNewMatcher(labels.MatchRegexp, "n", "^0_.*$"), // selects one fifth of series
+		}
+		restrictedRefs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, series/5, len(restrictedRefs))
 
-				// Construct two matchers that select inverse series.
-				// When combined they should select 0 series.
-				// But our selection strategy will omit the inverted one, so we will get some series.
-				// They should be the same series as if we passed only the non-inverted one.
-				matcher := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
-				inverseMatcher, err := matcher.Inverse()
-				require.NoError(t, err)
+		// Use different matchers, but with the same value. The item should be detected as colliding and discarded.
+		b.indexCache = &expandedPostingsReplacingCache{v: spyCache.storedExpandedPostingsVal}
+		allRefs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers[:1], newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, series, len(allRefs))
+	})
 
-				matchers := []*labels.Matcher{matcher, inverseMatcher}
+	t.Run("colliding request matchers are detected", func(t *testing.T) {
+		b := newTestBucketBlock()
+		spyCache := &spyPostingsCache{}
+		b.indexCache = spyCache
 
-				refsWithPendingMatchers, pendingMatchers, err := b.indexReader(omitMatchersStrategy{[]*labels.Matcher{inverseMatcher}}).ExpandedPostings(ctx, matchers, stats)
-				require.NoError(t, err)
-				if assert.Len(t, pendingMatchers, 1) {
-					assert.Equal(t, inverseMatcher, pendingMatchers[0])
-				}
+		// Store a value in the cache which is for these two matchers
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "n", "(0|1)_0"+labelLongSuffix), // this should select 2/5 of all postings
+		}
+		refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, 2*series/5/10, len(refs))
 
-				refsWithoutPendingMatchers, pendingMatchers, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(ctx, matchers[:1], stats)
-				require.NoError(t, err)
-				assert.Empty(t, pendingMatchers)
-				assert.Equal(t, refsWithoutPendingMatchers, refsWithPendingMatchers)
-			})
+		// We make the postings of both lists the same - this should end up selecting fewer series
+		spyCache.storedPostingsVal[labels.Label{Name: "n", Value: "0_0" + labelLongSuffix}] = spyCache.storedPostingsVal[labels.Label{Name: "n", Value: "1_0" + labelLongSuffix}]
+		// Use same matchers, but now with the wrong cache value for n=0_0...; this should trigger a cache miss for the second posting list.
+		b.indexCache = &postingsReplacingCache{vals: spyCache.storedPostingsVal}
+		refs, _, err = b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, 2*series/5/10, len(refs))
+	})
 
-		})
-	}
+	t.Run("requesting a label value that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
+		mockBucket := &bucket.ClientMock{}
+		b.bkt = mockBucket
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
+			// With a regular EqualsMatcher we can look up the value of the label in the postings
+			// offset table and see if it has any matches. If it matches no series, then
+			// we don't need to fetch the rest of the postings lists from the cache or the bucket.
+			labels.MustNewMatcher(labels.MatchEqual, "i", "non-existent-value"),
+		}
+		postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Empty(t, postings)
+		mockBucket.Mock.AssertNotCalled(t, "Get")
+		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+	})
+
+	t.Run("requesting a label value (with regex) that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = forbiddenFetchMultiPostingsIndexCache{t: t, IndexCache: b.indexCache}
+		mockBucket := &bucket.ClientMock{}
+		b.bkt = mockBucket
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$"),
+			// Since prometheus regular expressions are anchored at each end, some regular expressions have a
+			// known set of values. For those regular expressions we can short-circuit the cache and bucket lookups too.
+			labels.MustNewMatcher(labels.MatchRegexp, "i", "non-existent-value-(1|2)"),
+		}
+		postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Empty(t, postings)
+		mockBucket.Mock.AssertNotCalled(t, "Get")
+		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+	})
+
+	t.Run("postings selection strategy is respected", func(t *testing.T) {
+		b := newTestBucketBlock()
+		ctx := context.Background()
+		stats := newSafeQueryStats()
+
+		// Construct two matchers that select inverse series.
+		// When combined they should select 0 series.
+		// But our selection strategy will omit the inverted one, so we will get some series.
+		// They should be the same series as if we passed only the non-inverted one.
+		matcher := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
+		inverseMatcher, err := matcher.Inverse()
+		require.NoError(t, err)
+
+		matchers := []*labels.Matcher{matcher, inverseMatcher}
+
+		refsWithPendingMatchers, pendingMatchers, err := b.indexReader(omitMatchersStrategy{[]*labels.Matcher{inverseMatcher}}).ExpandedPostings(ctx, matchers, stats)
+		require.NoError(t, err)
+		if assert.Len(t, pendingMatchers, 1) {
+			assert.Equal(t, inverseMatcher, pendingMatchers[0])
+		}
+
+		refsWithoutPendingMatchers, pendingMatchers, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(ctx, matchers[:1], stats)
+		require.NoError(t, err)
+		assert.Empty(t, pendingMatchers)
+		assert.Equal(t, refsWithoutPendingMatchers, refsWithPendingMatchers)
+	})
 }
 
 func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
@@ -810,6 +872,7 @@ type interceptedIndexReader struct {
 	onLabelNamesCalled         func() error
 	onLabelValuesCalled        func(name string) error
 	onLabelValuesOffsetsCalled func(name string) error
+	onIndexVersionCalled       func() error
 }
 
 func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
@@ -821,15 +884,6 @@ func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
 	return iir.Reader.LabelNames()
 }
 
-func (iir *interceptedIndexReader) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
-	if iir.onLabelValuesCalled != nil {
-		if err := iir.onLabelValuesCalled(name); err != nil {
-			return nil, err
-		}
-	}
-	return iir.Reader.LabelValues(name, prefix, filter)
-}
-
 func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
 	if iir.onLabelValuesOffsetsCalled != nil {
 		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {
@@ -837,6 +891,24 @@ func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string
 		}
 	}
 	return iir.Reader.LabelValuesOffsets(name, prefix, filter)
+}
+
+func (iir *interceptedIndexReader) IndexVersion() (int, error) {
+	if iir.onIndexVersionCalled != nil {
+		if err := iir.onIndexVersionCalled(); err != nil {
+			return 0, err
+		}
+	}
+	return iir.Reader.IndexVersion()
+}
+
+func deadlineExceededIndexHeader() *interceptedIndexReader {
+	return &interceptedIndexReader{
+		onLabelNamesCalled:         func() error { return context.DeadlineExceeded },
+		onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
+		onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
+		onIndexVersionCalled:       func() error { return context.DeadlineExceeded },
+	}
 }
 
 type contextNotifyingOnDoneWaiting struct {
@@ -854,18 +926,18 @@ func (w *contextNotifyingOnDoneWaiting) Done() <-chan struct{} {
 
 type corruptedExpandedPostingsCache struct{ noopCache }
 
-func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
+func (c corruptedExpandedPostingsCache) FetchExpandedPostings(context.Context, string, ulid.ULID, indexcache.LabelMatchersKey, string) ([]byte, bool) {
 	return []byte(codecHeaderSnappy + "corrupted"), true
 }
 
 type corruptedPostingsCache struct{ noopCache }
 
-func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
+func (c corruptedPostingsCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) indexcache.BytesResult {
 	res := make(map[labels.Label][]byte)
 	for _, k := range keys {
 		res[k] = []byte("corrupted or unknown")
 	}
-	return res, nil
+	return &indexcache.MapIterator[labels.Label]{Keys: keys, M: res}
 }
 
 type cacheNotExpectingToStoreExpandedPostings struct {
@@ -873,24 +945,51 @@ type cacheNotExpectingToStoreExpandedPostings struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(string, ulid.ULID, indexcache.LabelMatchersKey, string, []byte) {
 	c.t.Fatalf("StoreExpandedPostings should not be called")
+}
+
+type spyPostingsCache struct {
+	noopCache
+	storedExpandedPostingsVal []byte
+	storedPostingsVal         map[labels.Label][]byte
+}
+
+func (c *spyPostingsCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ string, v []byte) {
+	c.storedExpandedPostingsVal = v
+}
+
+func (c *spyPostingsCache) StorePostings(_ string, _ ulid.ULID, l labels.Label, v []byte) {
+	if c.storedExpandedPostingsVal == nil {
+		c.storedPostingsVal = make(map[labels.Label][]byte)
+	}
+	c.storedPostingsVal[l] = v
+}
+
+type expandedPostingsReplacingCache struct {
+	noopCache
+	v []byte
+}
+
+func (c *expandedPostingsReplacingCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ string) ([]byte, bool) {
+	return c.v, true
+}
+
+type postingsReplacingCache struct {
+	noopCache
+	vals map[labels.Label][]byte
+}
+
+func (c *postingsReplacingCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) indexcache.BytesResult {
+	return &indexcache.MapIterator[labels.Label]{Keys: keys, M: c.vals}
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	tb := test.NewTB(b)
 	const series = 50e5
 
-	bucketBlockFactories := map[string]func() *bucketBlock{
-		"binary reader": prepareTestBlockWithBinaryReader(tb, appendTestSeries(series)),
-		"stream reader": prepareTestBlockWithStreamReader(tb, appendTestSeries(series)),
-	}
-
-	for name, newTestBucketBlock := range bucketBlockFactories {
-		b.Run(name, func(b *testing.B) {
-			benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
-		})
-	}
+	newTestBucketBlock := prepareTestBlock(tb, appendTestSeries(series))
+	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
 func prepareTestBucket(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) (objstore.BucketReader, string, ulid.ULID, int64, int64) {
@@ -908,33 +1007,27 @@ func prepareTestBucket(tb test.TB, dataSetup ...func(tb testing.TB, appender sto
 	return bkt, tmpDir, id, minT, maxT
 }
 
-func prepareTestBlockWithBinaryReader(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
+func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
 	bkt, tmpDir, id, minT, maxT := prepareTestBucket(tb, dataSetup...)
 
 	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 	require.NoError(tb, err)
 
-	return newBucketBlockFactory(bkt, r, id, minT, maxT)
-}
-
-func prepareTestBlockWithStreamReader(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
-	bkt, tmpDir, id, minT, maxT := prepareTestBucket(tb, dataSetup...)
-
-	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
-	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, metrics, indexheader.Config{})
-	require.NoError(tb, err)
-
-	return newBucketBlockFactory(bkt, r, id, minT, maxT)
-}
-
-func newBucketBlockFactory(bkt objstore.BucketReader, r indexheader.Reader, id ulid.ULID, minT int64, maxT int64) func() *bucketBlock {
 	return func() *bucketBlock {
+		var chunkObjects []string
+		err := bkt.Iter(context.Background(), path.Join(id.String(), "chunks"), func(s string) error {
+			chunkObjects = append(chunkObjects, s)
+			return nil
+		})
+		require.NoError(tb, err)
+
 		return &bucketBlock{
 			userID:            "tenant",
 			logger:            log.NewNopLogger(),
 			metrics:           NewBucketStoreMetrics(nil),
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
+			chunkObjs:         chunkObjects,
 			bkt:               bkt,
 			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -1019,21 +1112,75 @@ func benchmarkExpandedPostings(
 	for _, testCase := range seriesSelectionTestCases(tb, series) {
 		tb.Run(testCase.name, func(tb test.TB) {
 			indexr := newBucketIndexReader(newTestBucketBlock(), selectAllStrategy{})
+
+			var allSeries []labels.Labels
+			if !tb.IsBenchmark() {
+				allPostings, _, err := indexr.ExpandedPostings(ctx, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "my_made_up_label", "")}, newSafeQueryStats())
+				require.NoError(tb, err)
+				allSeries = loadSeries(ctx, tb, allPostings, indexr)
+			}
+
 			indexrStats := newSafeQueryStats()
 
 			tb.ResetTimer()
 			for i := 0; i < tb.N(); i++ {
 				p, _, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
-
-				if err != nil {
-					tb.Fatal(err.Error())
-				}
-				if testCase.expectedSeriesLen != len(p) {
-					tb.Fatalf("expected %d postings but got %d", testCase.expectedSeriesLen, len(p))
+				assert.NoError(tb, err)
+				assert.Equal(tb, testCase.expectedSeriesLen, len(p))
+				if !tb.IsBenchmark() {
+					seriesThatMatch := filterSeries(allSeries, testCase.matchers)
+					seriesForPostings := loadSeries(ctx, tb, p, indexr)
+					assert.Equal(tb, seriesThatMatch, seriesForPostings)
 				}
 			}
 		})
 	}
+}
+
+// filterSeries modified series in place and returns a subslice of series.
+func filterSeries(series []labels.Labels, ms []*labels.Matcher) []labels.Labels {
+	writeIdx := 0
+	for i, s := range series {
+		matches := true
+		for _, m := range ms {
+			if !m.Matches(s.Get(m.Name)) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			series[writeIdx], series[i] = series[i], series[writeIdx]
+			writeIdx++
+		}
+	}
+	return series[:writeIdx]
+}
+
+func loadSeries(ctx context.Context, tb test.TB, postings []storage.SeriesRef, indexr *bucketIndexReader) []labels.Labels {
+	setIterator := newLoadingSeriesChunkRefsSetIterator(
+		ctx,
+		newPostingsSetsIterator(postings, 1000),
+		indexr,
+		noopCache{},
+		newSafeQueryStats(),
+		indexr.block.meta,
+		nil,
+		nil,
+		true,
+		0,
+		0,
+		"",
+		1,
+		log.NewNopLogger(),
+	)
+	series := make([]labels.Labels, 0, len(postings))
+	seriesIterator := newSeriesSetWithoutChunks(ctx, setIterator, newSafeQueryStats())
+	for seriesIterator.Next() {
+		lbls, _ := seriesIterator.At()
+		series = append(series, lbls)
+	}
+	require.NoError(tb, seriesIterator.Err())
+	return series
 }
 
 type seriesSelectionTestCase struct {
@@ -1222,16 +1369,11 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
-	f, err := block.NewRawMetaFetcher(logger, ibkt)
-	assert.NoError(t, err)
-
-	chunkPool, err := pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, 1e9) // 1GB.
+	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil)
 	assert.NoError(t, err)
 
 	runTestWithStore := func(t test.TB, st *BucketStore, reg prometheus.Gatherer) {
 		if !t.IsBenchmark() {
-			st.chunkPool = &trackedBytesPool{parent: st.chunkPool}
-
 			// Reset the memory pools.
 			seriesChunksSlicePool.(*pool.TrackedPool).Reset()
 			chunksSlicePool.(*pool.TrackedPool).Reset()
@@ -1273,9 +1415,6 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 
 		if !t.IsBenchmark() {
 			if !skipChunk {
-				assert.Zero(t, st.chunkPool.(*trackedBytesPool).balance.Load())
-				st.chunkPool.(*trackedBytesPool).gets.Store(0)
-
 				assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
 				assert.Zero(t, chunksSlicePool.(*pool.TrackedPool).Balance.Load())
 
@@ -1314,15 +1453,15 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		maxSeriesPerBatch int
 	}{
 		"with series streaming (1K per batch)": {
-			options:           []BucketStoreOption{WithLogger(logger), WithChunkPool(chunkPool)},
+			options:           []BucketStoreOption{WithLogger(logger)},
 			maxSeriesPerBatch: 1000,
 		},
 		"with series streaming (10K per batch)": {
-			options:           []BucketStoreOption{WithLogger(logger), WithChunkPool(chunkPool)},
+			options:           []BucketStoreOption{WithLogger(logger)},
 			maxSeriesPerBatch: 10000,
 		},
 		"with series streaming and caches (1K per batch)": {
-			options:           []BucketStoreOption{WithLogger(logger), WithChunkPool(chunkPool), WithIndexCache(newInMemoryIndexCache(t)), WithChunksCache(newInMemoryChunksCache())},
+			options:           []BucketStoreOption{WithLogger(logger), WithIndexCache(newInMemoryIndexCache(t)), WithChunksCache(newInMemoryChunksCache())},
 			maxSeriesPerBatch: 1000,
 		},
 	}
@@ -1448,12 +1587,8 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			// Reset the memory pool tracker.
 			seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-			metaFetcher, err := block.NewRawMetaFetcher(logger, instrumentedBucket)
+			metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
 			assert.NoError(t, err)
-
-			chunkPool, err := pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, 1e9) // 1GB.
-			assert.NoError(t, err)
-			trackedChunkPool := &trackedBytesPool{parent: chunkPool}
 
 			// Create the bucket store.
 			store, err := NewBucketStore(
@@ -1475,7 +1610,6 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 				hashcache.NewSeriesHashCache(1024*1024),
 				NewBucketStoreMetrics(nil),
 				WithLogger(logger),
-				WithChunkPool(trackedChunkPool),
 			)
 			require.NoError(t, err)
 			require.NoError(t, store.SyncBlocks(ctx))
@@ -1497,36 +1631,12 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			// Wait until all workers have done.
 			wg.Wait()
 
-			// Ensure all chunks have been released to the pool.
-			require.Equal(t, 0, int(trackedChunkPool.balance.Load()))
-
 			// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
 			// pool have put back.
 			assert.Greater(t, seriesChunkRefsSetPool.(*pool.TrackedPool).Gets.Load(), int64(0))
 			assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*pool.TrackedPool).Balance.Load())
 		})
 	}
-}
-
-type trackedBytesPool struct {
-	parent  pool.Bytes
-	balance atomic.Uint64
-	gets    atomic.Uint64
-}
-
-func (m *trackedBytesPool) Get(sz int) (*[]byte, error) {
-	b, err := m.parent.Get(sz)
-	if err != nil {
-		return nil, err
-	}
-	m.balance.Add(uint64(cap(*b)))
-	m.gets.Add(uint64(1))
-	return b, nil
-}
-
-func (m *trackedBytesPool) Put(b *[]byte) {
-	m.balance.Sub(uint64(cap(*b)))
-	m.parent.Put(b)
 }
 
 // Regression test against: https://github.com/thanos-io/thanos/issues/2147.
@@ -1542,9 +1652,6 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: metadata.TestSource,
 	}
-
-	chunkPool, err := pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, 100e7)
-	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{
 		MaxItemSize: 3000,
@@ -1596,7 +1703,6 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			meta:         meta,
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
-			chunkPool:    chunkPool,
 		}
 		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
@@ -1635,7 +1741,6 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			meta:         meta,
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
-			chunkPool:    chunkPool,
 		}
 		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
@@ -1660,7 +1765,6 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		seriesLimiterFactory:     newStaticSeriesLimiterFactory(0),
 		maxSeriesPerBatch:        65536,
 		numChunksRangesPerSeries: 1,
-		chunkPool:                chunkPool,
 	}
 
 	srv := newBucketStoreTestServer(t, store)
@@ -1775,8 +1879,8 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 		}
 	}
 
-	tb, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t, 5000)
-	tb.Cleanup(close)
+	tb, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
+	tb.Cleanup(cleanup)
 	runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
 }
 
@@ -2134,14 +2238,14 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
-	}, numSamplesPerSeries, minTime, maxTime, nil)
+	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
 	_, err = testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
-	}, numSamplesPerSeries, minTime, maxTime, nil)
+	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
 	// Create a bucket and upload the block there.
@@ -2240,39 +2344,17 @@ func mustMarshalAny(pb proto.Message) *types.Any {
 	return out
 }
 
-func createBlockWithOneSeriesWithStep(t test.TB, dir string, lbls labels.Labels, blockIndex, totalSamples int, random *rand.Rand, step int64) ulid.ULID {
-	headOpts := tsdb.DefaultHeadOptions()
-	headOpts.ChunkDirRoot = dir
-	headOpts.ChunkRange = int64(totalSamples) * step
-	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, h.Close()) }()
-
-	app := h.Appender(context.Background())
-
-	ts := int64(blockIndex * totalSamples)
-	ref, err := app.Append(0, lbls, ts, random.Float64())
-	assert.NoError(t, err)
-	for i := 1; i < totalSamples; i++ {
-		_, err := app.Append(ref, nil, ts+step*int64(i), random.Float64())
-		assert.NoError(t, err)
-	}
-	assert.NoError(t, app.Commit())
-
-	return createBlockFromHead(t, dir, h)
-}
-
 func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
 	tb := test.NewTB(t)
 
-	closers := []func(){}
+	cleanupFuncs := []func(){}
 
 	tmpDir := t.TempDir()
 
 	bktDir := filepath.Join(tmpDir, "bkt")
 	bkt, err := filesystem.NewBucket(bktDir)
 	assert.NoError(t, err)
-	closers = append(closers, func() { assert.NoError(t, bkt.Close()) })
+	cleanupFuncs = append(cleanupFuncs, func() { assert.NoError(t, bkt.Close()) })
 
 	var (
 		logger   = log.NewNopLogger()
@@ -2343,18 +2425,18 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	assert.NoError(tb, err)
 	assert.NoError(tb, store.SyncBlocks(context.Background()))
 
-	closers = append(closers, func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
+	cleanupFuncs = append(cleanupFuncs, func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
 
 	return tb, store, seriesSet1, seriesSet2, block1, block2, func() {
-		for _, close := range closers {
-			close()
+		for _, cleanup := range cleanupFuncs {
+			cleanup()
 		}
 	}
 }
 
 func TestLabelNamesAndValuesHints(t *testing.T) {
-	_, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t, 5000)
-	defer close()
+	_, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
+	defer cleanup()
 
 	type labelNamesValuesCase struct {
 		name string
@@ -2493,8 +2575,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 }
 
 func TestLabelNames_Cancelled(t *testing.T) {
-	_, store, _, _, _, _, close := setupStoreForHintsTest(t, 5000)
-	defer close()
+	_, store, _, _, _, _, cleanup := setupStoreForHintsTest(t, 5000)
+	defer cleanup()
 
 	req := &storepb.LabelNamesRequest{
 		Start: 0,
@@ -2519,8 +2601,8 @@ func TestLabelNames_Cancelled(t *testing.T) {
 }
 
 func TestLabelValues_Cancelled(t *testing.T) {
-	_, store, _, _, _, _, close := setupStoreForHintsTest(t, 5000)
-	defer close()
+	_, store, _, _, _, _, cleanup := setupStoreForHintsTest(t, 5000)
+	defer cleanup()
 
 	req := &storepb.LabelValuesRequest{
 		Label: "ext1",
@@ -2561,58 +2643,6 @@ func labelNamesFromSeriesSet(series []*storepb.Series) []string {
 
 	slices.Sort(labels)
 	return labels
-}
-
-func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
-	var (
-		ctx    = context.Background()
-		logger = log.NewNopLogger()
-
-		// Read chunks of different length. We're not using random to make the benchmark repeatable.
-		readLengths = []int64{300, 500, 1000, 5000, 10000, 30000, 50000, 100000, 300000, 1500000}
-	)
-
-	tmpDir := b.TempDir()
-
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	assert.NoError(b, err)
-	b.Cleanup(func() {
-		assert.NoError(b, bkt.Close())
-	})
-
-	// Create a block.
-	blockID := createBlockWithOneSeriesWithStep(test.NewTB(b), tmpDir, labels.FromStrings("__name__", "test"), 0, 100000, rand.New(rand.NewSource(0)), 5000)
-
-	// Upload the block to the bucket.
-	thanosMeta := metadata.Thanos{
-		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
-	}
-
-	blockMeta, err := metadata.InjectThanos(logger, filepath.Join(tmpDir, blockID.String()), thanosMeta, nil)
-	assert.NoError(b, err)
-
-	assert.NoError(b, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, blockID.String()), nil))
-
-	// Create a chunk pool with buckets between 8B and 32KB.
-	chunkPool, err := pool.NewBucketedBytes(8, 32*1024, 2, 1e10)
-	assert.NoError(b, err)
-
-	// Create a bucket block with only the dependencies we need for the benchmark.
-	blk, err := newBucketBlock(context.Background(), "tenant", logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, nil, chunkPool, nil, blockPartitioners{})
-	assert.NoError(b, err)
-
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		offset := int64(0)
-		length := readLengths[n%len(readLengths)]
-
-		_, err := blk.readChunkRange(ctx, 0, offset, length, byteRanges{{offset: 0, length: int(length)}})
-		if err != nil {
-			b.Fatal(err.Error())
-		}
-	}
 }
 
 type headGenOptions struct {
@@ -2669,16 +2699,17 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		lbls := labels.NewBuilder(opts.PrependLabels)
 		lbls.Set("foo", "bar")
 		lbls.Set("i", fmt.Sprintf("%07d%s", tsLabel, labelLongSuffix))
+		ll := lbls.Labels()
 		ref, err := app.Append(
 			0,
-			lbls.Labels(),
+			ll,
 			int64(tsLabel)*opts.ScrapeInterval.Milliseconds(),
 			opts.Random.Float64(),
 		)
 		assert.NoError(t, err)
 
 		for is := 1; is < opts.SamplesPerSeries; is++ {
-			_, err := app.Append(ref, nil, int64(tsLabel+is)*opts.ScrapeInterval.Milliseconds(), opts.Random.Float64())
+			_, err := app.Append(ref, ll, int64(tsLabel+is)*opts.ScrapeInterval.Milliseconds(), opts.Random.Float64())
 			assert.NoError(t, err)
 		}
 	}
