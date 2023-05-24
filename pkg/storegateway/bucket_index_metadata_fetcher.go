@@ -108,7 +108,7 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 		if customFilter, ok := filter.(MetadataFilterWithBucketIndex); ok {
 			err = customFilter.FilterWithBucketIndex(ctx, metas, idx, f.metrics.Synced)
 		} else {
-			err = filter.Filter(ctx, metas, f.metrics.Synced, f.metrics.Modified)
+			err = filter.Filter(ctx, metas, f.metrics.Synced)
 		}
 
 		if err != nil {

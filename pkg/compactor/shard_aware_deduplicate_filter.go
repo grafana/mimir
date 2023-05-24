@@ -33,7 +33,7 @@ func NewShardAwareDeduplicateFilter() *ShardAwareDeduplicateFilter {
 
 // Filter filters out from metas, the initial map of blocks, all the blocks that are contained in other, compacted, blocks.
 // The removed blocks are source blocks of the blocks that remain in metas after the filtering is executed.
-func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
+func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec) error {
 	f.duplicateIDs = f.duplicateIDs[:0]
 
 	metasByResolution := make(map[int64][]*metadata.Meta)

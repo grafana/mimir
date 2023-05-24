@@ -53,8 +53,8 @@ func (f *IgnoreDeletionMarkFilter) DeletionMarkBlocks() map[ulid.ULID]*metadata.
 }
 
 // Filter implements block.MetadataFilter.
-func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
-	return f.upstream.Filter(ctx, metas, synced, modified)
+func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec) error {
+	return f.upstream.Filter(ctx, metas, synced)
 }
 
 // FilterWithBucketIndex implements MetadataFilterWithBucketIndex.
@@ -93,7 +93,7 @@ func newMinTimeMetaFilter(limit time.Duration) *minTimeMetaFilter {
 	return &minTimeMetaFilter{limit: limit}
 }
 
-func (f *minTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
+func (f *minTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec) error {
 	if f.limit <= 0 {
 		return nil
 	}

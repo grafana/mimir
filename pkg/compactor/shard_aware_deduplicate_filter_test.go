@@ -373,7 +373,7 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 				expected[id] = m
 			}
 
-			require.NoError(t, f.Filter(context.Background(), metas, m.Synced, m.Modified))
+			require.NoError(t, f.Filter(context.Background(), metas, m.Synced))
 			require.Equal(t, expected, metas)
 			require.Equal(t, float64(inputLen-len(tcase.expected)), promtest.ToFloat64(m.Synced.WithLabelValues(duplicateMeta)))
 
@@ -387,8 +387,7 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 
 func newTestFetcherMetrics() *block.FetcherMetrics {
 	return &block.FetcherMetrics{
-		Synced:   extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"state"}),
-		Modified: extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"modified"}),
+		Synced: extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"state"}),
 	}
 }
 
@@ -453,7 +452,7 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 				b.ResetTimer()
 				b.Run("", func(b *testing.B) {
 					for n := 0; n <= b.N; n++ {
-						_ = dedupFilter.Filter(context.Background(), tcase, synced, nil)
+						_ = dedupFilter.Filter(context.Background(), tcase, synced)
 						require.Equal(b, 0, len(dedupFilter.DuplicateIDs()))
 					}
 				})
