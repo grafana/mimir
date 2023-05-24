@@ -1491,7 +1491,7 @@ func createCustomTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, ext
 	require.NoError(t, err)
 
 	// Inject Thanos external labels to the block.
-	meta := block.Thanos{
+	meta := block.ThanosMeta{
 		Labels: externalLabels,
 		Source: "test",
 	}
@@ -1800,7 +1800,7 @@ func blockMeta(id string, mint, maxt int64, lbls map[string]string) *block.Meta 
 				Sources: []ulid.ULID{ulid.MustParse(id)},
 			},
 		},
-		Thanos: block.Thanos{
+		Thanos: block.ThanosMeta{
 			Labels: lbls,
 		},
 	}

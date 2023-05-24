@@ -43,7 +43,7 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 		},
 		"meta.json with SegmentFiles, 0 based 6 digits": {
 			meta: block.Meta{
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					SegmentFiles: []string{
 						"000000",
 						"000001",
@@ -56,7 +56,7 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 		},
 		"meta.json with SegmentFiles, 1 based 6 digits": {
 			meta: block.Meta{
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					SegmentFiles: []string{
 						"000001",
 						"000002",
@@ -69,7 +69,7 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 		},
 		"meta.json with SegmentFiles, 1 based 6 digits but non consecutive": {
 			meta: block.Meta{
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					SegmentFiles: []string{
 						"000001",
 						"000003",
@@ -82,7 +82,7 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 		},
 		"meta.json with Files, 0 based 6 digits": {
 			meta: block.Meta{
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Files: []block.File{
 						{RelPath: "index"},
 						{RelPath: "chunks/000000"},
@@ -97,7 +97,7 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 		},
 		"meta.json with Files, 1 based 6 digits": {
 			meta: block.Meta{
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Files: []block.File{
 						{RelPath: "index"},
 						{RelPath: "chunks/000001"},
@@ -112,7 +112,7 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 		},
 		"meta.json with Files, 1 based 6 digits but non consecutive": {
 			meta: block.Meta{
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Files: []block.File{
 						{RelPath: "index"},
 						{RelPath: "chunks/000001"},
@@ -150,7 +150,7 @@ func TestBlockFromThanosMeta(t *testing.T) {
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: block.Thanos{},
+				Thanos: block.ThanosMeta{},
 			},
 			expected: Block{
 				ID:             blockID,
@@ -167,7 +167,7 @@ func TestBlockFromThanosMeta(t *testing.T) {
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					SegmentFiles: []string{
 						"000001",
 						"000002",
@@ -190,7 +190,7 @@ func TestBlockFromThanosMeta(t *testing.T) {
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Files: []block.File{
 						{RelPath: "index"},
 						{RelPath: "chunks/000001"},
@@ -215,7 +215,7 @@ func TestBlockFromThanosMeta(t *testing.T) {
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
 						"a": "b",
 						"c": "d",
@@ -235,7 +235,7 @@ func TestBlockFromThanosMeta(t *testing.T) {
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
 						"a":                                      "b",
 						"c":                                      "d",
@@ -257,7 +257,7 @@ func TestBlockFromThanosMeta(t *testing.T) {
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
 						"a":                                      "b",
 						"c":                                      "d",
@@ -348,7 +348,7 @@ func TestBlock_ThanosMeta(t *testing.T) {
 					MaxTime: 20,
 					Version: block.TSDBVersion1,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Version: block.ThanosVersion1,
 					SegmentFiles: []string{
 						"000001",
@@ -373,7 +373,7 @@ func TestBlock_ThanosMeta(t *testing.T) {
 					MaxTime: 20,
 					Version: block.TSDBVersion1,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Version: block.ThanosVersion1,
 				},
 			},

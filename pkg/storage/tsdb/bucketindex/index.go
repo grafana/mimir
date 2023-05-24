@@ -114,7 +114,7 @@ func (m *Block) ThanosMeta() *block.Meta {
 			MaxTime: m.MaxTime,
 			Version: block.TSDBVersion1,
 		},
-		Thanos: block.Thanos{
+		Thanos: block.ThanosMeta{
 			Version:      block.ThanosVersion1,
 			SegmentFiles: m.thanosMetaSegmentFiles(),
 		},

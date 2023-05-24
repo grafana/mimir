@@ -1019,7 +1019,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 
 	// Inject different external labels for each block.
 	for idx, blockID := range blockIDs {
-		meta := block.Thanos{
+		meta := block.ThanosMeta{
 			Labels: map[string]string{
 				mimir_tsdb.DeprecatedTenantIDExternalLabel:   userID,
 				mimir_tsdb.DeprecatedIngesterIDExternalLabel: fmt.Sprintf("ingester-%d", idx),

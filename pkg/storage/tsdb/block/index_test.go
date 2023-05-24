@@ -46,7 +46,7 @@ func TestRewrite(t *testing.T) {
 
 	m := &Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: ULID(1)},
-		Thanos:    Thanos{},
+		Thanos:    ThanosMeta{},
 	}
 
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, m.ULID.String()), os.ModePerm))

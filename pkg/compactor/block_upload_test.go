@@ -66,7 +66,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			MinTime: now - 1000,
 			MaxTime: now,
 		},
-		Thanos: block.Thanos{
+		Thanos: block.ThanosMeta{
 			Labels: map[string]string{
 				mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
 			},
@@ -165,7 +165,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			blockID:         blockID,
 			setUpBucketMock: setUpPartialBlock,
 			meta: &block.Meta{
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Files: []block.File{
 						{
 							RelPath:   "chunks/invalid-file",
@@ -182,7 +182,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			blockID:         blockID,
 			setUpBucketMock: setUpPartialBlock,
 			meta: &block.Meta{
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Downsample: block.ThanosDownsample{
 						Resolution: 1000,
 					},
@@ -208,7 +208,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			blockID:         blockID,
 			setUpBucketMock: setUpPartialBlock,
 			meta: &block.Meta{
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Files: []block.File{
 						{
 							RelPath: block.MetaFilename,
@@ -312,7 +312,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 					MinTime: 0,
 					MaxTime: 1000,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
 						mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
 					},
@@ -345,7 +345,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 					MinTime: 0,
 					MaxTime: 1000,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
 						mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
 					},
@@ -375,7 +375,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 					ULID:    bULID,
 					Version: block.TSDBVersion1,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
 						mimir_tsdb.CompactorShardIDExternalLabel: "test",
 					},
@@ -460,7 +460,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 					MinTime: now - 1000,
 					MaxTime: now,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
 						mimir_tsdb.CompactorShardIDExternalLabel: "",
 					},
@@ -495,7 +495,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 					MinTime: now - 1000,
 					MaxTime: now,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Files: []block.File{
 						{
 							RelPath: block.MetaFilename,
@@ -527,7 +527,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 					MinTime: now - 1000,
 					MaxTime: now,
 				},
-				Thanos: block.Thanos{
+				Thanos: block.ThanosMeta{
 					Files: []block.File{
 						{
 							RelPath: block.MetaFilename,
@@ -748,7 +748,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		BlockMeta: tsdb.BlockMeta{
 			ULID: ulid.MustParse(blockID),
 		},
-		Thanos: block.Thanos{
+		Thanos: block.ThanosMeta{
 			Labels: map[string]string{
 				mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
 			},
@@ -1141,7 +1141,7 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			Version: block.TSDBVersion1,
 			ULID:    ulid.MustParse(blockID),
 		},
-		Thanos: block.Thanos{
+		Thanos: block.ThanosMeta{
 			Labels: map[string]string{
 				mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
 			},

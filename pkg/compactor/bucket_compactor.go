@@ -168,7 +168,7 @@ type Grouper interface {
 
 // DefaultGroupKey returns a unique identifier for the group the block belongs to, based on
 // the DefaultGrouper logic. It considers the downsampling resolution and the block's labels.
-func DefaultGroupKey(meta block.Thanos) string {
+func DefaultGroupKey(meta block.ThanosMeta) string {
 	return defaultGroupKey(meta.Downsample.Resolution, labels.FromMap(meta.Labels))
 }
 
@@ -373,7 +373,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			newLabels[mimir_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(blockToUpload.shardIndex), uint64(job.SplittingShards()))
 		}
 
-		newMeta, err := block.InjectThanos(jobLogger, bdir, block.Thanos{
+		newMeta, err := block.InjectThanos(jobLogger, bdir, block.ThanosMeta{
 			Labels:       newLabels,
 			Downsample:   block.ThanosDownsample{Resolution: job.Resolution()},
 			Source:       block.CompactorSource,

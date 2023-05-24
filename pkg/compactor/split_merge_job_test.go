@@ -224,31 +224,31 @@ func TestBlocksGroup_getNonShardedBlocks(t *testing.T) {
 		},
 		"should return nil if the group contains only sharded blocks": {
 			input: blocksGroup{blocks: []*block.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
 			}},
 			expected: nil,
 		},
 		"should return the list of non-sharded blocks if exist in the group": {
 			input: blocksGroup{blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{ULID: block1}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.Thanos{Labels: map[string]string{"key": "value"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.ThanosMeta{Labels: map[string]string{"key": "value"}}},
 			}},
 			expected: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{ULID: block1}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.Thanos{Labels: map[string]string{"key": "value"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.ThanosMeta{Labels: map[string]string{"key": "value"}}},
 			},
 		},
 		"should consider non-sharded a block with the shard ID label but empty value": {
 			input: blocksGroup{blocks: []*block.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: ""}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.Thanos{Labels: map[string]string{"key": "value"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: ""}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.ThanosMeta{Labels: map[string]string{"key": "value"}}},
 			}},
 			expected: []*block.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: ""}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.Thanos{Labels: map[string]string{"key": "value"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: ""}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.ThanosMeta{Labels: map[string]string{"key": "value"}}},
 			},
 		},
 	}

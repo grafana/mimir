@@ -90,7 +90,7 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 	require.NoError(t, err)
 	test.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, metaIndexV1.ULID.String()))
 
-	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, metaIndexV1.ULID.String()), block.Thanos{
+	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, metaIndexV1.ULID.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
 	}, &metaIndexV1.BlockMeta)
@@ -235,7 +235,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *bloc
 	require.NoError(t, err)
 	test.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
 
-	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), block.Thanos{
+	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
 	}, &m.BlockMeta)

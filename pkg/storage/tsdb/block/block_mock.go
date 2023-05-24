@@ -41,7 +41,7 @@ func MockStorageBlockWithExtLabels(t testing.TB, bucket objstore.Bucket, userID 
 				Sources: []ulid.ULID{id},
 			},
 		},
-		Thanos: Thanos{
+		Thanos: ThanosMeta{
 			Labels: externalLabels,
 		},
 	}

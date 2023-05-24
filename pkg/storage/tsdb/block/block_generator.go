@@ -173,7 +173,7 @@ func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) 
 			},
 			Version: 1,
 		},
-		Thanos: Thanos{
+		Thanos: ThanosMeta{
 			Version: ThanosVersion1,
 		},
 	}
@@ -282,7 +282,7 @@ func CreateBlock(
 
 	blockDir := filepath.Join(dir, id.String())
 
-	if _, err = InjectThanos(log.NewNopLogger(), blockDir, Thanos{
+	if _, err = InjectThanos(log.NewNopLogger(), blockDir, ThanosMeta{
 		Labels: extLset.Map(),
 		Source: TestSource,
 		Files:  []File{},

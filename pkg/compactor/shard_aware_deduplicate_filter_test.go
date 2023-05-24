@@ -354,7 +354,7 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 							Sources: metaInfo.sources,
 						},
 					},
-					Thanos: block.Thanos{
+					Thanos: block.ThanosMeta{
 						Downsample: block.ThanosDownsample{
 							Resolution: metaInfo.resolution,
 						},
@@ -434,7 +434,7 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 					BlockMeta: tsdb.BlockMeta{
 						ULID: id,
 					},
-					Thanos: block.Thanos{
+					Thanos: block.ThanosMeta{
 						Downsample: block.ThanosDownsample{Resolution: res},
 					},
 				}

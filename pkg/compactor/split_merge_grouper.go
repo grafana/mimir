@@ -360,7 +360,7 @@ func getMaxTime(blocks []*block.Meta) int64 {
 
 // defaultGroupKeyWithoutShardID returns the default group key excluding ShardIDLabelName
 // when computing it.
-func defaultGroupKeyWithoutShardID(meta block.Thanos) string {
+func defaultGroupKeyWithoutShardID(meta block.ThanosMeta) string {
 	return defaultGroupKey(meta.Downsample.Resolution, labelsWithoutShard(meta.Labels))
 }
 

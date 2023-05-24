@@ -153,7 +153,7 @@ func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 	require.NoError(b, err)
 	test.Copy(b, "./testdata/index_format_v1", filepath.Join(bucketDir, metaIndexV1.ULID.String()))
 
-	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(bucketDir, metaIndexV1.ULID.String()), block.Thanos{
+	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(bucketDir, metaIndexV1.ULID.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
 	}, &metaIndexV1.BlockMeta)

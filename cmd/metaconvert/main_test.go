@@ -49,7 +49,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 				},
 			},
 
-			Thanos: block.Thanos{
+			Thanos: block.ThanosMeta{
 				Version: 10,
 				Downsample: block.ThanosDownsample{
 					Resolution: 15,
@@ -63,7 +63,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 				ULID: blockWithWrongTenant,
 			},
 
-			Thanos: block.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"test":       "label",
 					"__org_id__": "wrong tenant",
@@ -76,7 +76,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 				ULID: blockWithManyMimirLabels,
 			},
 
-			Thanos: block.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"__org_id__":                             "fake",
 					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
@@ -90,7 +90,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 				ULID: blockWithNoChangesRequired,
 			},
 
-			Thanos: block.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"__org_id__": tenant,
 				},
@@ -123,7 +123,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 				},
 			},
 
-			Thanos: block.Thanos{
+			Thanos: block.ThanosMeta{
 				Version: 10,
 				Downsample: block.ThanosDownsample{
 					Resolution: 15,
@@ -143,7 +143,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 				ULID: blockWithManyMimirLabels,
 			},
 
-			Thanos: block.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
 				},
@@ -213,7 +213,7 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 				},
 			},
 
-			Thanos: block.Thanos{
+			Thanos: block.ThanosMeta{
 				Version: 10,
 				Downsample: block.ThanosDownsample{
 					Resolution: 15,
@@ -227,7 +227,7 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 				ULID: blockWithWrongTenant,
 			},
 
-			Thanos: block.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"test":       "label",
 					"__org_id__": "wrong tenant",
@@ -240,7 +240,7 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 				ULID: blockWithManyMimirLabels,
 			},
 
-			Thanos: block.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"__org_id__":                             "fake",
 					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
@@ -254,7 +254,7 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 				ULID: blockWithNoChangesRequired,
 			},
 
-			Thanos: block.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"__org_id__": tenant,
 				},

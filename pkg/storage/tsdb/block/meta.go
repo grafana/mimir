@@ -52,15 +52,15 @@ const (
 type Meta struct {
 	tsdb.BlockMeta
 
-	Thanos Thanos `json:"thanos"`
+	Thanos ThanosMeta `json:"thanos"`
 }
 
 func (m *Meta) String() string {
 	return fmt.Sprintf("%s (min time: %d, max time: %d)", m.ULID, m.MinTime, m.MaxTime)
 }
 
-// Thanos holds block meta information specific to Thanos.
-type Thanos struct {
+// ThanosMeta holds block meta information specific to Thanos.
+type ThanosMeta struct {
 	// Version of Thanos meta file. If none specified, 1 is assumed (since first version did not have explicit version specified).
 	Version int `json:"version,omitempty"`
 
@@ -125,7 +125,7 @@ type ThanosDownsample struct {
 
 // InjectThanos sets Thanos meta to the block meta JSON and saves it to the disk.
 // NOTE: It should be used after writing any block by any Thanos component, otherwise we will miss crucial metadata.
-func InjectThanos(logger log.Logger, bdir string, meta Thanos, downsampledMeta *tsdb.BlockMeta) (*Meta, error) {
+func InjectThanos(logger log.Logger, bdir string, meta ThanosMeta, downsampledMeta *tsdb.BlockMeta) (*Meta, error) {
 	newMeta, err := ReadFromDir(bdir)
 	if err != nil {
 		return nil, errors.Wrap(err, "read new meta")

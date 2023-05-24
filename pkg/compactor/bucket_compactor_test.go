@@ -28,29 +28,29 @@ import (
 
 func TestGroupKey(t *testing.T) {
 	for _, tcase := range []struct {
-		input    block.Thanos
+		input    block.ThanosMeta
 		expected string
 	}{
 		{
-			input:    block.Thanos{},
+			input:    block.ThanosMeta{},
 			expected: "0@17241709254077376921",
 		},
 		{
-			input: block.Thanos{
+			input: block.ThanosMeta{
 				Labels:     map[string]string{},
 				Downsample: block.ThanosDownsample{Resolution: 0},
 			},
 			expected: "0@17241709254077376921",
 		},
 		{
-			input: block.Thanos{
+			input: block.ThanosMeta{
 				Labels:     map[string]string{"foo": "bar", "foo1": "bar2"},
 				Downsample: block.ThanosDownsample{Resolution: 0},
 			},
 			expected: "0@2124638872457683483",
 		},
 		{
-			input: block.Thanos{
+			input: block.ThanosMeta{
 				Labels:     map[string]string{`foo/some..thing/some.thing/../`: `a_b_c/bar-something-a\metric/a\x`},
 				Downsample: block.ThanosDownsample{Resolution: 0},
 			},

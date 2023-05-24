@@ -81,7 +81,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
 	meta := &block.Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: blockID},
-		Thanos: block.Thanos{
+		Thanos: block.ThanosMeta{
 			Labels: map[string]string{}, // this is empty in Mimir
 		},
 	}
@@ -1052,7 +1052,7 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	assert.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "tmp"), os.ModePerm))
 	id := createBlockFromHead(t, filepath.Join(tmpDir, "tmp"), h)
 
-	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, "tmp", id.String()), block.Thanos{
+	_, err = block.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, "tmp", id.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
 	}, nil)
@@ -1325,7 +1325,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	)
 
 	extLset := labels.FromStrings("ext1", "1")
-	thanosMeta := block.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: extLset.Map(),
 		Source: block.TestSource,
 	}
@@ -1646,7 +1646,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	defer func() { assert.NoError(t, bkt.Close()) }()
 
 	logger := log.NewNopLogger()
-	thanosMeta := block.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
 	}
@@ -2108,7 +2108,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	blk := createBlockFromHead(t, headOpts.ChunkDirRoot, h)
 
-	thanosMeta := block.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
 	}
@@ -2362,7 +2362,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 
 	prependLabels := labels.FromStrings("ext1", "1")
 	// Inject the Thanos meta to each block in the storage.
-	thanosMeta := block.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: prependLabels.Map(),
 		Source: block.TestSource,
 	}

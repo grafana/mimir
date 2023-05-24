@@ -60,7 +60,7 @@ func TestLabelRemoverFilter(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			metas := map[ulid.ULID]*block.Meta{}
 			for id, lbls := range testData.input {
-				metas[id] = &block.Meta{Thanos: block.Thanos{Labels: lbls}}
+				metas[id] = &block.Meta{Thanos: block.ThanosMeta{Labels: lbls}}
 			}
 
 			f := NewLabelRemoverFilter(testData.labels)

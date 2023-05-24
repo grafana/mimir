@@ -76,7 +76,7 @@ func TestShipper(t *testing.T) {
 					NumSamples: 100, // Shipper checks if number of samples is greater than 0.
 				},
 			},
-			Thanos: block.Thanos{Labels: map[string]string{"a": "b"}},
+			Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 		})
 
 		// Let shipper sync the blocks.
@@ -207,7 +207,7 @@ func TestShipper_DeceivingUploadErrors(t *testing.T) {
 				NumSamples: 100, // Shipper checks if number of samples is greater than 0.
 			},
 		},
-		Thanos: block.Thanos{Labels: map[string]string{"a": "b"}},
+		Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 	})
 
 	// Let shipper sync the blocks, expecting the meta.json upload to fail.
@@ -395,7 +395,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 						NumSamples: 100, // Shipper checks if number of samples is greater than 0.
 					},
 				},
-				Thanos: block.Thanos{Labels: map[string]string{"a": "b"}},
+				Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 			}),
 			oooCompactionHintExpected: true,
 			expectedLabels:            map[string]string{"a": "b", mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue},
