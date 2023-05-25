@@ -93,6 +93,10 @@
 * [ENHANCEMENT] analyze prometheus: allow to specify `-prometheus-http-prefix`. #4966
 * [ENHANCEMENT] analyze grafana: allow to specify `--folder-title` to limit dashboards analysis based on their exact folder title. #4973
 
+### Tools
+
+* [CHANGE] copyblocks: copying between Azure Blob Storage buckets is now supported in addition to copying between Google Cloud Storage buckets. As a result, the `--service` flag is now required to be specified (accepted values are `gcs` or `abs`). #4756
+
 ## 2.8.0
 
 ### Grafana Mimir
