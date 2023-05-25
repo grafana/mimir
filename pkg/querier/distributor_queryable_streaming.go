@@ -30,7 +30,7 @@ func (s *streamingChunkSeries) Labels() labels.Labels {
 }
 
 func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
-	var rawChunks []client.Chunk
+	var uniqueChunks []client.Chunk
 	totalChunks := 0
 
 	for _, source := range s.sources {
@@ -41,23 +41,23 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 		}
 
 		totalChunks += len(c)
-		rawChunks = client.AccumulateChunks(rawChunks, c)
+		uniqueChunks = client.AccumulateChunks(uniqueChunks, c)
 	}
 
 	s.queryChunkMetrics.IngesterChunksTotal.Add(float64(totalChunks))
-	s.queryChunkMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(rawChunks)))
+	s.queryChunkMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(uniqueChunks)))
 
-	s.queryStats.AddFetchedChunks(uint64(len(rawChunks)))
+	s.queryStats.AddFetchedChunks(uint64(len(uniqueChunks)))
 
 	chunkBytes := 0
 
-	for _, c := range rawChunks {
+	for _, c := range uniqueChunks {
 		chunkBytes += c.Size()
 	}
 
 	s.queryStats.AddFetchedChunkBytes(uint64(chunkBytes))
 
-	chunks, err := client.FromChunks(s.labels, rawChunks)
+	chunks, err := client.FromChunks(s.labels, uniqueChunks)
 	if err != nil {
 		return series.NewErrIterator(err)
 	}
