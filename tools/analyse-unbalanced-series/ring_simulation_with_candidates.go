@@ -443,7 +443,7 @@ func simulateAddingAndRemovingInstances(logger log.Logger, candidateSelectionMod
 	return nil
 }
 
-func main() {
+func main2() {
 	logger := log.NewLogfmtLogger(os.Stdout)
 	numTokensPerInstanceScenarios := []int{64}
 	//replicationFactor := 3

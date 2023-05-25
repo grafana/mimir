@@ -170,7 +170,7 @@ func Test(t *testing.T) {
 	for z := 0; z < zonesCount; z++ {
 		tokensPerZone = append(tokensPerZone, make([]uint32, 0, tokensPerInstanceCount))
 		for t := 0; t < tokensPerInstanceCount; t++ {
-			token := uint32(math.Pow(2, 32)*(1.0-(3.0*float64(t)+float64(zonesCount)))/float64(zonesCount*tokensPerInstanceCount)) - 1
+			token := uint32(math.Pow(2, 32)*(1.0-(3.0*float64(t)+float64(z)))/float64(zonesCount*tokensPerInstanceCount)) - 1
 			tokensPerZone[z] = append(tokensPerZone[z], token)
 		}
 		slices.Sort(tokensPerZone[z])
