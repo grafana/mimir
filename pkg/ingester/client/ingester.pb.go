@@ -644,10 +644,11 @@ func (m *StreamChunk) GetType() StreamChunk_Encoding {
 }
 
 type QueryRequest struct {
-	StartTimestampMs         int64           `protobuf:"varint,1,opt,name=start_timestamp_ms,json=startTimestampMs,proto3" json:"start_timestamp_ms,omitempty"`
-	EndTimestampMs           int64           `protobuf:"varint,2,opt,name=end_timestamp_ms,json=endTimestampMs,proto3" json:"end_timestamp_ms,omitempty"`
-	Matchers                 []*LabelMatcher `protobuf:"bytes,3,rep,name=matchers,proto3" json:"matchers,omitempty"`
-	StreamingChunksBatchSize uint64          `protobuf:"varint,100,opt,name=streaming_chunks_batch_size,json=streamingChunksBatchSize,proto3" json:"streaming_chunks_batch_size,omitempty"`
+	StartTimestampMs int64           `protobuf:"varint,1,opt,name=start_timestamp_ms,json=startTimestampMs,proto3" json:"start_timestamp_ms,omitempty"`
+	EndTimestampMs   int64           `protobuf:"varint,2,opt,name=end_timestamp_ms,json=endTimestampMs,proto3" json:"end_timestamp_ms,omitempty"`
+	Matchers         []*LabelMatcher `protobuf:"bytes,3,rep,name=matchers,proto3" json:"matchers,omitempty"`
+	// Why 100? This QueryRequest message is also used for remote read requests, so we need to avoid any field numbers added in the future.
+	StreamingChunksBatchSize uint64 `protobuf:"varint,100,opt,name=streaming_chunks_batch_size,json=streamingChunksBatchSize,proto3" json:"streaming_chunks_batch_size,omitempty"`
 }
 
 func (m *QueryRequest) Reset()      { *m = QueryRequest{} }

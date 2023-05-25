@@ -113,6 +113,7 @@ message QueryRequest {
   int64 end_timestamp_ms = 2;
   repeated LabelMatcher matchers = 3;
 
+  // Why 100? This QueryRequest message is also used for remote read requests, so we need to avoid any field numbers added in the future.
   uint64 streaming_chunks_batch_size = 100;
 }
 
