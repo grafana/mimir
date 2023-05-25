@@ -193,9 +193,8 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	//   When we'll try to read it from object storage (later on), it will fail with ErrorSyncMetaNotFound
 	//   which is correctly handled by the caller (partial block).
 	//
-	// - The block upload is completed: this is the normal case. Meta.json file still exists in the
-	//   object storage and it's expected to match the locally cached one (because immutable by design).
-	//
+	// - The block upload is completed: this is the normal case. meta.json file still exists in the
+	//   object storage and it's expected to match the locally cached one (because it's immutable by design).
 	// - The block has been marked for deletion: the deletion hasn't started yet, so the full block (including
 	//   the meta.json file) is still in the object storage. This case is not different than the previous one.
 	//
