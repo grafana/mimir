@@ -53,7 +53,7 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 				},
 			},
 		},
-		"empty batch": {
+		"empty batches": {
 			batches: [][]QueryStreamSeriesChunks{
 				{
 					{SeriesIndex: 0, Chunks: series0},
@@ -65,6 +65,7 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 					{SeriesIndex: 3, Chunks: series3},
 					{SeriesIndex: 4, Chunks: series4},
 				},
+				{},
 			},
 		},
 	}
