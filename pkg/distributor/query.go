@@ -429,7 +429,7 @@ func mergeSeriesChunkStreams(results []ingesterQueryResult, expectedZoneCount in
 		return nil
 	}
 
-	allSeries := []ingester_client.StreamingSeries{}
+	var allSeries []ingester_client.StreamingSeries
 
 	for tree.Next() {
 		nextIngester, nextSeriesFromIngester, nextSeriesIndex := tree.Winner()
