@@ -7,6 +7,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -116,7 +117,7 @@ func createTestStreamReader(batches ...[]client.QueryStreamSeriesChunks) *client
 		batches: batches,
 	}
 
-	reader := client.NewSeriesChunksStreamReader(mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0))
+	reader := client.NewSeriesChunksStreamReader(mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0), log.NewNopLogger())
 	reader.StartBuffering()
 
 	return reader

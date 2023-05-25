@@ -11,6 +11,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
@@ -214,7 +215,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		closeStream := true
 		defer func() {
 			if closeStream {
-				stream.CloseSend() //nolint:errcheck
+				if err := stream.CloseSend(); err != nil {
+					level.Warn(d.log).Log("msg", "closing ingester client stream failed", "err", err)
+				}
 			}
 		}()
 
@@ -283,7 +286,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := ingester_client.NewSeriesChunksStreamReader(stream, streamingSeriesCount, queryLimiter)
+					streamReader := ingester_client.NewSeriesChunksStreamReader(stream, streamingSeriesCount, queryLimiter, d.log)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}

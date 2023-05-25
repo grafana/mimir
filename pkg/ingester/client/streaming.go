@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -30,25 +33,30 @@ type StreamingSeriesSource struct {
 // chunks in memory until they are consumed by the PromQL engine.
 type SeriesChunksStreamReader struct {
 	client              Ingester_QueryStreamClient
-	seriesBatchChan     chan []QueryStreamSeriesChunks
-	errorChan           chan error
-	seriesBatch         []QueryStreamSeriesChunks
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
+	log                 log.Logger
+
+	seriesBatchChan chan []QueryStreamSeriesChunks
+	errorChan       chan error
+	seriesBatch     []QueryStreamSeriesChunks
 }
 
-func NewSeriesChunksStreamReader(client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter) *SeriesChunksStreamReader {
+func NewSeriesChunksStreamReader(client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, log log.Logger) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		queryLimiter:        queryLimiter,
+		log:                 log,
 	}
 }
 
 // Close cleans up all resources associated with this SeriesChunksStreamReader.
 // This method should only be called if StartBuffering is not called.
 func (s *SeriesChunksStreamReader) Close() {
-	s.client.CloseSend() //nolint:errcheck
+	if err := s.client.CloseSend(); err != nil {
+		level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
+	}
 }
 
 // StartBuffering begins streaming series' chunks from the ingester associated with
@@ -64,9 +72,14 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 	ctxDone := s.client.Context().Done()
 
 	go func() {
-		defer s.client.CloseSend() //nolint:errcheck
-		defer close(s.seriesBatchChan)
-		defer close(s.errorChan)
+		defer func() {
+			if err := s.client.CloseSend(); err != nil {
+				level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
+			}
+
+			close(s.seriesBatchChan)
+			close(s.errorChan)
+		}()
 
 		totalSeries := 0
 
@@ -123,7 +136,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				s.errorChan <- s.client.Context().Err()
 				return
 			case s.seriesBatchChan <- msg.StreamingSeriesChunks:
-				// Batch sent successfully, nothing else to do for this batch.
+				// Batch enqueued successfully, nothing else to do for this batch.
 			}
 		}
 	}()
