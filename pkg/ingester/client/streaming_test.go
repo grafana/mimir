@@ -201,7 +201,7 @@ func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 
 	s, err := reader.GetChunks(0)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 0 from stream, but the stream has failed: expected to receive only 1 series, but received more than this")
+	require.EqualError(t, err, "attempted to read series at index 0 from stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series")
 
 	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
 }

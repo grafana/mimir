@@ -86,7 +86,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 			totalSeries += len(msg.SeriesChunks)
 			if totalSeries > s.expectedSeriesCount {
-				s.errorChan <- fmt.Errorf("expected to receive only %v series, but received more than this", s.expectedSeriesCount)
+				s.errorChan <- fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
 				return
 			}
 
