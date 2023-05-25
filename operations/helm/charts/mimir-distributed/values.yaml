@@ -1313,7 +1313,7 @@ ruler_query_frontend:
 
   # Additional query-frontend container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
- 
+
   # Pod Labels
   podLabels: {}
 
@@ -3740,8 +3740,8 @@ continuous_test:
 #     extra.yml: "does-my-install-need-extra-info: true"
 extraObjects: []
 
-# -- Add a set of dedicated query-frontend and queriers for the ruler to use. 
+# -- Add a set of dedicated query-frontend and queriers for the ruler to use.
 # -- This is useful for isolating the ruler queries from other queriers (api/grafana).
-#https://grafana.com/docs/mimir/latest/operators-guide/architecture/components/ruler/#remote
+# https://grafana.com/docs/mimir/latest/operators-guide/architecture/components/ruler/#remote
 ruler_querier_service:
   enabled: false
