@@ -57,7 +57,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/usagestats"
@@ -1593,21 +1592,9 @@ func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, t
 				return 0, 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
 			}
 
-			ch := client.Chunk{
-				StartTimestampMs: meta.MinTime,
-				EndTimestampMs:   meta.MaxTime,
-				Data:             meta.Chunk.Bytes(),
-			}
-
-			switch meta.Chunk.Encoding() {
-			case chunkenc.EncXOR:
-				ch.Encoding = int32(chunk.PrometheusXorChunk)
-			case chunkenc.EncHistogram:
-				ch.Encoding = int32(chunk.PrometheusHistogramChunk)
-			case chunkenc.EncFloatHistogram:
-				ch.Encoding = int32(chunk.PrometheusFloatHistogramChunk)
-			default:
-				return 0, 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
+			ch, err := client.ChunkFromMeta(meta)
+			if err != nil {
+				return 0, 0, err
 			}
 
 			ts.Chunks = append(ts.Chunks, ch)
@@ -1811,21 +1798,9 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 					return 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
 				}
 
-				ch := client.Chunk{
-					StartTimestampMs: meta.MinTime,
-					EndTimestampMs:   meta.MaxTime,
-					Data:             meta.Chunk.Bytes(),
-				}
-
-				switch meta.Chunk.Encoding() {
-				case chunkenc.EncXOR:
-					ch.Encoding = int32(chunk.PrometheusXorChunk)
-				case chunkenc.EncHistogram:
-					ch.Encoding = int32(chunk.PrometheusHistogramChunk)
-				case chunkenc.EncFloatHistogram:
-					ch.Encoding = int32(chunk.PrometheusFloatHistogramChunk)
-				default:
-					return 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
+				ch, err := client.ChunkFromMeta(meta)
+				if err != nil {
+					return 0, err
 				}
 
 				seriesChunks.Chunks = append(seriesChunks.Chunks, ch)
