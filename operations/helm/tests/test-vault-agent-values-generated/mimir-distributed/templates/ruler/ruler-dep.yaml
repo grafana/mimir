@@ -60,6 +60,7 @@ spec:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+          #
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
