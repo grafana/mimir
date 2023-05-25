@@ -4,11 +4,10 @@ package ingester
 
 import (
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/go-kit/log/level"
-	"github.com/shirou/gopsutil/v3/process"
+	"github.com/prometheus/procfs"
 	"github.com/weaveworks/common/httpgrpc"
 )
 
@@ -22,36 +21,25 @@ func (i *Ingester) updateResourceUtilization() {
 
 	lastUpdate := i.lastResourceUtilizationUpdate.Load()
 
-	proc, err := process.NewProcess(int32(os.Getpid()))
+	p, err := procfs.Self()
 	if err != nil {
 		level.Warn(i.logger).Log("msg", "couldn't update CPU/memory utilization - failed to get process info",
 			"err", err.Error())
 		return
 	}
-
-	memInfo, err := proc.MemoryInfo()
+	ps, err := p.Stat()
 	if err != nil {
-		level.Warn(i.logger).Log("msg", "couldn't update CPU/memory utilization - failed to get memory info",
+		level.Warn(i.logger).Log("msg", "couldn't update CPU/memory utilization - failed to get process stats",
 			"err", err.Error())
 		return
 	}
-	i.memoryUtilization.Store(memInfo.RSS)
 
-	cput, err := proc.Times()
-	if err != nil {
-		level.Warn(i.logger).Log("msg", "couldn't update CPU/memory utilization - failed to get process times",
-			"err", err.Error())
-		return
-	}
+	i.memoryUtilization.Store(uint64(ps.ResidentMemory()))
 
 	now := time.Now().UTC()
 
 	lastCPUTime := i.lastCPUTime.Load()
-	// TODO: Should Guest and GuestNice be ignored, as potentially duplicated in User?
-	// https://github.com/mackerelio/go-osstat/blob/54b9216143f9aa087151258f103dbd5c381f7915/cpu/cpu_linux.go#L70-L74
-	cpuTime := cput.User + cput.System + cput.Idle + cput.Nice + cput.Iowait + cput.Irq +
-		cput.Softirq + cput.Steal + cput.Guest + cput.GuestNice
-	i.lastCPUTime.Store(cpuTime)
+	i.lastCPUTime.Store(ps.CPUTime())
 
 	i.lastResourceUtilizationUpdate.Store(now)
 
@@ -59,12 +47,12 @@ func (i *Ingester) updateResourceUtilization() {
 		return
 	}
 
-	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
+	cpuUtil := (ps.CPUTime() - lastCPUTime) / now.Sub(lastUpdate).Seconds()
 	i.movingAvg.Add(cpuUtil)
 	cpuA := i.movingAvg.Value()
 	i.cpuUtilization.Store(cpuA)
 
-	level.Info(i.logger).Log("msg", "process resource utilization", "memory_utilization", memInfo.RSS,
+	level.Info(i.logger).Log("msg", "process resource utilization", "memory_utilization", ps.ResidentMemory(),
 		"smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
 }
 
