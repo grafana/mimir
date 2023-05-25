@@ -95,7 +95,7 @@
 
 ### Tools
 
-* [CHANGE] copyblocks: copying between Azure Blob Storage buckets is now supported so the `--service` flag is now required to be specified (accepted values are `gcs` or `abs`). #4756
+* [CHANGE] copyblocks: copying between Azure Blob Storage buckets is now supported in addition to copying between Google Cloud Storage buckets. As a result, the `--service` flag is now required to be specified (accepted values are `gcs` or `abs`). #4756
 
 ## 2.8.0
 
