@@ -494,9 +494,8 @@ func newSeriesChunkStreamsTree(results []ingesterQueryResult) *seriesChunkStream
 }
 
 // seriesChunkStreamsTree is a loser tree used to merge sets of series from different ingesters.
-// A loser tree is a binary tree laid out such that nodes N and N+1 have parent N/2.
-// We store M leaf nodes in positions M...2M-1, and M-1 internal nodes in positions 1..M-1.
-// Node 0 is a special node, containing the winner of the contest.
+// This implementation is based on https://github.com/grafana/dskit/blob/main/loser/loser.go, but
+// adapted to return the index of each series within its corresponding ingester stream.
 type seriesChunkStreamsTree struct {
 	nodes []seriesChunkStreamsTreeNode
 }
