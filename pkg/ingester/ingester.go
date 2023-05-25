@@ -255,9 +255,6 @@ type Ingester struct {
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
 
-	// chunkSeriesNodePool is used during streaming queries.
-	chunkSeriesNodePool zeropool.Pool[*chunkSeriesNode]
-
 	// Anonymous usage statistics tracked by ingester.
 	memorySeriesStats                  *expvar.Int
 	memoryTenantsStats                 *expvar.Int
@@ -1697,8 +1694,11 @@ type chunkSeriesNode struct {
 // Capacity of the slice in chunkSeriesNode.
 const chunkSeriesNodeSize = 1024
 
-func (i *Ingester) getChunkSeriesNode() *chunkSeriesNode {
-	sn := i.chunkSeriesNodePool.Get()
+// chunkSeriesNodePool is used during streaming queries.
+var chunkSeriesNodePool zeropool.Pool[*chunkSeriesNode]
+
+func getChunkSeriesNode() *chunkSeriesNode {
+	sn := chunkSeriesNodePool.Get()
 	if sn == nil {
 		sn = &chunkSeriesNode{
 			series: make([]storage.ChunkSeries, 0, chunkSeriesNodeSize),
@@ -1707,10 +1707,10 @@ func (i *Ingester) getChunkSeriesNode() *chunkSeriesNode {
 	return sn
 }
 
-func (i *Ingester) putChunkSeriesNode(sn *chunkSeriesNode) {
+func putChunkSeriesNode(sn *chunkSeriesNode) {
 	sn.series = sn.series[:0]
 	sn.next = nil
-	i.chunkSeriesNodePool.Put(sn)
+	chunkSeriesNodePool.Put(sn)
 }
 
 func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
@@ -1734,7 +1734,7 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 	// It is non-trivial to know the total number of series here, so we use a linked list of slices
 	// of series and re-use them for future use as well. Even if we did know total number of series
 	// here, maybe re-use of slices is a good idea.
-	allSeriesList := i.getChunkSeriesNode()
+	allSeriesList := getChunkSeriesNode()
 	lastSeriesNode := allSeriesList
 	seriesCount := 0
 
@@ -1742,7 +1742,7 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 		series := ss.At()
 
 		if len(lastSeriesNode.series) == chunkSeriesNodeSize {
-			newNode := i.getChunkSeriesNode()
+			newNode := getChunkSeriesNode()
 			lastSeriesNode.next = newNode
 			lastSeriesNode = newNode
 		}
@@ -1852,7 +1852,7 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 
 		toBePutInPool := currNode
 		currNode = currNode.next
-		i.putChunkSeriesNode(toBePutInPool)
+		putChunkSeriesNode(toBePutInPool)
 	}
 
 	// Send any remaining series.
