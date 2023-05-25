@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 func TestIndex_RemoveBlock(t *testing.T) {
@@ -32,18 +32,18 @@ func TestIndex_RemoveBlock(t *testing.T) {
 
 func TestDetectBlockSegmentsFormat(t *testing.T) {
 	tests := map[string]struct {
-		meta           metadata.Meta
+		meta           block.Meta
 		expectedFormat string
 		expectedNum    int
 	}{
 		"meta.json without SegmentFiles and Files": {
-			meta:           metadata.Meta{},
+			meta:           block.Meta{},
 			expectedFormat: SegmentsFormatUnknown,
 			expectedNum:    0,
 		},
 		"meta.json with SegmentFiles, 0 based 6 digits": {
-			meta: metadata.Meta{
-				Thanos: metadata.Thanos{
+			meta: block.Meta{
+				Thanos: block.ThanosMeta{
 					SegmentFiles: []string{
 						"000000",
 						"000001",
@@ -55,8 +55,8 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 			expectedNum:    0,
 		},
 		"meta.json with SegmentFiles, 1 based 6 digits": {
-			meta: metadata.Meta{
-				Thanos: metadata.Thanos{
+			meta: block.Meta{
+				Thanos: block.ThanosMeta{
 					SegmentFiles: []string{
 						"000001",
 						"000002",
@@ -68,8 +68,8 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 			expectedNum:    3,
 		},
 		"meta.json with SegmentFiles, 1 based 6 digits but non consecutive": {
-			meta: metadata.Meta{
-				Thanos: metadata.Thanos{
+			meta: block.Meta{
+				Thanos: block.ThanosMeta{
 					SegmentFiles: []string{
 						"000001",
 						"000003",
@@ -81,9 +81,9 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 			expectedNum:    0,
 		},
 		"meta.json with Files, 0 based 6 digits": {
-			meta: metadata.Meta{
-				Thanos: metadata.Thanos{
-					Files: []metadata.File{
+			meta: block.Meta{
+				Thanos: block.ThanosMeta{
+					Files: []block.File{
 						{RelPath: "index"},
 						{RelPath: "chunks/000000"},
 						{RelPath: "chunks/000001"},
@@ -96,9 +96,9 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 			expectedNum:    0,
 		},
 		"meta.json with Files, 1 based 6 digits": {
-			meta: metadata.Meta{
-				Thanos: metadata.Thanos{
-					Files: []metadata.File{
+			meta: block.Meta{
+				Thanos: block.ThanosMeta{
+					Files: []block.File{
 						{RelPath: "index"},
 						{RelPath: "chunks/000001"},
 						{RelPath: "chunks/000002"},
@@ -111,9 +111,9 @@ func TestDetectBlockSegmentsFormat(t *testing.T) {
 			expectedNum:    3,
 		},
 		"meta.json with Files, 1 based 6 digits but non consecutive": {
-			meta: metadata.Meta{
-				Thanos: metadata.Thanos{
-					Files: []metadata.File{
+			meta: block.Meta{
+				Thanos: block.ThanosMeta{
+					Files: []block.File{
 						{RelPath: "index"},
 						{RelPath: "chunks/000001"},
 						{RelPath: "chunks/000003"},
@@ -140,17 +140,17 @@ func TestBlockFromThanosMeta(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
 
 	tests := map[string]struct {
-		meta     metadata.Meta
+		meta     block.Meta
 		expected Block
 	}{
 		"meta.json without SegmentFiles and Files": {
-			meta: metadata.Meta{
+			meta: block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    blockID,
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: metadata.Thanos{},
+				Thanos: block.ThanosMeta{},
 			},
 			expected: Block{
 				ID:             blockID,
@@ -161,13 +161,13 @@ func TestBlockFromThanosMeta(t *testing.T) {
 			},
 		},
 		"meta.json with SegmentFiles": {
-			meta: metadata.Meta{
+			meta: block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    blockID,
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: metadata.Thanos{
+				Thanos: block.ThanosMeta{
 					SegmentFiles: []string{
 						"000001",
 						"000002",
@@ -184,14 +184,14 @@ func TestBlockFromThanosMeta(t *testing.T) {
 			},
 		},
 		"meta.json with Files": {
-			meta: metadata.Meta{
+			meta: block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    blockID,
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: metadata.Thanos{
-					Files: []metadata.File{
+				Thanos: block.ThanosMeta{
+					Files: []block.File{
 						{RelPath: "index"},
 						{RelPath: "chunks/000001"},
 						{RelPath: "chunks/000002"},
@@ -209,13 +209,13 @@ func TestBlockFromThanosMeta(t *testing.T) {
 			},
 		},
 		"meta.json with external labels, no compactor shard ID": {
-			meta: metadata.Meta{
+			meta: block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    blockID,
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: metadata.Thanos{
+				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
 						"a": "b",
 						"c": "d",
@@ -229,13 +229,13 @@ func TestBlockFromThanosMeta(t *testing.T) {
 			},
 		},
 		"meta.json with external labels, with compactor shard ID": {
-			meta: metadata.Meta{
+			meta: block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    blockID,
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: metadata.Thanos{
+				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
 						"a":                                      "b",
 						"c":                                      "d",
@@ -251,13 +251,13 @@ func TestBlockFromThanosMeta(t *testing.T) {
 			},
 		},
 		"meta.json with external labels, with invalid shard ID": {
-			meta: metadata.Meta{
+			meta: block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    blockID,
 					MinTime: 10,
 					MaxTime: 20,
 				},
-				Thanos: metadata.Thanos{
+				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
 						"a":                                      "b",
 						"c":                                      "d",
@@ -331,7 +331,7 @@ func TestBlock_ThanosMeta(t *testing.T) {
 
 	tests := map[string]struct {
 		block    Block
-		expected *metadata.Meta
+		expected *block.Meta
 	}{
 		"block with segment files format 1 based 6 digits": {
 			block: Block{
@@ -341,15 +341,15 @@ func TestBlock_ThanosMeta(t *testing.T) {
 				SegmentsFormat: SegmentsFormat1Based6Digits,
 				SegmentsNum:    3,
 			},
-			expected: &metadata.Meta{
+			expected: &block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    blockID,
 					MinTime: 10,
 					MaxTime: 20,
-					Version: metadata.TSDBVersion1,
+					Version: block.TSDBVersion1,
 				},
-				Thanos: metadata.Thanos{
-					Version: metadata.ThanosVersion1,
+				Thanos: block.ThanosMeta{
+					Version: block.ThanosVersion1,
 					SegmentFiles: []string{
 						"000001",
 						"000002",
@@ -366,15 +366,15 @@ func TestBlock_ThanosMeta(t *testing.T) {
 				SegmentsFormat: SegmentsFormatUnknown,
 				SegmentsNum:    0,
 			},
-			expected: &metadata.Meta{
+			expected: &block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    blockID,
 					MinTime: 10,
 					MaxTime: 20,
-					Version: metadata.TSDBVersion1,
+					Version: block.TSDBVersion1,
 				},
-				Thanos: metadata.Thanos{
-					Version: metadata.ThanosVersion1,
+				Thanos: block.ThanosMeta{
+					Version: block.ThanosVersion1,
 				},
 			},
 		},
@@ -391,9 +391,9 @@ func TestBlockDeletionMark_ThanosDeletionMark(t *testing.T) {
 	block1 := ulid.MustNew(1, nil)
 	mark := &BlockDeletionMark{ID: block1, DeletionTime: 1}
 
-	assert.Equal(t, &metadata.DeletionMark{
+	assert.Equal(t, &block.DeletionMark{
 		ID:           block1,
-		Version:      metadata.DeletionMarkVersion1,
+		Version:      block.DeletionMarkVersion1,
 		DeletionTime: 1,
 	}, mark.ThanosDeletionMark())
 }

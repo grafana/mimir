@@ -31,7 +31,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -66,7 +65,7 @@ func TestBlocksCleaner(t *testing.T) {
 
 func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	ctx := context.Background()
@@ -80,12 +79,12 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	block6 := createTSDBBlock(t, bucketClient, "user-1", 40, 50, 2, nil)
 	block7 := createTSDBBlock(t, bucketClient, "user-2", 10, 20, 2, nil)
 	block8 := createTSDBBlock(t, bucketClient, "user-2", 40, 50, 2, nil)
-	createDeletionMark(t, bucketClient, "user-1", block2, now.Add(-deletionDelay).Add(time.Hour))             // Block hasn't reached the deletion threshold yet.
-	createDeletionMark(t, bucketClient, "user-1", block3, now.Add(-deletionDelay).Add(-time.Hour))            // Block reached the deletion threshold.
-	createDeletionMark(t, bucketClient, "user-1", block4, now.Add(-deletionDelay).Add(time.Hour))             // Partial block hasn't reached the deletion threshold yet.
-	createDeletionMark(t, bucketClient, "user-1", block5, now.Add(-deletionDelay).Add(-time.Hour))            // Partial block reached the deletion threshold.
-	require.NoError(t, bucketClient.Delete(ctx, path.Join("user-1", block6.String(), metadata.MetaFilename))) // Partial block without deletion mark.
-	createDeletionMark(t, bucketClient, "user-2", block7, now.Add(-deletionDelay).Add(-time.Hour))            // Block reached the deletion threshold.
+	createDeletionMark(t, bucketClient, "user-1", block2, now.Add(-deletionDelay).Add(time.Hour))          // Block hasn't reached the deletion threshold yet.
+	createDeletionMark(t, bucketClient, "user-1", block3, now.Add(-deletionDelay).Add(-time.Hour))         // Block reached the deletion threshold.
+	createDeletionMark(t, bucketClient, "user-1", block4, now.Add(-deletionDelay).Add(time.Hour))          // Partial block hasn't reached the deletion threshold yet.
+	createDeletionMark(t, bucketClient, "user-1", block5, now.Add(-deletionDelay).Add(-time.Hour))         // Partial block reached the deletion threshold.
+	require.NoError(t, bucketClient.Delete(ctx, path.Join("user-1", block6.String(), block.MetaFilename))) // Partial block without deletion mark.
+	createDeletionMark(t, bucketClient, "user-2", block7, now.Add(-deletionDelay).Add(-time.Hour))         // Block reached the deletion threshold.
 
 	// Blocks for user-3, marked for deletion.
 	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-3", nil, tsdb.NewTenantDeletionMark(time.Now())))
@@ -121,25 +120,25 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	}{
 		// Check the storage to ensure only the block which has reached the deletion threshold
 		// has been effectively deleted.
-		{path: path.Join("user-1", block1.String(), metadata.MetaFilename), expectedExists: true},
-		{path: path.Join("user-1", block3.String(), metadata.MetaFilename), expectedExists: false},
-		{path: path.Join("user-2", block7.String(), metadata.MetaFilename), expectedExists: false},
-		{path: path.Join("user-2", block8.String(), metadata.MetaFilename), expectedExists: true},
+		{path: path.Join("user-1", block1.String(), block.MetaFilename), expectedExists: true},
+		{path: path.Join("user-1", block3.String(), block.MetaFilename), expectedExists: false},
+		{path: path.Join("user-2", block7.String(), block.MetaFilename), expectedExists: false},
+		{path: path.Join("user-2", block8.String(), block.MetaFilename), expectedExists: true},
 		// Should not delete a block with deletion mark who hasn't reached the deletion threshold yet.
-		{path: path.Join("user-1", block2.String(), metadata.MetaFilename), expectedExists: true},
-		{path: path.Join("user-1", bucketindex.BlockDeletionMarkFilepath(block2)), expectedExists: true},
+		{path: path.Join("user-1", block2.String(), block.MetaFilename), expectedExists: true},
+		{path: path.Join("user-1", block.DeletionMarkFilepath(block2)), expectedExists: true},
 		// Should delete a partial block with deletion mark who hasn't reached the deletion threshold yet.
-		{path: path.Join("user-1", block4.String(), metadata.DeletionMarkFilename), expectedExists: false},
-		{path: path.Join("user-1", bucketindex.BlockDeletionMarkFilepath(block4)), expectedExists: false},
+		{path: path.Join("user-1", block4.String(), block.DeletionMarkFilename), expectedExists: false},
+		{path: path.Join("user-1", block.DeletionMarkFilepath(block4)), expectedExists: false},
 		// Should delete a partial block with deletion mark who has reached the deletion threshold.
-		{path: path.Join("user-1", block5.String(), metadata.DeletionMarkFilename), expectedExists: false},
-		{path: path.Join("user-1", bucketindex.BlockDeletionMarkFilepath(block5)), expectedExists: false},
+		{path: path.Join("user-1", block5.String(), block.DeletionMarkFilename), expectedExists: false},
+		{path: path.Join("user-1", block.DeletionMarkFilepath(block5)), expectedExists: false},
 		// Should not delete a partial block without deletion mark.
 		{path: path.Join("user-1", block6.String(), "index"), expectedExists: true},
 		// Should completely delete blocks for user-3, marked for deletion
-		{path: path.Join("user-3", block9.String(), metadata.MetaFilename), expectedExists: false},
+		{path: path.Join("user-3", block9.String(), block.MetaFilename), expectedExists: false},
 		{path: path.Join("user-3", block9.String(), "index"), expectedExists: false},
-		{path: path.Join("user-3", block10.String(), metadata.MetaFilename), expectedExists: false},
+		{path: path.Join("user-3", block10.String(), block.MetaFilename), expectedExists: false},
 		{path: path.Join("user-3", block10.String(), "index"), expectedExists: false},
 		// Tenant deletion mark is not removed.
 		{path: path.Join("user-3", tsdb.TenantDeletionMarkPath), expectedExists: true},
@@ -215,7 +214,7 @@ func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 	const userID = "user-1"
 
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	ctx := context.Background()
@@ -232,7 +231,7 @@ func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 	// To emulate a failure deleting a block, we wrap the bucket client in a mocked one.
 	bucketClient = &mockBucketFailure{
 		Bucket:         bucketClient,
-		DeleteFailures: []string{path.Join(userID, block3.String(), metadata.MetaFilename)},
+		DeleteFailures: []string{path.Join(userID, block3.String(), block.MetaFilename)},
 	}
 
 	cfg := BlocksCleanerConfig{
@@ -253,10 +252,10 @@ func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 		path           string
 		expectedExists bool
 	}{
-		{path: path.Join(userID, block1.String(), metadata.MetaFilename), expectedExists: true},
-		{path: path.Join(userID, block2.String(), metadata.MetaFilename), expectedExists: false},
-		{path: path.Join(userID, block3.String(), metadata.MetaFilename), expectedExists: true},
-		{path: path.Join(userID, block4.String(), metadata.MetaFilename), expectedExists: false},
+		{path: path.Join(userID, block1.String(), block.MetaFilename), expectedExists: true},
+		{path: path.Join(userID, block2.String(), block.MetaFilename), expectedExists: false},
+		{path: path.Join(userID, block3.String(), block.MetaFilename), expectedExists: true},
+		{path: path.Join(userID, block4.String(), block.MetaFilename), expectedExists: false},
 	} {
 		exists, err := bucketClient.Exists(ctx, tc.path)
 		require.NoError(t, err)
@@ -280,7 +279,7 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 	const userID = "user-1"
 
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	ctx := context.Background()
@@ -313,9 +312,9 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 		path           string
 		expectedExists bool
 	}{
-		{path: path.Join(userID, block1.String(), metadata.MetaFilename), expectedExists: true},
-		{path: path.Join(userID, block2.String(), metadata.MetaFilename), expectedExists: false},
-		{path: path.Join(userID, block3.String(), metadata.MetaFilename), expectedExists: true},
+		{path: path.Join(userID, block1.String(), block.MetaFilename), expectedExists: true},
+		{path: path.Join(userID, block2.String(), block.MetaFilename), expectedExists: false},
+		{path: path.Join(userID, block3.String(), block.MetaFilename), expectedExists: true},
 	} {
 		exists, err := bucketClient.Exists(ctx, tc.path)
 		require.NoError(t, err)
@@ -337,7 +336,7 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 
 func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShard(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	createTSDBBlock(t, bucketClient, "user-1", 10, 20, 2, nil)
@@ -406,7 +405,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 
 func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	createTSDBBlock(t, bucketClient, "user-1", 10, 20, 2, nil)
@@ -457,7 +456,7 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 
 func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
@@ -515,7 +514,7 @@ func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 
 func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	ts := func(hours int) int64 {
 		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
@@ -540,8 +539,8 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 
-	assertBlockExists := func(user string, block ulid.ULID, expectExists bool) {
-		exists, err := bucketClient.Exists(ctx, path.Join(user, block.String(), metadata.MetaFilename))
+	assertBlockExists := func(user string, blockID ulid.ULID, expectExists bool) {
+		exists, err := bucketClient.Exists(ctx, path.Join(user, blockID.String(), block.MetaFilename))
 		require.NoError(t, err)
 		assert.Equal(t, expectExists, exists)
 	}
@@ -689,19 +688,19 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	}
 }
 
-func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, block ulid.ULID, metaJSONExists bool, markedForDeletion bool) {
-	exists, err := bucketClient.Exists(context.Background(), path.Join(user, block.String(), metadata.MetaFilename))
+func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, blockID ulid.ULID, metaJSONExists bool, markedForDeletion bool) {
+	exists, err := bucketClient.Exists(context.Background(), path.Join(user, blockID.String(), block.MetaFilename))
 	require.NoError(t, err)
 	require.Equal(t, metaJSONExists, exists)
 
-	exists, err = bucketClient.Exists(context.Background(), path.Join(user, block.String(), metadata.DeletionMarkFilename))
+	exists, err = bucketClient.Exists(context.Background(), path.Join(user, blockID.String(), block.DeletionMarkFilename))
 	require.NoError(t, err)
 	require.Equal(t, markedForDeletion, exists)
 }
 
 func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	ts := func(hours int) int64 {
 		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
@@ -724,8 +723,8 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 
-	makeBlockPartial := func(user string, block ulid.ULID) {
-		err := bucketClient.Delete(ctx, path.Join(user, block.String(), metadata.MetaFilename))
+	makeBlockPartial := func(user string, blockID ulid.ULID) {
+		err := bucketClient.Delete(ctx, path.Join(user, blockID.String(), block.MetaFilename))
 		require.NoError(t, err)
 	}
 
@@ -771,7 +770,7 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 
 func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	ts := func(hours int) int64 {
 		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
@@ -794,13 +793,13 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 
-	makeBlockPartial := func(user string, block ulid.ULID) {
-		err := bucketClient.Delete(ctx, path.Join(user, block.String(), metadata.MetaFilename))
+	makeBlockPartial := func(user string, blockID ulid.ULID) {
+		err := bucketClient.Delete(ctx, path.Join(user, blockID.String(), block.MetaFilename))
 		require.NoError(t, err)
 	}
 
-	corruptMeta := func(user string, block ulid.ULID) {
-		err := bucketClient.Upload(ctx, path.Join(user, block.String(), metadata.MetaFilename), strings.NewReader("corrupted file contents"))
+	corruptMeta := func(user string, blockID ulid.ULID) {
+		err := bucketClient.Upload(ctx, path.Join(user, blockID.String(), block.MetaFilename), strings.NewReader("corrupted file contents"))
 		require.NoError(t, err)
 	}
 
@@ -857,7 +856,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 	logger := log.NewLogfmtLogger(logs)
 
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	ts := func(hours int) int64 {
 		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
@@ -865,7 +864,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 
 	// Create a partial block.
 	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-	err := bucketClient.Delete(ctx, path.Join("user-1", block1.String(), metadata.MetaFilename))
+	err := bucketClient.Delete(ctx, path.Join("user-1", block1.String(), block.MetaFilename))
 	require.NoError(t, err)
 
 	cfg := BlocksCleanerConfig{
@@ -1041,15 +1040,15 @@ func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(user string) 
 	return m.blockUploadMaxBlockSizeBytes[user]
 }
 
-func (m *mockConfigProvider) S3SSEType(user string) string {
+func (m *mockConfigProvider) S3SSEType(string) string {
 	return ""
 }
 
-func (m *mockConfigProvider) S3SSEKMSKeyID(userID string) string {
+func (m *mockConfigProvider) S3SSEKMSKeyID(string) string {
 	return ""
 }
 
-func (m *mockConfigProvider) S3SSEKMSEncryptionContext(userID string) string {
+func (m *mockConfigProvider) S3SSEKMSEncryptionContext(string) string {
 	return ""
 }
 

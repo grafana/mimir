@@ -1025,13 +1025,10 @@ func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matc
 
 var errDistributorError = fmt.Errorf("errDistributorError")
 
-func (m *errDistributor) Query(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (model.Matrix, error) {
-	return nil, errDistributorError
-}
-func (m *errDistributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
+func (m *errDistributor) QueryStream(context.Context, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	return client.CombinedQueryStreamResponse{}, errDistributorError
 }
-func (m *errDistributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
+func (m *errDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
 	return nil, errDistributorError
 }
 func (m *errDistributor) LabelValuesForLabelName(context.Context, model.Time, model.Time, model.LabelName, ...*labels.Matcher) ([]string, error) {
@@ -1040,15 +1037,15 @@ func (m *errDistributor) LabelValuesForLabelName(context.Context, model.Time, mo
 func (m *errDistributor) LabelNames(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]string, error) {
 	return nil, errDistributorError
 }
-func (m *errDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
+func (m *errDistributor) MetricsForLabelMatchers(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]labels.Labels, error) {
 	return nil, errDistributorError
 }
 
-func (m *errDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
+func (m *errDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMetadata, error) {
 	return nil, errDistributorError
 }
 
-func (m *errDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
+func (m *errDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, errDistributorError
 }
 
@@ -1058,15 +1055,11 @@ func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Ma
 	return nil, errors.New("method is not implemented")
 }
 
-func (d *emptyDistributor) Query(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (model.Matrix, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
+func (d *emptyDistributor) QueryStream(context.Context, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	return client.CombinedQueryStreamResponse{}, nil
 }
 
-func (d *emptyDistributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
+func (d *emptyDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
 	return nil, nil
 }
 
@@ -1078,15 +1071,15 @@ func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time, .
 	return nil, nil
 }
 
-func (d *emptyDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
+func (d *emptyDistributor) MetricsForLabelMatchers(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]labels.Labels, error) {
 	return nil, nil
 }
 
-func (d *emptyDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
+func (d *emptyDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMetadata, error) {
 	return nil, nil
 }
 
-func (d *emptyDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
+func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, nil
 }
 
@@ -1303,7 +1296,7 @@ func newMockBlocksStorageQueryable(querier storage.Querier) *mockBlocksStorageQu
 }
 
 // Querier implements storage.Queryable.
-func (m *mockBlocksStorageQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (m *mockBlocksStorageQueryable) Querier(context.Context, int64, int64) (storage.Querier, error) {
 	return m.querier, nil
 }
 

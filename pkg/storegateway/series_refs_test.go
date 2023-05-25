@@ -957,6 +957,7 @@ func TestDeduplicatingSeriesChunkRefsSetIterator_PropagatesErrors(t *testing.T) 
 		},
 	}))
 
+	// nolint:revive // We want to read through all series.
 	for chainedSet.Next() {
 	}
 
@@ -2379,7 +2380,7 @@ type forbiddenFetchMultiPostingsIndexCache struct {
 	t *testing.T
 }
 
-func (c forbiddenFetchMultiPostingsIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) indexcache.BytesResult {
+func (c forbiddenFetchMultiPostingsIndexCache) FetchMultiPostings(context.Context, string, ulid.ULID, []labels.Label) indexcache.BytesResult {
 	assert.Fail(c.t, "index cache FetchMultiPostings should not be called")
 	return nil
 }
@@ -2446,12 +2447,12 @@ type mockSeriesHasher struct {
 	hashes map[string]uint64
 }
 
-func (a mockSeriesHasher) CachedHash(seriesID storage.SeriesRef, stats *queryStats) (uint64, bool) {
+func (a mockSeriesHasher) CachedHash(seriesID storage.SeriesRef, _ *queryStats) (uint64, bool) {
 	hash, isCached := a.cached[seriesID]
 	return hash, isCached
 }
 
-func (a mockSeriesHasher) Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
+func (a mockSeriesHasher) Hash(_ storage.SeriesRef, lset labels.Labels, _ *queryStats) uint64 {
 	return a.hashes[lset.String()]
 }
 
@@ -2777,6 +2778,6 @@ type mockIndexCacheEntry struct {
 	cached   bool
 }
 
-func (c mockIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey) ([]byte, bool) {
+func (c mockIndexCache) FetchSeriesForPostings(context.Context, string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey) ([]byte, bool) {
 	return c.fetchSeriesForPostingsResponse.contents, c.fetchSeriesForPostingsResponse.cached
 }

@@ -20,7 +20,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/listblocks"
 )
@@ -46,7 +46,7 @@ type config struct {
 func main() {
 	logger := gokitlog.NewNopLogger()
 	cfg := config{}
-	cfg.bucket.RegisterFlags(flag.CommandLine, logger)
+	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.BoolVar(&cfg.showDeleted, "show-deleted", false, "Show deleted blocks")
 	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")
@@ -90,7 +90,7 @@ func main() {
 // nolint:errcheck
 //
 //goland:noinspection GoUnhandledErrorResult
-func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]time.Time, cfg config) {
+func printMetas(metas map[ulid.ULID]*block.Meta, deletedTimes map[ulid.ULID]time.Time, cfg config) {
 	blocks := listblocks.SortBlocks(metas)
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)

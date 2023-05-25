@@ -207,7 +207,7 @@ func (i *mockIterator) Timestamp() int64 {
 	return 0
 }
 
-func (i *mockIterator) Batch(size int, valueType chunkenc.ValueType) chunk.Batch {
+func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType) chunk.Batch {
 	batch := chunk.Batch{
 		Length:    chunk.BatchSize,
 		ValueType: valueType,

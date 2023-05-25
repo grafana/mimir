@@ -43,7 +43,7 @@ type PrometheusAnalyzeCommand struct {
 	concurrency        int
 }
 
-func (cmd *PrometheusAnalyzeCommand) run(k *kingpin.ParseContext) error {
+func (cmd *PrometheusAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 	metricsUsed, err := cmd.parseUsedMetrics()
 	if err != nil {
 		return err

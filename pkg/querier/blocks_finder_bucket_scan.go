@@ -29,7 +29,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -45,7 +44,6 @@ type BucketScanBlocksFinderConfig struct {
 	TenantsConcurrency       int
 	MetasConcurrency         int
 	CacheDir                 string
-	ConsistencyDelay         time.Duration
 	IgnoreDeletionMarksDelay time.Duration
 }
 
@@ -321,9 +319,9 @@ func (d *BucketScanBlocksFinder) scanUserBlocks(ctx context.Context, userID stri
 		if prevMeta != nil {
 			blockMeta.UploadedAt = prevMeta.UploadedAt
 		} else {
-			attrs, err := userBucket.Attributes(ctx, path.Join(m.ULID.String(), metadata.MetaFilename))
+			attrs, err := userBucket.Attributes(ctx, path.Join(m.ULID.String(), block.MetaFilename))
 			if err != nil {
-				return nil, nil, errors.Wrapf(err, "read %s attributes of block %s for user %s", metadata.MetaFilename, m.ULID.String(), userID)
+				return nil, nil, errors.Wrapf(err, "read %s attributes of block %s for user %s", block.MetaFilename, m.ULID.String(), userID)
 			}
 
 			// Since the meta.json file is the last file of a block being uploaded and it's immutable
@@ -375,8 +373,6 @@ func (d *BucketScanBlocksFinder) createMetaFetcher(userID string) (block.Metadat
 	userReg := prometheus.NewRegistry()
 
 	// The following filters have been intentionally omitted:
-	// - Consistency delay filter: omitted because we should discover all uploaded blocks.
-	//   The consistency delay is taken in account when running the consistency check at query time.
 	// - Deduplicate filter: omitted because it could cause troubles with the consistency check if
 	//   we "hide" source blocks because recently compacted by the compactor before the store-gateway instances
 	//   discover and load the compacted ones.

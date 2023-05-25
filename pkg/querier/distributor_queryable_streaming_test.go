@@ -132,7 +132,7 @@ func (s streamingChunkSeriesTestIterator) Next() chunkenc.ValueType {
 	panic("not implemented")
 }
 
-func (s streamingChunkSeriesTestIterator) Seek(t int64) chunkenc.ValueType {
+func (s streamingChunkSeriesTestIterator) Seek(int64) chunkenc.ValueType {
 	panic("not implemented")
 }
 
@@ -190,10 +190,10 @@ func (m *mockQueryStreamClient) Context() context.Context {
 	return m.ctx
 }
 
-func (m *mockQueryStreamClient) SendMsg(msg interface{}) error {
+func (m *mockQueryStreamClient) SendMsg(interface{}) error {
 	panic("not supported on mock")
 }
 
-func (m *mockQueryStreamClient) RecvMsg(msg interface{}) error {
+func (m *mockQueryStreamClient) RecvMsg(interface{}) error {
 	panic("not supported on mock")
 }

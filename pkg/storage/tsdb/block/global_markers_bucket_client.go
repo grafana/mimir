@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package bucketindex
+package block
 
 import (
 	"bytes"
@@ -14,9 +14,6 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // globalMarkersBucket is a bucket client which stores markers (eg. block deletion marks) in a per-tenant
@@ -160,8 +157,8 @@ func (b *globalMarkersBucket) ReaderWithExpectedErrs(fn objstore.IsOpFailureExpe
 // getGlobalMarkPathFromBlockMark returns path to global mark, if name points to a block-local mark file. If name
 // doesn't point to a block-local mark file, returns empty string.
 func getGlobalMarkPathFromBlockMark(name string) string {
-	if blockID, ok := isBlockDeletionMark(name); ok {
-		return path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
+	if blockID, ok := isDeletionMark(name); ok {
+		return path.Clean(path.Join(path.Dir(name), "../", DeletionMarkFilepath(blockID)))
 	}
 
 	if blockID, ok := isNoCompactMark(name); ok {
@@ -171,22 +168,22 @@ func getGlobalMarkPathFromBlockMark(name string) string {
 	return ""
 }
 
-func isBlockDeletionMark(name string) (ulid.ULID, bool) {
-	if path.Base(name) != metadata.DeletionMarkFilename {
+func isDeletionMark(name string) (ulid.ULID, bool) {
+	if path.Base(name) != DeletionMarkFilename {
 		return ulid.ULID{}, false
 	}
 
 	// Parse the block ID in the path. If there's no block ID, then it's not the per-block
 	// deletion mark.
-	return block.IsBlockDir(path.Dir(name))
+	return IsBlockDir(path.Dir(name))
 }
 
 func isNoCompactMark(name string) (ulid.ULID, bool) {
-	if path.Base(name) != metadata.NoCompactMarkFilename {
+	if path.Base(name) != NoCompactMarkFilename {
 		return ulid.ULID{}, false
 	}
 
 	// Parse the block ID in the path. If there's no block ID, then it's not the per-block
 	// no-compact mark.
-	return block.IsBlockDir(path.Dir(name))
+	return IsBlockDir(path.Dir(name))
 }

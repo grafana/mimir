@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 type SplitAndMergePlanner struct {
@@ -20,7 +20,7 @@ func NewSplitAndMergePlanner(ranges []int64) *SplitAndMergePlanner {
 }
 
 // Plan implements compact.Planner.
-func (c *SplitAndMergePlanner) Plan(_ context.Context, metasByMinTime []*metadata.Meta) ([]*metadata.Meta, error) {
+func (c *SplitAndMergePlanner) Plan(_ context.Context, metasByMinTime []*block.Meta) ([]*block.Meta, error) {
 	// The split-and-merge grouper creates single groups of blocks that are expected to be
 	// compacted together, so there's no real planning to do here (reason why this function is
 	// just a pass-through). However, we want to run extra checks before proceeding.

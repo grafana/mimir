@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -170,14 +170,14 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 	return nil
 }
 
-func readMetadata(dir string) (*metadata.Meta, error) {
+func readMetadata(dir string) (*block.Meta, error) {
 	f, err := os.Open(filepath.Join(dir, "meta.json"))
 	if err != nil {
 		return nil, err
 	}
 
 	// this also closes reader
-	return metadata.Read(f)
+	return block.ReadMeta(f)
 }
 
 // https://github.com/prometheus/prometheus/blob/release-2.30/tsdb/docs/format/index.md

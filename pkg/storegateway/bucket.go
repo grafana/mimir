@@ -44,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -153,9 +152,9 @@ func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULI
 	return nil, false
 }
 
-func (noopCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+func (noopCache) StoreSeriesForPostings(string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey, []byte) {
 }
-func (noopCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey) ([]byte, bool) {
+func (noopCache) FetchSeriesForPostings(context.Context, string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey) ([]byte, bool) {
 	return nil, false
 }
 
@@ -299,7 +298,7 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 	}
 
 	var wg sync.WaitGroup
-	blockc := make(chan *metadata.Meta)
+	blockc := make(chan *block.Meta)
 
 	for i := 0; i < s.blockSyncConcurrency; i++ {
 		wg.Add(1)
@@ -383,7 +382,7 @@ func (s *BucketStore) getBlock(id ulid.ULID) *bucketBlock {
 	return s.blocks[id]
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -901,7 +900,7 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesFetchSeriesAndChunksDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe(stats.streamingSeriesOtherDuration.Seconds())
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index").Observe(stats.streamingSeriesIndexLoadDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index_header").Observe(stats.streamingSeriesIndexHeaderLoadDuration.Seconds())
 }
 
 func (s *BucketStore) recordCachedPostingStats(stats *queryStats) {
@@ -1470,7 +1469,7 @@ type bucketBlock struct {
 	logger     log.Logger
 	metrics    *BucketStoreMetrics
 	bkt        objstore.BucketReader
-	meta       *metadata.Meta
+	meta       *block.Meta
 	dir        string
 	indexCache indexcache.IndexCache
 
@@ -1494,7 +1493,7 @@ func newBucketBlock(
 	userID string,
 	logger log.Logger,
 	metrics *BucketStoreMetrics,
-	meta *metadata.Meta,
+	meta *block.Meta,
 	bkt objstore.BucketReader,
 	dir string,
 	indexCache indexcache.IndexCache,
@@ -1579,7 +1578,7 @@ func (b *bucketBlock) loadedIndexReader(postingsStrategy postingsSelectionStrate
 	// Call IndexVersion to lazy load the index header if it lazy-loaded.
 	_, _ = b.indexHeaderReader.IndexVersion()
 	stats.update(func(stats *queryStats) {
-		stats.streamingSeriesIndexLoadDuration += time.Since(loadStartTime)
+		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
 	})
 
 	return b.indexReader(postingsStrategy)

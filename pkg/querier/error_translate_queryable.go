@@ -78,10 +78,6 @@ func TranslateToPromqlAPIError(err error) error {
 // Input error may be nil.
 type ErrTranslateFn func(err error) error
 
-func NewErrorTranslateQueryable(q storage.Queryable) storage.Queryable {
-	return NewErrorTranslateQueryableWithFn(q, TranslateToPromqlAPIError)
-}
-
 func NewErrorTranslateQueryableWithFn(q storage.Queryable, fn ErrTranslateFn) storage.Queryable {
 	return errorTranslateQueryable{q: q, fn: fn}
 }

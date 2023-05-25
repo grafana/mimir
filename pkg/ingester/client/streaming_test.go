@@ -116,9 +116,9 @@ func TestSeriesChunksStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 
 		if errors.Is(err, context.Canceled) {
 			break
-		} else {
-			require.NoError(t, err)
 		}
+
+		require.NoError(t, err)
 
 		if i == 2 {
 			require.Fail(t, "expected GetChunks to report context cancellation error before reaching end of stream")
@@ -303,10 +303,10 @@ func (m *mockQueryStreamClient) Context() context.Context {
 	return m.ctx
 }
 
-func (m *mockQueryStreamClient) SendMsg(msg interface{}) error {
+func (m *mockQueryStreamClient) SendMsg(interface{}) error {
 	panic("not supported on mock")
 }
 
-func (m *mockQueryStreamClient) RecvMsg(msg interface{}) error {
+func (m *mockQueryStreamClient) RecvMsg(interface{}) error {
 	panic("not supported on mock")
 }

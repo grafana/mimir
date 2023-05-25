@@ -95,7 +95,7 @@ type mockShardedQueryable struct {
 }
 
 // Querier impls storage.Queryable
-func (q *mockShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (q *mockShardedQueryable) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
 	return q, nil
 }
 
@@ -186,12 +186,12 @@ func (s *shardLabelSeries) Labels() labels.Labels {
 }
 
 // LabelValues impls storage.Querier
-func (q *mockShardedQueryable) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *mockShardedQueryable) LabelValues(_ string, _ ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.Errorf("unimplemented")
 }
 
 // LabelNames returns all the unique label names present in the block in sorted order.
-func (q *mockShardedQueryable) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *mockShardedQueryable) LabelNames(_ ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.Errorf("unimplemented")
 }
 

@@ -11,7 +11,6 @@ import (
 	"github.com/go-kit/log"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 var logger = log.NewLogfmtLogger(os.Stderr)
@@ -32,7 +31,7 @@ func main() {
 	}
 
 	for _, b := range flag.Args() {
-		meta, err := metadata.ReadFromDir(b)
+		meta, err := block.ReadMetaFromDir(b)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to read meta from block dir", b, "error:", err)
 			continue

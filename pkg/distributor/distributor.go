@@ -52,7 +52,7 @@ import (
 
 var (
 	// Validation errors.
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
+	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
 )
 
 const (

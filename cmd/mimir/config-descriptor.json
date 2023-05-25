@@ -3201,6 +3201,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_sync_rules_on_changes_enabled",
+          "required": false,
+          "desc": "True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "ruler.sync-rules-on-changes-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",
@@ -5293,17 +5304,6 @@
               "fieldCategory": "advanced"
             },
             {
-              "kind": "field",
-              "name": "consistency_delay",
-              "required": false,
-              "desc": "Minimum age of a block before it's being read. Set it to safe value (e.g 30m) if your object storage is eventually consistent. GCS and S3 are (roughly) strongly consistent.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "blocks-storage.bucket-store.consistency-delay",
-              "fieldType": "duration",
-              "fieldCategory": "deprecated"
-            },
-            {
               "kind": "block",
               "name": "index_cache",
               "required": false,
@@ -7042,7 +7042,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": true,
                   "fieldFlag": "blocks-storage.bucket-store.bucket-index.enabled",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "deprecated"
                 },
                 {
                   "kind": "field",
@@ -7233,6 +7234,27 @@
               "fieldFlag": "blocks-storage.bucket-store.series-selection-strategy",
               "fieldType": "string",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "series_selection_strategies",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "worst_case_series_preference",
+                  "required": false,
+                  "desc": "This option is only used when blocks-storage.bucket-store.series-selection-strategy=worst-case. Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference",
+                  "fieldType": "float",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -7574,17 +7596,6 @@
           "fieldFlag": "compactor.meta-sync-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "consistency_delay",
-          "required": false,
-          "desc": "Minimum age of fresh (non-compacted) blocks before they are being processed.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "compactor.consistency-delay",
-          "fieldType": "duration",
-          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -9049,7 +9060,7 @@
           "kind": "field",
           "name": "poll_interval",
           "required": false,
-          "desc": "How frequently to poll for rule changes",
+          "desc": "How frequently the configured rule groups are re-synced from the object storage.",
           "fieldValue": null,
           "fieldDefaultValue": 60000000000,
           "fieldFlag": "ruler.poll-interval",

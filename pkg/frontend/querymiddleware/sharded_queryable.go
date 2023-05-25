@@ -50,7 +50,7 @@ func newShardedQueryable(req Request, next Handler) *shardedQueryable {
 }
 
 // Querier implements storage.Queryable.
-func (q *shardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (q *shardedQueryable) Querier(ctx context.Context, _, _ int64) (storage.Querier, error) {
 	return &shardedQuerier{ctx: ctx, req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}, nil
 }
 
@@ -133,12 +133,12 @@ func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.
 }
 
 // LabelValues implements storage.LabelQuerier.
-func (q *shardedQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *shardedQuerier) LabelValues(_ string, _ ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errNotImplemented
 }
 
 // LabelNames implements storage.LabelQuerier.
-func (q *shardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *shardedQuerier) LabelNames(_ ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errNotImplemented
 }
 
