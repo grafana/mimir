@@ -260,11 +260,11 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				}
 
 				result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
-			} else if len(resp.Series) > 0 {
-				labelsBatch := make([]labels.Labels, 0, len(resp.Series))
-				streamingSeriesCount += len(resp.Series)
+			} else if len(resp.StreamingSeries) > 0 {
+				labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
+				streamingSeriesCount += len(resp.StreamingSeries)
 
-				for _, s := range resp.Series {
+				for _, s := range resp.StreamingSeries {
 					if limitErr := queryLimiter.AddSeries(s.Labels); limitErr != nil {
 						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
 					}

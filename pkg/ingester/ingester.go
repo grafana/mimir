@@ -1755,7 +1755,7 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 
 		if len(seriesInBatch) >= queryStreamBatchSize {
 			err := client.SendQueryStream(stream, &client.QueryStreamResponse{
-				Series: seriesInBatch,
+				StreamingSeries: seriesInBatch,
 			})
 			if err != nil {
 				return nil, 0, err
@@ -1767,7 +1767,7 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 
 	// Send any remaining series, and signal that there are no more.
 	err := client.SendQueryStream(stream, &client.QueryStreamResponse{
-		Series:              seriesInBatch,
+		StreamingSeries:     seriesInBatch,
 		IsEndOfSeriesStream: true,
 	})
 	if err != nil {
@@ -1836,7 +1836,7 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 			if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= int(batchSize) {
 				// Adding this series to the batch would make it too big, flush the data and add it to new batch instead.
 				err := client.SendQueryStream(stream, &client.QueryStreamResponse{
-					SeriesChunks: seriesInBatch,
+					StreamingSeriesChunks: seriesInBatch,
 				})
 				if err != nil {
 					return 0, err
@@ -1858,7 +1858,7 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 	// Send any remaining series.
 	if batchSizeBytes != 0 {
 		err := client.SendQueryStream(stream, &client.QueryStreamResponse{
-			SeriesChunks: seriesInBatch,
+			StreamingSeriesChunks: seriesInBatch,
 		})
 		if err != nil {
 			return 0, err

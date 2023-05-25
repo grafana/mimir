@@ -2098,7 +2098,7 @@ func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsiste
 
 				for _, res := range s.responses {
 					if streamingEnabled {
-						for _, series := range res.Series {
+						for _, series := range res.StreamingSeries {
 							seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
 							seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
 							require.NoError(t, err)
@@ -3036,7 +3036,7 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 	require.NoError(t, err)
 
 	seriesLabelsMsg := client.QueryStreamResponse{
-		Series: []client.QueryStreamSeries{
+		StreamingSeries: []client.QueryStreamSeries{
 			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "1"))},
 			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "2"))},
 			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "3"))},
@@ -3056,12 +3056,12 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 			break
 		}
 		require.NoError(t, err)
-		require.True(t, len(resp.SeriesChunks) > 0) // No empty messages.
+		require.True(t, len(resp.StreamingSeriesChunks) > 0) // No empty messages.
 
 		recvMsgs++
-		series += len(resp.SeriesChunks)
+		series += len(resp.StreamingSeriesChunks)
 
-		for _, ts := range resp.SeriesChunks {
+		for _, ts := range resp.StreamingSeriesChunks {
 			for _, c := range ts.Chunks {
 				ch, err := chunk.NewForEncoding(chunk.Encoding(c.Encoding))
 				require.NoError(t, err)
@@ -3157,12 +3157,12 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 
 		switch seriesBatchCount {
 		case 1:
-			require.Len(t, resp.Series, 128, "first batch should be maximum batch size")
+			require.Len(t, resp.StreamingSeries, 128, "first batch should be maximum batch size")
 		case 2:
-			require.Len(t, resp.Series, 201-128, "second batch should contain remaining series")
+			require.Len(t, resp.StreamingSeries, 201-128, "second batch should contain remaining series")
 		}
 
-		for _, series := range resp.Series {
+		for _, series := range resp.StreamingSeries {
 			actualSeries = append(actualSeries, mimirpb.FromLabelAdaptersToLabels(series.Labels))
 		}
 
@@ -3197,9 +3197,9 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 			break
 		}
 
-		actualSeriesPerChunksMessage = append(actualSeriesPerChunksMessage, len(resp.SeriesChunks))
+		actualSeriesPerChunksMessage = append(actualSeriesPerChunksMessage, len(resp.StreamingSeriesChunks))
 
-		for _, s := range resp.SeriesChunks {
+		for _, s := range resp.StreamingSeriesChunks {
 			require.Equal(t, seriesReceivedCount, int(s.SeriesIndex))
 
 			expectedSampleCount := len(smallSampleSet)

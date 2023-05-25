@@ -38,7 +38,7 @@ func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse)
 		}
 		result = append(result, series...)
 
-		for _, s := range response.Series {
+		for _, s := range response.StreamingSeries {
 			if haveReachedEndOfStreamingSeriesLabels {
 				return nil, errors.New("received series labels after IsEndOfSeriesStream=true")
 			}
@@ -50,7 +50,7 @@ func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse)
 			haveReachedEndOfStreamingSeriesLabels = true
 		}
 
-		for _, s := range response.SeriesChunks {
+		for _, s := range response.StreamingSeriesChunks {
 			if !haveReachedEndOfStreamingSeriesLabels {
 				return nil, errors.New("received series chunks before IsEndOfSeriesStream=true")
 			}

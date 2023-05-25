@@ -84,7 +84,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				return
 			}
 
-			totalSeries += len(msg.SeriesChunks)
+			totalSeries += len(msg.StreamingSeriesChunks)
 			if totalSeries > s.expectedSeriesCount {
 				s.errorChan <- fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
 				return
@@ -93,7 +93,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 			chunkCount := 0
 			chunkBytes := 0
 
-			for _, s := range msg.SeriesChunks {
+			for _, s := range msg.StreamingSeriesChunks {
 				chunkCount += len(s.Chunks)
 
 				for _, c := range s.Chunks {
@@ -122,7 +122,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				// which is true at the time of writing.
 				s.errorChan <- s.client.Context().Err()
 				return
-			case s.seriesBatchChan <- msg.SeriesChunks:
+			case s.seriesBatchChan <- msg.StreamingSeriesChunks:
 				// Batch sent successfully, nothing else to do for this batch.
 			}
 		}

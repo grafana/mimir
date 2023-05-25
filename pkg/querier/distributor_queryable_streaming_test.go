@@ -170,7 +170,7 @@ func (m *mockQueryStreamClient) Recv() (*client.QueryStreamResponse, error) {
 	m.batches = m.batches[1:]
 
 	return &client.QueryStreamResponse{
-		SeriesChunks: batch,
+		StreamingSeriesChunks: batch,
 	}, nil
 }
 

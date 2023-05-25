@@ -139,10 +139,10 @@ message QueryStreamResponse {
   repeated TimeSeriesChunk chunkseries = 1 [(gogoproto.nullable) = false];
   repeated cortexpb.TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
 
-  repeated QueryStreamSeries series = 3 [(gogoproto.nullable) = false];
+  repeated QueryStreamSeries streaming_series = 3 [(gogoproto.nullable) = false];
   bool is_end_of_series_stream = 4;
 
-  repeated QueryStreamSeriesChunks series_chunks = 5 [(gogoproto.nullable) = false];
+  repeated QueryStreamSeriesChunks streaming_series_chunks = 5 [(gogoproto.nullable) = false];
 }
 
 message QueryStreamSeries {
