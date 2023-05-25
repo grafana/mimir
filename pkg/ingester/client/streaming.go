@@ -164,6 +164,7 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error
 		// This should never happen, but it guards against misbehaving ingesters.
 		// If we receive an empty batch, discard it and read the next one.
 		if len(batch) == 0 {
+			level.Warn(s.log).Log("msg", "received series batch of size 0 from ingester, this should not happen")
 			return s.GetChunks(seriesIndex)
 		}
 
