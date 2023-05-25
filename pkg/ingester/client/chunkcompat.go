@@ -130,8 +130,8 @@ func seriesChunksToMatrix(from, through model.Time, l labels.Labels, c []Chunk) 
 		return nil, err
 	}
 
-	samples := []model.SamplePair{}
-	histograms := []mimirpb.Histogram{}
+	var samples []model.SamplePair
+	var histograms []mimirpb.Histogram
 	for _, chunk := range chunks {
 		sf, sh, err := chunk.Samples(from, through)
 		if err != nil {
