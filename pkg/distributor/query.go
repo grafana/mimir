@@ -389,7 +389,7 @@ func (d *Distributor) estimatedIngestersPerSeries(replicationSet ring.Replicatio
 	// we return the number of ingesters required for quorum.
 
 	if replicationSet.MaxUnavailableZones > 0 {
-		// Zone-aware: quorum is number of zones less allowable unavailable zones.
+		// Zone-aware: quorum is replication factor less allowable unavailable zones.
 		return d.ingestersRing.ReplicationFactor() - replicationSet.MaxUnavailableZones
 	}
 
