@@ -16,7 +16,7 @@ type QueryChunkMetrics struct {
 	// responding to the same query.
 	IngesterChunksDeduplicated prometheus.Counter
 
-	// The total number of chunks received from ingesters that were used to evaluate queries, excluding any chunks
+	// The total number of chunks received from ingesters that were used to evaluate queries, including any chunks
 	// discarded due to deduplication.
 	IngesterChunksTotal prometheus.Counter
 }
@@ -26,12 +26,12 @@ func NewQueryChunkMetrics(reg prometheus.Registerer) *QueryChunkMetrics {
 		IngesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_query_ingester_chunks_deduped_total",
-			Help:      "Number of chunks deduplicated at query time from ingesters.",
+			Help:      "Number of chunks received from ingesters at query time but discarded as duplicates.",
 		}),
 		IngesterChunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_query_ingester_chunks_total",
-			Help:      "Number of chunks transferred at query time from ingesters, excluding any chunks discarded due to deduplication.",
+			Help:      "Number of chunks received from ingesters at query time, including any chunks discarded as duplicates.",
 		}),
 	}
 }
