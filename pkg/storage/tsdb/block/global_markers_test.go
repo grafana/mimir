@@ -6,10 +6,15 @@
 package block
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/oklog/ulid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
 func TestDeletionMarkFilepath(t *testing.T) {
@@ -56,4 +61,36 @@ func TestIsNoCompactMarkFilename(t *testing.T) {
 	actual, ok := IsNoCompactMarkFilename(expected.String() + "-no-compact-mark.json")
 	assert.True(t, ok)
 	assert.Equal(t, expected, actual)
+}
+
+func TestListBlockDeletionMarks(t *testing.T) {
+	var (
+		ctx    = context.Background()
+		block1 = ulid.MustNew(1, nil)
+		block2 = ulid.MustNew(2, nil)
+		block3 = ulid.MustNew(3, nil)
+	)
+
+	t.Run("should return an empty map on empty bucket", func(t *testing.T) {
+		bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+
+		actualMarks, actualErr := ListBlockDeletionMarks(ctx, bkt)
+		require.NoError(t, actualErr)
+		assert.Empty(t, actualMarks)
+	})
+
+	t.Run("should return a map with the locations of the block deletion marks found", func(t *testing.T) {
+		bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+
+		require.NoError(t, bkt.Upload(ctx, DeletionMarkFilepath(block1), strings.NewReader("{}")))
+		require.NoError(t, bkt.Upload(ctx, NoCompactMarkFilepath(block2), strings.NewReader("{}")))
+		require.NoError(t, bkt.Upload(ctx, DeletionMarkFilepath(block3), strings.NewReader("{}")))
+
+		actualMarks, actualErr := ListBlockDeletionMarks(ctx, bkt)
+		require.NoError(t, actualErr)
+		assert.Equal(t, map[ulid.ULID]struct{}{
+			block1: {},
+			block3: {},
+		}, actualMarks)
+	})
 }

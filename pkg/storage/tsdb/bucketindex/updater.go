@@ -169,17 +169,11 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 
 func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDeletionMark) ([]*BlockDeletionMark, error) {
 	out := make([]*BlockDeletionMark, 0, len(old))
-	discovered := map[ulid.ULID]struct{}{}
 
 	// Find all markers in the storage.
-	err := w.bkt.Iter(ctx, block.MarkersPathname+"/", func(name string) error {
-		if blockID, ok := block.IsDeletionMarkFilename(path.Base(name)); ok {
-			discovered[blockID] = struct{}{}
-		}
-		return nil
-	})
+	discovered, err := block.ListBlockDeletionMarks(ctx, w.bkt)
 	if err != nil {
-		return nil, errors.Wrap(err, "list block deletion marks")
+		return nil, err
 	}
 
 	// Since deletion marks are immutable, all markers already existing in the index can just be copied.

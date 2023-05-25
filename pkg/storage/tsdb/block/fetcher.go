@@ -123,7 +123,7 @@ type GaugeVec interface {
 	WithLabelValues(lvs ...string) prometheus.Gauge
 }
 
-// Filter allows filtering or modifying metas from the provided map or returns error.
+// MetadataFilter allows filtering or modifying metas from the provided map or returns error.
 type MetadataFilter interface {
 	Filter(ctx context.Context, metas map[ulid.ULID]*Meta, synced GaugeVec) error
 }
@@ -176,23 +176,35 @@ var (
 )
 
 // loadMeta returns metadata from object storage or error.
-// It returns `ErrorSyncMetaNotFound` and `ErrorSyncMetaCorrupted` sentinel errors in those cases.
+// It returns ErrorSyncMetaNotFound and ErrorSyncMetaCorrupted sentinel errors in those cases.
 func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error) {
 	var (
 		metaFile       = path.Join(id.String(), MetaFilename)
 		cachedBlockDir = filepath.Join(f.cacheDir, id.String())
 	)
 
-	// TODO(bwplotka): If that causes problems (obj store rate limits), add longer ttl to cached items.
-	// For 1y and 100 block sources this generates ~1.5-3k HEAD RPM. AWS handles 330k RPM per prefix.
-	ok, err := f.bkt.Exists(ctx, metaFile)
-	if err != nil {
-		return nil, errors.Wrapf(err, "meta.json file exists: %v", metaFile)
-	}
-	if !ok {
-		return nil, ErrorSyncMetaNotFound
-	}
-
+	// Block meta.json file is immutable, so we lookup the cache as first thing without issuing
+	// any API call to the object storage. This significantly reduce the pressure on the object
+	// storage.
+	//
+	// Details of all possible cases:
+	//
+	// - The block upload is in progress: the meta.json file is guaranteed to be uploaded at last.
+	//   When we'll try to read it from object storage (later on), it will fail with ErrorSyncMetaNotFound
+	//   which is correctly handled by the caller (partial block).
+	//
+	// - The block upload is completed: this is the normal case. meta.json file still exists in the
+	//   object storage and it's expected to match the locally cached one (because it's immutable by design).
+	// - The block has been marked for deletion: the deletion hasn't started yet, so the full block (including
+	//   the meta.json file) is still in the object storage. This case is not different than the previous one.
+	//
+	// - The block deletion is in progress: loadMeta() function may return the cached meta.json while it should
+	//   return ErrorSyncMetaNotFound. This is a race condition that could happen even if we check the meta.json
+	//   file in the storage, because the deletion could start right after we check it but before the MetaFetcher
+	//   completes its sync.
+	//
+	// - The block has been deleted: the loadMeta() function will not be called at all, because the block
+	//   was not discovered while iterating the bucket since all its files were already deleted.
 	if m, seen := f.cached[id]; seen {
 		return m, nil
 	}
@@ -253,14 +265,17 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 type response struct {
 	metas   map[ulid.ULID]*Meta
 	partial map[ulid.ULID]error
+
 	// If metaErr > 0 it means incomplete view, so some metas, failed to be loaded.
 	metaErrs multierror.MultiError
 
-	noMetas        float64
-	corruptedMetas float64
+	// Track the number of blocks not returned because of various reasons.
+	noMetasCount           float64
+	corruptedMetasCount    float64
+	markedForDeletionCount float64
 }
 
-func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
+func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool) (interface{}, error) {
 	var (
 		resp = response{
 			metas:   make(map[ulid.ULID]*Meta),
@@ -271,6 +286,19 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 		mtx sync.Mutex
 	)
 	level.Debug(f.logger).Log("msg", "fetching meta data", "concurrency", f.concurrency)
+
+	// Get the list of blocks marked for deletion so that we'll exclude them (if required).
+	var markedForDeletion map[ulid.ULID]struct{}
+	if excludeMarkedForDeletion {
+		var err error
+
+		markedForDeletion, err = ListBlockDeletionMarks(ctx, f.bkt)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Run workers.
 	for i := 0; i < f.concurrency; i++ {
 		eg.Go(func() error {
 			for id := range ch {
@@ -284,11 +312,11 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 
 				if errors.Is(errors.Cause(err), ErrorSyncMetaNotFound) {
 					mtx.Lock()
-					resp.noMetas++
+					resp.noMetasCount++
 					mtx.Unlock()
 				} else if errors.Is(errors.Cause(err), ErrorSyncMetaCorrupted) {
 					mtx.Lock()
-					resp.corruptedMetas++
+					resp.corruptedMetasCount++
 					mtx.Unlock()
 				} else {
 					mtx.Lock()
@@ -311,6 +339,12 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 		return f.bkt.Iter(ctx, "", func(name string) error {
 			id, ok := IsBlockDir(name)
 			if !ok {
+				return nil
+			}
+
+			// If requested, skip any block marked for deletion.
+			if _, marked := markedForDeletion[id]; excludeMarkedForDeletion && marked {
+				resp.markedForDeletionCount++
 				return nil
 			}
 
@@ -378,7 +412,22 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 // It's caller responsibility to not change the returned metadata files. Maps can be modified.
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
-func (f *MetaFetcher) Fetch(ctx context.Context) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
+func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
+	metas, partials, err = f.fetch(ctx, false)
+	return
+}
+
+// FetchWithoutMarkedForDeletion returns all block metas as well as partial blocks (blocks without or with corrupted meta file) from the bucket.
+// This function excludes all blocks for deletion (no deletion delay applied).
+// It's caller responsibility to not change the returned metadata files. Maps can be modified.
+//
+// Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
+func (f *MetaFetcher) FetchWithoutMarkedForDeletion(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
+	metas, partials, err = f.fetch(ctx, true)
+	return
+}
+
+func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
 	start := time.Now()
 	defer func() {
 		f.metrics.SyncDuration.Observe(time.Since(start).Seconds())
@@ -392,7 +441,7 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (_ map[ulid.ULID]*Meta, _ map[u
 	// Run this in thread safe run group.
 	v, err := f.g.Do("", func() (i interface{}, err error) {
 		// NOTE: First go routine context will go through.
-		return f.fetchMetadata(ctx)
+		return f.fetchMetadata(ctx, excludeMarkedForDeletion)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -406,8 +455,11 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (_ map[ulid.ULID]*Meta, _ map[u
 	}
 
 	f.metrics.Synced.WithLabelValues(FailedMeta).Set(float64(len(resp.metaErrs)))
-	f.metrics.Synced.WithLabelValues(NoMeta).Set(resp.noMetas)
-	f.metrics.Synced.WithLabelValues(CorruptedMeta).Set(resp.corruptedMetas)
+	f.metrics.Synced.WithLabelValues(NoMeta).Set(resp.noMetasCount)
+	f.metrics.Synced.WithLabelValues(CorruptedMeta).Set(resp.corruptedMetasCount)
+	if excludeMarkedForDeletion {
+		f.metrics.Synced.WithLabelValues(MarkedForDeletionMeta).Set(resp.markedForDeletionCount)
+	}
 
 	for _, filter := range f.filters {
 		// NOTE: filter can update synced metric accordingly to the reason of the exclude.
@@ -434,7 +486,7 @@ func (f *MetaFetcher) countCached() int {
 	return len(f.cached)
 }
 
-// Special label that will have an ULID of the meta.json being referenced to.
+// BlockIDLabel is a special label that will have an ULID of the meta.json being referenced to.
 const BlockIDLabel = "__block_id"
 
 // IgnoreDeletionMarkFilter is a filter that filters out the blocks that are marked for deletion after a given delay.
