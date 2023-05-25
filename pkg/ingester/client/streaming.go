@@ -97,6 +97,10 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				return
 			}
 
+			if len(msg.StreamingSeriesChunks) == 0 {
+				continue
+			}
+
 			totalSeries += len(msg.StreamingSeriesChunks)
 			if totalSeries > s.expectedSeriesCount {
 				s.errorChan <- fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
@@ -159,13 +163,6 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error
 			}
 
 			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
-		}
-
-		// This should never happen, but it guards against misbehaving ingesters.
-		// If we receive an empty batch, discard it and read the next one.
-		if len(batch) == 0 {
-			level.Warn(s.log).Log("msg", "received series batch of size 0 from ingester, this should not happen")
-			return s.GetChunks(seriesIndex)
 		}
 
 		s.seriesBatch = batch
