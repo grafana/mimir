@@ -312,6 +312,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	// via the AccumulateChunks function (fast) instead of needing to merge samples one
 	// by one (slow). Useful to verify the performance impact of things that potentially
 	// result in different samples being written to each ingester.
+	// Note that deduplication of streaming chunks is handled in streamingChunkSeries.
 	deduplicatedChunks := 0
 	totalChunks := 0
 	defer func() {
