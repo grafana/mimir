@@ -12,7 +12,5 @@
 /Makefile @wilfriedroset @vaxvms @bubu11e @grafana/mimir-maintainers
 /packaging/ @wilfriedroset @vaxvms @bubu11e @grafana/mimir-maintainers
 
-# Security Workflows
-.github/workflows/sbom-report.yml @grafana/security-engineering
 # No owners - allows sub-maintainers to merge changes.
 CHANGELOG.md
