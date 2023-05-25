@@ -1644,7 +1644,7 @@
           "kind": "field",
           "name": "prefer_streaming_chunks",
           "required": false,
-          "desc": "Stream chunks from ingesters if ingesters support this.",
+          "desc": "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "querier.prefer-streaming-chunks",
