@@ -361,13 +361,11 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
-	expectedZonesWithResults := replicationSet.ZoneCount() - replicationSet.MaxUnavailableZones
-
 	// Now turn the accumulated maps into slices.
 	resp := ingester_client.CombinedQueryStreamResponse{
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
-		StreamingSeries: mergeSeriesChunkStreams(results, expectedZonesWithResults),
+		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSet)),
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
@@ -383,6 +381,20 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	reqStats.AddFetchedChunks(uint64(ingester_client.ChunksCount(resp.Chunkseries)))
 
 	return resp, nil
+}
+
+// estimatedIngestersPerSeries estimates the number of ingesters that will have chunks for each streaming series.
+func (d *Distributor) estimatedIngestersPerSeries(replicationSet ring.ReplicationSet) int {
+	// Under normal circumstances, a quorum of ingesters will have chunks for each series, so here
+	// we return the number of ingesters required for quorum.
+
+	if replicationSet.MaxUnavailableZones > 0 {
+		// Zone-aware: quorum is number of zones less allowable unavailable zones.
+		return d.ingestersRing.ReplicationFactor() - replicationSet.MaxUnavailableZones
+	}
+
+	// Not zone-aware: quorum is replication factor less allowable unavailable ingesters.
+	return d.ingestersRing.ReplicationFactor() - replicationSet.MaxErrors
 }
 
 // Merges and dedupes two sorted slices with samples together.
@@ -430,7 +442,7 @@ type seriesChunksStream struct {
 	Series       []labels.Labels
 }
 
-func mergeSeriesChunkStreams(results []ingesterQueryResult, expectedZoneCount int) []ingester_client.StreamingSeries {
+func mergeSeriesChunkStreams(results []ingesterQueryResult, estimatedIngestersPerSeries int) []ingester_client.StreamingSeries {
 	tree := newSeriesChunkStreamsTree(results)
 	if tree == nil {
 		return nil
@@ -445,9 +457,8 @@ func mergeSeriesChunkStreams(results []ingesterQueryResult, expectedZoneCount in
 		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
 			// First time we've seen this series.
 			series := ingester_client.StreamingSeries{
-				Labels: nextSeriesFromIngester,
-				// Why expectedZoneCount? We assume each series is present exactly once in each zone.
-				Sources: make([]ingester_client.StreamingSeriesSource, 1, expectedZoneCount),
+				Labels:  nextSeriesFromIngester,
+				Sources: make([]ingester_client.StreamingSeriesSource, 1, estimatedIngestersPerSeries),
 			}
 
 			series.Sources[0] = ingester_client.StreamingSeriesSource{
