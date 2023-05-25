@@ -3,6 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 // Provenance-includes-location: https://github.com/grafana/loki/blob/main/pkg/util/loser/tree.go
+// Provenance-includes-location: https://github.com/grafana/dskit/blob/main/loser/loser.go
 
 package distributor
 
