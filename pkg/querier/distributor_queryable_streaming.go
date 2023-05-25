@@ -12,10 +12,10 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 )
 
-// streamingChunkSeries is a storage.Series that streams chunks from sources. The chunks are read from each source's
-// client.SeriesChunksStreamReader when the series' iterator is created. The stream reader only reads further
-// chunks from its underlying gRPC stream when the current buffer is exhausted, limiting the total number of chunks in
-// memory at a time.
+// streamingChunkSeries is a storage.Series that reads chunks from sources in a streaming way. The chunks are read from
+// each source's client.SeriesChunksStreamReader when the series' iterator is created. The stream reader only reads
+// further chunks from its underlying gRPC stream when the current buffer is exhausted, limiting the total number of
+// chunks in memory at a time.
 type streamingChunkSeries struct {
 	labels            labels.Labels
 	chunkIteratorFunc chunkIteratorFunc
