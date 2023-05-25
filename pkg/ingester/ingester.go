@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
@@ -1438,8 +1439,13 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	if streamType == QueryStreamChunks {
-		level.Debug(spanlog).Log("msg", "using queryStreamChunks")
-		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		if req.StreamingChunksBatchSize > 0 {
+			level.Debug(spanlog).Log("msg", "using queryStreamStreaming")
+			numSeries, numSamples, err = i.queryStreamStreaming(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize)
+		} else {
+			level.Debug(spanlog).Log("msg", "using queryStreamChunks")
+			numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		}
 	} else {
 		level.Debug(spanlog).Log("msg", "using queryStreamSamples")
 		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream)
@@ -1644,6 +1650,223 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 	}
 
 	return numSeries, numSamples, nil
+}
+
+func (i *Ingester) queryStreamStreaming(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64) (numSeries, numSamples int, _ error) {
+	var q storage.ChunkQuerier
+	var err error
+	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
+		q, err = db.UnorderedChunkQuerier(ctx, from, through)
+	} else {
+		q, err = db.ChunkQuerier(ctx, from, through)
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// The querier must remain open until we've finished streaming chunks.
+	defer q.Close()
+
+	allSeries, seriesCount, err := i.sendStreamingQuerySeries(q, from, through, matchers, shard, stream)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	numSamples, err = i.sendStreamingQueryChunks(allSeries, stream, batchSize)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return seriesCount, numSamples, nil
+}
+
+// chunkSeriesNode is used a build a linked list of slices of series.
+// This is useful to avoid lots of allocation when you don't know the
+// total number of series upfront.
+//
+// NOTE: Do not use this struct directly. Get it from getChunkSeriesNode()
+// and put it back using putChunkSeriesNode() when you are done using it.
+type chunkSeriesNode struct {
+	series []storage.ChunkSeries
+	next   *chunkSeriesNode
+}
+
+// Capacity of the slice in chunkSeriesNode.
+const chunkSeriesNodeSize = 1024
+
+// chunkSeriesNodePool is used during streaming queries.
+var chunkSeriesNodePool zeropool.Pool[*chunkSeriesNode]
+
+func getChunkSeriesNode() *chunkSeriesNode {
+	sn := chunkSeriesNodePool.Get()
+	if sn == nil {
+		sn = &chunkSeriesNode{
+			series: make([]storage.ChunkSeries, 0, chunkSeriesNodeSize),
+		}
+	}
+	return sn
+}
+
+func putChunkSeriesNode(sn *chunkSeriesNode) {
+	sn.series = sn.series[:0]
+	sn.next = nil
+	chunkSeriesNodePool.Put(sn)
+}
+
+func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
+	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
+	// the requested from/through range. PromQL engine can handle it.
+	hints := initSelectHints(from, through)
+	hints = configSelectHintsWithShard(hints, shard)
+	hints = configSelectHintsWithDisabledTrimming(hints)
+
+	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
+	ss := q.Select(true, hints, matchers...)
+	if ss.Err() != nil {
+		return nil, 0, ss.Err()
+	}
+
+	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
+
+	// Why retain the storage.ChunkSeries instead of their chunks.Iterator? If we get the iterators here,
+	// we can't re-use them. Re-using iterators has a bigger impact on allocations/memory than trying to
+	// avoid holding labels reference in ChunkSeries.
+	//
+	// It is non-trivial to know the total number of series here, so we use a linked list of slices
+	// of series and re-use them for future use as well. Even if we did know total number of series
+	// here, maybe re-use of slices is a good idea.
+	allSeriesList := getChunkSeriesNode()
+	lastSeriesNode := allSeriesList
+	seriesCount := 0
+
+	for ss.Next() {
+		series := ss.At()
+
+		if len(lastSeriesNode.series) == chunkSeriesNodeSize {
+			newNode := getChunkSeriesNode()
+			lastSeriesNode.next = newNode
+			lastSeriesNode = newNode
+		}
+		lastSeriesNode.series = append(lastSeriesNode.series, series)
+		seriesCount++
+
+		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
+			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+		})
+
+		if len(seriesInBatch) >= queryStreamBatchSize {
+			err := client.SendQueryStream(stream, &client.QueryStreamResponse{
+				StreamingSeries: seriesInBatch,
+			})
+			if err != nil {
+				return nil, 0, err
+			}
+
+			seriesInBatch = seriesInBatch[:0]
+		}
+	}
+
+	// Send any remaining series, and signal that there are no more.
+	err := client.SendQueryStream(stream, &client.QueryStreamResponse{
+		StreamingSeries:     seriesInBatch,
+		IsEndOfSeriesStream: true,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Ensure no error occurred while iterating the series set.
+	if err := ss.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return allSeriesList, seriesCount, nil
+}
+
+func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream client.Ingester_QueryStreamServer, batchSize uint64) (int, error) {
+	var (
+		it             chunks.Iterator
+		seriesIdx      = -1
+		currNode       = allSeries
+		numSamples     = 0
+		seriesInBatch  = make([]client.QueryStreamSeriesChunks, 0, batchSize)
+		batchSizeBytes = 0
+	)
+
+	for currNode != nil {
+		for _, series := range currNode.series {
+			seriesIdx++
+			seriesChunks := client.QueryStreamSeriesChunks{
+				SeriesIndex: uint64(seriesIdx),
+			}
+
+			it = series.Iterator(it)
+
+			for it.Next() {
+				meta := it.At()
+
+				// It is not guaranteed that chunk returned by iterator is populated.
+				// For now just return error. We could also try to figure out how to read the chunk.
+				if meta.Chunk == nil {
+					return 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
+				}
+
+				ch := client.Chunk{
+					StartTimestampMs: meta.MinTime,
+					EndTimestampMs:   meta.MaxTime,
+					Data:             meta.Chunk.Bytes(),
+				}
+
+				switch meta.Chunk.Encoding() {
+				case chunkenc.EncXOR:
+					ch.Encoding = int32(chunk.PrometheusXorChunk)
+				case chunkenc.EncHistogram:
+					ch.Encoding = int32(chunk.PrometheusHistogramChunk)
+				case chunkenc.EncFloatHistogram:
+					ch.Encoding = int32(chunk.PrometheusFloatHistogramChunk)
+				default:
+					return 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
+				}
+
+				seriesChunks.Chunks = append(seriesChunks.Chunks, ch)
+				numSamples += meta.Chunk.NumSamples()
+			}
+
+			msgSize := seriesChunks.Size()
+
+			if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= int(batchSize) {
+				// Adding this series to the batch would make it too big, flush the data and add it to new batch instead.
+				err := client.SendQueryStream(stream, &client.QueryStreamResponse{
+					StreamingSeriesChunks: seriesInBatch,
+				})
+				if err != nil {
+					return 0, err
+				}
+
+				seriesInBatch = seriesInBatch[:0]
+				batchSizeBytes = 0
+			}
+
+			seriesInBatch = append(seriesInBatch, seriesChunks)
+			batchSizeBytes += msgSize
+		}
+
+		toBePutInPool := currNode
+		currNode = currNode.next
+		putChunkSeriesNode(toBePutInPool)
+	}
+
+	// Send any remaining series.
+	if batchSizeBytes != 0 {
+		err := client.SendQueryStream(stream, &client.QueryStreamResponse{
+			StreamingSeriesChunks: seriesInBatch,
+		})
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return numSamples, nil
 }
 
 func (i *Ingester) getTSDB(userID string) *userTSDB {

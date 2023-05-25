@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -165,7 +167,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	require.NoError(t, err)
 
 	// Use the resulting chunks size to calculate the limit as (series to add + our test series) * the response chunk size.
-	responseChunkSize := chunkSizeResponse.ChunksSize()
+	responseChunkSize := ingester_client.ChunksSize(chunkSizeResponse.Chunkseries)
 	maxBytesLimit := (seriesToAdd) * responseChunkSize
 
 	// Update the limiter with the calculated limits.
@@ -402,3 +404,215 @@ func BenchmarkMergeExemplars(b *testing.B) {
 		mergeExemplarQueryResponses([]interface{}{input, input, input})
 	}
 }
+
+func TestMergingAndSortingSeries(t *testing.T) {
+	ingester1 := &ingester_client.SeriesChunksStreamReader{}
+	ingester2 := &ingester_client.SeriesChunksStreamReader{}
+	ingester3 := &ingester_client.SeriesChunksStreamReader{}
+
+	testCases := map[string]struct {
+		results  []ingesterQueryResult
+		expected []ingester_client.StreamingSeries
+	}{
+		"no ingesters": {
+			results:  []ingesterQueryResult{},
+			expected: []ingester_client.StreamingSeries{},
+		},
+		"single ingester, no streaming series": {
+			results: []ingesterQueryResult{
+				{},
+			},
+			expected: []ingester_client.StreamingSeries{},
+		},
+		"single ingester, no series": {
+			results: []ingesterQueryResult{
+				{streamingSeries: seriesChunksStream{StreamReader: ingester1, Series: []labels.Labels{}}},
+			},
+			expected: []ingester_client.StreamingSeries{},
+		},
+		"single ingester, single series": {
+			results: []ingesterQueryResult{
+				{streamingSeries: seriesChunksStream{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}}},
+			},
+			expected: []ingester_client.StreamingSeries{
+				{
+					Labels: labels.FromStrings("some-label", "some-value"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 0},
+					},
+				},
+			},
+		},
+		"multiple ingesters, each with single series": {
+			results: []ingesterQueryResult{
+				{streamingSeries: seriesChunksStream{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}}},
+				{streamingSeries: seriesChunksStream{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}}},
+				{streamingSeries: seriesChunksStream{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "some-value")}}},
+			},
+			expected: []ingester_client.StreamingSeries{
+				{
+					Labels: labels.FromStrings("some-label", "some-value"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 0},
+						{StreamReader: ingester2, SeriesIndex: 0},
+						{StreamReader: ingester3, SeriesIndex: 0},
+					},
+				},
+			},
+		},
+		"multiple ingesters, each with different series": {
+			results: []ingesterQueryResult{
+				{streamingSeries: seriesChunksStream{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}}},
+				{streamingSeries: seriesChunksStream{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}}},
+				{streamingSeries: seriesChunksStream{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}}},
+			},
+			expected: []ingester_client.StreamingSeries{
+				{
+					Labels: labels.FromStrings("some-label", "value-a"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("some-label", "value-b"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester2, SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("some-label", "value-c"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester3, SeriesIndex: 0},
+					},
+				},
+			},
+		},
+		"multiple ingesters, each with different series, with earliest ingesters having last series": {
+			results: []ingesterQueryResult{
+				{streamingSeries: seriesChunksStream{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("some-label", "value-c")}}},
+				{streamingSeries: seriesChunksStream{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("some-label", "value-b")}}},
+				{streamingSeries: seriesChunksStream{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("some-label", "value-a")}}},
+			},
+			expected: []ingester_client.StreamingSeries{
+				{
+					Labels: labels.FromStrings("some-label", "value-a"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("some-label", "value-b"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester2, SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("some-label", "value-c"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester3, SeriesIndex: 0},
+					},
+				},
+			},
+		},
+		"multiple ingesters, each with multiple series": {
+			results: []ingesterQueryResult{
+				{streamingSeries: seriesChunksStream{StreamReader: ingester1, Series: []labels.Labels{labels.FromStrings("label-a", "value-a"), labels.FromStrings("label-b", "value-a")}}},
+				{streamingSeries: seriesChunksStream{StreamReader: ingester2, Series: []labels.Labels{labels.FromStrings("label-a", "value-b"), labels.FromStrings("label-b", "value-a")}}},
+				{streamingSeries: seriesChunksStream{StreamReader: ingester3, Series: []labels.Labels{labels.FromStrings("label-a", "value-c"), labels.FromStrings("label-b", "value-a")}}},
+			},
+			expected: []ingester_client.StreamingSeries{
+				{
+					Labels: labels.FromStrings("label-a", "value-a"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("label-a", "value-b"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester2, SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("label-a", "value-c"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester3, SeriesIndex: 0},
+					},
+				},
+				{
+					Labels: labels.FromStrings("label-b", "value-a"),
+					Sources: []ingester_client.StreamingSeriesSource{
+						{StreamReader: ingester1, SeriesIndex: 1},
+						{StreamReader: ingester2, SeriesIndex: 1},
+						{StreamReader: ingester3, SeriesIndex: 1},
+					},
+				},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			zoneCount := 1 // The exact value of this only matters for performance (it's used to pre-allocate a slice of the correct size)
+			actual := mergeSeriesChunkStreams(testCase.results, zoneCount)
+			require.Lenf(t, actual, len(testCase.expected), "should be same length as %v", testCase.expected)
+
+			for i := 0; i < len(actual); i++ {
+				actualSeries := actual[i]
+				expectedSeries := testCase.expected[i]
+
+				require.Equal(t, expectedSeries.Labels, actualSeries.Labels)
+
+				// We don't care about the order.
+				require.ElementsMatch(t, expectedSeries.Sources, actualSeries.Sources, "series %v", actualSeries.Labels.String())
+			}
+		})
+	}
+}
+
+func BenchmarkMergingAndSortingSeries(b *testing.B) {
+	for _, ingestersPerZone := range []int{1, 2, 4, 10, 100} {
+		for _, zones := range []int{1, 2, 3} {
+			for _, seriesPerIngester := range []int{1, 10, 100, 1000, 10000} {
+				seriesSets := generateSeriesSets(ingestersPerZone, zones, seriesPerIngester)
+
+				b.Run(fmt.Sprintf("%v ingesters per zone, %v zones, %v series per ingester", ingestersPerZone, zones, seriesPerIngester), func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						mergeSeriesChunkStreams(seriesSets, zones)
+					}
+				})
+			}
+		}
+	}
+}
+
+func generateSeriesSets(ingestersPerZone int, zones int, seriesPerIngester int) []ingesterQueryResult {
+	seriesPerZone := ingestersPerZone * seriesPerIngester
+	zoneSeries := make([]labels.Labels, seriesPerZone)
+
+	for seriesIdx := 0; seriesIdx < seriesPerZone; seriesIdx++ {
+		zoneSeries[seriesIdx] = labels.FromStrings("the-label", strconv.Itoa(seriesIdx))
+	}
+
+	results := make([]ingesterQueryResult, 0, zones*ingestersPerZone)
+
+	for zone := 1; zone <= zones; zone++ {
+		rand.Shuffle(len(zoneSeries), func(i, j int) { zoneSeries[i], zoneSeries[j] = zoneSeries[j], zoneSeries[i] })
+
+		for ingester := 1; ingester <= ingestersPerZone; ingester++ {
+			streamReader := &ingester_client.SeriesChunksStreamReader{}
+			series := zoneSeries[(ingester-1)*seriesPerIngester : ingester*seriesPerIngester]
+			sort.Sort(byLabels(series))
+
+			results = append(results, ingesterQueryResult{streamingSeries: seriesChunksStream{StreamReader: streamReader, Series: series}})
+		}
+	}
+
+	return results
+}
+
+type byLabels []labels.Labels
+
+func (b byLabels) Len() int           { return len(b) }
+func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }

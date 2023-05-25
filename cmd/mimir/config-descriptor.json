@@ -1642,6 +1642,28 @@
         },
         {
           "kind": "field",
+          "name": "prefer_streaming_chunks",
+          "required": false,
+          "desc": "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.prefer-streaming-chunks",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "streaming_chunks_per_ingester_series_buffer_size",
+          "required": false,
+          "desc": "Number of series to buffer per ingester when streaming chunks from ingesters.",
+          "fieldValue": null,
+          "fieldDefaultValue": 512,
+          "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",

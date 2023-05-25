@@ -14,6 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 //lint:ignore faillint It's non-trivial to remove this global variable.
@@ -69,4 +71,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *Config) Validate(log log.Logger) error {
 	return cfg.GRPCClientConfig.Validate(log)
+}
+
+type CombinedQueryStreamResponse struct {
+	Chunkseries     []TimeSeriesChunk
+	Timeseries      []mimirpb.TimeSeries
+	StreamingSeries []StreamingSeries
 }

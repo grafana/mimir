@@ -1555,6 +1555,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
+  -querier.prefer-streaming-chunks
+    	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.
   -querier.query-ingesters-within duration
     	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h)
   -querier.query-store-after duration
@@ -1579,6 +1581,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
+  -querier.streaming-chunks-per-ingester-buffer-size uint
+    	[experimental] Number of series to buffer per ingester when streaming chunks from ingesters. (default 512)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-queries-with-step

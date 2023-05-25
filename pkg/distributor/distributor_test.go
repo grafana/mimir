@@ -49,7 +49,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
-	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
@@ -1015,7 +1014,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
 			assert.Nil(t, err)
 
-			series, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
+			resp, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
 
 			if tc.expectedError == nil {
 				require.NoError(t, err)
@@ -1027,14 +1026,14 @@ func TestDistributor_PushQuery(t *testing.T) {
 				assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
 			}
 
-			var response model.Matrix
-			if series == nil {
-				response, err = chunkcompat.SeriesChunksToMatrix(0, 10, nil)
+			var m model.Matrix
+			if len(resp.Chunkseries) == 0 {
+				m, err = client.TimeSeriesChunksToMatrix(0, 10, nil)
 			} else {
-				response, err = chunkcompat.SeriesChunksToMatrix(0, 10, series.Chunkseries)
+				m, err = client.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
 			}
 			assert.NoError(t, err)
-			assert.Equal(t, tc.expectedResponse.String(), response.String())
+			assert.Equal(t, tc.expectedResponse.String(), m.String())
 
 			// Check how many ingesters have been queried.
 			// Due to the quorum the distributor could cancel the last request towards ingesters

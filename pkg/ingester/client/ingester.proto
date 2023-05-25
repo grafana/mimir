@@ -105,9 +105,16 @@ message StreamChunk {
 }
 
 message QueryRequest {
+  // This QueryRequest message is also used for remote read requests, which includes a hints field we don't support.
+  reserved 4;
+  reserved "hints";
+
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
   repeated LabelMatcher matchers = 3;
+
+  // Why 100? This QueryRequest message is also used for remote read requests, so we need to avoid any field numbers added in the future.
+  uint64 streaming_chunks_batch_size = 100;
 }
 
 message ExemplarQueryRequest {
@@ -120,10 +127,31 @@ message QueryResponse {
   repeated cortexpb.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];
 }
 
-// QueryStreamResponse contains a batch of timeseries chunks or timeseries. Only one of these series will be populated.
+// If streaming chunks is not enabled with prefer_streaming_chunks: QueryStreamResponse contains a batch of timeseries
+// chunks or timeseries. Only one of these fields will be populated.
+//
+// If streaming chunks is enabled with prefer_streaming_chunks: QueryStreamResponse contains either:
+// - a batch of series labels (sorted in series order), with is_end_of_series_stream=true for the last batch or
+// - a batch of chunks (sorted in series order).
+//
+// Only one of these two options will be populated.
 message QueryStreamResponse {
   repeated TimeSeriesChunk chunkseries = 1 [(gogoproto.nullable) = false];
   repeated cortexpb.TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
+
+  repeated QueryStreamSeries streaming_series = 3 [(gogoproto.nullable) = false];
+  bool is_end_of_series_stream = 4;
+
+  repeated QueryStreamSeriesChunks streaming_series_chunks = 5 [(gogoproto.nullable) = false];
+}
+
+message QueryStreamSeries {
+  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+}
+
+message QueryStreamSeriesChunks {
+  uint64 series_index = 1; // Index into list of all series previously sent with QueryStreamSeries messages by this ingester during this query response.
+  repeated Chunk chunks = 2 [(gogoproto.nullable) = false];
 }
 
 message ExemplarQueryResponse {
