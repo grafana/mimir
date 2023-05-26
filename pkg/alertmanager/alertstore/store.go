@@ -72,7 +72,7 @@ func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantCon
 			return nil, err
 		}
 		stateStore := bucketclient.NewBucketAlertStore(bucketClient, cfgProvider, logger)
-		return mixed.NewMixedStore(configStore, stateStore), nil
+		return mixed.NewMixedStore(stateStore, configStore), nil
 	}
 
 	if cfg.Backend == bucket.Filesystem {
