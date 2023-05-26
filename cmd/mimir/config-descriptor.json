@@ -2798,7 +2798,7 @@
           "kind": "field",
           "name": "ingestion_tenant_shard_size",
           "required": false,
-          "desc": "The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.",
+          "desc": "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "distributor.ingestion-tenant-shard-size",
