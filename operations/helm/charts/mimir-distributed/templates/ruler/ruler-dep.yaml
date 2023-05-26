@@ -59,10 +59,6 @@ spec:
             - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
             {{- end }}
           {{- end }}
-          # {{- if .Values.ruler_querier_service.enabled }}
-          #   - "-ruler.remote-evaluation=false"
-          #   - "-ruler.remote-evaluation-migration=false"
-          # {{- end }}
           {{- range $key, $value := .Values.ruler.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
