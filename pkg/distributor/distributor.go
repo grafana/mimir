@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/mtime"
@@ -39,6 +40,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
+	capnp "capnproto.org/go/capnp/v3"
 	"github.com/grafana/dskit/tenant"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -1167,7 +1169,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 			}
 		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		err := d.send1(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1251,6 +1253,112 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Source:     source,
 	}
 	_, err = c.Push(ctx, &req)
+	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+		// Wrap HTTP gRPC error with more explanatory message.
+		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
+	}
+	return errors.Wrap(err, "failed pushing to ingester")
+}
+
+var pool zeropool.Pool[[]byte]
+
+func (d *Distributor) send1(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
+	if err != nil {
+		return err
+	}
+	c := h.(ingester_client.IngesterClient)
+
+	arena := pool.Get()
+	defer pool.Put(arena)
+
+	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(arena))
+	if err != nil {
+		panic(err)
+	}
+
+	wr2, err := ingester_client.NewRootCpnWriteRequest2(seg)
+	if err != nil {
+		return err
+	}
+
+	if source == mimirpb.RULE {
+		wr2.SetSource(ingester_client.CpnWriteRequest2_Source_rule)
+	} else {
+		wr2.SetSource(ingester_client.CpnWriteRequest2_Source_api)
+	}
+
+	// Add timeseries
+	if len(timeseries) > 0 && len(timeseries) < math.MaxInt32 {
+		tss, err := wr2.NewTimeseries(int32(len(timeseries)))
+		if err != nil {
+			return err
+		}
+
+		for ix, ts := range timeseries {
+			ts2, err := ingester_client.NewCpnWriteRequest2_TimeSeries2(seg)
+			if err != nil {
+				return err
+			}
+
+			// labels
+			lbls2, err := ts2.NewLabels(int32(len(ts.Labels)))
+			if err != nil {
+				return errors.Wrap(err, "NewLabels")
+			}
+			for lix, l := range ts.Labels {
+				l2, err := ingester_client.NewCpnWriteRequest2_TimeSeries2_LabelPair2(seg)
+				if err != nil {
+					return errors.Wrap(err, "NewWriteRequest2_TimeSeries2_LabelPair2")
+				}
+
+				if err := l2.SetName(l.Name); err != nil {
+					return err
+				}
+				if err := l2.SetValue(l.Value); err != nil {
+					return err
+				}
+				if err := lbls2.Set(lix, l2); err != nil {
+					return err
+				}
+			}
+
+			// samples
+			samples2, err := ts2.NewSamples(int32(len(ts.Samples)))
+			for six, s := range ts.Samples {
+				s2, err := ingester_client.NewCpnWriteRequest2_TimeSeries2_Sample2(seg)
+				if err != nil {
+					return err
+				}
+
+				s2.SetTimestampMs(s.TimestampMs)
+				s2.SetValue(s.Value)
+				if err := samples2.Set(six, s2); err != nil {
+					return err
+				}
+			}
+
+			// TODO: exemplars, histograms
+
+			if err := tss.Set(ix, ts2); err != nil {
+				return err
+			}
+		}
+	}
+
+	// TODO: metadata
+
+	msgBytes, err := msg.Marshal()
+	if err != nil {
+		return err
+	}
+
+	req := ingester_client.WriteRequest2{
+		Wrapper: ingester_client.PreallocMsgWrapper{
+			MsgWrapper: &ingester_client.MsgWrapper{Msg: msgBytes},
+		},
+	}
+	_, err = c.Push2(ctx, &req)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)

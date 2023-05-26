@@ -5,7 +5,7 @@ std.manifestYamlDoc({
 
     // If true, Mimir services are run under Delve debugger, that can be attached to via remote-debugging session.
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
-    debug: false,
+    debug: true,
 
     // How long should Mimir docker containers sleep before Mimir is started.
     sleep_seconds: 3,

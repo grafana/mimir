@@ -7,6 +7,7 @@ package client
 
 import (
 	context "context"
+	"sync"
 )
 
 // SendQueryStream wraps the stream's Send() checking if the context is done
@@ -72,4 +73,30 @@ func containsChunk(a []Chunk, b Chunk) bool {
 		}
 	}
 	return false
+}
+
+var pool = sync.Pool{
+	New: func() interface{} {
+		return &MsgWrapper{
+			Msg: make([]byte, 0, 1024),
+		}
+	},
+}
+
+type PreallocMsgWrapper struct {
+	*MsgWrapper
+}
+
+func (m *PreallocMsgWrapper) Unmarshal(dAtA []byte) error {
+	m.MsgWrapper = pool.Get().(*MsgWrapper)
+	m.MsgWrapper.Msg = m.MsgWrapper.Msg[:0]
+	return m.MsgWrapper.Unmarshal(dAtA)
+}
+
+func (m *PreallocMsgWrapper) ReturnToPool() {
+	if m.MsgWrapper != nil {
+		m.MsgWrapper.Msg = m.MsgWrapper.Msg[:0]
+		pool.Put(m.MsgWrapper)
+		m.MsgWrapper = nil
+	}
 }

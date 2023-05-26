@@ -1,0 +1,20 @@
+/capnpc-go/capnpc-go
+/internal/cmd/mktemplates/mktemplates
+TAGS
+*~
+*.swp
+
+# Common extensions for coverage/profling outputs:
+*.out
+*.cpu
+*.mem
+
+# Test executables:
+*.test
+
+# Bazel
+/bazel-bin
+/bazel-capnproto2
+/bazel-genfiles
+/bazel-out
+/bazel-testlogs
