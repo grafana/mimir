@@ -57,7 +57,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/usagestats"
@@ -1440,15 +1439,15 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	if streamType == QueryStreamChunks {
 		if req.StreamingChunksBatchSize > 0 {
-			level.Debug(spanlog).Log("msg", "using queryStreamStreaming")
-			numSeries, numSamples, err = i.queryStreamStreaming(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize)
+			level.Debug(spanlog).Log("msg", "using executeStreamingQuery")
+			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize)
 		} else {
-			level.Debug(spanlog).Log("msg", "using queryStreamChunks")
-			numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
+			level.Debug(spanlog).Log("msg", "using executeChunksQuery")
+			numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
 		}
 	} else {
-		level.Debug(spanlog).Log("msg", "using queryStreamSamples")
-		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		level.Debug(spanlog).Log("msg", "using executeSamplesQuery")
+		numSeries, numSamples, err = i.executeSamplesQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
 	}
 	if err != nil {
 		return err
@@ -1460,7 +1459,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	return nil
 }
 
-func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
 	q, err := db.Querier(ctx, from, through)
 	if err != nil {
 		return 0, 0, err
@@ -1545,8 +1544,8 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 	return numSeries, numSamples, nil
 }
 
-// queryStreamChunks streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+// executeChunksQuery streams metrics from a TSDB. This implements the client.IngesterServer interface
+func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
@@ -1593,21 +1592,9 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 				return 0, 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
 			}
 
-			ch := client.Chunk{
-				StartTimestampMs: meta.MinTime,
-				EndTimestampMs:   meta.MaxTime,
-				Data:             meta.Chunk.Bytes(),
-			}
-
-			switch meta.Chunk.Encoding() {
-			case chunkenc.EncXOR:
-				ch.Encoding = int32(chunk.PrometheusXorChunk)
-			case chunkenc.EncHistogram:
-				ch.Encoding = int32(chunk.PrometheusHistogramChunk)
-			case chunkenc.EncFloatHistogram:
-				ch.Encoding = int32(chunk.PrometheusFloatHistogramChunk)
-			default:
-				return 0, 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
+			ch, err := client.ChunkFromMeta(meta)
+			if err != nil {
+				return 0, 0, err
 			}
 
 			ts.Chunks = append(ts.Chunks, ch)
@@ -1652,7 +1639,7 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 	return numSeries, numSamples, nil
 }
 
-func (i *Ingester) queryStreamStreaming(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64) (numSeries, numSamples int, _ error) {
+func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
@@ -1811,21 +1798,9 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 					return 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
 				}
 
-				ch := client.Chunk{
-					StartTimestampMs: meta.MinTime,
-					EndTimestampMs:   meta.MaxTime,
-					Data:             meta.Chunk.Bytes(),
-				}
-
-				switch meta.Chunk.Encoding() {
-				case chunkenc.EncXOR:
-					ch.Encoding = int32(chunk.PrometheusXorChunk)
-				case chunkenc.EncHistogram:
-					ch.Encoding = int32(chunk.PrometheusHistogramChunk)
-				case chunkenc.EncFloatHistogram:
-					ch.Encoding = int32(chunk.PrometheusFloatHistogramChunk)
-				default:
-					return 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
+				ch, err := client.ChunkFromMeta(meta)
+				if err != nil {
+					return 0, err
 				}
 
 				seriesChunks.Chunks = append(seriesChunks.Chunks, ch)
