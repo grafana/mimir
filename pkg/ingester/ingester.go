@@ -20,7 +20,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
+	"capnproto.org/go/capnp/v3"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
@@ -810,6 +812,155 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	return &mimirpb.WriteResponse{}, nil
 }
 
+// PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
+func (i *Ingester) PushWithoutCleanup2(ctx context.Context, req client.CpnWriteRequest2) (*mimirpb.WriteResponse, error) {
+	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+
+	// We will report *this* request in the error too.
+	inflight := i.inflightPushRequests.Inc()
+	defer i.inflightPushRequests.Dec()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightPushRequests > 0 {
+		if inflight > il.MaxInflightPushRequests {
+			return nil, errMaxInflightRequestsReached
+		}
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if il != nil && il.MaxIngestionRate > 0 {
+		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			return nil, errMaxIngestionRateReached
+		}
+	}
+
+	//// Given metadata is a best-effort approach, and we don't halt on errors
+	//// process it before samples. Otherwise, we risk returning an error before ingestion.
+	//if ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata()); ingestedMetadata > 0 {
+	//	// Distributor counts both samples and metadata, so for consistency ingester does the same.
+	//	i.ingestionRate.Add(int64(ingestedMetadata))
+	//}
+
+	// Early exit if no timeseries in request - don't create a TSDB or an appender.
+	if !req.HasTimeseries() {
+		return &mimirpb.WriteResponse{}, nil
+	}
+
+	db, err := i.getOrCreateTSDB(userID, false)
+	if err != nil {
+		return nil, wrapWithUser(err, userID)
+	}
+
+	if err := db.acquireAppendLock(); err != nil {
+		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(err, userID).Error())
+	}
+	defer db.releaseAppendLock()
+
+	// Note that we don't .Finish() the span in this method on purpose
+	spanlog := spanlogger.FromContext(ctx, i.logger)
+	level.Debug(spanlog).Log("event", "acquired append lock")
+
+	var (
+		startAppend = time.Now()
+
+		// Keep track of some stats which are tracked only if the samples will be
+		// successfully committed
+		stats pushStats
+
+		firstPartialErr    error
+		updateFirstPartial = func(errFn func() error) {
+			if firstPartialErr == nil {
+				firstPartialErr = errFn()
+			}
+		}
+	)
+
+	ts, err := req.Timeseries()
+	if err != nil {
+		return nil, err
+	}
+
+	// Walk the samples, appending them to the users database
+	app := db.Appender(ctx).(extendedAppender)
+	level.Debug(spanlog).Log("event", "got appender for timeseries", "series", ts.Len())
+
+	var activeSeries *activeseries.ActiveSeries
+	if i.cfg.ActiveSeriesMetricsEnabled {
+		activeSeries = db.activeSeries
+	}
+
+	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
+
+	err = i.pushSamplesToAppender2(userID, ts, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
+	if err != nil {
+		if err := app.Rollback(); err != nil {
+			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
+		}
+
+		return nil, err
+	}
+
+	// At this point all samples have been added to the appender, so we can track the time it took.
+	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+
+	level.Debug(spanlog).Log(
+		"event", "start commit",
+		"succeededSamplesCount", stats.succeededSamplesCount,
+		"failedSamplesCount", stats.failedSamplesCount,
+		"succeededExemplarsCount", stats.succeededExemplarsCount,
+		"failedExemplarsCount", stats.failedExemplarsCount,
+	)
+
+	startCommit := time.Now()
+	if err := app.Commit(); err != nil {
+		return nil, wrapWithUser(err, userID)
+	}
+
+	commitDuration := time.Since(startCommit)
+	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
+	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
+
+	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
+	if stats.succeededSamplesCount > 0 {
+		db.setLastUpdate(time.Now())
+	}
+
+	// Increment metrics only if the samples have been successfully committed.
+	// If the code didn't reach this point, it means that we returned an error
+	// which will be converted into an HTTP 5xx and the client should/will retry.
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(stats.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
+	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
+	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
+
+	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, GroupLabel2(i.limits, userID, ts), startAppend)
+
+	s := mimirpb.API
+	if req.Source() == client.CpnWriteRequest2_Source_rule {
+		s = mimirpb.RULE
+	}
+	i.updateMetricsFromPushStats(userID, group, &stats, s, db, i.metrics.discarded)
+
+	if firstPartialErr != nil {
+		code := http.StatusBadRequest
+		var ve *validationError
+		if errors.As(firstPartialErr, &ve) {
+			code = ve.code
+		}
+		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
+	}
+
+	return &mimirpb.WriteResponse{}, nil
+}
+
 func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
 	if stats.sampleOutOfBoundsCount > 0 {
 		discarded.sampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
@@ -1073,6 +1224,276 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 	}
 	return nil
+}
+
+func (i *Ingester) pushSamplesToAppender2(userID string, timeseries client.CpnWriteRequest2_TimeSeries2_List, app extendedAppender, startAppend time.Time, stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries, outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+
+	// Return true if handled as soft error, and we can ingest more series.
+	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
+		// Check if the error is a soft error we can proceed on. If so, we keep track
+		// of it, so that we can return it back to the distributor, which will return a
+		// 400 error to the client. The client (Prometheus) will not retry on 400, and
+		// we actually ingested all samples which haven't failed.
+		//nolint:errorlint // We don't expect the cause error to be wrapped.
+		switch cause := errors.Cause(err); cause {
+		case storage.ErrOutOfBounds:
+			stats.sampleOutOfBoundsCount++
+			updateFirstPartial(func() error {
+				return newIngestErrSampleTimestampTooOld(model.Time(timestamp), labels)
+			})
+			return true
+
+		case storage.ErrOutOfOrderSample:
+			stats.sampleOutOfOrderCount++
+			updateFirstPartial(func() error {
+				return newIngestErrSampleOutOfOrder(model.Time(timestamp), labels)
+			})
+			return true
+
+		case storage.ErrTooOldSample:
+			stats.sampleTooOldCount++
+			updateFirstPartial(func() error {
+				return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow)
+			})
+			return true
+
+		case storage.ErrDuplicateSampleForTimestamp:
+			stats.newValueForTimestampCount++
+			updateFirstPartial(func() error {
+				return newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels)
+			})
+			return true
+
+		case errMaxSeriesPerUserLimitExceeded:
+			stats.perUserSeriesLimitCount++
+			updateFirstPartial(func() error {
+				return makeLimitError(i.limiter.FormatError(userID, cause))
+			})
+			return true
+
+		case errMaxSeriesPerMetricLimitExceeded:
+			stats.perMetricSeriesLimitCount++
+			updateFirstPartial(func() error {
+				return makeMetricLimitError(mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), i.limiter.FormatError(userID, cause))
+			})
+			return true
+		}
+		return false
+	}
+
+	// fetch once per push request to avoid processing half the request differently
+	nativeHistogramsIngestionEnabled := i.limits.NativeHistogramsIngestionEnabled(userID)
+
+	for ix := 0; ix < timeseries.Len(); ix++ {
+		ts := timeseries.At(ix)
+
+		samples, err := ts.Samples()
+		if err != nil {
+			return err
+		}
+
+		// The labels must be sorted (in our case, it's guaranteed a write request
+		// has sorted labels once hit the ingester).
+
+		// Fast path in case we only have samples and they are all out of bound
+		// and out-of-order support is not enabled.
+		// TODO(jesus.vazquez) If we had too many old samples we might want to
+		// extend the fast path to fail early.
+		if nativeHistogramsIngestionEnabled {
+			if outOfOrderWindow <= 0 && minAppendTimeAvailable && // len(ts.Exemplars) == 0 &&
+				(samples.Len() > 0 /* || len(ts.Histograms) > 0 */) &&
+				allOutOfBoundsFloats2(samples, minAppendTime) {
+				// && allOutOfBoundsHistograms(ts.Histograms, minAppendTime) {
+
+				stats.failedSamplesCount += samples.Len()     // + len(ts.Histograms)
+				stats.sampleOutOfBoundsCount += samples.Len() // + len(ts.Histograms)
+
+				var firstTimestamp int64
+				if samples.Len() > 0 {
+					firstTimestamp = samples.At(0).TimestampMs()
+				}
+				//if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < firstTimestamp {
+				//	firstTimestamp = ts.Histograms[0].Timestamp
+				//}
+
+				updateFirstPartial(func() error {
+					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), labelsToAdapter(ts.Labels()))
+				})
+				continue
+			}
+		} else {
+			// ignore native histograms in the condition and statitics as well
+			if outOfOrderWindow <= 0 && minAppendTimeAvailable && // len(ts.Exemplars) == 0 &&
+				samples.Len() > 0 && allOutOfBoundsFloats2(samples, minAppendTime) {
+
+				stats.failedSamplesCount += samples.Len()
+				stats.sampleOutOfBoundsCount += samples.Len()
+
+				firstTimestamp := samples.At(0).TimestampMs()
+
+				updateFirstPartial(func() error {
+					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), labelsToAdapter(ts.Labels()))
+				})
+				continue
+			}
+		}
+
+		nonCopiedLabels := labelsToLabels(ts.Labels())
+		hash := nonCopiedLabels.Hash()
+		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
+		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
+		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
+
+		// To find out if any sample was added to this series, we keep old value.
+		oldSucceededSamplesCount := stats.succeededSamplesCount
+
+		for ix := 0; ix < samples.Len(); ix++ {
+			s := samples.At(ix)
+			var err error
+
+			// If the cached reference exists, we try to use it.
+			if ref != 0 {
+				if _, err = app.Append(ref, copiedLabels, s.TimestampMs(), s.Value()); err == nil {
+					stats.succeededSamplesCount++
+					continue
+				}
+			} else {
+				// Copy the label set because both TSDB and the active series tracker may retain it.
+				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(mimirpb.FromLabelsToLabelAdapters(nonCopiedLabels))
+
+				// Retain the reference in case there are multiple samples for the series.
+				if ref, err = app.Append(0, copiedLabels, s.TimestampMs(), s.Value()); err == nil {
+					stats.succeededSamplesCount++
+					continue
+				}
+			}
+
+			stats.failedSamplesCount++
+
+			// If it's a soft error it will be returned back to the distributor later as a 400.
+			if handleAppendError(err, s.TimestampMs(), labelsToAdapter(ts.Labels())) {
+				continue
+			}
+
+			// Otherwise, return a 500.
+			return wrapWithUser(err, userID)
+		}
+
+		//if nativeHistogramsIngestionEnabled {
+		//	for _, h := range ts.Histograms {
+		//		var (
+		//			err error
+		//			ih  *histogram.Histogram
+		//			fh  *histogram.FloatHistogram
+		//		)
+		//
+		//		if h.IsFloatHistogram() {
+		//			fh = mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
+		//		} else {
+		//			ih = mimirpb.FromHistogramProtoToHistogram(&h)
+		//		}
+		//
+		//		// If the cached reference exists, we try to use it.
+		//		if ref != 0 {
+		//			if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
+		//				stats.succeededSamplesCount++
+		//				continue
+		//			}
+		//		} else {
+		//			// Copy the label set because both TSDB and the active series tracker may retain it.
+		//			copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+		//
+		//			// Retain the reference in case there are multiple samples for the series.
+		//			if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+		//				stats.succeededSamplesCount++
+		//				continue
+		//			}
+		//		}
+		//
+		//		stats.failedSamplesCount++
+		//
+		//		if handleAppendError(err, h.Timestamp, ts.Labels) {
+		//			continue
+		//		}
+		//
+		//		return wrapWithUser(err, userID)
+		//	}
+		//}
+
+		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
+			activeSeries.UpdateSeries(nonCopiedLabels, hash, startAppend, func(l labels.Labels) labels.Labels {
+				// we must already have copied the labels if succeededSamplesCount has been incremented.
+				return copiedLabels
+			})
+		}
+
+		//if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
+		//	// app.AppendExemplar currently doesn't create the series, it must
+		//	// already exist.  If it does not then drop.
+		//	if ref == 0 {
+		//		updateFirstPartial(func() error {
+		//			return newIngestErrExemplarMissingSeries(model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
+		//		})
+		//		stats.failedExemplarsCount += len(ts.Exemplars)
+		//	} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
+		//		for _, ex := range ts.Exemplars {
+		//			e := exemplar.Exemplar{
+		//				Value:  ex.Value,
+		//				Ts:     ex.TimestampMs,
+		//				HasTs:  true,
+		//				Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+		//			}
+		//
+		//			var err error
+		//			if _, err = app.AppendExemplar(ref, nil, e); err == nil {
+		//				stats.succeededExemplarsCount++
+		//				continue
+		//			}
+		//
+		//			// Error adding exemplar
+		//			updateFirstPartial(func() error {
+		//				return wrappedTSDBIngestExemplarOtherErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+		//			})
+		//			stats.failedExemplarsCount++
+		//		}
+		//	}
+		//}
+	}
+	return nil
+}
+
+func labelsToAdapter(list client.CpnWriteRequest2_TimeSeries2_LabelPair2_List, err error) []mimirpb.LabelAdapter {
+	return mimirpb.FromLabelsToLabelAdapters(labelsToLabels(list, err))
+}
+
+// creates labels.Labels from capnproto Labels. Uses []byte slices pointing to underlying message.
+func labelsToLabels(list client.CpnWriteRequest2_TimeSeries2_LabelPair2_List, err error) labels.Labels {
+	if err != nil {
+		return labels.Labels{labels.Label{Name: "error", Value: err.Error()}}
+	}
+
+	res := make(labels.Labels, list.Len())
+	for i := 0; i < list.Len(); i++ {
+		l := list.At(i)
+		name, err := l.NameBytes()
+		if err != nil {
+			name = []byte(err.Error())
+		}
+		val, err := l.ValueBytes()
+		if err != nil {
+			val = []byte(err.Error())
+		}
+
+		res[i] = labels.Label{
+			Name:  yoloString(name),
+			Value: yoloString(val),
+		}
+	}
+	return res
+}
+
+func yoloString(buf []byte) string {
+	return *((*string)(unsafe.Pointer(&buf)))
 }
 
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
@@ -2773,6 +3194,22 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 	return i.PushWithCleanup(ctx, pushReq)
 }
 
+func (i *Ingester) Push2(ctx context.Context, req *client.WriteRequest2) (*mimirpb.WriteResponse, error) {
+	msg, err := capnp.Unmarshal(req.Wrapper.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	wr, err := client.ReadRootCpnWriteRequest2(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	defer req.Wrapper.ReturnToPool()
+
+	return i.PushWithoutCleanup2(ctx, wr)
+}
+
 // pushMetadata returns number of ingested metadata.
 func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*mimirpb.MetricMetadata) int {
 	ingestedMetadata := 0
@@ -2935,6 +3372,17 @@ func allOutOfBoundsFloats(samples []mimirpb.Sample, minValidTime int64) bool {
 	return true
 }
 
+// allOutOfBounds returns whether all the provided (float) samples are out of bounds.
+func allOutOfBoundsFloats2(samples client.CpnWriteRequest2_TimeSeries2_Sample2_List, minValidTime int64) bool {
+	for ix := 0; ix < samples.Len(); ix++ {
+		s := samples.At(ix)
+		if s.TimestampMs() >= minValidTime {
+			return false
+		}
+	}
+	return true
+}
+
 // allOutOfBoundsHistograms returns whether all the provided histograms are out of bounds.
 func allOutOfBoundsHistograms(histograms []mimirpb.Histogram, minValidTime int64) bool {
 	for _, s := range histograms {
@@ -2963,4 +3411,40 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorHandling:      promhttp.HTTPErrorOnError,
 		Timeout:            10 * time.Second,
 	}).ServeHTTP(w, r)
+}
+
+// GroupLabel obtains the first non-empty group label from the first timeseries in the list of incoming timeseries.
+func GroupLabel2(o *validation.Overrides, userID string, timeseries client.CpnWriteRequest2_TimeSeries2_List) string {
+	if timeseries.Len() == 0 {
+		return ""
+	}
+
+	groupLabel := o.SeparateMetricsGroupLabel(userID)
+	if groupLabel == "" {
+		// If not set, label value will be "" and dropped by Prometheus
+		return groupLabel
+	}
+
+	for ix := 0; ix < timeseries.Len(); ix++ {
+		lbls, err := timeseries.At(ix).Labels()
+		if err != nil {
+			continue
+		}
+
+		for jx := 0; jx < lbls.Len(); jx++ {
+			n, err := lbls.At(jx).Name()
+			if err != nil {
+				n = err.Error()
+			}
+			v, err := lbls.At(jx).Value()
+			if err != nil {
+				v = err.Error()
+			}
+
+			if n == groupLabel {
+				return v
+			}
+		}
+	}
+	return ""
 }

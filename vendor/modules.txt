@@ -1,3 +1,16 @@
+# capnproto.org/go/capnp/v3 v3.0.0-alpha-29.0.20230525163938-2ad05d697d54
+## explicit; go 1.19
+capnproto.org/go/capnp/v3
+capnproto.org/go/capnp/v3/encoding/text
+capnproto.org/go/capnp/v3/exc
+capnproto.org/go/capnp/v3/exp/bufferpool
+capnproto.org/go/capnp/v3/flowcontrol
+capnproto.org/go/capnp/v3/internal/nodemap
+capnproto.org/go/capnp/v3/internal/schema
+capnproto.org/go/capnp/v3/internal/str
+capnproto.org/go/capnp/v3/internal/strquote
+capnproto.org/go/capnp/v3/packed
+capnproto.org/go/capnp/v3/schemas
 # cloud.google.com/go v0.110.0
 ## explicit; go 1.19
 cloud.google.com/go/internal
@@ -1438,6 +1451,12 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
+# zenhack.net/go/util v0.0.0-20230414211804-99ae9bf14f02
+## explicit; go 1.19
+zenhack.net/go/util/deferred
+zenhack.net/go/util/maybe
+zenhack.net/go/util/rc
+zenhack.net/go/util/sync/mutex
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230524115841-8d6690e86aa7
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094

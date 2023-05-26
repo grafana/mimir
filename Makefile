@@ -609,3 +609,6 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 
 docs: doc
 	cd docs && $(MAKE) docs
+
+pkg/ingester/client/write_request.capnp.go: pkg/ingester/client/write_request.capnp
+	capnp compile -I ../go-capnp/std -ogo pkg/ingester/client/write_request.capnp

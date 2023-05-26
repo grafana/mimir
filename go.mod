@@ -3,6 +3,7 @@ module github.com/grafana/mimir
 go 1.18
 
 require (
+	capnproto.org/go/capnp/v3 v3.0.0-alpha-29.0.20230525163938-2ad05d697d54
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v0.5.1
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/dustin/go-humanize v1.0.0
@@ -242,6 +243,7 @@ require (
 	k8s.io/kube-openapi v0.0.0-20230303024457-afdc3dddf62d // indirect
 	k8s.io/utils v0.0.0-20230308161112-d77c459e9343 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
+	zenhack.net/go/util v0.0.0-20230414211804-99ae9bf14f02 // indirect
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.

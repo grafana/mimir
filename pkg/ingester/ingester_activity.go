@@ -36,6 +36,11 @@ func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.Writ
 	return i.ing.Push(ctx, request)
 }
 
+func (i *ActivityTrackerWrapper) Push2(ctx context.Context, request *client.WriteRequest2) (*mimirpb.WriteResponse, error) {
+	// No tracking in Push
+	return i.ing.Push2(ctx, request)
+}
+
 func (i *ActivityTrackerWrapper) PushWithCleanup(ctx context.Context, r *push.Request) (*mimirpb.WriteResponse, error) {
 	// No tracking in PushWithCleanup
 	return i.ing.PushWithCleanup(ctx, r)
