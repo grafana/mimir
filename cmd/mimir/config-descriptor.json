@@ -2668,7 +2668,7 @@
           "kind": "field",
           "name": "utilization_based_limiting_enabled",
           "required": false,
-          "desc": "Enable CPU/memory utilization based request limiting",
+          "desc": "Enable CPU/memory utilization based read path request limiting",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.utilization-based-limiting-enabled",

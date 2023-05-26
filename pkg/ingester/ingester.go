@@ -188,7 +188,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
 
-	f.BoolVar(&cfg.UtilizationBasedLimitingEnabled, "ingester.utilization-based-limiting-enabled", false, "Enable CPU/memory utilization based request limiting")
+	f.BoolVar(&cfg.UtilizationBasedLimitingEnabled, "ingester.utilization-based-limiting-enabled", false, "Enable CPU/memory utilization based read path request limiting")
 	f.Float64Var(&cfg.CPUUtilizationTarget, "ingester.cpu-utilization-target", 0, "CPU target, as a fraction of 1, for CPU/memory utilization based request limiting")
 	f.Uint64Var(&cfg.MemoryUtilizationTarget, "ingester.memory-utilization-target", 0, "Memory target, in bytes, for CPU/memory utilization based request limiting")
 	f.Float64Var(&cfg.ReadPathUtilizationRatio, "ingester.read-path-utilization-target-ratio", 0.8,
