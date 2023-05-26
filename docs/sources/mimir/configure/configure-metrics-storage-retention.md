@@ -9,10 +9,10 @@ weight: 70
 
 # Configure Grafana Mimir metrics storage retention
 
-Grafana Mimir stores the metrics in a object storage.
+Grafana Mimir stores metrics in object storage.
 
 By default, metrics that are stored in the object storage are never deleted, and the storage utilization will increase over time.
-You can configure the object storage retention to automatically delete all of the metrics data older than the configured period.
+You can configure the object storage retention to automatically delete all metrics data older than the configured period.
 
 ## Configure the storage retention
 
