@@ -73,7 +73,7 @@ If a bucket index is unused for the amount of time configured via `-blocks-stora
 This is useful for tenants that are resharded to different queriers when [shuffle sharding]({{< relref "../../../configure/configure-shuffle-sharding/index.md" >}}) is enabled.
 
 At query time the querier and ruler determine how old a bucket index is based on its `updated_at` field.
-The query fails if the age is older than the period configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period`.
+The query fails if the bucket index is older than the period configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period`.
 This circuit breaker ensures queriers and rulers do not return any partial query results due to a stale view over the long-term storage.
 
 ## How it's used by the store-gateway
