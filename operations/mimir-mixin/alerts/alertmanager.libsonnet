@@ -94,7 +94,7 @@
         },
         {
           alert: $.alertName('AlertmanagerAllocatingTooMuchMemory'),
-          expr: $._config.alertmanager_alerts[$._config.deployment_type].memory_allocation % { allocationpercent: '0.80', instanceLabel: $._config.per_instance_label },
+          expr: $._config.alertmanager_alerts[$._config.deployment_type].memory_allocation % $._config { threshold: '0.80' },
           'for': '15m',
           labels: {
             severity: 'warning',
@@ -107,7 +107,7 @@
         },
         {
           alert: $.alertName('AlertmanagerAllocatingTooMuchMemory'),
-          expr: $._config.alertmanager_alerts[$._config.deployment_type].memory_allocation % { allocationpercent: '0.90', instanceLabel: $._config.per_instance_label },
+          expr: $._config.alertmanager_alerts[$._config.deployment_type].memory_allocation % $._config { threshold: '0.90' },
           'for': '15m',
           labels: {
             severity: 'critical',
