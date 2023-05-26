@@ -1157,7 +1157,7 @@ querier:
 
 
 ruler_querier:
-  replicas: 10
+  replicas: 2
 
 
   service:
