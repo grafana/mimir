@@ -16,6 +16,7 @@ import (
 type Config struct {
 	bucket.Config `yaml:",inline"`
 	Local         local.StoreConfig `yaml:"local"`
+	State         string            `yaml:"state"`
 }
 
 // RegisterFlags registers the backend storage config.

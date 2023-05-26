@@ -7,9 +7,9 @@ package alertstore
 
 import (
 	"context"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/mixed"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -17,6 +17,9 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
+
+const defaultStateStore = "default"
+const storageBucketName = "alertmanager-storage"
 
 // AlertStore stores and configures users rule configs
 type AlertStore interface {
@@ -54,16 +57,29 @@ type AlertStore interface {
 
 // NewAlertStore returns a alertmanager store backend client based on the provided cfg.
 func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) (AlertStore, error) {
-	if cfg.Backend == local.Name {
+	if cfg.Backend == local.Name && cfg.State == defaultStateStore {
 		level.Warn(logger).Log("msg", "-alertmanager-storage.backend=local is not suitable for persisting alertmanager state between replicas (silences, notifications); you should switch to an external object store for production use")
 		return local.NewStore(cfg.Local)
+	}
+
+	if cfg.Backend == local.Name && cfg.State != defaultStateStore {
+		configStore, err := local.NewStore(cfg.Local)
+		if err != nil {
+			return nil, err
+		}
+		bucketClient, err := bucket.NewClient(ctx, cfg.Config, storageBucketName, logger, reg)
+		if err != nil {
+			return nil, err
+		}
+		stateStore := bucketclient.NewBucketAlertStore(bucketClient, cfgProvider, logger)
+		return mixed.NewMixedStore(configStore, stateStore), nil
 	}
 
 	if cfg.Backend == bucket.Filesystem {
 		level.Warn(logger).Log("msg", "-alertmanager-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem")
 	}
 
-	bucketClient, err := bucket.NewClient(ctx, cfg.Config, "alertmanager-storage", logger, reg)
+	bucketClient, err := bucket.NewClient(ctx, cfg.Config, storageBucketName, logger, reg)
 	if err != nil {
 		return nil, err
 	}

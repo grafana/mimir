@@ -11911,6 +11911,16 @@
           "fieldType": "string"
         },
         {
+          "kind": "field",
+          "name": "backend",
+          "required": false,
+          "desc": "Backend storage to use for the state. Supported backends are: s3, gcs, azure, swift, filesystem.",
+          "fieldValue": null,
+          "fieldDefaultValue": "default",
+          "fieldFlag": "alertmanager-storage.state",
+          "fieldType": "string"
+        },
+        {
           "kind": "block",
           "name": "s3",
           "required": false,
