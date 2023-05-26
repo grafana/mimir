@@ -83,6 +83,21 @@ func (s *TimeseriesDistributionStatistics) AddOwnership(replicationSet []Instanc
 	}
 }
 
+func (s *TimeseriesDistributionStatistics) GetSpreadByZone() map[string]float64 {
+	spreadByZone := make(map[string]float64)
+	for zone, ownershipByInstance := range s.OwnershipByInstanceByZone {
+		min := math.MaxFloat64
+		max := math.SmallestNonzeroFloat64
+		for _, ownerhsip := range ownershipByInstance {
+			min = math.Min(min, ownerhsip)
+			max = math.Max(max, ownerhsip)
+		}
+		spread := (max - min) * 100.00 / max
+		spreadByZone[zone] = spread
+	}
+	return spreadByZone
+}
+
 func (s *TimeseriesDistributionStatistics) Print(verbose bool) {
 	for zone, ownershipByInstance := range s.OwnershipByInstanceByZone {
 		min := math.MaxFloat64
