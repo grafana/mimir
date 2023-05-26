@@ -29,7 +29,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.25.1-0.20230502165937-0f3ab929fa37
-	github.com/prometheus/client_golang v1.15.0
+	github.com/prometheus/client_golang v1.15.1
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.42.0
 	github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e
@@ -245,7 +245,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230505111100-e5eb66f42202
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230524115841-8d6690e86aa7
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
