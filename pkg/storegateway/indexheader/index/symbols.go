@@ -87,8 +87,9 @@ func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 			d.SkipUvarintBytes()
 		}
 	} else {
-		// In v1, o is relative to the beginning of the whole index header file, so we
-		// need to adjust for the fact our view into the file starts at the beginning
+		// In v1, o is relative to the beginning of the whole index file,
+		// which is also the offset in the whole index header file.
+		// We need to adjust for the fact our view into the file starts at the beginning
 		// of the symbol table.
 		offsetInTable := int(o) - s.tableOffset
 		d.ResetAt(offsetInTable)
@@ -174,7 +175,10 @@ func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, er
 	if s.version == index.FormatV2 {
 		return uint32(res), nil
 	}
-	return uint32(lastPosition), nil
+	// Since the symbols in v1 are relative to the start of the index
+	// and the Decbuf position is relative to the start of the Decbuf,
+	// we need to offset by the relative position of the symbols table in the index header.
+	return uint32(lastPosition + s.tableOffset), nil
 }
 
 func yoloString(b []byte) string {

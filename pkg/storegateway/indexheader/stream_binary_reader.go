@@ -44,6 +44,7 @@ type StreamBinaryReader struct {
 	symbols *streamindex.Symbols
 	// Cache of the label name symbol lookups,
 	// as there are not many and they are half of all lookups.
+	// The symbol reference is the prometheus TSDB symbol reference, not the index header symbol reference.
 	nameSymbols map[uint32]string
 	// Direct cache of values. This is much faster than an LRU cache and still provides
 	// a reasonable cache hit ratio.
@@ -139,7 +140,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, log
 
 	r.nameSymbols = make(map[uint32]string, len(labelNames))
 	if err = r.symbols.ForEachSymbol(labelNames, func(sym string, offset uint32) error {
-		r.nameSymbols[offset] = sym
+		r.nameSymbols[v1PromIndexSymbolRef(offset)] = sym
 		return nil
 	}); err != nil {
 		return nil, err
@@ -194,6 +195,10 @@ func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 		return s, nil
 	}
 
+	if r.indexVersion == index.FormatV1 {
+		o = v1IndexHeaderSymbolRef(o)
+	}
+
 	cacheIndex := o % valueSymbolsCacheSize
 	r.valueSymbolsMx.Lock()
 	if cached := r.valueSymbols[cacheIndex]; cached.index == o && cached.symbol != "" {
@@ -202,12 +207,6 @@ func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 		return v, nil
 	}
 	r.valueSymbolsMx.Unlock()
-
-	if r.indexVersion == index.FormatV1 {
-		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
-		// of the header length difference between two files.
-		o += headerLen - index.HeaderLen
-	}
 
 	s, err := r.symbols.Lookup(o)
 	if err != nil {
@@ -220,6 +219,18 @@ func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 	r.valueSymbolsMx.Unlock()
 
 	return s, nil
+}
+
+// v1IndexHeaderSymbolRef transforms a TSDB index symbols reference into a symbol reference in our index header.
+// Prometheus refs are actual offset inside index, not index-header. This is different because of the header length difference between two files.
+func v1IndexHeaderSymbolRef(tsdbSymRef uint32) uint32 {
+	return tsdbSymRef + (headerLen - index.HeaderLen)
+}
+
+// v1PromIndexSymbolRef transforms an index header symbols reference into a TSDB index symbol reference.
+// Prometheus refs are actual offset inside index, not index-header. This is different because of the header length difference between two files.
+func v1PromIndexSymbolRef(indexHeaderSymRef uint32) uint32 {
+	return indexHeaderSymRef - (headerLen - index.HeaderLen)
 }
 
 func (r *StreamBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
