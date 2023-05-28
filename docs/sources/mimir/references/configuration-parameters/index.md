@@ -2604,8 +2604,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.enforce-metadata-metric-name
 [enforce_metadata_metric_name: <boolean> | default = true]
 
-# The tenant's shard size used by shuffle-sharding. Must be set both on
-# ingesters and distributors. 0 disables shuffle sharding.
+# The tenant's shard size used by shuffle-sharding. This value is the total size
+# of the shard (ie. it is not the number of ingesters in the shard per zone, but
+# the number of ingesters in the shard across all zones, if zone-awareness is
+# enabled). Must be set both on ingesters and distributors. 0 disables shuffle
+# sharding.
 # CLI flag: -distributor.ingestion-tenant-shard-size
 [ingestion_tenant_shard_size: <int> | default = 0]
 
