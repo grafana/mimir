@@ -238,6 +238,18 @@ func generateAndAnalyzeRandomModuloTokenRing(timeseriesCount, tokensPerInstance,
 	return statistics, nil
 }
 
+func generateAndAnalyzeFixedTokenRing(timeseriesCount, tokensPerInstance, instancesPerZone int, zones []string, maxTokenValue uint32, logger log.Logger) (*eventokendistributor.TimeseriesDistributionStatistics, error) {
+	level.Info(logger).Log("test", "Analysis of a distribution of in a fixedToken ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "instancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "start")
+	tokenDistributor := eventokendistributor.Fixed{}
+	analysisName := fmt.Sprintf("timeseries-in-fixedTokenRing-tokensPerInstance-%d-instancesPerZone-%d-", tokensPerInstance, instancesPerZone)
+	statistics, err := generateAndAnalyzeRing(analysisName, timeseriesCount, instancesPerZone, zones, maxTokenValue, tokenDistributor)
+	if err != nil {
+		return nil, err
+	}
+	level.Info(logger).Log("test", "Analysis of a distribution of timeseries in a randomModuloToken ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "instancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "end")
+	return statistics, nil
+}
+
 func main() {
 	logger := log.NewLogfmtLogger(os.Stdout)
 	zones := []string{"zone-a", "zone-b", "zone-c"}
@@ -247,8 +259,9 @@ func main() {
 	analyses := map[string]func(int, int, int, []string, uint32, log.Logger) (*eventokendistributor.TimeseriesDistributionStatistics, error){
 		/*"powerOf2":     generateAndAnalyzePowerOf2Ring,
 		"random":       generateAndAnalyzeRandomTokenRing,
-		"randomBucket": generateAndAnalyzeRandomBucketTokenRing,*/
-		"randomModulo": generateAndAnalyzeRandomModuloTokenRing,
+		"randomBucket": generateAndAnalyzeRandomBucketTokenRing,
+		"randomModulo": generateAndAnalyzeRandomModuloTokenRing,*/
+		"fixed": generateAndAnalyzeFixedTokenRing,
 	}
 	for analysisName, analysis := range analyses {
 		spreadsByZoneByInstancePerZone := make(map[int]map[string]float64, len(instancesPerZoneScenarios))
