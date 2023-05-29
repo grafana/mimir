@@ -21,11 +21,11 @@ func TestMergeIter(t *testing.T) {
 	chunk4 := mkGenericChunk(t, model.TimeFromUnix(75), 100, chunk.PrometheusXorChunk)
 	chunk5 := mkGenericChunk(t, model.TimeFromUnix(100), 100, chunk.PrometheusXorChunk)
 
-	iter := newMergeIterator([]GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-	testIter(t, 200, newIteratorAdapter(iter), chunk.PrometheusXorChunk)
+	iter := newMergeIterator(nil, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+	testIter(t, 200, newIteratorAdapter(nil, iter), chunk.PrometheusXorChunk)
 
-	iter = newMergeIterator([]GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-	testSeek(t, 200, newIteratorAdapter(iter), chunk.PrometheusXorChunk)
+	iter = newMergeIterator(nil, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+	testSeek(t, 200, newIteratorAdapter(nil, iter), chunk.PrometheusXorChunk)
 }
 
 func TestMergeHarder(t *testing.T) {
@@ -40,9 +40,9 @@ func TestMergeHarder(t *testing.T) {
 		chunks = append(chunks, mkGenericChunk(t, from, samples, chunk.PrometheusXorChunk))
 		from = from.Add(time.Duration(offset) * time.Second)
 	}
-	iter := newMergeIterator(chunks)
-	testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(iter), chunk.PrometheusXorChunk)
+	iter := newMergeIterator(nil, chunks)
+	testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter), chunk.PrometheusXorChunk)
 
-	iter = newMergeIterator(chunks)
-	testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(iter), chunk.PrometheusXorChunk)
+	iter = newMergeIterator(nil, chunks)
+	testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter), chunk.PrometheusXorChunk)
 }

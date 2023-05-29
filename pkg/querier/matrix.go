@@ -16,7 +16,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/modelutil"
 )
 
-func mergeChunks(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
+// TODO: reuse iterators.
+func mergeChunks(_ chunkenc.Iterator, chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
 	var (
 		samples          = make([][]model.SamplePair, 0, len(chunks))
 		histograms       [][]mimirpb.Histogram
