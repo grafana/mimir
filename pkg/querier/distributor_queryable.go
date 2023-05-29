@@ -176,22 +176,24 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		sets = append(sets, series.NewConcreteSeriesSetFromUnsortedSeries(serieses))
 	}
 
-	streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
-	queryStats := stats.FromContext(ctx)
-
-	for _, s := range results.StreamingSeries {
-		streamingSeries = append(streamingSeries, &streamingChunkSeries{
-			labels:            s.Labels,
+	if len(results.StreamingSeries) > 0 {
+		streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
+		streamingChunkSeriesConfig := &streamingChunkSeriesConfig{
 			chunkIteratorFunc: q.chunkIterFn,
 			mint:              minT,
 			maxt:              maxT,
 			queryChunkMetrics: q.queryChunkMetrics,
-			sources:           s.Sources,
-			queryStats:        queryStats,
-		})
-	}
+			queryStats:        stats.FromContext(ctx),
+		}
 
-	if len(streamingSeries) > 0 {
+		for _, s := range results.StreamingSeries {
+			streamingSeries = append(streamingSeries, &streamingChunkSeries{
+				labels:  s.Labels,
+				sources: s.Sources,
+				config:  streamingChunkSeriesConfig,
+			})
+		}
+
 		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
 	}
 
