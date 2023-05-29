@@ -8,6 +8,7 @@ package querier
 import (
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"math"
 	"strconv"
 	"testing"
@@ -572,16 +573,26 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, batch.NewChunkMergeIterator, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 
 	b.ResetTimer()
+	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
 		seriesSet := querier.Select(true, &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64})
 		if seriesSet.Err() != nil {
 			b.Fatal(seriesSet.Err())
+		}
+
+		var it chunkenc.Iterator
+		for seriesSet.Next() {
+			ss := seriesSet.At()
+			it = ss.Iterator(it)
+			if it.Err() != nil {
+				b.Fatal(it.Err())
+			}
 		}
 	}
 }

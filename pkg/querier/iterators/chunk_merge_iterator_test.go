@@ -66,7 +66,7 @@ func TestChunkMergeIterator(t *testing.T) {
 				for _, bounds := range tc.chunkBounds {
 					chunks = append(chunks, mkChunk(t, bounds.mint, bounds.maxt, 1*time.Millisecond, encoding.enc))
 				}
-				iter := NewChunkMergeIterator(chunks, 0, 0)
+				iter := NewChunkMergeIterator(nil, chunks, 0, 0)
 				for i := tc.mint; i < tc.maxt; i++ {
 					encoding.assertSample(t, i, iter, iter.Next())
 				}
@@ -77,7 +77,7 @@ func TestChunkMergeIterator(t *testing.T) {
 }
 
 func TestChunkMergeIteratorMixed(t *testing.T) {
-	iter := NewChunkMergeIterator([]chunk.Chunk{
+	iter := NewChunkMergeIterator(nil, []chunk.Chunk{
 		mkChunk(t, 0, 75, 1*time.Millisecond, chunk.PrometheusXorChunk),
 		mkChunk(t, 50, 150, 1*time.Millisecond, chunk.PrometheusHistogramChunk),
 		mkChunk(t, 125, 200, 1*time.Millisecond, chunk.PrometheusFloatHistogramChunk),
@@ -115,7 +115,7 @@ func TestChunkMergeIteratorSeek(t *testing.T) {
 			maxt := int64(200)
 
 			for i := mint; i < maxt; i += 20 {
-				iter := NewChunkMergeIterator(chunks, 0, 0)
+				iter := NewChunkMergeIterator(nil, chunks, 0, 0)
 				valueType := iter.Seek(i)
 				encoding.assertSample(t, i, iter, valueType)
 
@@ -154,7 +154,7 @@ func TestChunkMergeIteratorSeekMixed(t *testing.T) {
 	}
 
 	for i := mint; i < maxt; i += 10 {
-		iter := NewChunkMergeIterator(chunks, 0, 0)
+		iter := NewChunkMergeIterator(nil, chunks, 0, 0)
 		assertSample(t, i, iter, iter.Seek(i))
 
 		for j := i + 1; j < maxt; j++ {
