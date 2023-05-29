@@ -9,8 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-
-	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
 type queryStatsMiddleware struct {
@@ -49,20 +47,17 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req Request) (Response, er
 		s.nonAlignedQueries.Inc()
 	}
 
-	expr, err := parser.ParseExpr(req.GetQuery())
-	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
-	}
+	if expr, err := parser.ParseExpr(req.GetQuery()); err == nil {
+		for _, selectors := range parser.ExtractSelectors(expr) {
+			for _, matcher := range selectors {
+				if matcher.Type != labels.MatchRegexp && matcher.Type != labels.MatchNotRegexp {
+					continue
+				}
 
-	for _, selectors := range parser.ExtractSelectors(expr) {
-		for _, matcher := range selectors {
-			if matcher.Type != labels.MatchRegexp && matcher.Type != labels.MatchNotRegexp {
-				continue
-			}
-
-			s.regexpMatcherCount.Inc()
-			if matcher.IsRegexOptimized() {
-				s.regexpMatcherOptimizedCount.Inc()
+				s.regexpMatcherCount.Inc()
+				if matcher.IsRegexOptimized() {
+					s.regexpMatcherOptimizedCount.Inc()
+				}
 			}
 		}
 	}
