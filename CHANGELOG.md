@@ -44,6 +44,7 @@
 * [ENHANCEMENT] Add native histogram support for `cortex_request_duration_seconds` metric family. #4987
 * [ENHANCEMENT] Ruler: do not list rule groups in the object storage for disabled tenants. #5004
 * [ENHANCEMENT] Query-frontend and querier: add HTTP API endpoint `<prometheus-http-prefix>/api/v1/format_query` to format a PromQL query. #4373
+* [ENHANCEMENT] Query-frontend: Add `cortex_query_frontend_regexp_matcher_count` and `cortex_query_frontend_regexp_matcher_optimized_count` metrics to track optimization of regular expression label matchers. #4813
 * [ENHANCEMENT] Alertmanager: Add configuration option to enable or disable the deletion of alertmanager state from object storage. This is useful when migrating alertmanager tenants from one cluster to another, because it avoids a condition where the state object is copied but then deleted before the configuration object is copied. #4989
 * [ENHANCEMENT] Querier: only use the minimum set of chunks from ingesters when querying, and cancel unnecessary requests to ingesters sooner if we know their results won't be used. #5016
 * [ENHANCEMENT] Add `-enable-go-runtime-metrics` flag to expose all go runtime metrics as Prometheus metrics. #5009
