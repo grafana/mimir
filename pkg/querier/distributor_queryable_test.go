@@ -8,7 +8,6 @@ package querier
 import (
 	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/querier/batch"
 	"math"
 	"strconv"
 	"testing"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
