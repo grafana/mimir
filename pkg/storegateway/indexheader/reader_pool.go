@@ -56,14 +56,14 @@ type ReaderPool struct {
 	headersLazyLoadedTracker *HeadersLazyLoadedTracker
 }
 
-// HeadersLazyLoadedTracker tracks blocks that are lazy loaded and last access time.
+// HeadersLazyLoadedTracker tracks blocks that are lazy loaded and its last access time.
 type HeadersLazyLoadedTracker struct {
 	sync.Mutex
 	LazyLoadedBlocks map[string]int64
 	Checksum         uint32
 }
 
-// NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers if enabled.
+// NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers and blockIds writers if enabled.
 func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics) *ReaderPool {
 	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics)
 
@@ -78,8 +78,17 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 					return
 				case <-time.After(checkFreq):
 					p.closeIdleReaders()
-					// TODO: later we will use own timer/ticker.
-					// this is for POC/testing.
+				}
+			}
+		}()
+
+		go func() {
+			for {
+				select {
+				case <-p.close:
+					return
+				// TODO: this should be 1 minute
+				case <-time.After(2 * time.Second):
 					p.lazyReaderPrinters()
 					p.lazyLoadedTrackerWriter()
 				}
