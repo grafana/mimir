@@ -21,11 +21,17 @@ func TestMergeIter(t *testing.T) {
 	chunk4 := mkGenericChunk(t, model.TimeFromUnix(75), 100, chunk.PrometheusXorChunk)
 	chunk5 := mkGenericChunk(t, model.TimeFromUnix(100), 100, chunk.PrometheusXorChunk)
 
-	iter := newMergeIterator(nil, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-	testIter(t, 200, newIteratorAdapter(nil, iter), chunk.PrometheusXorChunk)
+	iter := NewGenericChunkMergeIterator(nil, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+	testIter(t, 200, iter, chunk.PrometheusXorChunk)
+	iter = NewGenericChunkMergeIterator(nil, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+	testSeek(t, 200, iter, chunk.PrometheusXorChunk)
 
-	iter = newMergeIterator(nil, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-	testSeek(t, 200, newIteratorAdapter(nil, iter), chunk.PrometheusXorChunk)
+	// Re-use iterator.
+	iter = NewGenericChunkMergeIterator(iter, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+	testIter(t, 200, iter, chunk.PrometheusXorChunk)
+	iter = NewGenericChunkMergeIterator(iter, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+	testSeek(t, 200, iter, chunk.PrometheusXorChunk)
+
 }
 
 func TestMergeHarder(t *testing.T) {
