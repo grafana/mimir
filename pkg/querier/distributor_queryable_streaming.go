@@ -12,17 +12,21 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 )
 
+type streamingChunkSeriesConfig struct {
+	chunkIteratorFunc chunkIteratorFunc
+	mint, maxt        int64
+	queryChunkMetrics *stats.QueryChunkMetrics
+	queryStats        *stats.Stats
+}
+
 // streamingChunkSeries is a storage.Series that reads chunks from sources in a streaming way. The chunks are read from
 // each source's client.SeriesChunksStreamReader when the series' iterator is created. The stream reader only reads
 // further chunks from its underlying gRPC stream when the current buffer is exhausted, limiting the total number of
 // chunks in memory at a time.
 type streamingChunkSeries struct {
-	labels            labels.Labels
-	chunkIteratorFunc chunkIteratorFunc
-	mint, maxt        int64
-	sources           []client.StreamingSeriesSource
-	queryChunkMetrics *stats.QueryChunkMetrics
-	queryStats        *stats.Stats
+	labels  labels.Labels
+	sources []client.StreamingSeriesSource
+	config  *streamingChunkSeriesConfig
 }
 
 func (s *streamingChunkSeries) Labels() labels.Labels {
@@ -44,10 +48,10 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 		uniqueChunks = client.AccumulateChunks(uniqueChunks, c)
 	}
 
-	s.queryChunkMetrics.IngesterChunksTotal.Add(float64(totalChunks))
-	s.queryChunkMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(uniqueChunks)))
+	s.config.queryChunkMetrics.IngesterChunksTotal.Add(float64(totalChunks))
+	s.config.queryChunkMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(uniqueChunks)))
 
-	s.queryStats.AddFetchedChunks(uint64(len(uniqueChunks)))
+	s.config.queryStats.AddFetchedChunks(uint64(len(uniqueChunks)))
 
 	chunkBytes := 0
 
@@ -55,12 +59,12 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 		chunkBytes += c.Size()
 	}
 
-	s.queryStats.AddFetchedChunkBytes(uint64(chunkBytes))
+	s.config.queryStats.AddFetchedChunkBytes(uint64(chunkBytes))
 
 	chunks, err := client.FromChunks(s.labels, uniqueChunks)
 	if err != nil {
 		return series.NewErrIterator(err)
 	}
 
-	return s.chunkIteratorFunc(chunks, model.Time(s.mint), model.Time(s.maxt))
+	return s.config.chunkIteratorFunc(chunks, model.Time(s.config.mint), model.Time(s.config.maxt))
 }
