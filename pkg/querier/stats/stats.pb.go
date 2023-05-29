@@ -34,9 +34,9 @@ type Stats struct {
 	WallTime time.Duration `protobuf:"bytes,1,opt,name=wall_time,json=wallTime,proto3,stdduration" json:"wall_time"`
 	// The number of series fetched for the query
 	FetchedSeriesCount uint64 `protobuf:"varint,2,opt,name=fetched_series_count,json=fetchedSeriesCount,proto3" json:"fetched_series_count,omitempty"`
-	// The number of bytes of the chunks fetched for the query
+	// The number of bytes of the chunks fetched for the query, after any deduplication
 	FetchedChunkBytes uint64 `protobuf:"varint,3,opt,name=fetched_chunk_bytes,json=fetchedChunkBytes,proto3" json:"fetched_chunk_bytes,omitempty"`
-	// The number of chunks fetched for the query
+	// The number of chunks fetched for the query, after any deduplication
 	FetchedChunksCount uint64 `protobuf:"varint,4,opt,name=fetched_chunks_count,json=fetchedChunksCount,proto3" json:"fetched_chunks_count,omitempty"`
 	// The number of sharded queries executed. 0 if sharding is disabled or the query can't be sharded.
 	ShardedQueries uint32 `protobuf:"varint,5,opt,name=sharded_queries,json=shardedQueries,proto3" json:"sharded_queries,omitempty"`

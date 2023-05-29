@@ -47,7 +47,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -57,14 +56,12 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -82,14 +79,14 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 	defer func() { assert.NoError(t, bkt.Close()) }()
 
 	blockID := ulid.MustNew(1, nil)
-	meta := &metadata.Meta{
+	meta := &block.Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: blockID},
-		Thanos: metadata.Thanos{
+		Thanos: block.ThanosMeta{
 			Labels: map[string]string{}, // this is empty in Mimir
 		},
 	}
 
-	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, nil, blockPartitioners{})
+	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, blockPartitioners{})
 	assert.NoError(t, err)
 
 	cases := []struct {
@@ -176,7 +173,7 @@ func TestBucketBlockSet_remove(t *testing.T) {
 	}
 
 	for _, in := range input {
-		var m metadata.Meta
+		var m block.Meta
 		m.ULID = in.id
 		m.MinTime = in.mint
 		m.MaxTime = in.maxt
@@ -195,7 +192,7 @@ func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 
 	b := &bucketBlock{
-		meta: &metadata.Meta{
+		meta: &block.Meta{
 			BlockMeta: tsdb.BlockMeta{
 				ULID: ulid.MustNew(1, nil),
 			},
@@ -372,7 +369,7 @@ type cacheNotExpectingToStoreLabelNames struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(string, ulid.ULID, indexcache.LabelMatchersKey, []byte) {
 	c.t.Fatalf("StoreLabelNames should not be called")
 }
 
@@ -492,7 +489,7 @@ type cacheNotExpectingToStoreLabelValues struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey indexcache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(string, ulid.ULID, string, indexcache.LabelMatchersKey, []byte) {
 	c.t.Fatalf("StoreLabelValues should not be called")
 }
 
@@ -873,6 +870,7 @@ type interceptedIndexReader struct {
 	onLabelNamesCalled         func() error
 	onLabelValuesCalled        func(name string) error
 	onLabelValuesOffsetsCalled func(name string) error
+	onIndexVersionCalled       func() error
 }
 
 func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
@@ -893,11 +891,21 @@ func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string
 	return iir.Reader.LabelValuesOffsets(name, prefix, filter)
 }
 
+func (iir *interceptedIndexReader) IndexVersion() (int, error) {
+	if iir.onIndexVersionCalled != nil {
+		if err := iir.onIndexVersionCalled(); err != nil {
+			return 0, err
+		}
+	}
+	return iir.Reader.IndexVersion()
+}
+
 func deadlineExceededIndexHeader() *interceptedIndexReader {
 	return &interceptedIndexReader{
 		onLabelNamesCalled:         func() error { return context.DeadlineExceeded },
 		onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
 		onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
+		onIndexVersionCalled:       func() error { return context.DeadlineExceeded },
 	}
 }
 
@@ -916,13 +924,13 @@ func (w *contextNotifyingOnDoneWaiting) Done() <-chan struct{} {
 
 type corruptedExpandedPostingsCache struct{ noopCache }
 
-func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
+func (c corruptedExpandedPostingsCache) FetchExpandedPostings(context.Context, string, ulid.ULID, indexcache.LabelMatchersKey, string) ([]byte, bool) {
 	return []byte(codecHeaderSnappy + "corrupted"), true
 }
 
 type corruptedPostingsCache struct{ noopCache }
 
-func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) indexcache.BytesResult {
+func (c corruptedPostingsCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) indexcache.BytesResult {
 	res := make(map[labels.Label][]byte)
 	for _, k := range keys {
 		res[k] = []byte("corrupted or unknown")
@@ -935,7 +943,7 @@ type cacheNotExpectingToStoreExpandedPostings struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(string, ulid.ULID, indexcache.LabelMatchersKey, string, []byte) {
 	c.t.Fatalf("StoreExpandedPostings should not be called")
 }
 
@@ -945,7 +953,7 @@ type spyPostingsCache struct {
 	storedPostingsVal         map[labels.Label][]byte
 }
 
-func (c *spyPostingsCache) StoreExpandedPostings(userID string, blockID ulid.ULID, key indexcache.LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+func (c *spyPostingsCache) StoreExpandedPostings(_ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ string, v []byte) {
 	c.storedExpandedPostingsVal = v
 }
 
@@ -1004,14 +1012,22 @@ func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender stor
 	require.NoError(tb, err)
 
 	return func() *bucketBlock {
+		var chunkObjects []string
+		err := bkt.Iter(context.Background(), path.Join(id.String(), "chunks"), func(s string) error {
+			chunkObjects = append(chunkObjects, s)
+			return nil
+		})
+		require.NoError(tb, err)
+
 		return &bucketBlock{
 			userID:            "tenant",
 			logger:            log.NewNopLogger(),
 			metrics:           NewBucketStoreMetrics(nil),
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
+			chunkObjs:         chunkObjects,
 			bkt:               bkt,
-			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
+			meta:              &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
 	}
@@ -1036,9 +1052,9 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	assert.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "tmp"), os.ModePerm))
 	id := createBlockFromHead(t, filepath.Join(tmpDir, "tmp"), h)
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, "tmp", id.String()), metadata.Thanos{
+	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(tmpDir, "tmp", id.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}, nil)
 	assert.NoError(t, err)
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
@@ -1309,9 +1325,9 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	)
 
 	extLset := labels.FromStrings("ext1", "1")
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: extLset.Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
 	blockDir := filepath.Join(tmpDir, "tmp")
@@ -1343,7 +1359,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		series = append(series, bSeries...)
 		expectedQueriesBlocks = append(expectedQueriesBlocks, hintspb.Block{Id: id.String()})
 
-		meta, err := metadata.InjectThanos(logger, filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(logger, filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 
 		assert.NoError(t, meta.WriteToDir(logger, filepath.Join(blockDir, id.String())))
@@ -1351,16 +1367,11 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
-	f, err := block.NewRawMetaFetcher(logger, ibkt)
-	assert.NoError(t, err)
-
-	chunkPool, err := pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, 1e9) // 1GB.
+	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil)
 	assert.NoError(t, err)
 
 	runTestWithStore := func(t test.TB, st *BucketStore, reg prometheus.Gatherer) {
 		if !t.IsBenchmark() {
-			st.chunkPool = &trackedBytesPool{parent: st.chunkPool}
-
 			// Reset the memory pools.
 			seriesChunksSlicePool.(*pool.TrackedPool).Reset()
 			chunksSlicePool.(*pool.TrackedPool).Reset()
@@ -1402,9 +1413,6 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 
 		if !t.IsBenchmark() {
 			if !skipChunk {
-				assert.Zero(t, st.chunkPool.(*trackedBytesPool).balance.Load())
-				st.chunkPool.(*trackedBytesPool).gets.Store(0)
-
 				assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
 				assert.Zero(t, chunksSlicePool.(*pool.TrackedPool).Balance.Load())
 
@@ -1443,15 +1451,15 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		maxSeriesPerBatch int
 	}{
 		"with series streaming (1K per batch)": {
-			options:           []BucketStoreOption{WithLogger(logger), WithChunkPool(chunkPool)},
+			options:           []BucketStoreOption{WithLogger(logger)},
 			maxSeriesPerBatch: 1000,
 		},
 		"with series streaming (10K per batch)": {
-			options:           []BucketStoreOption{WithLogger(logger), WithChunkPool(chunkPool)},
+			options:           []BucketStoreOption{WithLogger(logger)},
 			maxSeriesPerBatch: 10000,
 		},
 		"with series streaming and caches (1K per batch)": {
-			options:           []BucketStoreOption{WithLogger(logger), WithChunkPool(chunkPool), WithIndexCache(newInMemoryIndexCache(t)), WithChunksCache(newInMemoryChunksCache())},
+			options:           []BucketStoreOption{WithLogger(logger), WithIndexCache(newInMemoryIndexCache(t)), WithChunksCache(newInMemoryChunksCache())},
 			maxSeriesPerBatch: 1000,
 		},
 	}
@@ -1577,12 +1585,8 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			// Reset the memory pool tracker.
 			seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-			metaFetcher, err := block.NewRawMetaFetcher(logger, instrumentedBucket)
+			metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
 			assert.NoError(t, err)
-
-			chunkPool, err := pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, 1e9) // 1GB.
-			assert.NoError(t, err)
-			trackedChunkPool := &trackedBytesPool{parent: chunkPool}
 
 			// Create the bucket store.
 			store, err := NewBucketStore(
@@ -1604,7 +1608,6 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 				hashcache.NewSeriesHashCache(1024*1024),
 				NewBucketStoreMetrics(nil),
 				WithLogger(logger),
-				WithChunkPool(trackedChunkPool),
 			)
 			require.NoError(t, err)
 			require.NoError(t, store.SyncBlocks(ctx))
@@ -1626,36 +1629,12 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			// Wait until all workers have done.
 			wg.Wait()
 
-			// Ensure all chunks have been released to the pool.
-			require.Equal(t, 0, int(trackedChunkPool.balance.Load()))
-
 			// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
 			// pool have put back.
 			assert.Greater(t, seriesChunkRefsSetPool.(*pool.TrackedPool).Gets.Load(), int64(0))
 			assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*pool.TrackedPool).Balance.Load())
 		})
 	}
-}
-
-type trackedBytesPool struct {
-	parent  pool.Bytes
-	balance atomic.Uint64
-	gets    atomic.Uint64
-}
-
-func (m *trackedBytesPool) Get(sz int) (*[]byte, error) {
-	b, err := m.parent.Get(sz)
-	if err != nil {
-		return nil, err
-	}
-	m.balance.Add(uint64(cap(*b)))
-	m.gets.Add(uint64(1))
-	return b, nil
-}
-
-func (m *trackedBytesPool) Put(b *[]byte) {
-	m.balance.Sub(uint64(cap(*b)))
-	m.parent.Put(b)
 }
 
 // Regression test against: https://github.com/thanos-io/thanos/issues/2147.
@@ -1667,13 +1646,10 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	defer func() { assert.NoError(t, bkt.Close()) }()
 
 	logger := log.NewNopLogger()
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
-
-	chunkPool, err := pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, 100e7)
-	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{
 		MaxItemSize: 3000,
@@ -1713,7 +1689,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		blockDir := filepath.Join(tmpDir, "tmp")
 		id := createBlockFromHead(t, blockDir, h)
 
-		meta, err := metadata.InjectThanos(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
 
@@ -1725,7 +1701,6 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			meta:         meta,
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
-			chunkPool:    chunkPool,
 		}
 		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
@@ -1752,7 +1727,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		blockDir := filepath.Join(tmpDir, "tmp2")
 		id := createBlockFromHead(t, blockDir, h)
 
-		meta, err := metadata.InjectThanos(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
 
@@ -1764,7 +1739,6 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			meta:         meta,
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
-			chunkPool:    chunkPool,
 		}
 		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
@@ -1789,7 +1763,6 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		seriesLimiterFactory:     newStaticSeriesLimiterFactory(0),
 		maxSeriesPerBatch:        65536,
 		numChunksRangesPerSeries: 1,
-		chunkPool:                chunkPool,
 	}
 
 	srv := newBucketStoreTestServer(t, store)
@@ -1904,8 +1877,8 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 		}
 	}
 
-	tb, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t, 5000)
-	tb.Cleanup(close)
+	tb, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
+	tb.Cleanup(cleanup)
 	runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
 }
 
@@ -2135,12 +2108,12 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	blk := createBlockFromHead(t, headOpts.ChunkDirRoot, h)
 
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(headOpts.ChunkDirRoot, blk.String()), thanosMeta, nil)
+	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(headOpts.ChunkDirRoot, blk.String()), thanosMeta, nil)
 	assert.NoError(t, err)
 
 	// Create a bucket and upload the block there.
@@ -2259,14 +2232,14 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	// Create two blocks. Some series exists in both blocks, some don't.
 	// Samples for the overlapping series are equal between the two blocks
 	// (simulate the case of uncompacted blocks from ingesters).
-	_, err := testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
+	_, err := block.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
-	_, err = testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
+	_, err = block.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
@@ -2369,39 +2342,17 @@ func mustMarshalAny(pb proto.Message) *types.Any {
 	return out
 }
 
-func createBlockWithOneSeriesWithStep(t test.TB, dir string, lbls labels.Labels, blockIndex, totalSamples int, random *rand.Rand, step int64) ulid.ULID {
-	headOpts := tsdb.DefaultHeadOptions()
-	headOpts.ChunkDirRoot = dir
-	headOpts.ChunkRange = int64(totalSamples) * step
-	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, h.Close()) }()
-
-	app := h.Appender(context.Background())
-
-	ts := int64(blockIndex * totalSamples)
-	ref, err := app.Append(0, lbls, ts, random.Float64())
-	assert.NoError(t, err)
-	for i := 1; i < totalSamples; i++ {
-		_, err := app.Append(ref, lbls, ts+step*int64(i), random.Float64())
-		assert.NoError(t, err)
-	}
-	assert.NoError(t, app.Commit())
-
-	return createBlockFromHead(t, dir, h)
-}
-
 func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
 	tb := test.NewTB(t)
 
-	closers := []func(){}
+	cleanupFuncs := []func(){}
 
 	tmpDir := t.TempDir()
 
 	bktDir := filepath.Join(tmpDir, "bkt")
 	bkt, err := filesystem.NewBucket(bktDir)
 	assert.NoError(t, err)
-	closers = append(closers, func() { assert.NoError(t, bkt.Close()) })
+	cleanupFuncs = append(cleanupFuncs, func() { assert.NoError(t, bkt.Close()) })
 
 	var (
 		logger   = log.NewNopLogger()
@@ -2411,9 +2362,9 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 
 	prependLabels := labels.FromStrings("ext1", "1")
 	// Inject the Thanos meta to each block in the storage.
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: prependLabels.Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
 	// Create TSDB blocks.
@@ -2437,7 +2388,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	assert.NoError(t, head2.Close())
 
 	for _, blockID := range []ulid.ULID{block1, block2} {
-		_, err := metadata.InjectThanos(logger, filepath.Join(bktDir, blockID.String()), thanosMeta, nil)
+		_, err := block.InjectThanosMeta(logger, filepath.Join(bktDir, blockID.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 	}
 
@@ -2472,18 +2423,18 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	assert.NoError(tb, err)
 	assert.NoError(tb, store.SyncBlocks(context.Background()))
 
-	closers = append(closers, func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
+	cleanupFuncs = append(cleanupFuncs, func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
 
 	return tb, store, seriesSet1, seriesSet2, block1, block2, func() {
-		for _, close := range closers {
-			close()
+		for _, cleanup := range cleanupFuncs {
+			cleanup()
 		}
 	}
 }
 
 func TestLabelNamesAndValuesHints(t *testing.T) {
-	_, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t, 5000)
-	defer close()
+	_, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
+	defer cleanup()
 
 	type labelNamesValuesCase struct {
 		name string
@@ -2622,8 +2573,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 }
 
 func TestLabelNames_Cancelled(t *testing.T) {
-	_, store, _, _, _, _, close := setupStoreForHintsTest(t, 5000)
-	defer close()
+	_, store, _, _, _, _, cleanup := setupStoreForHintsTest(t, 5000)
+	defer cleanup()
 
 	req := &storepb.LabelNamesRequest{
 		Start: 0,
@@ -2648,8 +2599,8 @@ func TestLabelNames_Cancelled(t *testing.T) {
 }
 
 func TestLabelValues_Cancelled(t *testing.T) {
-	_, store, _, _, _, _, close := setupStoreForHintsTest(t, 5000)
-	defer close()
+	_, store, _, _, _, _, cleanup := setupStoreForHintsTest(t, 5000)
+	defer cleanup()
 
 	req := &storepb.LabelValuesRequest{
 		Label: "ext1",
@@ -2690,58 +2641,6 @@ func labelNamesFromSeriesSet(series []*storepb.Series) []string {
 
 	slices.Sort(labels)
 	return labels
-}
-
-func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
-	var (
-		ctx    = context.Background()
-		logger = log.NewNopLogger()
-
-		// Read chunks of different length. We're not using random to make the benchmark repeatable.
-		readLengths = []int64{300, 500, 1000, 5000, 10000, 30000, 50000, 100000, 300000, 1500000}
-	)
-
-	tmpDir := b.TempDir()
-
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	assert.NoError(b, err)
-	b.Cleanup(func() {
-		assert.NoError(b, bkt.Close())
-	})
-
-	// Create a block.
-	blockID := createBlockWithOneSeriesWithStep(test.NewTB(b), tmpDir, labels.FromStrings("__name__", "test"), 0, 100000, rand.New(rand.NewSource(0)), 5000)
-
-	// Upload the block to the bucket.
-	thanosMeta := metadata.Thanos{
-		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
-	}
-
-	blockMeta, err := metadata.InjectThanos(logger, filepath.Join(tmpDir, blockID.String()), thanosMeta, nil)
-	assert.NoError(b, err)
-
-	assert.NoError(b, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, blockID.String()), nil))
-
-	// Create a chunk pool with buckets between 8B and 32KB.
-	chunkPool, err := pool.NewBucketedBytes(8, 32*1024, 2, 1e10)
-	assert.NoError(b, err)
-
-	// Create a bucket block with only the dependencies we need for the benchmark.
-	blk, err := newBucketBlock(context.Background(), "tenant", logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, nil, chunkPool, nil, blockPartitioners{})
-	assert.NoError(b, err)
-
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		offset := int64(0)
-		length := readLengths[n%len(readLengths)]
-
-		_, err := blk.readChunkRange(ctx, 0, offset, length, byteRanges{{offset: 0, length: int(length)}})
-		if err != nil {
-			b.Fatal(err.Error())
-		}
-	}
 }
 
 type headGenOptions struct {

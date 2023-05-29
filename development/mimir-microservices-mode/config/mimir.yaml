@@ -44,7 +44,6 @@ blocks_storage:
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
-    consistency_delay: 5s
     index_header_lazy_loading_enabled: true
     sync_interval: 1m
 
@@ -111,7 +110,6 @@ alertmanager_storage:
 compactor:
   compaction_interval: 30s
   data_dir:            /tmp/mimir-compactor
-  consistency_delay:   1m
   cleanup_interval:    1m
   tenant_cleanup_delay: 1m
   sharding_ring:

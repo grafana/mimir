@@ -19,7 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 const (
@@ -51,12 +50,12 @@ func NewBucketIndexMetadataFetcher(
 		cfgProvider: cfgProvider,
 		logger:      logger,
 		filters:     filters,
-		metrics:     block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}, nil),
+		metrics:     block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}),
 	}
 }
 
 // Fetch implements block.MetadataFetcher. Not goroutine-safe.
-func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*metadata.Meta, partial map[ulid.ULID]error, err error) {
+func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*block.Meta, partial map[ulid.ULID]error, err error) {
 	f.metrics.ResetTx()
 
 	start := time.Now()
@@ -96,7 +95,7 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 	}
 
 	// Build block metas out of the index.
-	metas = make(map[ulid.ULID]*metadata.Meta, len(idx.Blocks))
+	metas = make(map[ulid.ULID]*block.Meta, len(idx.Blocks))
 	for _, b := range idx.Blocks {
 		metas[b.ID] = b.ThanosMeta()
 	}
@@ -108,7 +107,7 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 		if customFilter, ok := filter.(MetadataFilterWithBucketIndex); ok {
 			err = customFilter.FilterWithBucketIndex(ctx, metas, idx, f.metrics.Synced)
 		} else {
-			err = filter.Filter(ctx, metas, f.metrics.Synced, f.metrics.Modified)
+			err = filter.Filter(ctx, metas, f.metrics.Synced)
 		}
 
 		if err != nil {
@@ -120,9 +119,4 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 	f.metrics.Submit()
 
 	return metas, nil, nil
-}
-
-func (f *BucketIndexMetadataFetcher) UpdateOnChange(callback func([]metadata.Meta, error)) {
-	// Unused by the store-gateway.
-	callback(nil, errors.New("UpdateOnChange is unsupported"))
 }

@@ -27,7 +27,6 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 type metrics struct {
@@ -69,36 +68,36 @@ type ShipperConfigProvider interface {
 	OutOfOrderBlocksExternalLabelEnabled(userID string) bool
 }
 
-// Shipper watches a directory for matching files and directories and uploads
+// shipper watches a directory for matching files and directories and uploads
 // them to a remote data store.
-// Shipper implements BlocksUploader interface.
-type Shipper struct {
+// shipper implements BlocksUploader interface.
+type shipper struct {
 	logger      log.Logger
 	cfgProvider ShipperConfigProvider
 	userID      string
 	dir         string
 	metrics     *metrics
 	bucket      objstore.Bucket
-	source      metadata.SourceType
+	source      block.SourceType
 }
 
-// NewShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
+// newShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
 // remote if necessary. It attaches the Thanos metadata section in each meta JSON file.
 // If uploadCompacted is enabled, it also uploads compacted blocks which are already in filesystem.
-func NewShipper(
+func newShipper(
 	logger log.Logger,
 	cfgProvider ShipperConfigProvider,
 	userID string,
 	r prometheus.Registerer,
 	dir string,
 	bucket objstore.Bucket,
-	source metadata.SourceType,
-) *Shipper {
+	source block.SourceType,
+) *shipper {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	return &Shipper{
+	return &shipper{
 		logger:      logger,
 		cfgProvider: cfgProvider,
 		userID:      userID,
@@ -113,7 +112,7 @@ func NewShipper(
 // to the object bucket once.
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
-func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
+func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
 	shippedBlocks, err := readShippedBlocks(s.dir)
 	if err != nil {
 		// If we encounter any error, proceed with an new list of shipped blocks.
@@ -198,7 +197,7 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 // upload method uploads the block to blocks storage. Block is uploaded with updated meta.json file with extra details.
 // This updated version of meta.json is however not persisted locally on the disk, to avoid race condition when TSDB
 // library could actually unload the block if it found meta.json file missing.
-func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
+func (s *shipper) upload(ctx context.Context, meta *block.Meta) error {
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
 	meta.Thanos.Source = s.source
@@ -215,7 +214,7 @@ func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 
 // blockMetasFromOldest returns the block meta of each block found in dir
 // sorted by minTime asc.
-func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
+func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 	fis, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, errors.Wrap(err, "read dir")
@@ -237,7 +236,7 @@ func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
 		if !fi.IsDir() {
 			continue
 		}
-		m, err := metadata.ReadFromDir(dir)
+		m, err := block.ReadMetaFromDir(dir)
 		if err != nil {
 			return nil, errors.Wrapf(err, "read metadata for block %v", dir)
 		}

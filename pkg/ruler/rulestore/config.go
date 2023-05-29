@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
@@ -32,12 +31,12 @@ type Config struct {
 }
 
 // RegisterFlags registers the backend storage config.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	prefix := "ruler-storage."
 
 	cfg.StorageBackendConfig.ExtraBackends = []string{local.Name}
 	cfg.Local.RegisterFlagsWithPrefix(prefix, f)
-	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "ruler", f, logger)
+	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "ruler", f)
 
 	f.StringVar(&cfg.Cache.Backend, prefix+"cache.backend", "", fmt.Sprintf("Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except %q. Supported values: %s.", local.Name, strings.Join(supportedCacheBackends, ", ")))
 	cfg.Cache.Memcached.RegisterFlagsWithPrefix(prefix+"cache.memcached.", f)

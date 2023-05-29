@@ -126,6 +126,11 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -max-separate-metrics-groups-per-user
 [max_separate_metrics_groups_per_user: <int> | default = 1000]
 
+# (advanced) Set to true to enable all Go runtime metrics, such as go_sched_*
+# and go_memstats_*.
+# CLI flag: -enable-go-runtime-metrics
+[enable_go_runtime_metrics: <boolean> | default = false]
+
 api:
   # (advanced) Allows to skip label name validation via
   # X-Mimir-SkipLabelNameValidation header on the http write path. Use with
@@ -1059,6 +1064,17 @@ store_gateway_client:
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
+# (experimental) Request ingesters stream chunks. Ingesters will only respond
+# with a stream of chunks if the target ingester supports this, and this
+# preference will be ignored by ingesters that do not support this.
+# CLI flag: -querier.prefer-streaming-chunks
+[prefer_streaming_chunks: <boolean> | default = false]
+
+# (experimental) Number of series to buffer per ingester when streaming chunks
+# from ingesters.
+# CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
+[streaming_chunks_per_ingester_series_buffer_size: <int> | default = 512]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
 # CLI flag: -querier.max-concurrent
@@ -1097,6 +1113,11 @@ The `frontend` block configures the query-frontend.
 # Set to < 0 to enable on all queries.
 # CLI flag: -query-frontend.log-queries-longer-than
 [log_queries_longer_than: <duration> | default = 0s]
+
+# (advanced) Comma-separated list of request header names to include in query
+# logs. Applies to both query stats and slow queries logs.
+# CLI flag: -query-frontend.log-query-request-headers
+[log_query_request_headers: <string> | default = ""]
 
 # (advanced) Max body size for downstream prometheus.
 # CLI flag: -query-frontend.max-body-size
@@ -1352,7 +1373,8 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.evaluation-interval
 [evaluation_interval: <duration> | default = 1m]
 
-# (advanced) How frequently to poll for rule changes
+# (advanced) How frequently the configured rule groups are re-synced from the
+# object storage.
 # CLI flag: -ruler.poll-interval
 [poll_interval: <duration> | default = 1m]
 
@@ -1918,6 +1940,12 @@ alertmanager_client:
 # notifications.
 # CLI flag: -alertmanager.persist-interval
 [persist_interval: <duration> | default = 15m]
+
+# (advanced) Enables periodic cleanup of alertmanager stateful data
+# (notification logs and silences) from object storage. When enabled, data is
+# removed for any tenant that does not have a configuration.
+# CLI flag: -alertmanager.enable-state-cleanup
+[enable_state_cleanup: <boolean> | default = true]
 ```
 
 ### alertmanager_storage
@@ -2576,8 +2604,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.enforce-metadata-metric-name
 [enforce_metadata_metric_name: <boolean> | default = true]
 
-# The tenant's shard size used by shuffle-sharding. Must be set both on
-# ingesters and distributors. 0 disables shuffle sharding.
+# The tenant's shard size used by shuffle-sharding. This value is the total size
+# of the shard (ie. it is not the number of ingesters in the shard per zone, but
+# the number of ingesters in the shard across all zones, if zone-awareness is
+# enabled). Must be set both on ingesters and distributors. 0 disables shuffle
+# sharding.
 # CLI flag: -distributor.ingestion-tenant-shard-size
 [ingestion_tenant_shard_size: <int> | default = 0]
 
@@ -2817,6 +2848,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.alerting-rules-evaluation-enabled
 [ruler_alerting_rules_evaluation_enabled: <boolean> | default = true]
 
+# (advanced) True to enable a re-sync of the configured rule groups as soon as
+# they're changed via ruler's config API. This re-sync is in addition of the
+# periodic syncing. When enabled, it may take up to few tens of seconds before a
+# configuration change triggers the re-sync.
+# CLI flag: -ruler.sync-rules-on-changes-enabled
+[ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.
@@ -2849,7 +2887,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to
 # disable.
 # CLI flag: -compactor.partial-block-deletion-delay
-[compactor_partial_block_deletion_delay: <duration> | default = 0s]
+[compactor_partial_block_deletion_delay: <duration> | default = 1d]
 
 # Enable block upload API for the tenant.
 # CLI flag: -compactor.block-upload-enabled
@@ -3017,12 +3055,6 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.meta-sync-concurrency
   [meta_sync_concurrency: <int> | default = 20]
 
-  # (deprecated) Minimum age of a block before it's being read. Set it to safe
-  # value (e.g 30m) if your object storage is eventually consistent. GCS and S3
-  # are (roughly) strongly consistent.
-  # CLI flag: -blocks-storage.bucket-store.consistency-delay
-  [consistency_delay: <duration> | default = 0s]
-
   index_cache:
     # The index cache backend type. Supported values: inmemory, memcached,
     # redis.
@@ -3167,8 +3199,8 @@ bucket_store:
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
   bucket_index:
-    # If enabled, queriers and store-gateways discover blocks by reading a
-    # bucket index (created and updated by the compactor) instead of
+    # (deprecated) If enabled, queriers and store-gateways discover blocks by
+    # reading a bucket index (created and updated by the compactor) instead of
     # periodically scanning the bucket.
     # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
     [enabled: <boolean> | default = true]
@@ -3199,16 +3231,16 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
   [ignore_blocks_within: <duration> | default = 10h]
 
-  # (advanced) Max size - in bytes - of a chunks pool, used to reduce memory
+  # (deprecated) Max size - in bytes - of a chunks pool, used to reduce memory
   # allocations. The pool is shared across all tenants. 0 to disable the limit.
   # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
   [max_chunk_pool_bytes: <int> | default = 2147483648]
 
-  # (advanced) Size - in bytes - of the smallest chunks pool bucket.
+  # (deprecated) Size - in bytes - of the smallest chunks pool bucket.
   # CLI flag: -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes
   [chunk_pool_min_bucket_size_bytes: <int> | default = 16000]
 
-  # (advanced) Size - in bytes - of the largest chunks pool bucket.
+  # (deprecated) Size - in bytes - of the largest chunks pool bucket.
   # CLI flag: -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes
   [chunk_pool_max_bucket_size_bytes: <int> | default = 50000000]
 
@@ -3266,6 +3298,14 @@ bucket_store:
   # worst-case, worst-case-small-posting-lists, all.
   # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
   [series_selection_strategy: <string> | default = "all"]
+
+  series_selection_strategies:
+    # (experimental) This option is only used when
+    # blocks-storage.bucket-store.series-selection-strategy=worst-case.
+    # Increasing the series preference results in fetching more series than
+    # postings. Must be a positive floating point number.
+    # CLI flag: -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference
+    [worst_case_series_preference: <float> | default = 1]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
@@ -3437,11 +3477,6 @@ The `compactor` block configures the compactor component.
 # long term storage.
 # CLI flag: -compactor.meta-sync-concurrency
 [meta_sync_concurrency: <int> | default = 20]
-
-# (deprecated) Minimum age of fresh (non-compacted) blocks before they are being
-# processed.
-# CLI flag: -compactor.consistency-delay
-[consistency_delay: <duration> | default = 0s]
 
 # Directory to temporarily store blocks during compaction. This directory is not
 # required to be persisted between restarts.

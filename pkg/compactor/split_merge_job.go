@@ -11,7 +11,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 type compactionStage string
@@ -94,9 +94,9 @@ func (j *job) String() string {
 
 // blocksGroup holds a group of blocks within the same time range.
 type blocksGroup struct {
-	rangeStart int64            // Included.
-	rangeEnd   int64            // Excluded.
-	blocks     []*metadata.Meta // Sorted by MinTime.
+	rangeStart int64         // Included.
+	rangeEnd   int64         // Excluded.
+	blocks     []*block.Meta // Sorted by MinTime.
 }
 
 // overlaps returns whether the group range overlaps with the input group.
@@ -132,8 +132,8 @@ func (g blocksGroup) maxTime() int64 {
 }
 
 // getNonShardedBlocks returns the list of non-sharded blocks.
-func (g blocksGroup) getNonShardedBlocks() []*metadata.Meta {
-	var out []*metadata.Meta
+func (g blocksGroup) getNonShardedBlocks() []*block.Meta {
+	var out []*block.Meta
 
 	for _, b := range g.blocks {
 		if value, ok := b.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]; !ok || value == "" {

@@ -280,8 +280,9 @@ func TestMetricsArePerUser(t *testing.T) {
 	ch := make(chan prometheus.Metric)
 
 	defer func() {
-		// drain the channel, so that collecting gouroutine can stop.
+		// drain the channel, so that collecting goroutine can stop.
 		// This is useful if test fails.
+		// nolint:revive // We want to drain the channel.
 		for range ch {
 		}
 	}()

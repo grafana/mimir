@@ -30,7 +30,6 @@ data:
     blocks_storage:
       backend: s3
       bucket_store:
-        max_chunk_pool_bytes: 12884901888
         sync_dir: /data/tsdb-sync
       s3:
         access_key_id: grafana-mimir

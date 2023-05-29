@@ -296,7 +296,8 @@ std.manifestYamlDoc({
       command: [
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
-        '--enable-feature=native-histograms',
+        // This option enables native histogram support in prometheus, which is disabled by default since it doesn't scape classic histograms used by the recording rules and dashboards
+        // '--enable-feature=native-histograms',
       ],
       volumes: [
         './config:/etc/prometheus',

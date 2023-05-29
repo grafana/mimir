@@ -3,12 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
 
-package metadata
-
-// metadata package implements writing and reading wrapped meta.json where Thanos puts its metadata.
-// Those metadata contains external labels, downsampling resolution and source type.
-// This package is minimal and separated because it used by testutils which limits test helpers we can use in
-// this package.
+package block
 
 import (
 	"encoding/json"
@@ -19,14 +14,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
-	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,8 +33,6 @@ const (
 )
 
 const (
-	// MetaFilename is the known JSON filename for meta information.
-	MetaFilename = "meta.json"
 	// TSDBVersion1 is a enumeration of TSDB meta versions supported by Thanos.
 	TSDBVersion1 = 1
 	// ThanosVersion1 is a enumeration of Thanos section of TSDB meta supported by Thanos.
@@ -54,15 +44,15 @@ const (
 type Meta struct {
 	tsdb.BlockMeta
 
-	Thanos Thanos `json:"thanos"`
+	Thanos ThanosMeta `json:"thanos"`
 }
 
 func (m *Meta) String() string {
 	return fmt.Sprintf("%s (min time: %d, max time: %d)", m.ULID, m.MinTime, m.MaxTime)
 }
 
-// Thanos holds block meta information specific to Thanos.
-type Thanos struct {
+// ThanosMeta holds block meta information specific to Thanos.
+type ThanosMeta struct {
 	// Version of Thanos meta file. If none specified, 1 is assumed (since first version did not have explicit version specified).
 	Version int `json:"version,omitempty"`
 
@@ -83,18 +73,6 @@ type Thanos struct {
 	// Useful to avoid API call to get size of each file, as well as for debugging purposes.
 	// Optional, added in v0.17.0.
 	Files []File `json:"files,omitempty"`
-
-	// Rewrites is present when any rewrite (deletion, relabel etc) were applied to this block. Optional.
-	Rewrites []Rewrite `json:"rewrites,omitempty"`
-}
-
-type Rewrite struct {
-	// ULIDs of all source head blocks that went into the block.
-	Sources []ulid.ULID `json:"sources,omitempty"`
-	// Deletions if applied (in order).
-	DeletionsApplied []DeletionRequest `json:"deletions_applied,omitempty"`
-	// Relabels if applied.
-	RelabelsApplied []*relabel.Config `json:"relabels_applied,omitempty"`
 }
 
 type Matchers []*labels.Matcher
@@ -105,12 +83,6 @@ func (m *Matchers) UnmarshalYAML(value *yaml.Node) (err error) {
 		return errors.Wrapf(err, "parse metric selector %v", value.Value)
 	}
 	return nil
-}
-
-type DeletionRequest struct {
-	Matchers  Matchers             `json:"matchers" yaml:"matchers"`
-	Intervals tombstones.Intervals `json:"intervals,omitempty" yaml:"intervals,omitempty"`
-	RequestID string               `json:"request_id,omitempty" yaml:"request_id,omitempty"`
 }
 
 type File struct {
@@ -125,10 +97,10 @@ type ThanosDownsample struct {
 	Resolution int64 `json:"resolution"`
 }
 
-// InjectThanos sets Thanos meta to the block meta JSON and saves it to the disk.
+// InjectThanosMeta sets Thanos meta to the block meta JSON and saves it to the disk.
 // NOTE: It should be used after writing any block by any Thanos component, otherwise we will miss crucial metadata.
-func InjectThanos(logger log.Logger, bdir string, meta Thanos, downsampledMeta *tsdb.BlockMeta) (*Meta, error) {
-	newMeta, err := ReadFromDir(bdir)
+func InjectThanosMeta(logger log.Logger, bdir string, meta ThanosMeta, downsampledMeta *tsdb.BlockMeta) (*Meta, error) {
+	newMeta, err := ReadMetaFromDir(bdir)
 	if err != nil {
 		return nil, errors.Wrap(err, "read new meta")
 	}
@@ -195,17 +167,17 @@ func renameFile(logger log.Logger, from, to string) error {
 	return pdir.Close()
 }
 
-// ReadFromDir reads the given meta from <dir>/meta.json.
-func ReadFromDir(dir string) (*Meta, error) {
+// ReadMetaFromDir reads the given meta from <dir>/meta.json.
+func ReadMetaFromDir(dir string) (*Meta, error) {
 	f, err := os.Open(filepath.Join(dir, filepath.Clean(MetaFilename)))
 	if err != nil {
 		return nil, err
 	}
-	return Read(f)
+	return ReadMeta(f)
 }
 
-// Read the block meta from the given reader.
-func Read(rc io.ReadCloser) (_ *Meta, err error) {
+// ReadMeta reads the block meta from the given reader.
+func ReadMeta(rc io.ReadCloser) (_ *Meta, err error) {
 	defer runutil.ExhaustCloseWithErrCapture(&err, rc, "close meta JSON")
 
 	var m Meta

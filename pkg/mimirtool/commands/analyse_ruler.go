@@ -26,7 +26,7 @@ type RulerAnalyzeCommand struct {
 	outputFile   string
 }
 
-func (cmd *RulerAnalyzeCommand) run(k *kingpin.ParseContext) error {
+func (cmd *RulerAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 	output := &analyze.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 

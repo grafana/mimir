@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
@@ -64,7 +63,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, nil, logger, reg, filters)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, map[ulid.ULID]*metadata.Meta{
+	assert.Equal(t, map[ulid.ULID]*block.Meta{
 		block1.ID: block1.ThanosMeta(),
 		block3.ID: block3.ThanosMeta(),
 	}, metas)
@@ -72,10 +71,6 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	assert.Empty(t, logs)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP blocks_meta_modified Number of blocks whose metadata changed
-		# TYPE blocks_meta_modified gauge
-		blocks_meta_modified{modified="replica-label-removed"} 0
-
 		# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
 		# TYPE blocks_meta_sync_failures_total counter
 		blocks_meta_sync_failures_total 0
@@ -94,13 +89,11 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
 		blocks_meta_synced{state="min-time-excluded"} 1
-		blocks_meta_synced{state="too-fresh"} 0
 
 		# HELP blocks_meta_syncs_total Total blocks metadata synchronization attempts
 		# TYPE blocks_meta_syncs_total counter
 		blocks_meta_syncs_total 1
 	`),
-		"blocks_meta_modified",
 		"blocks_meta_sync_failures_total",
 		"blocks_meta_synced",
 		"blocks_meta_syncs_total",
@@ -124,10 +117,6 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 	assert.Empty(t, logs)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP blocks_meta_modified Number of blocks whose metadata changed
-		# TYPE blocks_meta_modified gauge
-		blocks_meta_modified{modified="replica-label-removed"} 0
-
 		# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
 		# TYPE blocks_meta_sync_failures_total counter
 		blocks_meta_sync_failures_total 0
@@ -146,13 +135,11 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
 		blocks_meta_synced{state="min-time-excluded"} 0
-		blocks_meta_synced{state="too-fresh"} 0
 
 		# HELP blocks_meta_syncs_total Total blocks metadata synchronization attempts
 		# TYPE blocks_meta_syncs_total counter
 		blocks_meta_syncs_total 1
 	`),
-		"blocks_meta_modified",
 		"blocks_meta_sync_failures_total",
 		"blocks_meta_synced",
 		"blocks_meta_syncs_total",
@@ -179,10 +166,6 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 	assert.Regexp(t, "corrupted bucket index found", logs)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP blocks_meta_modified Number of blocks whose metadata changed
-		# TYPE blocks_meta_modified gauge
-		blocks_meta_modified{modified="replica-label-removed"} 0
-
 		# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
 		# TYPE blocks_meta_sync_failures_total counter
 		blocks_meta_sync_failures_total 0
@@ -201,13 +184,11 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
 		blocks_meta_synced{state="min-time-excluded"} 0
-		blocks_meta_synced{state="too-fresh"} 0
 
 		# HELP blocks_meta_syncs_total Total blocks metadata synchronization attempts
 		# TYPE blocks_meta_syncs_total counter
 		blocks_meta_syncs_total 1
 	`),
-		"blocks_meta_modified",
 		"blocks_meta_sync_failures_total",
 		"blocks_meta_synced",
 		"blocks_meta_syncs_total",
@@ -225,6 +206,6 @@ func (s *noShardingStrategy) FilterUsers(_ context.Context, userIDs []string) ([
 	return userIDs, nil
 }
 
-func (s *noShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
+func (s *noShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*block.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
 	return nil
 }

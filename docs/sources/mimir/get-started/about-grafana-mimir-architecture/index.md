@@ -91,6 +91,8 @@ Each on-disk block directory contains an index file, a file containing metadata,
 
 The TSDB block files contain samples for multiple series.
 The series inside the blocks are indexed by a per-block index, which indexes both metric names and labels to time series in the block files.
+Each series has its samples organized in chunks, which represent a specific time range of stored samples.
+Chunks may vary in length depending on specific configuration options and ingestion rate, usually storing around 120 samples per chunk.
 
 Grafana Mimir requires any of the following object stores for the block files:
 

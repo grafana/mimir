@@ -100,6 +100,12 @@
 
     store_gateway_replication_factor: 3,
 
+    // When store_gateway_lazy_loading_enabled: true, block index-headers are pre-downloaded but lazy loaded at query time.
+    // Enabling lazy loading results in faster startup times at the cost of some latency during query time.
+    // store_gateway_lazy_loading_enabled: false will also reduce the concurrency of blocks syncing;
+    // this improves startup times when running on HDDs instead of SSDs as it reduces random reads.
+    store_gateway_lazy_loading_enabled: true,
+
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,
     cache_frontend_backend: 'memcached',

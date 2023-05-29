@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 func TestPlanCompaction(t *testing.T) {
@@ -31,7 +31,7 @@ func TestPlanCompaction(t *testing.T) {
 		ranges      []int64
 		shardCount  uint32
 		splitGroups uint32
-		blocks      []*metadata.Meta
+		blocks      []*block.Meta
 		expected    []*job
 	}{
 		"no input blocks": {
@@ -42,14 +42,14 @@ func TestPlanCompaction(t *testing.T) {
 		"should split a single block if == smallest compaction range": {
 			ranges:     []int64{20, 40},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
 					},
 				}},
@@ -58,14 +58,14 @@ func TestPlanCompaction(t *testing.T) {
 		"should split a single block if < smallest compaction range": {
 			ranges:     []int64{20, 40},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 					},
 				}},
@@ -74,7 +74,7 @@ func TestPlanCompaction(t *testing.T) {
 		"should NOT split a single block if == smallest compaction range but configured shards = 0": {
 			ranges:     []int64{20, 40},
 			shardCount: 0,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
 			},
 			expected: []*job{},
@@ -82,7 +82,7 @@ func TestPlanCompaction(t *testing.T) {
 		"should merge and split multiple 1st level blocks within the same time range": {
 			ranges:     []int64{10, 20},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}},
 			},
@@ -90,7 +90,7 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}},
 					},
@@ -100,7 +100,7 @@ func TestPlanCompaction(t *testing.T) {
 		"should merge and split multiple 1st level blocks in different time ranges": {
 			ranges:     []int64{10, 20},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				// 1st level range [0, 10]
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
@@ -112,7 +112,7 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
 					},
@@ -120,7 +120,7 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}},
 						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
 					},
@@ -131,7 +131,7 @@ func TestPlanCompaction(t *testing.T) {
 			ranges:      []int64{10, 20},
 			shardCount:  2,
 			splitGroups: 1,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				// 1st level range [0, 10]
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
@@ -143,7 +143,7 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
 					},
@@ -151,7 +151,7 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}},
 						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
 					},
@@ -162,7 +162,7 @@ func TestPlanCompaction(t *testing.T) {
 			ranges:      []int64{10, 20},
 			shardCount:  2,
 			splitGroups: 2,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				// 1st level range [0, 10]
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
@@ -174,28 +174,28 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageSplit, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 					},
 				}},
 				{userID: userID, stage: stageSplit, shardID: "2_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
 					},
 				}},
 				{userID: userID, stage: stageSplit, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}},
 					},
 				}},
 				{userID: userID, stage: stageSplit, shardID: "2_of_2", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
 					},
 				}},
@@ -204,7 +204,7 @@ func TestPlanCompaction(t *testing.T) {
 		"should merge but NOT split multiple 1st level blocks in different time ranges if configured shards = 0": {
 			ranges:     []int64{10, 20},
 			shardCount: 0,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				// 1st level range [0, 10]
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
@@ -216,7 +216,7 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageMerge, blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
 					},
@@ -224,7 +224,7 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageMerge, blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}},
 						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
 					},
@@ -234,39 +234,39 @@ func TestPlanCompaction(t *testing.T) {
 		"should merge split blocks that can be compacted on the 2nd range only": {
 			ranges:     []int64{10, 20},
 			shardCount: 2,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				// 2nd level range [0, 20]
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
 				// 2nd level range [20, 40]
-				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 20, MaxTime: 30}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 30, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageMerge, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
 					},
 				}},
 				{userID: userID, stage: stageMerge, shardID: "2_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
 					},
 				}},
 				{userID: userID, stage: stageMerge, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 20,
 					rangeEnd:   40,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 20, MaxTime: 30}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 30, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
 					},
 				}},
 			},
@@ -274,31 +274,31 @@ func TestPlanCompaction(t *testing.T) {
 		"should not split non-split blocks if they're > smallest compaction range (do not split historical blocks after enabling splitting)": {
 			ranges:     []int64{10, 20},
 			shardCount: 2,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				// 2nd level range [0, 20]
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
 				// 2nd level range [20, 40]
 				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 20, MaxTime: 40}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 20, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 20, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageMerge, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
 					},
 				}},
 				{userID: userID, stage: stageMerge, shardID: "2_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
 					},
 				}},
 			},
@@ -306,31 +306,31 @@ func TestPlanCompaction(t *testing.T) {
 		"input blocks can be compacted on a mix of 1st and 2nd ranges, guaranteeing no overlaps and giving preference to smaller ranges": {
 			ranges:     []int64{10, 20},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				// To be split on 1st level range [0, 10]
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 7, MaxTime: 10}},
 				// Not compacted because on 2nd level because the range [0, 20]
 				// has other 1st level range groups to be split first
-				{BlockMeta: tsdb.BlockMeta{ULID: block10, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block10, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 				// To be compacted on 2nd level range [20, 40]
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 30, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 				// Already compacted on 2nd level range [40, 60]
-				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 40, MaxTime: 60}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 40, MaxTime: 60}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 				// Not compacted on 2nd level because the range [60, 80]
 				// has other 1st level range groups to be compacted first
-				{BlockMeta: tsdb.BlockMeta{ULID: block7, MinTime: 60, MaxTime: 70}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block7, MinTime: 60, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 				// To be compacted on 1st level range [70, 80]
-				{BlockMeta: tsdb.BlockMeta{ULID: block8, MinTime: 70, MaxTime: 80}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block9, MinTime: 75, MaxTime: 80}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block8, MinTime: 70, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block9, MinTime: 75, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 7, MaxTime: 10}},
 					},
@@ -338,17 +338,17 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 70,
 					rangeEnd:   80,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block8, MinTime: 70, MaxTime: 80}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block9, MinTime: 75, MaxTime: 80}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block8, MinTime: 70, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block9, MinTime: 75, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 					},
 				}},
 				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 20,
 					rangeEnd:   40,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 30, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 					},
 				}},
 			},
@@ -356,29 +356,29 @@ func TestPlanCompaction(t *testing.T) {
 		"input blocks have already been compacted with the largest range": {
 			ranges:     []int64{10, 20, 40},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 40, MaxTime: 70}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 40, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 			},
 			expected: nil,
 		},
 		"input blocks match the largest range but can be compacted because overlapping": {
 			ranges:     []int64{10, 20, 40},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 40, MaxTime: 70}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 40, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 80,
 					rangeEnd:   120,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 					},
 				}},
 			},
@@ -386,7 +386,7 @@ func TestPlanCompaction(t *testing.T) {
 		"a block with time range crossing two 1st level ranges should be NOT considered for 1st level splitting": {
 			ranges:     []int64{20, 40},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 30}}, // This block spans across two 1st level ranges.
 				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 30}},
@@ -396,14 +396,14 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 					},
 				}},
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 20,
 					rangeEnd:   40,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 30}},
 						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 30, MaxTime: 40}},
 					},
@@ -413,19 +413,19 @@ func TestPlanCompaction(t *testing.T) {
 		"a block with time range crossing two 1st level ranges should BE considered for 2nd level compaction": {
 			ranges:     []int64{20, 40},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 30}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}}, // This block spans across two 1st level ranges.
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}}, // This block spans across two 1st level ranges.
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   40,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 30}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 					},
 				}},
 			},
@@ -433,20 +433,20 @@ func TestPlanCompaction(t *testing.T) {
 		"a block with time range larger then the largest compaction range should NOT be considered for compaction": {
 			ranges:     []int64{10, 20, 40},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 30, MaxTime: 150}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}}, // This block is larger then the largest compaction range.
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 40, MaxTime: 70}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 30, MaxTime: 150}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}}, // This block is larger then the largest compaction range.
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 40, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 80,
 					rangeEnd:   120,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
 					},
 				}},
 			},
@@ -454,7 +454,7 @@ func TestPlanCompaction(t *testing.T) {
 		"a range containing the most recent block shouldn't be prematurely compacted if doesn't cover the full range": {
 			ranges:     []int64{10, 20, 40},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{MinTime: 5, MaxTime: 8}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 7, MaxTime: 9}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 12}},
@@ -464,7 +464,7 @@ func TestPlanCompaction(t *testing.T) {
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{MinTime: 5, MaxTime: 8}},
 						{BlockMeta: tsdb.BlockMeta{MinTime: 7, MaxTime: 9}},
 					},
@@ -474,33 +474,33 @@ func TestPlanCompaction(t *testing.T) {
 		"should not merge blocks within the same time range but with different external labels": {
 			ranges:     []int64{10, 20},
 			shardCount: 1,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{"another_group": "a"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{"another_group": "a"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{"another_group": "b"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{"another_group": "a"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{"another_group": "a"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{"another_group": "b"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
+					blocks: []*block.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 					},
 				}},
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{"another_group": "a"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{"another_group": "a"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{"another_group": "a"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{"another_group": "a"}}},
 					},
 				}},
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{"another_group": "b"}}},
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{"another_group": "b"}}},
 					},
 				}},
 			},
@@ -545,9 +545,9 @@ func TestPlanSplitting(t *testing.T) {
 			blocks: blocksGroup{
 				rangeStart: 10,
 				rangeEnd:   20,
-				blocks: []*metadata.Meta{
-					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-					{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+				blocks: []*block.Meta{
+					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
 				},
 			},
 			splitGroups: 2,
@@ -557,8 +557,8 @@ func TestPlanSplitting(t *testing.T) {
 			blocks: blocksGroup{
 				rangeStart: 10,
 				rangeEnd:   20,
-				blocks: []*metadata.Meta{
-					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				blocks: []*block.Meta{
+					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
 					{BlockMeta: tsdb.BlockMeta{ULID: block2}},
 				},
 			},
@@ -568,7 +568,7 @@ func TestPlanSplitting(t *testing.T) {
 					blocksGroup: blocksGroup{
 						rangeStart: 10,
 						rangeEnd:   20,
-						blocks: []*metadata.Meta{
+						blocks: []*block.Meta{
 							{BlockMeta: tsdb.BlockMeta{ULID: block2}},
 						},
 					},
@@ -582,12 +582,12 @@ func TestPlanSplitting(t *testing.T) {
 			blocks: blocksGroup{
 				rangeStart: 10,
 				rangeEnd:   20,
-				blocks: []*metadata.Meta{
-					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				blocks: []*block.Meta{
+					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
 					{BlockMeta: tsdb.BlockMeta{ULID: block2}},
 					{BlockMeta: tsdb.BlockMeta{ULID: block3}},
 					{BlockMeta: tsdb.BlockMeta{ULID: block4}},
-					{BlockMeta: tsdb.BlockMeta{ULID: block5}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block5}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
 				},
 			},
 			splitGroups: 2,
@@ -596,7 +596,7 @@ func TestPlanSplitting(t *testing.T) {
 					blocksGroup: blocksGroup{
 						rangeStart: 10,
 						rangeEnd:   20,
-						blocks: []*metadata.Meta{
+						blocks: []*block.Meta{
 							{BlockMeta: tsdb.BlockMeta{ULID: block3}},
 						},
 					},
@@ -607,7 +607,7 @@ func TestPlanSplitting(t *testing.T) {
 					blocksGroup: blocksGroup{
 						rangeStart: 10,
 						rangeEnd:   20,
-						blocks: []*metadata.Meta{
+						blocks: []*block.Meta{
 							{BlockMeta: tsdb.BlockMeta{ULID: block2}},
 							{BlockMeta: tsdb.BlockMeta{ULID: block4}},
 						},
@@ -634,50 +634,50 @@ func TestGroupBlocksByShardID(t *testing.T) {
 	block4 := ulid.MustNew(4, nil)
 
 	tests := map[string]struct {
-		blocks   []*metadata.Meta
-		expected map[string][]*metadata.Meta
+		blocks   []*block.Meta
+		expected map[string][]*block.Meta
 	}{
 		"no input blocks": {
 			blocks:   nil,
-			expected: map[string][]*metadata.Meta{},
+			expected: map[string][]*block.Meta{},
 		},
 		"only 1 block in input with shard ID": {
-			blocks: []*metadata.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
 			},
-			expected: map[string][]*metadata.Meta{
+			expected: map[string][]*block.Meta{
 				"1": {
-					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
 				},
 			},
 		},
 		"only 1 block in input without shard ID": {
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{ULID: block1}},
 			},
-			expected: map[string][]*metadata.Meta{
+			expected: map[string][]*block.Meta{
 				"": {
 					{BlockMeta: tsdb.BlockMeta{ULID: block1}},
 				},
 			},
 		},
 		"multiple blocks per shard ID": {
-			blocks: []*metadata.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block4}},
 			},
-			expected: map[string][]*metadata.Meta{
+			expected: map[string][]*block.Meta{
 				"": {
 					{BlockMeta: tsdb.BlockMeta{ULID: block4}},
 				},
 				"1": {
-					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
-					{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
 				},
 				"2": {
-					{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2"}}},
 				},
 			},
 		},
@@ -693,7 +693,7 @@ func TestGroupBlocksByShardID(t *testing.T) {
 func TestGroupBlocksByRange(t *testing.T) {
 	tests := map[string]struct {
 		timeRange int64
-		blocks    []*metadata.Meta
+		blocks    []*block.Meta
 		expected  []blocksGroup
 	}{
 		"no input blocks": {
@@ -703,44 +703,44 @@ func TestGroupBlocksByRange(t *testing.T) {
 		},
 		"only 1 block in input": {
 			timeRange: 20,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 20}},
 			},
 			expected: []blocksGroup{
-				{rangeStart: 0, rangeEnd: 20, blocks: []*metadata.Meta{
+				{rangeStart: 0, rangeEnd: 20, blocks: []*block.Meta{
 					{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 20}},
 				}},
 			},
 		},
 		"only 1 block per range": {
 			timeRange: 20,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 15}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 40, MaxTime: 60}},
 			},
 			expected: []blocksGroup{
-				{rangeStart: 0, rangeEnd: 20, blocks: []*metadata.Meta{
+				{rangeStart: 0, rangeEnd: 20, blocks: []*block.Meta{
 					{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 15}},
 				}},
-				{rangeStart: 40, rangeEnd: 60, blocks: []*metadata.Meta{
+				{rangeStart: 40, rangeEnd: 60, blocks: []*block.Meta{
 					{BlockMeta: tsdb.BlockMeta{MinTime: 40, MaxTime: 60}},
 				}},
 			},
 		},
 		"multiple blocks per range": {
 			timeRange: 20,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 15}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 20}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 40, MaxTime: 60}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 50, MaxTime: 55}},
 			},
 			expected: []blocksGroup{
-				{rangeStart: 0, rangeEnd: 20, blocks: []*metadata.Meta{
+				{rangeStart: 0, rangeEnd: 20, blocks: []*block.Meta{
 					{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 15}},
 					{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 20}},
 				}},
-				{rangeStart: 40, rangeEnd: 60, blocks: []*metadata.Meta{
+				{rangeStart: 40, rangeEnd: 60, blocks: []*block.Meta{
 					{BlockMeta: tsdb.BlockMeta{MinTime: 40, MaxTime: 60}},
 					{BlockMeta: tsdb.BlockMeta{MinTime: 50, MaxTime: 55}},
 				}},
@@ -748,32 +748,32 @@ func TestGroupBlocksByRange(t *testing.T) {
 		},
 		"a block with time range larger then the range should be excluded": {
 			timeRange: 20,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{MinTime: 0, MaxTime: 20}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 0, MaxTime: 40}}, // This block is larger then the range.
 				{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 20}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 20, MaxTime: 30}},
 			},
 			expected: []blocksGroup{
-				{rangeStart: 0, rangeEnd: 20, blocks: []*metadata.Meta{
+				{rangeStart: 0, rangeEnd: 20, blocks: []*block.Meta{
 					{BlockMeta: tsdb.BlockMeta{MinTime: 0, MaxTime: 20}},
 					{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 20}},
 				}},
-				{rangeStart: 20, rangeEnd: 40, blocks: []*metadata.Meta{
+				{rangeStart: 20, rangeEnd: 40, blocks: []*block.Meta{
 					{BlockMeta: tsdb.BlockMeta{MinTime: 20, MaxTime: 30}},
 				}},
 			},
 		},
 		"blocks with different time ranges but all fitting within the input range": {
 			timeRange: 40,
-			blocks: []*metadata.Meta{
+			blocks: []*block.Meta{
 				{BlockMeta: tsdb.BlockMeta{MinTime: 0, MaxTime: 20}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 0, MaxTime: 40}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 20}},
 				{BlockMeta: tsdb.BlockMeta{MinTime: 20, MaxTime: 30}},
 			},
 			expected: []blocksGroup{
-				{rangeStart: 0, rangeEnd: 40, blocks: []*metadata.Meta{
+				{rangeStart: 0, rangeEnd: 40, blocks: []*block.Meta{
 					{BlockMeta: tsdb.BlockMeta{MinTime: 0, MaxTime: 20}},
 					{BlockMeta: tsdb.BlockMeta{MinTime: 0, MaxTime: 40}},
 					{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 20}},

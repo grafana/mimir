@@ -48,7 +48,7 @@ func (f folderTitles) IsCumulative() bool {
 	return true
 }
 
-func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
+func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
 

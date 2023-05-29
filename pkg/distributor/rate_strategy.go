@@ -100,11 +100,11 @@ func newInfiniteRateStrategy() limiter.RateLimiterStrategy {
 	return &infiniteStrategy{}
 }
 
-func (s *infiniteStrategy) Limit(tenantID string) float64 {
+func (s *infiniteStrategy) Limit(_ string) float64 {
 	return float64(rate.Inf)
 }
 
-func (s *infiniteStrategy) Burst(tenantID string) int {
+func (s *infiniteStrategy) Burst(_ string) int {
 	// Burst is ignored when limit = rate.Inf
 	return 0
 }
