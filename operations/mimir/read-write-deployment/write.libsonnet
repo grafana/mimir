@@ -71,7 +71,7 @@
     local replicas = std.ceil($._config.mimir_write_replicas / 3);
 
     $.newMimirStatefulSet(name, replicas, container, mimir_write_data_pvc) +
-    statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'mimir-write' }) +
+    statefulSet.mixin.metadata.withLabels({ name: 'mimir-write', 'rollout-group': 'mimir-write' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.mimir_write_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'mimir-write' }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name, 'rollout-group': 'mimir-write' }) +
@@ -138,6 +138,6 @@
     // balances requests across all mimir-write pods.
     service.mixin.spec.withClusterIp('None'),
 
-  mimir_write_rollout_pdb: if !$._config.is_read_write_deployment_mode then null else
-    $.newMimirRolloutGroupPDB('mimir-write', 1),
+  mimir_write_pdb: if !$._config.is_read_write_deployment_mode then null else
+    $.newMimirPdb('mimir-write'),
 }

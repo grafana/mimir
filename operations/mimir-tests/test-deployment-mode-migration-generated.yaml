@@ -111,27 +111,40 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: mimir-backend-rollout-pdb
-  name: mimir-backend-rollout-pdb
+    name: mimir-backend
+  name: mimir-backend
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      rollout-group: mimir-backend
+      name: mimir-backend
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: mimir-write-rollout-pdb
-  name: mimir-write-rollout-pdb
+    name: mimir-read
+  name: mimir-read
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      rollout-group: mimir-write
+      name: mimir-read
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: mimir-write
+  name: mimir-write
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: mimir-write
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -1003,6 +1016,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  labels:
+    name: mimir-read
   name: mimir-read
   namespace: default
 spec:
@@ -2275,6 +2290,7 @@ metadata:
   annotations:
     rollout-max-unavailable: "10"
   labels:
+    name: mimir-backend
     rollout-group: mimir-backend
   name: mimir-backend-zone-a
   namespace: default
@@ -2455,6 +2471,7 @@ metadata:
   annotations:
     rollout-max-unavailable: "10"
   labels:
+    name: mimir-backend
     rollout-group: mimir-backend
   name: mimir-backend-zone-b
   namespace: default
@@ -2635,6 +2652,7 @@ metadata:
   annotations:
     rollout-max-unavailable: "10"
   labels:
+    name: mimir-backend
     rollout-group: mimir-backend
   name: mimir-backend-zone-c
   namespace: default
@@ -2815,6 +2833,7 @@ metadata:
   annotations:
     rollout-max-unavailable: "25"
   labels:
+    name: mimir-write
     rollout-group: mimir-write
   name: mimir-write-zone-a
   namespace: default
@@ -2945,6 +2964,7 @@ metadata:
   annotations:
     rollout-max-unavailable: "25"
   labels:
+    name: mimir-write
     rollout-group: mimir-write
   name: mimir-write-zone-b
   namespace: default
@@ -3075,6 +3095,7 @@ metadata:
   annotations:
     rollout-max-unavailable: "25"
   labels:
+    name: mimir-write
     rollout-group: mimir-write
   name: mimir-write-zone-c
   namespace: default

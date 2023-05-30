@@ -46,6 +46,7 @@
 
   mimir_read_deployment: if !$._config.is_read_write_deployment_mode then null else
     deployment.new('mimir-read', $._config.mimir_read_replicas, [$.mimir_read_container]) +
+    deployment.mixin.metadata.withLabels({ name: 'mimir-read' }) +
     $.mimirVolumeMounts +
     $.newMimirSpreadTopology('mimir-read', $._config.mimir_read_topology_spread_max_skew) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
@@ -63,4 +64,7 @@
     // Must be an headless to ensure any gRPC client using it (ruler remote evaluations)
     // correctly balances requests across all mimir-read pods.
     service.mixin.spec.withClusterIp('None'),
+
+  mimir_read_pdb: if !$._config.is_read_write_deployment_mode then null else
+    $.newMimirPdb('mimir-read'),
 }

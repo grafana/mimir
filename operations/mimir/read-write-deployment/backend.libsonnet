@@ -81,7 +81,7 @@
     local name = 'mimir-backend-zone-%s' % zone;
 
     $.newMimirStatefulSet(name, 3, container, mimir_backend_data_pvc) +
-    statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'mimir-backend' }) +
+    statefulSet.mixin.metadata.withLabels({ name: 'mimir-backend', 'rollout-group': 'mimir-backend' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.mimir_backend_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'mimir-backend' }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name, 'rollout-group': 'mimir-backend' }) +
@@ -145,6 +145,6 @@
   mimir_backend_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirRolloutGroupService('mimir-backend', [$.mimir_backend_zone_a_statefulset, $.mimir_backend_zone_b_statefulset, $.mimir_backend_zone_c_statefulset], $._config.service_ignored_labels),
 
-  mimir_backend_rollout_pdb: if !$._config.is_read_write_deployment_mode then null else
-    $.newMimirRolloutGroupPDB('mimir-backend', 1),
+  mimir_backend_pdb: if !$._config.is_read_write_deployment_mode then null else
+    $.newMimirPdb('mimir-backend', 1),
 }
