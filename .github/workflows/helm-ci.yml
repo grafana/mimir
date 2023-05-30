@@ -18,7 +18,7 @@ jobs:
   conftest:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:charleskorn-golangci-lint-upgrade-beafb9184
+      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
