@@ -3,9 +3,13 @@ package main
 poddisruptionbudget_root_test_fixture_dir := "test_fixtures/poddisruptionbudget"
 
 no_violations {
-	denies := deny_missing_poddisruption_budget with input as input
-	trace(sprintf("Denies: %v", [denies]))
-	count(deny_missing_poddisruption_budget) == 0
+	missing_pdb_denies := deny_missing_poddisruptionbudget with input as input
+  trace(sprintf("Missing PDB denies: %v", [missing_pdb_denies]))
+	count(missing_pdb_denies) == 0
+
+  pdb_with_no_workload_denies := deny_poddisruptionbudget_missing_workload with input as input
+  trace(sprintf("PDB with missing workload denies: %v", [pdb_with_no_workload_denies]))
+	count(pdb_with_no_workload_denies) == 0
 }
 
 test_deployment_with_no_pdb {
@@ -13,7 +17,7 @@ test_deployment_with_no_pdb {
 	deployment_file := sprintf("%s/deployment.yaml", [input_directory])
 	input := parse_combined_config_files([deployment_file])
 
-	denies := deny_missing_poddisruption_budget with input as input
+	denies := deny_missing_poddisruptionbudget with input as input
 	trace(sprintf("Denies: %v", [denies]))
 	denies["Deployment/test-deployment has no PodDisruptionBudget"]
 }
@@ -42,9 +46,13 @@ test_mismatched_deployment_and_pdb {
 	pdb_file := sprintf("%s/pdb.yaml", [input_directory])
 	input := parse_combined_config_files([deployment_file, pdb_file])
 
-	denies := deny_missing_poddisruption_budget with input as input
-	trace(sprintf("Denies: %v", [denies]))
-	denies["Deployment/test-deployment has no PodDisruptionBudget"]
+	missing_pdb_denies := deny_missing_poddisruptionbudget with input as input
+	trace(sprintf("Missing PDB denies: %v", [missing_pdb_denies]))
+	missing_pdb_denies["Deployment/test-deployment has no PodDisruptionBudget"]
+
+  pdb_with_no_workload_denies := deny_poddisruptionbudget_missing_workload with input as input
+  trace(sprintf("PDB with missing workload denies: %v", [pdb_with_no_workload_denies]))
+	pdb_with_no_workload_denies["PodDisruptionBudget/test-pdb has no matching workload"]
 }
 
 test_statefulset_with_no_pdb {
@@ -52,7 +60,7 @@ test_statefulset_with_no_pdb {
 	statefulset_file := sprintf("%s/statefulset.yaml", [input_directory])
 	input := parse_combined_config_files([statefulset_file])
 
-	denies := deny_missing_poddisruption_budget with input as input
+	denies := deny_missing_poddisruptionbudget with input as input
 	trace(sprintf("Denies: %v", [denies]))
 	denies["StatefulSet/test-set has no PodDisruptionBudget"]
 }
@@ -72,7 +80,11 @@ test_mismatched_deployment_and_pdb {
 	pdb_file := sprintf("%s/pdb.yaml", [input_directory])
 	input := parse_combined_config_files([statefulset_file, pdb_file])
 
-	denies := deny_missing_poddisruption_budget with input as input
-	trace(sprintf("Denies: %v", [denies]))
-	denies["StatefulSet/test-set has no PodDisruptionBudget"]
+	missing_pdb_denies := deny_missing_poddisruptionbudget with input as input
+	trace(sprintf("Missing PDB denies: %v", [missing_pdb_denies]))
+	missing_pdb_denies["StatefulSet/test-set has no PodDisruptionBudget"]
+
+  pdb_with_no_workload_denies := deny_poddisruptionbudget_missing_workload with input as input
+  trace(sprintf("PDB with missing workload denies: %v", [pdb_with_no_workload_denies]))
+	pdb_with_no_workload_denies["PodDisruptionBudget/test-pdb has no matching workload"]
 }
