@@ -39,16 +39,18 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	queryStats := &stats.Stats{}
 	series := streamingChunkSeries{
-		labels:            labels.FromStrings("the-name", "the-value"),
-		chunkIteratorFunc: chunkIteratorFunc,
-		mint:              1000,
-		maxt:              6000,
+		labels: labels.FromStrings("the-name", "the-value"),
 		sources: []client.StreamingSeriesSource{
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToFirstSource, chunkPresentInBothSources}}})},
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToSecondSource, chunkPresentInBothSources}}})},
 		},
-		queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
-		queryStats:        queryStats,
+		config: &streamingChunkSeriesConfig{
+			chunkIteratorFunc: chunkIteratorFunc,
+			mint:              1000,
+			maxt:              6000,
+			queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
+			queryStats:        queryStats,
+		},
 	}
 
 	iterator := series.Iterator(nil)
@@ -75,16 +77,18 @@ func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	queryStats := &stats.Stats{}
 	series := streamingChunkSeries{
-		labels:            labels.FromStrings("the-name", "the-value"),
-		chunkIteratorFunc: nil,
-		mint:              1000,
-		maxt:              6000,
+		labels: labels.FromStrings("the-name", "the-value"),
 		// Create a stream reader that will always return an error because we'll try to read a series when it has no series to read.
 		sources: []client.StreamingSeriesSource{
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{})},
 		},
-		queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
-		queryStats:        queryStats,
+		config: &streamingChunkSeriesConfig{
+			chunkIteratorFunc: nil,
+			mint:              1000,
+			maxt:              6000,
+			queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
+			queryStats:        queryStats,
+		},
 	}
 
 	iterator := series.Iterator(nil)
