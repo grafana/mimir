@@ -70,6 +70,10 @@ func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *
 	return s, nil
 }
 
+// Lookup takes a symbol reference and returns the symbol string.
+// For TSDB index v1, the reference is expected to be the offset of the symbol in the index
+// relative to the beginning of the whole index header file (not the TSDB index file).
+// For TSDB index v2, the reference is expected to be the sequence number of the symbol (starting at 0).
 func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "lookup symbol")
@@ -87,9 +91,8 @@ func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 			d.SkipUvarintBytes()
 		}
 	} else {
-		// In v1, o is relative to the beginning of the whole index file,
-		// which is also the offset in the whole index header file.
-		// We need to adjust for the fact our view into the file starts at the beginning
+		// In v1, o is relative to the beginning of the whole index header file, so we
+		// need to adjust for the fact our view into the file starts at the beginning
 		// of the symbol table.
 		offsetInTable := int(o) - s.tableOffset
 		d.ResetAt(offsetInTable)
