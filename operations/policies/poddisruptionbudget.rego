@@ -11,11 +11,11 @@ deny_missing_poddisruptionbudget[msg] {
 }
 
 deny_poddisruptionbudget_missing_workload[msg] {
-  pdb := input[i].contents
-  msg = sprintf("%s has no matching workload", [object_display_name[i]])
+	pdb := input[i].contents
+	msg = sprintf("%s has no matching workload", [object_display_name[i]])
 
-  pdb.kind == "PodDisruptionBudget"
-  not any_object_matches_pdb(pdb)
+	pdb.kind == "PodDisruptionBudget"
+	not any_object_matches_pdb(pdb)
 }
 
 should_have_poddisruptionbudget(obj) {
@@ -32,12 +32,12 @@ any_pdb_selects_object(obj) {
 }
 
 any_object_matches_pdb(pdb) {
-  obj := input[i].contents
-  should_have_poddisruptionbudget(obj)
+	obj := input[i].contents
+	should_have_poddisruptionbudget(obj)
 
-  every matcher in pdb.spec.selector.matchLabels {
- 		matcher_matches_object(matcher, obj)
-  }
+	every matcher in pdb.spec.selector.matchLabels {
+		matcher_matches_object(matcher, obj)
+	}
 }
 
 matcher_matches_object(matcher, obj) {

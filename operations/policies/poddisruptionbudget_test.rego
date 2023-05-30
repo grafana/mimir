@@ -4,11 +4,11 @@ poddisruptionbudget_root_test_fixture_dir := "test_fixtures/poddisruptionbudget"
 
 no_violations {
 	missing_pdb_denies := deny_missing_poddisruptionbudget with input as input
-  trace(sprintf("Missing PDB denies: %v", [missing_pdb_denies]))
+	trace(sprintf("Missing PDB denies: %v", [missing_pdb_denies]))
 	count(missing_pdb_denies) == 0
 
-  pdb_with_no_workload_denies := deny_poddisruptionbudget_missing_workload with input as input
-  trace(sprintf("PDB with missing workload denies: %v", [pdb_with_no_workload_denies]))
+	pdb_with_no_workload_denies := deny_poddisruptionbudget_missing_workload with input as input
+	trace(sprintf("PDB with missing workload denies: %v", [pdb_with_no_workload_denies]))
 	count(pdb_with_no_workload_denies) == 0
 }
 
@@ -50,8 +50,8 @@ test_mismatched_deployment_and_pdb {
 	trace(sprintf("Missing PDB denies: %v", [missing_pdb_denies]))
 	missing_pdb_denies["Deployment/test-deployment has no PodDisruptionBudget"]
 
-  pdb_with_no_workload_denies := deny_poddisruptionbudget_missing_workload with input as input
-  trace(sprintf("PDB with missing workload denies: %v", [pdb_with_no_workload_denies]))
+	pdb_with_no_workload_denies := deny_poddisruptionbudget_missing_workload with input as input
+	trace(sprintf("PDB with missing workload denies: %v", [pdb_with_no_workload_denies]))
 	pdb_with_no_workload_denies["PodDisruptionBudget/test-pdb has no matching workload"]
 }
 
@@ -84,7 +84,7 @@ test_mismatched_deployment_and_pdb {
 	trace(sprintf("Missing PDB denies: %v", [missing_pdb_denies]))
 	missing_pdb_denies["StatefulSet/test-set has no PodDisruptionBudget"]
 
-  pdb_with_no_workload_denies := deny_poddisruptionbudget_missing_workload with input as input
-  trace(sprintf("PDB with missing workload denies: %v", [pdb_with_no_workload_denies]))
+	pdb_with_no_workload_denies := deny_poddisruptionbudget_missing_workload with input as input
+	trace(sprintf("PDB with missing workload denies: %v", [pdb_with_no_workload_denies]))
 	pdb_with_no_workload_denies["PodDisruptionBudget/test-pdb has no matching workload"]
 }
