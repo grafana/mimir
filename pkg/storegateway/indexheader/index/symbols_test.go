@@ -9,7 +9,6 @@ import (
 	"hash/crc32"
 	"os"
 	"path"
-	"sort"
 	"strconv"
 	"testing"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -44,7 +44,7 @@ func TestSymbolsV1(t *testing.T) {
 		sortedSymbols[i] = strconv.Itoa(i)
 	}
 	// We must write the symbols sorted in the table, the TSDB index does the same.
-	sort.Strings(sortedSymbols[:])
+	slices.Sort(sortedSymbols[:])
 
 	buf := encoding.Encbuf{}
 	buf.PutUvarintStr(filePrefix)
