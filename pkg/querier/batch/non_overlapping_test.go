@@ -19,7 +19,17 @@ func TestNonOverlappingIter(t *testing.T) {
 		cs = append(cs, mkGenericChunk(t, model.TimeFromUnix(i*10), 10, chunk.PrometheusXorChunk))
 	}
 	testIter(t, 10*100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, cs)), chunk.PrometheusXorChunk)
-	testSeek(t, 10*100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, cs)), chunk.PrometheusXorChunk)
+	it := newNonOverlappingIterator(nil, cs)
+	adapter := newIteratorAdapter(nil, it)
+	testSeek(t, 10*100, adapter, chunk.PrometheusXorChunk)
+
+	// Do the same operations while re-using the iterators.
+	it = newNonOverlappingIterator(it, cs)
+	adapter = newIteratorAdapter(adapter.(*iteratorAdapter), it)
+	testIter(t, 10*100, adapter, chunk.PrometheusXorChunk)
+	it = newNonOverlappingIterator(it, cs)
+	adapter = newIteratorAdapter(adapter.(*iteratorAdapter), it)
+	testSeek(t, 10*100, adapter, chunk.PrometheusXorChunk)
 }
 
 func TestNonOverlappingIterSparse(t *testing.T) {

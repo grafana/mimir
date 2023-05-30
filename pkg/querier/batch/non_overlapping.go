@@ -17,18 +17,14 @@ type nonOverlappingIterator struct {
 	iter   chunkIterator
 }
 
-// newNonOverlappingIterator returns a single iterator over an slice of sorted,
+// newNonOverlappingIterator returns a single iterator over a slice of sorted,
 // non-overlapping iterators.
-func newNonOverlappingIterator(reuse *nonOverlappingIterator, chunks []GenericChunk) *nonOverlappingIterator {
-	if reuse != nil {
-		reuse.chunks = chunks
-		reuse.curr = 0
-		reuse.iter.reset(reuse.chunks[0])
-		return reuse
+func newNonOverlappingIterator(it *nonOverlappingIterator, chunks []GenericChunk) *nonOverlappingIterator {
+	if it == nil {
+		it = &nonOverlappingIterator{}
 	}
-	it := &nonOverlappingIterator{
-		chunks: chunks,
-	}
+	it.chunks = chunks
+	it.curr = 0
 	it.iter.reset(it.chunks[0])
 	return it
 }

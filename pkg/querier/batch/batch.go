@@ -67,19 +67,12 @@ func NewChunkMergeIterator(it chunkenc.Iterator, chunks []chunk.Chunk, _, _ mode
 
 // NewGenericChunkMergeIterator returns a chunkenc.Iterator that merges generic chunks together.
 func NewGenericChunkMergeIterator(it chunkenc.Iterator, chunks []GenericChunk) chunkenc.Iterator {
-	var (
-		iter    *mergeIterator
-		adapter *iteratorAdapter
-		ok      bool
-	)
-	if it != nil {
-		adapter, ok = it.(*iteratorAdapter)
-		if ok {
-			iter = newMergeIterator(adapter.underlying, chunks)
-		}
-	}
+	var iter *mergeIterator
 
-	if iter == nil {
+	adapter, ok := it.(*iteratorAdapter)
+	if ok {
+		iter = newMergeIterator(adapter.underlying, chunks)
+	} else {
 		iter = newMergeIterator(nil, chunks)
 	}
 
