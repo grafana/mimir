@@ -35,6 +35,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Store-gateway: set `GOMEMLIMIT` to the memory request value. This should reduce the likelihood the store-gateway may go out of memory, at the cost of an higher CPU utilization due to more frequent garbage collections when the memory utilization gets closer or above the configured requested memory. #4971
 * [ENHANCEMENT] Store-gateway: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce the likelihood a high load on the store-gateway will slow down the entire Kubernetes node. #5104
 * [BUGFIX] Fix Pod Anti-Affinity rule to allow ingesters of from the same zone to run on same node, by using `zone` label since the old `app.kubernetes.io/component` did not allow for this. #5031
+* [ENHANCEMENT] Enable `PodDisruptionBudget`s by default for alertmanager, distributor, overrides-exporter, ruler, querier, query-frontend, query-scheduler, compactor, chunks cache, index cache, metadata cache and results cache.
 
 ## 4.4.1
 
