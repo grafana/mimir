@@ -420,18 +420,18 @@ format-mixin: ## Format the mixin files.
 # Helm static tests
 
 HELM_SCRIPTS_PATH=operations/helm/scripts
-HELM_REGO_POLICIES_PATH=operations/helm/policies
+REGO_POLICIES_PATH=operations/policies
 HELM_RAW_MANIFESTS_PATH=operations/helm/manifests-intermediate
 HELM_REFERENCE_MANIFESTS=operations/helm/tests
 
 conftest-fmt:
-	@conftest fmt $(HELM_REGO_POLICIES_PATH)
+	@conftest fmt $(REGO_POLICIES_PATH)
 
 check-conftest-fmt: conftest-fmt
-	@./tools/find-diff-or-untracked.sh $(HELM_REGO_POLICIES_PATH) || (echo "Format the rego policies by running 'make conftest-fmt' and commit the changes" && false)
+	@./tools/find-diff-or-untracked.sh $(REGO_POLICIES_PATH) || (echo "Format the rego policies by running 'make conftest-fmt' and commit the changes" && false)
 
 conftest-verify:
-	@conftest verify -p $(HELM_REGO_POLICIES_PATH) --report notes
+	@conftest verify -p $(REGO_POLICIES_PATH) --report notes
 
 update-helm-dependencies:
 	@./$(HELM_SCRIPTS_PATH)/update-helm-dependencies.sh operations/helm/charts/mimir-distributed
@@ -442,7 +442,7 @@ build-helm-tests: update-helm-dependencies
 
 conftest-quick-test: ## Does not rebuild the yaml manifests, use the target conftest-test for that
 conftest-quick-test:
-	@./$(HELM_SCRIPTS_PATH)/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH) --manifests-path $(HELM_RAW_MANIFESTS_PATH)
+	@./$(HELM_SCRIPTS_PATH)/run-conftest.sh --policies-path $(REGO_POLICIES_PATH) --manifests-path $(HELM_RAW_MANIFESTS_PATH)
 
 conftest-test: build-helm-tests conftest-quick-test
 

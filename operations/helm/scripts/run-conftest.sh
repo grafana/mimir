@@ -6,7 +6,7 @@ set -o errexit
 set -o pipefail
 
 CHART_PATH="operations/helm/charts/mimir-distributed"
-POLICIES_PATH="operations/helm/policies"
+POLICIES_PATH="operations/policies"
 MANIFESTS_PATH=""
 
 while [[ $# -gt 0 ]]; do
