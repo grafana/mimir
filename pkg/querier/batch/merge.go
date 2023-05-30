@@ -28,7 +28,7 @@ type mergeIterator struct {
 	currErr error
 }
 
-func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
+func newMergeIterator(it iterator, gc []GenericChunk) *mergeIterator {
 	c, ok := it.(*mergeIterator)
 	if ok {
 		c.nextBatchBuf[0] = chunk.Batch{}
@@ -37,7 +37,8 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 		c = &mergeIterator{}
 	}
 
-	css := partitionChunks(cs)
+	css := partitionChunks(gc)
+	putGenericChunkSlice(gc)
 	if cap(c.its) >= len(css) {
 		c.its = c.its[:len(css)]
 		c.h = c.h[:0]
