@@ -76,6 +76,7 @@
 * [ENHANCEMENT] Alerts: added labels to duplicated `MimirRolloutStuck` and `MimirCompactorHasNotUploadedBlocks` rules in order to distinguish them. #5023
 * [ENHANCEMENT] Dashboards: fix holes in graph for lightly loaded clusters #4915
 * [ENHANCEMENT] Dashboards: allow configuring additional services for the Rollout Progress dashboard. #5007
+* [ENHANCEMENT] Alerts: do not fire `MimirAllocatingTooMuchMemory` alert for any matching container outside of namespaces where Mimir is running. #5089
 * [BUGFIX] Dashboards: show cancelled requests in a different color to successful requests in throughput panels on dashboards. #5039
 * [BUGFIX] Dashboards: fix dashboard panels that showed percentages with axes from 0 to 10000%. #5084
 
