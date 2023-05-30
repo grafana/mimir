@@ -4173,6 +4173,10 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # CLI flag: -<prefix>.s3.signature-version
 [signature_version: <string> | default = "v4"]
 
+# (advanced) S3 list object version
+# CLI flag: -<prefix>.s3.list-objects-version
+[list_objects_version: <string> | default = ""]
+
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
 # STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA,

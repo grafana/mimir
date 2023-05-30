@@ -10,6 +10,7 @@
 * [FEATURE] Query-frontend: added experimental support to cache cardinality query responses. The cache will be used when `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than 0. The following metrics have been added to track the query results cache hit ratio per `request_type`: #5212 #5235
   * `cortex_frontend_query_result_cache_requests_total{request_type="query_range|cardinality"}`
   * `cortex_frontend_query_result_cache_hits_total{request_type="query_range|cardinality"}`
+* [FEATURE] Added `-<prefix>.s3.list-objects-version` flag to configure the S3 list objects version.
 * [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. For now this feature can be disabled by setting `-timeseries-unmarshal-caching-optimization-enabled=false`. #5137
 * [ENHANCEMENT] Add advanced CLI flags to control gRPC client behaviour: #5161
