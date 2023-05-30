@@ -24,5 +24,5 @@ pdb_selects_object(obj) {
 }
 
 matcher_matches_object(matcher, obj) {
-	matcher in obj.metadata.labels
+	matcher in obj.spec.template.metadata.labels
 }

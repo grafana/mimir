@@ -2,14 +2,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-deployment
-  labels:
-    rollout-group: test-group
-    another-label: something-else
 spec:
   selector:
     matchLabels:
       name: test-deployment
   template:
+    metadata:
+      labels:
+        rollout-group: test-group
+        another-label: something-else
     spec:
       containers:
         - name: test-container
