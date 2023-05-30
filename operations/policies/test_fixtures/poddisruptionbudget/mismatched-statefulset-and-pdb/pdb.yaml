@@ -1,0 +1,7 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      rollout-group: other-set

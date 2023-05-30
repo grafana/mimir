@@ -1,0 +1,6 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    rollout-group: test-set
+  name: test-set
