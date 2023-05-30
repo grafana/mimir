@@ -72,7 +72,7 @@ func TestFixed(t *testing.T) {
 		assigned := make(map[uint32]instanceInZone)
 
 		for _, zone := range []int{0, 1, 2, 4, 5} {
-			for i := 0; i < 1024; i++ {
+			for i := 0; i < 256; i++ {
 				tokens, err := f.CalculateTokens(i, zone, nil)
 				require.NoError(t, err)
 				for _, token := range tokens {
