@@ -54,4 +54,7 @@
 
   overrides_exporter_service: if !$._config.overrides_exporter_enabled then null else
     $.util.serviceFor($.overrides_exporter_deployment, $._config.service_ignored_labels),
+
+  overrides_exporter_pdb: if !$._config.overrides_exporter_enabled then null else
+    $.newMimirPdb(name),
 }
