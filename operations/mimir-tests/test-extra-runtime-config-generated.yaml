@@ -1376,6 +1376,8 @@ spec:
         env:
         - name: GOMEMLIMIT
           value: "12884901888"
+        - name: GOMAXPROCS
+          value: "5"
         image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: store-gateway

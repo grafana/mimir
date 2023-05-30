@@ -56,6 +56,15 @@
     container.withEnvMixin([
       // Dynamically set GOMEMLIMIT based on memory request.
       envVar.new('GOMEMLIMIT', std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory)))),
+      // Dynamically set GOMAXPROCS based on CPU request.
+      envVar.new('GOMAXPROCS', std.toString(
+        std.ceil(
+          std.max(
+            $.util.parseCPU($.store_gateway_container.resources.requests.cpu) * 2,
+            $.util.parseCPU($.store_gateway_container.resources.requests.cpu) + 4
+          ),
+        )
+      )),
     ]) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
