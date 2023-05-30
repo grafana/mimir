@@ -201,7 +201,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-quick-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
+exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -440,14 +440,14 @@ build-helm-tests: ## Build the helm golden records.
 build-helm-tests: update-helm-dependencies
 	@./$(HELM_SCRIPTS_PATH)/build.sh --intermediate-path $(HELM_RAW_MANIFESTS_PATH) --output-path $(HELM_REFERENCE_MANIFESTS)
 
-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target conftest-test for that
-conftest-quick-test:
+helm-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target conftest-test for that
+helm-conftest-quick-test:
 	@./$(HELM_SCRIPTS_PATH)/run-conftest.sh --policies-path $(REGO_POLICIES_PATH) --manifests-path $(HELM_RAW_MANIFESTS_PATH)
 
-conftest-test: build-helm-tests conftest-quick-test
+helm-conftest-test: build-helm-tests helm-conftest-quick-test
 
 check-helm-tests: ## Check the helm golden records.
-check-helm-tests: build-helm-tests conftest-test
+check-helm-tests: build-helm-tests helm-conftest-test
 	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
 
 endif
