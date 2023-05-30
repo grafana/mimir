@@ -140,7 +140,10 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, log
 
 	r.nameSymbols = make(map[uint32]string, len(labelNames))
 	if err = r.symbols.ForEachSymbol(labelNames, func(sym string, offset uint32) error {
-		r.nameSymbols[v1PromIndexSymbolRef(offset)] = sym
+		if r.indexVersion == index.FormatV1 {
+			offset = v1PromIndexSymbolRef(offset)
+		}
+		r.nameSymbols[offset] = sym
 		return nil
 	}); err != nil {
 		return nil, err
