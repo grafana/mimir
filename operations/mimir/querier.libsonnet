@@ -53,6 +53,7 @@
 
   newQuerierDeployment(name, container)::
     deployment.new(name, 6, [container]) +
+    deployment.mixin.metadata.withLabels({ name: name }) +
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
@@ -62,8 +63,9 @@
   querier_deployment: if !$._config.is_microservices_deployment_mode then null else
     self.newQuerierDeployment('querier', $.querier_container),
 
-  local service = $.core.v1.service,
-
   querier_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),
+
+  querier_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('querier'),
 }

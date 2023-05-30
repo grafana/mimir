@@ -35,6 +35,7 @@
 
   newQueryFrontendDeployment(name, container)::
     deployment.new(name, 2, [container]) +
+    deployment.mixin.metadata.withLabels({ name: name }) +
     $.mimirVolumeMounts +
     $.newMimirSpreadTopology(name, $._config.query_frontend_topology_spread_max_skew) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
@@ -53,4 +54,7 @@
     // use the service cluster IP so that when the service DNS is resolved it
     // returns the set of query-frontend IPs.
     $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
+
+  query_frontend_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('query-frontend'),
 }

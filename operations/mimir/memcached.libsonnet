@@ -8,20 +8,25 @@ memcached {
   local volume = $.core.v1.volume,
 
   memcached+:: {
+    local name = self.name,
+
     cpu_limits:: null,
     deployment: {},
     statefulSet:
-      statefulSet.new(self.name, 3, [
+      statefulSet.new(name, 3, [
         self.memcached_container,
         self.memcached_exporter,
       ], []) +
-      statefulSet.mixin.spec.withServiceName(self.name) +
+      statefulSet.mixin.spec.withServiceName(name) +
+      statefulSet.mixin.metadata.withLabels({ name: name }) +
       (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
       $.util.antiAffinity,
 
     service:
       $.util.serviceFor(self.statefulSet) +
       service.mixin.spec.withClusterIp('None'),
+
+    podDisruptionBudget: $.newMimirPdb(name),
   },
 
   // Optionally configure Memcached to use mTLS for authenticating clients

@@ -41,6 +41,9 @@
   ruler_querier_service: if !$._config.ruler_remote_evaluation_enabled then {} else
     $.util.serviceFor($.ruler_querier_deployment, $._config.service_ignored_labels),
 
+  ruler_querier_pdb: if !$._config.ruler_remote_evaluation_enabled then null else
+    $.newMimirPdb('ruler-querier'),
+
   //
   // Query Frontend
   //
@@ -62,6 +65,9 @@
     $.util.serviceFor($.ruler_query_frontend_deployment, $._config.service_ignored_labels) +
     // Note: We use a headless service because the ruler uses gRPC load balancing.
     service.mixin.spec.withClusterIp('None'),
+
+  ruler_query_frontend_pdb: if !$._config.ruler_remote_evaluation_enabled then null else
+    $.newMimirPdb('ruler-query-frontend'),
 
   //
   // Query Scheduler
@@ -88,4 +94,7 @@
 
   ruler_query_scheduler_discovery_service: if !$._config.ruler_remote_evaluation_enabled then {} else
     $.newQuerySchedulerDiscoveryService(rulerQuerySchedulerName, $.ruler_query_scheduler_deployment),
+
+  ruler_query_scheduler_pdb: if !$._config.ruler_remote_evaluation_enabled then null else
+    $.newMimirPdb('ruler-query-scheduler'),
 }

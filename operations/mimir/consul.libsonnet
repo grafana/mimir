@@ -38,6 +38,7 @@ local consul = import 'consul/consul.libsonnet';
       else podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType,
 
     consul_deployment+:
+      deployment.mixin.metadata.withLabels({ name: $.consul.consul_deployment.metadata.name }) +
 
       // Keep the consul state on a ramdisk, as they are ephemeral to us.
       $.util.emptyVolumeMount(
@@ -62,5 +63,8 @@ local consul = import 'consul/consul.libsonnet';
         '--no-consul.health-summary',
         '--consul.allow_stale',
       ]),
+
+    consul_pdb:
+      $.newMimirPdb($.consul.consul_deployment.metadata.name),
   },
 }

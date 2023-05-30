@@ -45,6 +45,7 @@
 
   distributor_deployment: if !$._config.is_microservices_deployment_mode then null else
     deployment.new('distributor', 3, [$.distributor_container]) +
+    deployment.mixin.metadata.withLabels({ name: 'distributor' }) +
     $.newMimirSpreadTopology('distributor', $._config.distributor_topology_spread_max_skew) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
@@ -56,4 +57,7 @@
   distributor_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.distributor_deployment, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
+
+  distributor_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('distributor'),
 }

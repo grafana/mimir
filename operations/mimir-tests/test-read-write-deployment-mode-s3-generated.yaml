@@ -7,6 +7,58 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: memcached
+  name: memcached
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-frontend
+  name: memcached-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-index-queries
+  name: memcached-index-queries
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-index-queries
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-metadata
+  name: memcached-metadata
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: mimir-backend-rollout-pdb
   name: mimir-backend-rollout-pdb
   namespace: default
@@ -28,6 +80,19 @@ spec:
   selector:
     matchLabels:
       rollout-group: mimir-write
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: rollout-operator
+  name: rollout-operator
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: rollout-operator
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -518,6 +583,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  labels:
+    name: rollout-operator
   name: rollout-operator
   namespace: default
 spec:
@@ -563,6 +630,8 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  labels:
+    name: memcached
   name: memcached
   namespace: default
 spec:
@@ -616,6 +685,8 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  labels:
+    name: memcached-frontend
   name: memcached-frontend
   namespace: default
 spec:
@@ -669,6 +740,8 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  labels:
+    name: memcached-index-queries
   name: memcached-index-queries
   namespace: default
 spec:
@@ -722,6 +795,8 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  labels:
+    name: memcached-metadata
   name: memcached-metadata
   namespace: default
 spec:

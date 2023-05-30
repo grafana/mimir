@@ -33,6 +33,32 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: consul
+  name: consul
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: consul
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: distributor
+  name: distributor
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: distributor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: ingester
   name: ingester
   namespace: default
@@ -41,6 +67,110 @@ spec:
   selector:
     matchLabels:
       name: ingester
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached
+  name: memcached
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-frontend
+  name: memcached-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-index-queries
+  name: memcached-index-queries
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-index-queries
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-metadata
+  name: memcached-metadata
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: querier
+  name: querier
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: querier
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-frontend
+  name: query-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-scheduler
+  name: query-scheduler
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-scheduler
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler
+  name: ruler
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -609,6 +739,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  labels:
+    name: consul
   name: consul
   namespace: default
 spec:
@@ -734,6 +866,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  labels:
+    name: distributor
   name: distributor
   namespace: default
 spec:
@@ -818,6 +952,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  labels:
+    name: querier
   name: querier
   namespace: default
 spec:
@@ -908,6 +1044,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  labels:
+    name: query-frontend
   name: query-frontend
   namespace: default
 spec:
@@ -982,6 +1120,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  labels:
+    name: query-scheduler
   name: query-scheduler
   namespace: default
 spec:
@@ -1046,6 +1186,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  labels:
+    name: ruler
   name: ruler
   namespace: default
 spec:
@@ -1417,6 +1559,8 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  labels:
+    name: memcached
   name: memcached
   namespace: default
 spec:
@@ -1470,6 +1614,8 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  labels:
+    name: memcached-frontend
   name: memcached-frontend
   namespace: default
 spec:
@@ -1523,6 +1669,8 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  labels:
+    name: memcached-index-queries
   name: memcached-index-queries
   namespace: default
 spec:
@@ -1576,6 +1724,8 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  labels:
+    name: memcached-metadata
   name: memcached-metadata
   namespace: default
 spec:

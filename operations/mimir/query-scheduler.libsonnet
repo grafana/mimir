@@ -34,6 +34,7 @@
 
   newQuerySchedulerDeployment(name, container)::
     deployment.new(name, 2, [container]) +
+    deployment.mixin.metadata.withLabels({ name: name }) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     $.util.antiAffinity +
@@ -55,6 +56,9 @@
 
   query_scheduler_discovery_service: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then {} else
     self.newQuerySchedulerDiscoveryService('query-scheduler', $.query_scheduler_deployment),
+
+  query_scheduler_pdb: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then null else
+    $.newMimirPdb('query-scheduler'),
 
   // Reconfigure querier and query-frontend to use scheduler.
 
