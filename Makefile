@@ -186,6 +186,8 @@ LATEST_BUILD_IMAGE_TAG ?= charleskorn-golangci-lint-upgrade-beafb9184
 TTY := --tty
 MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
 
+REGO_POLICIES_PATH=operations/policies
+
 GO_FLAGS := -ldflags "\
 		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
 		-X $(MIMIR_VERSION).Revision=$(GIT_REVISION) \
@@ -420,7 +422,6 @@ format-mixin: ## Format the mixin files.
 # Helm static tests
 
 HELM_SCRIPTS_PATH=operations/helm/scripts
-REGO_POLICIES_PATH=operations/policies
 HELM_RAW_MANIFESTS_PATH=operations/helm/manifests-intermediate
 HELM_REFERENCE_MANIFESTS=operations/helm/tests
 
@@ -440,7 +441,7 @@ build-helm-tests: ## Build the helm golden records.
 build-helm-tests: update-helm-dependencies
 	@./$(HELM_SCRIPTS_PATH)/build.sh --intermediate-path $(HELM_RAW_MANIFESTS_PATH) --output-path $(HELM_REFERENCE_MANIFESTS)
 
-helm-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target conftest-test for that
+helm-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target helm-conftest-test for that
 helm-conftest-quick-test:
 	@./$(HELM_SCRIPTS_PATH)/run-conftest.sh --policies-path $(REGO_POLICIES_PATH) --manifests-path $(HELM_RAW_MANIFESTS_PATH)
 
@@ -569,8 +570,14 @@ check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-j
 build-jsonnet-tests: ## Build the jsonnet tests.
 	@./operations/mimir-tests/build.sh
 
+jsonnet-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target jsonnet-conftest-test for that
+jsonnet-conftest-quick-test:
+	@./operations/mimir-tests/run-conftest.sh --policies-path $(REGO_POLICIES_PATH) --manifests-path ./operations/mimir-tests
+
+jsonnet-conftest-test: build-jsonnet-tests jsonnet-conftest-quick-test
+
 check-jsonnet-tests: ## Check the jsonnet tests output.
-check-jsonnet-tests: build-jsonnet-tests
+check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
 	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
 check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.
