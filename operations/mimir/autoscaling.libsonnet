@@ -120,7 +120,13 @@
             // We also have to ensure that the threshold is an integer (represented as a string)
             threshold: std.toString(std.parseInt(trigger.threshold)),
           },
-        }
+        } + (
+          // Be aware that the default value for the trigger "metricType" field is "AverageValue"
+          // (see https://keda.sh/docs/2.9/concepts/scaling-deployments/#triggers), which means that KEDA will
+          // determine the target number of replicas by dividing the metric value by the threshold. This means in practice
+          // that we can sum together the values for the different replicas in our queries.
+          if std.objectHas(trigger, 'metric_type') then { metricType: trigger.metric_type } else {}
+        )
         for trigger in config.triggers
       ],
     },
@@ -371,10 +377,6 @@
       // As a result, we have made the decision to set the scale down periodSeconds to 600.
       scaledownPeriod: 600,
 
-      // Be aware that the default value for the trigger "metricType" field is "AverageValue"
-      // (see https://keda.sh/docs/2.9/concepts/scaling-deployments/#triggers), which means that KEDA will
-      // determine the target number of replicas by dividing the metric value by the threshold. This means in practice
-      // that we can sum together the values for the different replicas in our queries.
       triggers: [
         {
           metric_name: '%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
