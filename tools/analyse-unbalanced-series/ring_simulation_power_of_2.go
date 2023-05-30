@@ -46,9 +46,9 @@ func getTokensOwnership(r *eventokendistributor.Ring, timeseriesCount int) (*eve
 	return statistics, nil
 }
 
-func generateAndAnalyzeRing(analysisName string, timeseriesCount, instancesPerZone int, zones []string, maxTokenValue uint32, tokenDistributor eventokendistributor.TokenDistributorInterface) (*eventokendistributor.TimeseriesDistributionStatistics, error) {
+func generateAndAnalyzeRing(analysisName string, timeseriesCount, instancesPerZone, tokensPerInstance int, zones []string, maxTokenValue uint32, tokenDistributor eventokendistributor.TokenDistributorInterface) (*eventokendistributor.TimeseriesDistributionStatistics, error) {
 	ringDesc := &ring.Desc{}
-	r := eventokendistributor.NewRing(ringDesc, zones, maxTokenValue, tokenDistributor)
+	r := eventokendistributor.NewRing(ringDesc, zones, tokensPerInstance, maxTokenValue, tokenDistributor)
 	for i := 0; i < instancesPerZone; i++ {
 		for _, zone := range zones {
 			err := r.AddInstance(i, zone)
@@ -62,9 +62,39 @@ func generateAndAnalyzeRing(analysisName string, timeseriesCount, instancesPerZo
 	if err != nil {
 		return nil, err
 	}
-	generateCombinedCSV(analysisName, instancesPerZone, timeseriesCount, statistics)
+	//generateCombinedCSV(analysisName, instancesPerZone, timeseriesCount, statistics)
 	//generateCSV(analysisName, statistics, logger)
 	return statistics, nil
+}
+
+func generateAndAnalyzeSpreadMinimizingRing(timeseriesCount, maxInstancesPerZone, tokensPerInstance int, zones []string, maxTokenValue uint32, logger log.Logger) error {
+	ringDesc := &ring.Desc{}
+	r := eventokendistributor.NewSpreadMinimizingRing(ringDesc, zones, tokensPerInstance, maxTokenValue)
+	spreadsByZoneByInstancePerZone := make(map[int]map[string]float64, maxInstancesPerZone)
+	rootAnalysisName := "timeseries-in-spreadMinimizingRing"
+	for instancesPerZone := 1; instancesPerZone <= maxInstancesPerZone; instancesPerZone++ {
+		level.Info(logger).Log("test", "Analysis of a distribution of timeseries in a spreadMinimizing ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "maxInstancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "start")
+		for _, zone := range zones {
+			err := r.AddInstance(instancesPerZone, zone)
+			if err != nil {
+				panic(err)
+			}
+		}
+		statistics, err := getTokensOwnership(&r.Ring, timeseriesCount)
+		if err != nil {
+			return err
+		}
+		analysisName := fmt.Sprintf("%s-tokensPerInstance-%d-instancesPerZone-%d-", rootAnalysisName, tokensPerInstance, instancesPerZone)
+		generateCombinedCSV(analysisName, instancesPerZone, timeseriesCount, statistics)
+
+		spreadByZone := statistics.GetSpreadByZone()
+		spreadsByZoneByInstancePerZone[instancesPerZone] = spreadByZone
+		fmt.Println()
+
+		level.Info(logger).Log("test", "Analysis of a distribution of timeseries in a spreadMinimizing ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "maxInstancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "end")
+	}
+	generateSpreadCSV(fmt.Sprintf("spreads-%s-timeseries-%d", rootAnalysisName, timeseriesCount), spreadsByZoneByInstancePerZone)
+	return nil
 }
 
 func generateCSV(analysisName string, statistics *eventokendistributor.TimeseriesDistributionStatistics, logger log.Logger) error {
@@ -194,7 +224,7 @@ func generateAndAnalyzePowerOf2Ring(timeseriesCount, tokensPerInstance, instance
 	level.Info(logger).Log("test", "Analysis of a distribution of timeseries in a powerOf2 ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "instancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "start")
 	tokenDistributor := eventokendistributor.NewPower2TokenDistributor(zones, tokensPerInstance, maxTokenValue)
 	analysisName := fmt.Sprintf("timeseries-in-powerOf2Ring-tokensPerInstance-%d-instancesPerZone-%d", tokensPerInstance, instancesPerZone)
-	statistics, err := generateAndAnalyzeRing(analysisName, timeseriesCount, instancesPerZone, zones, maxTokenValue, tokenDistributor)
+	statistics, err := generateAndAnalyzeRing(analysisName, timeseriesCount, instancesPerZone, tokensPerInstance, zones, maxTokenValue, tokenDistributor)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +236,7 @@ func generateAndAnalyzeRandomTokenRing(timeseriesCount, tokensPerInstance, insta
 	level.Info(logger).Log("test", "Analysis of a distribution of in a randomToken ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "instancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "start")
 	tokenDistributor := eventokendistributor.NewRandomTokenDistributor(tokensPerInstance, maxTokenValue)
 	analysisName := fmt.Sprintf("timeseries-in-randomTokenRing-tokensPerInstance-%d-instancesPerZone-%d-", tokensPerInstance, instancesPerZone)
-	statistics, err := generateAndAnalyzeRing(analysisName, timeseriesCount, instancesPerZone, zones, maxTokenValue, tokenDistributor)
+	statistics, err := generateAndAnalyzeRing(analysisName, timeseriesCount, instancesPerZone, tokensPerInstance, zones, maxTokenValue, tokenDistributor)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +248,7 @@ func generateAndAnalyzeRandomBucketTokenRing(timeseriesCount, tokensPerInstance,
 	level.Info(logger).Log("test", "Analysis of a distribution of in a randomBucketToken ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "instancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "start")
 	tokenDistributor := eventokendistributor.NewRandomBucketTokenDistributor(tokensPerInstance, maxTokenValue)
 	analysisName := fmt.Sprintf("timeseries-in-randomBucketTokenRing-tokensPerInstance-%d-instancesPerZone-%d-", tokensPerInstance, instancesPerZone)
-	statistics, err := generateAndAnalyzeRing(analysisName, timeseriesCount, instancesPerZone, zones, maxTokenValue, tokenDistributor)
+	statistics, err := generateAndAnalyzeRing(analysisName, timeseriesCount, instancesPerZone, tokensPerInstance, zones, maxTokenValue, tokenDistributor)
 	if err != nil {
 		return nil, err
 	}
@@ -226,15 +256,15 @@ func generateAndAnalyzeRandomBucketTokenRing(timeseriesCount, tokensPerInstance,
 	return statistics, nil
 }
 
-func generateAndAnalyzeRandomModuloTokenRing(timeseriesCount, tokensPerInstance, instancesPerZone int, zones []string, maxTokenValue uint32, logger log.Logger) (*eventokendistributor.TimeseriesDistributionStatistics, error) {
-	level.Info(logger).Log("test", "Analysis of a distribution of in a randomModuloToken ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "instancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "start")
-	tokenDistributor := eventokendistributor.NewRandomModuloTokenDistributor(zones, tokensPerInstance, maxTokenValue)
-	analysisName := fmt.Sprintf("timeseries-in-randomModuloTokenRing-tokensPerInstance-%d-instancesPerZone-%d-", tokensPerInstance, instancesPerZone)
-	statistics, err := generateAndAnalyzeRing(analysisName, timeseriesCount, instancesPerZone, zones, maxTokenValue, tokenDistributor)
+func generateAndAnalyzeSlidingPower2TokenRing(timeseriesCount, tokensPerInstance, instancesPerZone int, zones []string, maxTokenValue uint32, logger log.Logger) (*eventokendistributor.TimeseriesDistributionStatistics, error) {
+	level.Info(logger).Log("test", "Analysis of a distribution of in a slidingPower2 ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "instancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "start")
+	tokenDistributor := eventokendistributor.NewSlidingPower2TokenDistributor(zones, tokensPerInstance, maxTokenValue)
+	analysisName := fmt.Sprintf("timeseries-in-slidingPower2-tokensPerInstance-%d-instancesPerZone-%d-", tokensPerInstance, instancesPerZone)
+	statistics, err := generateAndAnalyzeRing(analysisName, timeseriesCount, instancesPerZone, tokensPerInstance, zones, maxTokenValue, tokenDistributor)
 	if err != nil {
 		return nil, err
 	}
-	level.Info(logger).Log("test", "Analysis of a distribution of timeseries in a randomModuloToken ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "instancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "end")
+	level.Info(logger).Log("test", "Analysis of a distribution of timeseries in a slidingPower2 ring", "timeseriesCount", timeseriesCount, "tokensPerInstance", tokensPerInstance, "instancesPerZone", instancesPerZone, "phase", "Generating CSV files", "status", "end")
 	return statistics, nil
 }
 
@@ -242,13 +272,18 @@ func main() {
 	logger := log.NewLogfmtLogger(os.Stdout)
 	zones := []string{"zone-a", "zone-b", "zone-c"}
 	tokensPerInstance := 512
-	instancesPerZoneScenarios := []int{1, 2, 3, 4, 5, 15, 16, 17, 63, 64, 65, 127, 128, 129} // []int{18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31} //
+	maxInstancesPerZone := 128
+	//instancesPerZoneScenarios := []int{1, 2, 3, 4, 5, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 127, 128, 129} // []int{18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31} //
+	instancesPerZoneScenarios := make([]int, 0, maxInstancesPerZone)
+	for i := 0; i < maxInstancesPerZone; i++ {
+		instancesPerZoneScenarios = append(instancesPerZoneScenarios, i+1)
+	}
 	timeseriesCountScenarios := []int{10_000_000}
 	analyses := map[string]func(int, int, int, []string, uint32, log.Logger) (*eventokendistributor.TimeseriesDistributionStatistics, error){
-		/*"powerOf2":     generateAndAnalyzePowerOf2Ring,
-		"random":       generateAndAnalyzeRandomTokenRing,
-		"randomBucket": generateAndAnalyzeRandomBucketTokenRing,*/
-		"randomModulo": generateAndAnalyzeRandomModuloTokenRing,
+		//"powerOf2": generateAndAnalyzePowerOf2Ring,
+		//"random": generateAndAnalyzeRandomTokenRing,
+		//"randomBucket": generateAndAnalyzeRandomBucketTokenRing,
+		//"slidingPower2": generateAndAnalyzeSlidingPower2TokenRing,
 	}
 	for analysisName, analysis := range analyses {
 		spreadsByZoneByInstancePerZone := make(map[int]map[string]float64, len(instancesPerZoneScenarios))
@@ -264,6 +299,9 @@ func main() {
 			}
 			generateSpreadCSV(fmt.Sprintf("spreads-%s-timeseries-%d", analysisName, timeseriesCount), spreadsByZoneByInstancePerZone)
 		}
+	}
+	for _, timeseriesCount := range timeseriesCountScenarios {
+		generateAndAnalyzeSpreadMinimizingRing(timeseriesCount, maxInstancesPerZone, tokensPerInstance, zones, math.MaxUint32, logger)
 	}
 }
 
@@ -312,7 +350,7 @@ func main5() {
 	tokensPerInstance := 512
 	ringDesc := &ring.Desc{}
 	td := eventokendistributor.NewPower2TokenDistributor(zones, tokensPerInstance, math.MaxUint32)
-	r := eventokendistributor.NewRing(ringDesc, zones, math.MaxUint32, td)
+	r := eventokendistributor.NewRing(ringDesc, zones, tokensPerInstance, math.MaxUint32, td)
 	for i := 0; i < instancesPerZone; i++ {
 		for _, zone := range zones {
 			err := r.AddInstance(i, zone)

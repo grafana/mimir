@@ -3,7 +3,6 @@ package eventokendistributor
 import (
 	"container/heap"
 	"fmt"
-	"math"
 	"math/bits"
 	"math/rand"
 	"sort"
@@ -55,7 +54,7 @@ func NewPower2TokenDistributor(zones []string, tokensPerInstance int, maxTokenVa
 // CalculateTokens calculates the set of tokens to be assigned to the instance with the given id from the given zone.
 // id should be placed.
 func (t *Power2TokenDistributor) CalculateTokens(instanceID, zoneID int, existingTokens ring.Tokens) (ring.Tokens, error) {
-	tokenDistance := uint(math.MaxUint32 / t.tokensPerInstance)
+	tokenDistance := uint(t.maxTokenValue) / uint(t.tokensPerInstance)
 	tokenDistanceLen := bits.Len(tokenDistance)
 	zonesOffsetLen := bits.Len(uint((len(t.zones) - 1) << 1))
 	instanceIDLen := bits.Len(uint(instanceID))
@@ -81,7 +80,7 @@ func (t *Power2TokenDistributor) CalculateTokens(instanceID, zoneID int, existin
 // calculateOffset calculates the offset in the ring where the first token of the instance with the given
 // id should be placed.
 func (t *Power2TokenDistributor) calculateOffset(instanceID int) int {
-	tokenRangeLen := bits.Len(uint(math.MaxUint32 / t.tokensPerInstance))
+	tokenRangeLen := bits.Len(uint(t.maxTokenValue) / uint(t.tokensPerInstance))
 	len := bits.Len(uint(instanceID))
 	if len == 0 {
 		return 0
@@ -107,7 +106,7 @@ func NewSlidingPower2TokenDistributor(zones []string, tokensPerInstance int, max
 // CalculateTokens calculates the set of tokens to be assigned to the instance with the given id from the given zone.
 // id should be placed.
 func (t *SlidingPower2TokenDistributor) CalculateTokens(instanceID, zoneID int, existingTokens ring.Tokens) (ring.Tokens, error) {
-	tokenDistance := uint(math.MaxUint32 / t.tokensPerInstance)
+	tokenDistance := uint(t.maxTokenValue) / uint(t.tokensPerInstance)
 	tokenDistanceLen := bits.Len(tokenDistance)
 	zonesOffsetLen := bits.Len(uint((len(t.zones) - 1) << 1))
 	instanceIDLen := bits.Len(uint(instanceID))
@@ -133,7 +132,7 @@ func (t *SlidingPower2TokenDistributor) CalculateTokens(instanceID, zoneID int, 
 // calculateSlidingOffset calculates the offset in the ring where the nth token of the instance with the given
 // id should be placed.
 func (t *SlidingPower2TokenDistributor) calculateSlidingOffset(n, instanceID int) int {
-	tokenRangeLen := bits.Len(uint(math.MaxUint32 / t.tokensPerInstance))
+	tokenRangeLen := bits.Len(uint(t.maxTokenValue) / uint(t.tokensPerInstance))
 	len := bits.Len(uint(instanceID))
 	if len == 0 {
 		return 0
@@ -203,7 +202,7 @@ func NewRandomBucketTokenDistributor(tokensPerInstance int, maxTokenValue uint32
 // CalculateTokens calculates the set of tokens to be assigned to the instance with the given id from the given zone.
 // id should be placed.
 func (t *RandomBucketTokenDistributor) CalculateTokens(instanceID, zoneID int, existingTokens ring.Tokens) (ring.Tokens, error) {
-	tokenDistance := uint(math.MaxUint32 / t.tokensPerInstance)
+	tokenDistance := uint(t.maxTokenValue) / uint(t.tokensPerInstance)
 	tokenDistanceLen := bits.Len(tokenDistance)
 	//fmt.Printf("id: %3d, binary offset: %032b, numeric offset: %d\n", instanceID, offset, offset)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -245,7 +244,7 @@ func (t *RandomModuloTokenDistributor) CalculateTokens(instanceID, zoneID int, e
 		i++
 	}*/
 
-	tokenDistance := uint(math.MaxUint32 / t.tokensPerInstance)
+	tokenDistance := uint(t.maxTokenValue) / uint(t.tokensPerInstance)
 	tokenDistanceLen := bits.Len(tokenDistance)
 	//fmt.Printf("id: %3d, binary offset: %032b, numeric offset: %d\n", instanceID, offset, offset)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -272,21 +271,22 @@ func (t *RandomModuloTokenDistributor) createPriorityQueue(existingTokens ring.T
 		if prevIndex < 0 {
 			prevIndex = len(existingTokens) - 1
 		}
-		dist := distance(existingTokens[prevIndex], token, t.maxTokenValue)
-		wt := newWeightedToken(token, dist)
+		dist := float64(distance(existingTokens[prevIndex], token, t.maxTokenValue))
+		wt := newOwnershipInfo(dist)
 		pq.Add(wt)
 	}
 	heap.Init(pq)
 	return pq
 }
 
-func (t *RandomModuloTokenDistributor) findToken(weightedToken *WeightedToken, existingTokens ring.Tokens, zoneID int) uint32 {
-	half := weightedToken.weight / 2
+func (t *RandomModuloTokenDistributor) findToken(weightedToken *OwnershipInfo, existingTokens ring.Tokens, zoneID int) uint32 {
+	half := uint32(weightedToken.ownership / 2)
 	var candidate uint32
-	if weightedToken.token < half {
-		candidate = t.maxTokenValue - (half - weightedToken.token)
+	ringToken := weightedToken.ringItem.(*RingToken)
+	if ringToken.token < half {
+		candidate = t.maxTokenValue - (half - ringToken.token)
 	} else {
-		candidate = weightedToken.token - half
+		candidate = ringToken.token - half
 	}
 	size := uint32(len(t.zones))
 	candidate = (candidate / size) * size

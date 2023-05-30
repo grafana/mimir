@@ -10,10 +10,11 @@ import (
 )
 
 type Ring struct {
-	ringDesc         *ring.Desc
-	zones            []string
-	maxTokenValue    uint32
-	tokenDistributor TokenDistributorInterface
+	ringDesc          *ring.Desc
+	zones             []string
+	tokensPerInstance int
+	maxTokenValue     uint32
+	tokenDistributor  TokenDistributorInterface
 }
 
 type InstanceInfo struct {
@@ -21,13 +22,14 @@ type InstanceInfo struct {
 	Zone       string
 }
 
-func NewRing(ringDesc *ring.Desc, zones []string, maxTokenValue uint32, tokenDistributor TokenDistributorInterface) *Ring {
+func NewRing(ringDesc *ring.Desc, zones []string, tokensPerInstance int, maxTokenValue uint32, tokenDistributor TokenDistributorInterface) *Ring {
 	sort.Strings(zones)
 	return &Ring{
-		ringDesc:         ringDesc,
-		zones:            zones,
-		maxTokenValue:    maxTokenValue,
-		tokenDistributor: tokenDistributor,
+		ringDesc:          ringDesc,
+		zones:             zones,
+		tokensPerInstance: tokensPerInstance,
+		maxTokenValue:     maxTokenValue,
+		tokenDistributor:  tokenDistributor,
 	}
 }
 
@@ -48,7 +50,8 @@ func (r *Ring) AddInstance(instanceID int, zone string) error {
 	if err != nil {
 		return err
 	}
-	tokens, err := r.tokenDistributor.CalculateTokens(instanceID, zoneID, nil)
+	existingTokens := r.GetTokens()
+	tokens, err := r.tokenDistributor.CalculateTokens(instanceID, zoneID, existingTokens)
 	if err != nil {
 		return err
 	}
@@ -145,6 +148,29 @@ func (r *Ring) getRegisteredOwnershipByInstanceByZone() map[string]map[string]fl
 		}
 	}
 	return ownershipByInstanceByZone
+}
+
+// getRegisteredOwnershipByZone calculates ownership maps grouped by instance id and by zone and by token and by zone
+func (r *Ring) getRegisteredOwnershipByZone() (map[string]map[string]float64, map[string]map[uint32]float64) {
+	ownershipByInstanceByZone := make(map[string]map[string]float64, len(r.zones))
+	ownershipByTokenByZone := make(map[string]map[uint32]float64, len(r.zones))
+	tokensByZone := r.getTokensByZone()
+	instanceByToken := r.GetInstanceByToken()
+	for zone, tokens := range tokensByZone {
+		ownershipByInstanceByZone[zone] = make(map[string]float64, len(r.ringDesc.GetIngesters()))
+		ownershipByTokenByZone[zone] = make(map[uint32]float64, len(tokens))
+		if tokens == nil || len(tokens) == 0 {
+			continue
+		}
+		prev := len(tokens) - 1
+		for tk, token := range tokens {
+			ownership := float64(distance(tokens[prev], token, r.maxTokenValue))
+			ownershipByTokenByZone[zone][token] = ownership
+			ownershipByInstanceByZone[zone][instanceByToken[token].InstanceID] += ownership
+			prev = tk
+		}
+	}
+	return ownershipByInstanceByZone, ownershipByTokenByZone
 }
 
 func (r *Ring) getStatistics() RingStatistics {

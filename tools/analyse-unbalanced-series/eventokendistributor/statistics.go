@@ -49,7 +49,7 @@ func NewRingStatistics(ownershipByInstanceByZone map[string]map[string]float64, 
 		maxByZone:              maxByZone,
 		spreadByZone:           spreadByZone,
 		optimalOwnershipByZone: optimalOwnershipByZone,
-		stdevByZone:            spreadByZone,
+		stdevByZone:            stdevByZone,
 	}
 	return statistics
 }

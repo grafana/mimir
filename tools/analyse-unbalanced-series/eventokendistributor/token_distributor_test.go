@@ -960,9 +960,10 @@ func TestRandomModuloTokenDistributor_FindToken(t *testing.T) {
 		if prevIndex < 0 {
 			prevIndex = len(tokens) - 1
 		}
-		dist := distance(tokens[prevIndex], token, maxToken)
-		wt := newWeightedToken(token, dist)
-		next := td.findToken(wt, tokens, testData.zoneID)
+		dist := float64(distance(tokens[prevIndex], token, maxToken))
+		oi := newOwnershipInfo(dist)
+		oi.SetRingItem(NewRingToken(token, tokens[prevIndex]))
+		next := td.findToken(oi, tokens, testData.zoneID)
 		require.Equal(t, testData.expectedToken, next)
 		require.Equal(t, uint32(testData.zoneID), next%uint32(len(zones)))
 	}

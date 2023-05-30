@@ -1,0 +1,27 @@
+GOROOT=/opt/homebrew/Cellar/go/1.20.4/libexec #gosetup
+GOPATH=/Users/duricanikolic/go #gosetup
+/opt/homebrew/Cellar/go/1.20.4/libexec/bin/go test -c -o /private/var/folders/k2/9rp190p943q0zf_hf4p4cmrw0000gn/T/GoLand/___1TestSpreadMinimizingRing_AddInstancePerScenario_in_github_com_grafana_mimir_tools_analyse_unbalanced_series_eventokendistributor.test -gcflags all=-N -l github.com/grafana/mimir/tools/analyse-unbalanced-series/eventokendistributor #gosetup
+/opt/homebrew/Cellar/go/1.20.4/libexec/bin/go tool test2json -t /private/var/folders/k2/9rp190p943q0zf_hf4p4cmrw0000gn/T/dlvLauncher.sh /Applications/GoLand.app/Contents/plugins/go-plugin/lib/dlv/macarm/dlv --listen=127.0.0.1:63860 --headless=true --api-version=2 --check-go-version=false --only-same-user=false exec /private/var/folders/k2/9rp190p943q0zf_hf4p4cmrw0000gn/T/GoLand/___1TestSpreadMinimizingRing_AddInstancePerScenario_in_github_com_grafana_mimir_tools_analyse_unbalanced_series_eventokendistributor.test -- -test.v -test.paniconexit0 -test.run ^\QTestSpreadMinimizingRing_AddInstancePerScenario\E$
+=== RUN   TestSpreadMinimizingRing_AddInstancePerScenario
+Ring with 1 instances per zone, 3 zones and 512 tokens per instance
+zone:     zone-b, optimalOwnership:  4294967295.000, min:  4294967295.000, max:  4294967295.000, spread:  0.000%, stdev:  0.000%
+zone:     zone-c, optimalOwnership:  4294967295.000, min:  4294967295.000, max:  4294967295.000, spread:  0.000%, stdev:  0.000%
+zone:     zone-a, optimalOwnership:  4294967295.000, min:  4294967295.000, max:  4294967295.000, spread:  0.000%, stdev:  0.000%
+--------------------------------------------------
+Ring with 2 instances per zone, 3 zones and 512 tokens per instance
+zone:     zone-c, optimalOwnership:  2147483647.500, min:  2147483646.000, max:  2147483649.000, spread:  0.000%, stdev:  0.000%
+zone:     zone-a, optimalOwnership:  2147483647.500, min:  2147482621.000, max:  2147484674.000, spread:  0.000%, stdev:  0.000%
+zone:     zone-b, optimalOwnership:  2147483647.500, min:  2147483132.000, max:  2147484163.000, spread:  0.000%, stdev:  0.000%
+--------------------------------------------------
+Ring with 3 instances per zone, 3 zones and 512 tokens per instance
+zone:     zone-b, optimalOwnership:  1431655765.000, min:  1431655079.000, max:  1431656710.000, spread:  0.000%, stdev:  0.000%
+zone:     zone-c, optimalOwnership:  1431655765.000, min:  1431655428.000, max:  1431656103.000, spread:  0.000%, stdev:  0.000%
+zone:     zone-a, optimalOwnership:  1431655765.000, min:  1431654824.000, max:  1431657221.000, spread:  0.000%, stdev:  0.000%
+--------------------------------------------------
+Ring with 4 instances per zone, 3 zones and 512 tokens per instance
+zone:     zone-c, optimalOwnership:  1073741823.750, min:  1070945787.000, max:  1075139924.000, spread:  0.390%, stdev:  0.390%
+zone:     zone-a, optimalOwnership:  1073741823.750, min:  1070947421.000, max:  1075139750.000, spread:  0.390%, stdev:  0.390%
+zone:     zone-b, optimalOwnership:  1073741823.750, min:  1070946910.000, max:  1075139834.000, spread:  0.390%, stdev:  0.390%
+--------------------------------------------------
+
+Debugger finished with the exit code 0

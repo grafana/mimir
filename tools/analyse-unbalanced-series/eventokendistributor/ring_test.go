@@ -19,7 +19,7 @@ func TestRing_GetInstancesByZone(t *testing.T) {
 	tokensByInstanceID := createTokensByInstanceID(instancesPerZone, tokensPerInstance, zones)
 	ringDesc := createRigDesc(instancesPerZone, zones, tokensByInstanceID)
 	td := NewPower2TokenDistributor(zones, tokensPerInstance, math.MaxUint32)
-	r := NewRing(ringDesc, zones, math.MaxUint32, td)
+	r := NewRing(ringDesc, zones, tokensPerInstance, math.MaxUint32, td)
 	instancesByZone := r.getInstancesByZone()
 	for i := 0; i < instancesPerZone; i++ {
 		for _, zone := range zones {
@@ -40,7 +40,7 @@ func TestRing_GetTokensByZone(t *testing.T) {
 	tokensPerInstance := 4
 	tokensByInstanceID := createTokensByInstanceID(instancesPerZone, tokensPerInstance, zones)
 	ringDesc := createRigDesc(instancesPerZone, zones, tokensByInstanceID)
-	r := NewRing(ringDesc, zones, math.MaxUint32, nil)
+	r := NewRing(ringDesc, zones, tokensPerInstance, math.MaxUint32, nil)
 	tokensByZone := r.getTokensByZone()
 	for _, zone := range zones {
 		tokens, ok := tokensByZone[zone]
@@ -62,7 +62,7 @@ func TestRing_GetRegisteredOwnershipByInstanceByZone(t *testing.T) {
 	tokensByInstanceID := createTokensByInstanceID(instancesPerZone, tokensPerInstance, zones)
 	ringDesc := createRigDesc(instancesPerZone, zones, tokensByInstanceID)
 	td := NewPower2TokenDistributor(zones, tokensPerInstance, 1000)
-	r := NewRing(ringDesc, zones, 1000, td)
+	r := NewRing(ringDesc, zones, tokensPerInstance, 1000, td)
 	ownershipByInstanceByZone := r.getRegisteredOwnershipByInstanceByZone()
 	require.Len(t, ownershipByInstanceByZone, len(zones))
 	for _, ownershipByZone := range ownershipByInstanceByZone {
@@ -88,6 +88,41 @@ func TestRing_GetRegisteredOwnershipByInstanceByZone(t *testing.T) {
 	}
 }
 
+func TestRing_GetRegisteredOwnershipByZone(t *testing.T) {
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	instancesPerZone := 2
+	tokensPerInstance := 4
+	tokensByInstanceID := createTokensByInstanceID(instancesPerZone, tokensPerInstance, zones)
+	ringDesc := createRigDesc(instancesPerZone, zones, tokensByInstanceID)
+	td := NewPower2TokenDistributor(zones, tokensPerInstance, 1000)
+	r := NewRing(ringDesc, zones, tokensPerInstance, 1000, td)
+	ownershipByInstanceByZone, ownerwshipByTokenByZone := r.getRegisteredOwnershipByZone()
+	require.Len(t, ownershipByInstanceByZone, len(zones))
+	for _, ownershipByZone := range ownershipByInstanceByZone {
+		require.Len(t, ownershipByZone, instancesPerZone)
+	}
+	tokensByZone := r.getTokensByZone()
+	for instanceID, instance := range r.ringDesc.GetIngesters() {
+		tokens := instance.GetTokens()
+		allTokens := tokensByZone[instance.Zone]
+		ownership := 0.0
+		for _, token := range tokens {
+			index := search(allTokens, token)
+			if index == -1 {
+				panic(fmt.Errorf("token %d not found", token))
+			}
+			prev := index - 1
+			if prev < 0 {
+				prev = len(allTokens) - 1
+			}
+			tokenOwnership := float64(distance(allTokens[prev], token, td.maxTokenValue))
+			ownership += tokenOwnership
+			require.Equal(t, tokenOwnership, ownerwshipByTokenByZone[instance.Zone][token])
+		}
+		require.Equal(t, ownership, ownershipByInstanceByZone[instance.Zone][instanceID])
+	}
+}
+
 func TestRing_GetStatistics(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
 	instancesPerZone := 2
@@ -95,7 +130,7 @@ func TestRing_GetStatistics(t *testing.T) {
 	tokensByInstanceID := createTokensByInstanceID(instancesPerZone, tokensPerInstance, zones)
 	ringDesc := createRigDesc(instancesPerZone, zones, tokensByInstanceID)
 	td := NewPower2TokenDistributor(zones, tokensPerInstance, 1000)
-	r := NewRing(ringDesc, zones, math.MaxUint32, td)
+	r := NewRing(ringDesc, zones, tokensPerInstance, math.MaxUint32, td)
 	ownershipByInstanceByZone := r.getRegisteredOwnershipByInstanceByZone()
 	require.Len(t, ownershipByInstanceByZone, len(zones))
 	for _, ownershipByZone := range ownershipByInstanceByZone {
@@ -121,7 +156,7 @@ func TestRing_AddInstance(t *testing.T) {
 	tokensPerInstance := 512
 	ringDesc := &ring.Desc{}
 	td := NewPower2TokenDistributor(zones, tokensPerInstance, math.MaxUint32)
-	r := NewRing(ringDesc, zones, math.MaxUint32, td)
+	r := NewRing(ringDesc, zones, tokensPerInstance, math.MaxUint32, td)
 	for i := 0; i < instancesPerZone; i++ {
 		for _, zone := range zones {
 			err := r.AddInstance(i, zone)
@@ -143,16 +178,12 @@ func TestRing_AddInstance(t *testing.T) {
 
 func TestRing_AddInstancePerScenario(t *testing.T) {
 	zones := []string{"zone-a", "zone-b", "zone-c"}
-	instancesPerZoneScenarios := make([]int, 128)
-	for i := range instancesPerZoneScenarios {
-		instancesPerZoneScenarios[i] = i + 1
-	}
-	//instancesPerZoneScenarios := []int{64, 65, 66, 67, 68, 69, 70}
+	instancesPerZoneScenarios := []int{0, 1, 2, 3, 4, 5, 15, 16, 17, 63, 64, 65, 127, 128, 129}
 	tokensPerInstance := 512
 	for _, instancesPerZone := range instancesPerZoneScenarios {
 		td := NewPower2TokenDistributor(zones, tokensPerInstance, math.MaxUint32)
 		ringDesc := &ring.Desc{}
-		r := NewRing(ringDesc, zones, math.MaxUint32, td)
+		r := NewRing(ringDesc, zones, tokensPerInstance, math.MaxUint32, td)
 		for i := 0; i < instancesPerZone; i++ {
 			for _, zone := range zones {
 				err := r.AddInstance(i, zone)
@@ -165,22 +196,6 @@ func TestRing_AddInstancePerScenario(t *testing.T) {
 		statistics.Print()
 		fmt.Printf("%s\n", strings.Repeat("-", 50))
 	}
-}
-
-func TestRing_SimulateTimeseries(t *testing.T) {
-	zones := []string{"zone-a", "zone-b", "zone-c"}
-	instancesPerZone := 64
-	tokensPerInstance := 512
-	ringDesc := &ring.Desc{}
-	td := NewPower2TokenDistributor(zones, tokensPerInstance, math.MaxUint32)
-	r := NewRing(ringDesc, zones, math.MaxUint32, td)
-	for i := 0; i < instancesPerZone; i++ {
-		for _, zone := range zones {
-			err := r.AddInstance(i, zone)
-			require.NoError(t, err)
-		}
-	}
-
 }
 
 func createTokensByInstanceID(instancesPerZone, tokensPerInstance int, zones []string) map[string]ring.Tokens {
