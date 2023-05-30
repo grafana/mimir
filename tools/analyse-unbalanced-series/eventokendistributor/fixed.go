@@ -65,7 +65,7 @@ func (f Fixed) CalculateTokens(n, z int, _ ring.Tokens) (ring.Tokens, error) {
 
 			// For last instance, store the tokens we've generated.
 			if i == n {
-				tokens = append(tokens, r.start+uint32(z))
+				tokens = append(tokens, math.MaxUint32-r.start+uint32(z))
 			}
 		}
 

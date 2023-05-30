@@ -251,6 +251,7 @@ func generateAndAnalyzeFixedTokenRing(timeseriesCount, tokensPerInstance, instan
 }
 
 func main() {
+	rand.Seed(0)
 	logger := log.NewLogfmtLogger(os.Stdout)
 	zones := []string{"zone-a", "zone-b", "zone-c"}
 	tokensPerInstance := 512
