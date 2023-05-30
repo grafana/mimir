@@ -81,7 +81,7 @@
     local name = 'mimir-backend-zone-%s' % zone;
 
     $.newMimirStatefulSet(name, 3, container, mimir_backend_data_pvc) +
-    statefulSet.mixin.metadata.withLabels({ name: 'mimir-backend', 'rollout-group': 'mimir-backend' }) +
+    statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'mimir-backend' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.mimir_backend_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'mimir-backend' }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name, 'rollout-group': 'mimir-backend' }) +

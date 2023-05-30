@@ -47,7 +47,6 @@
     local name = 'ruler';
 
     deployment.new(name, 2, [$.ruler_container]) +
-    deployment.mixin.metadata.withLabels({ name: name }) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('50%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +

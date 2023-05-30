@@ -34,7 +34,6 @@
 
   newQuerySchedulerDeployment(name, container)::
     deployment.new(name, 2, [container]) +
-    deployment.mixin.metadata.withLabels({ name: name }) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     $.util.antiAffinity +

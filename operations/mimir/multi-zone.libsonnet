@@ -343,7 +343,6 @@
   rollout_operator_deployment: if !rollout_operator_enabled then null else
     deployment.new('rollout-operator', 1, [$.rollout_operator_container]) +
     deployment.mixin.metadata.withName('rollout-operator') +
-    deployment.mixin.metadata.withLabels({ name: 'rollout-operator' }) +
     deployment.mixin.spec.template.spec.withServiceAccountName('rollout-operator') +
     // Ensure Kubernetes doesn't run 2 operators at the same time.
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +

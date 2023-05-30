@@ -481,8 +481,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  labels:
-    name: distributor
   name: distributor
   namespace: default
 spec:
@@ -570,8 +568,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  labels:
-    name: querier
   name: querier
   namespace: default
 spec:
@@ -665,8 +661,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  labels:
-    name: query-frontend
   name: query-frontend
   namespace: default
 spec:
@@ -741,8 +735,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  labels:
-    name: query-scheduler
   name: query-scheduler
   namespace: default
 spec:
@@ -807,8 +799,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  labels:
-    name: ruler
   name: ruler
   namespace: default
 spec:
@@ -1192,8 +1182,6 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  labels:
-    name: memcached
   name: memcached
   namespace: default
 spec:
@@ -1247,8 +1235,6 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  labels:
-    name: memcached-frontend
   name: memcached-frontend
   namespace: default
 spec:
@@ -1302,8 +1288,6 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  labels:
-    name: memcached-index-queries
   name: memcached-index-queries
   namespace: default
 spec:
@@ -1357,8 +1341,6 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  labels:
-    name: memcached-metadata
   name: memcached-metadata
   namespace: default
 spec:
