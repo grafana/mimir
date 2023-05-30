@@ -11,7 +11,7 @@ import (
 )
 
 func TestFixed(t *testing.T) {
-	t.Run("generates a linearly incrementing amount of tokens", func(t *testing.T) {
+	t.Run("tokens amount", func(t *testing.T) {
 		f := Fixed{}
 
 		for i := 0; i < 2; i++ {
@@ -19,7 +19,7 @@ func TestFixed(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 1, len(tokens))
 		}
-		for i := 2; i < 100; i++ {
+		for i := 2; i < 256; i *= 2 {
 			t.Run(fmt.Sprintf("%d instances", i), func(t *testing.T) {
 				tokens, err := f.CalculateTokens(i, 0, nil)
 				require.NoError(t, err)
@@ -28,7 +28,7 @@ func TestFixed(t *testing.T) {
 		}
 	})
 	t.Run("equally distributed", func(t *testing.T) {
-		for _, instances := range []int{2, 10, 20, 50, 66, 100} {
+		for _, instances := range []int{2, 3, 4, 5, 10, 20, 50, 66, 100} {
 			t.Run(fmt.Sprintf("%d instances", instances), func(t *testing.T) {
 				type tokenOwner struct {
 					token    uint32
@@ -51,7 +51,6 @@ func TestFixed(t *testing.T) {
 					if i < len(ring)-1 {
 						nextToken = ring[i+1].token
 					}
-					fmt.Println(t.token, nextToken)
 					ownership[t.instance] += nextToken - t.token
 					tokensOwned[t.instance]++
 				}
@@ -69,25 +68,20 @@ func TestFixed(t *testing.T) {
 		type instanceInZone struct {
 			instance, zone int
 		}
-		for offset := range [512]int{} {
-			t.Run(fmt.Sprintf("offset %d", offset), func(t *testing.T) {
-				f := Fixed{zoneOffset: offset}
-				assigned := make(map[uint32]instanceInZone)
+		f := Fixed{}
+		assigned := make(map[uint32]instanceInZone)
 
-				for _, zone := range []int{0, 1, 2} {
-					for i := 0; i < 256; i++ {
-						tokens, err := f.CalculateTokens(i, zone, nil)
-						require.NoError(t, err)
-						for _, token := range tokens {
-							if repeated, ok := assigned[token]; ok {
-								t.Fatalf("instance %d in zone %d: token %d already assigned to instance %d in zone %d", i, zone, token, repeated.instance, repeated.zone)
-							}
-							assigned[token] = instanceInZone{i, zone}
-						}
+		for _, zone := range []int{0, 1, 2, 4, 5} {
+			for i := 0; i < 1024; i++ {
+				tokens, err := f.CalculateTokens(i, zone, nil)
+				require.NoError(t, err)
+				for _, token := range tokens {
+					if repeated, ok := assigned[token]; ok {
+						t.Fatalf("instance %d in zone %d: token %d already assigned to instance %d in zone %d", i, zone, token, repeated.instance, repeated.zone)
 					}
+					assigned[token] = instanceInZone{i, zone}
 				}
-			})
+			}
 		}
-
 	})
 }
