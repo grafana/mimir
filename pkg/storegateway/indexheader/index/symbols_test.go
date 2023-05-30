@@ -53,7 +53,8 @@ func TestSymbolsV1(t *testing.T) {
 	buf.PutBE32int(numSymbols)
 
 	for i, symbol := range sortedSymbols {
-		// The symbol reference in v1 is the offset of the string (and its varint length) in the symbols table.
+		// The symbol reference in v1 is the offset of the string (and its varint length) in the index header file,
+		// so we use the length of the buffer as the reference (i.e. length of the file).
 		symbolRef := uint32(buf.Len())
 		refToSymbol[symbolRef] = symbol
 		sortedSymbolRefs[i] = symbolRef

@@ -71,8 +71,7 @@ func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *
 }
 
 // Lookup takes a symbol reference and returns the symbol string.
-// For TSDB index v1, the reference is expected to be the offset of the symbol in the index
-// relative to the beginning of the whole index header file (not the TSDB index file).
+// For TSDB index v1, the reference is expected to be the offset of the symbol in the index header file (not the TSDB index file).
 // For TSDB index v2, the reference is expected to be the sequence number of the symbol (starting at 0).
 func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
@@ -119,7 +118,10 @@ func (s *Symbols) ReverseLookup(sym string) (o uint32, err error) {
 }
 
 // ForEachSymbol performs a reverse lookup on each syms and passes the symbol and offset to f.
-// If the offset of a symbol cannot be looked up, iteration stops immediately and the error is
+// For TSDB index v1, the symbol reference is the offset of the symbol in the index header file (not the TSDB index file).
+// For TSDB index v2, the symbol reference is the sequence number of the symbol (starting at 0).
+//
+// If the reference of a symbol cannot be looked up, iteration stops immediately and the error is
 // returned. If f returns an error, iteration stops immediately and the error is returned.
 func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32) error) (err error) {
 	if len(s.offsets) == 0 {
