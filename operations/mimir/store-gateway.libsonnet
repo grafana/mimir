@@ -54,8 +54,6 @@
     container.withArgsMixin($.util.mapToFlags($.store_gateway_args)) +
     container.withVolumeMountsMixin([volumeMount.new('store-gateway-data', '/data')]) +
     container.withEnvMixin([
-      // Dynamically set GOMEMLIMIT based on memory request.
-      envVar.new('GOMEMLIMIT', std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory)))),
       // Dynamically set GOMAXPROCS based on CPU request.
       envVar.new('GOMAXPROCS', std.toString(
         std.ceil(
@@ -65,6 +63,8 @@
           ),
         )
       )),
+      // Dynamically set GOMEMLIMIT based on memory request.
+      envVar.new('GOMEMLIMIT', std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory)))),
     ]) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
