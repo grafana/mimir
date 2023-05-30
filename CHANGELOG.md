@@ -4,7 +4,7 @@
 
 ### Jsonnet
 
-* [ENHANCEMENT] Add `PodDisruptionBudget`s for compactor, continuous-test, distributor, overrides-exporter all memcached instances, querier, query-frontend, query-scheduler, rollout-operator, ruler, ruler-querier, ruler-query-frontend and ruler-query-scheduler workloads. #5098
+* [ENHANCEMENT] Add `PodDisruptionBudget`s for compactor, continuous-test, distributor, overrides-exporter, querier, query-frontend, query-scheduler, rollout-operator, ruler, ruler-querier, ruler-query-frontend, ruler-query-scheduler, and all memcached workloads. #5098
 
 ## 2.9.0-rc.0
 
