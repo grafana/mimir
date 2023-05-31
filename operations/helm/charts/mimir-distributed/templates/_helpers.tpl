@@ -620,7 +620,7 @@ mimir.siToBytes takes 1 argument
 
 {{/*
 parseCPU is used to convert Kubernetes CPU units to the corresponding float value of CPU cores.
-The returned value is a string representation. If you need to do any math on it, please
+The returned value is a string representation. If you need to do any math on it, please parse the string first.
 
 mimir.parseCPU takes 1 argument
   .value = the Kubernetes CPU request value
