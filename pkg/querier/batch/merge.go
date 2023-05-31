@@ -28,6 +28,8 @@ type mergeIterator struct {
 	currErr error
 }
 
+// newMergeIterator returns an iterator that merges generic chunks in batches.
+// This functions must not hold a reference to the `cs` slice.
 func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 	c, ok := it.(*mergeIterator)
 	if ok {

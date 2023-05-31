@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
@@ -55,17 +56,37 @@ type iterator interface {
 	Err() error
 }
 
+var genericChunkSlicePool zeropool.Pool[[]GenericChunk]
+
+func getGenericChunkSlice(n int) []GenericChunk {
+	sn := genericChunkSlicePool.Get()
+	if sn == nil || cap(sn) < n {
+		// Even if we get a slice from the pool, we do not put it back here
+		// to not grow the pool size more than required. This effectively
+		// replaces a smaller slice with a bigger slice in the pool.
+		return make([]GenericChunk, n)
+	}
+	return sn[:n]
+}
+
+func putGenericChunkSlice(sn []GenericChunk) {
+	genericChunkSlicePool.Put(sn)
+}
+
 // NewChunkMergeIterator returns a chunkenc.Iterator that merges Mimir chunks together.
 func NewChunkMergeIterator(it chunkenc.Iterator, chunks []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
-	converted := make([]GenericChunk, len(chunks))
+	converted := getGenericChunkSlice(len(chunks))
 	for i, c := range chunks {
 		converted[i] = NewGenericChunk(int64(c.From), int64(c.Through), c.Data.NewIterator)
 	}
 
-	return NewGenericChunkMergeIterator(it, converted)
+	i := NewGenericChunkMergeIterator(it, converted)
+	putGenericChunkSlice(converted)
+	return i
 }
 
 // NewGenericChunkMergeIterator returns a chunkenc.Iterator that merges generic chunks together.
+// This function must not hold a reference to the 'chunks' slice.
 func NewGenericChunkMergeIterator(it chunkenc.Iterator, chunks []GenericChunk) chunkenc.Iterator {
 	var iter *mergeIterator
 
