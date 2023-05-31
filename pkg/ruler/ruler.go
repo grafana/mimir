@@ -649,7 +649,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 	}
 
 	if len(userRings) == 0 {
-		return nil, nil
+		return map[string]rulespb.RuleGroupList{}, nil
 	}
 
 	userCh := make(chan string, len(userRings))
