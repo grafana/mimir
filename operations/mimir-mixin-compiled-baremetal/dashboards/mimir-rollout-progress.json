@@ -1089,7 +1089,8 @@
                "text": {
                   "titleSize": 14,
                   "valueSize": 14
-               }
+               },
+               "textMode": "value_and_name"
             },
             "percentage": false,
             "pointradius": 5,

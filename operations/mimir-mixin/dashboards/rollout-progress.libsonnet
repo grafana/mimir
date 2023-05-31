@@ -218,6 +218,7 @@ local filename = 'mimir-rollout-progress.json';
               titleSize: 14,
               valueSize: 14,
             },
+            textMode: "value_and_name",
           },
           id: 10,
           gridPos: { h: 8, w: 10, x: 0, y: 8 },
