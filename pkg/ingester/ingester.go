@@ -3179,7 +3179,7 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 }
 
 func (i *Ingester) Push2(ctx context.Context, req *client.WriteRequest2) (*mimirpb.WriteResponse, error) {
-	msg, err := capnp.UnmarshalPacked(req.Wrapper.Msg)
+	msg, err := capnp.Unmarshal(req.Wrapper.Msg)
 	if err != nil {
 		return nil, err
 	}

@@ -1338,7 +1338,7 @@ func (d *Distributor) send1(ctx context.Context, ingester ring.InstanceDesc, tim
 
 	// TODO: metadata
 
-	msgBytes, err := msg.MarshalPacked()
+	msgBytes, err := msg.Marshal()
 	if err != nil {
 		return err
 	}
