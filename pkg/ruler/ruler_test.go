@@ -1078,6 +1078,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				}
 
 				// GetRules() should return all configured rule groups except the one just deleted.
+				// We use test.Poll() because the rule syncing is asynchronous in each ruler.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, numRuleGroups-1, func() interface{} {
 						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
@@ -1099,11 +1100,14 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 					verifySyncRulesMetric(t, reg, 1, 3)
 				}
 
-				// GetRules() should return no rule groups.
+				// GetRules() should return no rule groups. We use test.Poll() because
+				// the rule syncing is asynchronous in each ruler.
 				for _, ruler := range rulers {
-					actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
-					require.NoError(t, err)
-					assert.Empty(t, actualRuleGroups)
+					test.Poll(t, time.Second, 0, func() interface{} {
+						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+						require.NoError(t, err)
+						return len(actualRuleGroups)
+					})
 				}
 			})
 
@@ -1227,11 +1231,14 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 		verifySyncRulesMetric(t, reg, 1, 2)
 	}
 
-	// GetRules() should return all configured rule groups.
+	// GetRules() should return all configured rule groups. We use test.Poll() because
+	// the rule syncing is asynchronous in each ruler.
 	for _, ruler := range rulers {
-		actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
-		require.NoError(t, err)
-		assert.Len(t, actualRuleGroups, numRuleGroups)
+		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
+			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+			require.NoError(t, err)
+			return len(actualRuleGroups)
+		})
 	}
 
 	// We expect rule groups to have been loaded only from 1 ruler (not important which one).
