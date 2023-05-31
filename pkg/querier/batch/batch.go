@@ -8,12 +8,10 @@ package batch
 import (
 	"fmt"
 
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/zeropool"
-
-	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 // GenericChunk is a generic chunk used by the batch iterator, in order to make the batch
@@ -56,23 +54,9 @@ type iterator interface {
 	Err() error
 }
 
-var genericChunkSlicePool zeropool.Pool[[]GenericChunk]
-
-func getGenericChunkSlice(n int) []GenericChunk {
-	sn := genericChunkSlicePool.Get()
-	if sn == nil || cap(sn) < n {
-		return make([]GenericChunk, n)
-	}
-	return sn[:n]
-}
-
-func putGenericChunkSlice(sn []GenericChunk) {
-	genericChunkSlicePool.Put(sn)
-}
-
 // NewChunkMergeIterator returns a chunkenc.Iterator that merges Mimir chunks together.
 func NewChunkMergeIterator(it chunkenc.Iterator, chunks []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
-	converted := getGenericChunkSlice(len(chunks))
+	converted := make([]GenericChunk, len(chunks))
 	for i, c := range chunks {
 		converted[i] = NewGenericChunk(int64(c.From), int64(c.Through), c.Data.NewIterator)
 	}
