@@ -85,7 +85,7 @@ local filename = 'mimir-rollout-progress.json';
           { color: 'green', value: 1 },
         ], unit='percentunit', min=0, max=1) + {
           id: 1,
-          gridPos: { h: 8, w: 10, x: 0, y: 0 },
+          gridPos: { h: 12, w: 10, x: 0, y: 0 },
         },
 
         //
@@ -221,7 +221,7 @@ local filename = 'mimir-rollout-progress.json';
             textMode: "value_and_name",
           },
           id: 10,
-          gridPos: { h: 8, w: 10, x: 0, y: 8 },
+          gridPos: { h: 5, w: 10, x: 0, y: 12 },
         },
 
         //
