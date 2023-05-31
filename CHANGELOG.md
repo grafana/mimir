@@ -62,6 +62,10 @@
 
 * [ENHANCEMENT] `analyze dashboard` and `analyze grafana` command have dashboard uid filtering added, also queries array added to dashboard report. #4790
 
+### Mimirtool
+
+* [ENHANCEMENT] Generic panel type support in `mimirtool analyze dashboard` + support for queries with variables. #4726
+
 ### Documentation
 
 * [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752

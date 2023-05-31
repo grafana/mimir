@@ -21,8 +21,13 @@ import (
 )
 
 var (
-	lvRegexp = regexp.MustCompile(`label_values\(([a-zA-Z0-9_]+)`)
-	qrRegexp = regexp.MustCompile(`query_result\((.+)\)`)
+	lvRegexp         = regexp.MustCompile(`label_values\(([a-zA-Z0-9_]+)`)
+	qrRegexp         = regexp.MustCompile(`query_result\((.+)\)`)
+	durationRegexp   = regexp.MustCompile(`\[\$.+\]`)
+	var1LabelRegexp  = regexp.MustCompile(`=\${[a-zA-Z0-9_]+(:[a-zA-Z0-9]+)?}`)
+	var2LabelRegexp  = regexp.MustCompile(`=\$[a-zA-Z0-9_]+`)
+	var1MetricRegexp = regexp.MustCompile(`\${[a-zA-Z0-9_]+(:[a-zA-Z0-9]+)?}`)
+	var2MetricRegexp = regexp.MustCompile(`\$[a-zA-Z0-9_]+`)
 )
 
 type MetricsInGrafana struct {
@@ -239,6 +244,7 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}, queries 
 }
 
 func parseQuery(query string, metrics map[string]struct{}) error {
+	// replace standard Grafana Prometheus macros
 	query = strings.ReplaceAll(query, `$__interval`, "5m")
 	query = strings.ReplaceAll(query, `$interval`, "5m")
 	query = strings.ReplaceAll(query, `$resolution`, "5s")
@@ -246,6 +252,17 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 	query = strings.ReplaceAll(query, "$__range", "1d")
 	query = strings.ReplaceAll(query, "${__range_s:glob}", "30")
 	query = strings.ReplaceAll(query, "${__range_s}", "30")
+	// replace duration variable, e.g. [$agregation_window]
+	query = durationRegexp.ReplaceAllString(query, "[5m]")
+	// replace label variable, e.g. metric{label=${value}} or metric{label=${value:format}}
+	query = var1LabelRegexp.ReplaceAllString(query, `="variable"`)
+	// replace label variable, e.g. metric{label=$value}
+	query = var2LabelRegexp.ReplaceAllString(query, `="variable"`)
+	// replace metric variable, e.g. ${metric}{} or ${metric:format}{}
+	query = var1MetricRegexp.ReplaceAllString(query, `variable`)
+	// replace metric variable, e.g. $metric{}
+	query = var2MetricRegexp.ReplaceAllString(query, `variable`)
+
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return err
