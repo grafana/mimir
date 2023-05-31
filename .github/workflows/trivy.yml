@@ -1,0 +1,23 @@
+name: Trivy Nightly Scan
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  security_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker
+        uses: docker/setup-docker@v1
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'docker.io/grafana/mimir:latest'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
