@@ -39,9 +39,9 @@ import (
 
 // Config contains the configuration require to create a querier
 type Config struct {
-	Iterators            bool          `yaml:"iterators" category:"deprecated"`                         // TODO: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
-	BatchIterators       bool          `yaml:"batch_iterators" category:"deprecated"`                   // TODO: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
-	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced" doc:"hidden"` // TODO: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0
+	Iterators            bool          `yaml:"iterators" category:"deprecated"`                         // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
+	BatchIterators       bool          `yaml:"batch_iterators" category:"deprecated"`                   // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
+	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0
 
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
