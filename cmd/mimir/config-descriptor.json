@@ -2633,23 +2633,21 @@
           "kind": "field",
           "name": "request_rate",
           "required": false,
-          "desc": "Per-tenant request rate limit in requests per second. 0 to disable.",
+          "desc": "Per-tenant push request rate limit in requests per second. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "distributor.request-rate-limit",
-          "fieldType": "float",
-          "fieldCategory": "experimental"
+          "fieldType": "float"
         },
         {
           "kind": "field",
           "name": "request_burst_size",
           "required": false,
-          "desc": "Per-tenant allowed request burst size. 0 to disable.",
+          "desc": "Per-tenant allowed push request burst size. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "distributor.request-burst-size",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         },
         {
           "kind": "field",
