@@ -33,7 +33,7 @@ func (s *streamingChunkSeries) Labels() labels.Labels {
 	return s.labels
 }
 
-func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
+func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 	var uniqueChunks []client.Chunk
 	totalChunks := 0
 
@@ -66,5 +66,5 @@ func (s *streamingChunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 		return series.NewErrIterator(err)
 	}
 
-	return s.config.chunkIteratorFunc(chunks, model.Time(s.config.mint), model.Time(s.config.maxt))
+	return s.config.chunkIteratorFunc(it, chunks, model.Time(s.config.mint), model.Time(s.config.maxt))
 }

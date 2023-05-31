@@ -38,12 +38,12 @@ func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
 			scenario.duplicationFactor)
 
 		chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, chunk.PrometheusXorChunk)
-
+		var it chunkenc.Iterator
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 
 			for n := 0; n < b.N; n++ {
-				it := NewChunkMergeIterator(chunks, 0, 0)
+				it = NewChunkMergeIterator(it, chunks, 0, 0)
 				for it.Next() != chunkenc.ValNone {
 					it.At()
 				}
@@ -62,7 +62,7 @@ func TestSeekCorrectlyDealWithSinglePointChunks(t *testing.T) {
 	chunkTwo := mkChunk(t, model.Time(10*step/time.Millisecond), 1, chunk.PrometheusXorChunk)
 	chunks := []chunk.Chunk{chunkOne, chunkTwo}
 
-	sut := NewChunkMergeIterator(chunks, 0, 0)
+	sut := NewChunkMergeIterator(nil, chunks, 0, 0)
 
 	// Following calls mimics Prometheus's query engine behaviour for VectorSelector.
 	require.Equal(t, chunkenc.ValFloat, sut.Next())

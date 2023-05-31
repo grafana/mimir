@@ -24,7 +24,7 @@ import (
 )
 
 func TestStreamingChunkSeries_HappyPath(t *testing.T) {
-	chunkIteratorFunc := func(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
+	chunkIteratorFunc := func(_ chunkenc.Iterator, chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
 		return streamingChunkSeriesTestIterator{
 			chunks:  chunks,
 			from:    from,
