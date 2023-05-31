@@ -8,7 +8,6 @@ local filename = 'mimir-rollout-progress.json';
     per_cluster_label: $._config.per_cluster_label,
     write_job_matcher: if $._config.gateway_enabled then $.jobMatcher($._config.job_names.gateway) else $.jobMatcher($._config.job_names.distributor),
     read_job_matcher: if $._config.gateway_enabled then $.jobMatcher($._config.job_names.gateway) else $.jobMatcher($._config.job_names.query_frontend),
-    all_services_regex: '.*(%s).*' % std.join('|', ['cortex-gw', 'distributor', 'ingester', 'query-frontend', 'query-scheduler', 'querier', 'compactor', 'store-gateway', 'ruler', 'alertmanager', 'overrides-exporter', 'cortex', 'mimir'] + $._config.extraServiceNames),
   },
 
   [filename]:
@@ -30,7 +29,7 @@ local filename = 'mimir-rollout-progress.json';
             (
               sum by(cortex_service) (
                 label_replace(
-                  kube_statefulset_status_replicas_updated{%(namespace_matcher)s,statefulset=~"%(all_services_regex)s"},
+                  kube_statefulset_status_replicas_updated{%(namespace_matcher)s},
                   "cortex_service", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"
                 )
               )
@@ -55,7 +54,7 @@ local filename = 'mimir-rollout-progress.json';
             (
               sum by(cortex_service) (
                 label_replace(
-                  kube_deployment_status_replicas_updated{%(namespace_matcher)s,deployment=~"%(all_services_regex)s"},
+                  kube_deployment_status_replicas_updated{%(namespace_matcher)s},
                   "cortex_service", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                 )
               )
@@ -196,12 +195,12 @@ local filename = 'mimir-rollout-progress.json';
         $.panel('Unhealthy pods') +
         $.newStatPanel([
           |||
-            kube_deployment_status_replicas_unavailable{%(namespace_matcher)s, deployment=~"%(all_services_regex)s"}
+            kube_deployment_status_replicas_unavailable{%(namespace_matcher)s}
             > 0
           ||| % config,
           |||
-            kube_statefulset_status_replicas_current{%(namespace_matcher)s, statefulset=~"%(all_services_regex)s"} -
-            kube_statefulset_status_replicas_ready {%(namespace_matcher)s, statefulset=~"%(all_services_regex)s"}
+            kube_statefulset_status_replicas_current{%(namespace_matcher)s} -
+            kube_statefulset_status_replicas_ready {%(namespace_matcher)s}
             > 0
           ||| % config,
         ], legends=[
@@ -237,7 +236,7 @@ local filename = 'mimir-rollout-progress.json';
               expr: |||
                 count by(container, version) (
                   label_replace(
-                    kube_pod_container_info{%(namespace_matcher)s,container=~"%(all_services_regex)s"},
+                    kube_pod_container_info{%(namespace_matcher)s},
                     "version", "$1", "image", ".*:(.*)"
                   )
                 )
