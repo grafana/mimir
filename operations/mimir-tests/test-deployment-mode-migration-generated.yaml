@@ -111,14 +111,14 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: mimir-backend
-  name: mimir-backend
+    name: mimir-backend-rollout
+  name: mimir-backend-rollout
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: mimir-backend
+      rollout-group: mimir-backend
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -137,14 +137,14 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: mimir-write
-  name: mimir-write
+    name: mimir-write-rollout
+  name: mimir-write-rollout
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: mimir-write
+      rollout-group: mimir-write
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

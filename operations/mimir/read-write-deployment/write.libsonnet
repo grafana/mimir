@@ -138,6 +138,6 @@
     // balances requests across all mimir-write pods.
     service.mixin.spec.withClusterIp('None'),
 
-  mimir_write_pdb: if !$._config.is_read_write_deployment_mode then null else
-    $.newMimirPdb('mimir-write'),
+  mimir_write_rollout_pdb: if !$._config.is_read_write_deployment_mode then null else
+    $.newMimirRolloutGroupPDB('mimir-write', 1),
 }

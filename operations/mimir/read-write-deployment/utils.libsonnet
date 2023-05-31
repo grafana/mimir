@@ -1,4 +1,12 @@
 {
+  newMimirRolloutGroupPDB(rolloutGroup, maxUnavailable)::
+    local podDisruptionBudget = $.policy.v1.podDisruptionBudget;
+
+    podDisruptionBudget.new('%s-rollout' % rolloutGroup) +
+    podDisruptionBudget.mixin.metadata.withLabels({ name: '%s-rollout' % rolloutGroup }) +
+    podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': rolloutGroup }) +
+    podDisruptionBudget.mixin.spec.withMaxUnavailable(maxUnavailable),
+
   // Creates a service resolving to all replicas in a rollout group.
   newMimirRolloutGroupService(rolloutGroup, deployments, ignored_labels=[])::
     local name = rolloutGroup;
