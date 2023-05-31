@@ -15,13 +15,8 @@ struct CpnWriteRequest2 {
     }
 
     struct TimeSeries2 {
-        labels @0 : List(LabelPair2);
+        labels @0 : Text;
         samples @1 : List(Sample2);
-
-        struct LabelPair2 {
-            name @0 : Text;
-            value @1 : Text;
-        }
 
         struct Sample2 {
             timestampMs @0 : Int64;

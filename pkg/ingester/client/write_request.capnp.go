@@ -226,29 +226,24 @@ func (s CpnWriteRequest2_TimeSeries2) Message() *capnp.Message {
 func (s CpnWriteRequest2_TimeSeries2) Segment() *capnp.Segment {
 	return capnp.Struct(s).Segment()
 }
-func (s CpnWriteRequest2_TimeSeries2) Labels() (CpnWriteRequest2_TimeSeries2_LabelPair2_List, error) {
+func (s CpnWriteRequest2_TimeSeries2) Labels() (string, error) {
 	p, err := capnp.Struct(s).Ptr(0)
-	return CpnWriteRequest2_TimeSeries2_LabelPair2_List(p.List()), err
+	return p.Text(), err
 }
 
 func (s CpnWriteRequest2_TimeSeries2) HasLabels() bool {
 	return capnp.Struct(s).HasPtr(0)
 }
 
-func (s CpnWriteRequest2_TimeSeries2) SetLabels(v CpnWriteRequest2_TimeSeries2_LabelPair2_List) error {
-	return capnp.Struct(s).SetPtr(0, v.ToPtr())
+func (s CpnWriteRequest2_TimeSeries2) LabelsBytes() ([]byte, error) {
+	p, err := capnp.Struct(s).Ptr(0)
+	return p.TextBytes(), err
 }
 
-// NewLabels sets the labels field to a newly
-// allocated CpnWriteRequest2_TimeSeries2_LabelPair2_List, preferring placement in s's segment.
-func (s CpnWriteRequest2_TimeSeries2) NewLabels(n int32) (CpnWriteRequest2_TimeSeries2_LabelPair2_List, error) {
-	l, err := NewCpnWriteRequest2_TimeSeries2_LabelPair2_List(capnp.Struct(s).Segment(), n)
-	if err != nil {
-		return CpnWriteRequest2_TimeSeries2_LabelPair2_List{}, err
-	}
-	err = capnp.Struct(s).SetPtr(0, l.ToPtr())
-	return l, err
+func (s CpnWriteRequest2_TimeSeries2) SetLabels(v string) error {
+	return capnp.Struct(s).SetText(0, v)
 }
+
 func (s CpnWriteRequest2_TimeSeries2) Samples() (CpnWriteRequest2_TimeSeries2_Sample2_List, error) {
 	p, err := capnp.Struct(s).Ptr(1)
 	return CpnWriteRequest2_TimeSeries2_Sample2_List(p.List()), err
@@ -288,106 +283,6 @@ type CpnWriteRequest2_TimeSeries2_Future struct{ *capnp.Future }
 func (f CpnWriteRequest2_TimeSeries2_Future) Struct() (CpnWriteRequest2_TimeSeries2, error) {
 	p, err := f.Future.Ptr()
 	return CpnWriteRequest2_TimeSeries2(p.Struct()), err
-}
-
-type CpnWriteRequest2_TimeSeries2_LabelPair2 capnp.Struct
-
-// CpnWriteRequest2_TimeSeries2_LabelPair2_TypeID is the unique identifier for the type CpnWriteRequest2_TimeSeries2_LabelPair2.
-const CpnWriteRequest2_TimeSeries2_LabelPair2_TypeID = 0xf411009120da9dee
-
-func NewCpnWriteRequest2_TimeSeries2_LabelPair2(s *capnp.Segment) (CpnWriteRequest2_TimeSeries2_LabelPair2, error) {
-	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 2})
-	return CpnWriteRequest2_TimeSeries2_LabelPair2(st), err
-}
-
-func NewRootCpnWriteRequest2_TimeSeries2_LabelPair2(s *capnp.Segment) (CpnWriteRequest2_TimeSeries2_LabelPair2, error) {
-	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 2})
-	return CpnWriteRequest2_TimeSeries2_LabelPair2(st), err
-}
-
-func ReadRootCpnWriteRequest2_TimeSeries2_LabelPair2(msg *capnp.Message) (CpnWriteRequest2_TimeSeries2_LabelPair2, error) {
-	root, err := msg.Root()
-	return CpnWriteRequest2_TimeSeries2_LabelPair2(root.Struct()), err
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) String() string {
-	str, _ := text.Marshal(0xf411009120da9dee, capnp.Struct(s))
-	return str
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) EncodeAsPtr(seg *capnp.Segment) capnp.Ptr {
-	return capnp.Struct(s).EncodeAsPtr(seg)
-}
-
-func (CpnWriteRequest2_TimeSeries2_LabelPair2) DecodeFromPtr(p capnp.Ptr) CpnWriteRequest2_TimeSeries2_LabelPair2 {
-	return CpnWriteRequest2_TimeSeries2_LabelPair2(capnp.Struct{}.DecodeFromPtr(p))
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) ToPtr() capnp.Ptr {
-	return capnp.Struct(s).ToPtr()
-}
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) IsValid() bool {
-	return capnp.Struct(s).IsValid()
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) Message() *capnp.Message {
-	return capnp.Struct(s).Message()
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) Segment() *capnp.Segment {
-	return capnp.Struct(s).Segment()
-}
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) Name() (string, error) {
-	p, err := capnp.Struct(s).Ptr(0)
-	return p.Text(), err
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) HasName() bool {
-	return capnp.Struct(s).HasPtr(0)
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) NameBytes() ([]byte, error) {
-	p, err := capnp.Struct(s).Ptr(0)
-	return p.TextBytes(), err
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) SetName(v string) error {
-	return capnp.Struct(s).SetText(0, v)
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) Value() (string, error) {
-	p, err := capnp.Struct(s).Ptr(1)
-	return p.Text(), err
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) HasValue() bool {
-	return capnp.Struct(s).HasPtr(1)
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) ValueBytes() ([]byte, error) {
-	p, err := capnp.Struct(s).Ptr(1)
-	return p.TextBytes(), err
-}
-
-func (s CpnWriteRequest2_TimeSeries2_LabelPair2) SetValue(v string) error {
-	return capnp.Struct(s).SetText(1, v)
-}
-
-// CpnWriteRequest2_TimeSeries2_LabelPair2_List is a list of CpnWriteRequest2_TimeSeries2_LabelPair2.
-type CpnWriteRequest2_TimeSeries2_LabelPair2_List = capnp.StructList[CpnWriteRequest2_TimeSeries2_LabelPair2]
-
-// NewCpnWriteRequest2_TimeSeries2_LabelPair2 creates a new list of CpnWriteRequest2_TimeSeries2_LabelPair2.
-func NewCpnWriteRequest2_TimeSeries2_LabelPair2_List(s *capnp.Segment, sz int32) (CpnWriteRequest2_TimeSeries2_LabelPair2_List, error) {
-	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 2}, sz)
-	return capnp.StructList[CpnWriteRequest2_TimeSeries2_LabelPair2](l), err
-}
-
-// CpnWriteRequest2_TimeSeries2_LabelPair2_Future is a wrapper for a CpnWriteRequest2_TimeSeries2_LabelPair2 promised by a client call.
-type CpnWriteRequest2_TimeSeries2_LabelPair2_Future struct{ *capnp.Future }
-
-func (f CpnWriteRequest2_TimeSeries2_LabelPair2_Future) Struct() (CpnWriteRequest2_TimeSeries2_LabelPair2, error) {
-	p, err := f.Future.Ptr()
-	return CpnWriteRequest2_TimeSeries2_LabelPair2(p.Struct()), err
 }
 
 type CpnWriteRequest2_TimeSeries2_Sample2 capnp.Struct
@@ -670,64 +565,60 @@ func NewCpnWriteRequest2_MetricMetadata2_MetricType2_List(s *capnp.Segment, sz i
 	return capnp.NewEnumList[CpnWriteRequest2_MetricMetadata2_MetricType2](s, sz)
 }
 
-const schema_c41513495eab566b = "x\xda\xa4UOh\x1d\xd5\x17\xfe\xce\xbd\xf3\xdeKh" +
-	"\xf2\x9b\\&?\xb2\xd2\x14QlC\x9b4\x13\xa1M" +
-	"\xa0$F*$\x18\xc9mB\xc5\"\xeaMzM\xc6" +
-	"\xcc\xcc\x9b\xcc\x9f\xc6'-\xb1\x017\xfe\x01E\x84." +
-	"t!J\x17vW]\xb8U\x14\xc1\xa2\xeeE\x90\xba" +
-	"\xb0 \xa8\x88u\xd1\x8d#w^&3dW\xb3z" +
-	"\xdc3\xe7\x9e\xf3}\xf7\xfb\xcey'\xee\xd2\x8c5\xde" +
-	"\xff=\x07\x93\xc7\x1a\xcd\xdc\x9b\xf9\xee\xc6\xcdk\xd7\xdf" +
-	"\x82\x98c\xf9{7\xad\xcd\x9fo|\xf2\x0b@\x13\xdf" +
-	"\xd2\xc7\xcc\xf9\x9bZ\x80\xf3'}\x0d\xca\xf5\xd0\xf0\x8f" +
-	"\x9f\xbd\xfe\xcf;\x90g\x88\xe5\xe1\xd6\xad\xe1O\xdf\xfc" +
-	"\xf0/X-`B\xb1\x17\x99\xf3*3\xc9W\xd8\x16" +
-	"\xa8\xaa$'\x89\xf2_\x87z\xaf]\\~\xe3\x0e\x1a" +
-	"\xdcd\xdfb\xf3\xcci\xf0!\xc0\x11\xfc6\xa8*&" +
-	"&\xeb\xc9\xa6\xde\xc4o|\x849\xfd\xd6\xc3\x80\xf3\x90" +
-	"\xb5\x05\xfa\xe9\xf7\xf7\x7f8\xfc\xb6\xb8#\xce\xd4\xeeu" +
-	"S?\xb0v\x98\xf3\x95\x01\xe4|nR\xabR\xf2\x08" +
-	"Q\xbeq\xee\xfa\xb3s\xce\xff\xbf\xdc\xcd\xbe\xaf\xf1\x0d" +
-	"9\x93\x8d\x93\x80\xa3\x1a\x06\xc5\xce\xe8\x1f\x1d}\xff\xed" +
-	"\xbb\x10\x93\xac\xba\x0a\x9a\xd0M\xc6\x9c+MS\xf7r" +
-	"\xf3$\x8e\xe7\xd1\xc6\xda\x98\x17\xae\xe9\xde$\xd5\xf1\xd8" +
-	"\xaa\xef\xe90\x1d\xdb\x8a\xbdT?\x17\xeb\xcdL'\xe9" +
-	"\xe8\xaa\x8a\xc2h\xea\xb1(|\xca\x84\xcfv\xa3\xee\xe8" +
-	"\x82NcouA\xa7\xea\x82JUy^\xb6;\x91" +
-	"v\x17\x89\xe4ab\x80xz\x16 \x12\xd2\xfc01" +
-	"\xe7\x02\xc4\xc5\xa3g\x01\xb2\xc4\xe9\x97\x01j\x88I\xf3" +
-	"\xad)\xc6G\x00j\x89\xa3\xf3\xc0v\x16n\x84\xed\xad" +
-	"p{\xb5\x9d\x85\xa9\x8e\x87\xd7T\xb6\xa6\xf3u/I" +
-	"\xdbk\xb1\x02\x05y\x11Y\xf7\x12L\x17\xa1`;\xc9" +
-	"\x82@\xc5\x1d\xdb\x0b_h\xe7I\xaaR\x9d\xe8\x14\xc0" +
-	"\x1e\xc3\x9e{f\xb8\xec\x05zI\xc7\x9eN\xdc\xd1%" +
-	"\x15\xd8\x91\xdfe\xd6\xc3-\xc0\"@\x1c]\x01\xe4\x11" +
-	"N\xf2\x11F\x82h\x90Lp\xdc\x05\xe41N\xf2\x14" +
-	"\xa3<\xf5\x02\x9d\xa4*@+ZH\xa8\x01F\x0d\xd0" +
-	"\xf0E\xe5g\x9a\x0e\x81\xd1!\xd0\x01\x10\xee\xd3\x00\x90" +
-	"\x16Qm\x10h%\xdf\x95\xa5\x83V\xa4]9\xb0\x07" +
-	"]\x8d\x00\xf2\x19Nr\x9dQ\x89\\\xbf\x06\xc8uN" +
-	"2e$\x18\x0d\x16\x0an\x9aD\x9f\x93|\x89\x91\xe0" +
-	"l\x908 2\x13\x8c8\xc9K\x8c\xec\xb4\x13i\xb2" +
-	"\xab\xb6 \xb2AyPt~\\Q\xe0\xf9\x9d'U" +
-	"\xa0\x01\xea\x03\xa3>\x90\xbd\xae\xfdh\xef\x90\x85^Z" +
-	"\x1e\xf6\x1e\xa3\xf5_\xe5\xb2\x8d^\xb2\x87\xaa\xf1\xea=" +
-	"_M\xbc\xe8\x9d\xcd\x9fP+\xda_T\x1ex\xecn" +
-	"/\xa9\xc0\xe8Z\x17u\x0a\x90\x0fr\x9235QO" +
-	"\xcf\x02\xf2\x14'\xb9\xcch\xda7\x05\x12\xfa\x1fh\x91" +
-	"\x13\x0d\x94\x8d@&\xb4\x9d\x14\x15\xab\xcfU\xf3n\xc2" +
-	"\x01f\xae\xee\xc8\x92E\xecb\x9f)Gv\xf1\x9f\xa8" +
-	"\xe1?\xeeVN\xb5C\x15\xe8\xf2\xc1w\xbd\xb8\xff\xf9" +
-	"\x9b\xf7\x8a\x0d\x90}T\xdf<b\xaa\xb6\x0c\xfbW\xaa" +
-	"=*\xfaw\xa6\x97\xdaY\xbc\xaa\xf3\x92\x0fZ:q" +
-	"\xf3\xd2\xcdT\xda\xb9n\xd7\xf3\x80|\xbek\xb8\x92S" +
-	"\xc7\x08\x95r\x92\xaf\xd4\xeczy\x1e\x90\x978\xc9\xab" +
-	"\xc6\xae\x03]\xbb\xbe\xfb\x05 \xafr\x92\x1f\x95#i" +
-	"\x9a\xf2\xbaH{X\xbb\"M'\x05B\xb2+F\x95" +
-	"\xad\x0bx\x00\xaa\xdb\xb5\xbf\x9bB\xe2d\xc3\x8b\x8c@" +
-	"\xcc7\xc6?\xa7|\xef\x82J\xbdv\x08\"0\xa2\x03" +
-	"\xf9\xbc\xfbv]\xd1\x0b\xca\xe2\x81b\xc7\xf6\x8e\x00-" +
-	"\x15yv\x9c\xf9\xfa\xdf\x00\x00\x00\xff\xff\xf7J\x11\xd3"
+const schema_c41513495eab566b = "x\xda\xa4TMh\\U\x14\xfe\xbe{g2\x0dM" +
+	"\x9c\\&\x92\x9d\x11q\x91\x06\x9b4\x13\xa5& \xa9" +
+	"\xf1\x07\x12\x8c\xf46i\xa5\"\xeaMzM\x9ey\xef" +
+	"\xcd\xcb\xfbi\x1c\xa9\x8ct\xe9\x0f\x08\"T\xd0\x85(" +
+	"]\xd8]\xb5\xa0\xe0FQD\x0b\xee\x057\x15\xb4\xe8" +
+	"\xc6\x85n\xdc\xf8\xe4\xbe\xc9\xcc<\xdc\xd5\xae\x1e\xf7\xbc" +
+	"s\xcf\xf9\xbe\xf3}\xf7\x1c\xfb\x82'*s\xa3\xfb\x12" +
+	"BOU\x87r\xef\xc4\x0fW\xaf_\xbe\xf2\x16\xd4\x8a" +
+	"\xc8\xdf\xbb^\xd9\xfb\xf9\xea'\xbf\x02\x9c\xff\x80\x1f\x8b" +
+	"\xc6w\xac\x01\x8do\xf8-\x98\xdb\x89\xc9\x9f>{\xfd" +
+	"\x9f\xb7\xa1\x1f\xa3\xc8\xc3\xfd\x1b\x93\x9f\xbe\xf9\xe1\x9f\xa8" +
+	"\xd4\x80\xf9\x07\xc4\x8b\xa2qV\xb8\xe4\xd3b\x1f\x1cT" +
+	"\xd2\x0bd\xfe\xfb\xc4\xf0\xe5\xf3\x1bo\xfc\x85\xaat\xd9" +
+	"\xd7\xc4\xaah\xfc(&\x80\xc6/\xe2&8(\xa6\x16" +
+	"\xca\xc9\xae\xde\xfc\x97rZ4nH\x97\xfc\x9bt\xa5" +
+	"\xfb\xff\xf5\x14\x99\xef\x9e\xb9\xf2\xecJ\xe3\xce\xaf\x0f\xb2" +
+	"OW\xbegc\xafr\x1ch\xbc[q\xa5/\xce\xfc" +
+	"\xd1\xb6w\xdd\xfc\x1bjA\x0c\xae\x82\xf3\xefW\x85h" +
+	"|^u\x90\xafU\x8f\xe3h\x1e\xedn\xcfz\xe1\xb6" +
+	"\x1dNR\x1b\xcfn\xf9\x9e\x0d\xd3\xd9\xfd\xd8K\xeds" +
+	"\xb1\xdd\xcbl\x92\xcel\x99(\x8c\x16\x1f\x89\xc2\xa7\\" +
+	"\xf8T7\xda\x9cY\xb3i\xecm\xad\xd9\xd4\x9c3\xa9" +
+	"\xe9\x9d7\xea\xed\xc86O\x92\xfan\x0a@\x9d]\x06" +
+	"H\xa5\xddG\xa8\x95&@\xa9\x1e>\x05\xb0\xa2\x1ez" +
+	"\x19`U-\xb8\x7fCjn\x1a`M\x1dY\x05:" +
+	"Y\xb8\x1b\xb6\xf6\xc3\xceV+\x0bS\x1bOn\x9bl" +
+	"\xdb\xe6;^\x92\xb6\xb6c\x03\x06y\x11\xd9\xf1\x12," +
+	"\x15\xa1\xa0\x93dA`\xe2v\xdd\x0b_h\xe5Ij" +
+	"R\x9b\xd8\x14@\x9f\xe1\xa1[f\xb8\xe1\x05v\xdd\xc6" +
+	"\x9eM\x9a3\xeb&\xa8G~\x97\xd9!Y\x01*\x04" +
+	"\xd4\x91M@OI\xea\xfb\x05\x159N\x17\x9ck\x02" +
+	"\xfa>I\xfd\xa0`\x9ez\x81MR\x13\xa0\x16\xad%" +
+	"\xacB\xb0\x0aN\x9e7~fy\x18\x82\x87\xc1\xdb@" +
+	"\xf8\x1f\x0d\x00]!K\xee\xe6f~ K\x1b\xb5\xc8" +
+	"6\xf5X\x1f\xba\x99\x06\xf43\x92zG\xb0\x87\xdc\xbe" +
+	"\x06\xe8\x1dI\x9d\x0a*\xc1\xf1B\xc1=\x97\xe8K\xea" +
+	"\x97\x04\x95\x14\xe3\x94\x80\xca\\0\x92\xd4\x17\x04\xebi" +
+	";\xb2\xac\x0f\xda\x82\xac\x83yPt~\xdc0\xf0\xfc" +
+	"\xf6\x93&\xb0\x00G 8\x02\xd6w\xac\x1f\xf5\x0fY" +
+	"\xe8\xa5\xbdC\x7f\x18\xb5\xff+W\xdd\xe9U\xcc\xa1\xff" +
+	"v\x15\x97;\xeb&p\xfa\x95\xc5[\x04\xf4\xbd\x92\xfa" +
+	"XI\xbc\xa3\xcb\x07\x8a>*\xb8\xe4\x9bM\xeb'=" +
+	"h\x9d\xa4(\x91\xf0\x0e\xf0\xa4$\xc7\x06\x0d@\x17\xec" +
+	"c\x1f\xbaU\xec\x80\x1ea\xf9\xd9\xaa\xc5\xd2z\x18\xdd" +
+	"\x1cl\x165zqi\xbd\x95\xc5[6\xef\xd9\x135" +
+	"\x9b4\xf3\x9e\x15\xd8\xf3BY\xeb\xa7\x01\xfd|W\xad" +
+	"\x1e\xd1\xb6c\x9fJ\xeaWKZ\xbf\xb2\x0a\xe8\x0b\x92" +
+	"\xfa\x92\xd3z\xac\xab\xf5;_\x01\xfa\x92\xa4\xfe\xa8\xe7" +
+	"g\xd7T\x96\x07\xd1\xc7\xda\x1d\xc4RR d}\xc0" +
+	"h\xe0\x89\x02\x1e\x80\xc1\xed\xd2\x02.\xc6\x98\xecz\xd1" +
+	"\x13f\xd3\x0a\xdf\xb9\xe6\x8c\xf1\xbds&\xf5Z!H" +
+	"\x08\xf2\xb6L\xd2\x9d\x1d\x8ag\\PV\xf7\x14\x0bj" +
+	"x\x1a\xa8\x99\xc8\xab\xc7\x99o\xff\x0d\x00\x00\xff\xff\x81" +
+	"'\xce\xce"
 
 func RegisterSchema(reg *schemas.Registry) {
 	reg.Register(&schemas.Schema{
@@ -737,7 +628,6 @@ func RegisterSchema(reg *schemas.Registry) {
 			0x93fe8bb8dc1f1765,
 			0xe6b3b2e27104cb9c,
 			0xf3a38db41fe1776e,
-			0xf411009120da9dee,
 			0xf48c5476a60917ea,
 			0xf9e71e6579ef2e82,
 		},

@@ -1288,6 +1288,10 @@ func (d *Distributor) send1(ctx context.Context, ingester ring.InstanceDesc, tim
 		wr2.SetSource(ingester_client.CpnWriteRequest2_Source_api)
 	}
 
+	lbls := labels.EmptyLabels()
+	scb := labels.NewScratchBuilder(10)
+	buf := make([]byte, 0, 512)
+
 	// Add timeseries
 	if len(timeseries) > 0 && len(timeseries) < math.MaxInt32 {
 		tss, err := wr2.NewTimeseries(int32(len(timeseries)))
@@ -1302,25 +1306,11 @@ func (d *Distributor) send1(ctx context.Context, ingester ring.InstanceDesc, tim
 			}
 
 			// labels
-			lbls2, err := ts2.NewLabels(int32(len(ts.Labels)))
+			mimirpb.FromLabelAdaptersOverwriteLabels(&scb, ts.Labels, &lbls)
+			buf = lbls.Bytes(buf)
+			err = ts2.SetLabels(string(buf))
 			if err != nil {
-				return errors.Wrap(err, "NewLabels")
-			}
-			for lix, l := range ts.Labels {
-				l2, err := ingester_client.NewCpnWriteRequest2_TimeSeries2_LabelPair2(seg)
-				if err != nil {
-					return errors.Wrap(err, "NewWriteRequest2_TimeSeries2_LabelPair2")
-				}
-
-				if err := l2.SetName(l.Name); err != nil {
-					return err
-				}
-				if err := l2.SetValue(l.Value); err != nil {
-					return err
-				}
-				if err := lbls2.Set(lix, l2); err != nil {
-					return err
-				}
+				return err
 			}
 
 			// samples
@@ -1348,7 +1338,7 @@ func (d *Distributor) send1(ctx context.Context, ingester ring.InstanceDesc, tim
 
 	// TODO: metadata
 
-	msgBytes, err := msg.Marshal()
+	msgBytes, err := msg.MarshalPacked()
 	if err != nil {
 		return err
 	}

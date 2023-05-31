@@ -1229,7 +1229,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 func (i *Ingester) pushSamplesToAppender2(userID string, timeseries client.CpnWriteRequest2_TimeSeries2_List, app extendedAppender, startAppend time.Time, stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries, outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 
 	// Return true if handled as soft error, and we can ingest more series.
-	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
+	handleAppendError := func(err error, timestamp int64, labels labels.Labels) bool {
 		// Check if the error is a soft error we can proceed on. If so, we keep track
 		// of it, so that we can return it back to the distributor, which will return a
 		// 400 error to the client. The client (Prometheus) will not retry on 400, and
@@ -1239,28 +1239,28 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries client.CpnWr
 		case storage.ErrOutOfBounds:
 			stats.sampleOutOfBoundsCount++
 			updateFirstPartial(func() error {
-				return newIngestErrSampleTimestampTooOld(model.Time(timestamp), labels)
+				return newIngestErrSampleTimestampTooOld(model.Time(timestamp), mimirpb.FromLabelsToLabelAdapters(labels))
 			})
 			return true
 
 		case storage.ErrOutOfOrderSample:
 			stats.sampleOutOfOrderCount++
 			updateFirstPartial(func() error {
-				return newIngestErrSampleOutOfOrder(model.Time(timestamp), labels)
+				return newIngestErrSampleOutOfOrder(model.Time(timestamp), mimirpb.FromLabelsToLabelAdapters(labels))
 			})
 			return true
 
 		case storage.ErrTooOldSample:
 			stats.sampleTooOldCount++
 			updateFirstPartial(func() error {
-				return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow)
+				return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), mimirpb.FromLabelsToLabelAdapters(labels), outOfOrderWindow)
 			})
 			return true
 
 		case storage.ErrDuplicateSampleForTimestamp:
 			stats.newValueForTimestampCount++
 			updateFirstPartial(func() error {
-				return newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels)
+				return newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), mimirpb.FromLabelsToLabelAdapters(labels))
 			})
 			return true
 
@@ -1274,7 +1274,7 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries client.CpnWr
 		case errMaxSeriesPerMetricLimitExceeded:
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(func() error {
-				return makeMetricLimitError(mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), i.limiter.FormatError(userID, cause))
+				return makeMetricLimitError(labels.Copy(), i.limiter.FormatError(userID, cause))
 			})
 			return true
 		}
@@ -1317,7 +1317,7 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries client.CpnWr
 				//}
 
 				updateFirstPartial(func() error {
-					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), labelsToAdapter(ts.Labels()))
+					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), labelsToAdapter(ts.LabelsBytes()))
 				})
 				continue
 			}
@@ -1332,13 +1332,13 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries client.CpnWr
 				firstTimestamp := samples.At(0).TimestampMs()
 
 				updateFirstPartial(func() error {
-					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), labelsToAdapter(ts.Labels()))
+					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), labelsToAdapter(ts.LabelsBytes()))
 				})
 				continue
 			}
 		}
 
-		nonCopiedLabels := labelsToLabels(ts.Labels())
+		nonCopiedLabels := labelsToLabels(ts.LabelsBytes())
 		hash := nonCopiedLabels.Hash()
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
@@ -1359,7 +1359,7 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries client.CpnWr
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
-				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(mimirpb.FromLabelsToLabelAdapters(nonCopiedLabels))
+				copiedLabels = nonCopiedLabels.Copy()
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs(), s.Value()); err == nil {
@@ -1371,7 +1371,7 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries client.CpnWr
 			stats.failedSamplesCount++
 
 			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if handleAppendError(err, s.TimestampMs(), labelsToAdapter(ts.Labels())) {
+			if handleAppendError(err, s.TimestampMs(), labelsToLabels(ts.LabelsBytes())) {
 				continue
 			}
 
@@ -1462,34 +1462,18 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries client.CpnWr
 	return nil
 }
 
-func labelsToAdapter(list client.CpnWriteRequest2_TimeSeries2_LabelPair2_List, err error) []mimirpb.LabelAdapter {
+// Deprecated.
+func labelsToAdapter(list []byte, err error) []mimirpb.LabelAdapter {
 	return mimirpb.FromLabelsToLabelAdapters(labelsToLabels(list, err))
 }
 
 // creates labels.Labels from capnproto Labels. Uses []byte slices pointing to underlying message.
-func labelsToLabels(list client.CpnWriteRequest2_TimeSeries2_LabelPair2_List, err error) labels.Labels {
-	if err != nil {
-		return labels.Labels{labels.Label{Name: "error", Value: err.Error()}}
-	}
-
-	res := make(labels.Labels, list.Len())
-	for i := 0; i < list.Len(); i++ {
-		l := list.At(i)
-		name, err := l.NameBytes()
-		if err != nil {
-			name = []byte(err.Error())
-		}
-		val, err := l.ValueBytes()
-		if err != nil {
-			val = []byte(err.Error())
-		}
-
-		res[i] = labels.Label{
-			Name:  yoloString(name),
-			Value: yoloString(val),
-		}
-	}
-	return res
+func labelsToLabels(lbls []byte, _ error) labels.Labels {
+	result := labels.EmptyLabels()
+	result.InternStrings(func(s string) string {
+		return yoloString(lbls)
+	})
+	return result
 }
 
 func yoloString(buf []byte) string {
@@ -3195,7 +3179,7 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 }
 
 func (i *Ingester) Push2(ctx context.Context, req *client.WriteRequest2) (*mimirpb.WriteResponse, error) {
-	msg, err := capnp.Unmarshal(req.Wrapper.Msg)
+	msg, err := capnp.UnmarshalPacked(req.Wrapper.Msg)
 	if err != nil {
 		return nil, err
 	}
@@ -3425,26 +3409,13 @@ func GroupLabel2(o *validation.Overrides, userID string, timeseries client.CpnWr
 		return groupLabel
 	}
 
+	v := ""
 	for ix := 0; ix < timeseries.Len(); ix++ {
-		lbls, err := timeseries.At(ix).Labels()
-		if err != nil {
-			continue
-		}
-
-		for jx := 0; jx < lbls.Len(); jx++ {
-			n, err := lbls.At(jx).Name()
-			if err != nil {
-				n = err.Error()
+		labelsToLabels(timeseries.At(ix).LabelsBytes()).Range(func(l labels.Label) {
+			if groupLabel == l.Name && v == "" {
+				v = l.Value
 			}
-			v, err := lbls.At(jx).Value()
-			if err != nil {
-				v = err.Error()
-			}
-
-			if n == groupLabel {
-				return v
-			}
-		}
+		})
 	}
-	return ""
+	return v
 }
