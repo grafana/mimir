@@ -151,3 +151,5 @@ The following features or configuration parameters are currently deprecated and 
   - `-blocks-storage.bucket-store.max-chunk-pool-bytes`
 - Querier, ruler, store-gateway
   - `-blocks-storage.bucket-store.bucket-index.enabled`
+- Querier
+  - `-querier.iterators` and `-querier.batch-iterators` (Mimir 2.11 onwards will always use `-querier.batch-iterators=true`)

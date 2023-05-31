@@ -966,12 +966,12 @@ instance_limits:
 The `querier` block configures the querier.
 
 ```yaml
-# (advanced) Use iterators to execute query, as opposed to fully materialising
+# (deprecated) Use iterators to execute query, as opposed to fully materialising
 # the series in memory.
 # CLI flag: -querier.iterators
 [iterators: <boolean> | default = false]
 
-# (advanced) Use batch iterators to execute query, as opposed to fully
+# (deprecated) Use batch iterators to execute query, as opposed to fully
 # materialising the series in memory.  Takes precedent over the
 # -querier.iterators flag.
 # CLI flag: -querier.batch-iterators

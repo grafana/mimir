@@ -39,9 +39,9 @@ import (
 
 // Config contains the configuration require to create a querier
 type Config struct {
-	Iterators            bool          `yaml:"iterators" category:"advanced"`
-	BatchIterators       bool          `yaml:"batch_iterators" category:"advanced"`
-	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced" doc:"hidden"` // TODO: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0
+	Iterators            bool          `yaml:"iterators" category:"deprecated"`                         // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
+	BatchIterators       bool          `yaml:"batch_iterators" category:"deprecated"`                   // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
+	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0
 
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
@@ -73,8 +73,11 @@ var (
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
+
+	// TODO: these two flags were deprecated in Mimir 2.9.0, remove them in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
 	f.BoolVar(&cfg.Iterators, "querier.iterators", false, "Use iterators to execute query, as opposed to fully materialising the series in memory.")
 	f.BoolVar(&cfg.BatchIterators, "querier.batch-iterators", true, "Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag.")
+
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
