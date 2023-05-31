@@ -1961,6 +1961,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
         image: grafana/mimir:2.8.0
@@ -2094,6 +2096,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
         image: grafana/mimir:2.8.0
@@ -2227,6 +2231,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
         image: grafana/mimir:2.8.0
@@ -2360,6 +2366,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
         image: grafana/mimir:2.8.0
