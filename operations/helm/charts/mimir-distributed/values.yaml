@@ -385,7 +385,7 @@ mimir:
         remote_read:
           query_address: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
 
-        graphite_fallback: http://{{ template "mimir.fullname" . }}-graphite-web.{{ .Release.Namespace}}.svc:{{ include "mimir.serverHttpListenPort" .  }}
+        proxy_bad_requests: false
 
         schemas:
           default_storage_schemas_file: /etc/graphite-proxy/storage-schemas.conf
@@ -3235,62 +3235,6 @@ graphite:
     extraContainers: []
     extraVolumes: []
     extraVolumeMounts: []
-
-  web:
-    replicas: 1
-
-    image:
-      repository: docker.io/raintank/graphite-mt
-      tag: 8-7ebde4c60-v2
-      pullPolicy: IfNotPresent
-
-    service:
-      annotations: {}
-      labels: {}
-
-    # -- Resources for graphite-web pods
-    resources:
-      requests:
-        cpu: 100m
-        memory: 512Mi
-    # -- The name of the PriorityClass for graphite-web pods
-    priorityClassName: null
-    # -- Labels for graphite-web pods
-    podLabels: {}
-    # -- Annotations for graphite-web pods
-    podAnnotations: {}
-    # -- Node selector for graphite-web pods
-    nodeSelector: {}
-    # -- Affinity for graphite-web pods
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-                - key: app.kubernetes.io/component
-                  operator: In
-                  values:
-                    - graphite-web
-            topologyKey: 'kubernetes.io/hostname'
-
-    strategy:
-      type: RollingUpdate
-    # -- Grace period to allow the graphite-web to shutdown before it is killed
-    terminationGracePeriodSeconds: 30
-    # -- Tolerations for graphite-web pods
-    tolerations: []
-    # -- Pod Disruption Budget
-    podDisruptionBudget: {}
-
-    # -- SecurityContext override for graphite web pods
-    securityContext: {}
-
-    containerSecurityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop: [ALL]
-
 
 # Graphite's aggregation cache. If you want to know more about it please check
 # https://grafana.com/docs/enterprise-metrics/latest/graphite/graphite_querier/#aggregation-cache
