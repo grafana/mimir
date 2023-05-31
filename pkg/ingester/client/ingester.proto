@@ -18,6 +18,7 @@ option (gogoproto.unmarshaler_all) = true;
 
 service Ingester {
   rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {};
+  rpc Push2(WriteRequest2) returns (cortexpb.WriteResponse) {};
   rpc QueryStream(QueryRequest) returns (stream QueryStreamResponse) {};
   rpc QueryExemplars(ExemplarQueryRequest) returns (ExemplarQueryResponse) {};
 
@@ -36,6 +37,20 @@ service Ingester {
   // that match the matchers.
   // The listing order of the labels is not guaranteed.
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {};
+}
+
+message WriteRequest2 {
+  repeated Series series = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "PreallocSeries"];
+  repeated int64 timestamps = 2 [packed = true];
+  repeated double values = 3 [packed = true];
+  cortexpb.WriteRequest.SourceEnum source = 4 ;
+  repeated cortexpb.MetricMetadata metadata = 5 [(gogoproto.nullable) = true];
+}
+
+message Series {
+  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  int64 samplesStartIndex = 2;
+  int64 samplesCount = 3;
 }
 
 message LabelNamesAndValuesRequest {

@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/mtime"
@@ -1167,7 +1168,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 			}
 		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		err := d.send2(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1251,6 +1252,58 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Source:     source,
 	}
 	_, err = c.Push(ctx, &req)
+	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+		// Wrap HTTP gRPC error with more explanatory message.
+		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
+	}
+	return errors.Wrap(err, "failed pushing to ingester")
+}
+
+var pool = zeropool.New[*ingester_client.Series](func() *ingester_client.Series {
+	return &ingester_client.Series{}
+})
+
+func (d *Distributor) send2(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
+	if err != nil {
+		return err
+	}
+	c := h.(ingester_client.IngesterClient)
+
+	req := ingester_client.WriteRequest2{
+		Series:     make([]ingester_client.PreallocSeries, 0, len(timeseries)),
+		Timestamps: make([]int64, 0, len(timeseries)),
+		Values:     make([]float64, 0, len(timeseries)),
+		Source:     source,
+		Metadata:   metadata,
+	}
+
+	for _, ts := range timeseries {
+		if len(ts.Samples) == 0 {
+			continue
+		}
+
+		ps := ingester_client.PreallocSeries{Series: pool.Get()}
+		ps.Series.Labels = ts.Labels
+		ps.Series.SamplesStartIndex = int64(len(req.Timestamps))
+		ps.Series.SamplesCount = int64(len(ts.Samples))
+
+		req.Series = append(req.Series, ps)
+
+		for _, s := range ts.Samples {
+			req.Timestamps = append(req.Timestamps, s.TimestampMs)
+			req.Values = append(req.Values, s.Value)
+		}
+	}
+
+	defer func() {
+		for _, ps := range req.Series {
+			*ps.Series = ingester_client.Series{}
+			pool.Put(ps.Series)
+		}
+	}()
+
+	_, err = c.Push2(ctx, &req)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)

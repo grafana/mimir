@@ -662,6 +662,168 @@ type pushStats struct {
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
+func (i *Ingester) PushWithoutCleanup(ctx context.Context, req *client.WriteRequest2) (*mimirpb.WriteResponse, error) {
+	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+
+	// We will report *this* request in the error too.
+	inflight := i.inflightPushRequests.Inc()
+	defer i.inflightPushRequests.Dec()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightPushRequests > 0 {
+		if inflight > il.MaxInflightPushRequests {
+			return nil, errMaxInflightRequestsReached
+		}
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if il != nil && il.MaxIngestionRate > 0 {
+		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			return nil, errMaxIngestionRateReached
+		}
+	}
+
+	// Given metadata is a best-effort approach, and we don't halt on errors
+	// process it before samples. Otherwise, we risk returning an error before ingestion.
+	if ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata()); ingestedMetadata > 0 {
+		// Distributor counts both samples and metadata, so for consistency ingester does the same.
+		i.ingestionRate.Add(int64(ingestedMetadata))
+	}
+
+	// Early exit if no timeseries in request - don't create a TSDB or an appender.
+	if len(req.Series) == 0 {
+		return &mimirpb.WriteResponse{}, nil
+	}
+
+	db, err := i.getOrCreateTSDB(userID, false)
+	if err != nil {
+		return nil, wrapWithUser(err, userID)
+	}
+
+	if err := db.acquireAppendLock(); err != nil {
+		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(err, userID).Error())
+	}
+	defer db.releaseAppendLock()
+
+	// Note that we don't .Finish() the span in this method on purpose
+	spanlog := spanlogger.FromContext(ctx, i.logger)
+	level.Debug(spanlog).Log("event", "acquired append lock")
+
+	var (
+		startAppend = time.Now()
+
+		// Keep track of some stats which are tracked only if the samples will be
+		// successfully committed
+		stats pushStats
+
+		firstPartialErr    error
+		updateFirstPartial = func(errFn func() error) {
+			if firstPartialErr == nil {
+				firstPartialErr = errFn()
+			}
+		}
+	)
+
+	// Walk the samples, appending them to the users database
+	app := db.Appender(ctx).(extendedAppender)
+	level.Debug(spanlog).Log("event", "got appender for timeseries", "series", len(req.Series))
+
+	var activeSeries *activeseries.ActiveSeries
+	if i.cfg.ActiveSeriesMetricsEnabled {
+		activeSeries = db.activeSeries
+	}
+
+	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
+
+	err = i.pushSamplesToAppender2(userID, req.Series, req.Timestamps, req.Values, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
+	if err != nil {
+		if err := app.Rollback(); err != nil {
+			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
+		}
+
+		return nil, err
+	}
+
+	// At this point all samples have been added to the appender, so we can track the time it took.
+	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+
+	level.Debug(spanlog).Log(
+		"event", "start commit",
+		"succeededSamplesCount", stats.succeededSamplesCount,
+		"failedSamplesCount", stats.failedSamplesCount,
+		"succeededExemplarsCount", stats.succeededExemplarsCount,
+		"failedExemplarsCount", stats.failedExemplarsCount,
+	)
+
+	startCommit := time.Now()
+	if err := app.Commit(); err != nil {
+		return nil, wrapWithUser(err, userID)
+	}
+
+	commitDuration := time.Since(startCommit)
+	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
+	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
+
+	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
+	if stats.succeededSamplesCount > 0 {
+		db.setLastUpdate(time.Now())
+	}
+
+	// Increment metrics only if the samples have been successfully committed.
+	// If the code didn't reach this point, it means that we returned an error
+	// which will be converted into an HTTP 5xx and the client should/will retry.
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(stats.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
+	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
+	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
+
+	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, GroupLabel(i.limits, userID, req.Series), startAppend)
+
+	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discarded)
+
+	if firstPartialErr != nil {
+		code := http.StatusBadRequest
+		var ve *validationError
+		if errors.As(firstPartialErr, &ve) {
+			code = ve.code
+		}
+		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
+	}
+
+	return &mimirpb.WriteResponse{}, nil
+}
+
+func GroupLabel(limits *validation.Overrides, id string, series []client.PreallocSeries) string {
+	if len(series) == 0 {
+		return ""
+	}
+
+	groupLabel := limits.SeparateMetricsGroupLabel(id)
+	if groupLabel == "" {
+		// If not set, label value will be "" and dropped by Prometheus
+		return groupLabel
+	}
+
+	for _, label := range series[0].Labels {
+		if label.Name == groupLabel {
+			// label.Value string is cloned as underlying PreallocTimeseries contains
+			// unsafe strings that should not be retained
+			return strings.Clone(label.Value)
+		}
+	}
+
+	return ""
+}
+
+// PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
 func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
@@ -1067,6 +1229,135 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					stats.failedExemplarsCount++
 				}
 			}
+		}
+	}
+	return nil
+}
+
+// pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
+// but in case of unhandled errors, appender is rolled back and such error is returned.
+func (i *Ingester) pushSamplesToAppender2(userID string, timeseries []client.PreallocSeries, timestamps []int64, values []float64, app extendedAppender, startAppend time.Time, stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries, outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+
+	// Return true if handled as soft error, and we can ingest more series.
+	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
+		// Check if the error is a soft error we can proceed on. If so, we keep track
+		// of it, so that we can return it back to the distributor, which will return a
+		// 400 error to the client. The client (Prometheus) will not retry on 400, and
+		// we actually ingested all samples which haven't failed.
+		//nolint:errorlint // We don't expect the cause error to be wrapped.
+		switch cause := errors.Cause(err); cause {
+		case storage.ErrOutOfBounds:
+			stats.sampleOutOfBoundsCount++
+			updateFirstPartial(func() error {
+				return newIngestErrSampleTimestampTooOld(model.Time(timestamp), labels)
+			})
+			return true
+
+		case storage.ErrOutOfOrderSample:
+			stats.sampleOutOfOrderCount++
+			updateFirstPartial(func() error {
+				return newIngestErrSampleOutOfOrder(model.Time(timestamp), labels)
+			})
+			return true
+
+		case storage.ErrTooOldSample:
+			stats.sampleTooOldCount++
+			updateFirstPartial(func() error {
+				return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow)
+			})
+			return true
+
+		case storage.ErrDuplicateSampleForTimestamp:
+			stats.newValueForTimestampCount++
+			updateFirstPartial(func() error {
+				return newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels)
+			})
+			return true
+
+		case errMaxSeriesPerUserLimitExceeded:
+			stats.perUserSeriesLimitCount++
+			updateFirstPartial(func() error {
+				return makeLimitError(i.limiter.FormatError(userID, cause))
+			})
+			return true
+
+		case errMaxSeriesPerMetricLimitExceeded:
+			stats.perMetricSeriesLimitCount++
+			updateFirstPartial(func() error {
+				return makeMetricLimitError(mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), i.limiter.FormatError(userID, cause))
+			})
+			return true
+		}
+		return false
+	}
+
+	for _, ts := range timeseries {
+		// The labels must be sorted (in our case, it's guaranteed a write request
+		// has sorted labels once hit the ingester).
+
+		// Fast path in case we only have samples and they are all out of bound
+		// and out-of-order support is not enabled.
+		// TODO(jesus.vazquez) If we had too many old samples we might want to
+		// extend the fast path to fail early.
+		if outOfOrderWindow <= 0 && minAppendTimeAvailable && // len(ts.Exemplars) == 0 &&
+			ts.SamplesCount > 0 && allOutOfBoundsTimestamps(timestamps[ts.SamplesStartIndex:ts.SamplesStartIndex+ts.SamplesCount], minAppendTime) {
+
+			stats.failedSamplesCount += int(ts.SamplesCount)
+			stats.sampleOutOfBoundsCount += int(ts.SamplesCount)
+
+			firstTimestamp := timestamps[ts.SamplesStartIndex]
+
+			updateFirstPartial(func() error {
+				return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+			})
+			continue
+		}
+
+		nonCopiedLabels := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
+		hash := nonCopiedLabels.Hash()
+		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
+		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
+		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
+
+		// To find out if any sample was added to this series, we keep old value.
+		oldSucceededSamplesCount := stats.succeededSamplesCount
+
+		for ix := ts.SamplesStartIndex; ix < ts.SamplesStartIndex+ts.SamplesCount; ix++ {
+			var err error
+
+			// If the cached reference exists, we try to use it.
+			if ref != 0 {
+				if _, err = app.Append(ref, copiedLabels, timestamps[ix], values[ix]); err == nil {
+					stats.succeededSamplesCount++
+					continue
+				}
+			} else {
+				// Copy the label set because both TSDB and the active series tracker may retain it.
+				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+
+				// Retain the reference in case there are multiple samples for the series.
+				if ref, err = app.Append(0, copiedLabels, timestamps[ix], values[ix]); err == nil {
+					stats.succeededSamplesCount++
+					continue
+				}
+			}
+
+			stats.failedSamplesCount++
+
+			// If it's a soft error it will be returned back to the distributor later as a 400.
+			if handleAppendError(err, timestamps[ix], ts.Labels) {
+				continue
+			}
+
+			// Otherwise, return a 500.
+			return wrapWithUser(err, userID)
+		}
+
+		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
+			activeSeries.UpdateSeries(nonCopiedLabels, hash, startAppend, func(l labels.Labels) labels.Labels {
+				// we must already have copied the labels if succeededSamplesCount has been incremented.
+				return copiedLabels
+			})
 		}
 	}
 	return nil
@@ -2761,6 +3052,11 @@ func (i *Ingester) checkRunning() error {
 	return status.Error(codes.Unavailable, s.String())
 }
 
+func (i *Ingester) Push2(ctx context.Context, req *client.WriteRequest2) (*mimirpb.WriteResponse, error) {
+	defer client.ReturnToPool(req.Series)
+	return i.PushWithoutCleanup(ctx, req)
+}
+
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := push.NewParsedRequest(req)
@@ -2926,6 +3222,15 @@ func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.
 func allOutOfBoundsFloats(samples []mimirpb.Sample, minValidTime int64) bool {
 	for _, s := range samples {
 		if s.TimestampMs >= minValidTime {
+			return false
+		}
+	}
+	return true
+}
+
+func allOutOfBoundsTimestamps(timestamps []int64, minValidTime int64) bool {
+	for _, ts := range timestamps {
+		if ts >= minValidTime {
 			return false
 		}
 	}

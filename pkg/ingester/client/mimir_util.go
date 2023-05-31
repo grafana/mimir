@@ -7,6 +7,9 @@ package client
 
 import (
 	context "context"
+	"sync"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // SendQueryStream wraps the stream's Send() checking if the context is done
@@ -72,4 +75,35 @@ func containsChunk(a []Chunk, b Chunk) bool {
 		}
 	}
 	return false
+}
+
+var timeSeriesPool = sync.Pool{
+	New: func() interface{} {
+		return &Series{
+			Labels: make([]mimirpb.LabelAdapter, 0, 20),
+		}
+	},
+}
+
+type PreallocSeries struct {
+	*Series
+}
+
+// Unmarshal implements proto.Message.
+func (p *PreallocSeries) Unmarshal(dAtA []byte) error {
+	p.Series = GetSeriesFromPool()
+	return p.Series.Unmarshal(dAtA)
+}
+
+func GetSeriesFromPool() *Series {
+	return timeSeriesPool.Get().(*Series)
+}
+
+func ReturnToPool(s []PreallocSeries) {
+	for _, ps := range s {
+		ps.SamplesCount = 0
+		ps.SamplesStartIndex = 0
+		ps.Labels = ps.Labels[:0]
+		timeSeriesPool.Put(ps.Series)
+	}
 }
