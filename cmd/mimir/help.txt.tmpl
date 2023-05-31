@@ -345,6 +345,10 @@ Usage of ./cmd/mimir/mimir:
     	Per-tenant ingestion rate limit in samples per second. (default 10000)
   -distributor.ingestion-tenant-shard-size int
     	The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.
+  -distributor.request-burst-size int
+    	Per-tenant allowed push request burst size. 0 to disable.
+  -distributor.request-rate-limit float
+    	Per-tenant push request rate limit in requests per second. 0 to disable.
   -distributor.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -distributor.ring.etcd.endpoints string
