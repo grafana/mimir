@@ -265,9 +265,9 @@ local filename = 'mimir-rollout-progress.json';
               options: { valueLabel: 'version' },
             },
             {
-              // Hide time.
+              // Hide time and put the container column first.
               id: 'organize',
-              options: { excludeByName: { Time: true } },
+              options: { excludeByName: { Time: true }, indexByName: { Time: 0, container: 1 } },
             },
             {
               // Sort by container.
