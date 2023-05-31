@@ -30,7 +30,6 @@ type chunkMergeIterator struct {
 }
 
 // NewChunkMergeIterator creates a chunkenc.Iterator for a set of chunks.
-// TODO: reuse iterators.
 func NewChunkMergeIterator(_ chunkenc.Iterator, cs []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
 	its := buildIterators(cs)
 	c := &chunkMergeIterator{

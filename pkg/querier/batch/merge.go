@@ -42,6 +42,8 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 		c.its = c.its[:len(css)]
 		c.h = c.h[:0]
 		c.batches = c.batches[:0]
+		// We are not resetting the content of c.batchesBuf because they will be
+		// reset once we call mergeStreams() on them.
 		c.batchesBuf = c.batchesBuf[:len(css)]
 	} else {
 		c.its = make([]*nonOverlappingIterator, len(css))

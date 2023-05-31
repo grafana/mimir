@@ -8,10 +8,11 @@ package batch
 import (
 	"fmt"
 
-	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 // GenericChunk is a generic chunk used by the batch iterator, in order to make the batch
