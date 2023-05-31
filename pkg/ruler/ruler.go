@@ -565,6 +565,11 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 
 	// Sync the rule groups.
 	if len(userIDs) > 0 {
+		// Ensure the configs map is not nil.
+		if configs == nil {
+			configs = make(map[string]rulespb.RuleGroupList, len(userIDs))
+		}
+
 		// The filtering done above (e.g. due to sharding, disabled tenants, ...) may have
 		// removed some tenants from the configs map. We want to add back all input tenants
 		// to the map but with an empty list of rule groups, so that these tenants will be
@@ -649,7 +654,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 	}
 
 	if len(userRings) == 0 {
-		return nil, nil
+		return map[string]rulespb.RuleGroupList{}, nil
 	}
 
 	userCh := make(chan string, len(userRings))
