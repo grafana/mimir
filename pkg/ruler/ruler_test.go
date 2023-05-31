@@ -837,7 +837,7 @@ func TestSharding(t *testing.T) {
 			},
 
 			expectedRules: expectedRulesMap{
-				ruler1: nil,
+				ruler1: map[string]rulespb.RuleGroupList{},
 				ruler2: map[string]rulespb.RuleGroupList{},
 				ruler3: map[string]rulespb.RuleGroupList{
 					user2: {user2Group1},
@@ -1075,7 +1075,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				}
 			})
 
-			t.Run("NotifySyncRulesAsync() should trigger a re-sync after a single rule group of a tenant have been deleted", func(t *testing.T) {
+			t.Run("NotifySyncRulesAsync() should trigger a re-sync after a single rule group of a tenant has been deleted", func(t *testing.T) {
 				// Remove 1 rule group of a tenant.
 				require.NoError(t, store.DeleteRuleGroup(ctx, userID, namespace, "group-0"))
 
