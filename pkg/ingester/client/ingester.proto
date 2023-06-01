@@ -54,6 +54,7 @@ message LabelValues {
 message LabelValuesCardinalityRequest {
   repeated string label_names = 1;
   repeated LabelMatcher matchers = 2;
+  bool active_series_only = 3;
 }
 
 message LabelValuesCardinalityResponse {

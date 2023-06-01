@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
@@ -1357,11 +1358,23 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err != nil {
 		return err
 	}
+
+	postingsForMatchersFn := tsdb.PostingsForMatchers
+	if req.GetActiveSeriesOnly() {
+		postingsForMatchersFn = func(ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+			postings, err := tsdb.PostingsForMatchers(ix, ms...)
+			if err != nil {
+				return nil, err
+			}
+			return activeseries.NewPostings(db.activeSeries, postings), nil
+		}
+	}
+
 	return labelValuesCardinality(
 		req.GetLabelNames(),
 		matchers,
 		idx,
-		tsdb.PostingsForMatchers,
+		postingsForMatchersFn,
 		labelValuesCardinalityTargetSizeBytes,
 		srv,
 	)

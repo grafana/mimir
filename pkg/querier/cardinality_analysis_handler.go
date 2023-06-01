@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -23,9 +24,10 @@ import (
 )
 
 const (
-	minLimit     = 0
-	maxLimit     = 500
-	defaultLimit = 20
+	minLimit           = 0
+	maxLimit           = 500
+	defaultLimit       = 20
+	defaultSeriesScope = SeriesScopeInMemory
 )
 
 // LabelNamesCardinalityHandler creates handler for label names cardinality endpoint.
@@ -71,13 +73,13 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 			return
 		}
 
-		labelNames, matchers, limit, err := extractLabelValuesRequestParams(r)
+		labelNames, matchers, seriesScope, limit, err := extractLabelValuesRequestParams(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, labelNames, matchers)
+		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, labelNames, matchers, seriesScope)
 		if err != nil {
 			respondFromError(err, w)
 			return
@@ -104,27 +106,32 @@ func extractLabelNamesRequestParams(r *http.Request) ([]*labels.Matcher, int, er
 }
 
 // extractLabelValuesRequestParams parses query params from GET requests and parses request body from POST requests
-func extractLabelValuesRequestParams(r *http.Request) (labelNames []model.LabelName, matchers []*labels.Matcher, limit int, err error) {
+func extractLabelValuesRequestParams(r *http.Request) (labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope SeriesCardinalityScope, limit int, err error) {
 	if err := r.ParseForm(); err != nil {
-		return nil, nil, 0, err
+		return nil, nil, "", 0, err
 	}
 
 	labelNames, err = extractLabelNames(r)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, "", 0, err
 	}
 
 	matchers, err = extractSelector(r)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, "", 0, err
 	}
 
 	limit, err = extractLimit(r)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, "", 0, err
 	}
 
-	return labelNames, matchers, limit, nil
+	seriesScope, err = extractSeriesScope(r)
+	if err != nil {
+		return nil, nil, "", 0, err
+	}
+
+	return labelNames, matchers, seriesScope, limit, nil
 }
 
 // extractSelector parses and gets selector query parameter containing a single matcher
@@ -159,6 +166,22 @@ func extractLimit(r *http.Request) (limit int, err error) {
 		return 0, fmt.Errorf("'limit' param cannot be greater than '%v'", maxLimit)
 	}
 	return limit, nil
+}
+
+// extractSeriesScope parses and validates request param `include_active_series` if it's defined, otherwise returns default value.
+func extractSeriesScope(r *http.Request) (seriesScope SeriesCardinalityScope, err error) {
+	activeSeriesOnlyParams := r.Form["scope"]
+	if len(activeSeriesOnlyParams) == 0 {
+		return defaultSeriesScope, nil
+	}
+	switch SeriesCardinalityScope(activeSeriesOnlyParams[0]) {
+	case SeriesScopeActive:
+		return SeriesScopeActive, nil
+	case SeriesScopeInMemory:
+		return SeriesScopeInMemory, nil
+	default:
+		return "", fmt.Errorf("invalid 'scope' param '%v'. valid options are: [%s]", activeSeriesOnlyParams[0], strings.Join([]string{string(SeriesScopeActive), string(SeriesScopeInMemory)}, ","))
+	}
 }
 
 // extractLabelNames parses and gets label_names query parameter containing an array of label values
