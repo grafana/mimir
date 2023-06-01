@@ -72,10 +72,10 @@ spec:
                 operator: In
                 values:
                 - alertmanager
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - alertmanager-zone-a
+                - zone-a
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
       - maxSkew: 1
@@ -230,10 +230,10 @@ spec:
                 operator: In
                 values:
                 - alertmanager
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - alertmanager-zone-b
+                - zone-b
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
       - maxSkew: 1
@@ -388,10 +388,10 @@ spec:
                 operator: In
                 values:
                 - alertmanager
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - alertmanager-zone-c
+                - zone-c
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
       - maxSkew: 1

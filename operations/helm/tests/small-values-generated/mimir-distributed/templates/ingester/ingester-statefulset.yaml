@@ -73,10 +73,10 @@ spec:
                 operator: In
                 values:
                 - ingester
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - ingester-zone-a
+                - zone-a
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
       - maxSkew: 1
@@ -225,10 +225,10 @@ spec:
                 operator: In
                 values:
                 - ingester
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - ingester-zone-b
+                - zone-b
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
       - maxSkew: 1
@@ -377,10 +377,10 @@ spec:
                 operator: In
                 values:
                 - ingester
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - ingester-zone-c
+                - zone-c
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
       - maxSkew: 1

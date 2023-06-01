@@ -72,10 +72,10 @@ spec:
                 operator: In
                 values:
                 - store-gateway
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - store-gateway-zone-a
+                - zone-a
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
       - maxSkew: 1
@@ -227,10 +227,10 @@ spec:
                 operator: In
                 values:
                 - store-gateway
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - store-gateway-zone-b
+                - zone-b
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
       - maxSkew: 1
@@ -382,10 +382,10 @@ spec:
                 operator: In
                 values:
                 - store-gateway
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - store-gateway-zone-c
+                - zone-c
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
       - maxSkew: 1
