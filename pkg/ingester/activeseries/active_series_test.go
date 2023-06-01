@@ -47,6 +47,46 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	assert.True(t, valid)
 }
 
+func TestActiveSeries_ContainsRef(t *testing.T) {
+	collision1, collision2 := labelsWithHashCollision()
+	series := []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		collision1,
+		collision2,
+	}
+
+	refs := []uint64{1, 2, 3, 4}
+
+	// Run the same test for increasing TTL values
+	for ttl := 1; ttl <= len(series); ttl++ {
+		t.Run(fmt.Sprintf("ttl: %d", ttl), func(t *testing.T) {
+			mockedTime := time.Unix(int64(ttl), 0)
+			c := NewActiveSeries(&Matchers{}, DefaultTimeout)
+
+			// Update each series with a different timestamp according to each index
+			for i := 0; i < len(series); i++ {
+				c.UpdateSeries(series[i], refs[i], time.Unix(int64(i), 0), copyFn)
+			}
+
+			c.purge(time.Unix(int64(ttl), 0))
+
+			// The expected number of series is the total number of series minus the ttl
+			// because the first ttl series should be purged
+			exp := len(series) - (ttl)
+			// c.Active is not intended to purge
+			allActive, activeMatching, valid := c.Active(mockedTime)
+			assert.Equal(t, exp, allActive)
+			assert.Nil(t, activeMatching)
+			assert.True(t, valid)
+
+			for i := 0; i < len(series); i++ {
+				assert.Equal(t, i >= ttl, c.ContainsRef(refs[i]))
+			}
+		})
+	}
+}
+
 func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
 	ref2, ls2 := uint64(2), labels.FromStrings("a", "2")

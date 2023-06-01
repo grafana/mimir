@@ -100,6 +100,11 @@ func (c *ActiveSeries) purge(keepUntil time.Time) {
 	}
 }
 
+func (c *ActiveSeries) ContainsRef(ref uint64) bool {
+	stripeID := ref % numStripes
+	return c.stripes[stripeID].containsRef(ref)
+}
+
 // Active returns the total number of active series, as well as a slice of active series matching each one of the
 // custom trackers provided (in the same order as custom trackers are defined).
 // The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
@@ -121,6 +126,14 @@ func (c *ActiveSeries) Active(now time.Time) (int, []int, bool) {
 	}
 
 	return total, totalMatching, true
+}
+
+func (s *seriesStripe) containsRef(ref uint64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	_, ok := s.refs[ref]
+	return ok
 }
 
 // getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
