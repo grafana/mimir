@@ -336,7 +336,7 @@ mimir:
       rule_path: /data
     {{- if .Values.ruler_querier_service.enabled }}
       query_frontend:
-        address: dns:///{{ template "mimir.fullname" . }}-ruler-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}
+        address: dns:///{{ template "mimir.fullname" . }}-ruler-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
     {{- end }}
 
     {{- if .Values.minio.enabled }}
