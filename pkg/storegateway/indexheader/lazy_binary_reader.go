@@ -83,9 +83,7 @@ type LazyBinaryReader struct {
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
 
-	// tracks which blocks are lazy loaded
-	headersLazyLoadedTracker *HeadersLazyLoadedTracker
-	blockId                  string
+	blockId string
 }
 
 // NewLazyBinaryReader makes a new LazyBinaryReader. If the index-header does not exist
