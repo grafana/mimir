@@ -260,8 +260,7 @@ func NewBucketStore(
 	}
 
 	lazyLoadedTracker := indexheader.HeadersLazyLoadedTracker{
-		// Path store where lazy loaded blocks will be tracked in files.
-		// Each tenant will have different files.
+		// Path stores where lazy loaded blocks will be tracked in per-tenant-files
 		Path: filepath.Join(dir, lazyLoadedPath),
 		State: storepb.HeadersLazyLoadedTrackerState{
 			UserId: userID,
