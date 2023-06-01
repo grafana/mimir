@@ -1168,7 +1168,12 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 			}
 		}
 
-		err := d.send2(localCtx, ingester, timeseries, metadata, req.Source)
+		var err error
+		if ingester.Zone == "zone-c" || ingester.Zone == "" {
+			err = d.send2(localCtx, ingester, timeseries, metadata, req.Source)
+		} else {
+			err = d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1272,29 +1277,19 @@ func (d *Distributor) send2(ctx context.Context, ingester ring.InstanceDesc, tim
 
 	req := ingester_client.WriteRequest2{
 		Series:              make([]ingester_client.PreallocSeries, 0, len(timeseries)),
-		Timestamps:          make([]int64, 0, len(timeseries)),
-		Values:              make([]float64, 0, len(timeseries)),
-		SamplesStartIndexes: make([]int32, 0, len(timeseries)),
-		SamplesCounts:       make([]int32, 0, len(timeseries)),
+		TimestampsAndValues: make([]int64, 0, 2*len(timeseries)),
 		Source:              source,
 		Metadata:            metadata,
 	}
 
 	for _, ts := range timeseries {
-		if len(ts.Samples) == 0 {
-			continue
-		}
-
-		ps := ingester_client.PreallocSeries{Series: pool.Get()}
-		ps.Series.Labels = ts.Labels
-
-		req.Series = append(req.Series, ps)
-		req.SamplesStartIndexes = append(req.SamplesStartIndexes, int32(len(req.Timestamps)))
-		req.SamplesCounts = append(req.SamplesCounts, int32(len(ts.Samples)))
-
 		for _, s := range ts.Samples {
-			req.Timestamps = append(req.Timestamps, s.TimestampMs)
-			req.Values = append(req.Values, s.Value)
+			ps := ingester_client.PreallocSeries{Series: pool.Get()}
+			ps.Series.Labels = ts.Labels
+			req.Series = append(req.Series, ps)
+
+			req.TimestampsAndValues = append(req.TimestampsAndValues, s.TimestampMs)
+			req.TimestampsAndValues = append(req.TimestampsAndValues, int64(math.Float64bits(s.Value)))
 		}
 	}
 

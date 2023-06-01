@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1291,31 +1292,7 @@ func (i *Ingester) pushSamplesToAppender2(userID string, req *client.WriteReques
 		return false
 	}
 
-	for six, ts := range req.Series {
-		startIndex := req.SamplesStartIndexes[six]
-		samplesCount := req.SamplesCounts[six]
-
-		// The labels must be sorted (in our case, it's guaranteed a write request
-		// has sorted labels once hit the ingester).
-
-		// Fast path in case we only have samples and they are all out of bound
-		// and out-of-order support is not enabled.
-		// TODO(jesus.vazquez) If we had too many old samples we might want to
-		// extend the fast path to fail early.
-		if outOfOrderWindow <= 0 && minAppendTimeAvailable && // len(ts.Exemplars) == 0 &&
-			req.SamplesCounts[six] > 0 && allOutOfBoundsTimestamps(req.Timestamps[startIndex:startIndex+samplesCount], minAppendTime) {
-
-			stats.failedSamplesCount += int(samplesCount)
-			stats.sampleOutOfBoundsCount += int(samplesCount)
-
-			firstTimestamp := req.Timestamps[startIndex]
-
-			updateFirstPartial(func() error {
-				return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
-			})
-			continue
-		}
-
+	for ix, ts := range req.Series {
 		nonCopiedLabels := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
 		hash := nonCopiedLabels.Hash()
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
@@ -1325,35 +1302,41 @@ func (i *Ingester) pushSamplesToAppender2(userID string, req *client.WriteReques
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
-		for ix := startIndex; ix < startIndex+samplesCount; ix++ {
+		timestamp := req.TimestampsAndValues[2*ix]
+		val := math.Float64frombits(uint64(req.TimestampsAndValues[(2*ix)+1]))
+
+		ok := false
+		{
 			var err error
 
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, req.Timestamps[ix], req.Values[ix]); err == nil {
+				if _, err = app.Append(ref, copiedLabels, timestamp, val); err == nil {
 					stats.succeededSamplesCount++
-					continue
+					ok = true
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
 
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, req.Timestamps[ix], req.Values[ix]); err == nil {
+				if ref, err = app.Append(0, copiedLabels, timestamp, val); err == nil {
+					ok = true
 					stats.succeededSamplesCount++
-					continue
 				}
 			}
 
-			stats.failedSamplesCount++
+			if !ok {
+				stats.failedSamplesCount++
 
-			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if handleAppendError(err, req.Timestamps[ix], ts.Labels) {
-				continue
+				// If it's a soft error it will be returned back to the distributor later as a 400.
+				if handleAppendError(err, timestamp, ts.Labels) {
+					continue
+				}
+
+				// Otherwise, return a 500.
+				return wrapWithUser(err, userID)
 			}
-
-			// Otherwise, return a 500.
-			return wrapWithUser(err, userID)
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {

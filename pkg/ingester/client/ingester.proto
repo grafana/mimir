@@ -41,12 +41,10 @@ service Ingester {
 
 message WriteRequest2 {
   repeated Series series = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "PreallocSeries"];
-  repeated sfixed64 timestamps = 2 [packed = true];
-  repeated double values = 3 [packed = true];
-  repeated sfixed32 samplesStartIndexes = 4 [packed = true];
-  repeated sfixed32 samplesCounts = 5 [packed = true];
-  cortexpb.WriteRequest.SourceEnum source = 6 ;
-  repeated cortexpb.MetricMetadata metadata = 7 [(gogoproto.nullable) = true];
+  repeated sfixed64 timestamps_and_values = 2 [packed = true];
+//  repeated double values = 3 [packed = true];
+  cortexpb.WriteRequest.SourceEnum source = 4 ;
+  repeated cortexpb.MetricMetadata metadata = 5 [(gogoproto.nullable) = true];
 }
 
 message Series {
