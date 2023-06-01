@@ -282,7 +282,6 @@ func (r *LazyBinaryReader) unloadIfIdleSince(ts int64) error {
 	}
 
 	r.reader = nil
-
 	return nil
 }
 
