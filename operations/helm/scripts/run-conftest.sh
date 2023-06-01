@@ -6,7 +6,7 @@ set -o errexit
 set -o pipefail
 
 CHART_PATH="operations/helm/charts/mimir-distributed"
-POLICIES_PATH="operations/helm/policies"
+POLICIES_PATH="operations/policies"
 MANIFESTS_PATH=""
 
 while [[ $# -gt 0 ]]; do
@@ -48,6 +48,6 @@ find "$CHART_PATH/ci" -name '*.yaml' | while read -r FILEPATH ; do
   TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
   MANIFEST_DIR="${MANIFESTS_PATH}/${TEST_NAME}-generated"
   echo "Testing with values file $TEST_NAME with manifests in ${MANIFEST_DIR}"
-  conftest test "$MANIFEST_DIR/$CHART_NAME/templates" -p "$POLICIES_PATH" --combine
+  conftest test "$MANIFEST_DIR/$CHART_NAME/templates" -p "$POLICIES_PATH" --data "$POLICIES_PATH/helm.yaml"  --combine
   echo ""
 done
