@@ -26,23 +26,23 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-type IndexHeaderTrackerState struct {
-	LazyLoadedBlocks map[string]uint32 `protobuf:"bytes,1,rep,name=lazy_loaded_blocks,json=lazyLoadedBlocks,proto3" json:"lazy_loaded_blocks,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"varint,2,opt,name=value,proto3"`
-	UserId           string            `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Checksum         int32             `protobuf:"varint,3,opt,name=checksum,proto3" json:"checksum,omitempty"`
+type HeadersLazyLoadedTrackerState struct {
+	LazyLoadedBlocks map[string]int64 `protobuf:"bytes,1,rep,name=lazy_loaded_blocks,json=lazyLoadedBlocks,proto3" json:"lazy_loaded_blocks,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"varint,2,opt,name=value,proto3"`
+	UserId           string           `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Checksum         int32            `protobuf:"varint,3,opt,name=checksum,proto3" json:"checksum,omitempty"`
 }
 
-func (m *IndexHeaderTrackerState) Reset()      { *m = IndexHeaderTrackerState{} }
-func (*IndexHeaderTrackerState) ProtoMessage() {}
-func (*IndexHeaderTrackerState) Descriptor() ([]byte, []int) {
+func (m *HeadersLazyLoadedTrackerState) Reset()      { *m = HeadersLazyLoadedTrackerState{} }
+func (*HeadersLazyLoadedTrackerState) ProtoMessage() {}
+func (*HeadersLazyLoadedTrackerState) Descriptor() ([]byte, []int) {
 	return fileDescriptor_9bb3ac7de06266d4, []int{0}
 }
-func (m *IndexHeaderTrackerState) XXX_Unmarshal(b []byte) error {
+func (m *HeadersLazyLoadedTrackerState) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *IndexHeaderTrackerState) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *HeadersLazyLoadedTrackerState) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_IndexHeaderTrackerState.Marshal(b, m, deterministic)
+		return xxx_messageInfo_HeadersLazyLoadedTrackerState.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -52,57 +52,57 @@ func (m *IndexHeaderTrackerState) XXX_Marshal(b []byte, deterministic bool) ([]b
 		return b[:n], nil
 	}
 }
-func (m *IndexHeaderTrackerState) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_IndexHeaderTrackerState.Merge(m, src)
+func (m *HeadersLazyLoadedTrackerState) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_HeadersLazyLoadedTrackerState.Merge(m, src)
 }
-func (m *IndexHeaderTrackerState) XXX_Size() int {
+func (m *HeadersLazyLoadedTrackerState) XXX_Size() int {
 	return m.Size()
 }
-func (m *IndexHeaderTrackerState) XXX_DiscardUnknown() {
-	xxx_messageInfo_IndexHeaderTrackerState.DiscardUnknown(m)
+func (m *HeadersLazyLoadedTrackerState) XXX_DiscardUnknown() {
+	xxx_messageInfo_HeadersLazyLoadedTrackerState.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_IndexHeaderTrackerState proto.InternalMessageInfo
+var xxx_messageInfo_HeadersLazyLoadedTrackerState proto.InternalMessageInfo
 
 func init() {
-	proto.RegisterType((*IndexHeaderTrackerState)(nil), "thanos.IndexHeaderTrackerState")
-	proto.RegisterMapType((map[string]uint32)(nil), "thanos.IndexHeaderTrackerState.LazyLoadedBlocksEntry")
+	proto.RegisterType((*HeadersLazyLoadedTrackerState)(nil), "thanos.HeadersLazyLoadedTrackerState")
+	proto.RegisterMapType((map[string]int64)(nil), "thanos.HeadersLazyLoadedTrackerState.LazyLoadedBlocksEntry")
 }
 
 func init() { proto.RegisterFile("indexheader.proto", fileDescriptor_9bb3ac7de06266d4) }
 
 var fileDescriptor_9bb3ac7de06266d4 = []byte{
 	// 315 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x74, 0x90, 0x31, 0x4b, 0xf3, 0x40,
-	0x1c, 0x87, 0xef, 0xdf, 0xd2, 0xf6, 0x7d, 0x4f, 0x84, 0x7a, 0x28, 0x0d, 0x1d, 0xfe, 0x14, 0xa7,
-	0x2e, 0xa6, 0xa0, 0x08, 0xe2, 0x66, 0x45, 0xb0, 0xd0, 0x29, 0x3a, 0xb9, 0x94, 0x4b, 0x72, 0x36,
-	0x25, 0x69, 0xaf, 0x5c, 0x2e, 0x62, 0x3a, 0xf9, 0x11, 0xfc, 0x18, 0x7e, 0x94, 0x8e, 0x1d, 0x3b,
-	0x9a, 0xeb, 0xe2, 0xd8, 0xd1, 0x51, 0x7a, 0x01, 0x07, 0xd1, 0xed, 0xf7, 0xdc, 0xf1, 0x3c, 0x07,
-	0x47, 0x0f, 0x26, 0xb3, 0x50, 0x3c, 0x47, 0x82, 0x87, 0x42, 0xb9, 0x73, 0x25, 0xb5, 0x64, 0x75,
-	0x1d, 0xf1, 0x99, 0x4c, 0xdb, 0x27, 0xe3, 0x89, 0x8e, 0x32, 0xdf, 0x0d, 0xe4, 0xb4, 0x37, 0x96,
-	0x63, 0xd9, 0xb3, 0xd7, 0x7e, 0xf6, 0x68, 0xc9, 0x82, 0x5d, 0xa5, 0x76, 0xfc, 0x09, 0xb4, 0x35,
-	0xd8, 0xc5, 0x6e, 0x6d, 0xec, 0x5e, 0xf1, 0x20, 0x16, 0xea, 0x4e, 0x73, 0x2d, 0x58, 0x40, 0x59,
-	0xc2, 0x17, 0xf9, 0x28, 0x91, 0x3c, 0x14, 0xe1, 0xc8, 0x4f, 0x64, 0x10, 0xa7, 0x0e, 0x74, 0xaa,
-	0xdd, 0xbd, 0xd3, 0x73, 0xb7, 0x7c, 0xcf, 0xfd, 0x43, 0x76, 0x87, 0x7c, 0x91, 0x0f, 0xad, 0xd8,
-	0xb7, 0xde, 0xcd, 0x4c, 0xab, 0xdc, 0x6b, 0x26, 0x3f, 0x8e, 0x59, 0x8b, 0x36, 0xb2, 0x54, 0xa8,
-	0xd1, 0x24, 0x74, 0x2a, 0x1d, 0xe8, 0xfe, 0xf7, 0xea, 0x3b, 0x1c, 0x84, 0xac, 0x4d, 0xff, 0x05,
-	0x91, 0x08, 0xe2, 0x34, 0x9b, 0x3a, 0xd5, 0x0e, 0x74, 0x6b, 0xde, 0x37, 0xb7, 0xaf, 0xe9, 0xd1,
-	0xaf, 0x7d, 0xd6, 0xa4, 0xd5, 0x58, 0xe4, 0x0e, 0xd8, 0xd2, 0x6e, 0xb2, 0x43, 0x5a, 0x7b, 0xe2,
-	0x49, 0x26, 0x6c, 0x7d, 0xdf, 0x2b, 0xe1, 0xb2, 0x72, 0x01, 0xfd, 0xab, 0x65, 0x81, 0x64, 0x55,
-	0x20, 0x59, 0x17, 0x48, 0xb6, 0x05, 0xc2, 0x8b, 0x41, 0x78, 0x33, 0x08, 0x4b, 0x83, 0xb0, 0x32,
-	0x08, 0xef, 0x06, 0xe1, 0xc3, 0x20, 0xd9, 0x1a, 0x84, 0xd7, 0x0d, 0x92, 0xd5, 0x06, 0xc9, 0x7a,
-	0x83, 0xe4, 0xa1, 0x91, 0x6a, 0xa9, 0xc4, 0xdc, 0xf7, 0xeb, 0xf6, 0x13, 0xcf, 0xbe, 0x02, 0x00,
-	0x00, 0xff, 0xff, 0x21, 0x2b, 0x95, 0x99, 0x90, 0x01, 0x00, 0x00,
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x90, 0xb1, 0x4a, 0xc3, 0x40,
+	0x1c, 0xc6, 0xef, 0x1a, 0xda, 0xea, 0xb9, 0xd4, 0x43, 0x31, 0x14, 0xfc, 0x53, 0x9c, 0xba, 0x98,
+	0x82, 0x2e, 0xa2, 0x93, 0x15, 0x41, 0xa1, 0x53, 0x74, 0x72, 0x29, 0x97, 0xe4, 0x6c, 0x42, 0xd2,
+	0x5e, 0xb9, 0xbb, 0x88, 0xe9, 0xe4, 0xe0, 0x03, 0xf8, 0x18, 0x3e, 0x4a, 0xc7, 0x8e, 0x1d, 0xcd,
+	0x75, 0x71, 0xec, 0x23, 0x48, 0x2f, 0xa0, 0x20, 0xe2, 0xf6, 0xff, 0x7d, 0x1f, 0xdf, 0xef, 0xe0,
+	0xc8, 0x6e, 0x32, 0x89, 0xf8, 0x73, 0xcc, 0x59, 0xc4, 0xa5, 0x37, 0x95, 0x42, 0x0b, 0xda, 0xd0,
+	0x31, 0x9b, 0x08, 0xd5, 0x3e, 0x1e, 0x25, 0x3a, 0xce, 0x03, 0x2f, 0x14, 0xe3, 0xde, 0x48, 0x8c,
+	0x44, 0xcf, 0xd6, 0x41, 0xfe, 0x68, 0xc9, 0x82, 0xbd, 0xaa, 0xd9, 0xd1, 0x6b, 0x8d, 0x1c, 0xde,
+	0x58, 0x8f, 0x1a, 0xb0, 0x59, 0x31, 0x10, 0x2c, 0xe2, 0xd1, 0xbd, 0x64, 0x61, 0xca, 0xe5, 0x9d,
+	0x66, 0x9a, 0xd3, 0x84, 0xd0, 0x8c, 0xcd, 0x8a, 0x61, 0x66, 0xab, 0x61, 0x90, 0x89, 0x30, 0x55,
+	0x2e, 0xee, 0x38, 0xdd, 0x9d, 0x93, 0x0b, 0xaf, 0x7a, 0xd5, 0xfb, 0x57, 0xe1, 0xfd, 0xc4, 0x7d,
+	0xbb, 0xbe, 0x9e, 0x68, 0x59, 0xf8, 0xad, 0xec, 0x57, 0x4c, 0x0f, 0x48, 0x33, 0x57, 0x5c, 0x0e,
+	0x93, 0xc8, 0xad, 0x75, 0x70, 0x77, 0xdb, 0x6f, 0x6c, 0xf0, 0x36, 0xa2, 0x6d, 0xb2, 0x15, 0xc6,
+	0x3c, 0x4c, 0x55, 0x3e, 0x76, 0x9d, 0x0e, 0xee, 0xd6, 0xfd, 0x6f, 0x6e, 0x5f, 0x91, 0xfd, 0x3f,
+	0xfd, 0xb4, 0x45, 0x9c, 0x94, 0x17, 0x2e, 0xb6, 0xa6, 0xcd, 0x49, 0xf7, 0x48, 0xfd, 0x89, 0x65,
+	0x39, 0xb7, 0x76, 0xc7, 0xaf, 0xe0, 0xbc, 0x76, 0x86, 0xfb, 0x97, 0xf3, 0x12, 0xd0, 0xa2, 0x04,
+	0xb4, 0x2c, 0x01, 0xad, 0x4b, 0xc0, 0x2f, 0x06, 0xf0, 0xbb, 0x01, 0x3c, 0x37, 0x80, 0x17, 0x06,
+	0xf0, 0x87, 0x01, 0xfc, 0x69, 0x00, 0xad, 0x0d, 0xe0, 0xb7, 0x15, 0xa0, 0xc5, 0x0a, 0xd0, 0x72,
+	0x05, 0xe8, 0xa1, 0xa9, 0xb4, 0x90, 0x7c, 0x1a, 0x04, 0x0d, 0xfb, 0xa1, 0xa7, 0x5f, 0x01, 0x00,
+	0x00, 0xff, 0xff, 0xc5, 0x64, 0x97, 0x4d, 0x9c, 0x01, 0x00, 0x00,
 }
 
-func (this *IndexHeaderTrackerState) Equal(that interface{}) bool {
+func (this *HeadersLazyLoadedTrackerState) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*IndexHeaderTrackerState)
+	that1, ok := that.(*HeadersLazyLoadedTrackerState)
 	if !ok {
-		that2, ok := that.(IndexHeaderTrackerState)
+		that2, ok := that.(HeadersLazyLoadedTrackerState)
 		if ok {
 			that1 = &that2
 		} else {
@@ -130,18 +130,18 @@ func (this *IndexHeaderTrackerState) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *IndexHeaderTrackerState) GoString() string {
+func (this *HeadersLazyLoadedTrackerState) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 7)
-	s = append(s, "&storepb.IndexHeaderTrackerState{")
+	s = append(s, "&storepb.HeadersLazyLoadedTrackerState{")
 	keysForLazyLoadedBlocks := make([]string, 0, len(this.LazyLoadedBlocks))
 	for k, _ := range this.LazyLoadedBlocks {
 		keysForLazyLoadedBlocks = append(keysForLazyLoadedBlocks, k)
 	}
 	github_com_gogo_protobuf_sortkeys.Strings(keysForLazyLoadedBlocks)
-	mapStringForLazyLoadedBlocks := "map[string]uint32{"
+	mapStringForLazyLoadedBlocks := "map[string]int64{"
 	for _, k := range keysForLazyLoadedBlocks {
 		mapStringForLazyLoadedBlocks += fmt.Sprintf("%#v: %#v,", k, this.LazyLoadedBlocks[k])
 	}
@@ -162,7 +162,7 @@ func valueToGoStringIndexheader(v interface{}, typ string) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
 }
-func (m *IndexHeaderTrackerState) Marshal() (dAtA []byte, err error) {
+func (m *HeadersLazyLoadedTrackerState) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -172,12 +172,12 @@ func (m *IndexHeaderTrackerState) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *IndexHeaderTrackerState) MarshalTo(dAtA []byte) (int, error) {
+func (m *HeadersLazyLoadedTrackerState) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *IndexHeaderTrackerState) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *HeadersLazyLoadedTrackerState) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -225,7 +225,7 @@ func encodeVarintIndexheader(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *IndexHeaderTrackerState) Size() (n int) {
+func (m *HeadersLazyLoadedTrackerState) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -255,7 +255,7 @@ func sovIndexheader(x uint64) (n int) {
 func sozIndexheader(x uint64) (n int) {
 	return sovIndexheader(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (this *IndexHeaderTrackerState) String() string {
+func (this *HeadersLazyLoadedTrackerState) String() string {
 	if this == nil {
 		return "nil"
 	}
@@ -264,12 +264,12 @@ func (this *IndexHeaderTrackerState) String() string {
 		keysForLazyLoadedBlocks = append(keysForLazyLoadedBlocks, k)
 	}
 	github_com_gogo_protobuf_sortkeys.Strings(keysForLazyLoadedBlocks)
-	mapStringForLazyLoadedBlocks := "map[string]uint32{"
+	mapStringForLazyLoadedBlocks := "map[string]int64{"
 	for _, k := range keysForLazyLoadedBlocks {
 		mapStringForLazyLoadedBlocks += fmt.Sprintf("%v: %v,", k, this.LazyLoadedBlocks[k])
 	}
 	mapStringForLazyLoadedBlocks += "}"
-	s := strings.Join([]string{`&IndexHeaderTrackerState{`,
+	s := strings.Join([]string{`&HeadersLazyLoadedTrackerState{`,
 		`LazyLoadedBlocks:` + mapStringForLazyLoadedBlocks + `,`,
 		`UserId:` + fmt.Sprintf("%v", this.UserId) + `,`,
 		`Checksum:` + fmt.Sprintf("%v", this.Checksum) + `,`,
@@ -285,7 +285,7 @@ func valueToStringIndexheader(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
-func (m *IndexHeaderTrackerState) Unmarshal(dAtA []byte) error {
+func (m *HeadersLazyLoadedTrackerState) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -308,10 +308,10 @@ func (m *IndexHeaderTrackerState) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: IndexHeaderTrackerState: wiretype end group for non-group")
+			return fmt.Errorf("proto: HeadersLazyLoadedTrackerState: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: IndexHeaderTrackerState: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: HeadersLazyLoadedTrackerState: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -344,10 +344,10 @@ func (m *IndexHeaderTrackerState) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.LazyLoadedBlocks == nil {
-				m.LazyLoadedBlocks = make(map[string]uint32)
+				m.LazyLoadedBlocks = make(map[string]int64)
 			}
 			var mapkey string
-			var mapvalue uint32
+			var mapvalue int64
 			for iNdEx < postIndex {
 				entryPreIndex := iNdEx
 				var wire uint64
@@ -405,7 +405,7 @@ func (m *IndexHeaderTrackerState) Unmarshal(dAtA []byte) error {
 						}
 						b := dAtA[iNdEx]
 						iNdEx++
-						mapvalue |= uint32(b&0x7F) << shift
+						mapvalue |= int64(b&0x7F) << shift
 						if b < 0x80 {
 							break
 						}

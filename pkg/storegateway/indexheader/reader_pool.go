@@ -59,7 +59,7 @@ type ReaderPool struct {
 // HeadersLazyLoadedTrackerState tracks blocks that are lazy loaded and its last access time.
 type HeadersLazyLoadedTrackerState struct {
 	sync.Mutex
-	state storepb.IndexHeaderTrackerState
+	state storepb.HeadersLazyLoadedTrackerState
 }
 
 // HeadersLazyLoadedTracker persists the list of lazy loaded blocks.
@@ -72,8 +72,8 @@ type HeadersLazyLoadedTracker struct {
 // Write writes the list of lazy loaded block to the writer.
 func (h *HeadersLazyLoadedTracker) Write() error {
 	trackerState := HeadersLazyLoadedTrackerState{
-		state: storepb.IndexHeaderTrackerState{
-			LazyLoadedBlocks: make(map[string]uint32),
+		state: storepb.HeadersLazyLoadedTrackerState{
+			LazyLoadedBlocks: make(map[string]int64),
 			UserId:           h.userID,
 		},
 	}
@@ -83,7 +83,7 @@ func (h *HeadersLazyLoadedTracker) Write() error {
 
 	for k := range h.lazyReaders {
 		if k.reader != nil {
-			trackerState.state.LazyLoadedBlocks[k.blockId] = uint32(k.usedAt.Load() / int64(time.Second))
+			trackerState.state.LazyLoadedBlocks[k.blockId] = k.usedAt.Load() / int64(time.Millisecond)
 		}
 	}
 

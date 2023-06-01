@@ -18,8 +18,8 @@ option (gogoproto.goproto_unkeyed_all) = false;
 option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 
-message IndexHeaderTrackerState {
-  map<string, uint32> lazy_loaded_blocks = 1;
+message HeadersLazyLoadedTrackerState {
+  map<string, int64> lazy_loaded_blocks = 1;
   string user_id = 2;
   int32 checksum = 3;
 }
