@@ -31,7 +31,7 @@
 * [ENHANCEMENT] Store-gateway: reduce memory allocations when looking up postings from cache. #4861 #4869 #4962 #5047
 * [ENHANCEMENT] Store-gateway: retain only necessary bytes when reading series from the bucket. #4926
 * [ENHANCEMENT] Ingester: improve handling of the shutdown marker. #4985
-* [ENHANCEMENT] Reduced memory allocations when looking up cached entries from Memcached. #4862
+* [ENHANCEMENT] Store-gateway, query-frontend: Reduced memory allocations when looking up cached entries from Memcached. #4862
 * [ENHANCEMENT] Alertmanager: Add additional template function `queryFromGeneratorURL` returning query URL decoded query from the `GeneratorURL` field of an alert. #4301
 * [ENHANCEMENT] Go: update to 1.20.4. #4092
 * [ENHANCEMENT] Ruler: added experimental ruler storage cache support. The cache should reduce the number of "list objects" API calls issued to the object storage when there are 2+ ruler replicas running in a Mimir cluster. The cache can be configured setting `-ruler-storage.cache.*` CLI flags or their respective YAML config options. #4950 #5054
