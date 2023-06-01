@@ -20,6 +20,7 @@
 * [CHANGE] Store-gateway: the deprecated configuration parameter `-blocks-storage.bucket-store.consistency-delay` has been removed. #5050
 * [CHANGE] The configuration parameter `-blocks-storage.bucket-store.bucket-index.enabled` has been deprecated and will be removed in Mimir 2.11. Mimir is running by default with the bucket index enabled since version 2.0, and starting from the version 2.11 it will not be possible to disable it. #5051
 * [CHANGE] The configuration parameters `-querier.iterators` and `-query.batch-iterators` have been deprecated and will be removed in Mimir 2.11. Mimir runs by default with `-querier.batch-iterators=true`, and starting from version 2.11 it will not be possible to change this. #5114
+* [CHANGE] Compactor: change default of `-compactor.first-level-compaction-wait-period` to 25m. #5128
 * [FEATURE] Query-frontend: add `-query-frontend.log-query-request-headers` to enable logging of request headers in query logs. #5030
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
