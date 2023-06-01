@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 )
 
-type streamingChunkSeriesConfig struct {
+type streamingChunkSeriesContext struct {
 	chunkIteratorFunc chunkIteratorFunc
 	mint, maxt        int64
 	queryChunkMetrics *stats.QueryChunkMetrics
@@ -26,7 +26,7 @@ type streamingChunkSeriesConfig struct {
 type streamingChunkSeries struct {
 	labels  labels.Labels
 	sources []client.StreamingSeriesSource
-	config  *streamingChunkSeriesConfig
+	context *streamingChunkSeriesContext
 }
 
 func (s *streamingChunkSeries) Labels() labels.Labels {
@@ -48,10 +48,10 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		uniqueChunks = client.AccumulateChunks(uniqueChunks, c)
 	}
 
-	s.config.queryChunkMetrics.IngesterChunksTotal.Add(float64(totalChunks))
-	s.config.queryChunkMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(uniqueChunks)))
+	s.context.queryChunkMetrics.IngesterChunksTotal.Add(float64(totalChunks))
+	s.context.queryChunkMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(uniqueChunks)))
 
-	s.config.queryStats.AddFetchedChunks(uint64(len(uniqueChunks)))
+	s.context.queryStats.AddFetchedChunks(uint64(len(uniqueChunks)))
 
 	chunkBytes := 0
 
@@ -59,12 +59,12 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		chunkBytes += c.Size()
 	}
 
-	s.config.queryStats.AddFetchedChunkBytes(uint64(chunkBytes))
+	s.context.queryStats.AddFetchedChunkBytes(uint64(chunkBytes))
 
 	chunks, err := client.FromChunks(s.labels, uniqueChunks)
 	if err != nil {
 		return series.NewErrIterator(err)
 	}
 
-	return s.config.chunkIteratorFunc(it, chunks, model.Time(s.config.mint), model.Time(s.config.maxt))
+	return s.context.chunkIteratorFunc(it, chunks, model.Time(s.context.mint), model.Time(s.context.maxt))
 }
