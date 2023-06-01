@@ -189,8 +189,9 @@ func NewCompactor(name string, consulAddress string, flags map[string]string, op
 			"-compactor.ring.store":           "consul",
 			"-compactor.ring.consul.hostname": consulAddress,
 			// Startup quickly.
-			"-compactor.ring.wait-stability-min-duration": "0",
-			"-compactor.ring.wait-stability-max-duration": "0",
+			"-compactor.ring.wait-stability-min-duration":   "0",
+			"-compactor.ring.wait-stability-max-duration":   "0",
+			"-compactor.first-level-compaction-wait-period": "0s",
 		},
 		flags,
 		options...,
