@@ -7,7 +7,6 @@ package indexheader
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -17,7 +16,6 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -53,54 +51,28 @@ type ReaderPool struct {
 	// Keep track of all readers managed by the pool.
 	lazyReadersMx sync.Mutex
 	lazyReaders   map[*LazyBinaryReader]struct{}
-	tracker       HeadersLazyLoadedTracker
-}
 
-// HeadersLazyLoadedTrackerState tracks blocks that are lazy loaded and its last access time.
-type HeadersLazyLoadedTrackerState struct {
-	sync.Mutex
-	state storepb.HeadersLazyLoadedTrackerState
+	lazyLoadedTracker HeadersLazyLoadedTracker
 }
 
 // HeadersLazyLoadedTracker persists the list of lazy loaded blocks.
 type HeadersLazyLoadedTracker struct {
-	lazyReaders map[*LazyBinaryReader]struct{}
-	userID      string
-	persistPath string
+	State storepb.HeadersLazyLoadedTrackerState
+	Path  string
 }
 
-// Write writes the list of lazy loaded block to the writer.
-func (h *HeadersLazyLoadedTracker) Write() error {
-	trackerState := HeadersLazyLoadedTrackerState{
-		state: storepb.HeadersLazyLoadedTrackerState{
-			LazyLoadedBlocks: make(map[string]int64),
-			UserId:           h.userID,
-		},
-	}
-
-	trackerState.Lock()
-	defer trackerState.Unlock()
-
-	for k := range h.lazyReaders {
-		if k.reader != nil {
-			trackerState.state.LazyLoadedBlocks[k.blockId] = k.usedAt.Load() / int64(time.Millisecond)
-		}
-	}
-
-	return h.persist(&trackerState)
-}
-
-func (h *HeadersLazyLoadedTracker) persist(trackerState *HeadersLazyLoadedTrackerState) error {
-	data, err := trackerState.state.Marshal()
+func (h HeadersLazyLoadedTracker) Persist() error {
+	data, err := h.State.Marshal()
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(h.persistPath, data, 0644)
+
+	return os.WriteFile(h.Path, data, 0600)
 }
 
 // NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers and blockIds writers if enabled.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, userID string) *ReaderPool {
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics, userID)
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedTracker HeadersLazyLoadedTracker) *ReaderPool {
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics, lazyLoadedTracker)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -124,7 +96,13 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 					return
 				// TODO: this should be 1 minute
 				case <-time.After(2 * time.Second):
-					p.tracker.Write()
+					// We copy the state of blocks that are being lazy loaded from LazyBinaryReaders.
+					p.lazyReadersMx.Lock()
+					p.lazyLoadedTracker.CopyLazyLoadedState(p.lazyReaders)
+					p.lazyReadersMx.Unlock()
+
+					// Then we persist the state to files.
+					p.lazyLoadedTracker.Persist()
 				}
 			}
 		}()
@@ -134,20 +112,25 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, userID string) *ReaderPool {
-	lazyReaders := make(map[*LazyBinaryReader]struct{})
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedTracker HeadersLazyLoadedTracker) *ReaderPool {
 	return &ReaderPool{
 		logger:                logger,
 		metrics:               metrics,
 		lazyReaderEnabled:     lazyReaderEnabled,
 		lazyReaderIdleTimeout: lazyReaderIdleTimeout,
-		lazyReaders:           lazyReaders,
+		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
 		close:                 make(chan struct{}),
-		tracker: HeadersLazyLoadedTracker{
-			lazyReaders: lazyReaders,
-			userID:      userID,
-			persistPath: fmt.Sprintf("/tmp/headers-%s.proto", userID),
-		},
+		lazyLoadedTracker:     lazyLoadedTracker,
+	}
+}
+
+// CopyLazyLoadedState copies the list of lazy loaded block to lazy loaded blocks map.
+func (p HeadersLazyLoadedTracker) CopyLazyLoadedState(lazyReaders map[*LazyBinaryReader]struct{}) {
+	p.State.LazyLoadedBlocks = make(map[string]int64)
+	for k := range lazyReaders {
+		if k.reader != nil {
+			p.State.LazyLoadedBlocks[k.blockId] = k.usedAt.Load() / int64(time.Millisecond)
+		}
 	}
 }
 

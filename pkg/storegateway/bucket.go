@@ -67,6 +67,8 @@ const (
 	// Labels for metrics.
 	labelEncode = "encode"
 	labelDecode = "decode"
+
+	lazyLoadedPath = "lazy-loaded.proto"
 )
 
 type BucketStoreStats struct {
@@ -257,8 +259,16 @@ func NewBucketStore(
 		option(s)
 	}
 
+	lazyLoadedTracker := indexheader.HeadersLazyLoadedTracker{
+		// Path store where lazy loaded blocks will be tracked in files.
+		// Each tenant will have different files.
+		Path: filepath.Join(dir, lazyLoadedPath),
+		State: storepb.HeadersLazyLoadedTrackerState{
+			UserId: userID,
+		},
+	}
 	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, metrics.indexHeaderReaderMetrics, userID)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, metrics.indexHeaderReaderMetrics, lazyLoadedTracker)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
