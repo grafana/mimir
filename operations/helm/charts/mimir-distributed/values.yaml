@@ -384,7 +384,6 @@ mimir:
       querier:
         remote_read:
           query_address: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
-
         proxy_bad_requests: false
 
         schemas:
