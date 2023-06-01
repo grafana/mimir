@@ -85,11 +85,36 @@ func (p *PreallocTimeseries) ClearBufferedRawData() {
 	p.rawData = nil
 }
 
+func (p *PreallocTimeseries) Size() int {
+	if p.rawData != nil {
+		return len(p.rawData)
+	}
+	return p.TimeSeries.Size()
+}
+
 func (p *PreallocTimeseries) Marshal() ([]byte, error) {
 	if p.rawData != nil {
 		return p.rawData, nil
 	}
 	return p.TimeSeries.Marshal()
+}
+
+func (p *PreallocTimeseries) MarshalTo(dAtA []byte) (int, error) {
+	if p.rawData != nil {
+		return p.MarshalToSizedBuffer(dAtA)
+	}
+	return p.TimeSeries.MarshalTo(dAtA)
+}
+
+func (p *PreallocTimeseries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	if p.rawData != nil {
+		s := copy(dAtA, p.rawData)
+		if s < len(p.rawData) {
+			panic("incomplete copy")
+		}
+		return len(p.rawData), nil
+	}
+	return p.TimeSeries.MarshalToSizedBuffer(dAtA)
 }
 
 // Unmarshal implements proto.Message.
