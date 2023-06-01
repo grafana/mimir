@@ -8,6 +8,7 @@ package indexheader
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -51,21 +52,55 @@ type ReaderPool struct {
 	// Keep track of all readers managed by the pool.
 	lazyReadersMx sync.Mutex
 	lazyReaders   map[*LazyBinaryReader]struct{}
-
-	// tracks which blocks are lazy loaded
-	headersLazyLoadedTracker *HeadersLazyLoadedTracker
+	tracker       HeadersLazyLoadedTracker
 }
 
-// HeadersLazyLoadedTracker tracks blocks that are lazy loaded and its last access time.
-type HeadersLazyLoadedTracker struct {
+// HeadersLazyLoadedTrackerState tracks blocks that are lazy loaded and its last access time.
+type HeadersLazyLoadedTrackerState struct {
 	sync.Mutex
+	UserID           string
 	LazyLoadedBlocks map[string]int64
 	Checksum         uint32
 }
 
+// HeadersLazyLoadedTracker persists the list of lazy loaded blocks.
+type HeadersLazyLoadedTracker struct {
+	lazyReaders map[*LazyBinaryReader]struct{}
+	userID      string
+	persistPath string
+}
+
+// Write writes the list of lazy loaded block to the writer.
+func (h *HeadersLazyLoadedTracker) Write() error {
+	state := HeadersLazyLoadedTrackerState{
+		LazyLoadedBlocks: make(map[string]int64),
+		UserID:           h.userID,
+	}
+
+	state.Lock()
+	defer state.Unlock()
+
+	for k := range h.lazyReaders {
+		if k.reader != nil {
+			state.LazyLoadedBlocks[k.blockId] = k.usedAt.Load() / int64(time.Second)
+		}
+	}
+
+	return h.Persist(&state)
+}
+
+// Persist persists the list of lazy loaded blocks
+func (h *HeadersLazyLoadedTracker) Persist(state *HeadersLazyLoadedTrackerState) error {
+	data, err := json.MarshalIndent(state, "", " ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(h.persistPath, data, 0644)
+}
+
 // NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers and blockIds writers if enabled.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics) *ReaderPool {
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics)
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, userID string) *ReaderPool {
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics, userID)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -89,8 +124,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 					return
 				// TODO: this should be 1 minute
 				case <-time.After(2 * time.Second):
-					p.lazyReaderPrinters()
-					p.lazyLoadedTrackerWriter()
+					p.tracker.Write()
 				}
 			}
 		}()
@@ -100,16 +134,19 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics) *ReaderPool {
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, userID string) *ReaderPool {
+	lazyReaders := make(map[*LazyBinaryReader]struct{})
 	return &ReaderPool{
 		logger:                logger,
 		metrics:               metrics,
 		lazyReaderEnabled:     lazyReaderEnabled,
 		lazyReaderIdleTimeout: lazyReaderIdleTimeout,
-		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
+		lazyReaders:           lazyReaders,
 		close:                 make(chan struct{}),
-		headersLazyLoadedTracker: &HeadersLazyLoadedTracker{
-			LazyLoadedBlocks: make(map[string]int64),
+		tracker: HeadersLazyLoadedTracker{
+			lazyReaders: lazyReaders,
+			userID:      userID,
+			persistPath: fmt.Sprintf("/tmp/headers-%s.json", userID),
 		},
 	}
 }
@@ -127,7 +164,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	}
 
 	if p.lazyReaderEnabled {
-		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.headersLazyLoadedTracker)
+		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
 	} else {
 		reader, err = readerFactory()
 	}
@@ -162,28 +199,6 @@ func (p *ReaderPool) closeIdleReaders() {
 	}
 }
 
-// TODO: this will be removed. For testing purpose.
-func (p *ReaderPool) lazyReaderPrinters() {
-	i := 0
-	for k := range p.lazyReaders {
-		if k != nil && k.reader != nil {
-			path := k.filepath
-			level.Info(p.logger).Log("msg", "lazyReaderPrinters", "lazyPath", path)
-			i += 1
-		}
-	}
-	level.Info(p.logger).Log("msg", "lazyReaderPrinters", "lazySize", i)
-}
-
-// TODO: this is for POC purpose. Real implementation will use protobuf.
-func (p *ReaderPool) lazyLoadedTrackerWriter() {
-	data, err := json.MarshalIndent(p.headersLazyLoadedTracker, "", " ")
-	if err != nil {
-		level.Error(p.logger).Log("msg", "Error saving headers", "err", err)
-	}
-	os.WriteFile("/tmp/headers.json", data, 0644)
-}
-
 func (p *ReaderPool) getIdleReadersSince(ts int64) []*LazyBinaryReader {
 	p.lazyReadersMx.Lock()
 	defer p.lazyReadersMx.Unlock()
@@ -208,14 +223,10 @@ func (p *ReaderPool) isTracking(r *LazyBinaryReader) bool {
 
 func (p *ReaderPool) onLazyReaderClosed(r *LazyBinaryReader) {
 	p.lazyReadersMx.Lock()
+	defer p.lazyReadersMx.Unlock()
 
 	// When this function is called, it means the reader has been closed NOT because was idle
 	// but because the consumer closed it. By contract, a reader closed by the consumer can't
 	// be used anymore, so we can automatically remove it from the pool.
 	delete(p.lazyReaders, r)
-	p.lazyReadersMx.Unlock()
-
-	p.headersLazyLoadedTracker.Lock()
-	defer p.headersLazyLoadedTracker.Unlock()
-	delete(p.headersLazyLoadedTracker.LazyLoadedBlocks, r.blockId)
 }

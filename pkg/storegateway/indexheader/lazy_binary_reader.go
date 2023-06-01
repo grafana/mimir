@@ -101,7 +101,6 @@ func NewLazyBinaryReader(
 	id ulid.ULID,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
-	headersLazyLoadedTracker *HeadersLazyLoadedTracker,
 ) (*LazyBinaryReader, error) {
 	path := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 
@@ -122,14 +121,13 @@ func NewLazyBinaryReader(
 	}
 
 	return &LazyBinaryReader{
-		logger:                   logger,
-		filepath:                 path,
-		metrics:                  metrics,
-		usedAt:                   atomic.NewInt64(time.Now().UnixNano()),
-		onClosed:                 onClosed,
-		readerFactory:            readerFactory,
-		headersLazyLoadedTracker: headersLazyLoadedTracker,
-		blockId:                  id.String(),
+		logger:        logger,
+		filepath:      path,
+		metrics:       metrics,
+		usedAt:        atomic.NewInt64(time.Now().UnixNano()),
+		onClosed:      onClosed,
+		readerFactory: readerFactory,
+		blockId:       id.String(),
 	}, nil
 }
 
@@ -257,10 +255,6 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 	r.reader = reader
 	elapsed := time.Since(startTime)
 
-	r.headersLazyLoadedTracker.Lock()
-	r.headersLazyLoadedTracker.LazyLoadedBlocks[r.blockId] = time.Now().UnixNano()
-	r.headersLazyLoadedTracker.Unlock()
-
 	level.Debug(r.logger).Log("msg", "lazy loaded index-header file", "path", r.filepath, "elapsed", elapsed)
 	r.metrics.loadDuration.Observe(elapsed.Seconds())
 
@@ -290,10 +284,6 @@ func (r *LazyBinaryReader) unloadIfIdleSince(ts int64) error {
 	}
 
 	r.reader = nil
-
-	r.headersLazyLoadedTracker.Lock()
-	defer r.headersLazyLoadedTracker.Unlock()
-	delete(r.headersLazyLoadedTracker.LazyLoadedBlocks, r.blockId)
 
 	return nil
 }

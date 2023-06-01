@@ -47,9 +47,7 @@ var implementations = []struct {
 				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			}
 
-			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil, &HeadersLazyLoadedTracker{
-				LazyLoadedBlocks: nil,
-			})
+			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br

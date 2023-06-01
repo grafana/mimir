@@ -294,8 +294,6 @@ func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, i
 		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	}
 
-	reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, &HeadersLazyLoadedTracker{
-		LazyLoadedBlocks: nil,
-	})
+	reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
 	test(t, reader, err)
 }
