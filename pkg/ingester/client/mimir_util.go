@@ -7,6 +7,11 @@ package client
 
 import (
 	context "context"
+	"fmt"
+
+	"google.golang.org/grpc"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // SendQueryStream wraps the stream's Send() checking if the context is done
@@ -72,4 +77,21 @@ func containsChunk(a []Chunk, b Chunk) bool {
 		}
 	}
 	return false
+}
+
+func PushRaw(ctx context.Context, client IngesterClient, in interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	if c, ok := client.(*closableHealthAndIngesterClient); ok {
+		client = c.IngesterClient
+	}
+	c, ok := client.(*ingesterClient)
+	if !ok {
+		return nil, fmt.Errorf("invalid ingester client: %T", client)
+	}
+
+	out := new(mimirpb.WriteResponse)
+	err := c.cc.Invoke(ctx, "/cortex.Ingester/Push", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/mtime"
@@ -1203,12 +1204,47 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Metadata:   metadata,
 		Source:     source,
 	}
-	_, err = c.Push(ctx, &req)
+	wrappedReq := &wrappedRequest{WriteRequest: &req}
+	defer wrappedReq.ReturnSliceToPool()
+
+	_, err = ingester_client.PushRaw(ctx, c, wrappedReq)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
 	}
 	return errors.Wrap(err, "failed pushing to ingester")
+}
+
+var pool = zeropool.Pool[[]byte]{}
+
+type wrappedRequest struct {
+	*mimirpb.WriteRequest
+
+	sliceFromPool []byte
+}
+
+func (w *wrappedRequest) Marshal() ([]byte, error) {
+	size := w.WriteRequest.Size()
+	if w.sliceFromPool == nil {
+		w.sliceFromPool = pool.Get()
+	}
+
+	if cap(w.sliceFromPool) < size {
+		w.sliceFromPool = make([]byte, size)
+	}
+
+	n, err := w.WriteRequest.MarshalToSizedBuffer(w.sliceFromPool[:size])
+	if err != nil {
+		return nil, err
+	}
+	return w.sliceFromPool[:n], nil
+}
+
+func (w *wrappedRequest) ReturnSliceToPool() {
+	if w.sliceFromPool != nil {
+		pool.Put(w.sliceFromPool)
+		w.sliceFromPool = nil
+	}
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
