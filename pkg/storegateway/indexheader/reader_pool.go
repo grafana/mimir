@@ -146,7 +146,7 @@ func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		tracker: HeadersLazyLoadedTracker{
 			lazyReaders: lazyReaders,
 			userID:      userID,
-			persistPath: fmt.Sprintf("/tmp/headers-%s.json", userID),
+			persistPath: fmt.Sprintf("/tmp/headers-%s.proto", userID),
 		},
 	}
 }
