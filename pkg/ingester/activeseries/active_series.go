@@ -140,7 +140,7 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int) int {
 func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref uint64, labelsCopy func(labels.Labels) labels.Labels) {
 	nowNanos := now.UnixNano()
 
-	e := s.findEntryForSeries(ref, series)
+	e := s.findEntryForSeries(ref)
 	entryTimeSet := false
 	if e == nil {
 		e, entryTimeSet = s.findOrCreateEntryForSeries(ref, series, nowNanos, labelsCopy)
@@ -163,7 +163,7 @@ func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels
 	}
 }
 
-func (s *seriesStripe) findEntryForSeries(ref uint64, series labels.Labels) *atomic.Int64 {
+func (s *seriesStripe) findEntryForSeries(ref uint64) *atomic.Int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
