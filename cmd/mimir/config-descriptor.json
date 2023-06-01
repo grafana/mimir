@@ -3026,8 +3026,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 4096,
           "fieldFlag": "query-frontend.query-sharding-max-regexp-size-bytes",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         },
         {
           "kind": "field",
