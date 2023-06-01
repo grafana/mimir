@@ -78,50 +78,50 @@ type PreallocTimeseries struct {
 	// if it is set to nil then it can be ignored because the backing byte slice came from somewhere else.
 	yoloSlice *[]byte
 
-	rawData []byte
+	// Original data used for unmarshalling this PreallocTimeseries. When set, Marshal methods will return it
+	// instead of doing full marshalling again. This assumes that this instance hasn't changed.
+	unmarshalData []byte
 }
 
-func (p *PreallocTimeseries) ClearBufferedRawData() {
-	p.rawData = nil
+// ClearUnmarshalData removes cached unmarshalled version of the message.
+func (p *PreallocTimeseries) ClearUnmarshalData() {
+	p.unmarshalData = nil
+}
+
+// Unmarshal implements proto.Message.
+func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
+	p.unmarshalData = dAtA
+	p.TimeSeries = TimeseriesFromPool()
+	return p.TimeSeries.Unmarshal(dAtA)
 }
 
 func (p *PreallocTimeseries) Size() int {
-	if p.rawData != nil {
-		return len(p.rawData)
+	if p.unmarshalData != nil {
+		return len(p.unmarshalData)
 	}
 	return p.TimeSeries.Size()
 }
 
 func (p *PreallocTimeseries) Marshal() ([]byte, error) {
-	if p.rawData != nil {
-		return p.rawData, nil
+	if p.unmarshalData != nil {
+		return p.unmarshalData, nil
 	}
 	return p.TimeSeries.Marshal()
 }
 
 func (p *PreallocTimeseries) MarshalTo(dAtA []byte) (int, error) {
-	if p.rawData != nil {
+	if p.unmarshalData != nil {
 		return p.MarshalToSizedBuffer(dAtA)
 	}
 	return p.TimeSeries.MarshalTo(dAtA)
 }
 
-func (p *PreallocTimeseries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	if p.rawData != nil {
-		s := copy(dAtA, p.rawData)
-		if s < len(p.rawData) {
-			panic("incomplete copy")
-		}
-		return len(p.rawData), nil
+func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
+	if p.unmarshalData != nil && len(buf) >= len(p.unmarshalData) {
+		copy(buf, p.unmarshalData)
+		return len(p.unmarshalData), nil
 	}
-	return p.TimeSeries.MarshalToSizedBuffer(dAtA)
-}
-
-// Unmarshal implements proto.Message.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
-	p.rawData = dAtA
-	p.TimeSeries = TimeseriesFromPool()
-	return p.TimeSeries.Unmarshal(dAtA)
+	return p.TimeSeries.MarshalToSizedBuffer(buf)
 }
 
 // LabelAdapter is a labels.Label that can be marshalled to/from protos.
@@ -382,7 +382,7 @@ func ReusePreallocTimeseries(ts *PreallocTimeseries) {
 		ts.yoloSlice = nil
 	}
 
-	ts.rawData = nil
+	ts.unmarshalData = nil
 }
 
 func yoloSliceFromPool() *[]byte {
