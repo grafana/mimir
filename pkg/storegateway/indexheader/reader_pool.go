@@ -61,7 +61,17 @@ type HeadersLazyLoadedTracker struct {
 	Path  string
 }
 
-func (h HeadersLazyLoadedTracker) Persist() error {
+// CopyLazyLoadedState copies the list of lazy loaded block to map tracked by State.
+func (h *HeadersLazyLoadedTracker) CopyLazyLoadedState(lazyReaders map[*LazyBinaryReader]struct{}) {
+	h.State.LazyLoadedBlocks = make(map[string]int64)
+	for k := range lazyReaders {
+		if k.reader != nil {
+			h.State.LazyLoadedBlocks[k.blockId] = k.usedAt.Load() / int64(time.Millisecond)
+		}
+	}
+}
+
+func (h *HeadersLazyLoadedTracker) Persist() error {
 	data, err := h.State.Marshal()
 	if err != nil {
 		return err
@@ -121,16 +131,6 @@ func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
 		close:                 make(chan struct{}),
 		lazyLoadedTracker:     lazyLoadedTracker,
-	}
-}
-
-// CopyLazyLoadedState copies the list of lazy loaded block to lazy loaded blocks map.
-func (p HeadersLazyLoadedTracker) CopyLazyLoadedState(lazyReaders map[*LazyBinaryReader]struct{}) {
-	p.State.LazyLoadedBlocks = make(map[string]int64)
-	for k := range lazyReaders {
-		if k.reader != nil {
-			p.State.LazyLoadedBlocks[k.blockId] = k.usedAt.Load() / int64(time.Millisecond)
-		}
 	}
 }
 
