@@ -6,6 +6,7 @@
 package mimirpb
 
 import (
+	"crypto/rand"
 	"reflect"
 	"testing"
 	"unsafe"
@@ -193,4 +194,89 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 
 	// dst1 should use much smaller buffer than dst2.
 	assert.Less(t, cap(*dst1.yoloSlice), cap(*dst2.yoloSlice))
+}
+
+func TestPreallocTimeseries_Unmarshal(t *testing.T) {
+	// Prepare message
+	msg := PreallocTimeseries{}
+	{
+		src := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "sampleLabel1", Value: "sampleValue1"},
+					{Name: "sampleLabel2", Value: "sampleValue2"},
+				},
+				Samples: []Sample{
+					{Value: 1, TimestampMs: 2},
+					{Value: 3, TimestampMs: 4},
+				},
+			},
+		}
+
+		data, err := src.Marshal()
+		require.NoError(t, err)
+
+		require.NoError(t, msg.Unmarshal(data))
+		require.True(t, src.Equal(msg.TimeSeries))
+		require.NotNil(t, msg.unmarshalData)
+	}
+
+	correctMarshaledData := make([]byte, len(msg.unmarshalData))
+	copy(correctMarshaledData, msg.unmarshalData)
+
+	// Set cached version to random bytes (make a new slice, because labels in TimeSeries use the original byte slice).
+	msg.unmarshalData = make([]byte, 100)
+	_, err := rand.Read(msg.unmarshalData)
+	require.NoError(t, err)
+
+	t.Run("message with cached marshalled version: Size returns length of cached data", func(t *testing.T) {
+		require.Equal(t, len(msg.unmarshalData), msg.Size())
+	})
+
+	t.Run("message with cached marshalled version: Marshal returns cached data", func(t *testing.T) {
+		out, err := msg.Marshal()
+		require.NoError(t, err)
+		require.Equal(t, msg.unmarshalData, out)
+	})
+
+	t.Run("message with cached marshalled version: MarshalTo returns cached data", func(t *testing.T) {
+		out := make([]byte, 2*msg.Size())
+		n, err := msg.MarshalTo(out)
+		require.NoError(t, err)
+		require.Equal(t, n, msg.Size())
+		require.Equal(t, msg.unmarshalData, out[:msg.Size()])
+	})
+
+	t.Run("message with cached marshalled version: MarshalToSizedBuffer returns cached data", func(t *testing.T) {
+		out := make([]byte, msg.Size())
+		n, err := msg.MarshalToSizedBuffer(out)
+		require.NoError(t, err)
+		require.Equal(t, n, len(out))
+		require.Equal(t, msg.unmarshalData, out)
+	})
+
+	msg.ClearUnmarshalData()
+	require.Nil(t, msg.unmarshalData)
+
+	t.Run("message without cached marshalled version: Marshal returns correct data", func(t *testing.T) {
+		out, err := msg.Marshal()
+		require.NoError(t, err)
+		require.Equal(t, correctMarshaledData, out)
+	})
+
+	t.Run("message without cached marshalled version: MarshalTo returns correct data", func(t *testing.T) {
+		out := make([]byte, 2*msg.Size())
+		n, err := msg.MarshalTo(out)
+		require.NoError(t, err)
+		require.Equal(t, n, msg.Size())
+		require.Equal(t, correctMarshaledData, out[:msg.Size()])
+	})
+
+	t.Run("message with cached marshalled version: MarshalToSizedBuffer returns correct data", func(t *testing.T) {
+		out := make([]byte, msg.Size())
+		n, err := msg.MarshalToSizedBuffer(out)
+		require.NoError(t, err)
+		require.Equal(t, n, len(out))
+		require.Equal(t, correctMarshaledData, out[:msg.Size()])
+	})
 }
