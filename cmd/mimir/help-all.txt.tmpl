@@ -1309,8 +1309,6 @@ Usage of ./cmd/mimir/mimir:
     	Observe tokens after generating to resolve collisions. Useful when using gossiping ring.
   -ingester.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
-  -ingester.ring.readiness-check-ring-health
-    	[deprecated] When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.
   -ingester.ring.replication-factor int
     	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 3)
   -ingester.ring.store string

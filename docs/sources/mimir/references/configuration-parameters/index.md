@@ -898,14 +898,6 @@ ring:
   # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
 
-  # (deprecated) When enabled the readiness probe succeeds only after all
-  # instances are ACTIVE and healthy in the ring, otherwise only the instance
-  # itself is checked. This option should be disabled if in your cluster
-  # multiple instances can be rolled out simultaneously, otherwise rolling
-  # updates may be slowed down.
-  # CLI flag: -ingester.ring.readiness-check-ring-health
-  [readiness_check_ring_health: <boolean> | default = false]
-
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.
 # CLI flag: -ingester.metadata-retain-period

@@ -161,9 +161,9 @@ func (d *DurationList) ToMilliseconds() []int64 {
 }
 
 // RegisterFlags registers the TSDB flags
-func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f)
-	cfg.BucketStore.RegisterFlags(f, logger)
+	cfg.BucketStore.RegisterFlags(f)
 	cfg.TSDB.RegisterFlags(f)
 }
 
@@ -396,9 +396,9 @@ var validSeriesSelectionStrategies = []string{
 }
 
 // RegisterFlags registers the BucketStore flags
-func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.IndexCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-cache.")
-	cfg.ChunksCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.chunks-cache.", logger)
+	cfg.ChunksCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.chunks-cache.")
 	cfg.MetadataCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.metadata-cache.")
 	cfg.BucketIndex.RegisterFlagsWithPrefix(f, bucketIndexFlagPrefix)
 	cfg.IndexHeader.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header.")

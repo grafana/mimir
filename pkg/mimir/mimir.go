@@ -169,7 +169,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
-	c.BlocksStorage.RegisterFlags(f, logger)
+	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
@@ -244,9 +244,6 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.IngesterClient.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
-	}
-	if err := c.Ingester.Validate(log); err != nil {
-		return errors.Wrap(err, "invalid ingester config")
 	}
 	if err := c.Worker.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")

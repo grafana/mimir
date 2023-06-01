@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
@@ -41,14 +40,12 @@ type ChunksCacheConfig struct {
 	FineGrainedChunksCachingEnabled bool          `yaml:"fine_grained_chunks_caching_enabled" category:"experimental"`
 }
 
-func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string, logger log.Logger) {
+func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 
 	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
 	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 
-	// TODO: Deprecated in Mimir 2.7, remove in Mimir 2.9
-	flagext.DeprecatedFlag(f, prefix+"subrange-size", fmt.Sprintf("Deprecated, %d bytes is now always used. Size of each subrange that bucket object is split into for better caching.", subrangeSize), logger)
 	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests.")
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
 	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 50000, "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
