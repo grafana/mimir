@@ -408,7 +408,6 @@ Examples:
   "gr-aggr-cache" "gr-aggr-cache"
   "gr-metricname-cache" "gr-metricname-cache"
   "graphite-querier" "graphite.querier"
-  "graphite-web" "graphite.web"
   "graphite-write-proxy" "graphite.write_proxy"
   "index-cache" "index-cache"
   "ingester" "ingester"
