@@ -11,6 +11,7 @@
 
       'server.http-listen-port': $._config.server_http_port,
       'query-frontend.align-queries-with-step': false,
+      'query-frontend.query-sharding-target-series-per-shard': if $.query_frontend_enable_cardinality_estimation then '2500' else '0',
 
       // Limit queries to 500 days; allow this to be overridden on a per-user basis.
       'query-frontend.max-total-query-length': '12000h',  // 500 days

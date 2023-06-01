@@ -474,6 +474,7 @@ spec:
       - args:
         - -query-frontend.align-queries-with-step=false
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=redis
         - -query-frontend.results-cache.redis.endpoint=redis-frontend.default.svc.cluster.local:6379
         - -query-frontend.results-cache.redis.max-item-size=5242880

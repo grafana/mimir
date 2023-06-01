@@ -569,6 +569,8 @@
     },
   },
 
+  query_frontend_enable_cardinality_estimation:: $._config.cache_frontend_enabled,
+
   query_frontend_caching_config:: (
     if $._config.cache_frontend_enabled then
       if $._config.cache_frontend_backend == 'memcached' then (

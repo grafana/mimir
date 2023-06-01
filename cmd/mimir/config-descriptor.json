@@ -4617,8 +4617,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.query-sharding-target-series-per-shard",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         },
         {
           "kind": "field",

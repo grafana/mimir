@@ -236,6 +236,7 @@ mimir:
           addresses: {{ include "mimir.resultsCacheAddress" . }}
           max_item_size: {{ mul (index .Values "results-cache").maxItemMemory 1024 1024 }}
       cache_results: true
+      query_sharding_target_series_per_shard: 2500
       {{- end }}
       {{- if .Values.query_scheduler.enabled }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}

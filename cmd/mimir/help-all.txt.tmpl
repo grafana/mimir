@@ -1658,7 +1658,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.query-sharding-max-sharded-queries int
     	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
   -query-frontend.query-sharding-target-series-per-shard uint
-    	[experimental] How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.
+    	How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.
   -query-frontend.query-sharding-total-shards int
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled

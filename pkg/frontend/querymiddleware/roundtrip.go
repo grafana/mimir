@@ -41,7 +41,7 @@ type Config struct {
 	MaxRetries             int    `yaml:"max_retries" category:"advanced"`
 	ShardedQueries         bool   `yaml:"parallelize_shardable_queries"`
 	CacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced"`
-	TargetSeriesPerShard   uint64 `yaml:"query_sharding_target_series_per_shard" category:"experimental"`
+	TargetSeriesPerShard   uint64 `yaml:"query_sharding_target_series_per_shard"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
