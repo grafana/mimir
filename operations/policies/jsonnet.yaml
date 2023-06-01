@@ -1,0 +1,2 @@
+# We currently don't support this for Jsonnet.
+disable_restricted_security_context_checks: true

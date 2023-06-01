@@ -2,9 +2,18 @@ package main
 
 import future.keywords
 
+no_denies if {
+	trace(sprintf("Denies: %v", [deny]))
+	count(deny) == 0
+}
+
 test_no_namespace_not_allowed if {
 	deny[reason] with input as [{"contents": {"metadata": {"name": "resource"}}}]
 	contains(reason, "Resource doesn't have a namespace")
+}
+
+test_no_namespace_allowed if {
+	no_denies with input as [{"contents": {"kind": "Namespace", "metadata": {"name": "the-namespace"}}}]
 }
 
 test_empty_namespace_not_allowed if {
@@ -32,7 +41,7 @@ passing_psp := {"contents": {
 }}
 
 test_passing_psp_without_namespace if {
-	count(deny) == 0 with input as [passing_psp]
+	no_denies with input as [passing_psp]
 }
 
 passing_container := {
@@ -75,5 +84,5 @@ passing_deployment := {"contents": {
 }}
 
 test_passing_deployment if {
-	count(deny) == 0 with input as [passing_deployment]
+	no_denies with input as [passing_deployment]
 }

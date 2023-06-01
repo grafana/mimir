@@ -966,12 +966,12 @@ instance_limits:
 The `querier` block configures the querier.
 
 ```yaml
-# (advanced) Use iterators to execute query, as opposed to fully materialising
+# (deprecated) Use iterators to execute query, as opposed to fully materialising
 # the series in memory.
 # CLI flag: -querier.iterators
 [iterators: <boolean> | default = false]
 
-# (advanced) Use batch iterators to execute query, as opposed to fully
+# (deprecated) Use batch iterators to execute query, as opposed to fully
 # materialising the series in memory.  Takes precedent over the
 # -querier.iterators flag.
 # CLI flag: -querier.batch-iterators
@@ -2530,12 +2530,11 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
-# (experimental) Per-tenant request rate limit in requests per second. 0 to
-# disable.
+# Per-tenant push request rate limit in requests per second. 0 to disable.
 # CLI flag: -distributor.request-rate-limit
 [request_rate: <float> | default = 0]
 
-# (experimental) Per-tenant allowed request burst size. 0 to disable.
+# Per-tenant allowed push request burst size. 0 to disable.
 # CLI flag: -distributor.request-burst-size
 [request_burst_size: <int> | default = 0]
 

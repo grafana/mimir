@@ -148,8 +148,8 @@
     $.newIngesterZoneService($.ingester_zone_c_statefulset),
 
   ingester_rollout_pdb: if !multi_zone_ingesters_deployed then null else
-    podDisruptionBudget.new('ingester-rollout-pdb') +
-    podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-rollout-pdb' }) +
+    podDisruptionBudget.new('ingester-rollout') +
+    podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-rollout' }) +
     podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'ingester' }) +
     podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
 
@@ -290,8 +290,8 @@
     service.mixin.metadata.withLabels({ name: name }),
 
   store_gateway_rollout_pdb: if !multi_zone_store_gateways_deployed then null else
-    podDisruptionBudget.new('store-gateway-rollout-pdb') +
-    podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-rollout-pdb' }) +
+    podDisruptionBudget.new('store-gateway-rollout') +
+    podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-rollout' }) +
     podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'store-gateway' }) +
     podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
 
