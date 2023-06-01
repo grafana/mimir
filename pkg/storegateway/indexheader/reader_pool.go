@@ -7,7 +7,6 @@ package indexheader
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -20,6 +19,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
@@ -58,9 +59,7 @@ type ReaderPool struct {
 // HeadersLazyLoadedTrackerState tracks blocks that are lazy loaded and its last access time.
 type HeadersLazyLoadedTrackerState struct {
 	sync.Mutex
-	UserID           string
-	LazyLoadedBlocks map[string]int64
-	Checksum         uint32
+	state storepb.IndexHeaderTrackerState
 }
 
 // HeadersLazyLoadedTracker persists the list of lazy loaded blocks.
@@ -72,26 +71,27 @@ type HeadersLazyLoadedTracker struct {
 
 // Write writes the list of lazy loaded block to the writer.
 func (h *HeadersLazyLoadedTracker) Write() error {
-	state := HeadersLazyLoadedTrackerState{
-		LazyLoadedBlocks: make(map[string]int64),
-		UserID:           h.userID,
+	trackerState := HeadersLazyLoadedTrackerState{
+		state: storepb.IndexHeaderTrackerState{
+			LazyLoadedBlocks: make(map[string]uint32),
+			UserId:           h.userID,
+		},
 	}
 
-	state.Lock()
-	defer state.Unlock()
+	trackerState.Lock()
+	defer trackerState.Unlock()
 
 	for k := range h.lazyReaders {
 		if k.reader != nil {
-			state.LazyLoadedBlocks[k.blockId] = k.usedAt.Load() / int64(time.Second)
+			trackerState.state.LazyLoadedBlocks[k.blockId] = uint32(k.usedAt.Load() / int64(time.Second))
 		}
 	}
 
-	return h.Persist(&state)
+	return h.persist(&trackerState)
 }
 
-// Persist persists the list of lazy loaded blocks
-func (h *HeadersLazyLoadedTracker) Persist(state *HeadersLazyLoadedTrackerState) error {
-	data, err := json.MarshalIndent(state, "", " ")
+func (h *HeadersLazyLoadedTracker) persist(trackerState *HeadersLazyLoadedTrackerState) error {
+	data, err := trackerState.state.Marshal()
 	if err != nil {
 		return err
 	}
