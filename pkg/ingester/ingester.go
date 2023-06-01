@@ -2762,6 +2762,11 @@ func (i *Ingester) checkRunning() error {
 }
 
 // Push implements client.IngesterServer
+func (i *Ingester) Push2(ctx context.Context, req *client.WriteRequestWrapper) (*mimirpb.WriteResponse, error) {
+	return i.Push(ctx, req.WriteRequest.WriteRequest)
+}
+
+// Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := push.NewParsedRequest(req)
 	pushReq.AddCleanup(func() {

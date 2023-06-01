@@ -28,6 +28,8 @@ var (
 		return make([]PreallocTimeseries, 0, expectedTimeseries)
 	})
 
+	bytePool = zeropool.Pool[[]byte]{}
+
 	timeSeriesPool = sync.Pool{
 		New: func() interface{} {
 			return &TimeSeries{
@@ -60,6 +62,42 @@ type PreallocWriteRequest struct {
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	return p.WriteRequest.Unmarshal(dAtA)
+}
+
+// PooledWriteRequestWrapper uses pooled byte slices during marshaling.
+type PooledWriteRequestWrapper struct {
+	*WriteRequest
+
+	sliceFromPool []byte
+}
+
+func (p *PooledWriteRequestWrapper) Unmarshal(data []byte) error {
+	p.WriteRequest = &WriteRequest{}
+	return p.WriteRequest.Unmarshal(data)
+}
+
+func (p *PooledWriteRequestWrapper) Marshal() ([]byte, error) {
+	if p.sliceFromPool == nil {
+		p.sliceFromPool = bytePool.Get()
+	}
+	size := p.WriteRequest.Size()
+	if cap(p.sliceFromPool) < size {
+		// throw away sliceFromPool and allocate new one
+		p.sliceFromPool = make([]byte, size)
+	}
+	n, err := p.WriteRequest.MarshalToSizedBuffer(p.sliceFromPool[:size])
+	if err != nil {
+		return nil, err
+	}
+	return p.sliceFromPool[:n], nil
+}
+
+func (p *PooledWriteRequestWrapper) ReturnSliceToPool() {
+	if p.sliceFromPool != nil {
+		p.sliceFromPool = p.sliceFromPool[:0]
+		bytePool.Put(p.sliceFromPool)
+		p.sliceFromPool = nil
+	}
 }
 
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.

@@ -1167,7 +1167,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 			}
 		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		err := d.send2(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1251,6 +1251,32 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Source:     source,
 	}
 	_, err = c.Push(ctx, &req)
+	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+		// Wrap HTTP gRPC error with more explanatory message.
+		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
+	}
+	return errors.Wrap(err, "failed pushing to ingester")
+}
+
+func (d *Distributor) send2(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
+	if err != nil {
+		return err
+	}
+	c := h.(ingester_client.IngesterClient)
+
+	req := ingester_client.WriteRequestWrapper{
+		WriteRequest: &mimirpb.PooledWriteRequestWrapper{
+			WriteRequest: &mimirpb.WriteRequest{
+				Timeseries: timeseries,
+				Metadata:   metadata,
+				Source:     source,
+			},
+		},
+	}
+	defer req.WriteRequest.ReturnSliceToPool()
+
+	_, err = c.Push2(ctx, &req)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
