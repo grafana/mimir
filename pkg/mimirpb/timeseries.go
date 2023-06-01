@@ -39,6 +39,12 @@ var (
 		},
 	}
 
+	metadataPool = sync.Pool{
+		New: func() interface{} {
+			return &MetricMetadata{}
+		},
+	}
+
 	// yoloSlicePool is a pool of byte slices which are used to back the yoloStrings of this package.
 	yoloSlicePool = sync.Pool{
 		New: func() interface{} {
@@ -71,10 +77,24 @@ type PreallocTimeseries struct {
 	// If it is set to a non-nil value then it must be returned to the yoloSlicePool on cleanup,
 	// if it is set to nil then it can be ignored because the backing byte slice came from somewhere else.
 	yoloSlice *[]byte
+
+	rawData []byte
+}
+
+func (p *PreallocTimeseries) ClearBufferedRawData() {
+	p.rawData = nil
+}
+
+func (p *PreallocTimeseries) Marshal() ([]byte, error) {
+	if p.rawData != nil {
+		return p.rawData, nil
+	}
+	return p.TimeSeries.Marshal()
 }
 
 // Unmarshal implements proto.Message.
 func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
+	p.rawData = dAtA
 	p.TimeSeries = TimeseriesFromPool()
 	return p.TimeSeries.Unmarshal(dAtA)
 }
@@ -336,6 +356,8 @@ func ReusePreallocTimeseries(ts *PreallocTimeseries) {
 		reuseYoloSlice(ts.yoloSlice)
 		ts.yoloSlice = nil
 	}
+
+	ts.rawData = nil
 }
 
 func yoloSliceFromPool() *[]byte {

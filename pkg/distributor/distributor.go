@@ -819,7 +819,9 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
 			// later in the validation phase, we ignore them here.
 			// 3) Ingesters expect labels to be sorted in the Push request.
-			sortLabelsIfNeeded(ts.Labels)
+			if sortLabelsIfNeeded(ts.Labels) {
+				ts.ClearBufferedRawData()
+			}
 		}
 
 		if len(removeTsIndexes) > 0 {
@@ -1216,7 +1218,7 @@ func copyString(s string) string {
 	return string([]byte(s))
 }
 
-func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
+func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) bool {
 	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
 	// we can avoid extra memory allocations (mostly interface-related) this way.
 	sorted := true
@@ -1230,12 +1232,13 @@ func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
 	}
 
 	if sorted {
-		return
+		return false
 	}
 
 	sort.Slice(labels, func(i, j int) bool {
 		return labels[i].Name < labels[j].Name
 	})
+	return true
 }
 
 func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
