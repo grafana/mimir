@@ -5215,8 +5215,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "blocks-storage.storage-prefix",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "block",
@@ -10549,8 +10548,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "ruler-storage.storage-prefix",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "block",
@@ -12450,8 +12448,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "alertmanager-storage.storage-prefix",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "block",

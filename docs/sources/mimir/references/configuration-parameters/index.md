@@ -1650,8 +1650,8 @@ The `ruler_storage` block configures the ruler storage backend.
 # The CLI flags prefix for this block configuration is: ruler-storage
 [filesystem: <filesystem_storage_backend>]
 
-# (experimental) Prefix for all objects stored in the backend storage. For
-# simplicity, it may only contain digits and English alphabet letters.
+# Prefix for all objects stored in the backend storage. For simplicity, it may
+# only contain digits and English alphabet letters.
 # CLI flag: -ruler-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
@@ -1975,8 +1975,8 @@ The `alertmanager_storage` block configures the alertmanager storage backend.
 # The CLI flags prefix for this block configuration is: alertmanager-storage
 [filesystem: <filesystem_storage_backend>]
 
-# (experimental) Prefix for all objects stored in the backend storage. For
-# simplicity, it may only contain digits and English alphabet letters.
+# Prefix for all objects stored in the backend storage. For simplicity, it may
+# only contain digits and English alphabet letters.
 # CLI flag: -alertmanager-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
@@ -3007,8 +3007,8 @@ The `blocks_storage` block configures the blocks storage.
 # The CLI flags prefix for this block configuration is: blocks-storage
 [filesystem: <filesystem_storage_backend>]
 
-# (experimental) Prefix for all objects stored in the backend storage. For
-# simplicity, it may only contain digits and English alphabet letters.
+# Prefix for all objects stored in the backend storage. For simplicity, it may
+# only contain digits and English alphabet letters.
 # CLI flag: -blocks-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
