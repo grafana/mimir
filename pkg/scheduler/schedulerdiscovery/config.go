@@ -27,7 +27,7 @@ var (
 type Config struct {
 	Mode             string     `yaml:"service_discovery_mode" category:"experimental"`
 	SchedulerRing    RingConfig `yaml:"ring" doc:"description=The hash ring configuration. The query-schedulers hash ring is used for service discovery."`
-	MaxUsedInstances int        `yaml:"max_used_instances" category:"experimental"`
+	MaxUsedInstances int        `yaml:"max_used_instances"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {

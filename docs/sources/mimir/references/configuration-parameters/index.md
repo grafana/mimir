@@ -1340,8 +1340,8 @@ ring:
   # CLI flag: -query-scheduler.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
-# (experimental) The maximum number of query-scheduler instances to use,
-# regardless how many replicas are running. This option can be set only when
+# The maximum number of query-scheduler instances to use, regardless how many
+# replicas are running. This option can be set only when
 # -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all
 # available query-scheduler instances.
 # CLI flag: -query-scheduler.max-used-instances
