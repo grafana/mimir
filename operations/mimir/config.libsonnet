@@ -42,12 +42,7 @@
     test_exporter_user_id: error 'must specify test exporter used id',
 
     querier: {
-      replicas: 6,
       concurrency: 8,
-    },
-
-    queryFrontend: {
-      replicas: 2,
     },
 
     // storage_backend will be used for all components that use block storage.
