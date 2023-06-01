@@ -255,11 +255,11 @@ runtime_config:
 [query_scheduler: <query_scheduler>]
 
 usage_stats:
-  # (experimental) Enable anonymous usage reporting.
+  # Enable anonymous usage reporting.
   # CLI flag: -usage-stats.enabled
   [enabled: <boolean> | default = true]
 
-  # (experimental) Installation mode. Supported values: custom, helm, jsonnet.
+  # Installation mode. Supported values: custom, helm, jsonnet.
   # CLI flag: -usage-stats.installation-mode
   [installation_mode: <string> | default = "custom"]
 

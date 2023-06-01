@@ -2442,9 +2442,9 @@ Usage of ./cmd/mimir/mimir:
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -usage-stats.enabled
-    	[experimental] Enable anonymous usage reporting. (default true)
+    	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
-    	[experimental] Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+    	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable. (default 10m)
   -validation.enforce-metadata-metric-name
