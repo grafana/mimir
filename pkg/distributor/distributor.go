@@ -1271,11 +1271,13 @@ func (d *Distributor) send2(ctx context.Context, ingester ring.InstanceDesc, tim
 	c := h.(ingester_client.IngesterClient)
 
 	req := ingester_client.WriteRequest2{
-		Series:     make([]ingester_client.PreallocSeries, 0, len(timeseries)),
-		Timestamps: make([]int64, 0, len(timeseries)),
-		Values:     make([]float64, 0, len(timeseries)),
-		Source:     source,
-		Metadata:   metadata,
+		Series:              make([]ingester_client.PreallocSeries, 0, len(timeseries)),
+		Timestamps:          make([]int64, 0, len(timeseries)),
+		Values:              make([]float64, 0, len(timeseries)),
+		SamplesStartIndexes: make([]int32, 0, len(timeseries)),
+		SamplesCounts:       make([]int32, 0, len(timeseries)),
+		Source:              source,
+		Metadata:            metadata,
 	}
 
 	for _, ts := range timeseries {
@@ -1285,10 +1287,10 @@ func (d *Distributor) send2(ctx context.Context, ingester ring.InstanceDesc, tim
 
 		ps := ingester_client.PreallocSeries{Series: pool.Get()}
 		ps.Series.Labels = ts.Labels
-		ps.Series.SamplesStartIndex = int64(len(req.Timestamps))
-		ps.Series.SamplesCount = int64(len(ts.Samples))
 
 		req.Series = append(req.Series, ps)
+		req.SamplesStartIndexes = append(req.SamplesStartIndexes, int32(len(req.Timestamps)))
+		req.SamplesCounts = append(req.SamplesCounts, int32(len(ts.Samples)))
 
 		for _, s := range ts.Samples {
 			req.Timestamps = append(req.Timestamps, s.TimestampMs)

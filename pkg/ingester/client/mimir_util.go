@@ -101,8 +101,6 @@ func GetSeriesFromPool() *Series {
 
 func ReturnToPool(s []PreallocSeries) {
 	for _, ps := range s {
-		ps.SamplesCount = 0
-		ps.SamplesStartIndex = 0
 		ps.Labels = ps.Labels[:0]
 		timeSeriesPool.Put(ps.Series)
 	}

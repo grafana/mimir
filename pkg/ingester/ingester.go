@@ -741,7 +741,7 @@ func (i *Ingester) PushWithoutCleanup(ctx context.Context, req *client.WriteRequ
 
 	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-	err = i.pushSamplesToAppender2(userID, req.Series, req.Timestamps, req.Values, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
+	err = i.pushSamplesToAppender2(userID, req, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
 	if err != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
@@ -1236,7 +1236,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned.
-func (i *Ingester) pushSamplesToAppender2(userID string, timeseries []client.PreallocSeries, timestamps []int64, values []float64, app extendedAppender, startAppend time.Time, stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries, outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+func (i *Ingester) pushSamplesToAppender2(userID string, req *client.WriteRequest2, app extendedAppender, startAppend time.Time, stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries, outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 
 	// Return true if handled as soft error, and we can ingest more series.
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
@@ -1291,7 +1291,10 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries []client.Pre
 		return false
 	}
 
-	for _, ts := range timeseries {
+	for six, ts := range req.Series {
+		startIndex := req.SamplesStartIndexes[six]
+		samplesCount := req.SamplesCounts[six]
+
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
@@ -1300,12 +1303,12 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries []client.Pre
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
 		// extend the fast path to fail early.
 		if outOfOrderWindow <= 0 && minAppendTimeAvailable && // len(ts.Exemplars) == 0 &&
-			ts.SamplesCount > 0 && allOutOfBoundsTimestamps(timestamps[ts.SamplesStartIndex:ts.SamplesStartIndex+ts.SamplesCount], minAppendTime) {
+			req.SamplesCounts[six] > 0 && allOutOfBoundsTimestamps(req.Timestamps[startIndex:startIndex+samplesCount], minAppendTime) {
 
-			stats.failedSamplesCount += int(ts.SamplesCount)
-			stats.sampleOutOfBoundsCount += int(ts.SamplesCount)
+			stats.failedSamplesCount += int(samplesCount)
+			stats.sampleOutOfBoundsCount += int(samplesCount)
 
-			firstTimestamp := timestamps[ts.SamplesStartIndex]
+			firstTimestamp := req.Timestamps[startIndex]
 
 			updateFirstPartial(func() error {
 				return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
@@ -1322,12 +1325,12 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries []client.Pre
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
-		for ix := ts.SamplesStartIndex; ix < ts.SamplesStartIndex+ts.SamplesCount; ix++ {
+		for ix := startIndex; ix < startIndex+samplesCount; ix++ {
 			var err error
 
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, timestamps[ix], values[ix]); err == nil {
+				if _, err = app.Append(ref, copiedLabels, req.Timestamps[ix], req.Values[ix]); err == nil {
 					stats.succeededSamplesCount++
 					continue
 				}
@@ -1336,7 +1339,7 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries []client.Pre
 				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
 
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, timestamps[ix], values[ix]); err == nil {
+				if ref, err = app.Append(0, copiedLabels, req.Timestamps[ix], req.Values[ix]); err == nil {
 					stats.succeededSamplesCount++
 					continue
 				}
@@ -1345,7 +1348,7 @@ func (i *Ingester) pushSamplesToAppender2(userID string, timeseries []client.Pre
 			stats.failedSamplesCount++
 
 			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if handleAppendError(err, timestamps[ix], ts.Labels) {
+			if handleAppendError(err, req.Timestamps[ix], ts.Labels) {
 				continue
 			}
 
