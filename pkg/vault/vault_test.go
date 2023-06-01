@@ -126,6 +126,6 @@ func newMockKVStore() *mockKVStore {
 	}
 }
 
-func (m *mockKVStore) Get(ctx context.Context, path string) (*hashivault.KVSecret, error) {
+func (m *mockKVStore) Get(_ context.Context, path string) (*hashivault.KVSecret, error) {
 	return m.values[path].secret, m.values[path].err
 }

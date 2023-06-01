@@ -96,9 +96,11 @@ const (
 	maxTSDBOpeningConcurrencyOnStartupFlag    = "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup"
 	defaultMaxTSDBOpeningConcurrencyOnStartup = 10
 
-	maxChunksBytesPoolFlag = "blocks-storage.bucket-store.max-chunk-pool-bytes"
-	minBucketSizeBytesFlag = "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes"
-	maxBucketSizeBytesFlag = "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes"
+	maxChunksBytesPoolFlag      = "blocks-storage.bucket-store.max-chunk-pool-bytes"
+	minBucketSizeBytesFlag      = "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes"
+	maxBucketSizeBytesFlag      = "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes"
+	seriesSelectionStrategyFlag = "blocks-storage.bucket-store.series-selection-strategy"
+	bucketIndexFlagPrefix       = "blocks-storage.bucket-store.bucket-index."
 )
 
 // Validation errors
@@ -159,9 +161,9 @@ func (d *DurationList) ToMilliseconds() []int64 {
 }
 
 // RegisterFlags registers the TSDB flags
-func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f, logger)
-	cfg.BucketStore.RegisterFlags(f, logger)
+func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
+	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f)
+	cfg.BucketStore.RegisterFlags(f)
 	cfg.TSDB.RegisterFlags(f)
 }
 
@@ -374,6 +376,9 @@ type BucketStoreConfig struct {
 	StreamingBatchSize          int    `yaml:"streaming_series_batch_size" category:"advanced"`
 	ChunkRangesPerSeries        int    `yaml:"fine_grained_chunks_caching_ranges_per_series" category:"experimental"`
 	SeriesSelectionStrategyName string `yaml:"series_selection_strategy" category:"experimental"`
+	SelectionStrategies         struct {
+		WorstCaseSeriesPreference float64 `yaml:"worst_case_series_preference" category:"experimental"`
+	} `yaml:"series_selection_strategies"`
 }
 
 const (
@@ -391,11 +396,11 @@ var validSeriesSelectionStrategies = []string{
 }
 
 // RegisterFlags registers the BucketStore flags
-func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.IndexCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-cache.")
-	cfg.ChunksCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.chunks-cache.", logger)
+	cfg.ChunksCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.chunks-cache.")
 	cfg.MetadataCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.metadata-cache.")
-	cfg.BucketIndex.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.bucket-index.")
+	cfg.BucketIndex.RegisterFlagsWithPrefix(f, bucketIndexFlagPrefix)
 	cfg.IndexHeader.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header.")
 
 	f.StringVar(&cfg.SyncDir, "blocks-storage.bucket-store.sync-dir", "./tsdb-sync/", "Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time.")
@@ -417,7 +422,8 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) 
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.IntVar(&cfg.ChunkRangesPerSeries, "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series", 1, "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled.")
-	f.StringVar(&cfg.SeriesSelectionStrategyName, "blocks-storage.bucket-store.series-selection-strategy", AllPostingsStrategy, "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): "+strings.Join(validSeriesSelectionStrategies, ", ")+".")
+	f.StringVar(&cfg.SeriesSelectionStrategyName, seriesSelectionStrategyFlag, AllPostingsStrategy, "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): "+strings.Join(validSeriesSelectionStrategies, ", ")+".")
+	f.Float64Var(&cfg.SelectionStrategies.WorstCaseSeriesPreference, "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference", 1.0, "This option is only used when "+seriesSelectionStrategyFlag+"="+WorstCasePostingsStrategy+". Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.")
 }
 
 // Validate the config.
@@ -434,6 +440,9 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	if err := cfg.MetadataCache.Validate(); err != nil {
 		return errors.Wrap(err, "metadata-cache configuration")
 	}
+	if err := cfg.BucketIndex.Validate(logger); err != nil {
+		return errors.Wrap(err, "bucket-index configuration")
+	}
 	if cfg.DeprecatedMaxChunkPoolBytes != uint64(2*units.Gibibyte) {
 		util.WarnDeprecatedConfig(maxChunksBytesPoolFlag, logger)
 	}
@@ -446,19 +455,30 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
 		return errors.New("invalid series-selection-strategy, set one of " + strings.Join(validSeriesSelectionStrategies, ", "))
 	}
+	if cfg.SeriesSelectionStrategyName == WorstCasePostingsStrategy && cfg.SelectionStrategies.WorstCaseSeriesPreference <= 0 {
+		return errors.New("invalid worst-case series preference; must be positive")
+	}
 	return nil
 }
 
 type BucketIndexConfig struct {
-	Enabled               bool          `yaml:"enabled"`
+	DeprecatedEnabled     bool          `yaml:"enabled" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.11.
 	UpdateOnErrorInterval time.Duration `yaml:"update_on_error_interval" category:"advanced"`
 	IdleTimeout           time.Duration `yaml:"idle_timeout" category:"advanced"`
 	MaxStalePeriod        time.Duration `yaml:"max_stale_period" category:"advanced"`
 }
 
 func (cfg *BucketIndexConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", true, "If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket.")
+	f.BoolVar(&cfg.DeprecatedEnabled, prefix+"enabled", true, "If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket.")
 	f.DurationVar(&cfg.UpdateOnErrorInterval, prefix+"update-on-error-interval", time.Minute, "How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier.")
 	f.DurationVar(&cfg.IdleTimeout, prefix+"idle-timeout", time.Hour, "How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier.")
 	f.DurationVar(&cfg.MaxStalePeriod, prefix+"max-stale-period", time.Hour, "The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, and this check is enforced in the querier (at query time).")
+}
+
+// Validate the config.
+func (cfg *BucketIndexConfig) Validate(logger log.Logger) error {
+	if !cfg.DeprecatedEnabled {
+		util.WarnDeprecatedConfig(bucketIndexFlagPrefix+"enabled", logger)
+	}
+	return nil
 }

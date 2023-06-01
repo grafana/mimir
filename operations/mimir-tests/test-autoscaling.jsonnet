@@ -51,4 +51,19 @@ mimir {
     // the KEDA threshold
     // Also specify CPU request as a string to make sure it works
     k.util.resourcesRequests('0.2', '1Gi'),
+
+  // Test ScaledObject with metric_type.
+  test_scaled_object: $.newScaledObject('test', $._config.namespace, {
+    min_replica_count: 20,
+    max_replica_count: 30,
+
+    triggers: [
+      {
+        metric_name: 'cortex_test_hpa_%s' % $._config.namespace,
+        metric_type: 'Value', // This is what we're testing.
+        query: 'some_query_goes_here',
+        threshold: '123',
+      },
+    ],
+  }),
 }

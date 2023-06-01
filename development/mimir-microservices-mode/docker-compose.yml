@@ -261,7 +261,6 @@
     "command":
       - "--config.file=/etc/prometheus/prometheus.yaml"
       - "--enable-feature=exemplar-storage"
-      - "--enable-feature=native-histograms"
     "image": "prom/prometheus:v2.40.6"
     "ports":
       - "9090:9090"

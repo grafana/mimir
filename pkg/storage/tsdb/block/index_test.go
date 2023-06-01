@@ -18,9 +18,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
-	e2eutil "github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
 func TestRewrite(t *testing.T) {
@@ -28,7 +25,7 @@ func TestRewrite(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	b, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	b, err := CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),
@@ -47,9 +44,9 @@ func TestRewrite(t *testing.T) {
 
 	defer func() { require.NoError(t, cr.Close()) }()
 
-	m := &metadata.Meta{
+	m := &Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: ULID(1)},
-		Thanos:    metadata.Thanos{},
+		Thanos:    ThanosMeta{},
 	}
 
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, m.ULID.String()), os.ModePerm))

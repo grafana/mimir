@@ -29,8 +29,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/exp/slices"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // VerifyBlock does a full run over a block index and chunk data and verifies that they fulfill the order invariants.
@@ -405,7 +403,7 @@ type ignoreFnType func(mint, maxt int64, prev *chunks.Meta, curr *chunks.Meta) (
 // - removes all near "complete" outside chunks introduced by https://github.com/prometheus/tsdb/issues/347.
 // Fixable inconsistencies are resolved in the new block.
 // TODO(bplotka): https://github.com/thanos-io/thanos/issues/378.
-func Repair(logger log.Logger, dir string, id ulid.ULID, source metadata.SourceType, ignoreChkFns ...ignoreFnType) (resid ulid.ULID, err error) {
+func Repair(logger log.Logger, dir string, id ulid.ULID, source SourceType, ignoreChkFns ...ignoreFnType) (resid ulid.ULID, err error) {
 	if len(ignoreChkFns) == 0 {
 		return resid, errors.New("no ignore chunk function specified")
 	}
@@ -414,7 +412,7 @@ func Repair(logger log.Logger, dir string, id ulid.ULID, source metadata.SourceT
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	resid = ulid.MustNew(ulid.Now(), entropy)
 
-	meta, err := metadata.ReadFromDir(bdir)
+	meta, err := ReadMetaFromDir(bdir)
 	if err != nil {
 		return resid, errors.Wrap(err, "read meta file")
 	}
@@ -640,7 +638,7 @@ func rewrite(
 	logger log.Logger,
 	indexr indexReader, chunkr tsdb.ChunkReader,
 	indexw tsdb.IndexWriter, chunkw tsdb.ChunkWriter,
-	meta *metadata.Meta,
+	meta *Meta,
 	ignoreChkFns []ignoreFnType,
 ) error {
 	symbols := indexr.Symbols()

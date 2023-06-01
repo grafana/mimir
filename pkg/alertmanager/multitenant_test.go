@@ -2286,15 +2286,15 @@ type passthroughAlertmanagerClient struct {
 	server alertmanagerpb.AlertmanagerServer
 }
 
-func (am *passthroughAlertmanagerClient) UpdateState(ctx context.Context, in *clusterpb.Part, opts ...grpc.CallOption) (*alertmanagerpb.UpdateStateResponse, error) {
+func (am *passthroughAlertmanagerClient) UpdateState(ctx context.Context, in *clusterpb.Part, _ ...grpc.CallOption) (*alertmanagerpb.UpdateStateResponse, error) {
 	return am.server.UpdateState(ctx, in)
 }
 
-func (am *passthroughAlertmanagerClient) ReadState(ctx context.Context, in *alertmanagerpb.ReadStateRequest, opts ...grpc.CallOption) (*alertmanagerpb.ReadStateResponse, error) {
+func (am *passthroughAlertmanagerClient) ReadState(ctx context.Context, in *alertmanagerpb.ReadStateRequest, _ ...grpc.CallOption) (*alertmanagerpb.ReadStateResponse, error) {
 	return am.server.ReadState(ctx, in)
 }
 
-func (am *passthroughAlertmanagerClient) HandleRequest(ctx context.Context, in *httpgrpc.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+func (am *passthroughAlertmanagerClient) HandleRequest(ctx context.Context, in *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 	return am.server.HandleRequest(ctx, in)
 }
 
@@ -2342,31 +2342,31 @@ type mockAlertManagerLimits struct {
 	maxAlertsSizeBytes             int
 }
 
-func (m *mockAlertManagerLimits) AlertmanagerMaxConfigSize(tenant string) int {
+func (m *mockAlertManagerLimits) AlertmanagerMaxConfigSize(string) int {
 	return m.maxConfigSize
 }
 
-func (m *mockAlertManagerLimits) AlertmanagerMaxTemplatesCount(tenant string) int {
+func (m *mockAlertManagerLimits) AlertmanagerMaxTemplatesCount(string) int {
 	return m.maxTemplatesCount
 }
 
-func (m *mockAlertManagerLimits) AlertmanagerMaxTemplateSize(tenant string) int {
+func (m *mockAlertManagerLimits) AlertmanagerMaxTemplateSize(string) int {
 	return m.maxSizeOfTemplate
 }
 
-func (m *mockAlertManagerLimits) AlertmanagerReceiversBlockCIDRNetworks(user string) []flagext.CIDR {
+func (m *mockAlertManagerLimits) AlertmanagerReceiversBlockCIDRNetworks(string) []flagext.CIDR {
 	panic("implement me")
 }
 
-func (m *mockAlertManagerLimits) AlertmanagerReceiversBlockPrivateAddresses(user string) bool {
+func (m *mockAlertManagerLimits) AlertmanagerReceiversBlockPrivateAddresses(string) bool {
 	panic("implement me")
 }
 
-func (m *mockAlertManagerLimits) NotificationRateLimit(_ string, integration string) rate.Limit {
+func (m *mockAlertManagerLimits) NotificationRateLimit(string, string) rate.Limit {
 	return m.emailNotificationRateLimit
 }
 
-func (m *mockAlertManagerLimits) NotificationBurstSize(_ string, integration string) int {
+func (m *mockAlertManagerLimits) NotificationBurstSize(string, string) int {
 	return m.emailNotificationBurst
 }
 

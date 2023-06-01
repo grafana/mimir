@@ -4,7 +4,9 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
+func TestIngesterQuerying(t *testing.T) {
 	query := "foobar"
 	queryEnd := time.Now().Round(time.Second)
 	queryStart := queryEnd.Add(-1 * time.Hour)
@@ -332,49 +334,58 @@ func TestIngesterMixedFloatHistogramSeries(t *testing.T) {
 
 	for testName, tc := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			s, err := e2e.NewScenario(networkName)
-			require.NoError(t, err)
-			defer s.Close()
+			for _, streamingEnabled := range []bool{true, false} {
+				t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
+					s, err := e2e.NewScenario(networkName)
+					require.NoError(t, err)
+					defer s.Close()
 
-			flags := mergeFlags(
-				BlocksStorageFlags(),
-				BlocksStorageS3Flags(),
-			)
-			flags["-distributor.ingestion-tenant-shard-size"] = "0"
-			flags["-ingester.ring.heartbeat-period"] = "1s"
+					baseFlags := map[string]string{
+						"-distributor.ingestion-tenant-shard-size": "0",
+						"-ingester.ring.heartbeat-period":          "1s",
+						"-querier.prefer-streaming-chunks":         strconv.FormatBool(streamingEnabled),
+					}
 
-			// Start dependencies.
-			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(consul, minio))
+					flags := mergeFlags(
+						BlocksStorageFlags(),
+						BlocksStorageS3Flags(),
+						baseFlags,
+					)
 
-			// Start Mimir components.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+					// Start dependencies.
+					consul := e2edb.NewConsul()
+					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+					require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-			// Wait until distributor has updated the ring.
-			require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+					// Start Mimir components.
+					distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+					ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+					querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+					require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
 
-			// Wait until querier has updated the ring.
-			require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+					// Wait until distributor has updated the ring.
+					require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+						labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+						labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
-			require.NoError(t, err)
+					// Wait until querier has updated the ring.
+					require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+						labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+						labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-			res, err := client.Push(tc.inSeries)
-			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, res.StatusCode)
+					client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+					require.NoError(t, err)
 
-			result, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
-			require.NoError(t, err)
+					res, err := client.Push(tc.inSeries)
+					require.NoError(t, err)
+					require.Equal(t, http.StatusOK, res.StatusCode)
 
-			require.Equal(t, tc.expected.String(), result.String())
+					result, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
+					require.NoError(t, err)
+
+					require.Equal(t, tc.expected.String(), result.String())
+				})
+			}
 		})
 	}
 }

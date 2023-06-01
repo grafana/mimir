@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -24,7 +23,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	userID := "user"
 	tmpDir := t.TempDir()
 
-	spec1 := testutil.BlockSeriesSpec{
+	spec1 := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
 			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
@@ -34,7 +33,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 			}),
 		},
 	}
-	spec2 := testutil.BlockSeriesSpec{
+	spec2 := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "zxcv", "foo", "bar"),
 		Chunks: []chunks.Meta{
 			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
@@ -50,7 +49,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 		},
 	}
 
-	meta, err := testutil.GenerateBlockFromSpec(userID, tmpDir, []*testutil.BlockSeriesSpec{&spec1, &spec2})
+	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.SeriesSpec{&spec1, &spec2})
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())

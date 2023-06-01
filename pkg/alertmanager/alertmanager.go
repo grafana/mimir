@@ -132,6 +132,7 @@ func init() {
 		// Since this is not a "normal" Alertmanager which reads its config
 		// from disk, we just accept and ignore web-based reload signals. Config
 		// updates are only applied externally via ApplyConfig().
+		// nolint:revive // We want to drain the channel, we don't need to do anything inside the loop body.
 		for range webReload {
 		}
 	}()

@@ -43,6 +43,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
@@ -51,7 +52,7 @@ import (
 
 var (
 	// Validation errors.
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
+	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
 )
 
 const (
@@ -106,8 +107,6 @@ type Distributor struct {
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
-	ingesterChunksDeduplicated       prometheus.Counter
-	ingesterChunksTotal              prometheus.Counter
 	receivedRequests                 *prometheus.CounterVec
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
@@ -122,6 +121,7 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+	QueryChunkMetrics                *stats.QueryChunkMetrics
 
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
 	discardedSamplesRateLimited       *prometheus.CounterVec
@@ -157,7 +157,9 @@ type Config struct {
 	SkipLabelNameValidation bool `yaml:"-"`
 
 	// This config is dynamically injected because it is defined in the querier config.
-	ShuffleShardingLookbackPeriod time.Duration `yaml:"-"`
+	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
+	PreferStreamingChunks                      bool          `yaml:"-"`
+	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
@@ -226,6 +228,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		limits:                limits,
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		QueryChunkMetrics:     stats.NewQueryChunkMetrics(reg),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -233,16 +236,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:      "Time spent executing expression and exemplar queries.",
 			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}, []string{"method", "status_code"})),
-		ingesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_query_ingester_chunks_deduped_total",
-			Help:      "Number of chunks deduplicated at query time from ingesters.",
-		}),
-		ingesterChunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_query_ingester_chunks_total",
-			Help:      "Number of chunks transferred at query time from ingesters.",
-		}),
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_requests_total",

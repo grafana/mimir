@@ -115,7 +115,7 @@ type PusherAppendable struct {
 	failedWrites prometheus.Counter
 }
 
-func NewPusherAppendable(pusher Pusher, userID string, limits RulesLimits, totalWrites, failedWrites prometheus.Counter) *PusherAppendable {
+func NewPusherAppendable(pusher Pusher, userID string, totalWrites, failedWrites prometheus.Counter) *PusherAppendable {
 	return &PusherAppendable{
 		pusher:       pusher,
 		userID:       userID,
@@ -144,6 +144,7 @@ type RulesLimits interface {
 	RulerMaxRulesPerRuleGroup(userID string) int
 	RulerRecordingRulesEvaluationEnabled(userID string) bool
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
+	RulerSyncRulesOnChangesEnabled(userID string) bool
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter) rules.QueryFunc {
@@ -287,7 +288,7 @@ func DefaultTenantManagerFactory(
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, logger)
 
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
+			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
 			Queryable:                  embeddedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),

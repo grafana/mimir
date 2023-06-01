@@ -89,6 +89,7 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
+  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`, `-querier.streaming-chunks-per-ingester-buffer-size`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
@@ -128,23 +129,18 @@ The following features are currently experimental:
 Deprecated features are usable up until the release that indicates their removal.
 For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters/index.md#parameter-lifecycle" >}}).
 
-The following features are currently deprecated and will be **removed in Mimir 2.9**:
-
-- Compactor
-  - `-compactor.consistency-delay`
-- Store-gateway
-  - `-blocks-storage.bucket-store.consistency-delay`
-- Ingester
-  - `-ingester.ring.readiness-check-ring-health`
-
 The following features are currently deprecated and will be **removed in Mimir 2.10**:
 
 - Ingester
   - `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`
 
-The following features are currently deprecated and will be **removed in Mimir 2.11**:
+The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.11**:
 
 - Store-gateway
   - `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
   - `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
   - `-blocks-storage.bucket-store.max-chunk-pool-bytes`
+- Querier, ruler, store-gateway
+  - `-blocks-storage.bucket-store.bucket-index.enabled`
+- Querier
+  - `-querier.iterators` and `-querier.batch-iterators` (Mimir 2.11 onwards will always use `-querier.batch-iterators=true`)

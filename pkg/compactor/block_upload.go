@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -80,7 +79,7 @@ func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	var meta metadata.Meta
+	var meta block.Meta
 	if err := json.Unmarshal(content, &meta); err != nil {
 		err = httpError{
 			message:    "malformed request body",
@@ -201,7 +200,7 @@ func writeBlockUploadError(err error, op, extra string, logger log.Logger, w htt
 	http.Error(w, "internal server error", http.StatusInternalServerError)
 }
 
-func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, meta *metadata.Meta,
+func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, meta *block.Meta,
 	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
 	level.Debug(logger).Log("msg", "starting block upload")
 
@@ -317,7 +316,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta *metadata.Meta, validation func(context.Context) error) {
+func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta *block.Meta, validation func(context.Context) error) {
 	level.Debug(logger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
 
 	{
@@ -364,7 +363,7 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 	level.Debug(logger).Log("msg", "successfully completed block upload")
 }
 
-func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta *metadata.Meta) error {
+func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta *block.Meta) error {
 	if err := c.uploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
 		level.Error(logger).Log("msg", "error uploading block metadata file", "err", err)
 		return err
@@ -380,7 +379,7 @@ func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log
 
 // sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
 // message gets returned, otherwise an empty string.
-func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, blockID ulid.ULID, meta *metadata.Meta) string {
+func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, blockID ulid.ULID, meta *block.Meta) string {
 	if meta == nil {
 		return "missing block metadata"
 	}
@@ -437,8 +436,8 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, bl
 		return err.Error()
 	}
 
-	if meta.Version != metadata.TSDBVersion1 {
-		return fmt.Sprintf("version must be %d", metadata.TSDBVersion1)
+	if meta.Version != block.TSDBVersion1 {
+		return fmt.Sprintf("version must be %d", block.TSDBVersion1)
 	}
 
 	// validate minTime/maxTime
@@ -460,7 +459,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, bl
 	return ""
 }
 
-func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger, meta *metadata.Meta, blockID ulid.ULID, name string, userBkt objstore.Bucket) error {
+func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger, meta *block.Meta, blockID ulid.ULID, name string, userBkt objstore.Bucket) error {
 	if meta == nil {
 		return errors.New("missing block metadata")
 	}
@@ -520,7 +519,7 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 	return blockDir, nil
 }
 
-func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, blockMetadata *metadata.Meta, userBkt objstore.Bucket, userID string) error {
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, blockMetadata *block.Meta, userBkt objstore.Bucket, userID string) error {
 	if err := c.validateMaximumBlockSize(logger, blockMetadata.Thanos.Files, userID); err != nil {
 		return err
 	}
@@ -557,7 +556,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Log
 	return nil
 }
 
-func (c *MultitenantCompactor) validateMaximumBlockSize(logger log.Logger, files []metadata.File, userID string) error {
+func (c *MultitenantCompactor) validateMaximumBlockSize(logger log.Logger, files []block.File, userID string) error {
 	maxBlockSizeBytes := c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID)
 	if maxBlockSizeBytes <= 0 {
 		return nil
@@ -674,7 +673,7 @@ func (c *MultitenantCompactor) GetBlockUploadStateHandler(w http.ResponseWriter,
 
 // checkBlockState checks blocks state and returns various HTTP status codes for individual states if block
 // upload cannot start, finish or file cannot be uploaded to the block.
-func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID, requireUploadInProgress bool) (*metadata.Meta, *validationFile, error) {
+func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID, requireUploadInProgress bool) (*block.Meta, *validationFile, error) {
 	s, m, v, err := c.getBlockUploadState(ctx, userBkt, blockID)
 	if err != nil {
 		return m, v, err
@@ -703,7 +702,7 @@ func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objs
 }
 
 // getBlockUploadState returns state of the block upload, and meta and validation objects, if they exist.
-func (c *MultitenantCompactor) getBlockUploadState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (blockUploadState, *metadata.Meta, *validationFile, error) {
+func (c *MultitenantCompactor) getBlockUploadState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (blockUploadState, *block.Meta, *validationFile, error) {
 	exists, err := userBkt.Exists(ctx, path.Join(blockID.String(), block.MetaFilename))
 	if err != nil {
 		return blockStateUnknown, nil, nil, err
@@ -737,7 +736,7 @@ func (c *MultitenantCompactor) getBlockUploadState(ctx context.Context, userBkt 
 	return blockValidationStale, meta, v, nil
 }
 
-func (c *MultitenantCompactor) loadUploadingMeta(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (*metadata.Meta, error) {
+func (c *MultitenantCompactor) loadUploadingMeta(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (*block.Meta, error) {
 	r, err := userBkt.Get(ctx, path.Join(blockID.String(), uploadingMetaFilename))
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
@@ -747,7 +746,7 @@ func (c *MultitenantCompactor) loadUploadingMeta(ctx context.Context, userBkt ob
 	}
 	defer func() { _ = r.Close() }()
 
-	v := &metadata.Meta{}
+	v := &block.Meta{}
 	err = json.NewDecoder(r).Decode(v)
 	if err != nil {
 		return nil, err

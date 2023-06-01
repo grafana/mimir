@@ -15,9 +15,8 @@ import (
 )
 
 const (
-	httpPort   = 8080
-	grpcPort   = 9095
-	GossipPort = 9094
+	httpPort = 8080
+	grpcPort = 9095
 )
 
 // GetDefaultImage returns the Docker image to use to run Mimir.
@@ -54,7 +53,7 @@ func getExtraFlags() map[string]string {
 func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]string, options ...Option) *MimirService {
 	o := newOptions(options)
 	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
-	binaryName := getBinaryNameForBackwardsCompatibility(o.Image)
+	binaryName := getBinaryNameForBackwardsCompatibility()
 
 	return NewMimirService(
 		name,
@@ -150,7 +149,7 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 	)
 }
 
-func getBinaryNameForBackwardsCompatibility(image string) string {
+func getBinaryNameForBackwardsCompatibility() string {
 	return "mimir"
 }
 
@@ -277,7 +276,7 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, options ...Opt
 		"-target":    "alertmanager",
 		"-log.level": "warn",
 	}, flags, getExtraFlags()))
-	binaryName := getBinaryNameForBackwardsCompatibility(o.Image)
+	binaryName := getBinaryNameForBackwardsCompatibility()
 
 	return NewMimirService(
 		name,

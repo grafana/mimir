@@ -272,7 +272,7 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) ([]*prompb.Ti
 	}, from, to, nil
 }
 
-func (c *RemoteReadCommand) dump(k *kingpin.ParseContext) error {
+func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 	query, _, _, err := c.prepare()
 	if err != nil {
 		return err
@@ -305,7 +305,7 @@ func (c *RemoteReadCommand) dump(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (c *RemoteReadCommand) stats(k *kingpin.ParseContext) error {
+func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
 	query, _, _, err := c.prepare()
 	if err != nil {
 		return err
@@ -387,7 +387,7 @@ func (c *RemoteReadCommand) stats(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (c *RemoteReadCommand) export(k *kingpin.ParseContext) error {
+func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 	query, from, to, err := c.prepare()
 	if err != nil {
 		return err

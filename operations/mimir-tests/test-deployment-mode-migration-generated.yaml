@@ -7,8 +7,8 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: alertmanager-pdb
-  name: alertmanager-pdb
+    name: alertmanager
+  name: alertmanager
   namespace: default
 spec:
   maxUnavailable: 1
@@ -20,8 +20,8 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: ingester-rollout-pdb
-  name: ingester-rollout-pdb
+    name: ingester-rollout
+  name: ingester-rollout
   namespace: default
 spec:
   maxUnavailable: 1
@@ -59,8 +59,8 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: store-gateway-rollout-pdb
-  name: store-gateway-rollout-pdb
+    name: store-gateway-rollout
+  name: store-gateway-rollout
   namespace: default
 spec:
   maxUnavailable: 1
@@ -3116,6 +3116,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
         image: grafana/mimir:2.8.0
@@ -3249,6 +3251,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
         image: grafana/mimir:2.8.0
@@ -3382,6 +3386,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
         image: grafana/mimir:2.8.0

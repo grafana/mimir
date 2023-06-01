@@ -15,7 +15,12 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/test"
 )
+
+func TestMain(m *testing.M) {
+	test.VerifyNoLeakTestMain(m)
+}
 
 // TestMarshall is useful to try out various optimisation on the unmarshalling code.
 func TestMarshall(t *testing.T) {

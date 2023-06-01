@@ -12,6 +12,8 @@ weight: 70
 The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture/index.md#long-term-storage" >}}).
 On the read path, the [querier]({{< relref "querier.md" >}}) and the [ruler]({{< relref "ruler/index.md" >}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
 
+## Bucket index
+
 To find the right blocks to look up at query time, the store-gateway requires a view of the bucket in long-term storage.
 The store-gateway keeps the bucket view updated using one of the following options:
 

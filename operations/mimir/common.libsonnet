@@ -90,7 +90,7 @@
   // Utility to create a PodDisruptionBudget for a Mimir deployment.
   newMimirPdb(deploymentName, maxUnavailable=1)::
     local podDisruptionBudget = $.policy.v1.podDisruptionBudget;
-    local pdbName = '%s-pdb' % deploymentName;
+    local pdbName = deploymentName;
 
     podDisruptionBudget.new(pdbName) +
     podDisruptionBudget.mixin.metadata.withLabels({ name: pdbName }) +

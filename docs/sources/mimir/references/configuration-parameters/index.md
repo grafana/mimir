@@ -898,14 +898,6 @@ ring:
   # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
 
-  # (deprecated) When enabled the readiness probe succeeds only after all
-  # instances are ACTIVE and healthy in the ring, otherwise only the instance
-  # itself is checked. This option should be disabled if in your cluster
-  # multiple instances can be rolled out simultaneously, otherwise rolling
-  # updates may be slowed down.
-  # CLI flag: -ingester.ring.readiness-check-ring-health
-  [readiness_check_ring_health: <boolean> | default = false]
-
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.
 # CLI flag: -ingester.metadata-retain-period
@@ -966,12 +958,12 @@ instance_limits:
 The `querier` block configures the querier.
 
 ```yaml
-# (advanced) Use iterators to execute query, as opposed to fully materialising
+# (deprecated) Use iterators to execute query, as opposed to fully materialising
 # the series in memory.
 # CLI flag: -querier.iterators
 [iterators: <boolean> | default = false]
 
-# (advanced) Use batch iterators to execute query, as opposed to fully
+# (deprecated) Use batch iterators to execute query, as opposed to fully
 # materialising the series in memory.  Takes precedent over the
 # -querier.iterators flag.
 # CLI flag: -querier.batch-iterators
@@ -1063,6 +1055,17 @@ store_gateway_client:
 # (ingesters shuffle sharding on read path is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
+
+# (experimental) Request ingesters stream chunks. Ingesters will only respond
+# with a stream of chunks if the target ingester supports this, and this
+# preference will be ignored by ingesters that do not support this.
+# CLI flag: -querier.prefer-streaming-chunks
+[prefer_streaming_chunks: <boolean> | default = false]
+
+# (experimental) Number of series to buffer per ingester when streaming chunks
+# from ingesters.
+# CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
+[streaming_chunks_per_ingester_series_buffer_size: <int> | default = 512]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
@@ -1362,7 +1365,8 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.evaluation-interval
 [evaluation_interval: <duration> | default = 1m]
 
-# (advanced) How frequently to poll for rule changes
+# (advanced) How frequently the configured rule groups are re-synced from the
+# object storage.
 # CLI flag: -ruler.poll-interval
 [poll_interval: <duration> | default = 1m]
 
@@ -2518,12 +2522,11 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
-# (experimental) Per-tenant request rate limit in requests per second. 0 to
-# disable.
+# Per-tenant push request rate limit in requests per second. 0 to disable.
 # CLI flag: -distributor.request-rate-limit
 [request_rate: <float> | default = 0]
 
-# (experimental) Per-tenant allowed request burst size. 0 to disable.
+# Per-tenant allowed push request burst size. 0 to disable.
 # CLI flag: -distributor.request-burst-size
 [request_burst_size: <int> | default = 0]
 
@@ -2592,8 +2595,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.enforce-metadata-metric-name
 [enforce_metadata_metric_name: <boolean> | default = true]
 
-# The tenant's shard size used by shuffle-sharding. Must be set both on
-# ingesters and distributors. 0 disables shuffle sharding.
+# The tenant's shard size used by shuffle-sharding. This value is the total size
+# of the shard (ie. it is not the number of ingesters in the shard per zone, but
+# the number of ingesters in the shard across all zones, if zone-awareness is
+# enabled). Must be set both on ingesters and distributors. 0 disables shuffle
+# sharding.
 # CLI flag: -distributor.ingestion-tenant-shard-size
 [ingestion_tenant_shard_size: <int> | default = 0]
 
@@ -2832,6 +2838,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # evaluation on a per-tenant basis.
 # CLI flag: -ruler.alerting-rules-evaluation-enabled
 [ruler_alerting_rules_evaluation_enabled: <boolean> | default = true]
+
+# (advanced) True to enable a re-sync of the configured rule groups as soon as
+# they're changed via ruler's config API. This re-sync is in addition of the
+# periodic syncing. When enabled, it may take up to few tens of seconds before a
+# configuration change triggers the re-sync.
+# CLI flag: -ruler.sync-rules-on-changes-enabled
+[ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
@@ -3177,8 +3190,8 @@ bucket_store:
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
   bucket_index:
-    # If enabled, queriers and store-gateways discover blocks by reading a
-    # bucket index (created and updated by the compactor) instead of
+    # (deprecated) If enabled, queriers and store-gateways discover blocks by
+    # reading a bucket index (created and updated by the compactor) instead of
     # periodically scanning the bucket.
     # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
     [enabled: <boolean> | default = true]
@@ -3276,6 +3289,14 @@ bucket_store:
   # worst-case, worst-case-small-posting-lists, all.
   # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
   [series_selection_strategy: <string> | default = "all"]
+
+  series_selection_strategies:
+    # (experimental) This option is only used when
+    # blocks-storage.bucket-store.series-selection-strategy=worst-case.
+    # Increasing the series preference results in fetching more series than
+    # postings. Must be a positive floating point number.
+    # CLI flag: -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference
+    [worst_case_series_preference: <float> | default = 1]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is

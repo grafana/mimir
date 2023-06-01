@@ -358,14 +358,14 @@ type accumulator struct {
 }
 
 func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {
-	any, err := types.MarshalAny(acc.Response)
+	marshalled, err := types.MarshalAny(acc.Response)
 	if err != nil {
 		return nil, err
 	}
 	return append(extents, Extent{
 		Start:            acc.Extent.Start,
 		End:              acc.Extent.End,
-		Response:         any,
+		Response:         marshalled,
 		TraceId:          acc.Extent.TraceId,
 		QueryTimestampMs: acc.QueryTimestampMs,
 	}), nil
@@ -383,14 +383,14 @@ func newAccumulator(base Extent) (*accumulator, error) {
 }
 
 func toExtent(ctx context.Context, req Request, res Response, queryTime time.Time) (Extent, error) {
-	any, err := types.MarshalAny(res)
+	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
 	}
 	return Extent{
 		Start:            req.GetStart(),
 		End:              req.GetEnd(),
-		Response:         any,
+		Response:         marshalled,
 		TraceId:          jaegerTraceID(ctx),
 		QueryTimestampMs: queryTime.UnixMilli(),
 	}, nil
@@ -473,11 +473,11 @@ func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extr
 				return nil, err
 			}
 			extracted := extractor.Extract(extents[i].Start, maxCacheTime, res)
-			any, err := types.MarshalAny(extracted)
+			marshalled, err := types.MarshalAny(extracted)
 			if err != nil {
 				return nil, err
 			}
-			extents[i].Response = any
+			extents[i].Response = marshalled
 		}
 	}
 	return extents, nil

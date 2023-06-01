@@ -207,7 +207,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 
 	// Create the blocks finder.
 	var finder BlocksFinder
-	if storageCfg.BucketStore.BucketIndex.Enabled {
+	if storageCfg.BucketStore.BucketIndex.DeprecatedEnabled {
 		finder = NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
 			IndexLoader: bucketindex.LoaderConfig{
 				CheckInterval:         time.Minute,

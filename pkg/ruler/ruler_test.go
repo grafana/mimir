@@ -837,7 +837,7 @@ func TestSharding(t *testing.T) {
 			},
 
 			expectedRules: expectedRulesMap{
-				ruler1: nil,
+				ruler1: map[string]rulespb.RuleGroupList{},
 				ruler2: map[string]rulespb.RuleGroupList{},
 				ruler3: map[string]rulespb.RuleGroupList{
 					user2: {user2Group1},
@@ -974,7 +974,293 @@ func TestSharding(t *testing.T) {
 	}
 }
 
-func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulers(t *testing.T) {
+func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnabled(t *testing.T) {
+	const (
+		numRulers     = 2
+		numRuleGroups = 10
+		userID        = "user-1"
+		namespace     = "test"
+	)
+
+	for _, rulerShardSize := range []int{0, 1} {
+		t.Run(fmt.Sprintf("Ruler shard size = %d", rulerShardSize), func(t *testing.T) {
+			var (
+				ctx          = context.Background()
+				logger       = log.NewNopLogger()
+				rulerAddrMap = map[string]*Ruler{}
+			)
+
+			// Create a filesystem backed storage.
+			bucketCfg := bucket.Config{StorageBackendConfig: bucket.StorageBackendConfig{Backend: "filesystem", Filesystem: filesystem.Config{Directory: t.TempDir()}}}
+			bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", logger, nil)
+			require.NoError(t, err)
+
+			store := bucketclient.NewBucketRuleStore(bucketClient, nil, logger)
+
+			// Create an in-memory ring backend.
+			kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
+			t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
+
+			// Create rulers. The rulers are configured with a very long polling interval
+			// so that they will not trigger after the initial sync. Once the ruler has started,
+			// the initial sync already occurred.
+			rulers := make([]*Ruler, numRulers)
+			regs := make([]*prometheus.Registry, numRulers)
+
+			for i := 0; i < len(rulers); i++ {
+				rulerAddr := fmt.Sprintf("ruler-%d", i)
+
+				rulerCfg := defaultRulerConfig(t)
+				rulerCfg.PollInterval = time.Hour
+				rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+				rulerCfg.Ring.NumTokens = 128
+				rulerCfg.Ring.Common.InstanceID = rulerAddr
+				rulerCfg.Ring.Common.InstanceAddr = rulerAddr
+				rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+
+				limits := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+					defaults.RulerTenantShardSize = rulerShardSize
+				})
+
+				regs[i] = prometheus.NewPedanticRegistry()
+				rulers[i] = prepareRuler(t, rulerCfg, store, withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withLimits(limits), withStart(), withPrometheusRegisterer(regs[i]))
+			}
+
+			// Pre-condition check: each ruler should have synced the rules once (at startup).
+			for _, reg := range regs {
+				verifySyncRulesMetric(t, reg, 1, 0)
+			}
+
+			// Pre-condition check: each ruler should have an updated view over the ring.
+			for _, reg := range regs {
+				verifyRingMembersMetric(t, reg, 2)
+			}
+
+			t.Run("NotifySyncRulesAsync() should trigger a re-sync after the initial rule groups of a tenant have been configured", func(t *testing.T) {
+				// Create some rule groups in the storage.
+				for i := 0; i < numRuleGroups; i++ {
+					groupID := fmt.Sprintf("group-%d", i)
+					record := fmt.Sprintf("count:metric_%d", i)
+					expr := fmt.Sprintf("count(metric_%d)", i)
+
+					require.NoError(t, store.SetRuleGroup(ctx, userID, namespace, createRuleGroup(groupID, userID, createRecordingRule(record, expr))))
+				}
+
+				// Call NotifySyncRulesAsync() on 1 ruler.
+				rulers[0].NotifySyncRulesAsync("user-1")
+
+				// Wait until rules syncing triggered on both rulers (with reason "API change").
+				for _, reg := range regs {
+					verifySyncRulesMetric(t, reg, 1, 1)
+				}
+
+				// GetRules() should return all configured rule groups. We use test.Poll() because
+				// the per-tenant rules manager gets started asynchronously.
+				for _, ruler := range rulers {
+					test.Poll(t, time.Second, numRuleGroups, func() interface{} {
+						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+						require.NoError(t, err)
+						return len(actualRuleGroups)
+					})
+				}
+			})
+
+			t.Run("NotifySyncRulesAsync() should trigger a re-sync after a single rule group of a tenant has been deleted", func(t *testing.T) {
+				// Remove 1 rule group of a tenant.
+				require.NoError(t, store.DeleteRuleGroup(ctx, userID, namespace, "group-0"))
+
+				// Call NotifySyncRulesAsync() on 1 ruler.
+				rulers[0].NotifySyncRulesAsync("user-1")
+
+				// Wait until rules syncing triggered on both rulers (with reason "API change").
+				for _, reg := range regs {
+					verifySyncRulesMetric(t, reg, 1, 2)
+				}
+
+				// GetRules() should return all configured rule groups except the one just deleted.
+				// We use test.Poll() because the rule syncing is asynchronous in each ruler.
+				for _, ruler := range rulers {
+					test.Poll(t, time.Second, numRuleGroups-1, func() interface{} {
+						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+						require.NoError(t, err)
+						return len(actualRuleGroups)
+					})
+				}
+			})
+
+			t.Run("NotifySyncRulesAsync() should trigger a re-sync after all rule groups of a tenant have been deleted", func(t *testing.T) {
+				// Remove all rules groups of a tenant.
+				require.NoError(t, store.DeleteNamespace(ctx, userID, namespace))
+
+				// Call NotifySyncRulesAsync() on 1 ruler.
+				rulers[0].NotifySyncRulesAsync("user-1")
+
+				// Wait until rules syncing triggered on both rulers (with reason "API change").
+				for _, reg := range regs {
+					verifySyncRulesMetric(t, reg, 1, 3)
+				}
+
+				// GetRules() should return no rule groups. We use test.Poll() because
+				// the rule syncing is asynchronous in each ruler.
+				for _, ruler := range rulers {
+					test.Poll(t, time.Second, 0, func() interface{} {
+						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+						require.NoError(t, err)
+						return len(actualRuleGroups)
+					})
+				}
+			})
+
+			// Post-condition check: there should have been no other rules syncing other than the initial one
+			// and the one driven by the API.
+			for _, reg := range regs {
+				verifySyncRulesMetric(t, reg, 1, 3)
+			}
+		})
+	}
+}
+
+func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleTheCaseTheTenantShardHasChanged(t *testing.T) {
+	const (
+		numRulers     = 2
+		numRuleGroups = 100
+		userID        = "user-1"
+		namespace     = "test"
+	)
+
+	var (
+		ctx          = context.Background()
+		logger       = log.NewNopLogger()
+		rulerAddrMap = map[string]*Ruler{}
+	)
+
+	// Create a filesystem backed storage.
+	bucketCfg := bucket.Config{StorageBackendConfig: bucket.StorageBackendConfig{Backend: "filesystem", Filesystem: filesystem.Config{Directory: t.TempDir()}}}
+	bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", logger, nil)
+	require.NoError(t, err)
+
+	store := bucketclient.NewBucketRuleStore(bucketClient, nil, logger)
+
+	// Create an in-memory ring backend.
+	kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
+	t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
+
+	// Init tenant limits: ruler shuffle sharding disabled.
+	tenantLimits := map[string]*validation.Limits{userID: validation.MockDefaultLimits()}
+	tenantLimits[userID].RulerTenantShardSize = 0
+
+	// Create rulers. The rulers are configured with a very long polling interval
+	// so that they will not trigger after the initial sync. Once the ruler has started,
+	// the initial sync already occurred.
+	rulers := make([]*Ruler, numRulers)
+	regs := make([]*prometheus.Registry, numRulers)
+
+	for i := 0; i < len(rulers); i++ {
+		rulerAddr := fmt.Sprintf("ruler-%d", i)
+
+		rulerCfg := defaultRulerConfig(t)
+		rulerCfg.PollInterval = time.Hour
+		rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+		rulerCfg.Ring.NumTokens = 128
+		rulerCfg.Ring.Common.InstanceID = rulerAddr
+		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
+		rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+
+		limits, err := validation.NewOverrides(*validation.MockDefaultLimits(), validation.NewMockTenantLimits(tenantLimits))
+		require.NoError(t, err)
+
+		regs[i] = prometheus.NewPedanticRegistry()
+		rulers[i] = prepareRuler(t, rulerCfg, store, withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withLimits(limits), withStart(), withPrometheusRegisterer(regs[i]))
+	}
+
+	// Pre-condition check: each ruler should have synced the rules once (at startup).
+	for _, reg := range regs {
+		verifySyncRulesMetric(t, reg, 1, 0)
+	}
+
+	// Pre-condition check: each ruler should have an updated view over the ring.
+	for _, reg := range regs {
+		verifyRingMembersMetric(t, reg, 2)
+	}
+
+	// Create some rule groups in the storage.
+	for i := 0; i < numRuleGroups; i++ {
+		groupID := fmt.Sprintf("group-%d", i)
+		record := fmt.Sprintf("count:metric_%d", i)
+		expr := fmt.Sprintf("count(metric_%d)", i)
+
+		require.NoError(t, store.SetRuleGroup(ctx, userID, namespace, createRuleGroup(groupID, userID, createRecordingRule(record, expr))))
+	}
+
+	// Call NotifySyncRulesAsync() on 1 ruler.
+	rulers[0].NotifySyncRulesAsync(userID)
+
+	// Wait until rules syncing triggered on both rulers (with reason "API change").
+	for _, reg := range regs {
+		verifySyncRulesMetric(t, reg, 1, 1)
+	}
+
+	// GetRules() should return all configured rule groups. We use test.Poll() because
+	// the per-tenant rules manager gets started asynchronously.
+	for _, ruler := range rulers {
+		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
+			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+			require.NoError(t, err)
+			return len(actualRuleGroups)
+		})
+	}
+
+	// We expect rule groups to have been sharded between the rulers.
+	actualRuleGroupsCount := 0
+	for _, ruler := range rulers {
+		actualRuleGroups, err := ruler.getLocalRules(userID, AnyRule)
+		require.NoError(t, err)
+		require.NotEmpty(t, actualRuleGroups)
+		actualRuleGroupsCount += len(actualRuleGroups)
+	}
+	assert.Equal(t, numRuleGroups, actualRuleGroupsCount)
+
+	// Change the tenant's ruler shard size to 1, so that only 1 ruler will load all the rule groups after the next sync.
+	tenantLimits[userID].RulerTenantShardSize = 1
+
+	// Call NotifySyncRulesAsync() on 1 ruler.
+	rulers[0].NotifySyncRulesAsync(userID)
+
+	// Wait until rules syncing triggered on both rulers (with reason "API change").
+	for _, reg := range regs {
+		verifySyncRulesMetric(t, reg, 1, 2)
+	}
+
+	// GetRules() should return all configured rule groups. We use test.Poll() because
+	// the rule syncing is asynchronous in each ruler.
+	for _, ruler := range rulers {
+		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
+			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+			require.NoError(t, err)
+			return len(actualRuleGroups)
+		})
+	}
+
+	// We expect rule groups to have been loaded only from 1 ruler (not important which one).
+	var actualRuleGroupsCountPerRuler []int
+	for _, ruler := range rulers {
+		actualRuleGroups, err := ruler.getLocalRules(userID, AnyRule)
+		require.NoError(t, err)
+
+		if len(actualRuleGroups) > 0 {
+			actualRuleGroupsCountPerRuler = append(actualRuleGroupsCountPerRuler, len(actualRuleGroups))
+		}
+	}
+	assert.Equal(t, []int{numRuleGroups}, actualRuleGroupsCountPerRuler)
+
+	// Post-condition check: there should have been no other rules syncing other than the initial one
+	// and the one driven by the API.
+	for _, reg := range regs {
+		verifySyncRulesMetric(t, reg, 1, 2)
+	}
+}
+
+func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenDisabled(t *testing.T) {
 	const (
 		numRulers     = 2
 		numRuleGroups = 10
@@ -1016,8 +1302,12 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulers(t *test
 		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
 		rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
 
+		limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+			defaults.RulerSyncRulesOnChangesEnabled = false
+		})
+
 		regs[i] = prometheus.NewPedanticRegistry()
-		rulers[i] = prepareRuler(t, rulerCfg, store, withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withStart(), withPrometheusRegisterer(regs[i]))
+		rulers[i] = prepareRuler(t, rulerCfg, store, withLimits(limits), withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withStart(), withPrometheusRegisterer(regs[i]))
 	}
 
 	// Pre-condition check: each ruler should have synced the rules once (at startup).
@@ -1027,17 +1317,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulers(t *test
 
 	// Pre-condition check: each ruler should have an updated view over the ring.
 	for _, reg := range regs {
-		test.Poll(t, time.Second, nil, func() interface{} {
-			return prom_testutil.GatherAndCompare(reg, strings.NewReader(`
-				# HELP cortex_ring_members Number of members in the ring
-				# TYPE cortex_ring_members gauge
-				cortex_ring_members{name="ruler",state="ACTIVE"} 2
-				cortex_ring_members{name="ruler",state="JOINING"} 0
-				cortex_ring_members{name="ruler",state="LEAVING"} 0
-				cortex_ring_members{name="ruler",state="PENDING"} 0
-				cortex_ring_members{name="ruler",state="Unhealthy"} 0
-			`), "cortex_ring_members")
-		})
+		verifyRingMembersMetric(t, reg, 2)
 	}
 
 	// Create some rule groups in the storage.
@@ -1052,25 +1332,20 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulers(t *test
 	// Call NotifySyncRulesAsync() on 1 ruler.
 	rulers[0].NotifySyncRulesAsync("user-1")
 
-	// Wait until rules syncing triggered on both rulers (with reason "API change").
+	// Give rulers enough time to eventually re-sync based on config change, if it was enabled (but it's not).
+	// Unfortunately there's no better to way than waiting some time, since we're waiting for a condition to NOT happen.
+	time.Sleep(time.Second)
+
+	// Ensure no rules syncing has been triggered in any ruler.
 	for _, reg := range regs {
-		verifySyncRulesMetric(t, reg, 1, 1)
+		verifySyncRulesMetric(t, reg, 1, 0)
 	}
 
-	// GetRules() should return all configured rule groups. We use test.Poll() because
-	// the per-tenant rules manager gets started asynchronously.
+	// GetRules() should return no configured rule groups, because no re-sync happened.
 	for _, ruler := range rulers {
-		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
-			require.NoError(t, err)
-			return len(actualRuleGroups)
-		})
-	}
-
-	// Post-condition check: there should have been no other rules syncing other than the initial one
-	// and the one driven by the API.
-	for _, reg := range regs {
-		verifySyncRulesMetric(t, reg, 1, 1)
+		actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+		require.NoError(t, err)
+		require.Empty(t, actualRuleGroups)
 	}
 }
 
@@ -1227,6 +1502,20 @@ func verifySyncRulesMetric(t *testing.T, reg prometheus.Gatherer, initialCount, 
 	})
 }
 
+func verifyRingMembersMetric(t *testing.T, reg prometheus.Gatherer, activeCount int) {
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_ring_members Number of members in the ring
+				# TYPE cortex_ring_members gauge
+				cortex_ring_members{name="ruler",state="ACTIVE"} %d
+				cortex_ring_members{name="ruler",state="JOINING"} 0
+				cortex_ring_members{name="ruler",state="LEAVING"} 0
+				cortex_ring_members{name="ruler",state="PENDING"} 0
+				cortex_ring_members{name="ruler",state="Unhealthy"} 0
+			`, activeCount)), "cortex_ring_members")
+	})
+}
+
 type ruleGroupKey struct {
 	user, namespace, group string
 }
@@ -1346,10 +1635,15 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 		limits   RulesLimits
 		expected map[string]rulespb.RuleGroupList
 	}{
-		"should return an empty map on empty input": {
+		"should return nil on nil input": {
 			configs:  nil,
 			limits:   validation.MockDefaultOverrides(),
 			expected: nil,
+		},
+		"should return an empty map on empty input": {
+			configs:  map[string]rulespb.RuleGroupList{},
+			limits:   validation.MockDefaultOverrides(),
+			expected: map[string]rulespb.RuleGroupList{},
 		},
 		"should remove alerting rules if disabled for a given tenant": {
 			configs: map[string]rulespb.RuleGroupList{
@@ -1474,9 +1768,13 @@ func TestFilterRuleGroupsByNotMissing(t *testing.T) {
 		missing  rulespb.RuleGroupList
 		expected map[string]rulespb.RuleGroupList
 	}{
-		"should return an empty map on empty input": {
+		"should return nil on nil input": {
 			configs:  nil,
 			expected: nil,
+		},
+		"should return an empty map on empty input": {
+			configs:  map[string]rulespb.RuleGroupList{},
+			expected: map[string]rulespb.RuleGroupList{},
 		},
 		"should remove the input missing rule groups": {
 			configs: map[string]rulespb.RuleGroupList{

@@ -370,7 +370,7 @@ func (r *RuleCommand) setupFiles() error {
 	return nil
 }
 
-func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
+func (r *RuleCommand) listRules(_ *kingpin.ParseContext) error {
 	rules, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
 		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
@@ -381,7 +381,7 @@ func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
 	return p.PrintRuleSet(rules, r.Format, os.Stdout)
 }
 
-func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
+func (r *RuleCommand) printRules(_ *kingpin.ParseContext) error {
 	rules, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
@@ -395,7 +395,7 @@ func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 	return p.PrintRuleGroups(rules)
 }
 
-func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
+func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
 	group, err := r.cli.GetRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
@@ -409,7 +409,7 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 	return p.PrintRuleGroup(*group)
 }
 
-func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
+func (r *RuleCommand) deleteRuleGroup(_ *kingpin.ParseContext) error {
 	err := r.cli.DeleteRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		log.Fatalf("Unable to delete rule group from Grafana Mimir, %v", err)
@@ -417,7 +417,7 @@ func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
+func (r *RuleCommand) loadRules(_ *kingpin.ParseContext) error {
 	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
@@ -474,7 +474,7 @@ func (r *RuleCommand) shouldCheckNamespace(namespace string) bool {
 	return !ignored
 }
 
-func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
+func (r *RuleCommand) diffRules(_ *kingpin.ParseContext) error {
 	err := r.setupFiles()
 	if err != nil {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to load rules files")
@@ -537,7 +537,7 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 	return p.PrintComparisonResult(changes, r.Verbose)
 }
 
-func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
+func (r *RuleCommand) syncRules(_ *kingpin.ParseContext) error {
 	// Check the configuration.
 	if r.SyncConcurrency < 1 || r.SyncConcurrency > maxSyncConcurrency {
 		return fmt.Errorf("the configured concurrency (%d) must be a value between 1 and %d", r.SyncConcurrency, maxSyncConcurrency)
@@ -650,7 +650,7 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 	return nil
 }
 
-func (r *RuleCommand) prepare(k *kingpin.ParseContext) error {
+func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 	err := r.setupFiles()
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to load rules files")
@@ -688,7 +688,7 @@ func (r *RuleCommand) prepare(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (r *RuleCommand) lint(k *kingpin.ParseContext) error {
+func (r *RuleCommand) lint(_ *kingpin.ParseContext) error {
 	err := r.setupFiles()
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to load rules files")
@@ -829,7 +829,7 @@ func save(nss map[string]rules.RuleNamespace, i bool) error {
 	return nil
 }
 
-func (r *RuleCommand) deleteNamespace(k *kingpin.ParseContext) error {
+func (r *RuleCommand) deleteNamespace(_ *kingpin.ParseContext) error {
 	err := r.cli.DeleteNamespace(context.Background(), r.Namespace)
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		log.Fatalf("Unable to delete namespace from Grafana Mimir, %v", err)

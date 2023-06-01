@@ -1104,7 +1104,7 @@ func (f *chunkReaderMock) Close() error {
 	return nil
 }
 
-func (f *chunkReaderMock) addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry int, length uint32) error {
+func (f *chunkReaderMock) addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry int, _ uint32) error {
 	if f.addLoadErr != nil {
 		return f.addLoadErr
 	}
@@ -1138,11 +1138,11 @@ func generateSeriesEntriesWithChunks(t testing.TB, numSeries, numChunksPerSeries
 func generateSeriesEntriesWithChunksSize(t testing.TB, numSeries, numChunksPerSeries, chunkDataLenBytes int) []testBlockSeries {
 
 	out := make([]testBlockSeries, 0, numSeries)
-	labels := generateSeries([]int{numSeries})
+	lbls := generateSeries([]int{numSeries})
 
 	for i := 0; i < numSeries; i++ {
 		series := testBlockSeries{
-			lset: labels[i],
+			lset: lbls[i],
 			refs: make([]chunks.ChunkRef, 0, numChunksPerSeries),
 			chks: make([]storepb.AggrChunk, 0, numChunksPerSeries),
 		}
@@ -1304,7 +1304,7 @@ func newInMemoryChunksCache() chunkscache.Cache {
 	}
 }
 
-func (c *inMemoryChunksCache) FetchMultiChunks(ctx context.Context, userID string, ranges []chunkscache.Range, chunksPool *pool.SafeSlabPool[byte]) map[chunkscache.Range][]byte {
+func (c *inMemoryChunksCache) FetchMultiChunks(_ context.Context, userID string, ranges []chunkscache.Range, _ *pool.SafeSlabPool[byte]) map[chunkscache.Range][]byte {
 	hits := make(map[chunkscache.Range][]byte, len(ranges))
 	for _, r := range ranges {
 		if cached, ok := c.cached[userID][r]; ok {

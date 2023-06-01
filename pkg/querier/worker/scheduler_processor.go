@@ -153,8 +153,16 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 		go func() {
 			defer inflightQuery.Store(false)
 
+			// Create a per-request context and cancel it once we're done processing the request.
+			// This is important for queries that stream chunks from ingesters to the querier, as SeriesChunksStreamReader relies
+			// on the context being cancelled to abort streaming and terminate a goroutine if the query is aborted. Requests that
+			// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
+			// net/http package.
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
 			// We need to inject user into context for sending response back.
-			ctx := user.InjectOrgID(ctx, request.UserID)
+			ctx = user.InjectOrgID(ctx, request.UserID)
 
 			tracer := opentracing.GlobalTracer()
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.

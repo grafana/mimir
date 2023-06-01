@@ -693,7 +693,7 @@ func TestRulerFederatedRules(t *testing.T) {
 			name:               "separate source tenants and destination tenant",
 			tenantsWithMetrics: []string{"tenant-1", "tenant-2"},
 			ruleGroupOwner:     "tenant-3",
-			ruleExpression:     "count(sum_over_time(metric[1h]))",
+			ruleExpression:     "count(count_over_time(metric[1h]))",
 			groupSourceTenants: []string{"tenant-1", "tenant-2"},
 			assertEvalResult: func(evalResult model.Vector) {
 				require.Len(t, evalResult, 1)
@@ -845,7 +845,7 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 		"non federated rule group": {
 			tenantsWithMetrics: []string{"tenant-1"},
 			ruleGroupOwner:     "tenant-1",
-			ruleExpression:     "count(sum_over_time(metric[1h]))",
+			ruleExpression:     "count(count_over_time(metric[1h]))",
 			assertEvalResult: func(evalResult model.Vector) {
 				require.Len(t, evalResult, 1)
 				require.Equal(t, evalResult[0].Value, model.SampleValue(1))
@@ -864,7 +864,7 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 		"protobuf query result payload format": {
 			tenantsWithMetrics:       []string{"tenant-4"},
 			ruleGroupOwner:           "tenant-4",
-			ruleExpression:           "count(sum_over_time(metric[1h]))",
+			ruleExpression:           "count(count_over_time(metric[1h]))",
 			queryResultPayloadFormat: "protobuf",
 			assertEvalResult: func(evalResult model.Vector) {
 				require.Len(t, evalResult, 1)

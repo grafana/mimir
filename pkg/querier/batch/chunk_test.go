@@ -35,10 +35,10 @@ func testChunkIter(t *testing.T, encoding chunk.Encoding) {
 	iter := &chunkIterator{}
 
 	iter.reset(chunk)
-	testIter(t, 100, newIteratorAdapter(iter), encoding)
+	testIter(t, 100, newIteratorAdapter(nil, iter), encoding)
 
 	iter.reset(chunk)
-	testSeek(t, 100, newIteratorAdapter(iter), encoding)
+	testSeek(t, 100, newIteratorAdapter(nil, iter), encoding)
 }
 
 func mkChunk(t require.TestingT, from model.Time, points int, encoding chunk.Encoding) chunk.Chunk {
@@ -207,7 +207,7 @@ func (i *mockIterator) Timestamp() int64 {
 	return 0
 }
 
-func (i *mockIterator) Batch(size int, valueType chunkenc.ValueType) chunk.Batch {
+func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType) chunk.Batch {
 	batch := chunk.Batch{
 		Length:    chunk.BatchSize,
 		ValueType: valueType,

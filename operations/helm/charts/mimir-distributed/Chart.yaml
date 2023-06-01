@@ -1,6 +1,6 @@
 apiVersion: v2
-version: 4.5.0-weekly.238
-appVersion: r238
+version: 4.5.0-weekly.240
+appVersion: r240
 description: "Grafana Mimir"
 home: https://grafana.com/docs/mimir/v2.8.x/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg

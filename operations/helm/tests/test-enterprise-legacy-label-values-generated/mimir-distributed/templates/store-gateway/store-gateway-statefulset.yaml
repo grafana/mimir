@@ -131,6 +131,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
             - name: "GOMEMLIMIT"
               value: "536870912"
           envFrom:
@@ -267,6 +269,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
             - name: "GOMEMLIMIT"
               value: "536870912"
           envFrom:
@@ -403,6 +407,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
             - name: "GOMEMLIMIT"
               value: "536870912"
           envFrom:

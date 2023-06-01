@@ -178,13 +178,15 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= update-go-to-1.20.4-3f4099fd0
+LATEST_BUILD_IMAGE_TAG ?= charleskorn-poddisruptionbudget-ba2264123
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
 # in any custom cloudbuild.yaml files
 TTY := --tty
 MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
+
+REGO_POLICIES_PATH=operations/policies
 
 GO_FLAGS := -ldflags "\
 		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
@@ -201,7 +203,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-quick-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
+exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -420,18 +422,17 @@ format-mixin: ## Format the mixin files.
 # Helm static tests
 
 HELM_SCRIPTS_PATH=operations/helm/scripts
-HELM_REGO_POLICIES_PATH=operations/helm/policies
 HELM_RAW_MANIFESTS_PATH=operations/helm/manifests-intermediate
 HELM_REFERENCE_MANIFESTS=operations/helm/tests
 
 conftest-fmt:
-	@conftest fmt $(HELM_REGO_POLICIES_PATH)
+	@conftest fmt $(REGO_POLICIES_PATH)
 
 check-conftest-fmt: conftest-fmt
-	@./tools/find-diff-or-untracked.sh $(HELM_REGO_POLICIES_PATH) || (echo "Format the rego policies by running 'make conftest-fmt' and commit the changes" && false)
+	@./tools/find-diff-or-untracked.sh $(REGO_POLICIES_PATH) || (echo "Format the rego policies by running 'make conftest-fmt' and commit the changes" && false)
 
 conftest-verify:
-	@conftest verify -p $(HELM_REGO_POLICIES_PATH) --report notes
+	@conftest verify -p $(REGO_POLICIES_PATH) --report notes
 
 update-helm-dependencies:
 	@./$(HELM_SCRIPTS_PATH)/update-helm-dependencies.sh operations/helm/charts/mimir-distributed
@@ -440,14 +441,14 @@ build-helm-tests: ## Build the helm golden records.
 build-helm-tests: update-helm-dependencies
 	@./$(HELM_SCRIPTS_PATH)/build.sh --intermediate-path $(HELM_RAW_MANIFESTS_PATH) --output-path $(HELM_REFERENCE_MANIFESTS)
 
-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target conftest-test for that
-conftest-quick-test:
-	@./$(HELM_SCRIPTS_PATH)/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH) --manifests-path $(HELM_RAW_MANIFESTS_PATH)
+helm-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target helm-conftest-test for that
+helm-conftest-quick-test:
+	@./$(HELM_SCRIPTS_PATH)/run-conftest.sh --policies-path $(REGO_POLICIES_PATH) --manifests-path $(HELM_RAW_MANIFESTS_PATH)
 
-conftest-test: build-helm-tests conftest-quick-test
+helm-conftest-test: build-helm-tests helm-conftest-quick-test
 
 check-helm-tests: ## Check the helm golden records.
-check-helm-tests: build-helm-tests conftest-test
+check-helm-tests: build-helm-tests helm-conftest-test
 	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
 
 endif
@@ -569,8 +570,14 @@ check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-j
 build-jsonnet-tests: ## Build the jsonnet tests.
 	@./operations/mimir-tests/build.sh
 
+jsonnet-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target jsonnet-conftest-test for that
+jsonnet-conftest-quick-test:
+	@./operations/mimir-tests/run-conftest.sh --policies-path $(REGO_POLICIES_PATH) --manifests-path ./operations/mimir-tests
+
+jsonnet-conftest-test: build-jsonnet-tests jsonnet-conftest-quick-test
+
 check-jsonnet-tests: ## Check the jsonnet tests output.
-check-jsonnet-tests: build-jsonnet-tests
+check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
 	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
 check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.

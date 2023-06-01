@@ -33,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -155,7 +154,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by this compactor. If specified, and compactor would normally pick given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")
 }
 
-func (cfg *Config) Validate(logger log.Logger) error {
+func (cfg *Config) Validate() error {
 	// Each block range period should be divisible by the previous one.
 	for i := 1; i < len(cfg.BlockRanges); i++ {
 		if cfg.BlockRanges[i]%cfg.BlockRanges[i-1] != 0 {
@@ -281,10 +280,8 @@ func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksSt
 		return bucket.NewClient(ctx, storageCfg.Bucket, "compactor", logger, registerer)
 	}
 
-	// Configure the compactor and grouper factories.
-	if compactorCfg.BlocksGrouperFactory != nil && compactorCfg.BlocksCompactorFactory != nil {
-		// Nothing to do because it was already set by a downstream project.
-	} else {
+	// Configure the compactor and grouper factories only if they weren't already set by a downstream project.
+	if compactorCfg.BlocksGrouperFactory == nil || compactorCfg.BlocksCompactorFactory == nil {
 		configureSplitAndMergeCompactor(&compactorCfg)
 	}
 
@@ -416,7 +413,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	// Wrap the bucket client to write block deletion marks in the global location too.
-	c.bucketClient = bucketindex.BucketWithGlobalMarkers(c.bucketClient)
+	c.bucketClient = block.BucketWithGlobalMarkers(c.bucketClient)
 
 	// Initialize the compactors ring if sharding is enabled.
 	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, c.logger, c.registerer)
@@ -700,9 +697,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	userLogger := util_log.WithUserID(userID, c.logger)
 
-	// While fetching blocks, we filter out blocks that were marked for deletion by using ExcludeMarkedForDeletionFilter.
-	// No delay is used -- all blocks with deletion marker are ignored, and not considered for compaction.
-	excludeMarkedForDeletionFilter := NewExcludeMarkedForDeletionFilter(userBucket)
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatches the source blocks of the older blocks.
 	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
@@ -717,7 +711,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 			mimir_tsdb.DeprecatedTenantIDExternalLabel,
 			mimir_tsdb.DeprecatedIngesterIDExternalLabel,
 		}),
-		excludeMarkedForDeletionFilter,
 		deduplicateBlocksFilter,
 		// removes blocks that should not be compacted due to being marked so.
 		NewNoCompactionMarkFilter(userBucket, true),
@@ -741,7 +734,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		userBucket,
 		fetcher,
 		deduplicateBlocksFilter,
-		excludeMarkedForDeletionFilter,
 		c.blocksMarkedForDeletion,
 	)
 	if err != nil {

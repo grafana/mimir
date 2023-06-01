@@ -281,10 +281,10 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 
 type infinitePostings struct{}
 
-func (ip infinitePostings) Next() bool                    { return true }
-func (ip infinitePostings) Seek(v storage.SeriesRef) bool { return true }
-func (ip infinitePostings) At() storage.SeriesRef         { return 0 }
-func (ip infinitePostings) Err() error                    { return nil }
+func (ip infinitePostings) Next() bool                  { return true }
+func (ip infinitePostings) Seek(storage.SeriesRef) bool { return true }
+func (ip infinitePostings) At() storage.SeriesRef       { return 0 }
+func (ip infinitePostings) Err() error                  { return nil }
 
 func TestCountLabelValueSeries_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

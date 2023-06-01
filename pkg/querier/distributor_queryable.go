@@ -20,16 +20,16 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // Distributor is the read interface to the distributor, made an interface here
 // to reduce package coupling.
 type Distributor interface {
-	QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (*client.QueryStreamResponse, error)
+	QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
 	QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error)
 	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, matchers ...*labels.Matcher) ([]string, error)
 	LabelNames(ctx context.Context, from model.Time, to model.Time, matchers ...*labels.Matcher) ([]string, error)
@@ -39,12 +39,13 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, logger log.Logger) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryChunkMetrics *stats.QueryChunkMetrics, logger log.Logger) QueryableWithFilter {
 	return distributorQueryable{
-		logger:      logger,
-		distributor: distributor,
-		iteratorFn:  iteratorFn,
-		cfgProvider: cfgProvider,
+		logger:            logger,
+		distributor:       distributor,
+		iteratorFn:        iteratorFn,
+		cfgProvider:       cfgProvider,
+		queryChunkMetrics: queryChunkMetrics,
 	}
 }
 
@@ -53,10 +54,11 @@ type distributorQueryableConfigProvider interface {
 }
 
 type distributorQueryable struct {
-	logger      log.Logger
-	distributor Distributor
-	iteratorFn  chunkIteratorFunc
-	cfgProvider distributorQueryableConfigProvider
+	logger            log.Logger
+	distributor       Distributor
+	iteratorFn        chunkIteratorFunc
+	cfgProvider       distributorQueryableConfigProvider
+	queryChunkMetrics *stats.QueryChunkMetrics
 }
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -81,6 +83,7 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 		maxt:                 maxt,
 		chunkIterFn:          d.iteratorFn,
 		queryIngestersWithin: queryIngestersWithin,
+		queryChunkMetrics:    d.queryChunkMetrics,
 	}, nil
 }
 
@@ -99,6 +102,7 @@ type distributorQuerier struct {
 	mint, maxt           int64
 	chunkIterFn          chunkIteratorFunc
 	queryIngestersWithin time.Duration
+	queryChunkMetrics    *stats.QueryChunkMetrics
 }
 
 // Select implements storage.Querier interface.
@@ -154,7 +158,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
 
-		chunks, err := chunkcompat.FromChunks(ls, result.Chunks)
+		chunks, err := client.FromChunks(ls, result.Chunks)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
@@ -170,6 +174,27 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 	if len(serieses) > 0 {
 		sets = append(sets, series.NewConcreteSeriesSetFromUnsortedSeries(serieses))
+	}
+
+	if len(results.StreamingSeries) > 0 {
+		streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
+		streamingChunkSeriesConfig := &streamingChunkSeriesConfig{
+			chunkIteratorFunc: q.chunkIterFn,
+			mint:              minT,
+			maxt:              maxT,
+			queryChunkMetrics: q.queryChunkMetrics,
+			queryStats:        stats.FromContext(ctx),
+		}
+
+		for _, s := range results.StreamingSeries {
+			streamingSeries = append(streamingSeries, &streamingChunkSeries{
+				labels:  s.Labels,
+				sources: s.Sources,
+				config:  streamingChunkSeriesConfig,
+			})
+		}
+
+		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
 	}
 
 	if len(sets) == 0 {

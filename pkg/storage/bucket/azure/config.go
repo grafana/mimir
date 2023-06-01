@@ -8,7 +8,6 @@ package azure
 import (
 	"flag"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 )
 
@@ -23,12 +22,12 @@ type Config struct {
 }
 
 // RegisterFlags registers the flags for Azure storage
-func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.RegisterFlagsWithPrefix("", f, logger)
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("", f)
 }
 
 // RegisterFlagsWithPrefix registers the flags for Azure storage
-func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
+func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.StorageAccountName, prefix+"azure.account-name", "", "Azure storage account name")
 	f.Var(&cfg.StorageAccountKey, prefix+"azure.account-key", "Azure storage account key")
 	f.StringVar(&cfg.ContainerName, prefix+"azure.container-name", "", "Azure storage container name")

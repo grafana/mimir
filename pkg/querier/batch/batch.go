@@ -56,19 +56,27 @@ type iterator interface {
 }
 
 // NewChunkMergeIterator returns a chunkenc.Iterator that merges Mimir chunks together.
-func NewChunkMergeIterator(chunks []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
+func NewChunkMergeIterator(it chunkenc.Iterator, chunks []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
 	converted := make([]GenericChunk, len(chunks))
 	for i, c := range chunks {
 		converted[i] = NewGenericChunk(int64(c.From), int64(c.Through), c.Data.NewIterator)
 	}
 
-	return NewGenericChunkMergeIterator(converted)
+	return NewGenericChunkMergeIterator(it, converted)
 }
 
 // NewGenericChunkMergeIterator returns a chunkenc.Iterator that merges generic chunks together.
-func NewGenericChunkMergeIterator(chunks []GenericChunk) chunkenc.Iterator {
-	iter := newMergeIterator(chunks)
-	return newIteratorAdapter(iter)
+func NewGenericChunkMergeIterator(it chunkenc.Iterator, chunks []GenericChunk) chunkenc.Iterator {
+	var iter *mergeIterator
+
+	adapter, ok := it.(*iteratorAdapter)
+	if ok {
+		iter = newMergeIterator(adapter.underlying, chunks)
+	} else {
+		iter = newMergeIterator(nil, chunks)
+	}
+
+	return newIteratorAdapter(adapter, iter)
 }
 
 // iteratorAdapter turns a batchIterator into a chunkenc.Iterator.
@@ -80,7 +88,13 @@ type iteratorAdapter struct {
 	underlying iterator
 }
 
-func newIteratorAdapter(underlying iterator) chunkenc.Iterator {
+func newIteratorAdapter(it *iteratorAdapter, underlying iterator) chunkenc.Iterator {
+	if it != nil {
+		it.batchSize = 1
+		it.underlying = underlying
+		it.curr = chunk.Batch{}
+		return it
+	}
 	return &iteratorAdapter{
 		batchSize:  1,
 		underlying: underlying,

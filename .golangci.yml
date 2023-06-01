@@ -36,3 +36,8 @@ run:
     - netgo
     - requires_docker
     - requires_libpcap
+
+issues:
+  exclude-rules:
+    - linters: [revive]
+      text: "if-return"

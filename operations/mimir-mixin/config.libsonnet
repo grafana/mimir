@@ -212,14 +212,14 @@
     alertmanager_alerts: {
       kubernetes: {
         memory_allocation: |||
-          (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > %(allocationpercent)s
+          (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > %(threshold)s
           and
           (container_spec_memory_limit_bytes{container="alertmanager"} > 0)
         |||,
       },
       baremetal: {
         memory_allocation: |||
-          (process_resident_memory_bytes{job=~".*/alertmanager"} / on(%(instanceLabel)s) node_memory_MemTotal_bytes{}) > %(allocationpercent)s
+          (process_resident_memory_bytes{job=~".*/alertmanager"} / on(%(per_instance_label)s) node_memory_MemTotal_bytes{}) > %(threshold)s
         |||,
       },
     },
@@ -232,7 +232,10 @@
             container_memory_rss{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
               /
             ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
-          ) > %(allocationpercent)s
+          )
+          # Match only Mimir namespaces.
+          * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
+          > %(threshold)s
         |||,
       },
       baremetal: {
@@ -240,8 +243,8 @@
           (
             process_resident_memory_bytes{job=~".*/(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
               /
-            on(%(instanceLabel)s) node_memory_MemTotal_bytes{}
-          ) > %(allocationpercent)s
+            on(%(per_instance_label)s) node_memory_MemTotal_bytes{}
+          ) > %(threshold)s
         |||,
       },
     },

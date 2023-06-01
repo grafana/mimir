@@ -48,10 +48,7 @@ func (f folderTitles) IsCumulative() bool {
 	return true
 }
 
-func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
-	output := &analyze.MetricsInGrafana{}
-	output.OverallMetrics = make(map[string]struct{})
-
+func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
 	defer cancel()
 
@@ -60,15 +57,33 @@ func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	boardLinks, err := c.SearchDashboards(ctx, "", false)
+	output, err := AnalyzeGrafana(ctx, c, cmd.folders)
+	if err != nil {
+		return err
+	}
+	err = writeOut(output, cmd.outputFile)
 	if err != nil {
 		return err
 	}
 
-	filterOnFolders := len(cmd.folders) > 0
+	return nil
+}
+
+// AnalyzeGrafana analyze grafana's dashboards and return the list metrics used in them.
+func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string) (*analyze.MetricsInGrafana, error) {
+
+	output := &analyze.MetricsInGrafana{}
+	output.OverallMetrics = make(map[string]struct{})
+
+	boardLinks, err := c.SearchDashboards(ctx, "", false)
+	if err != nil {
+		return nil, err
+	}
+
+	filterOnFolders := len(folders) > 0
 
 	for _, link := range boardLinks {
-		if filterOnFolders && !slices.Contains(cmd.folders, link.FolderTitle) {
+		if filterOnFolders && !slices.Contains(folders, link.FolderTitle) {
 			continue
 		}
 		data, _, err := c.GetRawDashboardByUID(ctx, link.UID)
@@ -83,13 +98,7 @@ func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
 		}
 		analyze.ParseMetricsInBoard(output, board)
 	}
-
-	err = writeOut(output, cmd.outputFile)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return output, nil
 }
 
 func unmarshalDashboard(data []byte, link sdk.FoundBoard) (minisdk.Board, error) {

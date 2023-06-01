@@ -88,7 +88,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	verifyalertCmd.Arg("template-files", "The template files to verify").ExistingFilesVar(&a.TemplateFiles)
 }
 
-func (a *AlertmanagerCommand) setup(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {
 	cli, err := client.New(a.ClientConfig)
 	if err != nil {
 		return err
@@ -98,7 +98,7 @@ func (a *AlertmanagerCommand) setup(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (a *AlertmanagerCommand) getConfig(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) getConfig(_ *kingpin.ParseContext) error {
 	cfg, templates, err := a.cli.GetAlertmanagerConfig(context.Background())
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
@@ -113,7 +113,7 @@ func (a *AlertmanagerCommand) getConfig(k *kingpin.ParseContext) error {
 	return p.PrintAlertmanagerConfig(cfg, templates)
 }
 
-func (a *AlertmanagerCommand) readAlertManagerConfig(k *kingpin.ParseContext) (string, map[string]string, error) {
+func (a *AlertmanagerCommand) readAlertManagerConfig() (string, map[string]string, error) {
 	content, err := os.ReadFile(a.AlertmanagerConfigFile)
 	if err != nil {
 		return "", nil, errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile)
@@ -136,20 +136,20 @@ func (a *AlertmanagerCommand) readAlertManagerConfig(k *kingpin.ParseContext) (s
 	return cfg, templates, nil
 }
 
-func (a *AlertmanagerCommand) verifyAlertmanagerConfig(k *kingpin.ParseContext) error {
-	_, _, err := a.readAlertManagerConfig(k)
+func (a *AlertmanagerCommand) verifyAlertmanagerConfig(_ *kingpin.ParseContext) error {
+	_, _, err := a.readAlertManagerConfig()
 	return err
 }
 
-func (a *AlertmanagerCommand) loadConfig(k *kingpin.ParseContext) error {
-	cfg, templates, err := a.readAlertManagerConfig(k)
+func (a *AlertmanagerCommand) loadConfig(_ *kingpin.ParseContext) error {
+	cfg, templates, err := a.readAlertManagerConfig()
 	if err != nil {
 		return err
 	}
 	return a.cli.CreateAlertmanagerConfig(context.Background(), cfg, templates)
 }
 
-func (a *AlertmanagerCommand) deleteConfig(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) deleteConfig(_ *kingpin.ParseContext) error {
 	err := a.cli.DeleteAlermanagerConfig(context.Background())
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		return err
@@ -203,7 +203,7 @@ type metric struct {
 	Metric map[string]string `json:"metric"`
 }
 
-func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
+func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 	var empty interface{}
 	if a.IgnoreString != "" {
 		a.IgnoreAlerts = make(map[string]interface{})

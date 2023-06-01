@@ -76,11 +76,11 @@ func (p *prometheusXorChunk) Add(m model.SamplePair) (EncodedChunk, error) {
 	return nil, nil
 }
 
-func (p *prometheusXorChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
+func (p *prometheusXorChunk) AddHistogram(_ int64, _ *histogram.Histogram) (EncodedChunk, error) {
 	return nil, fmt.Errorf("cannot add histogram to sample chunk")
 }
 
-func (p *prometheusXorChunk) AddFloatHistogram(timestamp int64, h *histogram.FloatHistogram) (EncodedChunk, error) {
+func (p *prometheusXorChunk) AddFloatHistogram(_ int64, _ *histogram.FloatHistogram) (EncodedChunk, error) {
 	return nil, fmt.Errorf("cannot add float histogram to sample chunk")
 }
 
@@ -107,11 +107,11 @@ func newPrometheusHistogramChunk() *prometheusHistogramChunk {
 	return &prometheusHistogramChunk{}
 }
 
-func (p *prometheusHistogramChunk) Add(sample model.SamplePair) (EncodedChunk, error) {
+func (p *prometheusHistogramChunk) Add(_ model.SamplePair) (EncodedChunk, error) {
 	return nil, fmt.Errorf("cannot add float sample to histogram chunk")
 }
 
-func (p *prometheusHistogramChunk) AddFloatHistogram(timestamp int64, h *histogram.FloatHistogram) (EncodedChunk, error) {
+func (p *prometheusHistogramChunk) AddFloatHistogram(_ int64, _ *histogram.FloatHistogram) (EncodedChunk, error) {
 	return nil, fmt.Errorf("cannot add float histogram to histogram chunk")
 }
 
@@ -155,11 +155,11 @@ func newPrometheusFloatHistogramChunk() *prometheusFloatHistogramChunk {
 	return &prometheusFloatHistogramChunk{}
 }
 
-func (p *prometheusFloatHistogramChunk) Add(sample model.SamplePair) (EncodedChunk, error) {
+func (p *prometheusFloatHistogramChunk) Add(_ model.SamplePair) (EncodedChunk, error) {
 	return nil, fmt.Errorf("cannot add float sample to histogram chunk")
 }
 
-func (p *prometheusFloatHistogramChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
+func (p *prometheusFloatHistogramChunk) AddHistogram(_ int64, _ *histogram.Histogram) (EncodedChunk, error) {
 	return nil, fmt.Errorf("cannot add histogram sample to float histogram chunk")
 }
 
@@ -285,13 +285,13 @@ func (p *prometheusChunkIterator) Err() error {
 
 type errorIterator string
 
-func (e errorIterator) Scan() chunkenc.ValueType                         { return chunkenc.ValNone }
-func (e errorIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType { return chunkenc.ValNone }
-func (e errorIterator) Value() model.SamplePair                          { panic("no values") }
-func (e errorIterator) AtHistogram() (int64, *histogram.Histogram)       { panic("no integer histograms") }
+func (e errorIterator) Scan() chunkenc.ValueType                      { return chunkenc.ValNone }
+func (e errorIterator) FindAtOrAfter(_ model.Time) chunkenc.ValueType { return chunkenc.ValNone }
+func (e errorIterator) Value() model.SamplePair                       { panic("no values") }
+func (e errorIterator) AtHistogram() (int64, *histogram.Histogram)    { panic("no integer histograms") }
 func (e errorIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	panic("no float histograms")
 }
-func (e errorIterator) Timestamp() int64                                   { panic("no samples") }
-func (e errorIterator) Batch(size int, valueType chunkenc.ValueType) Batch { panic("no values") }
-func (e errorIterator) Err() error                                         { return errors.New(string(e)) }
+func (e errorIterator) Timestamp() int64                        { panic("no samples") }
+func (e errorIterator) Batch(_ int, _ chunkenc.ValueType) Batch { panic("no values") }
+func (e errorIterator) Err() error                              { return errors.New(string(e)) }

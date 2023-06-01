@@ -121,11 +121,8 @@ func (cfg *Config) Validate() error {
 	if !util.StringsContain(supportedStorageClasses, cfg.StorageClass) && cfg.StorageClass != "" {
 		return errUnsupportedStorageClass
 	}
-	if err := cfg.SSE.Validate(); err != nil {
-		return err
-	}
 
-	return nil
+	return cfg.SSE.Validate()
 }
 
 // SSEConfig configures S3 server side encryption
