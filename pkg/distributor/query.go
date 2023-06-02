@@ -529,7 +529,7 @@ func (t *seriesChunkStreamsTree) moveNext(index int) bool {
 	n := &t.nodes[index]
 	n.nextSeriesIndex++
 	if int(n.nextSeriesIndex) > len(n.ingester.Series) {
-		n.value = nil
+		n.value = labels.EmptyLabels()
 		n.index = -1
 		return false
 	}
@@ -603,11 +603,11 @@ func (t *seriesChunkStreamsTree) playGame(a, b int) (loser, winner int) {
 }
 
 func (t *seriesChunkStreamsTree) less(a, b labels.Labels) bool {
-	if a == nil {
+	if a.IsEmpty() {
 		return false
 	}
 
-	if b == nil {
+	if b.IsEmpty() {
 		return true
 	}
 
