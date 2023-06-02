@@ -109,6 +109,44 @@ func TestSymbolsV1(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, refToSymbol, actual)
 	})
+
+	t.Run("Reader iterate all", func(t *testing.T) {
+		r := s.Reader()
+
+		for i, ref := range sortedSymbolRefs {
+			s, err := r.Read(ref)
+			require.NoError(t, err)
+			require.Equal(t, sortedSymbols[i], s)
+		}
+
+		require.NoError(t, r.Close())
+	})
+
+	t.Run("Reader two distant", func(t *testing.T) {
+		r := s.Reader()
+
+		s1, err := r.Read(sortedSymbolRefs[1])
+		require.NoError(t, err)
+		require.Equal(t, sortedSymbols[1], s1)
+
+		s97, err := r.Read(sortedSymbolRefs[97])
+		require.NoError(t, err)
+		require.Equal(t, sortedSymbols[97], s97)
+
+		require.NoError(t, r.Close())
+	})
+
+	t.Run("Reader trying to reverse", func(t *testing.T) {
+		r := s.Reader()
+
+		_, err = r.Read(sortedSymbolRefs[20])
+		require.NoError(t, err)
+
+		_, err = r.Read(sortedSymbolRefs[10])
+		require.ErrorIs(t, err, errReverseSymbolsReader)
+
+		require.NoError(t, r.Close())
+	})
 }
 
 func TestSymbolsV2(t *testing.T) {
@@ -139,37 +177,81 @@ func TestSymbolsV2(t *testing.T) {
 	// We store only 4 offsets to symbols.
 	require.Len(t, s.offsets, 4)
 
-	for i := 99; i >= 0; i-- {
-		s, err := s.Lookup(uint32(i))
-		require.NoError(t, err)
-		require.Equal(t, string(rune(i)), s)
-	}
-	_, err = s.Lookup(100)
-	require.ErrorIs(t, err, ErrSymbolNotFound)
-
-	for i := 99; i >= 0; i-- {
-		r, err := s.ReverseLookup(string(rune(i)))
-		require.NoError(t, err)
-		require.Equal(t, uint32(i), r)
-	}
-	_, err = s.ReverseLookup(string(rune(100)))
-	require.ErrorIs(t, err, ErrSymbolNotFound)
-
-	// Use ForEachSymbol to build an offset -> symbol mapping and ensure
-	// that it matches the expected offsets and symbols.
-	var symbols []string
-	expected := make(map[uint32]string)
-	for i := 99; i >= 0; i-- {
-		symbols = append(symbols, string(rune(i)))
-		expected[uint32(i)] = string(rune(i))
-	}
-
-	actual := make(map[uint32]string)
-	err = s.ForEachSymbol(symbols, func(sym string, offset uint32) error {
-		actual[offset] = sym
-		return nil
+	t.Run("Lookup", func(t *testing.T) {
+		for i := 99; i >= 0; i-- {
+			s, err := s.Lookup(uint32(i))
+			require.NoError(t, err)
+			require.Equal(t, string(rune(i)), s)
+		}
+		_, err = s.Lookup(100)
+		require.ErrorIs(t, err, ErrSymbolNotFound)
 	})
 
-	require.NoError(t, err)
-	require.Equal(t, expected, actual)
+	t.Run("ReverseLookup", func(t *testing.T) {
+		for i := 99; i >= 0; i-- {
+			r, err := s.ReverseLookup(string(rune(i)))
+			require.NoError(t, err)
+			require.Equal(t, uint32(i), r)
+		}
+		_, err = s.ReverseLookup(string(rune(100)))
+		require.ErrorIs(t, err, ErrSymbolNotFound)
+	})
+
+	t.Run("ForEachSymbol", func(t *testing.T) {
+		// Use ForEachSymbol to build an offset -> symbol mapping and ensure
+		// that it matches the expected offsets and symbols.
+		var symbols []string
+		expected := make(map[uint32]string)
+		for i := 99; i >= 0; i-- {
+			symbols = append(symbols, string(rune(i)))
+			expected[uint32(i)] = string(rune(i))
+		}
+
+		actual := make(map[uint32]string)
+		err = s.ForEachSymbol(symbols, func(sym string, offset uint32) error {
+			actual[offset] = sym
+			return nil
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("Reader iterate all", func(t *testing.T) {
+		r := s.Reader()
+
+		for i := uint32(0); i <= 99; i++ {
+			sym, err := r.Read(i)
+			require.NoError(t, err)
+			require.Equal(t, string(rune(i)), sym)
+		}
+
+		require.NoError(t, r.Close())
+	})
+
+	t.Run("Reader two distant", func(t *testing.T) {
+		r := s.Reader()
+
+		s7, err := r.Read(7)
+		require.NoError(t, err)
+		require.Equal(t, string(rune(7)), s7)
+
+		s97, err := r.Read(97)
+		require.NoError(t, err)
+		require.Equal(t, string(rune(97)), s97)
+
+		require.NoError(t, r.Close())
+	})
+
+	t.Run("Reader trying to reverse", func(t *testing.T) {
+		r := s.Reader()
+
+		_, err = r.Read(20)
+		require.NoError(t, err)
+
+		_, err = r.Read(10)
+		require.ErrorIs(t, err, errReverseSymbolsReader)
+
+		require.NoError(t, r.Close())
+	})
 }
