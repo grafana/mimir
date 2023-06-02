@@ -100,12 +100,10 @@ func (f *minTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*block
 	limitTime := timestamp.FromTime(time.Now().Add(-f.limit))
 
 	for id, m := range metas {
-		if m.MinTime < limitTime {
-			continue
+		if m.MinTime >= limitTime || (m.Compaction.Level == 1 && m.ULID.Time() >= uint64(limitTime)) {
+			synced.WithLabelValues(minTimeExcludedMeta).Inc()
+			delete(metas, id)
 		}
-
-		synced.WithLabelValues(minTimeExcludedMeta).Inc()
-		delete(metas, id)
 	}
 	return nil
 }
