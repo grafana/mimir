@@ -99,6 +99,7 @@
 ### Mimirtool
 
 * [CHANGE] check rules: will fail on duplicate rules when `--strict` is provided. #5035
+* [FEATURE] sync/diff can now include/exclude namespaces based on a regular expression using `--namespaces-regex` and `--ignore-namespaces-regex`. #5100
 * [ENHANCEMENT] analyze prometheus: allow to specify `-prometheus-http-prefix`. #4966
 * [ENHANCEMENT] analyze grafana: allow to specify `--folder-title` to limit dashboards analysis based on their exact folder title. #4973
 
