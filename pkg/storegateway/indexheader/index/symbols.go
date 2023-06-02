@@ -70,9 +70,12 @@ func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *
 	return s, nil
 }
 
+var ErrSymbolNotFound = errors.New("symbol not found")
+
 // Lookup takes a symbol reference and returns the symbol string.
 // For TSDB index v1, the reference is expected to be the offset of the symbol in the index header file (not the TSDB index file).
 // For TSDB index v2, the reference is expected to be the sequence number of the symbol (starting at 0).
+// If the symbol reference is beyond the last symbol in the symbols table, the return error's cause will be ErrSymbolNotFound.
 func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "lookup symbol")
@@ -82,7 +85,7 @@ func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 
 	if s.version == index.FormatV2 {
 		if int(o) >= s.seen {
-			return "", fmt.Errorf("unknown symbol offset %d", o)
+			return "", fmt.Errorf("%w: symbol offset %d", ErrSymbolNotFound, o)
 		}
 		d.ResetAt(s.offsets[int(o/symbolFactor)])
 		// Walk until we find the one we want.
@@ -94,6 +97,9 @@ func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 		// need to adjust for the fact our view into the file starts at the beginning
 		// of the symbol table.
 		offsetInTable := int(o) - s.tableOffset
+		if offsetInTable >= d.Len() {
+			return "", fmt.Errorf("%w: symbol offset %d", ErrSymbolNotFound, o)
+		}
 		d.ResetAt(offsetInTable)
 	}
 	sym = d.UvarintStr()
@@ -103,6 +109,7 @@ func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 	return sym, nil
 }
 
+// ReverseLookup returns an error with cause ErrSymbolNotFound if the symbol cannot be found.
 func (s *Symbols) ReverseLookup(sym string) (o uint32, err error) {
 	if len(s.offsets) == 0 {
 		return 0, fmt.Errorf("unknown symbol %q - no symbols", sym)
@@ -123,6 +130,7 @@ func (s *Symbols) ReverseLookup(sym string) (o uint32, err error) {
 //
 // If the reference of a symbol cannot be looked up, iteration stops immediately and the error is
 // returned. If f returns an error, iteration stops immediately and the error is returned.
+// ForEachSymbol returns an error with cause ErrSymbolNotFound if any symbol cannot be found.
 func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32) error) (err error) {
 	if len(s.offsets) == 0 {
 		return errors.New("no symbols")
@@ -171,11 +179,14 @@ func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, er
 		}
 		res++
 	}
-	if d.Err() != nil {
+	if err := d.Err(); err != nil {
+		if errors.Is(err, streamencoding.ErrInvalidSize) {
+			return 0, fmt.Errorf("%w: %q", ErrSymbolNotFound, sym)
+		}
 		return 0, d.Err()
 	}
 	if lastSymbol != sym {
-		return 0, fmt.Errorf("unknown symbol %q", sym)
+		return 0, fmt.Errorf("%w: %q", ErrSymbolNotFound, sym)
 	}
 	if s.version == index.FormatV2 {
 		return uint32(res), nil

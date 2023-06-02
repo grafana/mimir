@@ -83,8 +83,8 @@ func TestSymbolsV1(t *testing.T) {
 		}
 
 		// Look beyond the last symbol
-		_, err = s.Lookup(uint32(symbolsTableSize + len(filePrefix) + 1))
-		require.Error(t, err)
+		_, err = s.Lookup(uint32(buf.Len() + 1))
+		require.ErrorIs(t, err, ErrSymbolNotFound)
 	})
 
 	t.Run("ReverseLookup", func(t *testing.T) {
@@ -94,7 +94,7 @@ func TestSymbolsV1(t *testing.T) {
 			require.Equal(t, ref, r)
 		}
 		_, err = s.ReverseLookup("100")
-		require.Error(t, err)
+		require.ErrorIs(t, err, ErrSymbolNotFound)
 	})
 
 	t.Run("ForEachSymbol", func(t *testing.T) {
@@ -145,7 +145,7 @@ func TestSymbolsV2(t *testing.T) {
 		require.Equal(t, string(rune(i)), s)
 	}
 	_, err = s.Lookup(100)
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrSymbolNotFound)
 
 	for i := 99; i >= 0; i-- {
 		r, err := s.ReverseLookup(string(rune(i)))
@@ -153,7 +153,7 @@ func TestSymbolsV2(t *testing.T) {
 		require.Equal(t, uint32(i), r)
 	}
 	_, err = s.ReverseLookup(string(rune(100)))
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrSymbolNotFound)
 
 	// Use ForEachSymbol to build an offset -> symbol mapping and ensure
 	// that it matches the expected offsets and symbols.
