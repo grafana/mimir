@@ -134,7 +134,7 @@ Assuming `max_compaction_range_blocks_size` is the total block size for the larg
 compactor.compaction-concurrency * max_compaction_range_blocks_size * 2
 ```
 
-Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (the default), you could estimate needing 150GB of disk space for every 10M active series owned by the largest tenant. For example, if your largest tenant has 30M active series and `-compactor.compaction-concurrency=1`, we would recommend having a disk with at least 450GB available capacity.
+Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (the default), you could estimate needing 150GB of disk space for every 10M active series owned by the largest tenant. For example, if your largest tenant has 30M active series and `-compactor.compaction-concurrency=1`, we would recommend having a disk with at least 450GB available.
 
 ## Compactor configuration
 
