@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/mtime"
@@ -46,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	pool2 "github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1122,6 +1122,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
+	slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 1024*1024)
+
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
 		var timeseriesCount, metadataCount int
 		for _, i := range indexes {
@@ -1143,7 +1145,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 			}
 		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		err := d.send(localCtx, ingester, timeseries, metadata, req.Source, slabPool)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1192,7 +1194,7 @@ func copyString(s string) string {
 	return string([]byte(s))
 }
 
-func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum, slabPool *pool2.FastReleasingSlabPool[byte]) error {
 	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
 	if err != nil {
 		return err
@@ -1204,7 +1206,7 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Metadata:   metadata,
 		Source:     source,
 	}
-	wrappedReq := &wrappedRequest{WriteRequest: &req}
+	wrappedReq := &wrappedRequest{WriteRequest: &req, slabPool: slabPool}
 	defer wrappedReq.ReturnSliceToPool()
 
 	_, err = ingester_client.PushRaw(ctx, c, wrappedReq)
@@ -1215,36 +1217,33 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	return errors.Wrap(err, "failed pushing to ingester")
 }
 
-var pool = zeropool.Pool[[]byte]{}
+var pool = &sync.Pool{}
 
 type wrappedRequest struct {
 	*mimirpb.WriteRequest
 
-	sliceFromPool []byte
+	slabPool *pool2.FastReleasingSlabPool[byte]
+	slabId   int
 }
 
 func (w *wrappedRequest) Marshal() ([]byte, error) {
+	w.ReturnSliceToPool()
+
 	size := w.WriteRequest.Size()
-	if w.sliceFromPool == nil {
-		w.sliceFromPool = pool.Get()
-	}
+	buf, slabId := w.slabPool.Get(size)
 
-	if cap(w.sliceFromPool) < size {
-		w.sliceFromPool = make([]byte, size)
-	}
+	w.slabId = slabId
 
-	n, err := w.WriteRequest.MarshalToSizedBuffer(w.sliceFromPool[:size])
+	n, err := w.WriteRequest.MarshalToSizedBuffer(buf)
 	if err != nil {
 		return nil, err
 	}
-	return w.sliceFromPool[:n], nil
+	return buf[:n], nil
 }
 
 func (w *wrappedRequest) ReturnSliceToPool() {
-	if w.sliceFromPool != nil {
-		pool.Put(w.sliceFromPool)
-		w.sliceFromPool = nil
-	}
+	w.slabPool.Release(w.slabId)
+	w.slabId = 0
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.

@@ -79,7 +79,10 @@ func containsChunk(a []Chunk, b Chunk) bool {
 	return false
 }
 
-func PushRaw(ctx context.Context, client IngesterClient, in interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+// PushRaw is a copy of (*ingesterClient).Push method, but accepting message with `interface{}` type instead of `*mimirpb.WriteRequest`.
+// Any message that can be marshaled into bytes by gRPC can be passed here.
+func PushRaw(ctx context.Context, client IngesterClient, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	// unwrap client to find *ingesterClient.
 	if c, ok := client.(*closableHealthAndIngesterClient); ok {
 		client = c.IngesterClient
 	}
@@ -89,7 +92,7 @@ func PushRaw(ctx context.Context, client IngesterClient, in interface{}, opts ..
 	}
 
 	out := new(mimirpb.WriteResponse)
-	err := c.cc.Invoke(ctx, "/cortex.Ingester/Push", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/cortex.Ingester/Push", msg, out, opts...)
 	if err != nil {
 		return nil, err
 	}
