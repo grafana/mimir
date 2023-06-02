@@ -74,7 +74,7 @@ require (
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	google.golang.org/api v0.114.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
-	sigs.k8s.io/kustomize/kyaml v0.13.7
+	sigs.k8s.io/kustomize/kyaml v0.14.2
 )
 
 require (
@@ -137,7 +137,7 @@ require (
 	github.com/fatih/color v1.14.1 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	github.com/go-errors/errors v1.4.1 // indirect
+	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
