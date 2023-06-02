@@ -105,8 +105,9 @@ func (c *ActiveSeries) ContainsRef(ref uint64) bool {
 	return c.stripes[stripeID].containsRef(ref)
 }
 
-// Active returns the total number of active series.
-func (c *ActiveSeries) Active(now time.Time) int {
+// Active returns the total number of active series. This method does not purge
+// expired entries, so ActiveWithMatchers should still be called periodically.
+func (c *ActiveSeries) Active() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

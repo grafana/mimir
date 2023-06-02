@@ -1386,7 +1386,7 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) *client.UserSta
 
 	var series uint64
 	if req.GetActiveSeriesOnly() {
-		activeSeries := db.activeSeries.Active(time.Now())
+		activeSeries := db.activeSeries.Active()
 		series = uint64(activeSeries)
 	} else {
 		series = db.Head().NumSeries()

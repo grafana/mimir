@@ -35,21 +35,21 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	allActive, _, valid = c.ActiveWithMatchers(time.Now())
 	assert.Equal(t, 1, allActive)
 	assert.True(t, valid)
-	allActive = c.Active(time.Now())
+	allActive = c.Active()
 	assert.Equal(t, 1, allActive)
 
 	c.UpdateSeries(ls1, ref1, time.Now(), copyFn)
 	allActive, _, valid = c.ActiveWithMatchers(time.Now())
 	assert.Equal(t, 1, allActive)
 	assert.True(t, valid)
-	allActive = c.Active(time.Now())
+	allActive = c.Active()
 	assert.Equal(t, 1, allActive)
 
 	c.UpdateSeries(ls2, ref2, time.Now(), copyFn)
 	allActive, _, valid = c.ActiveWithMatchers(time.Now())
 	assert.Equal(t, 2, allActive)
 	assert.True(t, valid)
-	allActive = c.Active(time.Now())
+	allActive = c.Active()
 	assert.Equal(t, 2, allActive)
 }
 
@@ -105,7 +105,7 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0}, activeMatching)
 	assert.True(t, valid)
-	allActive = c.Active(time.Now())
+	allActive = c.Active()
 	assert.Equal(t, 0, allActive)
 
 	c.UpdateSeries(ls1, ref1, time.Now(), copyFn)
@@ -113,7 +113,7 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{0}, activeMatching)
 	assert.True(t, valid)
-	allActive = c.Active(time.Now())
+	allActive = c.Active()
 	assert.Equal(t, 1, allActive)
 
 	c.UpdateSeries(ls2, ref2, time.Now(), copyFn)
@@ -121,7 +121,7 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	assert.Equal(t, 2, allActive)
 	assert.Equal(t, []int{1}, activeMatching)
 	assert.True(t, valid)
-	allActive = c.Active(time.Now())
+	allActive = c.Active()
 	assert.Equal(t, 2, allActive)
 
 	c.UpdateSeries(ls3, ref3, time.Now(), copyFn)
@@ -129,7 +129,7 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	assert.Equal(t, 3, allActive)
 	assert.Equal(t, []int{2}, activeMatching)
 	assert.True(t, valid)
-	allActive = c.Active(time.Now())
+	allActive = c.Active()
 	assert.Equal(t, 3, allActive)
 
 	c.UpdateSeries(ls3, ref3, time.Now(), copyFn)
@@ -137,7 +137,7 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	assert.Equal(t, 3, allActive)
 	assert.Equal(t, []int{2}, activeMatching)
 	assert.True(t, valid)
-	allActive = c.Active(time.Now())
+	allActive = c.Active()
 	assert.Equal(t, 3, allActive)
 }
 
