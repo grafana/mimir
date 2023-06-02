@@ -29,7 +29,7 @@ func TestRequestActivity(t *testing.T) {
 		},
 		{
 			request:  &client.LabelValuesCardinalityRequest{LabelNames: []string{"hello", "world"}, Matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "test", Value: "value"}}},
-			expected: "test: user=\"\" trace=\"\" request=&LabelValuesCardinalityRequest{LabelNames:[hello world],Matchers:[]*LabelMatcher{&LabelMatcher{Type:EQUAL,Name:test,Value:value,},},}",
+			expected: "test: user=\"\" trace=\"\" request=&LabelValuesCardinalityRequest{LabelNames:[hello world],Matchers:[]*LabelMatcher{&LabelMatcher{Type:EQUAL,Name:test,Value:value,},},ActiveSeriesOnly:false,}",
 		},
 	} {
 		assert.Equal(t, tc.expected, requestActivity(context.Background(), "test", tc.request))

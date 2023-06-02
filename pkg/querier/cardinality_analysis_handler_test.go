@@ -300,6 +300,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 		postRequestForm        url.Values
 		labelNames             []model.LabelName
 		matcher                []*labels.Matcher
+		scope                  SeriesScope
 		labelValuesCardinality *client.LabelValuesCardinalityResponse
 		expectedResponse       labelValuesCardinalityResponse
 	}{
@@ -310,6 +311,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      InMemoryScope,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
@@ -336,6 +338,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher{nameMatcher},
+			scope:      InMemoryScope,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
@@ -361,6 +364,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"foo", "bar"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      InMemoryScope,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{
 					{
@@ -402,6 +406,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"foo", "bar"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      InMemoryScope,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{
 					{
@@ -443,6 +448,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      InMemoryScope,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
@@ -469,6 +475,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      InMemoryScope,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
@@ -496,6 +503,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      InMemoryScope,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
@@ -524,6 +532,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
+			scope:      InMemoryScope,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
 					LabelName:        labels.MetricName,
@@ -549,6 +558,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 		distributor := mockDistributorLabelValuesCardinality(
 			testData.labelNames,
 			testData.matcher,
+			testData.scope,
 			seriesCountTotal,
 			testData.labelValuesCardinality,
 			nil)
@@ -624,6 +634,7 @@ func TestLabelValuesCardinalityHandler_FeatureFlag(t *testing.T) {
 			distributor := mockDistributorLabelValuesCardinality(
 				[]model.LabelName{"foo"},
 				[]*labels.Matcher(nil),
+				InMemoryScope,
 				uint64(0),
 				&client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
 				nil)
@@ -654,6 +665,7 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 	distributor := mockDistributorLabelValuesCardinality(
 		[]model.LabelName{},
 		[]*labels.Matcher(nil),
+		InMemoryScope,
 		uint64(0),
 		&client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
 		nil)
@@ -747,6 +759,7 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 			distributor := mockDistributorLabelValuesCardinality(
 				[]model.LabelName{"foo", "bar"},
 				[]*labels.Matcher(nil),
+				InMemoryScope,
 				uint64(0),
 				&client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
 				testData.distributorError)
@@ -811,8 +824,8 @@ func mockDistributorLabelNamesAndValues(items []*client.LabelValues, err error) 
 	return distributor
 }
 
-func mockDistributorLabelValuesCardinality(labelNames []model.LabelName, matchers []*labels.Matcher, seriesCount uint64, cardinalityResponse *client.LabelValuesCardinalityResponse, err error) *mockDistributor {
+func mockDistributorLabelValuesCardinality(labelNames []model.LabelName, matchers []*labels.Matcher, scope SeriesScope, seriesCount uint64, cardinalityResponse *client.LabelValuesCardinalityResponse, err error) *mockDistributor {
 	distributor := &mockDistributor{}
-	distributor.On("LabelValuesCardinality", mock.Anything, labelNames, matchers).Return(seriesCount, cardinalityResponse, err)
+	distributor.On("LabelValuesCardinality", mock.Anything, labelNames, matchers, scope).Return(seriesCount, cardinalityResponse, err)
 	return distributor
 }
