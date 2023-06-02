@@ -57,7 +57,7 @@ MIXIN_OUT_PATH := operations/mimir-mixin-compiled
 MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
 
 # path to the mimir jsonnet manifests
-JSONNET_MANIFESTS_PATHS := operations/mimir development
+JSONNET_MANIFESTS_PATHS := operations/mimir operations/mimir-tests development
 
 # path to the mimir doc sources
 DOC_SOURCES_PATH := docs/sources/mimir
