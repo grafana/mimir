@@ -195,17 +195,24 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"Read path target ratio , as a fraction of 1, for CPU/memory utilization based request limiting")
 }
 
-	if cfg.UtilizationBasedLimitingEnabled {
-		if cfg.CPUUtilizationTarget == 0 {
-			return fmt.Errorf("CPU utilization target must be set")
-		}
-		if cfg.MemoryUtilizationTarget == 0 {
-			return fmt.Errorf("memory utilization target must be set")
-		}
-		if cfg.ReadPathUtilizationRatio == 0 {
-			return fmt.Errorf("read path utilization target ratio must be set")
-		}
+func (cfg *Config) Validate() error {
+	if !cfg.UtilizationBasedLimitingEnabled {
+		return nil
 	}
+
+	if cfg.CPUUtilizationTarget == 0 {
+		return fmt.Errorf("CPU utilization target must be set")
+	}
+	if cfg.MemoryUtilizationTarget == 0 {
+		return fmt.Errorf("memory utilization target must be set")
+	}
+	if cfg.ReadPathUtilizationRatio == 0 {
+		return fmt.Errorf("read path utilization target ratio must be set")
+	}
+
+	return nil
+}
+
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 	if cfg.IgnoreSeriesLimitForMetricNames == "" {
 		return nil
