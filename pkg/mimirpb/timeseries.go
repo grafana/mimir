@@ -39,12 +39,6 @@ var (
 		},
 	}
 
-	metadataPool = sync.Pool{
-		New: func() interface{} {
-			return &MetricMetadata{}
-		},
-	}
-
 	// yoloSlicePool is a pool of byte slices which are used to back the yoloStrings of this package.
 	yoloSlicePool = sync.Pool{
 		New: func() interface{} {
