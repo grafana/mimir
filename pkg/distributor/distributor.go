@@ -758,9 +758,10 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			// If we found both the cluster and replica labels, we only want to include the cluster label when
 			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
 			// series we're trying to dedupe when HA tracking moves over to a different replica.
-			for _, ts := range req.Timeseries {
-				removeLabel(haReplicaLabel, &ts.Labels)
-				ts.ClearUnmarshalData()
+			for ix := range req.Timeseries {
+				if removeLabel(haReplicaLabel, &req.Timeseries[ix].Labels) {
+					req.Timeseries[ix].ClearUnmarshalData()
+				}
 			}
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
@@ -809,20 +810,20 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 
 				// We can't reuse raw unmarshalled data for the timeseries after relabeling the series.
 				// (Maybe we could, if labels are exactly the same, but it's expensive to check.)
-				ts.ClearUnmarshalData()
+				req.Timeseries[tsIdx].ClearUnmarshalData()
 			}
 
 			for _, labelName := range d.limits.DropLabels(userID) {
 				if removeLabel(labelName, &ts.Labels) {
 					// If we have dropped a label, we can't reuse raw unmarshalled data for the timeseries.
-					ts.ClearUnmarshalData()
+					req.Timeseries[tsIdx].ClearUnmarshalData()
 				}
 			}
 
 			// Prometheus strips empty values before storing; drop them now, before sharding to ingesters.
 			if removeEmptyLabelValues(&ts.Labels) {
 				// If we have modified the series, we can't reuse raw unmarshalled data for the timeseries.
-				ts.ClearUnmarshalData()
+				req.Timeseries[tsIdx].ClearUnmarshalData()
 			}
 
 			if len(ts.Labels) == 0 {
@@ -837,7 +838,8 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			// later in the validation phase, we ignore them here.
 			// 3) Ingesters expect labels to be sorted in the Push request.
 			if sortLabelsIfNeeded(ts.Labels) {
-				ts.ClearUnmarshalData()
+				// If we have reordered labels, we can't reuse raw unmarshalled data for the timeseries.
+				req.Timeseries[tsIdx].ClearUnmarshalData()
 			}
 		}
 
