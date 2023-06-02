@@ -17,7 +17,7 @@ Disabling the bucket index is not recommended.
 ## Benefits
 
 The [querier]({{< relref "../components/querier.md" >}}), [store-gateway]({{< relref "../components/store-gateway.md" >}}) and [ruler]({{< relref "../components/ruler/index.md" >}}) must have an almost[^1] up-to-date view of the storage bucket, in order to find the right blocks to look up at query time (querier) and to load a block's [index-header]({{< relref "../binary-index-header.md" >}}) (store-gateway).
-Because of this, they need to periodically scan the bucket to look for new blocks uploaded by ingester or compactor, and blocks deleted (or marked for deletion) by compactor.
+Because of this, they need to periodically scan the bucket to look for new blocks uploaded by ingesters or compactors, and blocks deleted (or marked for deletion) by compactors.
 
 When the bucket index is enabled, the querier, store-gateway, and ruler periodically look up the per-tenant bucket index instead of scanning the bucket via `list objects` operations.
 
@@ -44,7 +44,7 @@ The [compactor]({{< relref "../components/compactor/index.md" >}}) periodically 
 You can configure the frequency with which the bucket index is updated via `-compactor.cleanup-interval`.
 
 The use of the bucket index is optional, but the index is built and updated by the compactor even if `-blocks-storage.bucket-store.bucket-index.enabled=false`.
-This behavior ensures that the bucket index for any tenant exists and that query result consistency is guaranteed if a Grafana Mimir cluster operator enable the bucket index in a live cluster.
+This behavior ensures that the bucket index for any tenant exists and that query result consistency is guaranteed if a Grafana Mimir cluster operator enables the bucket index in a live cluster.
 The overhead introduced by keeping the bucket index updated is not significant.
 
 ## How it's used by the querier
@@ -73,7 +73,7 @@ If a bucket index is unused for the amount of time configured via `-blocks-stora
 This is useful for tenants that are resharded to different queriers when [shuffle sharding]({{< relref "../../../configure/configure-shuffle-sharding/index.md" >}}) is enabled.
 
 At query time the querier and ruler determine how old a bucket index is based on its `updated_at` field.
-If the age is older than the period configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period` a query fails.
+The query fails if the bucket index is older than the period configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period`.
 This circuit breaker ensures queriers and rulers do not return any partial query results due to a stale view over the long-term storage.
 
 ## How it's used by the store-gateway
