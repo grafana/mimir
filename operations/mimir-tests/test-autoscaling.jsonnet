@@ -60,7 +60,7 @@ mimir {
     triggers: [
       {
         metric_name: 'cortex_test_hpa_%s' % $._config.namespace,
-        metric_type: 'Value', // This is what we're testing.
+        metric_type: 'Value',  // This is what we're testing.
         query: 'some_query_goes_here',
         threshold: '123',
       },
