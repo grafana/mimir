@@ -44,7 +44,7 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToFirstSource, chunkPresentInBothSources}}})},
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToSecondSource, chunkPresentInBothSources}}})},
 		},
-		config: &streamingChunkSeriesConfig{
+		context: &streamingChunkSeriesContext{
 			chunkIteratorFunc: chunkIteratorFunc,
 			mint:              1000,
 			maxt:              6000,
@@ -82,7 +82,7 @@ func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
 		sources: []client.StreamingSeriesSource{
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{})},
 		},
-		config: &streamingChunkSeriesConfig{
+		context: &streamingChunkSeriesContext{
 			chunkIteratorFunc: nil,
 			mint:              1000,
 			maxt:              6000,
