@@ -26,11 +26,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-type SeriesCardinalityScope string
+type SeriesScope string
 
 const (
-	SeriesScopeInMemory SeriesCardinalityScope = "inmemory"
-	SeriesScopeActive   SeriesCardinalityScope = "active"
+	InMemoryScope SeriesScope = "inmemory"
+	ActiveScope   SeriesScope = "active"
 )
 
 // Distributor is the read interface to the distributor, made an interface here
@@ -43,7 +43,7 @@ type Distributor interface {
 	MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error)
 	MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error)
 	LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error)
-	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope SeriesCardinalityScope) (uint64, *client.LabelValuesCardinalityResponse, error)
+	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope SeriesScope) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
 func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryChunkMetrics *stats.QueryChunkMetrics, logger log.Logger) QueryableWithFilter {

@@ -1045,7 +1045,7 @@ func (m *errDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMetada
 	return nil, errDistributorError
 }
 
-func (m *errDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, SeriesCardinalityScope) (uint64, *client.LabelValuesCardinalityResponse, error) {
+func (m *errDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, SeriesScope) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, errDistributorError
 }
 
@@ -1079,7 +1079,7 @@ func (d *emptyDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMeta
 	return nil, nil
 }
 
-func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, SeriesCardinalityScope) (uint64, *client.LabelValuesCardinalityResponse, error) {
+func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, SeriesScope) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, nil
 }
 

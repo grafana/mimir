@@ -27,7 +27,7 @@ const (
 	minLimit           = 0
 	maxLimit           = 500
 	defaultLimit       = 20
-	defaultSeriesScope = SeriesScopeInMemory
+	defaultSeriesScope = InMemoryScope
 )
 
 // LabelNamesCardinalityHandler creates handler for label names cardinality endpoint.
@@ -106,7 +106,7 @@ func extractLabelNamesRequestParams(r *http.Request) ([]*labels.Matcher, int, er
 }
 
 // extractLabelValuesRequestParams parses query params from GET requests and parses request body from POST requests
-func extractLabelValuesRequestParams(r *http.Request) (labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope SeriesCardinalityScope, limit int, err error) {
+func extractLabelValuesRequestParams(r *http.Request) (labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope SeriesScope, limit int, err error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, nil, "", 0, err
 	}
@@ -169,18 +169,18 @@ func extractLimit(r *http.Request) (limit int, err error) {
 }
 
 // extractSeriesScope parses and validates request param `include_active_series` if it's defined, otherwise returns default value.
-func extractSeriesScope(r *http.Request) (seriesScope SeriesCardinalityScope, err error) {
+func extractSeriesScope(r *http.Request) (seriesScope SeriesScope, err error) {
 	activeSeriesOnlyParams := r.Form["scope"]
 	if len(activeSeriesOnlyParams) == 0 {
 		return defaultSeriesScope, nil
 	}
-	switch SeriesCardinalityScope(activeSeriesOnlyParams[0]) {
-	case SeriesScopeActive:
-		return SeriesScopeActive, nil
-	case SeriesScopeInMemory:
-		return SeriesScopeInMemory, nil
+	switch SeriesScope(activeSeriesOnlyParams[0]) {
+	case ActiveScope:
+		return ActiveScope, nil
+	case InMemoryScope:
+		return InMemoryScope, nil
 	default:
-		return "", fmt.Errorf("invalid 'scope' param '%v'. valid options are: [%s]", activeSeriesOnlyParams[0], strings.Join([]string{string(SeriesScopeActive), string(SeriesScopeInMemory)}, ","))
+		return "", fmt.Errorf("invalid 'scope' param '%v'. valid options are: [%s]", activeSeriesOnlyParams[0], strings.Join([]string{string(ActiveScope), string(InMemoryScope)}, ","))
 	}
 }
 

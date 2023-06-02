@@ -1417,7 +1417,7 @@ func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_clie
 // LabelValuesCardinality performs the following two operations in parallel:
 //   - queries ingesters for label values cardinality of a set of labelNames
 //   - queries ingesters for user stats to get the ingester's series head count
-func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope querier.SeriesCardinalityScope) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
+func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope querier.SeriesScope) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
 	var totalSeries uint64
 	var labelValuesCardinalityResponse *ingester_client.LabelValuesCardinalityResponse
 
@@ -1455,7 +1455,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
-func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope querier.SeriesCardinalityScope) (*ingester_client.LabelValuesCardinalityResponse, error) {
+func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope querier.SeriesScope) (*ingester_client.LabelValuesCardinalityResponse, error) {
 	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
@@ -1489,7 +1489,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	return cardinalityConcurrentMap.toLabelValuesCardinalityResponse(d.ingestersRing.ReplicationFactor()), nil
 }
 
-func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope querier.SeriesCardinalityScope) (*ingester_client.LabelValuesCardinalityRequest, error) {
+func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope querier.SeriesScope) (*ingester_client.LabelValuesCardinalityRequest, error) {
 	matchersProto, err := ingester_client.ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
@@ -1500,9 +1500,9 @@ func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*l
 	}
 	var activeSeriesOnly bool
 	switch seriesScope {
-	case querier.SeriesScopeActive:
+	case querier.ActiveScope:
 		activeSeriesOnly = true
-	case querier.SeriesScopeInMemory:
+	case querier.InMemoryScope:
 		activeSeriesOnly = false
 	default:
 		return nil, fmt.Errorf("unknown series scope %v", seriesScope)
