@@ -23,9 +23,3 @@ updates:
       interval: "weekly"
       time: "06:04"
     open-pull-requests-limit: 5
-  - package-ecosystem: docker
-    directory: /mimir-build-image
-    schedule:
-      interval: "weekly"
-      time: "06:06"
-    open-pull-requests-limit: 5
