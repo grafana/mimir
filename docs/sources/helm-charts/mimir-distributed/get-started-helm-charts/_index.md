@@ -210,7 +210,10 @@ Verify that an ingress controller is set up in the Kubernetes cluster, for examp
    b. Add the following to your `custom.yaml` Helm values file:
 
    ```yaml
+   nginx:
+     enabled: false
    gateway:
+     enabledNonEnterprise: true
      ingress:
        enabled: true
        ingressClassName: nginx
