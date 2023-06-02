@@ -1253,6 +1253,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 * [ENHANCEMENT] Alertmanager: Added a `PodDisruptionBudget` of `withMaxUnavailable = 1`, to ensure we maintain quorum during rollouts. #1683
 * [ENHANCEMENT] Store-gateway anti-affinity can now be enabled/disabled using `store_gateway_allow_multiple_replicas_on_same_node` configuration key. #1730
 * [ENHANCEMENT] Added `store_gateway_zone_a_args`, `store_gateway_zone_b_args` and `store_gateway_zone_c_args` configuration options. #1807
+* [ENHANCEMENT] Update `rollout-operator` image to `v0.6.0`. #TBD 
 * [BUGFIX] Pass primary and secondary multikv stores via CLI flags. Introduced new `multikv_switch_primary_secondary` config option to flip primary and secondary in runtime config.
 
 ### Mimirtool
