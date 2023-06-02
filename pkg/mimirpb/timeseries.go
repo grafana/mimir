@@ -62,6 +62,12 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
+func (p *PreallocWriteRequest) ClearTimeseriesUnmarshalData() {
+	for idx := range p.Timeseries {
+		p.Timeseries[idx].ClearUnmarshalData()
+	}
+}
+
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
 type PreallocTimeseries struct {
 	*TimeSeries
