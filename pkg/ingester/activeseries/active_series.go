@@ -166,14 +166,7 @@ func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels
 func (s *seriesStripe) findEntryForSeries(ref uint64) *atomic.Int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	// Check if already exists within the entries.
-	entry, ok := s.refs[ref]
-	if !ok {
-		return nil
-	}
-
-	return entry.nanos
+	return s.refs[ref].nanos
 }
 
 func (s *seriesStripe) findOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64, labelsCopy func(labels.Labels) labels.Labels) (*atomic.Int64, bool) {
