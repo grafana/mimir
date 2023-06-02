@@ -3288,7 +3288,7 @@ bucket_store:
   # Supported values (most aggressive to least aggressive): speculative,
   # worst-case, worst-case-small-posting-lists, all.
   # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
-  [series_selection_strategy: <string> | default = "all"]
+  [series_selection_strategy: <string> | default = "worst-case"]
 
   series_selection_strategies:
     # (experimental) This option is only used when
@@ -3296,7 +3296,7 @@ bucket_store:
     # Increasing the series preference results in fetching more series than
     # postings. Must be a positive floating point number.
     # CLI flag: -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference
-    [worst_case_series_preference: <float> | default = 1]
+    [worst_case_series_preference: <float> | default = 0.75]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is

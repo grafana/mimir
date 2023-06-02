@@ -7217,7 +7217,7 @@
               "required": false,
               "desc": "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): speculative, worst-case, worst-case-small-posting-lists, all.",
               "fieldValue": null,
-              "fieldDefaultValue": "all",
+              "fieldDefaultValue": "worst-case",
               "fieldFlag": "blocks-storage.bucket-store.series-selection-strategy",
               "fieldType": "string",
               "fieldCategory": "experimental"
@@ -7234,7 +7234,7 @@
                   "required": false,
                   "desc": "This option is only used when blocks-storage.bucket-store.series-selection-strategy=worst-case. Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 1,
+                  "fieldDefaultValue": 0.75,
                   "fieldFlag": "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference",
                   "fieldType": "float",
                   "fieldCategory": "experimental"
