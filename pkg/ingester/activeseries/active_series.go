@@ -105,8 +105,8 @@ func (c *ActiveSeries) ContainsRef(ref uint64) bool {
 	return c.stripes[stripeID].containsRef(ref)
 }
 
-// TotalActive returns the total number of active series.
-func (c *ActiveSeries) TotalActive(now time.Time) int {
+// Active returns the total number of active series.
+func (c *ActiveSeries) Active(now time.Time) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -117,11 +117,11 @@ func (c *ActiveSeries) TotalActive(now time.Time) int {
 	return total
 }
 
-// Active returns the total number of active series, as well as a slice of active series matching each one of the
+// ActiveWithMatchers returns the total number of active series, as well as a slice of active series matching each one of the
 // custom trackers provided (in the same order as custom trackers are defined).
 // The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
 // This should be called periodically to avoid unbounded memory growth.
-func (c *ActiveSeries) Active(now time.Time) (int, []int, bool) {
+func (c *ActiveSeries) ActiveWithMatchers(now time.Time) (int, []int, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	purgeTime := now.Add(-c.timeout)

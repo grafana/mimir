@@ -527,7 +527,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
 			i.replaceMatchers(activeseries.NewMatchers(newMatchersConfig), userDB, now)
 		}
-		allActive, activeMatching, valid := userDB.activeSeries.Active(now)
+		allActive, activeMatching, valid := userDB.activeSeries.ActiveWithMatchers(now)
 		if !valid {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
@@ -1386,7 +1386,7 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) *client.UserSta
 
 	var series uint64
 	if req.GetActiveSeriesOnly() {
-		activeSeries := db.activeSeries.TotalActive(time.Now())
+		activeSeries := db.activeSeries.Active(time.Now())
 		series = uint64(activeSeries)
 	} else {
 		series = db.Head().NumSeries()
