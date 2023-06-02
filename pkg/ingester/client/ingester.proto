@@ -180,7 +180,9 @@ message LabelNamesResponse {
   repeated string label_names = 1;
 }
 
-message UserStatsRequest {}
+message UserStatsRequest {
+  bool active_series_only = 1;
+}
 
 message UserStatsResponse {
   double ingestion_rate = 1;

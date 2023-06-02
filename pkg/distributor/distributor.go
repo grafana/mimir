@@ -1441,7 +1441,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 		return err
 	})
 	group.Go(func() error {
-		response, err := d.UserStats(ctx)
+		response, err := d.UserStats(ctx, seriesScope == querier.ActiveScope)
 		if err == nil {
 			totalSeries = response.NumSeries
 		}
@@ -1691,7 +1691,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetad
 }
 
 // UserStats returns statistics about the current user.
-func (d *Distributor) UserStats(ctx context.Context) (*UserStats, error) {
+func (d *Distributor) UserStats(ctx context.Context, activeSeriesOnly bool) (*UserStats, error) {
 	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
@@ -1701,7 +1701,9 @@ func (d *Distributor) UserStats(ctx context.Context) (*UserStats, error) {
 	replicationSet.MaxErrors = 0
 	replicationSet.MaxUnavailableZones = 0
 
-	req := &ingester_client.UserStatsRequest{}
+	req := &ingester_client.UserStatsRequest{
+		ActiveSeriesOnly: activeSeriesOnly,
+	}
 	resps, err := d.forReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
 		return client.UserStats(ctx, req)
 	})

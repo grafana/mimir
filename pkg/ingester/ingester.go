@@ -1263,7 +1263,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	return result, nil
 }
 
-func (i *Ingester) UserStats(ctx context.Context, _ *client.UserStatsRequest) (*client.UserStatsResponse, error) {
+func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (*client.UserStatsResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
@@ -1278,10 +1278,10 @@ func (i *Ingester) UserStats(ctx context.Context, _ *client.UserStatsRequest) (*
 		return &client.UserStatsResponse{}, nil
 	}
 
-	return createUserStats(db), nil
+	return createUserStats(db, req), nil
 }
 
-func (i *Ingester) AllUserStats(context.Context, *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
+func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
@@ -1297,7 +1297,7 @@ func (i *Ingester) AllUserStats(context.Context, *client.UserStatsRequest) (*cli
 	for userID, db := range users {
 		response.Stats = append(response.Stats, &client.UserIDStatsResponse{
 			UserId: userID,
-			Data:   createUserStats(db),
+			Data:   createUserStats(db, req),
 		})
 	}
 	return response, nil
@@ -1380,14 +1380,23 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	)
 }
 
-func createUserStats(db *userTSDB) *client.UserStatsResponse {
+func createUserStats(db *userTSDB, req *client.UserStatsRequest) *client.UserStatsResponse {
 	apiRate := db.ingestedAPISamples.Rate()
 	ruleRate := db.ingestedRuleSamples.Rate()
+
+	var series uint64
+	if req.GetActiveSeriesOnly() {
+		activeSeries := db.activeSeries.TotalActive(time.Now())
+		series = uint64(activeSeries)
+	} else {
+		series = db.Head().NumSeries()
+	}
+
 	return &client.UserStatsResponse{
 		IngestionRate:     apiRate + ruleRate,
 		ApiIngestionRate:  apiRate,
 		RuleIngestionRate: ruleRate,
-		NumSeries:         db.Head().NumSeries(),
+		NumSeries:         series,
 	}
 }
 

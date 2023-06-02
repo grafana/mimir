@@ -21,7 +21,7 @@ type UserStats struct {
 
 // UserStatsHandler handles user stats to the Distributor.
 func (d *Distributor) UserStatsHandler(w http.ResponseWriter, r *http.Request) {
-	stats, err := d.UserStats(r.Context())
+	stats, err := d.UserStats(r.Context(), false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

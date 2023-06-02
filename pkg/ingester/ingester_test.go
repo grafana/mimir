@@ -4467,6 +4467,14 @@ func Test_Ingester_UserStats(t *testing.T) {
 	assert.InDelta(t, 0.2, res.ApiIngestionRate, 0.0001)
 	assert.InDelta(t, float64(0), res.RuleIngestionRate, 0.0001)
 	assert.Equal(t, uint64(3), res.NumSeries)
+
+	res, err = i.UserStats(ctx, &client.UserStatsRequest{ActiveSeriesOnly: true})
+	require.NoError(t, err)
+	assert.InDelta(t, 0.2, res.ApiIngestionRate, 0.0001)
+	assert.InDelta(t, float64(0), res.RuleIngestionRate, 0.0001)
+	// Active series are considered according to the wall time during the push, not the sample timestamp.
+	// Therefore all three series are still active at this point.
+	assert.Equal(t, uint64(3), res.NumSeries)
 }
 
 func Test_Ingester_AllUserStats(t *testing.T) {

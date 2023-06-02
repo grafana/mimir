@@ -105,6 +105,18 @@ func (c *ActiveSeries) ContainsRef(ref uint64) bool {
 	return c.stripes[stripeID].containsRef(ref)
 }
 
+// TotalActive returns the total number of active series.
+func (c *ActiveSeries) TotalActive(now time.Time) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	total := 0
+	for s := 0; s < numStripes; s++ {
+		total += c.stripes[s].getTotal()
+	}
+	return total
+}
+
 // Active returns the total number of active series, as well as a slice of active series matching each one of the
 // custom trackers provided (in the same order as custom trackers are defined).
 // The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
@@ -134,6 +146,13 @@ func (s *seriesStripe) containsRef(ref uint64) bool {
 
 	_, ok := s.refs[ref]
 	return ok
+}
+
+// getTotal will return the total active series in the stripe
+func (s *seriesStripe) getTotal() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.active
 }
 
 // getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
