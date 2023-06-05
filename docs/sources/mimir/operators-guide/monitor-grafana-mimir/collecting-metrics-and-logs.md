@@ -10,7 +10,7 @@ weight: 60
 # Collecting metrics and logs from Grafana Mimir
 
 You can collect logs and metrics from a Mimir or GEM cluster. To set up dashboards and alerts,
-see [Installing Grafana Mimir dashboards and alerts]({{< relref "installing-dashboards-and-alerts.md" >}})
+see [Installing Grafana Mimir dashboards and alerts]({{< relref "./installing-dashboards-and-alerts" >}})
 or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations/integration-mimir/).
 
 It is easier and best to monitor a cluster if it was installed via the Grafana Mimir Helm chart.
@@ -26,7 +26,7 @@ even if Mimir or GEM is not deployed via the Helm chart.
 If you are not using the Helm chart, start by using the Agent configuration
 from [Collect metrics and logs via Grafana Agent]({{< relref "#collect-metrics-and-logs-via-grafana-agent" >}}).
 You might need to modify it. For
-more information, see [dashboards and alerts requirements]({{< relref "requirements.md" >}}).
+more information, see [dashboards and alerts requirements]({{< relref "./requirements" >}}).
 
 ### Service discovery
 
