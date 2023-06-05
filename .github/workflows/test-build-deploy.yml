@@ -200,6 +200,15 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Get Go build cache path
+        id: gocache
+        run: |
+          echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - name: Cache Go build cache
+        uses: actions/cache@v3
+        with:
+          key: build-go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          path: ${{ steps.gocache.outputs.path }}
       - name: Build Multiarch Docker Images Locally
         # Ignore mimir-build-image and mimir-rules-action.
         run: |
