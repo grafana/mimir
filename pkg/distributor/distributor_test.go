@@ -3727,7 +3727,7 @@ func (i *mockIngester) countCalls(name string) int {
 
 // noopIngester is a mocked ingester which does nothing.
 type noopIngester struct {
-	client.IngesterClient
+	client.IngesterClientExt
 	grpc_health_v1.HealthClient
 }
 
@@ -3736,6 +3736,10 @@ func (i *noopIngester) Close() error {
 }
 
 func (i *noopIngester) Push(context.Context, *mimirpb.WriteRequest, ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	return nil, nil
+}
+
+func (i *noopIngester) PushSerialized(context.Context, *client.SerializedWriteRequest, ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	return nil, nil
 }
 

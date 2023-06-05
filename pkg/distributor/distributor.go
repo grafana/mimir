@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	prompool "github.com/prometheus/prometheus/util/pool"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/mtime"
@@ -72,6 +73,9 @@ const (
 	// Size of "slab" when using pooled buffers for marshaling write requests. When handling single Push request
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
+
+	minPushSerializeBufSize = 32
+	maxPushSerializeBufSize = 128 << 20 // 128 MB
 )
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -83,6 +87,8 @@ type Distributor struct {
 	ingestersRing ring.ReadRing
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
+
+	serializeBufPool *prompool.Pool
 
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
@@ -238,7 +244,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		limits:                limits,
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
-		QueryChunkMetrics:     stats.NewQueryChunkMetrics(reg),
+		serializeBufPool: prompool.New(minPushSerializeBufSize, maxPushSerializeBufSize, 2, func(sz int) interface{} { // 8 MB max buffer size
+			return make([]byte, 0, sz)
+		}),
+		QueryChunkMetrics: stats.NewQueryChunkMetrics(reg),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -1212,15 +1221,23 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	if err != nil {
 		return err
 	}
-	c := h.(ingester_client.IngesterClient)
-
 	req := mimirpb.WriteRequest{
 		Timeseries: timeseries,
 		Metadata:   metadata,
 		Source:     source,
 	}
+	c := h.(ingester_client.IngesterClientExt)
 
-	_, err = c.Push(ctx, &req)
+	sz := req.Size()
+	buf := d.serializeBufPool.Get(sz).([]byte)[:sz]
+	defer d.serializeBufPool.Put(buf)
+
+	_, err = req.MarshalToSizedBuffer(buf)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.PushSerialized(ctx, &ingester_client.SerializedWriteRequest{Payload: buf})
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
