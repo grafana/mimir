@@ -1,13 +1,14 @@
 ---
 aliases:
+  - storing-exemplars
   - ../using-exemplars/storing-exemplars/
 description: Learn how to store exemplars in Grafana Mimir.
-menuTitle: Storing exemplars
-title: Storing exemplars in Grafana Mimir
+menuTitle: Store exemplars
+title: Store exemplars in Grafana Mimir
 weight: 30
 ---
 
-# Storing exemplars in Grafana Mimir
+# Store exemplars in Grafana Mimir
 
 You can enable exemplar storage in Grafana Mimir and view the resulting data in Grafana.
 While exemplars can be enabled for all tenants at once or for only specific tenants, we recommend enabling and enforcing limits for exemplars for only specific tenants.
