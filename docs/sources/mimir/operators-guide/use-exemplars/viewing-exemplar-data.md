@@ -1,13 +1,14 @@
 ---
 aliases:
+  - viewing-exemplar-data/
   - ../using-exemplars/viewing-exemplar-data/
 description: Learn how to view exemplar data in Grafana Mimir.
-menuTitle: Viewing exemplar data
-title: Viewing exemplar data in Grafana Explore
+menuTitle: View exemplar data
+title: View exemplar data in Grafana Explore
 weight: 40
 ---
 
-# Viewing exemplar data in Grafana Explore
+# View exemplar data in Grafana Explore
 
 Grafana Explore visualizes exemplar traces as highlighted points alongside metrics data.
 For more information, see [View exemplar data](/docs/grafana/latest/basics/exemplars/view-exemplars/#view-exemplar-data) topic in Grafana OSS documentation.
