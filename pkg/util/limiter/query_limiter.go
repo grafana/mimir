@@ -19,7 +19,7 @@ import (
 
 type queryLimiterCtxKey struct{}
 
-const cardinalityStrategy = "Consider reducing the time range and/or number of series selected by the query, and/or increase the number of query shards. To reduce the number of series selected, add more label matchers to the query. To increase the number of query shards, increase the value of -<sharding option name here>"
+const cardinalityStrategy = "Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query"
 
 var (
 	ctxKey                = &queryLimiterCtxKey{}

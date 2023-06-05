@@ -88,7 +88,7 @@ func (id ID) MessageWithPerTenantLimitConfig(msg, flag string, addFlags ...strin
 }
 
 // MessageWithStrategyAndPerTenantLimitConfig returns the provided msg, appending the error id and a
-// suggestion on which strategy to follow for hopefully not hitting the limit, plus which configuration
+// suggestion on which strategy to follow to try not hitting the limit, plus which configuration
 // flag(s) to otherwise change the per-tenant limit.
 func (id ID) MessageWithStrategyAndPerTenantLimitConfig(msg, strategy, flag string, addFlags ...string) string {
 	flagsList, plural := buildFlagsList(flag, addFlags...)
