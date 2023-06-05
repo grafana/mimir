@@ -2,7 +2,24 @@
 
 ## main / unreleased
 
+### Grafana Mimir
+
 * [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
+
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Mimir Continuous Test
+
+### Query-tee
+
+### Documentation
+
+### Tools
+
 
 ## 2.9.0-rc.0
 
