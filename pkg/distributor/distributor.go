@@ -1460,12 +1460,8 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	// Make sure we get a successful response from all the ingesters
-	replicationSet.MaxErrors = 0
-	replicationSet.MaxUnavailableZones = 0
-
 	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
-		cardinalityMap: map[string]map[string]uint64{},
+		cardinalityMapByZone: map[string]map[string]map[string]uint64{},
 	}
 
 	labelValuesReq, err := toLabelValuesCardinalityRequest(labelNames, matchers)
@@ -1473,15 +1469,22 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	_, err = d.forReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
+		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
+		if err != nil {
+			return struct{}{}, err
+		}
+
+		client := poolClient.(ingester_client.IngesterClient)
+
 		stream, err := client.LabelValuesCardinality(ctx, labelValuesReq)
 		if err != nil {
-			return nil, err
+			return struct{}{}, err
 		}
 		defer func() { _ = stream.CloseSend() }()
 
-		return nil, cardinalityConcurrentMap.processLabelValuesCardinalityMessages(stream)
-	})
+		return struct{}{}, cardinalityConcurrentMap.processLabelValuesCardinalityMessages(desc.Zone, stream)
+	}, func(struct{}) {})
 	if err != nil {
 		return nil, err
 	}
@@ -1501,12 +1504,12 @@ func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*l
 }
 
 type labelValuesCardinalityConcurrentMap struct {
-	cardinalityMap map[string]map[string]uint64
-	lock           sync.Mutex
+	// cardinalityMapByZone stores a result for each zone.
+	cardinalityMapByZone map[string]map[string]map[string]uint64
+	lock                 sync.Mutex
 }
 
-func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessages(
-	stream ingester_client.Ingester_LabelValuesCardinalityClient) error {
+func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessages(zone string, stream ingester_client.Ingester_LabelValuesCardinalityClient) error {
 	for {
 		message, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -1514,7 +1517,7 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
 		} else if err != nil {
 			return err
 		}
-		cm.processLabelValuesCardinalityMessage(message)
+		cm.processLabelValuesCardinalityMessage(zone, message)
 	}
 	return nil
 }
@@ -1523,26 +1526,32 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
  * Build a map from all the responses received from all the ingesters.
  * Each label name will represent a key on the cardinalityMap which will have as value a second map, containing
  * as key the label_value and value the respective series_count. This series_count will represent the cumulative result
- * of all (label_name, label_value) tuples from all ingesters.
+ * of all (label_name, label_value) tuples from all ingesters, split by zone.
  *
  * Map: (label_name -> (label_value -> series_count))
  *
  * This method is called per each LabelValuesCardinalityResponse consumed from each ingester
  */
-func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessage(
-	message *ingester_client.LabelValuesCardinalityResponse) {
-
+func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessage(zone string, message *ingester_client.LabelValuesCardinalityResponse) {
 	cm.lock.Lock()
 	defer cm.lock.Unlock()
 
 	for _, item := range message.Items {
-		if _, exists := cm.cardinalityMap[item.LabelName]; !exists {
-			// Label name nonexistent
-			cm.cardinalityMap[item.LabelName] = map[string]uint64{}
+
+		// Create a new map for the label name if it doesn't exist
+		if _, ok := cm.cardinalityMapByZone[item.LabelName]; !ok {
+			cm.cardinalityMapByZone[item.LabelName] = map[string]map[string]uint64{}
 		}
+
 		for labelValue, seriesCount := range item.LabelValueSeries {
-			// Label name existent
-			cm.cardinalityMap[item.LabelName][labelValue] += seriesCount
+
+			// Create a new map for the label value if it doesn't exist
+			if _, ok := cm.cardinalityMapByZone[item.LabelName][labelValue]; !ok {
+				cm.cardinalityMapByZone[item.LabelName][labelValue] = map[string]uint64{}
+			}
+
+			// Add the series count to the map
+			cm.cardinalityMapByZone[item.LabelName][labelValue][zone] += seriesCount
 		}
 	}
 }
@@ -1553,22 +1562,53 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 	cm.lock.Lock()
 	defer cm.lock.Unlock()
 
-	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(cm.cardinalityMap))
-	// Adjust label values' series count based on the ingester's replication factor
-	for labelName, labelValueSeriesCountMap := range cm.cardinalityMap {
-		adjustedSeriesCountMap := make(map[string]uint64, len(labelValueSeriesCountMap))
-		for labelValue, seriesCount := range labelValueSeriesCountMap {
-			adjustedSeriesCountMap[labelValue] = seriesCount / uint64(replicationFactor)
+	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(cm.cardinalityMapByZone))
+	// Adjust label values' series count to return the max value across zones
+	for labelName, labelValueSeriesCountMapByZone := range cm.cardinalityMapByZone {
+		labelValueSeriesCountMap := map[string]uint64{}
+
+		for labelValue, seriesCountMapByZone := range labelValueSeriesCountMapByZone {
+			labelValueSeriesCountMap[labelValue] = approximateCardinalityFromZones(replicationFactor, seriesCountMapByZone)
 		}
+
 		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
 			LabelName:        labelName,
-			LabelValueSeries: adjustedSeriesCountMap,
+			LabelValueSeries: labelValueSeriesCountMap,
 		})
 	}
 
 	return &ingester_client.LabelValuesCardinalityResponse{
 		Items: cardinalityItems,
 	}
+}
+
+// approximateCardinalityFromZones computes the series count while factoring in replication.
+func approximateCardinalityFromZones(replicationFactor int, seriesCountMapByZone map[string]uint64) uint64 {
+	// If we have more than one zone, we return the max value across zones
+	// Values can be different across zones due to incomplete replication or
+	// other issues. Any inconsistency should always be an underestimation of
+	// the real value, so we take the max to get the best available
+	// approximation.
+	if len(seriesCountMapByZone) > 1 {
+		var max uint64
+		for _, seriesCount := range seriesCountMapByZone {
+			if seriesCount > max {
+				max = seriesCount
+			}
+		}
+		return max
+	}
+
+	// If we have a single zone: we can't return the value directly because
+	// series will be replicated randomly across ingesters, and there's no way
+	// here to know how many unique series really exist. In this case, dividing
+	// by the replication factor will give us an approximation of the real
+	// value.
+	var sum uint64
+	for _, seriesCount := range seriesCountMapByZone {
+		sum += seriesCount
+	}
+	return sum / uint64(replicationFactor)
 }
 
 // LabelNames returns all of the label names.
