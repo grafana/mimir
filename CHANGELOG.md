@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+## 2.9.0-rc.0
+
 ### Grafana Mimir
 
 * [CHANGE] Store-gateway: change expanded postings, postings, and label values index cache key format. These caches will be invalidated when rolling out the new Mimir version. #4770 #4978 #5037
