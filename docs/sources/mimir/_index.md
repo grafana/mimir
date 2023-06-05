@@ -15,7 +15,7 @@ keywords:
   - observability
 ---
 
-# Grafana Mimir documentation
+# Grafana Mimir documentation test
 
 ![Grafana Mimir](mimir-logo.png)
 
