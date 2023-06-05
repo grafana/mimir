@@ -72,7 +72,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.14.0
 	go.uber.org/multierr v1.9.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
-	google.golang.org/api v0.114.0
+	google.golang.org/api v0.125.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	sigs.k8s.io/kustomize/kyaml v0.14.2
 )
@@ -97,9 +97,9 @@ require (
 
 require (
 	cloud.google.com/go v0.110.0 // indirect
-	cloud.google.com/go/compute v1.18.0 // indirect
+	cloud.google.com/go/compute v1.19.3 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
-	cloud.google.com/go/iam v0.12.0 // indirect
+	cloud.google.com/go/iam v0.13.0 // indirect
 	github.com/DmitriyVTitov/size v1.5.0 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
@@ -159,8 +159,9 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20230406165453-00490a63f317 // indirect
+	github.com/google/s2a-go v0.1.4 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
-	github.com/googleapis/gax-go/v2 v2.7.1 // indirect
+	github.com/googleapis/gax-go/v2 v2.10.0 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
 	github.com/grafana/gomemcache v0.0.0-20230316202710-a081dae0aba9 // indirect
 	github.com/hashicorp/consul/api v1.20.0 // indirect
@@ -230,13 +231,15 @@ require (
 	go.opentelemetry.io/otel/metric v0.37.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
-	golang.org/x/oauth2 v0.7.0 // indirect
+	golang.org/x/oauth2 v0.8.0 // indirect
 	golang.org/x/sys v0.8.0 // indirect
 	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/tools v0.8.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
+	google.golang.org/genproto v0.0.0-20230530153820-e85fd2cbaebc // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20230530153820-e85fd2cbaebc // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230530153820-e85fd2cbaebc // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/telebot.v3 v3.1.3 // indirect
