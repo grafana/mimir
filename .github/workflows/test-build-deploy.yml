@@ -156,7 +156,7 @@ jobs:
       - name: Cache Go build cache
         uses: actions/cache@v3
         with:
-          key: lint-go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          key: test-${{ matrix.test_group_id }}-go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
       - name: Run Tests
         run: |
@@ -254,7 +254,7 @@ jobs:
       - name: Cache Go build cache
         uses: actions/cache@v3
         with:
-          key: lint-go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          key: integration-${{ matrix.test_group_id }}-go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v3
