@@ -198,7 +198,7 @@ jobs:
         test_group_total: [6]
     steps:
       - name: Upgrade golang
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
           go-version: 1.20.4
       - name: Check out repository
