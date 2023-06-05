@@ -88,6 +88,7 @@
 * [ENHANCEMENT] Alerts: do not fire `MimirAllocatingTooMuchMemory` alert for any matching container outside of namespaces where Mimir is running. #5089
 * [BUGFIX] Dashboards: show cancelled requests in a different color to successful requests in throughput panels on dashboards. #5039
 * [BUGFIX] Dashboards: fix dashboard panels that showed percentages with axes from 0 to 10000%. #5084
+* [BUGFIX] Remove dependency on upstream Kubernetes mixin. #4732
 
 ### Jsonnet
 
