@@ -17,6 +17,7 @@
 * [ENHANCEMENT] Query-frontend: added "response_size_bytes" field to "query stats" log. #5196
 * [ENHANCEMENT] Querier: Refine error messages for per-tenant query limits, informing the user of the preferred strategy for not hitting the limit, in addition to how they may tweak the limit. #5059
 * [BUGFIX] Querier: don't leak memory when processing query requests from query-frontends (ie. when the query-scheduler is disabled). #5199
+* [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 
 ### Mixin
 * [CHANGE] Dashboards: show all workloads in selected namespace on "rollout progress" dashboard. #5113

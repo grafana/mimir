@@ -127,6 +127,10 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 // f will not be returned. If the result of that invocation of f will be returned, the context.Context passed
 // to that invocation of f will not be cancelled by DoUntilQuorum, but the context.Context is a child of ctx
 // passed to DoUntilQuorum and so will be cancelled if ctx is cancelled.
+//
+// Important: to ensure that no context.Context is leaked, you must ensure that ctx is cancelled after DoUntilQuorum
+// returns. (Until ctx is cancelled, ctx will retain a reference to each uncancelled child context.Context for each
+// returned invocation of f.)
 func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequests bool, f func(context.Context, *InstanceDesc) (T, error), cleanupFunc func(T)) ([]T, error) {
 	resultsChan := make(chan instanceResult[T], len(r.Instances))
 	resultsRemaining := len(r.Instances)
