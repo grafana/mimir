@@ -20,8 +20,10 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
-	mu                 sync.RWMutex
-	stripes            [numStripes]seriesStripe
+	stripes [numStripes]seriesStripe
+
+	// matchersMutex protects matchers and lastMatchersUpdate.
+	matchersMutex      sync.RWMutex
 	matchers           *Matchers
 	lastMatchersUpdate time.Time
 
@@ -64,14 +66,14 @@ func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
 }
 
 func (c *ActiveSeries) CurrentMatcherNames() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.matchersMutex.RLock()
+	defer c.matchersMutex.RUnlock()
 	return c.matchers.MatcherNames()
 }
 
 func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.matchersMutex.Lock()
+	defer c.matchersMutex.Unlock()
 
 	for i := 0; i < numStripes; i++ {
 		c.stripes[i].reinitialize(asm)
@@ -81,8 +83,8 @@ func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
 }
 
 func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.matchersMutex.RLock()
+	defer c.matchersMutex.RUnlock()
 	return c.matchers.Config()
 }
 
@@ -108,9 +110,6 @@ func (c *ActiveSeries) ContainsRef(ref uint64) bool {
 // Active returns the total number of active series. This method does not purge
 // expired entries, so ActiveWithMatchers should still be called periodically.
 func (c *ActiveSeries) Active() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	total := 0
 	for s := 0; s < numStripes; s++ {
 		total += c.stripes[s].getTotal()
@@ -123,8 +122,8 @@ func (c *ActiveSeries) Active() int {
 // The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
 // This should be called periodically to avoid unbounded memory growth.
 func (c *ActiveSeries) ActiveWithMatchers(now time.Time) (int, []int, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.matchersMutex.Lock()
+	defer c.matchersMutex.Unlock()
 	purgeTime := now.Add(-c.timeout)
 	c.purge(purgeTime)
 
