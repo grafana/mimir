@@ -3026,8 +3026,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 4096,
           "fieldFlag": "query-frontend.query-sharding-max-regexp-size-bytes",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         },
         {
           "kind": "field",
@@ -4618,8 +4617,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.query-sharding-target-series-per-shard",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         },
         {
           "kind": "field",
@@ -5216,8 +5214,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "blocks-storage.storage-prefix",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "block",
@@ -7633,10 +7630,9 @@
           "required": false,
           "desc": "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 1500000000000,
           "fieldFlag": "compactor.first-level-compaction-wait-period",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -10550,8 +10546,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "ruler-storage.storage-prefix",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "block",
@@ -12451,8 +12446,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "alertmanager-storage.storage-prefix",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "block",
@@ -13558,8 +13552,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-scheduler.max-used-instances",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         }
       ],
       "fieldValue": null,
@@ -13579,8 +13572,7 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "usage-stats.enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -13590,8 +13582,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "custom",
           "fieldFlag": "usage-stats.installation-mode",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         }
       ],
       "fieldValue": null,

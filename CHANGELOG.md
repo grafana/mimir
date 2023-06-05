@@ -20,6 +20,7 @@
 * [CHANGE] Store-gateway: the deprecated configuration parameter `-blocks-storage.bucket-store.consistency-delay` has been removed. #5050
 * [CHANGE] The configuration parameter `-blocks-storage.bucket-store.bucket-index.enabled` has been deprecated and will be removed in Mimir 2.11. Mimir is running by default with the bucket index enabled since version 2.0, and starting from the version 2.11 it will not be possible to disable it. #5051
 * [CHANGE] The configuration parameters `-querier.iterators` and `-query.batch-iterators` have been deprecated and will be removed in Mimir 2.11. Mimir runs by default with `-querier.batch-iterators=true`, and starting from version 2.11 it will not be possible to change this. #5114
+* [CHANGE] Compactor: change default of `-compactor.first-level-compaction-wait-period` to 25m. #5128
 * [FEATURE] Query-frontend: add `-query-frontend.log-query-request-headers` to enable logging of request headers in query logs. #5030
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
@@ -88,6 +89,7 @@
 * [CHANGE] Update to v0.5.0 rollout-operator. #4893
 * [CHANGE] Backend: add `alertmanager_args` to `mimir-backend` when running in read-write deployment mode. Remove hardcoded `filesystem` alertmanager storage. This moves alertmanager's data-dir to `/data/alertmanager` by default. #4907 #4921
 * [CHANGE] Remove `-pdb` suffix from `PodDisruptionBudget` names. This will create new `PodDisruptionBudget` resources. Make sure to prune the old resources; otherwise, rollouts will be blocked. #5109
+* [CHANGE] Query-frontend: enable query sharding for cardinality estimation via `-query-frontend.query-sharding-target-series-per-shard` by default if the results cache is enabled. #5128
 * [ENHANCEMENT] Ingester: configure `-blocks-storage.tsdb.head-compaction-interval=15m` to spread TSDB head compaction over a wider time range. #4870
 * [ENHANCEMENT] Ingester: configure `-blocks-storage.tsdb.wal-replay-concurrency` to CPU request minus 1. #4864
 * [ENHANCEMENT] Compactor: configure `-compactor.first-level-compaction-wait-period` to TSDB head compaction interval plus 10 minutes. #4872
