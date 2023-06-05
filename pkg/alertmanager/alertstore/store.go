@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
-const defaultStateStore = "default"
 const storageBucketName = "alertmanager-storage"
 
 // AlertStore stores and configures users rule configs
@@ -57,12 +56,13 @@ type AlertStore interface {
 
 // NewAlertStore returns a alertmanager store backend client based on the provided cfg.
 func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) (AlertStore, error) {
-	if cfg.Backend == local.Name && cfg.State == defaultStateStore {
+	if cfg.Backend == local.Name {
 		level.Warn(logger).Log("msg", "-alertmanager-storage.backend=local is not suitable for persisting alertmanager state between replicas (silences, notifications); you should switch to an external object store for production use")
 		return local.NewStore(cfg.Local)
 	}
 
-	if cfg.Backend == local.Name && cfg.State != defaultStateStore {
+	// If we manage the configs locally but want to write the state to a bucket, we create a mixed store.
+	if cfg.ManageConfigsLocally {
 		configStore, err := local.NewStore(cfg.Local)
 		if err != nil {
 			return nil, err

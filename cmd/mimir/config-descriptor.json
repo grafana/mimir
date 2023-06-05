@@ -11912,13 +11912,13 @@
         },
         {
           "kind": "field",
-          "name": "backend",
+          "name": "manage_configs_locally",
           "required": false,
-          "desc": "Backend storage to use for the state. Supported backends are: s3, gcs, azure, swift, filesystem.",
+          "desc": "Lets you provision and manage the configs locally, even when writing the state to another backend.",
           "fieldValue": null,
-          "fieldDefaultValue": "default",
-          "fieldFlag": "alertmanager-storage.state",
-          "fieldType": "string"
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager-storage.manage_configs_locally",
+          "fieldType": "boolean"
         },
         {
           "kind": "block",
