@@ -567,10 +567,10 @@ podAntiAffinity:
             operator: In
             values:
               - {{ .component }}
-          - key: app.kubernetes.io/component
+          - key: zone
             operator: NotIn
             values:
-              - {{ .component }}-{{ .rolloutZoneName }}
+              - {{ .rolloutZoneName }}
       topologyKey: {{ .topologyKey | quote }}
 {{- else -}}
 {}
@@ -618,5 +618,21 @@ mimir.siToBytes takes 1 argument
         {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
     {{- else -}}
         {{- .value }}
+    {{- end -}}
+{{- end -}}
+
+{{/*
+parseCPU is used to convert Kubernetes CPU units to the corresponding float value of CPU cores.
+The returned value is a string representation. If you need to do any math on it, please parse the string first.
+
+mimir.parseCPU takes 1 argument
+  .value = the Kubernetes CPU request value
+*/}}
+{{- define "mimir.parseCPU" -}}
+    {{- $value_string := .value | toString -}}
+    {{- if (hasSuffix "m" $value_string) -}}
+        {{ trimSuffix "m" $value_string | float64 | mulf 0.001 -}}
+    {{- else -}}
+        {{- $value_string }}
     {{- end -}}
 {{- end -}}

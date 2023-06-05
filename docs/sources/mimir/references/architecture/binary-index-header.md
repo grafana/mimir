@@ -24,7 +24,7 @@ The index-header is a subset of the block index and contains:
 - [Symbol Table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#symbol-table): Used to unintern string values
 - [Posting Offset Table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#postings-offset-table): Used to look up postings
 
-The following example shows the format of the index-header file that is located in each block store-gateway local directory. It is terminated by a table of contents that serves as an entry point into the index.
+The following example shows the format of the index-header file that is located in each block's store-gateway local directory. It is terminated by a table of contents that serves as an entry point into the index.
 
 ```
 ┌─────────────────────────────┬───────────────────────────────┐

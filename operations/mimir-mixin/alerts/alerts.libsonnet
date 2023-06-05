@@ -562,9 +562,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           alert: $.alertName('AllocatingTooMuchMemory'),
-          expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % {
-            allocationpercent: '0.65',
-            instanceLabel: $._config.per_instance_label,
+          expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
+            threshold: '0.65',
             ingester: $._config.container_names.ingester,
             mimir_write: $._config.container_names.mimir_write,
             mimir_backend: $._config.container_names.mimir_backend,
@@ -581,9 +580,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           alert: $.alertName('AllocatingTooMuchMemory'),
-          expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % {
-            allocationpercent: '0.8',
-            instanceLabel: $._config.per_instance_label,
+          expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
+            threshold: '0.8',
             ingester: $._config.container_names.ingester,
             mimir_write: $._config.container_names.mimir_write,
             mimir_backend: $._config.container_names.mimir_backend,

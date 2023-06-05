@@ -25,7 +25,7 @@ var (
 // InitLogger initialises the global gokit logger (util_log.Logger) and overrides the
 // default logger for the server.
 func InitLogger(cfg *server.Config) {
-	l := newBasicLogger(cfg.LogLevel, cfg.LogFormat)
+	l := newBasicLogger(cfg.LogFormat)
 
 	// when using util_log.Logger, skip 5 stack frames.
 	logger := log.With(l, "caller", log.Caller(5))
@@ -36,7 +36,7 @@ func InitLogger(cfg *server.Config) {
 	cfg.Log = logging.GoKit(level.NewFilter(log.With(l, "caller", log.Caller(6)), cfg.LogLevel.Gokit))
 }
 
-func newBasicLogger(l logging.Level, format logging.Format) log.Logger {
+func newBasicLogger(format logging.Format) log.Logger {
 	var logger log.Logger
 	if format.String() == "json" {
 		logger = log.NewJSONLogger(log.NewSyncWriter(os.Stderr))
@@ -50,7 +50,7 @@ func newBasicLogger(l logging.Level, format logging.Format) log.Logger {
 
 // NewDefaultLogger creates a new gokit logger with the configured level and format
 func NewDefaultLogger(l logging.Level, format logging.Format) log.Logger {
-	logger := newBasicLogger(l, format)
+	logger := newBasicLogger(format)
 	return level.NewFilter(log.With(logger, "ts", log.DefaultTimestampUTC), l.Gokit)
 }
 

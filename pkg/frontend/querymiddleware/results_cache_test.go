@@ -108,14 +108,14 @@ func mkExtent(start, end int64) Extent {
 
 func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 	res := mkAPIResponse(start, end, step)
-	any, err := types.MarshalAny(res)
+	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		panic(err)
 	}
 	return Extent{
 		Start:            start,
 		End:              end,
-		Response:         any,
+		Response:         marshalled,
 		QueryTimestampMs: queryTime,
 	}
 }

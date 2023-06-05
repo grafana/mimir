@@ -80,7 +80,7 @@ type seriesChunksSet struct {
 	seriesChunksPool *pool.SlabPool[storepb.AggrChunk]
 
 	// chunksReleaser releases the memory used to allocate series chunks.
-	chunksReleaser chunksReleaser
+	chunksReleaser releaser
 }
 
 // newSeriesChunksSet creates a new seriesChunksSet. The series slice is pre-allocated with
@@ -115,8 +115,9 @@ func newSeriesChunksSet(seriesCapacity int, seriesReleasable bool) seriesChunksS
 	}
 }
 
-type chunksReleaser interface {
-	// Release the memory used to allocate series chunks.
+type releaser interface {
+	// Release should release resources associated with this releaser instance.
+	// It is not safe to use any resources from this releaser after calling Release.
 	Release()
 }
 

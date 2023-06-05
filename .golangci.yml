@@ -29,10 +29,15 @@ linters-settings:
     errorf: false
 
 run:
-  timeout: 5m
+  timeout: 10m
 
   # List of build tags, all linters use it.
   build-tags:
     - netgo
     - requires_docker
     - requires_libpcap
+
+issues:
+  exclude-rules:
+    - linters: [revive]
+      text: "if-return"

@@ -63,7 +63,7 @@ func newFakeReplicator() *fakeReplicator {
 	}
 }
 
-func (f *fakeReplicator) ReplicateStateForUser(ctx context.Context, userID string, p *clusterpb.Part) error {
+func (f *fakeReplicator) ReplicateStateForUser(_ context.Context, userID string, p *clusterpb.Part) error {
 	f.mtx.Lock()
 	f.results[userID] = p
 	f.mtx.Unlock()

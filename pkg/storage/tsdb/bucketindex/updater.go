@@ -21,7 +21,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -143,12 +142,12 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 	}
 
 	// Unmarshal it.
-	m := metadata.Meta{}
+	m := block.Meta{}
 	if err := json.Unmarshal(metaContent, &m); err != nil {
 		return nil, errors.Wrapf(ErrBlockMetaCorrupted, "unmarshal block meta file %s: %v", metaFile, err)
 	}
 
-	if m.Version != metadata.TSDBVersion1 {
+	if m.Version != block.TSDBVersion1 {
 		return nil, errors.Errorf("unexpected block meta version: %s version: %d", metaFile, m.Version)
 	}
 
@@ -170,17 +169,11 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 
 func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDeletionMark) ([]*BlockDeletionMark, error) {
 	out := make([]*BlockDeletionMark, 0, len(old))
-	discovered := map[ulid.ULID]struct{}{}
 
 	// Find all markers in the storage.
-	err := w.bkt.Iter(ctx, MarkersPathname+"/", func(name string) error {
-		if blockID, ok := IsBlockDeletionMarkFilename(path.Base(name)); ok {
-			discovered[blockID] = struct{}{}
-		}
-		return nil
-	})
+	discovered, err := block.ListBlockDeletionMarks(ctx, w.bkt)
 	if err != nil {
-		return nil, errors.Wrap(err, "list block deletion marks")
+		return nil, err
 	}
 
 	// Since deletion marks are immutable, all markers already existing in the index can just be copied.
@@ -214,13 +207,13 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 }
 
 func (w *Updater) updateBlockDeletionMarkIndexEntry(ctx context.Context, id ulid.ULID) (*BlockDeletionMark, error) {
-	m := metadata.DeletionMark{}
+	m := block.DeletionMark{}
 
-	if err := metadata.ReadMarker(ctx, w.logger, w.bkt, id.String(), &m); err != nil {
-		if errors.Is(err, metadata.ErrorMarkerNotFound) {
+	if err := block.ReadMarker(ctx, w.logger, w.bkt, id.String(), &m); err != nil {
+		if errors.Is(err, block.ErrorMarkerNotFound) {
 			return nil, errors.Wrap(ErrBlockDeletionMarkNotFound, err.Error())
 		}
-		if errors.Is(err, metadata.ErrorUnmarshalMarker) {
+		if errors.Is(err, block.ErrorUnmarshalMarker) {
 			return nil, errors.Wrap(ErrBlockDeletionMarkCorrupted, err.Error())
 		}
 		return nil, err

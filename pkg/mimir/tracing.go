@@ -61,7 +61,7 @@ func NewOpenTelemetryProviderBridge(tracer opentracing.Tracer) *OpenTelemetryPro
 // name will be used instead.
 //
 // This method must be concurrency safe.
-func (p *OpenTelemetryProviderBridge) Tracer(instrumentationName string, opts ...trace.TracerOption) trace.Tracer {
+func (p *OpenTelemetryProviderBridge) Tracer(_ string, _ ...trace.TracerOption) trace.Tracer {
 	return NewOpenTelemetryTracerBridge(p.tracer, p)
 }
 

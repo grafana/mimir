@@ -2,6 +2,14 @@ package main
 
 import future.keywords.every
 
+object_display_name[i] := display_name {
+	contents := input[i].contents
+	contents != null
+	kind := object.get(contents, "kind", "<unknown>")
+	name := object.get(object.get(contents, "metadata", {}), "name", "<unknown>")
+	display_name := sprintf("%v/%v", [kind, name])
+}
+
 has_key(x, k) {
 	_ = x[k]
 }
@@ -12,7 +20,7 @@ should_be_namespaced(contents) {
 }
 
 should_be_namespaced(contents) {
-	not contents.kind in ["PodSecurityPolicy"]
+	not contents.kind in ["PodSecurityPolicy", "Namespace"]
 }
 
 metadata_has_namespace(metadata) {
@@ -22,7 +30,7 @@ metadata_has_namespace(metadata) {
 
 deny[msg] {
 	obj := input[i].contents
-	msg := sprintf("Resource doesn't have a namespace %v", [obj])
+	msg := sprintf("Resource doesn't have a namespace %v", [object_display_name[i]])
 
 	should_be_namespaced(obj)
 	not metadata_has_namespace(obj.metadata)
@@ -30,7 +38,7 @@ deny[msg] {
 
 deny[msg] {
 	obj := input[i].contents
-	msg := sprintf("Resource has a namespace, but shouldn't %v", [obj])
+	msg := sprintf("Resource has a namespace, but shouldn't %v", [object_display_name[i]])
 
 	not should_be_namespaced(obj)
 	metadata_has_namespace(obj.metadata)
@@ -50,13 +58,18 @@ pod_template_has_labels(template, labels) {
 
 deny[msg] {
 	obj := input[i].contents
-	msg := sprintf("TopologySpreadConstraints use labels not present on pods: %v", [obj])
+	msg := sprintf("TopologySpreadConstraints use labels not present on pods: %v", [object_display_name[i]])
 	can_use_topology_spread_constraints(obj.kind)
 
 	pod_template := obj.spec.template
 	topology_spread_constraints_labels := obj.spec.template.spec.topologySpreadConstraints[j].labelSelector.matchLabels
 
 	not pod_template_has_labels(pod_template, topology_spread_constraints_labels)
+}
+
+disable_restricted_security_context_checks {
+	# This value is passed to `conftest test` with the --data flag.
+	data.disable_restricted_security_context_checks
 }
 
 is_mimir_or_gem_image(image) {
@@ -74,8 +87,10 @@ is_openshift(x) {
 }
 
 deny[msg] {
+	not disable_restricted_security_context_checks
+
 	obj := input[i].contents
-	msg := sprintf("Mimir or GEM containers do not have the restricted security context: %v", [obj])
+	msg := sprintf("Mimir or GEM containers do not have the restricted security context: %v", [object_display_name[i]])
 
 	obj.kind in ["StatefulSet", "Deployment"]
 	container := obj.spec.template.spec.containers[j]
@@ -91,8 +106,10 @@ deny[msg] {
 }
 
 deny[msg] {
+	not disable_restricted_security_context_checks
+
 	obj := input[i].contents
-	msg := sprintf("The Mimir or GEM Pod doesn't have the restricted security context: %v", [obj])
+	msg := sprintf("The Mimir or GEM Pod doesn't have the restricted security context: %v", [object_display_name[i]])
 
 	obj.kind in ["StatefulSet", "Deployment"]
 	pod_spec := obj.spec.template.spec
@@ -111,8 +128,10 @@ deny[msg] {
 }
 
 deny[msg] {
+	not disable_restricted_security_context_checks
+
 	obj := input[i].contents
-	msg := sprintf("The Mimir or GEM Pod doesn't have the restricted security context: %v", [obj])
+	msg := sprintf("The Mimir or GEM Pod doesn't have the restricted security context: %v", [object_display_name[i]])
 
 	obj.kind in ["StatefulSet", "Deployment"]
 	pod_spec := obj.spec.template.spec

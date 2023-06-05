@@ -27,11 +27,10 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func createBlock(t *testing.T, blocksDir string, id ulid.ULID, m metadata.Meta) {
+func createBlock(t *testing.T, blocksDir string, id ulid.ULID, m block.Meta) {
 	// We need "chunks" dir and "index" files for upload to work correctly (it expects these to exist).
 	require.NoError(t, os.MkdirAll(path.Join(blocksDir, id.String(), "chunks"), 0777))
 	require.NoError(t, m.WriteToDir(log.NewNopLogger(), path.Join(blocksDir, id.String())))
@@ -52,7 +51,7 @@ func TestShipper(t *testing.T) {
 	logger := log.NewLogfmtLogger(logs)
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	s := NewShipper(logger, overrides, "", nil, blocksDir, bkt, metadata.TestSource)
+	s := newShipper(logger, overrides, "", nil, blocksDir, bkt, block.TestSource)
 
 	t.Run("no shipper file yet", func(t *testing.T) {
 		// No shipper file = nothing is reported as shipped.
@@ -67,7 +66,7 @@ func TestShipper(t *testing.T) {
 		// No blocks have been uploaded yet.
 		require.Equal(t, float64(0), testutil.ToFloat64(s.metrics.lastSuccessfulUploadTime))
 
-		createBlock(t, blocksDir, id1, metadata.Meta{
+		createBlock(t, blocksDir, id1, block.Meta{
 			BlockMeta: tsdb.BlockMeta{
 				ULID:    id1,
 				MaxTime: 2000,
@@ -77,7 +76,7 @@ func TestShipper(t *testing.T) {
 					NumSamples: 100, // Shipper checks if number of samples is greater than 0.
 				},
 			},
-			Thanos: metadata.Thanos{Labels: map[string]string{"a": "b"}},
+			Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 		})
 
 		// Let shipper sync the blocks.
@@ -105,7 +104,7 @@ func TestShipper(t *testing.T) {
 	id2 := ulid.MustNew(2, nil)
 
 	t.Run("sync block without external labels", func(t *testing.T) {
-		createBlock(t, blocksDir, id2, metadata.Meta{
+		createBlock(t, blocksDir, id2, block.Meta{
 			BlockMeta: tsdb.BlockMeta{
 				ULID:    id2,
 				MaxTime: 4000,
@@ -134,7 +133,7 @@ func TestShipper(t *testing.T) {
 	id3 := ulid.MustNew(3, nil)
 
 	t.Run("sync block with 0 samples", func(t *testing.T) {
-		createBlock(t, blocksDir, id3, metadata.Meta{
+		createBlock(t, blocksDir, id3, block.Meta{
 			BlockMeta: tsdb.BlockMeta{
 				ULID:    id3,
 				MaxTime: 4000,
@@ -194,11 +193,11 @@ func TestShipper_DeceivingUploadErrors(t *testing.T) {
 	logger := log.NewLogfmtLogger(os.Stderr)
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	s := NewShipper(logger, overrides, "", nil, blocksDir, bkt, metadata.TestSource)
+	s := newShipper(logger, overrides, "", nil, blocksDir, bkt, block.TestSource)
 
 	// Create and upload a block
 	id1 := ulid.MustNew(1, nil)
-	createBlock(t, blocksDir, id1, metadata.Meta{
+	createBlock(t, blocksDir, id1, block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id1,
 			MaxTime: 2000,
@@ -208,7 +207,7 @@ func TestShipper_DeceivingUploadErrors(t *testing.T) {
 				NumSamples: 100, // Shipper checks if number of samples is greater than 0.
 			},
 		},
-		Thanos: metadata.Thanos{Labels: map[string]string{"a": "b"}},
+		Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 	})
 
 	// Let shipper sync the blocks, expecting the meta.json upload to fail.
@@ -228,7 +227,7 @@ func TestIterBlockMetas(t *testing.T) {
 
 	id1 := ulid.MustNew(1, nil)
 	require.NoError(t, os.Mkdir(path.Join(dir, id1.String()), os.ModePerm))
-	require.NoError(t, metadata.Meta{
+	require.NoError(t, block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id1,
 			MaxTime: 2000,
@@ -239,7 +238,7 @@ func TestIterBlockMetas(t *testing.T) {
 
 	id2 := ulid.MustNew(2, nil)
 	require.NoError(t, os.Mkdir(path.Join(dir, id2.String()), os.ModePerm))
-	require.NoError(t, metadata.Meta{
+	require.NoError(t, block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id2,
 			MaxTime: 5000,
@@ -250,7 +249,7 @@ func TestIterBlockMetas(t *testing.T) {
 
 	id3 := ulid.MustNew(3, nil)
 	require.NoError(t, os.Mkdir(path.Join(dir, id3.String()), os.ModePerm))
-	require.NoError(t, metadata.Meta{
+	require.NoError(t, block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id3,
 			MaxTime: 3000,
@@ -260,7 +259,7 @@ func TestIterBlockMetas(t *testing.T) {
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id3.String())))
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	shipper := NewShipper(nil, overrides, "", nil, dir, nil, metadata.TestSource)
+	shipper := newShipper(nil, overrides, "", nil, dir, nil, block.TestSource)
 	metas, err := shipper.blockMetasFromOldest()
 	require.NoError(t, err)
 	require.Equal(t, sort.SliceIsSorted(metas, func(i, j int) bool {
@@ -274,7 +273,7 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 	inmemory := objstore.NewInMemBucket()
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	s := NewShipper(nil, overrides, "", nil, dir, inmemory, metadata.TestSource)
+	s := newShipper(nil, overrides, "", nil, dir, inmemory, block.TestSource)
 
 	id := ulid.MustNew(1, nil)
 	blockDir := path.Join(dir, id.String())
@@ -282,7 +281,7 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 	require.NoError(t, os.MkdirAll(chunksDir, os.ModePerm))
 
 	// Prepare minimal "block" for shipper (meta.json, index, one segment file).
-	require.NoError(t, metadata.Meta{
+	require.NoError(t, block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id,
 			MaxTime: 2000,
@@ -311,14 +310,14 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 	for _, tc := range []struct {
 		name                      string
 		addOOOLabel               bool
-		meta                      metadata.Meta
+		meta                      block.Meta
 		oooCompactionHintExpected bool
 		expectedLabels            map[string]string
 	}{
 		{
 			name:        "in-order block, addOOOLabel = false",
 			addOOOLabel: false,
-			meta: metadata.Meta{
+			meta: block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    ulid.MustNew(1, nil),
 					MaxTime: 2000,
@@ -335,7 +334,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 		{
 			name:        "in-order block, addOOOLabel = true",
 			addOOOLabel: true,
-			meta: metadata.Meta{
+			meta: block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    ulid.MustNew(1, nil),
 					MaxTime: 2000,
@@ -352,7 +351,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 		{
 			name:        "OOO block, addOOOLabel = false",
 			addOOOLabel: false,
-			meta: metaWithOOOHint(metadata.Meta{
+			meta: metaWithOOOHint(block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    ulid.MustNew(1, nil),
 					MaxTime: 2000,
@@ -369,7 +368,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 		{
 			name:        "OOO block, addOOOLabel = true",
 			addOOOLabel: true,
-			meta: metaWithOOOHint(metadata.Meta{
+			meta: metaWithOOOHint(block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    ulid.MustNew(1, nil),
 					MaxTime: 2000,
@@ -386,7 +385,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 		{
 			name:        "OOO block, addOOOLabel = true, additional labels",
 			addOOOLabel: true,
-			meta: metaWithOOOHint(metadata.Meta{
+			meta: metaWithOOOHint(block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    ulid.MustNew(1, nil),
 					MaxTime: 2000,
@@ -396,7 +395,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 						NumSamples: 100, // Shipper checks if number of samples is greater than 0.
 					},
 				},
-				Thanos: metadata.Thanos{Labels: map[string]string{"a": "b"}},
+				Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 			}),
 			oooCompactionHintExpected: true,
 			expectedLabels:            map[string]string{"a": "b", mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue},
@@ -418,7 +417,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 			}
 			overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
 			require.NoError(t, err)
-			s := NewShipper(logger, overrides, "", nil, blocksDir, bkt, metadata.TestSource)
+			s := newShipper(logger, overrides, "", nil, blocksDir, bkt, block.TestSource)
 
 			createBlock(t, blocksDir, tc.meta.ULID, tc.meta)
 
@@ -436,7 +435,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 	}
 }
 
-func metaWithOOOHint(meta metadata.Meta) metadata.Meta {
+func metaWithOOOHint(meta block.Meta) block.Meta {
 	meta.Compaction.SetOutOfOrder()
 	return meta
 }

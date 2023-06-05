@@ -72,9 +72,16 @@ func wrapBucketWithCache(bkt objstore.Bucket, cfg rulestore.Config, cacheTTL tim
 		return bkt, nil
 	}
 
-	// Cache all bucket iterations.
+	// Cache all bucket iterations except tenants listing, for two reasons:
+	// 1. We want new tenants to be discovered asap to offer a better UX to tenants setting up their first rules.
+	// 2. The number of API calls issued to list tenants is orders of magnitude lower than the ones issued to list
+	//    per-tenant rule groups in a multi-tenant cluster.
 	codec := bucketcache.SnappyIterCodec{IterCodec: bucketcache.JSONIterCodec{}}
-	cacheCfg.CacheIter("iter", cacheClient, func(_ string) bool { return true }, cacheTTL, codec)
+	cacheCfg.CacheIter("iter", cacheClient, isNotTenantsDir, cacheTTL, codec)
 
 	return bucketcache.NewCachingBucket("ruler", bkt, cacheCfg, logger, reg)
+}
+
+func isNotTenantsDir(name string) bool {
+	return name != ""
 }

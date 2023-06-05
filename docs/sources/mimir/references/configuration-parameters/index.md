@@ -255,11 +255,11 @@ runtime_config:
 [query_scheduler: <query_scheduler>]
 
 usage_stats:
-  # (experimental) Enable anonymous usage reporting.
+  # Enable anonymous usage reporting.
   # CLI flag: -usage-stats.enabled
   [enabled: <boolean> | default = true]
 
-  # (experimental) Installation mode. Supported values: custom, helm, jsonnet.
+  # Installation mode. Supported values: custom, helm, jsonnet.
   # CLI flag: -usage-stats.installation-mode
   [installation_mode: <string> | default = "custom"]
 
@@ -898,14 +898,6 @@ ring:
   # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
 
-  # (deprecated) When enabled the readiness probe succeeds only after all
-  # instances are ACTIVE and healthy in the ring, otherwise only the instance
-  # itself is checked. This option should be disabled if in your cluster
-  # multiple instances can be rolled out simultaneously, otherwise rolling
-  # updates may be slowed down.
-  # CLI flag: -ingester.ring.readiness-check-ring-health
-  [readiness_check_ring_health: <boolean> | default = false]
-
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.
 # CLI flag: -ingester.metadata-retain-period
@@ -966,12 +958,12 @@ instance_limits:
 The `querier` block configures the querier.
 
 ```yaml
-# (advanced) Use iterators to execute query, as opposed to fully materialising
+# (deprecated) Use iterators to execute query, as opposed to fully materialising
 # the series in memory.
 # CLI flag: -querier.iterators
 [iterators: <boolean> | default = false]
 
-# (advanced) Use batch iterators to execute query, as opposed to fully
+# (deprecated) Use batch iterators to execute query, as opposed to fully
 # materialising the series in memory.  Takes precedent over the
 # -querier.iterators flag.
 # CLI flag: -querier.batch-iterators
@@ -1063,6 +1055,17 @@ store_gateway_client:
 # (ingesters shuffle sharding on read path is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
+
+# (experimental) Request ingesters stream chunks. Ingesters will only respond
+# with a stream of chunks if the target ingester supports this, and this
+# preference will be ignored by ingesters that do not support this.
+# CLI flag: -querier.prefer-streaming-chunks
+[prefer_streaming_chunks: <boolean> | default = false]
+
+# (experimental) Number of series to buffer per ingester when streaming chunks
+# from ingesters.
+# CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
+[streaming_chunks_per_ingester_series_buffer_size: <int> | default = 512]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
@@ -1215,10 +1218,10 @@ results_cache:
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
 
-# (experimental) How many series a single sharded partial query should load at
-# most. This is not a strict requirement guaranteed to be honoured by query
-# sharding, but a hint given to the query sharding when the query execution is
-# initially planned. 0 to disable cardinality-based hints.
+# How many series a single sharded partial query should load at most. This is
+# not a strict requirement guaranteed to be honoured by query sharding, but a
+# hint given to the query sharding when the query execution is initially
+# planned. 0 to disable cardinality-based hints.
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
 
@@ -1337,8 +1340,8 @@ ring:
   # CLI flag: -query-scheduler.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
-# (experimental) The maximum number of query-scheduler instances to use,
-# regardless how many replicas are running. This option can be set only when
+# The maximum number of query-scheduler instances to use, regardless how many
+# replicas are running. This option can be set only when
 # -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all
 # available query-scheduler instances.
 # CLI flag: -query-scheduler.max-used-instances
@@ -1362,7 +1365,8 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.evaluation-interval
 [evaluation_interval: <duration> | default = 1m]
 
-# (advanced) How frequently to poll for rule changes
+# (advanced) How frequently the configured rule groups are re-synced from the
+# object storage.
 # CLI flag: -ruler.poll-interval
 [poll_interval: <duration> | default = 1m]
 
@@ -1646,8 +1650,8 @@ The `ruler_storage` block configures the ruler storage backend.
 # The CLI flags prefix for this block configuration is: ruler-storage
 [filesystem: <filesystem_storage_backend>]
 
-# (experimental) Prefix for all objects stored in the backend storage. For
-# simplicity, it may only contain digits and English alphabet letters.
+# Prefix for all objects stored in the backend storage. For simplicity, it may
+# only contain digits and English alphabet letters.
 # CLI flag: -ruler-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
@@ -1971,8 +1975,8 @@ The `alertmanager_storage` block configures the alertmanager storage backend.
 # The CLI flags prefix for this block configuration is: alertmanager-storage
 [filesystem: <filesystem_storage_backend>]
 
-# (experimental) Prefix for all objects stored in the backend storage. For
-# simplicity, it may only contain digits and English alphabet letters.
+# Prefix for all objects stored in the backend storage. For simplicity, it may
+# only contain digits and English alphabet letters.
 # CLI flag: -alertmanager-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
@@ -2518,12 +2522,11 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
-# (experimental) Per-tenant request rate limit in requests per second. 0 to
-# disable.
+# Per-tenant push request rate limit in requests per second. 0 to disable.
 # CLI flag: -distributor.request-rate-limit
 [request_rate: <float> | default = 0]
 
-# (experimental) Per-tenant allowed request burst size. 0 to disable.
+# Per-tenant allowed push request burst size. 0 to disable.
 # CLI flag: -distributor.request-burst-size
 [request_burst_size: <int> | default = 0]
 
@@ -2592,8 +2595,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.enforce-metadata-metric-name
 [enforce_metadata_metric_name: <boolean> | default = true]
 
-# The tenant's shard size used by shuffle-sharding. Must be set both on
-# ingesters and distributors. 0 disables shuffle sharding.
+# The tenant's shard size used by shuffle-sharding. This value is the total size
+# of the shard (ie. it is not the number of ingesters in the shard per zone, but
+# the number of ingesters in the shard across all zones, if zone-awareness is
+# enabled). Must be set both on ingesters and distributors. 0 disables shuffle
+# sharding.
 # CLI flag: -distributor.ingestion-tenant-shard-size
 [ingestion_tenant_shard_size: <int> | default = 0]
 
@@ -2746,9 +2752,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
 
-# (experimental) Disable query sharding for any query containing a regular
-# expression matcher longer than the configured number of bytes. 0 to disable
-# the limit.
+# Disable query sharding for any query containing a regular expression matcher
+# longer than the configured number of bytes. 0 to disable the limit.
 # CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
 [query_sharding_max_regexp_size_bytes: <int> | default = 4096]
 
@@ -2832,6 +2837,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # evaluation on a per-tenant basis.
 # CLI flag: -ruler.alerting-rules-evaluation-enabled
 [ruler_alerting_rules_evaluation_enabled: <boolean> | default = true]
+
+# (advanced) True to enable a re-sync of the configured rule groups as soon as
+# they're changed via ruler's config API. This re-sync is in addition of the
+# periodic syncing. When enabled, it may take up to few tens of seconds before a
+# configuration change triggers the re-sync.
+# CLI flag: -ruler.sync-rules-on-changes-enabled
+[ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
@@ -2995,8 +3007,8 @@ The `blocks_storage` block configures the blocks storage.
 # The CLI flags prefix for this block configuration is: blocks-storage
 [filesystem: <filesystem_storage_backend>]
 
-# (experimental) Prefix for all objects stored in the backend storage. For
-# simplicity, it may only contain digits and English alphabet letters.
+# Prefix for all objects stored in the backend storage. For simplicity, it may
+# only contain digits and English alphabet letters.
 # CLI flag: -blocks-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
@@ -3177,8 +3189,8 @@ bucket_store:
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
   bucket_index:
-    # If enabled, queriers and store-gateways discover blocks by reading a
-    # bucket index (created and updated by the compactor) instead of
+    # (deprecated) If enabled, queriers and store-gateways discover blocks by
+    # reading a bucket index (created and updated by the compactor) instead of
     # periodically scanning the bucket.
     # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
     [enabled: <boolean> | default = true]
@@ -3275,7 +3287,15 @@ bucket_store:
   # Supported values (most aggressive to least aggressive): speculative,
   # worst-case, worst-case-small-posting-lists, all.
   # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
-  [series_selection_strategy: <string> | default = "all"]
+  [series_selection_strategy: <string> | default = "worst-case"]
+
+  series_selection_strategies:
+    # (experimental) This option is only used when
+    # blocks-storage.bucket-store.series-selection-strategy=worst-case.
+    # Increasing the series preference results in fetching more series than
+    # postings. Must be a positive floating point number.
+    # CLI flag: -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference
+    [worst_case_series_preference: <float> | default = 0.75]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
@@ -3466,12 +3486,12 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.compaction-concurrency
 [compaction_concurrency: <int> | default = 1]
 
-# (experimental) How long the compactor waits before compacting first-level
-# blocks that are uploaded by the ingesters. This configuration option allows
-# for the reduction of cases where the compactor begins to compact blocks before
-# all ingesters have uploaded their blocks to the storage.
+# How long the compactor waits before compacting first-level blocks that are
+# uploaded by the ingesters. This configuration option allows for the reduction
+# of cases where the compactor begins to compact blocks before all ingesters
+# have uploaded their blocks to the storage.
 # CLI flag: -compactor.first-level-compaction-wait-period
-[first_level_compaction_wait_period: <duration> | default = 0s]
+[first_level_compaction_wait_period: <duration> | default = 25m]
 
 # (advanced) How frequently compactor should run blocks cleanup and maintenance,
 # as well as update the bucket index.

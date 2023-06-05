@@ -19,7 +19,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime time.Duration) error {
@@ -156,7 +155,7 @@ func (c *MimirClient) getBlockUpload(ctx context.Context, url string) (result, e
 	return r, nil
 }
 
-func (c *MimirClient) uploadBlockFile(ctx context.Context, tf metadata.File, blockDir, fileUploadEndpoint string, logctx *logrus.Entry) error {
+func (c *MimirClient) uploadBlockFile(ctx context.Context, tf block.File, blockDir, fileUploadEndpoint string, logctx *logrus.Entry) error {
 	pth := filepath.Join(blockDir, filepath.FromSlash(tf.RelPath))
 	f, err := os.Open(pth)
 	if err != nil {
@@ -179,8 +178,8 @@ func (c *MimirClient) uploadBlockFile(ctx context.Context, tf metadata.File, blo
 
 // GetBlockMeta reads meta.json file, and adds (or replaces) thanos.files section with
 // list of local files from the local block.
-func GetBlockMeta(blockDir string) (metadata.Meta, error) {
-	var blockMeta metadata.Meta
+func GetBlockMeta(blockDir string) (block.Meta, error) {
+	var blockMeta block.Meta
 
 	metaPath := filepath.Join(blockDir, block.MetaFilename)
 	f, err := os.Open(metaPath)
@@ -200,7 +199,7 @@ func GetBlockMeta(blockDir string) (metadata.Meta, error) {
 			block.MetaFilename, blockMeta.Version)
 	}
 
-	blockMeta.Thanos.Files = []metadata.File{
+	blockMeta.Thanos.Files = []block.File{
 		{
 			RelPath: block.MetaFilename,
 		},
@@ -232,7 +231,7 @@ func GetBlockMeta(blockDir string) (metadata.Meta, error) {
 			return blockMeta, fmt.Errorf("not a file: %q", p)
 		}
 
-		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, metadata.File{
+		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, block.File{
 			RelPath:   relPath,
 			SizeBytes: st.Size(),
 		})

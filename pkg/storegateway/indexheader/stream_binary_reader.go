@@ -44,11 +44,14 @@ type StreamBinaryReader struct {
 	symbols *streamindex.Symbols
 	// Cache of the label name symbol lookups,
 	// as there are not many and they are half of all lookups.
+	// For index v1 the symbol reference is the index header symbol reference, not the prometheus TSDB index symbol reference.
 	nameSymbols map[uint32]string
 	// Direct cache of values. This is much faster than an LRU cache and still provides
 	// a reasonable cache hit ratio.
 	valueSymbolsMx sync.Mutex
 	valueSymbols   [valueSymbolsCacheSize]struct {
+		// index in TSDB v1 is the offset of the symbol in the index-header file.
+		// In TSDB v2 it is the sequence number of the symbol in the TSDB index (starting at 0).
 		index  uint32
 		symbol string
 	}
@@ -190,6 +193,12 @@ func (r *StreamBinaryReader) PostingsOffset(name, value string) (index.Range, er
 }
 
 func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
+	if r.indexVersion == index.FormatV1 {
+		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
+		// of the header length difference between two files.
+		o += headerLen - index.HeaderLen
+	}
+
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
 	}
@@ -203,12 +212,6 @@ func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 	}
 	r.valueSymbolsMx.Unlock()
 
-	if r.indexVersion == index.FormatV1 {
-		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
-		// of the header length difference between two files.
-		o += headerLen - index.HeaderLen
-	}
-
 	s, err := r.symbols.Lookup(o)
 	if err != nil {
 		return s, err
@@ -220,6 +223,29 @@ func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 	r.valueSymbolsMx.Unlock()
 
 	return s, nil
+}
+
+type cachedLabelNamesSymbolsReader struct {
+	labelNames map[uint32]string
+	r          streamindex.SymbolsReader
+}
+
+func (c cachedLabelNamesSymbolsReader) Close() error {
+	return c.r.Close()
+}
+
+func (c cachedLabelNamesSymbolsReader) Read(u uint32) (string, error) {
+	if s, ok := c.labelNames[u]; ok {
+		return s, nil
+	}
+	return c.r.Read(u)
+}
+
+func (r *StreamBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
+	return cachedLabelNamesSymbolsReader{
+		labelNames: r.nameSymbols,
+		r:          r.symbols.Reader(),
+	}, nil
 }
 
 func (r *StreamBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {

@@ -21,11 +21,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore/tracing"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -35,6 +36,18 @@ import (
 
 var (
 	seriesChunkRefsSetPool = pool.Interface(&sync.Pool{
+		// Intentionally return nil if the pool is empty, so that the caller can preallocate
+		// the slice with the right size.
+		New: nil,
+	})
+
+	symbolizedSeriesChunkRefsSetsPool = pool.Interface(&sync.Pool{
+		// Intentionally return nil if the pool is empty, so that the caller can preallocate
+		// the slice with the right size.
+		New: nil,
+	})
+
+	symbolizedLabelsPool = pool.Interface(&sync.Pool{
 		// Intentionally return nil if the pool is empty, so that the caller can preallocate
 		// the slice with the right size.
 		New: nil,
@@ -71,6 +84,44 @@ type seriesChunkRefsSet struct {
 
 	// releasable holds whether the series slice (but not its content) can be released to a memory pool.
 	releasable bool
+}
+
+type symbolizedSeriesChunkRefsSet struct {
+	// series sorted by labels.
+	series []symbolizedSeriesChunkRefs
+
+	labelsPool *pool.SlabPool[symbolizedLabel]
+}
+
+func newSymbolizedSeriesChunkRefsSet(capacity int) symbolizedSeriesChunkRefsSet {
+	var prealloc []symbolizedSeriesChunkRefs
+
+	if reused := symbolizedSeriesChunkRefsSetsPool.Get(); reused != nil {
+		prealloc = *(reused.(*[]symbolizedSeriesChunkRefs))
+	}
+
+	if prealloc == nil {
+		prealloc = make([]symbolizedSeriesChunkRefs, 0, capacity)
+	}
+
+	return symbolizedSeriesChunkRefsSet{
+		series:     prealloc,
+		labelsPool: pool.NewSlabPool[symbolizedLabel](symbolizedLabelsPool, 1024),
+	}
+}
+
+// release the internal series slice to a memory pool.
+//
+// This function is not idempotent. Calling it twice would introduce subtle bugs.
+func (b symbolizedSeriesChunkRefsSet) release() {
+	b.labelsPool.Release()
+	reuse := b.series[:0]
+	symbolizedSeriesChunkRefsSetsPool.Put(&reuse)
+}
+
+type symbolizedSeriesChunkRefs struct {
+	lset         []symbolizedLabel
+	chunksRanges []seriesChunkRefsRange
 }
 
 // newSeriesChunkRefsSet creates a new seriesChunkRefsSet with the given capacity.
@@ -470,10 +521,10 @@ Outer:
 			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) < 0 {
 				toReturn.chunksRanges = append(toReturn.chunksRanges, chksA[aChunksOffset])
 				break
-			} else {
-				toReturn.chunksRanges = append(toReturn.chunksRanges, chksB[bChunksOffset])
-				bChunksOffset++
 			}
+
+			toReturn.chunksRanges = append(toReturn.chunksRanges, chksB[bChunksOffset])
+			bChunksOffset++
 		}
 	}
 
@@ -675,8 +726,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	chunkRangesPerSeries int
 	logger               log.Logger
 
-	symbolizedLsetBuffer []symbolizedLabel
-	chunkMetasBuffer     []chunks.Meta
+	chunkMetasBuffer []chunks.Meta
 
 	err        error
 	currentSet seriesChunkRefsSet
@@ -688,7 +738,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	tenantID string,
 	indexr *bucketIndexReader, // Index reader for block.
 	indexCache indexcache.IndexCache,
-	blockMeta *metadata.Meta,
+	blockMeta *block.Meta,
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHasher seriesHasher,
@@ -746,7 +796,7 @@ func newLoadingSeriesChunkRefsSetIterator(
 	indexr *bucketIndexReader,
 	indexCache indexcache.IndexCache,
 	stats *safeQueryStats,
-	blockMeta *metadata.Meta,
+	blockMeta *block.Meta,
 	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
 	skipChunks bool,
@@ -817,54 +867,25 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	// However, if the hash is already in the cache, then we can remove all postings for series
 	// not belonging to the shard.
 	if s.shard != nil {
-		var unsafeStats queryStats
-		nextPostings = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHasher, &unsafeStats)
-		loadStats.merge(&unsafeStats)
+		nextPostings = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHasher, loadStats)
 	}
 
-	loadedSeries, err := s.indexr.preloadSeries(ctx, nextPostings, s.stats)
+	symbolizedSet, err := s.symbolizedSet(ctx, nextPostings, loadStats)
 	if err != nil {
-		s.err = errors.Wrap(err, "preload series")
+		s.err = err
+		return false
+	}
+	defer symbolizedSet.release() // We only retain the slices of chunk ranges from this set. These are still not pooled, and it's ok to retain them.
+
+	nextSet, err := s.stringifiedSet(symbolizedSet)
+	if err != nil {
+		s.err = err
 		return false
 	}
 
-	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
-	// after Next() will be called again.
-	nextSet := newSeriesChunkRefsSet(len(nextPostings), true)
-	var builder labels.ScratchBuilder
+	nextSet = s.filterSeries(nextSet, nextPostings, loadStats)
 
-	for _, id := range nextPostings {
-		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats, &builder)
-		if err != nil {
-			s.err = errors.Wrap(err, "read series")
-			return false
-		}
-		if lset.Len() == 0 {
-			// An empty label set means the series had no chunks in this block, so we skip it.
-			continue
-		}
-		var ranges []seriesChunkRefsRange
-		if !s.skipChunks {
-			clampLastChunkLength(nextSet.series, metas)
-			ranges = metasToRanges(partitionChunks(metas, s.chunkRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
-			if len(ranges) == 0 {
-				// There are no chunks for this series in the requested time range; skip it
-				continue
-			}
-		}
-		if !shardOwned(s.shard, s.seriesHasher, id, lset, loadStats) {
-			continue
-		}
-		nextSet.series = append(nextSet.series, seriesChunkRefs{
-			lset:         lset,
-			chunksRanges: ranges,
-		})
-	}
-
-	if nextSet.len() == 0 {
-		// The next set we attempted to build is empty, so we can directly release it.
-		nextSet.release()
-
+	if len(nextSet.series) == 0 {
 		// Try with the next set of postings.
 		return s.Next()
 	}
@@ -876,21 +897,65 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	return true
 }
 
+func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, postings []storage.SeriesRef, stats *queryStats) (_ symbolizedSeriesChunkRefsSet, err error) {
+	symbolizedSet := newSymbolizedSeriesChunkRefsSet(len(postings))
+	defer func() {
+		if err != nil {
+			symbolizedSet.release()
+		}
+	}()
+
+	loadedSeries, err := s.indexr.preloadSeries(ctx, postings, s.stats)
+	if err != nil {
+		return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "preload series")
+	}
+
+	for _, id := range postings {
+		var (
+			metas  []chunks.Meta
+			series symbolizedSeriesChunkRefs
+		)
+		series.lset, metas, err = s.loadSeries(id, loadedSeries, stats, symbolizedSet.labelsPool)
+		if err != nil {
+			return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "read series")
+		}
+		if !s.skipChunks {
+			clampLastChunkLength(symbolizedSet.series, metas)
+			series.chunksRanges = metasToRanges(partitionChunks(metas, s.chunkRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
+		}
+		symbolizedSet.series = append(symbolizedSet.series, series)
+	}
+	return symbolizedSet, nil
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) stringifiedSet(symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
+	if len(symbolizedSet.series) > 256 {
+		// This approach comes with some overhead in data structures.
+		// It starts making more sense with more label values only.
+		return s.singlePassStringify(symbolizedSet)
+	}
+
+	return s.multiLookupStringify(symbolizedSet)
+}
+
 // clampLastChunkLength checks the length of the last chunk in the last range of the last series.
 // If the length of that chunk is larger than the difference with the first chunk ref in metas
 // then the length is clamped at that difference.
 // clampLastChunkLength assumes that the chunks are sorted by their refs
 // (currently this is equivalent to also being sorted by their minTime) and that all series belong to the same block.
 // clampLastChunkLength is a noop if metas or series is empty.
-func clampLastChunkLength(series []seriesChunkRefs, nextSeriesChunkMetas []chunks.Meta) {
+func clampLastChunkLength(series []symbolizedSeriesChunkRefs, nextSeriesChunkMetas []chunks.Meta) {
 	if len(series) == 0 || len(nextSeriesChunkMetas) == 0 {
 		return
 	}
+	var lastSeriesRanges = series[len(series)-1].chunksRanges
+	if len(lastSeriesRanges) == 0 {
+		return
+	}
 	var (
-		lastSeriesRanges = series[len(series)-1].chunksRanges
-		lastRange        = lastSeriesRanges[len(lastSeriesRanges)-1]
-		lastSeriesChunk  = lastRange.refs[len(lastRange.refs)-1]
-		firstRef         = nextSeriesChunkMetas[0].Ref
+		lastRange       = lastSeriesRanges[len(lastSeriesRanges)-1]
+		lastSeriesChunk = lastRange.refs[len(lastRange.refs)-1]
+		firstRef        = nextSeriesChunkMetas[0].Ref
 	)
 
 	// We only compare the segment file of the series because they all come from the same block.
@@ -902,6 +967,27 @@ func clampLastChunkLength(series []seriesChunkRefs, nextSeriesChunkMetas []chunk
 	if diffWithNextChunk > 0 && lastSeriesChunk.length > diffWithNextChunk {
 		lastRange.refs[len(lastRange.refs)-1].length = diffWithNextChunk
 	}
+}
+
+// filterSeries filters out series that don't belong to this shard (if sharding is configured) or that don't have any
+// chunk ranges and skipChunks=false. Empty chunks ranges indicates that the series doesn't have any chunk ranges in the
+// requested time range.
+func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet, postings []storage.SeriesRef, stats *queryStats) seriesChunkRefsSet {
+	writeIdx := 0
+	for sIdx, series := range set.series {
+		// An empty label set means the series had no chunks in this block, so we skip it.
+		// No chunk ranges means the series doesn't have a single chunk range in the requested range.
+		if len(series.lset) == 0 || (!s.skipChunks && len(series.chunksRanges) == 0) {
+			continue
+		}
+		if !shardOwned(s.shard, s.seriesHasher, postings[sIdx], series.lset, stats) {
+			continue
+		}
+		set.series[writeIdx] = set.series[sIdx]
+		writeIdx++
+	}
+	set.series = set.series[:writeIdx]
+	return set
 }
 
 const (
@@ -1025,18 +1111,84 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 }
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
-func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, builder *labels.ScratchBuilder) (labels.Labels, []chunks.Meta, error) {
-	ok, err := loadedSeries.unsafeLoadSeries(ref, &s.symbolizedLsetBuffer, &s.chunkMetasBuffer, s.skipChunks, stats)
+func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) ([]symbolizedLabel, []chunks.Meta, error) {
+	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.skipChunks, stats, lsetPool)
 	if !ok || err != nil {
-		return labels.EmptyLabels(), nil, errors.Wrap(err, "loadSeries")
+		return nil, nil, errors.Wrap(err, "loadSeries")
 	}
 
-	lset, err := s.indexr.LookupLabelsSymbols(s.symbolizedLsetBuffer, builder)
+	return lbls, s.chunkMetasBuffer, nil
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
+	// Some conservative map pre-allocation; the goal is to get an order of magnitude size of the map, so we minimize map growth.
+	symbols := make(map[uint32]string, len(symbolizedSet.series)/2)
+	maxLabelsPerSeries := 0
+
+	for _, series := range symbolizedSet.series {
+		if numLabels := len(series.lset); maxLabelsPerSeries < numLabels {
+			maxLabelsPerSeries = numLabels
+		}
+		for _, symRef := range series.lset {
+			symbols[symRef.value] = ""
+			symbols[symRef.name] = ""
+		}
+	}
+
+	allSymbols := make([]uint32, 0, len(symbols))
+	for sym := range symbols {
+		allSymbols = append(allSymbols, sym)
+	}
+	slices.Sort(allSymbols)
+
+	symReader, err := s.indexr.indexHeaderReader.SymbolsReader()
 	if err != nil {
-		return labels.EmptyLabels(), nil, errors.Wrap(err, "lookup labels symbols")
+		return seriesChunkRefsSet{}, err
+	}
+	defer symReader.Close()
+	for _, sym := range allSymbols {
+		symbols[sym], err = symReader.Read(sym)
+		if err != nil {
+			return seriesChunkRefsSet{}, err
+		}
 	}
 
-	return lset, s.chunkMetasBuffer, nil
+	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again.
+	set := newSeriesChunkRefsSet(len(symbolizedSet.series), true)
+
+	labelsBuilder := labels.NewScratchBuilder(maxLabelsPerSeries)
+	for _, series := range symbolizedSet.series {
+		labelsBuilder.Reset()
+		for _, symRef := range series.lset {
+			labelsBuilder.Add(symbols[symRef.name], symbols[symRef.value])
+		}
+
+		set.series = append(set.series, seriesChunkRefs{
+			lset:         labelsBuilder.Labels(),
+			chunksRanges: series.chunksRanges,
+		})
+	}
+
+	return set, nil
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
+	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again.
+	set := newSeriesChunkRefsSet(len(symbolizedSet.series), true)
+
+	labelsBuilder := labels.NewScratchBuilder(16)
+	for _, series := range symbolizedSet.series {
+		lset, err := s.indexr.LookupLabelsSymbols(series.lset, &labelsBuilder)
+		if err != nil {
+			return seriesChunkRefsSet{}, err
+		}
+
+		set.series = append(set.series, seriesChunkRefs{
+			lset:         lset,
+			chunksRanges: series.chunksRanges,
+		})
+	}
+	return set, nil
 }
 
 type filteringSeriesChunkRefsSetIterator struct {

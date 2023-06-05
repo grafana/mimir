@@ -225,7 +225,12 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 		labelMatcherToString(sb, m)
 		sb.WriteString(",")
 	}
-	sb.WriteString("},}")
+	sb.WriteString("},")
+
+	b = b[:0]
+	sb.WriteString("StreamingChunksBatchSize:")
+	sb.Write(strconv.AppendUint(b, req.StreamingChunksBatchSize, 10))
+	sb.WriteString(",}")
 }
 
 func labelMatcherToString(sb *bytes.Buffer, m *client.LabelMatcher) {

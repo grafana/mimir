@@ -20,7 +20,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-to-1.20.4-3f4099fd0
+      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -64,7 +64,7 @@ jobs:
   lint-jsonnet:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-to-1.20.4-3f4099fd0
+      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -92,7 +92,7 @@ jobs:
   lint-helm:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-to-1.20.4-3f4099fd0
+      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -121,7 +121,7 @@ jobs:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
     container:
-      image: grafana/mimir-build-image:update-go-to-1.20.4-3f4099fd0
+      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -156,7 +156,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-to-1.20.4-3f4099fd0
+      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -198,7 +198,7 @@ jobs:
         test_group_total: [6]
     steps:
       - name: Upgrade golang
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
           go-version: 1.20.4
       - name: Check out repository
@@ -246,7 +246,7 @@ jobs:
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-to-1.20.4-3f4099fd0
+      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
     steps:
       - name: Check out repository
         uses: actions/checkout@v3

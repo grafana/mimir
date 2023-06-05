@@ -94,7 +94,7 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		DurationVar(&c.sleepTime)
 }
 
-func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
+func (c *BackfillCommand) backfill(_ *kingpin.ParseContext) error {
 	logrus.WithFields(logrus.Fields{
 		"blocks": c.blocks.String(),
 		"user":   c.clientConfig.ID,

@@ -145,7 +145,6 @@ func TestConfig_Validate(t *testing.T) {
 
 func TestConfig_DurationList(t *testing.T) {
 	t.Parallel()
-	nopLogger := log.NewNopLogger()
 
 	tests := map[string]struct {
 		cfg            BlocksStorageConfig
@@ -156,7 +155,7 @@ func TestConfig_DurationList(t *testing.T) {
 			cfg:            BlocksStorageConfig{},
 			expectedRanges: []int64{7200000},
 			f: func(c *BlocksStorageConfig) {
-				c.RegisterFlags(&flag.FlagSet{}, nopLogger)
+				c.RegisterFlags(&flag.FlagSet{})
 			},
 		},
 		"parse ranges correctly": {
@@ -176,8 +175,8 @@ func TestConfig_DurationList(t *testing.T) {
 			cfg:            BlocksStorageConfig{},
 			expectedRanges: []int64{7200000},
 			f: func(c *BlocksStorageConfig) {
-				c.RegisterFlags(&flag.FlagSet{}, nopLogger)
-				c.RegisterFlags(&flag.FlagSet{}, nopLogger)
+				c.RegisterFlags(&flag.FlagSet{})
+				c.RegisterFlags(&flag.FlagSet{})
 			},
 		},
 	}

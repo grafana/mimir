@@ -71,7 +71,7 @@ func runNotifications(t *testing.T, rateLimitedNotifier *rateLimitedNotifier, co
 
 type mockNotifier struct{}
 
-func (m *mockNotifier) Notify(ctx context.Context, alert ...*types.Alert) (bool, error) {
+func (m *mockNotifier) Notify(context.Context, ...*types.Alert) (bool, error) {
 	return false, nil
 }
 

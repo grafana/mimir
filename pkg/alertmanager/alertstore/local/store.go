@@ -96,32 +96,32 @@ func (f *Store) GetAlertConfig(_ context.Context, user string) (alertspb.AlertCo
 }
 
 // SetAlertConfig implements alertstore.AlertStore.
-func (f *Store) SetAlertConfig(_ context.Context, cfg alertspb.AlertConfigDesc) error {
+func (f *Store) SetAlertConfig(_ context.Context, _ alertspb.AlertConfigDesc) error {
 	return errReadOnly
 }
 
 // DeleteAlertConfig implements alertstore.AlertStore.
-func (f *Store) DeleteAlertConfig(_ context.Context, user string) error {
+func (f *Store) DeleteAlertConfig(_ context.Context, _ string) error {
 	return errReadOnly
 }
 
 // ListUsersWithFullState implements alertstore.AlertStore.
-func (f *Store) ListUsersWithFullState(ctx context.Context) ([]string, error) {
+func (f *Store) ListUsersWithFullState(_ context.Context) ([]string, error) {
 	return []string{}, nil
 }
 
 // GetFullState implements alertstore.AlertStore.
-func (f *Store) GetFullState(ctx context.Context, user string) (alertspb.FullStateDesc, error) {
+func (f *Store) GetFullState(_ context.Context, _ string) (alertspb.FullStateDesc, error) {
 	return alertspb.FullStateDesc{}, alertspb.ErrNotFound
 }
 
 // SetFullState implements alertstore.AlertStore.
-func (f *Store) SetFullState(ctx context.Context, user string, cfg alertspb.FullStateDesc) error {
+func (f *Store) SetFullState(_ context.Context, _ string, _ alertspb.FullStateDesc) error {
 	return errState
 }
 
 // DeleteFullState implements alertstore.AlertStore.
-func (f *Store) DeleteFullState(ctx context.Context, user string) error {
+func (f *Store) DeleteFullState(_ context.Context, _ string) error {
 	return errState
 }
 

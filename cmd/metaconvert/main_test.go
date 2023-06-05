@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 func TestConvertTenantBlocks(t *testing.T) {
@@ -35,7 +34,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 
 	const tenant = "target_tenant"
 
-	inputMetas := map[ulid.ULID]metadata.Meta{
+	inputMetas := map[ulid.ULID]block.Meta{
 		blockWithNoLabelsButManyOtherFields: {
 			BlockMeta: tsdb.BlockMeta{
 				ULID: blockWithNoLabelsButManyOtherFields,
@@ -50,9 +49,9 @@ func TestConvertTenantBlocks(t *testing.T) {
 				},
 			},
 
-			Thanos: metadata.Thanos{
+			Thanos: block.ThanosMeta{
 				Version: 10,
-				Downsample: metadata.ThanosDownsample{
+				Downsample: block.ThanosDownsample{
 					Resolution: 15,
 				},
 				Source: "ingester",
@@ -64,7 +63,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 				ULID: blockWithWrongTenant,
 			},
 
-			Thanos: metadata.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"test":       "label",
 					"__org_id__": "wrong tenant",
@@ -77,7 +76,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 				ULID: blockWithManyMimirLabels,
 			},
 
-			Thanos: metadata.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"__org_id__":                             "fake",
 					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
@@ -91,7 +90,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 				ULID: blockWithNoChangesRequired,
 			},
 
-			Thanos: metadata.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"__org_id__": tenant,
 				},
@@ -100,7 +99,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 	}
 
 	for b, m := range inputMetas {
-		require.NoError(t, uploadMetadata(ctx, bkt, m, path.Join(b.String(), metadata.MetaFilename)))
+		require.NoError(t, uploadMetadata(ctx, bkt, m, path.Join(b.String(), block.MetaFilename)))
 	}
 
 	logs := &concurrency.SyncBuffer{}
@@ -109,7 +108,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 	// Run conversion
 	assert.NoError(t, convertTenantBlocks(ctx, bkt, tenant, false, logger))
 
-	expected := map[ulid.ULID]metadata.Meta{
+	expected := map[ulid.ULID]block.Meta{
 		blockWithNoLabelsButManyOtherFields: {
 			BlockMeta: tsdb.BlockMeta{
 				ULID: blockWithNoLabelsButManyOtherFields,
@@ -124,9 +123,9 @@ func TestConvertTenantBlocks(t *testing.T) {
 				},
 			},
 
-			Thanos: metadata.Thanos{
+			Thanos: block.ThanosMeta{
 				Version: 10,
-				Downsample: metadata.ThanosDownsample{
+				Downsample: block.ThanosDownsample{
 					Resolution: 15,
 				},
 				Source: "ingester",
@@ -144,7 +143,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 				ULID: blockWithManyMimirLabels,
 			},
 
-			Thanos: metadata.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
 				},
@@ -199,7 +198,7 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 
 	const tenant = "target_tenant"
 
-	inputMetas := map[ulid.ULID]metadata.Meta{
+	inputMetas := map[ulid.ULID]block.Meta{
 		blockWithNoLabelsButManyOtherFields: {
 			BlockMeta: tsdb.BlockMeta{
 				ULID: blockWithNoLabelsButManyOtherFields,
@@ -214,9 +213,9 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 				},
 			},
 
-			Thanos: metadata.Thanos{
+			Thanos: block.ThanosMeta{
 				Version: 10,
-				Downsample: metadata.ThanosDownsample{
+				Downsample: block.ThanosDownsample{
 					Resolution: 15,
 				},
 				Source: "ingester",
@@ -228,7 +227,7 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 				ULID: blockWithWrongTenant,
 			},
 
-			Thanos: metadata.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"test":       "label",
 					"__org_id__": "wrong tenant",
@@ -241,7 +240,7 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 				ULID: blockWithManyMimirLabels,
 			},
 
-			Thanos: metadata.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"__org_id__":                             "fake",
 					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
@@ -255,7 +254,7 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 				ULID: blockWithNoChangesRequired,
 			},
 
-			Thanos: metadata.Thanos{
+			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
 					"__org_id__": tenant,
 				},
@@ -264,7 +263,7 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 	}
 
 	for b, m := range inputMetas {
-		require.NoError(t, uploadMetadata(ctx, bkt, m, path.Join(b.String(), metadata.MetaFilename)))
+		require.NoError(t, uploadMetadata(ctx, bkt, m, path.Join(b.String(), block.MetaFilename)))
 	}
 
 	logs := &concurrency.SyncBuffer{}

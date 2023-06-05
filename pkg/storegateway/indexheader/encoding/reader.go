@@ -161,6 +161,11 @@ func (f *fileReader) position() int {
 	return f.pos
 }
 
+// buffered returns the number of bytes that can be read from the fileReader which are already in memory.
+func (f *fileReader) buffered() int {
+	return f.buf.Buffered()
+}
+
 // close cleans up the underlying resources used by this fileReader.
 func (f *fileReader) close() error {
 	// Note that we don't do anything to clean up the buffer before returning it to the pool here:

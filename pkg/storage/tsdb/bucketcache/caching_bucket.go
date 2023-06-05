@@ -255,13 +255,13 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 	existsTime := time.Now()
 	ok, err := cb.Bucket.Exists(ctx, name)
 	if err == nil {
-		storeExistsCacheEntry(ctx, key, ok, existsTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
+		storeExistsCacheEntry(key, ok, existsTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
 	}
 
 	return ok, err
 }
 
-func storeExistsCacheEntry(ctx context.Context, cachingKey string, exists bool, ts time.Time, cache cache.Cache, existsTTL, doesntExistTTL time.Duration) {
+func storeExistsCacheEntry(cachingKey string, exists bool, ts time.Time, cache cache.Cache, existsTTL, doesntExistTTL time.Duration) {
 	var ttl time.Duration
 	if exists {
 		ttl = existsTTL - time.Since(ts)
@@ -330,13 +330,13 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	if err != nil {
 		if cb.Bucket.IsObjNotFoundErr(err) {
 			// Cache that object doesn't exist.
-			storeExistsCacheEntry(ctx, existsKey, false, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
+			storeExistsCacheEntry(existsKey, false, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
 		}
 
 		return nil, err
 	}
 
-	storeExistsCacheEntry(ctx, existsKey, true, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
+	storeExistsCacheEntry(existsKey, true, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
 	return &getReader{
 		c:         cfg.cache,
 		r:         reader,

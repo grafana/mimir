@@ -149,7 +149,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries)
-		if err := t.writeSamples(ctx, metricName, typeLabel, timestamp, series, records); err != nil {
+		if err := t.writeSamples(ctx, typeLabel, timestamp, series, records); err != nil {
 			errs.Add(err)
 			break
 		}
@@ -175,7 +175,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 	}
 }
 
-func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, metricName, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, records *MetricHistory) error {
+func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, records *MetricHistory) error {
 	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.writeSamples")
 	defer sp.Finish()
 	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)

@@ -44,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -53,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -153,9 +153,9 @@ func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULI
 	return nil, false
 }
 
-func (noopCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+func (noopCache) StoreSeriesForPostings(string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey, []byte) {
 }
-func (noopCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey) ([]byte, bool) {
+func (noopCache) FetchSeriesForPostings(context.Context, string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey) ([]byte, bool) {
 	return nil, false
 }
 
@@ -299,7 +299,7 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 	}
 
 	var wg sync.WaitGroup
-	blockc := make(chan *metadata.Meta)
+	blockc := make(chan *block.Meta)
 
 	for i := 0; i < s.blockSyncConcurrency; i++ {
 		wg.Add(1)
@@ -383,7 +383,7 @@ func (s *BucketStore) getBlock(id ulid.ULID) *bucketBlock {
 	return s.blocks[id]
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -901,7 +901,7 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesFetchSeriesAndChunksDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe(stats.streamingSeriesOtherDuration.Seconds())
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index").Observe(stats.streamingSeriesIndexLoadDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index_header").Observe(stats.streamingSeriesIndexHeaderLoadDuration.Seconds())
 }
 
 func (s *BucketStore) recordCachedPostingStats(stats *queryStats) {
@@ -1470,7 +1470,7 @@ type bucketBlock struct {
 	logger     log.Logger
 	metrics    *BucketStoreMetrics
 	bkt        objstore.BucketReader
-	meta       *metadata.Meta
+	meta       *block.Meta
 	dir        string
 	indexCache indexcache.IndexCache
 
@@ -1494,7 +1494,7 @@ func newBucketBlock(
 	userID string,
 	logger log.Logger,
 	metrics *BucketStoreMetrics,
-	meta *metadata.Meta,
+	meta *block.Meta,
 	bkt objstore.BucketReader,
 	dir string,
 	indexCache indexcache.IndexCache,
@@ -1579,7 +1579,7 @@ func (b *bucketBlock) loadedIndexReader(postingsStrategy postingsSelectionStrate
 	// Call IndexVersion to lazy load the index header if it lazy-loaded.
 	_, _ = b.indexHeaderReader.IndexVersion()
 	stats.update(func(stats *queryStats) {
-		stats.streamingSeriesIndexLoadDuration += time.Since(loadStartTime)
+		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
 	})
 
 	return b.indexReader(postingsStrategy)
@@ -1640,23 +1640,24 @@ type symbolizedLabel struct {
 // decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
 // If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if at least single chunk is within time range.
 // decodeSeries returns false, when there are no series data for given time range.
-func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool) (ok bool, err error) {
-	*lset = (*lset)[:0]
+func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, skipChunks bool) (ok bool, lset []symbolizedLabel, err error) {
+
 	*chks = (*chks)[:0]
 
 	d := encoding.Decbuf{B: b}
 
 	// Read labels without looking up symbols.
 	k := d.Uvarint()
+	lset = lsetPool.Get(k)[:0]
 	for i := 0; i < k; i++ {
 		lno := uint32(d.Uvarint())
 		lvo := uint32(d.Uvarint())
-		*lset = append(*lset, symbolizedLabel{name: lno, value: lvo})
+		lset = append(lset, symbolizedLabel{name: lno, value: lvo})
 	}
 	// Read the chunks meta data.
 	k = d.Uvarint()
 	if k == 0 {
-		return false, d.Err()
+		return false, nil, d.Err()
 	}
 
 	// First t0 is absolute, rest is just diff so different type is used (Uvarint64).
@@ -1675,7 +1676,7 @@ func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipCh
 		// Found a chunk.
 		if skipChunks {
 			// We are not interested in chunks and we know there is at least one, that's enough to return series.
-			return true, nil
+			return true, lset, nil
 		}
 
 		*chks = append(*chks, chunks.Meta{
@@ -1686,7 +1687,7 @@ func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipCh
 
 		mint = maxt
 	}
-	return len(*chks) > 0, d.Err()
+	return len(*chks) > 0, lset, d.Err()
 }
 
 func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {

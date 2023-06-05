@@ -7,8 +7,8 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: alertmanager-pdb
-  name: alertmanager-pdb
+    name: alertmanager
+  name: alertmanager
   namespace: default
 spec:
   maxUnavailable: 1
@@ -20,8 +20,8 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: ingester-rollout-pdb
-  name: ingester-rollout-pdb
+    name: ingester-rollout
+  name: ingester-rollout
   namespace: default
 spec:
   maxUnavailable: 1
@@ -33,8 +33,8 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: store-gateway-rollout-pdb
-  name: store-gateway-rollout-pdb
+    name: store-gateway-rollout
+  name: store-gateway-rollout
   namespace: default
 spec:
   maxUnavailable: 1
@@ -718,6 +718,7 @@ spec:
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.max-item-size=5242880
@@ -852,7 +853,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.5.0
+        image: grafana/rollout-operator:v0.6.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -1801,6 +1802,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
         image: grafana/mimir:2.8.0
@@ -1934,6 +1937,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
         image: grafana/mimir:2.8.0
@@ -2067,6 +2072,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
         image: grafana/mimir:2.8.0

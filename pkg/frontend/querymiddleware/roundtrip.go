@@ -41,7 +41,7 @@ type Config struct {
 	MaxRetries             int    `yaml:"max_retries" category:"advanced"`
 	ShardedQueries         bool   `yaml:"parallelize_shardable_queries"`
 	CacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced"`
-	TargetSeriesPerShard   uint64 `yaml:"query_sharding_target_series_per_shard" category:"experimental"`
+	TargetSeriesPerShard   uint64 `yaml:"query_sharding_target_series_per_shard"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
@@ -189,7 +189,7 @@ func newQueryTripperware(
 		newLimitsMiddleware(limits, log),
 	}
 	if cfg.AlignQueriesWithStep {
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("step_align", metrics, log), newStepAlignMiddleware())
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("step_align", metrics), newStepAlignMiddleware())
 	}
 
 	var c cache.Cache
@@ -215,7 +215,7 @@ func newQueryTripperware(
 			splitter = ConstSplitter(cfg.SplitQueriesByInterval)
 		}
 
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics, log), newSplitAndCacheMiddleware(
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
@@ -246,12 +246,12 @@ func newQueryTripperware(
 			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c, log, registerer)
 			queryRangeMiddleware = append(
 				queryRangeMiddleware,
-				newInstrumentMiddleware("cardinality_estimation", metrics, log),
+				newInstrumentMiddleware("cardinality_estimation", metrics),
 				cardinalityEstimationMiddleware,
 			)
 			queryInstantMiddleware = append(
 				queryInstantMiddleware,
-				newInstrumentMiddleware("cardinality_estimation", metrics, log),
+				newInstrumentMiddleware("cardinality_estimation", metrics),
 				cardinalityEstimationMiddleware,
 			)
 		}
@@ -265,20 +265,20 @@ func newQueryTripperware(
 		)
 
 		queryRangeMiddleware = append(queryRangeMiddleware,
-			newInstrumentMiddleware("querysharding", metrics, log),
+			newInstrumentMiddleware("querysharding", metrics),
 			queryshardingMiddleware,
 		)
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
-			newInstrumentMiddleware("querysharding", metrics, log),
+			newInstrumentMiddleware("querysharding", metrics),
 			queryshardingMiddleware,
 		)
 	}
 
 	if cfg.MaxRetries > 0 {
 		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics, log), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
-		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics, log), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
 
 	return func(next http.RoundTripper) http.RoundTripper {

@@ -26,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
@@ -48,16 +47,16 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 
 	// Create a bucket backed by filesystem.
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+	bkt = block.BucketWithGlobalMarkers(bkt)
 	userBkt := bucket.NewUserBucketClient(userID, bkt, nil)
 
-	shouldFetch := &metadata.DeletionMark{
+	shouldFetch := &block.DeletionMark{
 		ID:           ulid.MustNew(1, nil),
 		DeletionTime: now.Add(-15 * time.Hour).Unix(),
 		Version:      1,
 	}
 
-	shouldIgnore := &metadata.DeletionMark{
+	shouldIgnore := &block.DeletionMark{
 		ID:           ulid.MustNew(2, nil),
 		DeletionTime: now.Add(-60 * time.Hour).Unix(),
 		Version:      1,
@@ -65,10 +64,10 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 
 	var buf bytes.Buffer
 	require.NoError(t, json.NewEncoder(&buf).Encode(&shouldFetch))
-	require.NoError(t, userBkt.Upload(ctx, path.Join(shouldFetch.ID.String(), metadata.DeletionMarkFilename), &buf))
+	require.NoError(t, userBkt.Upload(ctx, path.Join(shouldFetch.ID.String(), block.DeletionMarkFilename), &buf))
 	require.NoError(t, json.NewEncoder(&buf).Encode(&shouldIgnore))
-	require.NoError(t, userBkt.Upload(ctx, path.Join(shouldIgnore.ID.String(), metadata.DeletionMarkFilename), &buf))
-	require.NoError(t, userBkt.Upload(ctx, path.Join(ulid.MustNew(3, nil).String(), metadata.DeletionMarkFilename), bytes.NewBufferString("not a valid deletion-mark.json")))
+	require.NoError(t, userBkt.Upload(ctx, path.Join(shouldIgnore.ID.String(), block.DeletionMarkFilename), &buf))
+	require.NoError(t, userBkt.Upload(ctx, path.Join(ulid.MustNew(3, nil).String(), block.DeletionMarkFilename), bytes.NewBufferString("not a valid deletion-mark.json")))
 
 	// Create the bucket index if required.
 	var idx *bucketindex.Index
@@ -81,20 +80,20 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 		require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
 	}
 
-	inputMetas := map[ulid.ULID]*metadata.Meta{
+	inputMetas := map[ulid.ULID]*block.Meta{
 		ulid.MustNew(1, nil): {},
 		ulid.MustNew(2, nil): {},
 		ulid.MustNew(3, nil): {},
 		ulid.MustNew(4, nil): {},
 	}
 
-	expectedMetas := map[ulid.ULID]*metadata.Meta{
+	expectedMetas := map[ulid.ULID]*block.Meta{
 		ulid.MustNew(1, nil): {},
 		ulid.MustNew(3, nil): {},
 		ulid.MustNew(4, nil): {},
 	}
 
-	expectedDeletionMarks := map[ulid.ULID]*metadata.DeletionMark{
+	expectedDeletionMarks := map[ulid.ULID]*block.DeletionMark{
 		ulid.MustNew(1, nil): shouldFetch,
 		ulid.MustNew(2, nil): shouldIgnore,
 	}
@@ -105,7 +104,7 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 	if bucketIndexEnabled {
 		require.NoError(t, f.FilterWithBucketIndex(ctx, inputMetas, idx, synced))
 	} else {
-		require.NoError(t, f.Filter(ctx, inputMetas, synced, nil))
+		require.NoError(t, f.Filter(ctx, inputMetas, synced))
 	}
 
 	assert.Equal(t, 1.0, promtest.ToFloat64(synced.WithLabelValues(block.MarkedForDeletionMeta)))
@@ -123,14 +122,14 @@ func TestTimeMetaFilter(t *testing.T) {
 	ulid3 := ulid.MustNew(3, nil)
 	ulid4 := ulid.MustNew(4, nil)
 
-	inputMetas := map[ulid.ULID]*metadata.Meta{
+	inputMetas := map[ulid.ULID]*block.Meta{
 		ulid1: {BlockMeta: tsdb.BlockMeta{MinTime: 100}},                                             // Very old, keep it
 		ulid2: {BlockMeta: tsdb.BlockMeta{MinTime: timestamp.FromTime(now)}},                         // Fresh block, remove.
 		ulid3: {BlockMeta: tsdb.BlockMeta{MinTime: timestamp.FromTime(limitTime.Add(time.Minute))}},  // Inside limit time, remove.
 		ulid4: {BlockMeta: tsdb.BlockMeta{MinTime: timestamp.FromTime(limitTime.Add(-time.Minute))}}, // Before limit time, keep.
 	}
 
-	expectedMetas := map[ulid.ULID]*metadata.Meta{}
+	expectedMetas := map[ulid.ULID]*block.Meta{}
 	expectedMetas[ulid1] = inputMetas[ulid1]
 	expectedMetas[ulid4] = inputMetas[ulid4]
 
@@ -138,12 +137,12 @@ func TestTimeMetaFilter(t *testing.T) {
 
 	// Test negative limit.
 	f := newMinTimeMetaFilter(-10 * time.Minute)
-	require.NoError(t, f.Filter(context.Background(), inputMetas, synced, nil))
+	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 	assert.Equal(t, inputMetas, inputMetas)
 	assert.Equal(t, 0.0, promtest.ToFloat64(synced.WithLabelValues(minTimeExcludedMeta)))
 
 	f = newMinTimeMetaFilter(limit)
-	require.NoError(t, f.Filter(context.Background(), inputMetas, synced, nil))
+	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 
 	assert.Equal(t, expectedMetas, inputMetas)
 	assert.Equal(t, 2.0, promtest.ToFloat64(synced.WithLabelValues(minTimeExcludedMeta)))

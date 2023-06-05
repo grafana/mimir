@@ -12,6 +12,8 @@ weight: 70
 The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture/index.md#long-term-storage" >}}).
 On the read path, the [querier]({{< relref "querier.md" >}}) and the [ruler]({{< relref "ruler/index.md" >}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
 
+## Bucket index
+
 To find the right blocks to look up at query time, the store-gateway requires a view of the bucket in long-term storage.
 The store-gateway keeps the bucket view updated using one of the following options:
 
@@ -33,7 +35,7 @@ It is possible that the compactor might have deleted blocks or marked others for
 The store-gateway downloads the index header for new blocks, and offloads (deletes) the local copy of index header for deleted blocks.
 You can configure the `-blocks-storage.bucket-store.sync-interval` flag to control the frequency with which the store-gateway checks for changes in the long-term storage.
 
-When a query executes, store-gateway downloads chunks, but it does not fully download the whole block; the store-gateway downloads only the portions of index and chunks that are required to run a given query.
+When a query executes, the store-gateway downloads chunks, but it does not fully download the whole block; the store-gateway downloads only the portions of index and chunks that are required to run a given query.
 To avoid the store-gateway having to re-download the index header during subsequent restarts, we recommend running the store-gateway with a persistent disk.
 For example, if you're running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a PersistentVolumeClaim for the store-gateways.
 

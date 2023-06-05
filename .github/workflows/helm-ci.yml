@@ -18,7 +18,7 @@ jobs:
   conftest:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:update-go-to-1.20.4-3f4099fd0
+      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -29,7 +29,7 @@ jobs:
       - name: Lint Rego Policies
         run: make BUILD_IN_CONTAINER=false check-conftest-fmt
 
-      - name: Conftest Verify
+      - name: Run conftest policy unit tests
         env:
           TEMP_DIR: ${{ runner.temp }}/conftest
         run: make BUILD_IN_CONTAINER=false conftest-verify

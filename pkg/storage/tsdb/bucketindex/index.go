@@ -16,7 +16,6 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -107,16 +106,16 @@ func (m *Block) GetUploadedAt() time.Time {
 // ThanosMeta returns a block meta based on the known information in the index.
 // The returned meta doesn't include all original meta.json data but only a subset
 // of it.
-func (m *Block) ThanosMeta() *metadata.Meta {
-	return &metadata.Meta{
+func (m *Block) ThanosMeta() *block.Meta {
+	return &block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    m.ID,
 			MinTime: m.MinTime,
 			MaxTime: m.MaxTime,
-			Version: metadata.TSDBVersion1,
+			Version: block.TSDBVersion1,
 		},
-		Thanos: metadata.Thanos{
-			Version:      metadata.ThanosVersion1,
+		Thanos: block.ThanosMeta{
+			Version:      block.ThanosVersion1,
 			SegmentFiles: m.thanosMetaSegmentFiles(),
 		},
 	}
@@ -144,7 +143,7 @@ func (m *Block) String() string {
 	return fmt.Sprintf("%s (min time: %s max time: %s, compactor shard: %s)", m.ID, minT.String(), maxT.String(), shard)
 }
 
-func BlockFromThanosMeta(meta metadata.Meta) *Block {
+func BlockFromThanosMeta(meta block.Meta) *Block {
 	segmentsFormat, segmentsNum := detectBlockSegmentsFormat(meta)
 
 	return &Block{
@@ -157,7 +156,7 @@ func BlockFromThanosMeta(meta metadata.Meta) *Block {
 	}
 }
 
-func detectBlockSegmentsFormat(meta metadata.Meta) (string, int) {
+func detectBlockSegmentsFormat(meta block.Meta) (string, int) {
 	if num, ok := detectBlockSegmentsFormat1Based6Digits(meta); ok {
 		return SegmentsFormat1Based6Digits, num
 	}
@@ -165,7 +164,7 @@ func detectBlockSegmentsFormat(meta metadata.Meta) (string, int) {
 	return "", 0
 }
 
-func detectBlockSegmentsFormat1Based6Digits(meta metadata.Meta) (int, bool) {
+func detectBlockSegmentsFormat1Based6Digits(meta block.Meta) (int, bool) {
 	// Check the (deprecated) SegmentFiles.
 	if len(meta.Thanos.SegmentFiles) > 0 {
 		for i, f := range meta.Thanos.SegmentFiles {
@@ -211,15 +210,15 @@ func (m *BlockDeletionMark) GetDeletionTime() time.Time {
 }
 
 // ThanosMeta returns the Thanos deletion mark.
-func (m *BlockDeletionMark) ThanosDeletionMark() *metadata.DeletionMark {
-	return &metadata.DeletionMark{
+func (m *BlockDeletionMark) ThanosDeletionMark() *block.DeletionMark {
+	return &block.DeletionMark{
 		ID:           m.ID,
-		Version:      metadata.DeletionMarkVersion1,
+		Version:      block.DeletionMarkVersion1,
 		DeletionTime: m.DeletionTime,
 	}
 }
 
-func BlockDeletionMarkFromThanosMarker(mark *metadata.DeletionMark) *BlockDeletionMark {
+func BlockDeletionMarkFromThanosMarker(mark *block.DeletionMark) *BlockDeletionMark {
 	return &BlockDeletionMark{
 		ID:           mark.ID,
 		DeletionTime: mark.DeletionTime,

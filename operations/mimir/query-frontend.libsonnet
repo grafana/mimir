@@ -11,6 +11,7 @@
 
       'server.http-listen-port': $._config.server_http_port,
       'query-frontend.align-queries-with-step': false,
+      'query-frontend.query-sharding-target-series-per-shard': if $.query_frontend_enable_cardinality_estimation then '2500' else '0',
 
       // Limit queries to 500 days; allow this to be overridden on a per-user basis.
       'query-frontend.max-total-query-length': '12000h',  // 500 days
@@ -33,7 +34,7 @@
   local deployment = $.apps.v1.deployment,
 
   newQueryFrontendDeployment(name, container)::
-    deployment.new(name, $._config.queryFrontend.replicas, [container]) +
+    deployment.new(name, 2, [container]) +
     $.mimirVolumeMounts +
     $.newMimirSpreadTopology(name, $._config.query_frontend_topology_spread_max_skew) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +

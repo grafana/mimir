@@ -68,6 +68,7 @@ func TestSendQueryStream(t *testing.T) {
 	go func() {
 		require.NoError(t, server.Serve(listen))
 	}()
+	t.Cleanup(server.Stop)
 
 	client := NewIngesterClient(conn)
 	stream, err := client.QueryStream(clientCtx, &QueryRequest{})
