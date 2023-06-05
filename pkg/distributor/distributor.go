@@ -1460,6 +1460,11 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
+	// If we have a single zone, we require all ingesters to respond.
+	if replicationSet.ZoneCount() == 1 {
+		replicationSet.MaxErrors = 0
+	}
+
 	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
 		cardinalityMapByZone: map[string]map[string]map[string]uint64{},
 	}
@@ -1488,7 +1493,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	if err != nil {
 		return nil, err
 	}
-	return cardinalityConcurrentMap.toLabelValuesCardinalityResponse(d.ingestersRing.ReplicationFactor()), nil
+	return cardinalityConcurrentMap.toLabelValuesCardinalityResponse(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor()), nil
 }
 
 func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher) (*ingester_client.LabelValuesCardinalityRequest, error) {
@@ -1557,7 +1562,7 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
 }
 
 // toLabelValuesCardinalityResponse adjust count of series to the replication factor and converts the map to `ingester_client.LabelValuesCardinalityResponse`.
-func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(replicationFactor int) *ingester_client.LabelValuesCardinalityResponse {
+func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(zoneCount int, replicationFactor int) *ingester_client.LabelValuesCardinalityResponse {
 	// we need to acquire the lock to prevent concurrent read/write to the map
 	cm.lock.Lock()
 	defer cm.lock.Unlock()
@@ -1568,7 +1573,7 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 		labelValueSeriesCountMap := map[string]uint64{}
 
 		for labelValue, seriesCountMapByZone := range labelValueSeriesCountMapByZone {
-			labelValueSeriesCountMap[labelValue] = approximateCardinalityFromZones(replicationFactor, seriesCountMapByZone)
+			labelValueSeriesCountMap[labelValue] = approximateFromZones(zoneCount, replicationFactor, seriesCountMapByZone)
 		}
 
 		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
@@ -1582,15 +1587,16 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 	}
 }
 
-// approximateCardinalityFromZones computes the series count while factoring in replication.
-func approximateCardinalityFromZones(replicationFactor int, seriesCountMapByZone map[string]uint64) uint64 {
-	// If we have more than one zone, we return the max value across zones
+// approximateFromZones computes a zonal value while factoring in replication.
+// e.g. series cardinality or ingestion rate.
+func approximateFromZones[T ~float64 | ~uint64](zoneCount int, replicationFactor int, seriesCountMapByZone map[string]T) T {
+	// If we have more than one zone, we return the max value across zones.
 	// Values can be different across zones due to incomplete replication or
 	// other issues. Any inconsistency should always be an underestimation of
 	// the real value, so we take the max to get the best available
 	// approximation.
-	if len(seriesCountMapByZone) > 1 {
-		var max uint64
+	if zoneCount > 1 {
+		var max T
 		for _, seriesCount := range seriesCountMapByZone {
 			if seriesCount > max {
 				max = seriesCount
@@ -1604,11 +1610,11 @@ func approximateCardinalityFromZones(replicationFactor int, seriesCountMapByZone
 	// here to know how many unique series really exist. In this case, dividing
 	// by the replication factor will give us an approximation of the real
 	// value.
-	var sum uint64
+	var sum T
 	for _, seriesCount := range seriesCountMapByZone {
 		sum += seriesCount
 	}
-	return sum / uint64(replicationFactor)
+	return sum / T(replicationFactor)
 }
 
 // LabelNames returns all of the label names.
@@ -1727,29 +1733,55 @@ func (d *Distributor) UserStats(ctx context.Context) (*UserStats, error) {
 		return nil, err
 	}
 
-	// Make sure we get a successful response from all of them.
-	replicationSet.MaxErrors = 0
-	replicationSet.MaxUnavailableZones = 0
+	// If we have a single zone, we can't tolerate any errors.
+	if replicationSet.ZoneCount() == 1 {
+		replicationSet.MaxErrors = 0
+	}
+
+	type zonedUserStatsResponse struct {
+		zone string
+		resp *ingester_client.UserStatsResponse
+	}
 
 	req := &ingester_client.UserStatsRequest{}
-	resps, err := d.forReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
-		return client.UserStats(ctx, req)
-	})
+	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
+		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
+		if err != nil {
+			return zonedUserStatsResponse{}, err
+		}
+
+		client := poolClient.(ingester_client.IngesterClient)
+		resp, err := client.UserStats(ctx, req)
+		if err != nil {
+			return zonedUserStatsResponse{}, err
+		}
+		return zonedUserStatsResponse{zone: desc.Zone, resp: resp}, nil
+	}, func(zusr zonedUserStatsResponse) {})
 	if err != nil {
 		return nil, err
 	}
 
-	totalStats := &UserStats{}
-	for _, resp := range resps {
-		r := resp.(*ingester_client.UserStatsResponse)
-		totalStats.IngestionRate += r.IngestionRate
-		totalStats.APIIngestionRate += r.ApiIngestionRate
-		totalStats.RuleIngestionRate += r.RuleIngestionRate
-		totalStats.NumSeries += r.NumSeries
+	var (
+		zoneIngestionRate     = map[string]float64{}
+		zoneAPIIngestionRate  = map[string]float64{}
+		zoneRuleIngestionRate = map[string]float64{}
+		zoneNumSeries         = map[string]uint64{}
+	)
+
+	// collect responses by zone
+	for _, r := range resps {
+		zoneIngestionRate[r.zone] += r.resp.IngestionRate
+		zoneAPIIngestionRate[r.zone] += r.resp.ApiIngestionRate
+		zoneRuleIngestionRate[r.zone] += r.resp.RuleIngestionRate
+		zoneNumSeries[r.zone] += r.resp.NumSeries
 	}
 
-	totalStats.IngestionRate /= float64(d.ingestersRing.ReplicationFactor())
-	totalStats.NumSeries /= uint64(d.ingestersRing.ReplicationFactor())
+	totalStats := &UserStats{
+		IngestionRate:     approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneIngestionRate),
+		APIIngestionRate:  approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneAPIIngestionRate),
+		RuleIngestionRate: approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneRuleIngestionRate),
+		NumSeries:         approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneNumSeries),
+	}
 
 	return totalStats, nil
 }
