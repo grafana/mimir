@@ -37,7 +37,6 @@ const (
 
 // ReadRing represents the read interface to the ring.
 type ReadRing interface {
-
 	// Get returns n (or more) instances which form the replicas for the given key.
 	// bufDescs, bufHosts and bufZones are slices to be overwritten for the return value
 	// to avoid memory allocation; can be nil, or created with ring.MakeBuffersForGet().
@@ -171,7 +170,7 @@ type Ring struct {
 	oldestRegisteredTimestamp int64
 
 	// Maps a token with the information of the instance holding it. This map is immutable and
-	// cannot be chanced in place because it's shared "as is" between subrings (the only way to
+	// cannot be changed in place because it's shared "as is" between subrings (the only way to
 	// change it is to create a new one and replace it).
 	ringInstanceByToken map[uint32]instanceInfo
 
@@ -727,7 +726,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 					panic(ErrInconsistentTokensInfo)
 				}
 
-				// Ensure we select an unique instance.
+				// Ensure we select a unique instance.
 				if _, ok := shard[info.InstanceID]; ok {
 					continue
 				}
