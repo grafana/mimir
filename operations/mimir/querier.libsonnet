@@ -52,7 +52,7 @@
   local deployment = $.apps.v1.deployment,
 
   newQuerierDeployment(name, container)::
-    deployment.new(name, $._config.querier.replicas, [container]) +
+    deployment.new(name, 6, [container]) +
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +

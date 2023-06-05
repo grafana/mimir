@@ -229,6 +229,7 @@
   * Renamed `memcached_*_max_item_size_mb` config options to `cache_*_max_item_size_mb`
   * Added `cache_*_backend` config options
 * [CHANGE] Store-gateway StatefulSets with disabled multi-zone deployment are also unregistered from the ring on shutdown. This eliminated resharding during rollouts, at the cost of extra effort during scaling down store-gateways. For more information see [Scaling down store-gateways](https://grafana.com/docs/mimir/v2.7.x/operators-guide/run-production-environment/scaling-out/#scaling-down-store-gateways). #4713
+* [CHANGE] Removed `$._config.querier.replicas` and `$._config.queryFrontend.replicas`. If you need to customize the number of querier or query-frontend replicas, and autoscaling is disabled, please set an override as is done for other stateless components (e.g. distributors). #5130
 * [ENHANCEMENT] Alertmanager: add `alertmanager_data_disk_size` and  `alertmanager_data_disk_class` configuration options, by default no storage class is set. #4389
 * [ENHANCEMENT] Update `rollout-operator` to `v0.4.0`. #4524
 * [ENHANCEMENT] Update memcached to `memcached:1.6.19-alpine`. #4581
