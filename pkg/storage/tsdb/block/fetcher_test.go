@@ -337,7 +337,7 @@ func createTestBlock(t *testing.T) (blockID ulid.ULID, blockDir string) {
 		labels.FromStrings(labels.MetricName, "series_3"),
 	}
 
-	blockID, err = CreateBlock(context.Background(), parentDir, series, 100, 0, 1000, nil)
+	blockID, err = CreateBlock(context.Background(), parentDir, series, 100, 0, 1000, labels.EmptyLabels())
 	require.NoError(t, err)
 
 	blockDir = filepath.Join(parentDir, blockID.String())

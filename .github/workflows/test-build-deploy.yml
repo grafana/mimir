@@ -50,16 +50,38 @@ jobs:
   doc-validator:
     runs-on: ubuntu-latest
     container:
-      image: grafana/doc-validator:v1.9.0
+      image: grafana/doc-validator:v3.0.0
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Run doc-validator tool (mimir)
-        run: doc-validator ./docs/sources/mimir /docs/mimir/latest
+        run: >
+          doc-validator
+          docs/sources/mimir
+          /docs/mimir/latest
+          | reviewdog
+          -f=rdjsonl
+          --fail-on-error
+          --filter-mode=nofilter
+          --name=doc-validator
+          --reporter=github-pr-review
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       - name: Run doc-validator tool (helm-charts)
-        run: doc-validator ./docs/sources/helm-charts /docs/mimir/latest
+        run: >
+          doc-validator
+          docs/sources/helm-charts
+          /docs/helm-charts/mimir-distributed/latest
+          | reviewdog
+          -f=rdjsonl
+          --fail-on-error
+          --filter-mode=nofilter
+          --name=doc-validator
+          --reporter=github-pr-review
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
   lint-jsonnet:
     runs-on: ubuntu-latest
@@ -198,7 +220,7 @@ jobs:
         test_group_total: [6]
     steps:
       - name: Upgrade golang
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
           go-version: 1.20.4
       - name: Check out repository

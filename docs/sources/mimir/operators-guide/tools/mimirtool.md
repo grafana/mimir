@@ -336,6 +336,19 @@ mimirtool rules diff <file_path>...
 
 The format of the file is the same format as shown in [rules load](#load-rule-group).
 
+To restrict the affected namespaces, use the `--namespaces` and `--ignore-namespaces` parameters as well as their RegEx variants `--namespaces-regex` and `--ignore-namespaces-regex`.
+
+##### Configuration
+
+| Flag                         | Description                                                |
+| ---------------------------- | ---------------------------------------------------------- |
+| `--namespaces`               | comma-separated list of namespaces to check during a diff  |
+| `--ignored-namespaces`       | comma-separated list of namespaces to ignore during a diff |
+| `--namespaces-regex`         | regex matching namespaces to check during a diff           |
+| `--ignored-namespaces-regex` | regex matching namespaces to ignore during a diff          |
+
+Only one of the namespace selection flags can be specified.
+
 #### Sync
 
 The `sync` command compares rules against the rules in your Grafana Mimir cluster.
@@ -346,6 +359,17 @@ mimirtool rules sync <file_path>...
 ```
 
 The format of the file is the same format as shown in [rules load](#load-rule-group).
+
+##### Configuration
+
+| Flag                         | Description                                                |
+| ---------------------------- | ---------------------------------------------------------- |
+| `--namespaces`               | comma-separated list of namespaces to check during a sync  |
+| `--ignored-namespaces`       | comma-separated list of namespaces to ignore during a sync |
+| `--namespaces-regex`         | regex matching namespaces to check during a sync           |
+| `--ignored-namespaces-regex` | regex matching namespaces to ignore during a sync          |
+
+Only one of the namespace selection flags can be specified.
 
 ### Remote-read
 

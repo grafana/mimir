@@ -67,7 +67,7 @@ The number of split groups, _N_, can also be adjusted per tenant using the `-com
 
 If the configuration of `-compactor.split-and-merge-shards` changes during compaction, the change will affect only the compaction of blocks which have not yet been split. Already split blocks will use the original configuration when merged. The original configuration is stored in the `meta.json` of each split block.
 
-Splitting and merging can be horizontally scaled. Nonconflicting and nonoverlapping jobs will be executed in parallel.
+Splitting and merging can be horizontally scaled. Non-conflicting and non-overlapping jobs will be executed in parallel.
 
 ## Compactor sharding
 
@@ -81,7 +81,7 @@ To configure the compactors' hash ring, refer to [configuring hash rings]({{< re
 
 ### Waiting for a stable hash ring at startup
 
-A cluster cold start or an increase of two or more compactor instances at the same time may result each new compactor instance starting at a slightly different time. Then, each compactor runs its first compaction based on a different state of the hash ring. This is not an error condition, but it may be inefficient, because multiple compactor instances may start compacting the same tenant at nearly the same time.
+A cluster cold start or an increase of two or more compactor instances at the same time may result in each new compactor instance starting at a slightly different time. Then, each compactor runs its first compaction based on a different state of the hash ring. This is not an error condition, but it may be inefficient, because multiple compactor instances may start compacting the same tenant at nearly the same time.
 
 To mitigate the issue, compactors can be configured to wait for a stable hash ring at startup. A ring is considered stable if no instance is added to or removed from the hash ring for at least `-compactor.ring.wait-stability-min-duration`. The maximum time the compactor will wait is controlled by the flag `-compactor.ring.wait-stability-max-duration` (or the respective YAML configuration option). Once the compactor has finished waiting, either because the ring stabilized or because the maximum wait time was reached, it will start up normally.
 

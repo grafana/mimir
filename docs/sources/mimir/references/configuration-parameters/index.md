@@ -255,11 +255,11 @@ runtime_config:
 [query_scheduler: <query_scheduler>]
 
 usage_stats:
-  # (experimental) Enable anonymous usage reporting.
+  # Enable anonymous usage reporting.
   # CLI flag: -usage-stats.enabled
   [enabled: <boolean> | default = true]
 
-  # (experimental) Installation mode. Supported values: custom, helm, jsonnet.
+  # Installation mode. Supported values: custom, helm, jsonnet.
   # CLI flag: -usage-stats.installation-mode
   [installation_mode: <string> | default = "custom"]
 
@@ -1218,10 +1218,10 @@ results_cache:
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
 
-# (experimental) How many series a single sharded partial query should load at
-# most. This is not a strict requirement guaranteed to be honoured by query
-# sharding, but a hint given to the query sharding when the query execution is
-# initially planned. 0 to disable cardinality-based hints.
+# How many series a single sharded partial query should load at most. This is
+# not a strict requirement guaranteed to be honoured by query sharding, but a
+# hint given to the query sharding when the query execution is initially
+# planned. 0 to disable cardinality-based hints.
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
 
@@ -1340,8 +1340,8 @@ ring:
   # CLI flag: -query-scheduler.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
-# (experimental) The maximum number of query-scheduler instances to use,
-# regardless how many replicas are running. This option can be set only when
+# The maximum number of query-scheduler instances to use, regardless how many
+# replicas are running. This option can be set only when
 # -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all
 # available query-scheduler instances.
 # CLI flag: -query-scheduler.max-used-instances
@@ -1368,7 +1368,7 @@ The `ruler` block configures the ruler.
 # (advanced) How frequently the configured rule groups are re-synced from the
 # object storage.
 # CLI flag: -ruler.poll-interval
-[poll_interval: <duration> | default = 1m]
+[poll_interval: <duration> | default = 10m]
 
 # Directory to store temporary rule files loaded by the Prometheus rule
 # managers. This directory is not required to be persisted between restarts.
@@ -1650,8 +1650,8 @@ The `ruler_storage` block configures the ruler storage backend.
 # The CLI flags prefix for this block configuration is: ruler-storage
 [filesystem: <filesystem_storage_backend>]
 
-# (experimental) Prefix for all objects stored in the backend storage. For
-# simplicity, it may only contain digits and English alphabet letters.
+# Prefix for all objects stored in the backend storage. For simplicity, it may
+# only contain digits and English alphabet letters.
 # CLI flag: -ruler-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
@@ -1975,8 +1975,8 @@ The `alertmanager_storage` block configures the alertmanager storage backend.
 # The CLI flags prefix for this block configuration is: alertmanager-storage
 [filesystem: <filesystem_storage_backend>]
 
-# (experimental) Prefix for all objects stored in the backend storage. For
-# simplicity, it may only contain digits and English alphabet letters.
+# Prefix for all objects stored in the backend storage. For simplicity, it may
+# only contain digits and English alphabet letters.
 # CLI flag: -alertmanager-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
@@ -2752,9 +2752,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
 
-# (experimental) Disable query sharding for any query containing a regular
-# expression matcher longer than the configured number of bytes. 0 to disable
-# the limit.
+# Disable query sharding for any query containing a regular expression matcher
+# longer than the configured number of bytes. 0 to disable the limit.
 # CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
 [query_sharding_max_regexp_size_bytes: <int> | default = 4096]
 
@@ -3008,8 +3007,8 @@ The `blocks_storage` block configures the blocks storage.
 # The CLI flags prefix for this block configuration is: blocks-storage
 [filesystem: <filesystem_storage_backend>]
 
-# (experimental) Prefix for all objects stored in the backend storage. For
-# simplicity, it may only contain digits and English alphabet letters.
+# Prefix for all objects stored in the backend storage. For simplicity, it may
+# only contain digits and English alphabet letters.
 # CLI flag: -blocks-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
@@ -3288,7 +3287,7 @@ bucket_store:
   # Supported values (most aggressive to least aggressive): speculative,
   # worst-case, worst-case-small-posting-lists, all.
   # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
-  [series_selection_strategy: <string> | default = "all"]
+  [series_selection_strategy: <string> | default = "worst-case"]
 
   series_selection_strategies:
     # (experimental) This option is only used when
@@ -3296,7 +3295,7 @@ bucket_store:
     # Increasing the series preference results in fetching more series than
     # postings. Must be a positive floating point number.
     # CLI flag: -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference
-    [worst_case_series_preference: <float> | default = 1]
+    [worst_case_series_preference: <float> | default = 0.75]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
@@ -3487,12 +3486,12 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.compaction-concurrency
 [compaction_concurrency: <int> | default = 1]
 
-# (experimental) How long the compactor waits before compacting first-level
-# blocks that are uploaded by the ingesters. This configuration option allows
-# for the reduction of cases where the compactor begins to compact blocks before
-# all ingesters have uploaded their blocks to the storage.
+# How long the compactor waits before compacting first-level blocks that are
+# uploaded by the ingesters. This configuration option allows for the reduction
+# of cases where the compactor begins to compact blocks before all ingesters
+# have uploaded their blocks to the storage.
 # CLI flag: -compactor.first-level-compaction-wait-period
-[first_level_compaction_wait_period: <duration> | default = 0s]
+[first_level_compaction_wait_period: <duration> | default = 25m]
 
 # (advanced) How frequently compactor should run blocks cleanup and maintenance,
 # as well as update the bucket index.

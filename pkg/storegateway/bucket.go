@@ -52,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -1639,23 +1640,24 @@ type symbolizedLabel struct {
 // decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
 // If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if at least single chunk is within time range.
 // decodeSeries returns false, when there are no series data for given time range.
-func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool) (ok bool, err error) {
-	*lset = (*lset)[:0]
+func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, skipChunks bool) (ok bool, lset []symbolizedLabel, err error) {
+
 	*chks = (*chks)[:0]
 
 	d := encoding.Decbuf{B: b}
 
 	// Read labels without looking up symbols.
 	k := d.Uvarint()
+	lset = lsetPool.Get(k)[:0]
 	for i := 0; i < k; i++ {
 		lno := uint32(d.Uvarint())
 		lvo := uint32(d.Uvarint())
-		*lset = append(*lset, symbolizedLabel{name: lno, value: lvo})
+		lset = append(lset, symbolizedLabel{name: lno, value: lvo})
 	}
 	// Read the chunks meta data.
 	k = d.Uvarint()
 	if k == 0 {
-		return false, d.Err()
+		return false, nil, d.Err()
 	}
 
 	// First t0 is absolute, rest is just diff so different type is used (Uvarint64).
@@ -1674,7 +1676,7 @@ func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipCh
 		// Found a chunk.
 		if skipChunks {
 			// We are not interested in chunks and we know there is at least one, that's enough to return series.
-			return true, nil
+			return true, lset, nil
 		}
 
 		*chks = append(*chks, chunks.Meta{
@@ -1685,7 +1687,7 @@ func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipCh
 
 		mint = maxt
 	}
-	return len(*chks) > 0, d.Err()
+	return len(*chks) > 0, lset, d.Err()
 }
 
 func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {

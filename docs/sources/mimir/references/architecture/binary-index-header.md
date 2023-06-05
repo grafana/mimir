@@ -9,7 +9,7 @@ weight: 40
 
 # Grafana Mimir binary index-header
 
-To query series inside blocks from object storage, the [store-gateway]({{< relref "components/store-gateway.md" >}}) must obtain information about each block index.
+To query series inside blocks from object storage, the [store-gateway]({{< relref "./components/store-gateway" >}}) must obtain information about each block index.
 To obtain the required information, the store-gateway builds an index-header for each block and stores it on local disk.
 
 The store-gateway uses `GET byte range request` to build the index-header, which contains specific sections of the block's index. The store-gateway uses the index-header at query time.
@@ -24,7 +24,7 @@ The index-header is a subset of the block index and contains:
 - [Symbol Table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#symbol-table): Used to unintern string values
 - [Posting Offset Table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#postings-offset-table): Used to look up postings
 
-The following example shows the format of the index-header file that is located in each block store-gateway local directory. It is terminated by a table of contents that serves as an entry point into the index.
+The following example shows the format of the index-header file that is located in each block's store-gateway local directory. It is terminated by a table of contents that serves as an entry point into the index.
 
 ```
 ┌─────────────────────────────┬───────────────────────────────┐
