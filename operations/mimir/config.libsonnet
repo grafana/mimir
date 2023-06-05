@@ -42,12 +42,7 @@
     test_exporter_user_id: error 'must specify test exporter used id',
 
     querier: {
-      replicas: 6,
       concurrency: 8,
-    },
-
-    queryFrontend: {
-      replicas: 2,
     },
 
     // storage_backend will be used for all components that use block storage.
@@ -568,6 +563,8 @@
       },
     },
   },
+
+  query_frontend_enable_cardinality_estimation:: $._config.cache_frontend_enabled,
 
   query_frontend_caching_config:: (
     if $._config.cache_frontend_enabled then
