@@ -32,6 +32,16 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Cache golangci-lint cache
+        uses: actions/cache@v3
+        with:
+          key: golangci-lint-linter-${{ runner.os }}-${{ hashFiles('**/go.sum', '.golangci.yml', 'Makefile') }}
+          path: ~/.cache/golangci-lint
+      - name: Cache Go build cache
+        uses: actions/cache@v3
+        with:
+          key: golangci-lint-go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          path: ~/.cache/golangci-lint
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
@@ -40,7 +50,7 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
-      - name: Check White Noise.
+      - name: Check White Noise
         run: make BUILD_IN_CONTAINER=false check-white-noise
       - name: Check License Header
         run: make BUILD_IN_CONTAINER=false check-license
