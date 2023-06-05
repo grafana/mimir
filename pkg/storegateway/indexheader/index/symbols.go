@@ -42,12 +42,13 @@ const symbolFactor = 32
 
 // NewSymbols returns a Symbols object for symbol lookups.
 func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int, doChecksum bool) (s *Symbols, err error) {
-	tab := castagnoliTable
-	if !doChecksum {
-		tab = nil
+	var d streamencoding.Decbuf
+	if doChecksum {
+		d = factory.NewDecbufAtChecked(offset, castagnoliTable)
+	} else {
+		d = factory.NewDecbufAtUnchecked(offset)
 	}
 
-	d := factory.NewDecbufAtChecked(offset, tab)
 	defer runutil.CloseWithErrCapture(&err, &d, "read symbols")
 	if err := d.Err(); err != nil {
 		return nil, fmt.Errorf("decode symbol table: %w", d.Err())

@@ -55,11 +55,7 @@ func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset in
 	if indexVersion == index.FormatV1 {
 		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound)
 	} else if indexVersion == index.FormatV2 {
-		tab := castagnoliTable
-		if !doChecksum {
-			tab = nil
-		}
-		return newV2PostingOffsetTable(factory, tab, tableOffset, indexLastPostingListEndBound, postingOffsetsInMemSampling)
+		return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound, postingOffsetsInMemSampling, doChecksum)
 	}
 
 	return nil, fmt.Errorf("unknown index version %v", indexVersion)
@@ -105,7 +101,7 @@ func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	return &t, nil
 }
 
-func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, checksumTab *crc32.Table, tableOffset int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
+func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -113,7 +109,13 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, checksumTab 
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 	}
 
-	d := factory.NewDecbufAtChecked(tableOffset, checksumTab)
+	var d streamencoding.Decbuf
+	if doChecksum {
+		d = factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
+	} else {
+		d = factory.NewDecbufAtUnchecked(tableOffset)
+	}
+
 	defer runutil.CloseWithErrCapture(&err, &d, "read offset table")
 
 	remainingCount := d.Be32()
