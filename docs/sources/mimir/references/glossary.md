@@ -34,14 +34,14 @@ Grafana Mimir comprises several components.
 Each component provides a specific function to the system.
 For component specific documentation, refer to one of the following topics:
 
-- [Compactor]({{< relref "architecture/components/compactor/index.md" >}})
-- [Distributor]({{< relref "architecture/components/distributor.md" >}})
-- [Ingester]({{< relref "architecture/components/ingester.md" >}})
-- [Query-frontend]({{< relref "architecture/components/query-frontend/index.md" >}})
-- [Query-scheduler]({{< relref "architecture/components/query-scheduler/index.md" >}})
-- [Store-gateway]({{< relref "architecture/components/store-gateway.md" >}})
-- [Optional: Alertmanager]({{< relref "architecture/components/alertmanager.md" >}})
-- [Optional: Ruler]({{< relref "architecture/components/ruler/index.md" >}})
+- [Compactor]({{< relref "./architecture/components/compactor" >}})
+- [Distributor]({{< relref "./architecture/components/distributor" >}})
+- [Ingester]({{< relref "./architecture/components/ingester.md" >}})
+- [Query-frontend]({{< relref "./architecture/components/query-frontend" >}})
+- [Query-scheduler]({{< relref "./architecture/components/query-scheduler" >}})
+- [Store-gateway]({{< relref "./architecture/components/store-gateway" >}})
+- [Optional: Alertmanager]({{< relref "./architecture/components/alertmanager" >}})
+- [Optional: Ruler]({{< relref "./architecture/components/ruler" >}})
 
 ## Flushing
 
@@ -61,12 +61,12 @@ To configure HA tracking, refer to [Configuring high-availability deduplication]
 
 The hash ring is a distributed data structure used by Grafana Mimir for sharding, replication, and service discovery.
 Components use a [key-value store]({{< relref "#key-value-store" >}}) or [gossip]({{< relref "#gossip" >}}) to share the hash ring data structure.
-For more information, refer to the [Hash ring]({{< relref "architecture/hash-ring/index.md" >}}).
+For more information, refer to the [Hash ring]({{< relref "./architecture/hash-ring" >}}).
 
 ## Key-value store
 
 A key-value store is a database that associates keys with values.
-To understand how Grafana Mimir uses key-value stores, refer to [Key-value store]({{< relref "architecture/key-value-store.md" >}}).
+To understand how Grafana Mimir uses key-value stores, refer to [Key-value store]({{< relref "./architecture/key-value-store.md" >}}).
 
 ## Memberlist
 
@@ -125,4 +125,4 @@ Refer to [Tenant]({{< relref "#tenant" >}}).
 ## Write-ahead log (WAL)
 
 The write-ahead Log (WAL) is an append only log stored on disk by ingesters to recover their in-memory state after the process gets restarted.
-For more information, refer to [The write path]({{< relref "../get-started/about-grafana-mimir-architecture/index.md#the-write-path" >}}).
+For more information, refer to [The write path]({{< relref "../get-started/about-grafana-mimir-architecture#the-write-path" >}}).

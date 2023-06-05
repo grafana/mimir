@@ -25,7 +25,7 @@ limits:
   compactor_blocks_retention_period: 1y
 ```
 
-To configure the storage retention on a per-tenant basis, set overrides in the [runtime configuration]({{< relref "about-runtime-configuration.md" >}}):
+To configure the storage retention on a per-tenant basis, set overrides in the [runtime configuration]({{< relref "./about-runtime-configuration" >}}):
 
 ```yaml
 overrides:

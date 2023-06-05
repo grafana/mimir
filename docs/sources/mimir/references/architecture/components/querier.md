@@ -12,7 +12,7 @@ weight: 50
 The querier is a stateless component that evaluates [PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/)
 expressions by fetching time series and labels on the read path.
 
-The querier uses the [store-gateway]({{< relref "store-gateway.md" >}}) component to query the [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture/index.md#long-term-storage" >}}) and the [ingester]({{< relref "ingester.md" >}}) component to query recently written data.
+The querier uses the [store-gateway]({{< relref "./store-gateway" >}}) component to query the [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture#long-term-storage" >}}) and the [ingester]({{< relref "./ingester" >}}) component to query recently written data.
 
 ## How it works
 
@@ -88,7 +88,7 @@ Caching is optional, but highly recommended in a production environment.
 
 ### Metadata cache
 
-[Store-gateways]({{< relref "store-gateway.md" >}}) and queriers can use Memcached to cache the following bucket metadata:
+[Store-gateways]({{< relref "./store-gateway" >}}) and queriers can use Memcached to cache the following bucket metadata:
 
 - List of tenants
 - List of blocks per tenant

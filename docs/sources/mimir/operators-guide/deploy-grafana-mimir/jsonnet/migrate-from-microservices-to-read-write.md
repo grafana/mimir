@@ -32,7 +32,7 @@ Read-write mode requires that you enable [multi-zone ingesters and store-gateway
 }
 ```
 
-[Ruler remote evaluation]({{< relref "configure-ruler.md#operational-modes" >}}) is also required to be disabled, however this is done later in the migration process if you are presently using it in microservices.
+[Ruler remote evaluation]({{< relref "./configure-ruler#operational-modes" >}}) is also required to be disabled, however this is done later in the migration process if you are presently using it in microservices.
 
 ## Step 2: Deploy read-write components with 0 replicas
 
@@ -240,7 +240,7 @@ Then scale down the replicas for all components:
 
 Ensure backend components (`query-scheduler`, `compactor`, `ruler`, `store-gateway`) correctly left their respective rings (Query-scheduler, Compactor, Ruler, Store-gateway).
 
-It is now safe to disable [ruler remote evaluation]({{< relref "configure-ruler.md#operational-modes" >}}). (This needs to be done after the microservices ruler has been scaled down, otherwise rule evaluations may fail).
+It is now safe to disable [ruler remote evaluation]({{< relref "./configure-ruler#operational-modes" >}}). (This needs to be done after the microservices ruler has been scaled down, otherwise rule evaluations may fail).
 
 ```jsonnet
 {
