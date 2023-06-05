@@ -29,7 +29,7 @@ linters-settings:
     errorf: false
 
 run:
-  timeout: 5m
+  timeout: 10m
 
   # List of build tags, all linters use it.
   build-tags:
