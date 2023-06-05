@@ -1,0 +1,3 @@
+{{- if .Values.ruler_querier_service.enabled -}}
+{{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "ruler-query-scheduler") }}
+{{- end -}}

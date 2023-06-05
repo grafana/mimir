@@ -1,0 +1,1 @@
+{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "querier" "memberlist" true) }}
