@@ -487,7 +487,7 @@ Usage of ./cmd/mimir/mimir:
     	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
   -blocks-storage.bucket-store.index-header.max-idle-file-handles uint
     	Maximum number of idle file handles the store-gateway keeps open for each index header file. (default 1)
-  -blocks-storage.bucket-store.index-header.verify-index-headers-on-load
+  -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.max-chunk-pool-bytes uint
     	[deprecated] Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)

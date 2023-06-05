@@ -3271,7 +3271,7 @@ bucket_store:
     # (either on startup or lazily when lazy loading is enabled). Setting to
     # true helps detect disk corruption at the cost of slowing down index header
     # loading.
-    # CLI flag: -blocks-storage.bucket-store.index-header.verify-index-headers-on-load
+    # CLI flag: -blocks-storage.bucket-store.index-header.verify-on-load
     [verify_on_load: <boolean> | default = false]
 
   # (advanced) This option controls how many series to fetch per batch. The

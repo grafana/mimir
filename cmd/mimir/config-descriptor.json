@@ -7189,7 +7189,7 @@
                   "desc": "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
-                  "fieldFlag": "blocks-storage.bucket-store.index-header.verify-index-headers-on-load",
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.verify-on-load",
                   "fieldType": "boolean",
                   "fieldCategory": "advanced"
                 }

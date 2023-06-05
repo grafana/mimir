@@ -58,5 +58,5 @@ type Config struct {
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index header file.")
-	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-index-headers-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
+	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
 }
