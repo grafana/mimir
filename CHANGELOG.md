@@ -30,7 +30,7 @@
 * [ENHANCEMENT] Packaging: facilitate configuration management by instructing systemd to start mimir with a configuration file. #4810
 * [ENHANCEMENT] Store-gateway: reduce memory allocations when looking up postings from cache. #4861 #4869 #4962 #5047
 * [ENHANCEMENT] Store-gateway: retain only necessary bytes when reading series from the bucket. #4926
-* [ENHANCEMENT] Ingester: improve handling of the shutdown marker. #4985
+* [ENHANCEMENT] Ingester, store-gateway: clear the shutdown marker after a successful shutdown to enable reusing their persistent volumes in case the ingester or store-gateway is restarted. #4985
 * [ENHANCEMENT] Store-gateway, query-frontend: Reduced memory allocations when looking up cached entries from Memcached. #4862
 * [ENHANCEMENT] Alertmanager: Add additional template function `queryFromGeneratorURL` returning query URL decoded query from the `GeneratorURL` field of an alert. #4301
 * [ENHANCEMENT] Go: update to 1.20.4. #4092
