@@ -41,8 +41,13 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbols returns a Symbols object for symbol lookups.
-func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *Symbols, err error) {
-	d := factory.NewDecbufAtChecked(offset, castagnoliTable)
+func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int, doChecksum bool) (s *Symbols, err error) {
+	tab := castagnoliTable
+	if !doChecksum {
+		tab = nil
+	}
+
+	d := factory.NewDecbufAtChecked(offset, tab)
 	defer runutil.CloseWithErrCapture(&err, &d, "read symbols")
 	if err := d.Err(); err != nil {
 		return nil, fmt.Errorf("decode symbol table: %w", d.Err())

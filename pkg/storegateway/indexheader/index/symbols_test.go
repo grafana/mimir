@@ -69,7 +69,7 @@ func TestSymbolsV1(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	df := streamencoding.NewDecbufFactory(filePath, 0, log.NewNopLogger(), streamencoding.NewDecbufFactoryMetrics(reg))
-	s, err := NewSymbols(df, index.FormatV1, symbolsStart)
+	s, err := NewSymbols(df, index.FormatV1, symbolsStart, true)
 	require.NoError(t, err)
 
 	// We store only 4 offsets to symbols.
@@ -171,7 +171,7 @@ func TestSymbolsV2(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	df := streamencoding.NewDecbufFactory(filePath, 0, log.NewNopLogger(), streamencoding.NewDecbufFactoryMetrics(reg))
-	s, err := NewSymbols(df, index.FormatV2, symbolsStart)
+	s, err := NewSymbols(df, index.FormatV2, symbolsStart, true)
 	require.NoError(t, err)
 
 	// We store only 4 offsets to symbols.

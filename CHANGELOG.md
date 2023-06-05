@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
+
 ## 2.9.0-rc.0
 
 ### Grafana Mimir

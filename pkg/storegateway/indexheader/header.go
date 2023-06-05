@@ -53,8 +53,10 @@ type Reader interface {
 
 type Config struct {
 	MaxIdleFileHandles uint `yaml:"max_idle_file_handles" category:"advanced"`
+	VerifyOnLoad       bool `yaml:"verify_on_load" category:"advanced"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file.")
+	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index header file.")
+	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-index-headers-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
 }
