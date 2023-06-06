@@ -104,8 +104,8 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 				select {
 				case <-p.close:
 					return
-				// TODO: this should be 1 minute
-				case <-time.After(2 * time.Second):
+				// Persist lazy loaded blocks in file every one minute
+				case <-time.After(1 * time.Minute):
 					// We copy the state of blocks that are being lazy loaded from LazyBinaryReaders.
 					p.lazyReadersMx.Lock()
 					p.lazyLoadedTracker.CopyLazyLoadedState(p.lazyReaders)
