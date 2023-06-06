@@ -113,7 +113,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 
 					// Then we persist the state to files.
 					if err := p.lazyLoadedTracker.Persist(); err != nil {
-						level.Warn(p.logger).Log("msg", "failed to persist lazyLoadedTracker", "err", err)
+						level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
 					}
 				}
 			}
