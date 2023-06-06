@@ -80,7 +80,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 
 func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	const idleTimeout = time.Second
-	ctx, tmpDir, bkt, blockID, metrics, err := prepareReaderPool(t)
+	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 	defer func() { require.NoError(t, bkt.Close()) }()
 
@@ -126,7 +126,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 
 func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	const idleTimeout = time.Second
-	ctx, tmpDir, bkt, blockID, metrics, err := prepareReaderPool(t)
+	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 	defer func() { require.NoError(t, bkt.Close()) }()
 
@@ -155,7 +155,8 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 
 	// lazyLoaded tracker will track the lazyLoadedBlocks into persistent file
 	pool.lazyLoadedTracker.CopyLazyLoadedState(pool.lazyReaders)
-	pool.lazyLoadedTracker.Persist()
+	err = pool.lazyLoadedTracker.Persist()
+	require.NoError(t, err)
 	require.Condition(t, func() bool { return pool.lazyLoadedTracker.State.LazyLoadedBlocks[blockID.String()] > 0 }, "lazyLoadedBlocks state must be set")
 
 	// Wait enough time before checking it.
@@ -164,11 +165,12 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 
 	// lazyLoaded tracker will remove the track from persistent file
 	pool.lazyLoadedTracker.CopyLazyLoadedState(pool.lazyReaders)
-	pool.lazyLoadedTracker.Persist()
+	err = pool.lazyLoadedTracker.Persist()
+	require.NoError(t, err)
 	require.Condition(t, func() bool { return pool.lazyLoadedTracker.State.LazyLoadedBlocks[blockID.String()] == 0 }, "lazyLoadedBlocks state must be unset")
 }
 
-func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics, error) {
+func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
 	ctx := context.Background()
 
 	tmpDir, err := os.MkdirTemp("", "test-indexheader")
@@ -187,5 +189,5 @@ func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucke
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	metrics := NewReaderPoolMetrics(nil)
-	return ctx, tmpDir, bkt, blockID, metrics, err
+	return ctx, tmpDir, bkt, blockID, metrics
 }

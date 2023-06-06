@@ -66,7 +66,7 @@ func (h *HeadersLazyLoadedTracker) CopyLazyLoadedState(lazyReaders map[*LazyBina
 	h.State.LazyLoadedBlocks = make(map[string]int64)
 	for k := range lazyReaders {
 		if k.reader != nil {
-			h.State.LazyLoadedBlocks[k.blockId] = k.usedAt.Load() / int64(time.Millisecond)
+			h.State.LazyLoadedBlocks[k.blockID] = k.usedAt.Load() / int64(time.Millisecond)
 		}
 	}
 }
