@@ -22,10 +22,10 @@ const (
 	// Interval for updating resource (CPU/memory) utilization
 	resourceUtilizationUpdateInterval = time.Second
 
-	memPathV1 = "/sys/fs/cgroup/memory/memory.stat"
 	memPathV2 = "/sys/fs/cgroup/memory.current"
-	cpuPathV1 = "/sys/fs/cgroup/cpu/cpuacct.usage"
 	cpuPathV2 = "/sys/fs/cgroup/cpu.stat"
+	memPathV1 = "/sys/fs/cgroup/memory/memory.stat"
+	cpuPathV1 = "/sys/fs/cgroup/cpu/cpuacct.usage"
 )
 
 type utilizationScanner interface {
