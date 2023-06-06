@@ -108,8 +108,8 @@ func (p *PreallocTimeseries) SetLabels(lbls labels.Labels) {
 func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
 	modified := false
 	for i := len(p.Labels) - 1; i >= 0; i-- {
-		if (p.Labels)[i].Value == "" {
-			p.Labels = append((p.Labels)[:i], (p.Labels)[i+1:]...)
+		if p.Labels[i].Value == "" {
+			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
 			modified = true
 		}
 	}
