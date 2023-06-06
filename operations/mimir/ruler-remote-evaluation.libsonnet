@@ -38,7 +38,7 @@
     if $._config.autoscaling_ruler_querier_enabled then
       if $._config.autoscaling_ruler_querier_min_replicas <= 1 then 0 else 1
     else
-      if $._config.querier.replicas <= 1 then 0 else 1,
+      if $.ruler_querier_deployment.spec.replicas <= 1 then 0 else 1,
 
   ruler_querier_deployment: if !$._config.ruler_remote_evaluation_enabled then {} else
     $.newQuerierDeployment('ruler-querier', $.ruler_querier_container, querier_max_unavailable),
@@ -65,7 +65,7 @@
     if $._config.autoscaling_ruler_query_frontend_enabled then
       if $._config.autoscaling_ruler_query_frontend_min_replicas <= 1 then 0 else 1
     else
-      if $._config.queryFrontend.replicas <= 1 then 0 else 1,
+      if $.ruler_query_frontend_deployment.spec.replicas <= 1 then 0 else 1,
 
   ruler_query_frontend_deployment: if !$._config.ruler_remote_evaluation_enabled then {} else
     $.newQueryFrontendDeployment('ruler-query-frontend', $.ruler_query_frontend_container, query_frontend_max_unavailable),

@@ -64,7 +64,7 @@
     if $._config.autoscaling_querier_enabled then
       if $._config.autoscaling_querier_min_replicas <= 1 then 0 else 1
     else
-      if $._config.querier.replicas <= 1 then 0 else 1,
+      if $.querier_deployment.spec.replicas <= 1 then 0 else 1,
 
   querier_deployment: if !$._config.is_microservices_deployment_mode then null else
     self.newQuerierDeployment('querier', $.querier_container, max_unavailable),

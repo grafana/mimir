@@ -46,7 +46,7 @@
     if $._config.autoscaling_query_frontend_enabled then
       if $._config.autoscaling_query_frontend_min_replicas <= 1 then 0 else 1
     else
-      if $._config.queryFrontend.replicas <= 1 then 0 else 1,
+      if $.query_frontend_deployment.spec.replicas <= 1 then 0 else 1,
 
   query_frontend_deployment: if !$._config.is_microservices_deployment_mode then null else
     self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, max_unavailable),
