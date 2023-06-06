@@ -964,8 +964,8 @@ instance_limits:
 # CLI flag: -ingester.utilization-based-limiting-enabled
 [utilization_based_limiting_enabled: <boolean> | default = false]
 
-# (experimental) CPU target, as a fraction of 1, for CPU/memory utilization
-# based request limiting
+# (experimental) CPU utilization target, as CPU cores, for CPU/memory
+# utilization based request limiting
 # CLI flag: -ingester.cpu-utilization-target
 [cpu_utilization_target: <float> | default = 0]
 
