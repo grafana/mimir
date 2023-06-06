@@ -68,7 +68,7 @@ const (
 	labelEncode = "encode"
 	labelDecode = "decode"
 
-	lazyLoadedPath = "lazy-loaded.proto"
+	lazyLoadedFile = "lazy-loaded.proto"
 )
 
 type BucketStoreStats struct {
@@ -261,7 +261,7 @@ func NewBucketStore(
 
 	lazyLoadedTracker := indexheader.HeadersLazyLoadedTracker{
 		// Path stores where lazy loaded blocks will be tracked in per-tenant-files
-		Path: filepath.Join(dir, lazyLoadedPath),
+		Path: filepath.Join(dir, lazyLoadedFile),
 		State: storepb.HeadersLazyLoadedTrackerState{
 			UserId: userID,
 		},
