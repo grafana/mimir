@@ -12,10 +12,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/pkg/errors"
 	"github.com/prometheus/procfs"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/util/math"
 )
 
 const (
