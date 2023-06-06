@@ -220,25 +220,25 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 
 		require.NoError(t, msg.Unmarshal(data))
 		require.True(t, src.Equal(msg.TimeSeries))
-		require.NotNil(t, msg.unmarshalData)
+		require.NotNil(t, msg.marshalledData)
 	}
 
-	correctMarshaledData := make([]byte, len(msg.unmarshalData))
-	copy(correctMarshaledData, msg.unmarshalData)
+	correctMarshaledData := make([]byte, len(msg.marshalledData))
+	copy(correctMarshaledData, msg.marshalledData)
 
 	// Set cached version to random bytes (make a new slice, because labels in TimeSeries use the original byte slice).
-	msg.unmarshalData = make([]byte, 100)
-	_, err := rand.Read(msg.unmarshalData)
+	msg.marshalledData = make([]byte, 100)
+	_, err := rand.Read(msg.marshalledData)
 	require.NoError(t, err)
 
 	t.Run("message with cached marshalled version: Size returns length of cached data", func(t *testing.T) {
-		require.Equal(t, len(msg.unmarshalData), msg.Size())
+		require.Equal(t, len(msg.marshalledData), msg.Size())
 	})
 
 	t.Run("message with cached marshalled version: Marshal returns cached data", func(t *testing.T) {
 		out, err := msg.Marshal()
 		require.NoError(t, err)
-		require.Equal(t, msg.unmarshalData, out)
+		require.Equal(t, msg.marshalledData, out)
 	})
 
 	t.Run("message with cached marshalled version: MarshalTo returns cached data", func(t *testing.T) {
@@ -246,7 +246,7 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 		n, err := msg.MarshalTo(out)
 		require.NoError(t, err)
 		require.Equal(t, n, msg.Size())
-		require.Equal(t, msg.unmarshalData, out[:msg.Size()])
+		require.Equal(t, msg.marshalledData, out[:msg.Size()])
 	})
 
 	t.Run("message with cached marshalled version: MarshalToSizedBuffer returns cached data", func(t *testing.T) {
@@ -254,11 +254,11 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 		n, err := msg.MarshalToSizedBuffer(out)
 		require.NoError(t, err)
 		require.Equal(t, n, len(out))
-		require.Equal(t, msg.unmarshalData, out)
+		require.Equal(t, msg.marshalledData, out)
 	})
 
 	msg.clearUnmarshalData()
-	require.Nil(t, msg.unmarshalData)
+	require.Nil(t, msg.marshalledData)
 
 	t.Run("message without cached marshalled version: Marshal returns correct data", func(t *testing.T) {
 		out, err := msg.Marshal()
@@ -294,13 +294,13 @@ func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
 					{Name: "sample", Value: "1"},
 				},
 			},
-			unmarshalData: []byte{1, 2, 3},
+			marshalledData: []byte{1, 2, 3},
 		}
 		// no allocations if input is already sorted
 		require.Equal(t, 0.0, testing.AllocsPerRun(100, func() {
 			sorted.SortLabelsIfNeeded()
 		}))
-		require.NotNil(t, sorted.unmarshalData)
+		require.NotNil(t, sorted.marshalledData)
 	})
 
 	t.Run("unsorted", func(t *testing.T) {
@@ -313,7 +313,7 @@ func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
 					{Name: "bar", Value: "baz"},
 				},
 			},
-			unmarshalData: []byte{1, 2, 3},
+			marshalledData: []byte{1, 2, 3},
 		}
 
 		unsorted.SortLabelsIfNeeded()
@@ -321,7 +321,7 @@ func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
 		require.True(t, sort.SliceIsSorted(unsorted.Labels, func(i, j int) bool {
 			return unsorted.Labels[i].Name < unsorted.Labels[j].Name
 		}))
-		require.Nil(t, unsorted.unmarshalData)
+		require.Nil(t, unsorted.marshalledData)
 	})
 }
 
@@ -334,12 +334,12 @@ func TestPreallocTimeseries_RemoveLabel(t *testing.T) {
 					{Name: "bar", Value: "baz"},
 				},
 			},
-			unmarshalData: []byte{1, 2, 3},
+			marshalledData: []byte{1, 2, 3},
 		}
 		p.RemoveLabel("bar")
 
 		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}}, p.Labels)
-		require.Nil(t, p.unmarshalData)
+		require.Nil(t, p.marshalledData)
 	})
 
 	t.Run("with no matching label", func(t *testing.T) {
@@ -350,12 +350,12 @@ func TestPreallocTimeseries_RemoveLabel(t *testing.T) {
 					{Name: "bar", Value: "baz"},
 				},
 			},
-			unmarshalData: []byte{1, 2, 3},
+			marshalledData: []byte{1, 2, 3},
 		}
 		p.RemoveLabel("foo")
 
 		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
-		require.NotNil(t, p.unmarshalData)
+		require.NotNil(t, p.marshalledData)
 	})
 }
 
@@ -370,12 +370,12 @@ func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
 					{Name: "empty2", Value: ""},
 				},
 			},
-			unmarshalData: []byte{1, 2, 3},
+			marshalledData: []byte{1, 2, 3},
 		}
 		p.RemoveEmptyLabelValues()
 
 		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
-		require.Nil(t, p.unmarshalData)
+		require.Nil(t, p.marshalledData)
 	})
 
 	t.Run("without empty labels", func(t *testing.T) {
@@ -386,12 +386,12 @@ func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
 					{Name: "bar", Value: "baz"},
 				},
 			},
-			unmarshalData: []byte{1, 2, 3},
+			marshalledData: []byte{1, 2, 3},
 		}
 		p.RemoveLabel("foo")
 
 		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
-		require.NotNil(t, p.unmarshalData)
+		require.NotNil(t, p.marshalledData)
 	})
 }
 
@@ -403,10 +403,10 @@ func TestPreallocTimeseries_SetLabels(t *testing.T) {
 				{Name: "bar", Value: "baz"},
 			},
 		},
-		unmarshalData: []byte{1, 2, 3},
+		marshalledData: []byte{1, 2, 3},
 	}
 	p.SetLabels(labels.FromStrings("__name__", "hello", "lbl", "world"))
 
 	require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}, p.Labels)
-	require.Nil(t, p.unmarshalData)
+	require.Nil(t, p.marshalledData)
 }

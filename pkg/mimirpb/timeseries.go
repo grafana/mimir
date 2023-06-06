@@ -81,7 +81,7 @@ type PreallocTimeseries struct {
 
 	// Original data used for unmarshalling this PreallocTimeseries. When set, Marshal methods will return it
 	// instead of doing full marshalling again. This assumes that this instance hasn't changed.
-	unmarshalData []byte
+	marshalledData []byte
 }
 
 // RemoveLabel removes the label labelName from this timeseries, if it exists.
@@ -144,42 +144,42 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 
 // clearUnmarshalData removes cached unmarshalled version of the message.
 func (p *PreallocTimeseries) clearUnmarshalData() {
-	p.unmarshalData = nil
+	p.marshalledData = nil
 }
 
 // Unmarshal implements proto.Message. Input data slice is retained.
 func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
-	p.unmarshalData = dAtA
+	p.marshalledData = dAtA
 	p.TimeSeries = TimeseriesFromPool()
 	return p.TimeSeries.Unmarshal(dAtA)
 }
 
 func (p *PreallocTimeseries) Size() int {
-	if p.unmarshalData != nil {
-		return len(p.unmarshalData)
+	if p.marshalledData != nil {
+		return len(p.marshalledData)
 	}
 	return p.TimeSeries.Size()
 }
 
 func (p *PreallocTimeseries) Marshal() ([]byte, error) {
-	if p.unmarshalData != nil {
-		return p.unmarshalData, nil
+	if p.marshalledData != nil {
+		return p.marshalledData, nil
 	}
 	return p.TimeSeries.Marshal()
 }
 
 func (p *PreallocTimeseries) MarshalTo(buf []byte) (int, error) {
-	if p.unmarshalData != nil && len(buf) >= len(p.unmarshalData) {
-		copy(buf, p.unmarshalData)
-		return len(p.unmarshalData), nil
+	if p.marshalledData != nil && len(buf) >= len(p.marshalledData) {
+		copy(buf, p.marshalledData)
+		return len(p.marshalledData), nil
 	}
 	return p.TimeSeries.MarshalTo(buf)
 }
 
 func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
-	if p.unmarshalData != nil && len(buf) >= len(p.unmarshalData) {
-		copy(buf, p.unmarshalData)
-		return len(p.unmarshalData), nil
+	if p.marshalledData != nil && len(buf) >= len(p.marshalledData) {
+		copy(buf, p.marshalledData)
+		return len(p.marshalledData), nil
 	}
 	return p.TimeSeries.MarshalToSizedBuffer(buf)
 }
@@ -442,7 +442,7 @@ func ReusePreallocTimeseries(ts *PreallocTimeseries) {
 		ts.yoloSlice = nil
 	}
 
-	ts.unmarshalData = nil
+	ts.marshalledData = nil
 }
 
 func yoloSliceFromPool() *[]byte {
