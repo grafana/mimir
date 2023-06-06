@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/VividCortex/ewma"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
@@ -93,9 +92,6 @@ const (
 	compactionIdleTimeoutJitter = 0.25
 
 	instanceIngestionRateTickInterval = time.Second
-
-	// Interval for updating resource (CPU/memory) utilization
-	resourceUtilizationUpdateInterval = time.Second
 
 	// Reasons for discarding samples
 	sampleOutOfOrder     = "sample-out-of-order"
@@ -292,19 +288,7 @@ type Ingester struct {
 	minOutOfOrderTimeWindowSecondsStat *expvar.Int
 	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
 
-	// Read path memory threshold in bytes
-	readPathMemoryThreshold uint64
-	// Read path CPU threshold as a fraction of 1
-	readPathCPUThreshold float64
-	// Memory utilization in bytes
-	memoryUtilization atomic.Uint64
-	// CPU utilization as fraction
-	cpuUtilization atomic.Float64
-	// Last CPU time counter
-	lastCPUTime atomic.Float64
-	// Last time resource utilization was computed
-	lastResourceUtilizationUpdate atomic.Time
-	movingAvg                     ewma.MovingAverage
+	utilizationBasedLimiter *utilizationBasedLimiter
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -341,11 +325,6 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		tenantsWithOutOfOrderEnabledStat:   usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName),
 		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
 		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
-
-		readPathCPUThreshold:    cfg.ReadPathUtilizationRatio * cfg.CPUUtilizationTarget,
-		readPathMemoryThreshold: uint64(cfg.ReadPathUtilizationRatio * float64(cfg.MemoryUtilizationTarget)),
-		// Use a minute long window, each sample being a second apart
-		movingAvg: ewma.NewMovingAverage(60),
 	}, nil
 }
 
@@ -457,7 +436,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 	}
 
 	if i.cfg.UtilizationBasedLimitingEnabled {
-		servs = append(servs, services.NewTimerService(resourceUtilizationUpdateInterval, nil, i.updateResourceUtilization, nil))
+		servs = append(servs, newUtilizationBasedLimiter(i.cfg, i.logger))
 	}
 
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)

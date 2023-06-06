@@ -10,14 +10,23 @@ import (
 	"os"
 	"time"
 
+	"github.com/VividCortex/ewma"
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/procfs"
 	"github.com/weaveworks/common/httpgrpc"
+	"go.uber.org/atomic"
 )
 
-// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
-const queryLimitingCode = http.StatusServiceUnavailable
+const (
+	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
+	queryLimitingCode = http.StatusServiceUnavailable
+
+	// Interval for updating resource (CPU/memory) utilization
+	resourceUtilizationUpdateInterval = time.Second
+)
 
 func scanCgroupV2() (float64, uint64, error) {
 	// For reference, see https://git.kernel.org/pub/scm/linux/kernel/git/tj/cgroup.git/tree/Documentation/admin-guide/cgroup-v2.rst
@@ -125,13 +134,45 @@ func scanProcFS() (float64, uint64, error) {
 	return ps.CPUTime(), uint64(ps.ResidentMemory()), nil
 }
 
-func (i *Ingester) updateResourceUtilization(ctx context.Context) error {
-	lastUpdate := i.lastResourceUtilizationUpdate.Load()
+type utilizationBasedLimiter struct {
+	services.Service
+
+	logger log.Logger
+
+	// Read path memory threshold in bytes
+	readPathMemoryThreshold uint64
+	// Read path CPU threshold as a fraction of 1
+	readPathCPUThreshold float64
+	// Memory utilization in bytes
+	memoryUtilization atomic.Uint64
+	// CPU utilization as fraction
+	cpuUtilization atomic.Float64
+	// Last CPU time counter
+	lastCPUTime atomic.Float64
+	// Last time resource utilization was computed
+	lastResourceUtilizationUpdate atomic.Time
+	movingAvg                     ewma.MovingAverage
+}
+
+func newUtilizationBasedLimiter(cfg Config, logger log.Logger) *utilizationBasedLimiter {
+	l := &utilizationBasedLimiter{
+		logger:                  logger,
+		readPathCPUThreshold:    cfg.ReadPathUtilizationRatio * cfg.CPUUtilizationTarget,
+		readPathMemoryThreshold: uint64(cfg.ReadPathUtilizationRatio * float64(cfg.MemoryUtilizationTarget)),
+		// Use a minute long window, each sample being a second apart
+		movingAvg: ewma.NewMovingAverage(60),
+	}
+	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, nil, l.updateResourceUtilization, nil)
+	return l
+}
+
+func (l *utilizationBasedLimiter) updateResourceUtilization(ctx context.Context) error {
+	lastUpdate := l.lastResourceUtilizationUpdate.Load()
 
 	var method string
 	cpuTime, memUtil, err := scanCgroupV2()
 	if err != nil && !os.IsNotExist(err) {
-		level.Warn(i.logger).Log("msg", "failed to get CPU and memory stats from cgroup v2", "err", err.Error())
+		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats from cgroup v2", "err", err.Error())
 		return ctx.Err()
 	}
 	if err == nil {
@@ -140,7 +181,7 @@ func (i *Ingester) updateResourceUtilization(ctx context.Context) error {
 		// cgroup v2 not detected, try v1
 		cpuTime, memUtil, err = scanCgroupV1()
 		if err != nil && !os.IsNotExist(err) {
-			level.Warn(i.logger).Log("msg", "failed to get CPU and memory stats from cgroup v1", "err", err.Error())
+			level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats from cgroup v1", "err", err.Error())
 			return ctx.Err()
 		}
 		if err == nil {
@@ -149,32 +190,32 @@ func (i *Ingester) updateResourceUtilization(ctx context.Context) error {
 			// cgroup not detected, fall back to /proc
 			cpuTime, memUtil, err = scanProcFS()
 			if err != nil {
-				level.Warn(i.logger).Log("msg", "failed to get CPU and memory stats from /proc", "err", err.Error())
+				level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats from /proc", "err", err.Error())
 				return ctx.Err()
 			}
 			method = "/proc"
 		}
 	}
 
-	i.memoryUtilization.Store(memUtil)
+	l.memoryUtilization.Store(memUtil)
 
 	now := time.Now().UTC()
 
-	lastCPUTime := i.lastCPUTime.Load()
-	i.lastCPUTime.Store(cpuTime)
+	lastCPUTime := l.lastCPUTime.Load()
+	l.lastCPUTime.Store(cpuTime)
 
-	i.lastResourceUtilizationUpdate.Store(now)
+	l.lastResourceUtilizationUpdate.Store(now)
 
 	if lastUpdate.IsZero() {
 		return ctx.Err()
 	}
 
 	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
-	i.movingAvg.Add(cpuUtil)
-	cpuA := i.movingAvg.Value()
-	i.cpuUtilization.Store(cpuA)
+	l.movingAvg.Add(cpuUtil)
+	cpuA := l.movingAvg.Value()
+	l.cpuUtilization.Store(cpuA)
 
-	level.Debug(i.logger).Log("msg", "process resource utilization", "method", method, "memory_utilization", memUtil,
+	level.Debug(l.logger).Log("msg", "process resource utilization", "method", method, "memory_utilization", memUtil,
 		"smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
 	return ctx.Err()
 }
@@ -185,15 +226,19 @@ func (i *Ingester) checkReadOverloaded() error {
 		return nil
 	}
 
-	memUtil := i.memoryUtilization.Load()
-	cpuUtil := i.cpuUtilization.Load()
-	lastUpdate := i.lastResourceUtilizationUpdate.Load()
+	return i.utilizationBasedLimiter.checkReadOverloaded()
+}
+
+func (l *utilizationBasedLimiter) checkReadOverloaded() error {
+	memUtil := l.memoryUtilization.Load()
+	cpuUtil := l.cpuUtilization.Load()
+	lastUpdate := l.lastResourceUtilizationUpdate.Load()
 	if lastUpdate.IsZero() {
 		return nil
 	}
 
-	memPercent := 100 * (float64(memUtil) / float64(i.readPathMemoryThreshold))
-	cpuPercent := 100 * (cpuUtil / i.readPathCPUThreshold)
+	memPercent := 100 * (float64(memUtil) / float64(l.readPathMemoryThreshold))
+	cpuPercent := 100 * (cpuUtil / l.readPathCPUThreshold)
 
 	var reason string
 	if memPercent >= 100 {
@@ -202,9 +247,9 @@ func (i *Ingester) checkReadOverloaded() error {
 		reason = "cpu"
 	}
 	if reason != "" {
-		level.Debug(i.logger).Log("msg", "read path resource utilization based limiting", "reason", reason,
-			"memory_threshold", i.readPathMemoryThreshold, "memory_percentage_of_threshold", memPercent,
-			"cpu_threshold", i.readPathCPUThreshold, "cpu_percentage_of_threshold", cpuPercent,
+		level.Debug(l.logger).Log("msg", "read path resource utilization based limiting", "reason", reason,
+			"memory_threshold", l.readPathMemoryThreshold, "memory_percentage_of_threshold", memPercent,
+			"cpu_threshold", l.readPathCPUThreshold, "cpu_percentage_of_threshold", cpuPercent,
 			"memory_utilization", memUtil, "cpu_utilization", cpuUtil)
 
 		return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process queries, try again later")
