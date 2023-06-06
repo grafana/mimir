@@ -147,7 +147,7 @@ func (p *PreallocTimeseries) clearUnmarshalData() {
 	p.unmarshalData = nil
 }
 
-// Unmarshal implements proto.Message.
+// Unmarshal implements proto.Message. Input data slice is retained.
 func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
 	p.unmarshalData = dAtA
 	p.TimeSeries = TimeseriesFromPool()
@@ -168,11 +168,12 @@ func (p *PreallocTimeseries) Marshal() ([]byte, error) {
 	return p.TimeSeries.Marshal()
 }
 
-func (p *PreallocTimeseries) MarshalTo(dAtA []byte) (int, error) {
-	if p.unmarshalData != nil {
-		return p.MarshalToSizedBuffer(dAtA)
+func (p *PreallocTimeseries) MarshalTo(buf []byte) (int, error) {
+	if p.unmarshalData != nil && len(buf) >= len(p.unmarshalData) {
+		copy(buf, p.unmarshalData)
+		return len(p.unmarshalData), nil
 	}
-	return p.TimeSeries.MarshalTo(dAtA)
+	return p.TimeSeries.MarshalTo(buf)
 }
 
 func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
