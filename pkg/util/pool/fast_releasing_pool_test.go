@@ -41,10 +41,5 @@ func TestNewFastReleasingSlabPool(t *testing.T) {
 
 	fmt.Println("total size:", totalSize, "slabs:", delegatePool.Gets.Load(), "balance:", delegatePool.Balance.Load())
 	require.Greater(t, delegatePool.Gets.Load(), int64(0))
-
-	// It is very likely that balance isn't zero at this point, although it could be.
-	require.GreaterOrEqual(t, delegatePool.Balance.Load(), int64(0))
-
-	s.ReleaseAll()
 	require.Equal(t, int64(0), delegatePool.Balance.Load())
 }

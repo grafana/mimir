@@ -1,7 +1,6 @@
 package pool
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -10,10 +9,8 @@ type FastReleasingSlabPool[T any] struct {
 	delegate Interface
 	slabSize int
 
-	mtx       sync.Mutex
-	allSlabs  map[int]*trackedSlab[T] // All slabs.
-	freeSlabs map[int]*trackedSlab[T] // Slabs with free space.
-	lastSlab  int                     // ID of last created trackedSlab.
+	mtx   sync.Mutex
+	slabs []*trackedSlab[T] // All slabs. Slab ID is an index into this slice.
 }
 
 type trackedSlab[T any] struct {
@@ -24,21 +21,18 @@ type trackedSlab[T any] struct {
 
 func NewFastReleasingSlabPool[T any](delegate Interface, slabSize int) *FastReleasingSlabPool[T] {
 	return &FastReleasingSlabPool[T]{
-		delegate:  delegate,
-		slabSize:  slabSize,
-		allSlabs:  map[int]*trackedSlab[T]{},
-		freeSlabs: map[int]*trackedSlab[T]{},
+		delegate: delegate,
+		slabSize: slabSize,
+		slabs:    []*trackedSlab[T]{nil}, // slabId = 0 is invalid.
 	}
 }
 
 const (
 	freeSlabChecks = 3
-	freeSlabFactor = float64(2) / 3
 )
 
 // Release decreases reference counter for given slab.
-// If reference counter is 0, slab may be returned to the delegate pool, but it may
-// also be preserved for later allocations. See ReleaseAll to return all slabs.
+// If reference counter is 0, slab may be returned to the delegate pool.
 func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 	if slabId <= 0 {
 		return
@@ -55,37 +49,19 @@ func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	ts := b.allSlabs[slabId]
+	if slabId >= len(b.slabs) {
+		panic("invalid slabId")
+	}
+
+	ts := b.slabs[slabId]
 	if ts == nil || ts.references <= 0 {
 		panic("invalid reference count")
 	}
 
 	ts.references--
 	if ts.references == 0 {
-		// If this slab is too full or or there are too many free slabs, return slab back to delegate.
-		// Otherwise keep it for future Get calls.
-		if ts.nextFreeIndex >= int(freeSlabFactor*float64(len(ts.slab))) || len(b.freeSlabs) > freeSlabChecks {
-			delete(b.allSlabs, slabId)
-			delete(b.freeSlabs, slabId)
-			slabToRelease = ts.slab
-		}
-	}
-}
-
-// ReleaseAll releases all slabs. This method expects that all slabs have no references anymore,
-// and it will panic if there is still a slab with non-zero reference counter.
-func (b *FastReleasingSlabPool[T]) ReleaseAll() {
-	b.mtx.Lock()
-	defer b.mtx.Unlock()
-
-	for id, ts := range b.allSlabs {
-		if ts.references > 0 {
-			panic(fmt.Sprintf("slab is still being used, references: %d", ts.references))
-		}
-
-		delete(b.allSlabs, id)
-		delete(b.freeSlabs, id)
-		b.delegate.Put(ts.slab)
+		b.slabs[slabId] = nil
+		slabToRelease = ts.slab
 	}
 }
 
@@ -107,16 +83,12 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 	slabId := 0
 	ts := (*trackedSlab[T])(nil)
 
-	count := 0
-	for sid, s := range b.freeSlabs {
-		if len(s.slab)-s.nextFreeIndex >= size {
+	// Look at last few slabs (with most free space).
+	for sid := len(b.slabs) - 1; sid >= len(b.slabs)-freeSlabChecks && sid >= 0; sid-- {
+		s := b.slabs[sid]
+		if s != nil && len(s.slab)-s.nextFreeIndex >= size {
 			slabId = sid
 			ts = s
-			break
-		}
-		count++
-		// No space found in few slabs, get a new one.
-		if count >= freeSlabChecks {
 			break
 		}
 	}
@@ -124,8 +96,7 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 	if slabId == 0 {
 		var slab []T
 
-		fromDelegate := b.delegate.Get()
-		if fromDelegate == nil {
+		if fromDelegate := b.delegate.Get(); fromDelegate == nil {
 			slab = make([]T, b.slabSize, b.slabSize)
 		} else {
 			slab = (fromDelegate).([]T)
@@ -134,20 +105,13 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 		ts = &trackedSlab[T]{
 			slab: slab,
 		}
-		b.lastSlab++
-		slabId = b.lastSlab
-		b.allSlabs[slabId] = ts
-		b.freeSlabs[slabId] = ts
+		slabId = len(b.slabs)
+		b.slabs = append(b.slabs, ts)
 	}
 
 	out := ts.slab[ts.nextFreeIndex : ts.nextFreeIndex+size : ts.nextFreeIndex+size]
 	ts.nextFreeIndex += size
 	ts.references++
-
-	if ts.nextFreeIndex >= len(ts.slab) {
-		// this slab is no longer free, remove it from free slabs.
-		delete(b.freeSlabs, slabId)
-	}
 
 	return out, slabId
 }
