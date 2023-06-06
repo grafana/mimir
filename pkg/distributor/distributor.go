@@ -560,19 +560,6 @@ func shardByAllLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
 	return h
 }
 
-// Remove the label labelName from a slice of LabelAdapters if it exists.
-// Returns true if label was removed.
-func removeLabel(labelName string, labels *[]mimirpb.LabelAdapter) bool {
-	for i := 0; i < len(*labels); i++ {
-		pair := (*labels)[i]
-		if pair.Name == labelName {
-			*labels = append((*labels)[:i], (*labels)[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
-
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
 // and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
 // nil for the error means accept the sample.

@@ -3918,50 +3918,6 @@ func TestDistributorValidation(t *testing.T) {
 	}
 }
 
-func TestRemoveReplicaLabel(t *testing.T) {
-	replicaLabel := "replica"
-	clusterLabel := "cluster"
-	cases := []struct {
-		labelsIn  []mimirpb.LabelAdapter
-		labelsOut []mimirpb.LabelAdapter
-	}{
-		// Replica label is present
-		{
-			labelsIn: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: "replica", Value: replicaLabel},
-			},
-			labelsOut: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-			},
-		},
-		// Replica label is not present
-		{
-			labelsIn: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: "cluster", Value: clusterLabel},
-			},
-			labelsOut: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: "cluster", Value: clusterLabel},
-			},
-		},
-	}
-
-	for _, c := range cases {
-		removeLabel(replicaLabel, &c.labelsIn)
-		assert.Equal(t, c.labelsOut, c.labelsIn)
-	}
-}
-
 // This is not great, but we deal with unsorted labels in prePushRelabelMiddleware.
 func TestShardByAllLabelsReturnsWrongResultsForUnsortedLabels(t *testing.T) {
 	val1 := shardByAllLabels("test", []mimirpb.LabelAdapter{
