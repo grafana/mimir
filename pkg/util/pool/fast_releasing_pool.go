@@ -1,6 +1,9 @@
 package pool
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // FastReleasingSlabPool is similar to SlabPool, but allows for fast release of slabs if they are not used anymore.
 type FastReleasingSlabPool[T any] struct {
@@ -8,14 +11,14 @@ type FastReleasingSlabPool[T any] struct {
 	slabSize int
 
 	mtx       sync.Mutex
-	allSlabs  map[int]*trackedSlab[T]
-	freeSlabs map[int]*trackedSlab[T]
-	lastSlab  int
+	allSlabs  map[int]*trackedSlab[T] // All slabs.
+	freeSlabs map[int]*trackedSlab[T] // Slabs with free space.
+	lastSlab  int                     // ID of last created trackedSlab.
 }
 
 type trackedSlab[T any] struct {
 	slab          []T
-	references    int
+	references    int // How many slices from this slab were returned via Get.
 	nextFreeIndex int
 }
 
@@ -28,14 +31,22 @@ func NewFastReleasingSlabPool[T any](delegate Interface, slabSize int) *FastRele
 	}
 }
 
+const (
+	freeSlabChecks = 3
+	freeSlabFactor = float64(2) / 3
+)
+
+// Release decreases reference counter for given slab.
+// If reference counter is 0, slab may be returned to the delegate pool, but it may
+// also be preserved for later allocations. See ReleaseAll to return all slabs.
 func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 	if slabId <= 0 {
 		return
 	}
 
 	var slabToRelease []T
-
 	defer func() {
+		// Return of the slab is done via defer, so that it can be done without the lock.
 		if slabToRelease != nil {
 			b.delegate.Put(slabToRelease)
 		}
@@ -51,15 +62,35 @@ func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 
 	ts.references--
 	if ts.references == 0 {
-		delete(b.allSlabs, slabId)
-		delete(b.freeSlabs, slabId)
+		// If this slab is too full or or there are too many free slabs, return slab back to delegate.
+		// Otherwise keep it for future Get calls.
+		if ts.nextFreeIndex >= int(freeSlabFactor*float64(len(ts.slab))) || len(b.freeSlabs) > freeSlabChecks {
+			delete(b.allSlabs, slabId)
+			delete(b.freeSlabs, slabId)
+			slabToRelease = ts.slab
+		}
+	}
+}
+
+// ReleaseAll releases all slabs. This method expects that all slabs have no references anymore,
+// and it will panic if there is still a slab with non-zero reference counter.
+func (b *FastReleasingSlabPool[T]) ReleaseAll() {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+
+	for id, ts := range b.allSlabs {
+		if ts.references > 0 {
+			panic(fmt.Sprintf("slab is still being used, references: %d", ts.references))
+		}
+
+		delete(b.allSlabs, id)
+		delete(b.freeSlabs, id)
+		b.delegate.Put(ts.slab)
 	}
 }
 
 // Get returns a slice of T with the given length and capacity (both matches).
 func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
-	const freeSlabChecks = 3
-
 	if size <= 0 {
 		return nil, 0
 	}
@@ -91,9 +122,13 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 	}
 
 	if slabId == 0 {
-		slab := b.delegate.Get().([]T)
-		if slab == nil {
-			slab = make([]T, 0, b.slabSize)
+		var slab []T
+
+		fromDelegate := b.delegate.Get()
+		if fromDelegate == nil {
+			slab = make([]T, b.slabSize, b.slabSize)
+		} else {
+			slab = (fromDelegate).([]T)
 		}
 
 		ts = &trackedSlab[T]{
