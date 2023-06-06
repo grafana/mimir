@@ -202,15 +202,12 @@ type utilizationBasedLimiter struct {
 	readPathMemoryThreshold uint64
 	// Read path CPU threshold as a fraction of 1
 	readPathCPUThreshold float64
-	// Memory utilization in bytes
-	memoryUtilization atomic.Uint64
-	// CPU utilization as fraction
-	cpuUtilization atomic.Float64
 	// Last CPU time counter
-	lastCPUTime atomic.Float64
+	lastCPUTime float64
 	// The time of the last update
-	lastUpdate atomic.Time
-	movingAvg  ewma.MovingAverage
+	lastUpdate     time.Time
+	movingAvg      ewma.MovingAverage
+	limitingReason atomic.String
 }
 
 func newUtilizationBasedLimiter(cfg Config, logger log.Logger) *utilizationBasedLimiter {
@@ -246,23 +243,21 @@ func (l *utilizationBasedLimiter) init(ctx context.Context) error {
 }
 
 func (l *utilizationBasedLimiter) update(ctx context.Context) error {
-	lastUpdate := l.lastUpdate.Load()
-
 	cpuTime, memUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "method",
 			l.utilizationScanner.Method(), "err", err.Error())
+		// Disable any limiting, since we can't tell resource utilization
+		l.limitingReason.Store("")
 		return ctx.Err()
 	}
 
-	l.memoryUtilization.Store(memUtil)
-
 	now := time.Now().UTC()
+	lastUpdate := l.lastUpdate
+	l.lastUpdate = now
 
-	lastCPUTime := l.lastCPUTime.Load()
-	l.lastCPUTime.Store(cpuTime)
-
-	l.lastUpdate.Store(now)
+	lastCPUTime := l.lastCPUTime
+	l.lastCPUTime = cpuTime
 
 	if lastUpdate.IsZero() {
 		return ctx.Err()
@@ -271,10 +266,39 @@ func (l *utilizationBasedLimiter) update(ctx context.Context) error {
 	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
 	l.movingAvg.Add(cpuUtil)
 	cpuA := l.movingAvg.Value()
-	l.cpuUtilization.Store(cpuA)
 
 	level.Debug(l.logger).Log("msg", "process resource utilization", "method", l.utilizationScanner.Method(),
 		"memory_utilization", memUtil, "smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
+
+	memPercent := 100 * (float64(memUtil) / float64(l.readPathMemoryThreshold))
+	cpuPercent := 100 * (cpuA / l.readPathCPUThreshold)
+
+	var reason string
+	if memPercent >= 100 {
+		reason = "memory"
+	} else if cpuPercent >= 100 {
+		reason = "cpu"
+	}
+
+	enable := reason != ""
+	prevEnable := l.limitingReason.Load() != ""
+	if enable == prevEnable {
+		// No change
+		return ctx.Err()
+	}
+
+	if enable {
+		level.Info(l.logger).Log("msg", "enabling read path resource utilization based limiting",
+			"reason", reason, "memory_threshold", l.readPathMemoryThreshold,
+			"memory_percentage_of_threshold", memPercent, "cpu_threshold", l.readPathCPUThreshold,
+			"cpu_percentage_of_threshold", cpuPercent)
+	} else {
+		level.Info(l.logger).Log("msg", "disabling read path resource utilization based limiting",
+			"memory_threshold", l.readPathMemoryThreshold, "memory_percentage_of_threshold", memPercent,
+			"cpu_threshold", l.readPathCPUThreshold, "cpu_percentage_of_threshold", cpuPercent)
+	}
+	l.limitingReason.Store(reason)
+
 	return ctx.Err()
 }
 
@@ -284,36 +308,14 @@ func (i *Ingester) checkReadOverloaded() error {
 		return nil
 	}
 
-	return i.utilizationBasedLimiter.checkReadOverloaded()
-}
-
-func (l *utilizationBasedLimiter) checkReadOverloaded() error {
-	memUtil := l.memoryUtilization.Load()
-	cpuUtil := l.cpuUtilization.Load()
-	lastUpdate := l.lastUpdate.Load()
-	if lastUpdate.IsZero() {
+	reason := i.utilizationBasedLimiter.limitingReason.Load()
+	if reason == "" {
 		return nil
 	}
 
-	memPercent := 100 * (float64(memUtil) / float64(l.readPathMemoryThreshold))
-	cpuPercent := 100 * (cpuUtil / l.readPathCPUThreshold)
-
-	var reason string
-	if memPercent >= 100 {
-		reason = "memory"
-	} else if cpuPercent >= 100 {
-		reason = "cpu"
-	}
-	if reason != "" {
-		level.Debug(l.logger).Log("msg", "read path resource utilization based limiting", "reason", reason,
-			"memory_threshold", l.readPathMemoryThreshold, "memory_percentage_of_threshold", memPercent,
-			"cpu_threshold", l.readPathCPUThreshold, "cpu_percentage_of_threshold", cpuPercent,
-			"memory_utilization", memUtil, "cpu_utilization", cpuUtil)
-
-		return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process queries, try again later")
-	}
-
-	return nil
+	level.Debug(i.logger).Log("msg", "rejecting read request due to resource utilization based limiting",
+		"reason", reason)
+	return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process queries, try again later")
 }
 
 // readFileNoStat returns an io.ReadCloser for fpath.
