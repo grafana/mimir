@@ -10,7 +10,6 @@
 * [FEATURE] Query-frontend: added experimental support to cache cardinality query responses. The cache will be used when `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than 0. The following metrics have been added to track the query results cache hit ratio per `request_type`: #5212 #5235
   * `cortex_frontend_query_result_cache_requests_total{request_type="query_range|cardinality"}`
   * `cortex_frontend_query_result_cache_hits_total{request_type="query_range|cardinality"}`
-* [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. For now this feature can be disabled by setting `-timeseries-unmarshal-caching-optimization-enabled=false`. #5137
 * [ENHANCEMENT] Add advanced CLI flags to control gRPC client behaviour: #5161
   * `-<prefix>.connect-timeout`
@@ -23,13 +22,17 @@
 * [ENHANCEMENT] Distributor: optimize sending of requests to ingesters by reusing memory buffers for marshalling requests. For now this optimization can be disabled by setting `-distributor.write-requests-buffer-pooling-enabled` to `false`. #5195
 * [ENHANCEMENT] Querier: add experimental `-querier.minimize-ingester-requests` option to initially query only the minimum set of ingesters required to reach quorum. #5202 #5259 #5263
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
-* [FEATURE] Ingester: Add optional CPU/memory utilization based read request limiting, considered experimental. Disabled by default, enable via `-ingester.utilization-based-limiting-enabled` flag. #5012
 
 * [CHANGE] Dashboards: show all workloads in selected namespace on "rollout progress" dashboard. #5113
 * [CHANGE] Dashboards: show the number of updated and ready pods for each workload in the "rollout progress" panel on the "rollout progress" dashboard. #5113
+* [FEATURE] Ingester: Add optional CPU/memory utilization based read request limiting, considered experimental. Disabled by default, enable via `-ingester.utilization-based-limiting-enabled` flag. The following flags configure the feature: #5012
+* `-ingester.cpu-utilization-target`
+* `-ingester.memory-utilization-target`
+* `-ingester.read-path-utilization-target-ratio`
 * [ENHANCEMENT] Dashboards: adjust layout of "rollout progress" dashboard panels so that the "rollout progress" panel doesn't require scrolling. #5113
 * [ENHANCEMENT] Dashboards: show container name first in "pods count per version" panel on "rollout progress" dashboard. #5113
 * [BUGFIX] Dashboards: fix "unhealthy pods" panel on "rollout progress" dashboard showing only a number rather than the name of the workload and the number of unhealthy pods if only one workload has unhealthy pods. #5113 #5200
+
 ### Jsonnet
 
 * [FEATURE] Alertmanager: Add horizontal pod autoscaler config, that can be enabled using `autoscaling_alertmanager_enabled: true`. #5194 #5249
