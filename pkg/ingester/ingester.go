@@ -1355,9 +1355,6 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
-	if err := i.checkReadOverloaded(); err != nil {
-		return nil, err
-	}
 
 	i.tsdbsMtx.RLock()
 	defer i.tsdbsMtx.RUnlock()
