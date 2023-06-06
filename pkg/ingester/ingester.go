@@ -200,14 +200,14 @@ func (cfg *Config) Validate() error {
 		return nil
 	}
 
-	if cfg.CPUUtilizationTarget == 0 {
-		return fmt.Errorf("CPU utilization target must be set")
+	if cfg.CPUUtilizationTarget <= 0 {
+		return fmt.Errorf("CPU utilization target must be greater than 0")
 	}
-	if cfg.MemoryUtilizationTarget == 0 {
-		return fmt.Errorf("memory utilization target must be set")
+	if cfg.MemoryUtilizationTarget <= 0 {
+		return fmt.Errorf("memory utilization target must be greater than 0")
 	}
-	if cfg.ReadPathUtilizationRatio == 0 {
-		return fmt.Errorf("read path utilization target ratio must be set")
+	if cfg.ReadPathUtilizationRatio <= 0 {
+		return fmt.Errorf("read path utilization target must be greater than 0")
 	}
 
 	return nil
