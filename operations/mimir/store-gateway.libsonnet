@@ -67,7 +67,6 @@
     container.withPorts($.store_gateway_ports) +
     container.withArgsMixin($.util.mapToFlags($.store_gateway_args)) +
     container.withVolumeMountsMixin([volumeMount.new('store-gateway-data', '/data')]) +
-    (if std.length($.store_gateway_env_map) > 0 then container.withEnvMap($.store_gateway_env_map) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
     $.util.readinessProbe +
@@ -80,7 +79,9 @@
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
   store_gateway_statefulset: if !$._config.is_microservices_deployment_mode then null else
-    self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container, !$._config.store_gateway_allow_multiple_replicas_on_same_node),
+    self.newStoreGatewayStatefulSet('store-gateway',
+                                    $.store_gateway_container + (if std.length($.store_gateway_env_map) > 0 then container.withEnvMap($.store_gateway_env_map) else {}),
+                                    !$._config.store_gateway_allow_multiple_replicas_on_same_node),
 
   store_gateway_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),

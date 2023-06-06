@@ -52,7 +52,6 @@
     container.new(name, $._images.ingester) +
     container.withPorts($.ingester_ports) +
     container.withArgsMixin($.util.mapToFlags($.ingester_args)) +
-    (if std.length($.ingester_env_map) > 0 then container.withEnvMap($.ingester_env_map) else {}) +
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
     $.util.readinessProbe +
@@ -81,7 +80,7 @@
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
   ingester_statefulset: if !$._config.is_microservices_deployment_mode then null else
-    self.newIngesterStatefulSet('ingester', $.ingester_container, !$._config.ingester_allow_multiple_replicas_on_same_node),
+    self.newIngesterStatefulSet('ingester', $.ingester_container + (if std.length($.ingester_env_map) > 0 then container.withEnvMap($.ingester_env_map) else {}), !$._config.ingester_allow_multiple_replicas_on_same_node),
 
   ingester_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.ingester_statefulset, $._config.service_ignored_labels),
