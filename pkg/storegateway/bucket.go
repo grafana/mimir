@@ -615,6 +615,72 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		readers = newChunkReaders(chunkReaders)
 	}
 
+	if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
+		// The streaming feature is enabled where we stream the series labels first, followed
+		// by the chunks later. Fetch only the labels here.
+		req.SkipChunks = true
+
+		// TODO: what to do with hints here?
+		seriesSet, _, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, nil, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+		if err != nil {
+			return err
+		}
+
+		// TODO: should we pool the seriesBuffer/seriesBatch?
+		seriesBuffer := make([]*storepb.Series, req.StreamingChunksBatchSize)
+		for i := range seriesBuffer {
+			seriesBuffer[i] = &storepb.Series{}
+		}
+		seriesBatch := &storepb.StreamSeriesBatch{
+			Series: seriesBuffer[:0],
+		}
+		for seriesSet.Next() {
+			var lset labels.Labels
+			// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
+			// because the subsequent call to seriesSet.Next() may release it.
+			// TODO: check if it is safe to hold the lset.
+			lset, _ = seriesSet.At()
+
+			// We are re-using the slice for every batch this way.
+			seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
+			seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
+
+			// TODO: Add relevant trace spans and timers.
+
+			if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
+				msg := &grpc.PreparedMsg{}
+				if err = msg.Encode(srv, storepb.NewStreamSeriesResponse(seriesBatch, false)); err != nil {
+					return status.Error(codes.Internal, errors.Wrap(err, "encode streaming series response").Error())
+				}
+
+				// Send the message.
+				if err = srv.SendMsg(msg); err != nil {
+					return status.Error(codes.Unknown, errors.Wrap(err, "send streaming series response").Error())
+				}
+
+				seriesBatch.Series = seriesBatch.Series[:0]
+			}
+		}
+
+		// Send any remaining series and signal that there are no more series.
+		msg := &grpc.PreparedMsg{}
+		if err = msg.Encode(srv, storepb.NewStreamSeriesResponse(seriesBatch, true)); err != nil {
+			return status.Error(codes.Internal, errors.Wrap(err, "encode streaming series response").Error())
+		}
+		// Send the message.
+		if err = srv.SendMsg(msg); err != nil {
+			return status.Error(codes.Unknown, errors.Wrap(err, "send streaming series response").Error())
+		}
+
+		if seriesSet.Err() != nil {
+			return errors.Wrap(seriesSet.Err(), "expand series set")
+		}
+
+		req.SkipChunks = false
+	}
+
+	// TODO: if streaming is enabled, we don't need to fetch the labels again; we just need to fetch the chunk references.
+	// TODO: re-use the postings from above streamingSeriesSetForBlocks if not already being re-used.
 	seriesSet, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	if err != nil {
 		return err
@@ -646,36 +712,54 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		})
 
 		for seriesSet.Next() {
-			var lset labels.Labels
-			var series storepb.Series
-
-			seriesCount++
-
 			// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
 			// because the subsequent call to seriesSet.Next() may release it.
-			if req.SkipChunks {
-				lset, _ = seriesSet.At()
-			} else {
-				lset, series.Chunks = seriesSet.At()
-
-				chunksCount += len(series.Chunks)
-				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(series.Chunks)))
-			}
-			series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
-
-			// Encode the message. We encode it ourselves into a PreparedMsg in order to measure
-			// the time it takes.
-			encodeBegin := time.Now()
+			lset, chks := seriesSet.At()
+			seriesCount++
 			msg := &grpc.PreparedMsg{}
-			if err = msg.Encode(srv, storepb.NewSeriesResponse(&series)); err != nil {
-				err = status.Error(codes.Internal, errors.Wrap(err, "encode series response").Error())
-				return
+			if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
+				// We only need to stream chunks here because the series labels have already
+				// been sent above.
+				// TODO: is the 'is end of stream' parameter required here?
+				streamingChunks := storepb.StreamSeriesChunks{
+					SeriesIndex: uint64(seriesCount - 1),
+					Chunks:      chks,
+				}
+
+				// Encode the message. We encode it ourselves into a PreparedMsg in order to measure
+				// the time it takes.
+				encodeBegin := time.Now()
+				if err = msg.Encode(srv, storepb.NewStreamSeriesChunksResponse(&streamingChunks)); err != nil {
+					err = status.Error(codes.Internal, errors.Wrap(err, "encode streaming chunks response").Error())
+					return
+				}
+				encodeDuration += time.Since(encodeBegin)
+			} else {
+				var series storepb.Series
+				if !req.SkipChunks {
+					series.Chunks = chks
+				}
+				series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
+
+				// Encode the message. We encode it ourselves into a PreparedMsg in order to measure
+				// the time it takes.
+				encodeBegin := time.Now()
+				if err = msg.Encode(srv, storepb.NewSeriesResponse(&series)); err != nil {
+					err = status.Error(codes.Internal, errors.Wrap(err, "encode series response").Error())
+					return
+				}
+				encodeDuration += time.Since(encodeBegin)
 			}
-			encodeDuration += time.Since(encodeBegin)
+
+			if !req.SkipChunks {
+				chunksCount += len(chks)
+				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chks)))
+			}
 
 			// Send the message.
 			sendBegin := time.Now()
 			if err = srv.SendMsg(msg); err != nil {
+				// TODO: set the right error wrapper message.
 				err = status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
 				return
 			}
