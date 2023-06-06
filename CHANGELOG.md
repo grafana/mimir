@@ -18,6 +18,8 @@
 
 ### Query-tee
 
+* [CHANGE] Proxy `Content-Type` response header from backend. Previously `Content-Type: text/plain; charset=utf-8` was returned on all requests. #5183
+
 ### Documentation
 
 ### Tools
