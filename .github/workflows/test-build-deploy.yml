@@ -39,7 +39,7 @@ jobs:
       - name: Cache golangci-lint cache
         uses: actions/cache@v3
         with:
-          key: lint-golangci-lint-${{ runner.os }}-${{ hashFiles('**/go.sum', '.golangci.yml', 'Makefile') }}
+          key: lint-golangci-lint-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', '.golangci.yml', 'Makefile') }}
           path: ${{ steps.golangcilintcache.outputs.path }}
       - name: Get Go build cache path
         id: gocache
@@ -48,7 +48,7 @@ jobs:
       - name: Cache Go build cache
         uses: actions/cache@v3
         with:
-          key: lint-go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          key: lint-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
@@ -156,7 +156,7 @@ jobs:
       - name: Cache Go build cache
         uses: actions/cache@v3
         with:
-          key: test-${{ matrix.test_group_id }}-go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          key: test-${{ matrix.test_group_id }}-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
       - name: Run Tests
         run: |
@@ -207,7 +207,7 @@ jobs:
       - name: Cache Go build cache
         uses: actions/cache@v3
         with:
-          key: build-go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          key: build-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
       - name: Build Multiarch Docker Images Locally
         # Ignore mimir-build-image and mimir-rules-action.
@@ -254,7 +254,7 @@ jobs:
       - name: Cache Go build cache
         uses: actions/cache@v3
         with:
-          key: integration-${{ matrix.test_group_id }}-go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          key: integration-${{ matrix.test_group_id }}-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v3
