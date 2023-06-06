@@ -32,22 +32,22 @@
 
   querier_ports:: $.util.defaultPorts,
 
-  querier_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
-  },
-
-  newQuerierContainer(name, args)::
+  newQuerierContainer(name, args, envmap={})::
     container.new(name, $._images.querier) +
     container.withPorts($.querier_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
-    container.withEnvMap($.querier_env_map) +
+    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
 
+  querier_env_map:: {
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
+  },
+
   querier_container::
-    self.newQuerierContainer('querier', $.querier_args),
+    self.newQuerierContainer('querier', $.querier_args, $.querier_env_map),
 
   local deployment = $.apps.v1.deployment,
 

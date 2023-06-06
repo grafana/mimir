@@ -37,7 +37,7 @@ Depending on what version of the `mimir-distributed` Helm chart is installed cur
 
   1.  If you have modified the `mimir.config` value, either make sure to merge in the latest version from the chart, or consider using `mimir.structuredConfig` instead.
 
-      For more information, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../run-production-environment-with-helm/configuration-with-helm/" >}}).
+      For more information, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../run-production-environment-with-helm/configuration-with-helm" >}}).
 
 - If the current version of the `mimir-distributed` Helm chart is greater than 4.0.0 (version >= 4.0.0).
 
@@ -53,7 +53,7 @@ Depending on what version of the `mimir-distributed` Helm chart is installed cur
 
   1.  If you have modified the `mimir.config` value, either make sure to merge in the latest version from the chart, or consider using `mimir.structuredConfig` instead.
 
-      For more information, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../run-production-environment-with-helm/configuration-with-helm/" >}}).
+      For more information, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../run-production-environment-with-helm/configuration-with-helm" >}}).
 
 ## Migrate alertmanager to zone-aware replication
 

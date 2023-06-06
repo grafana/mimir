@@ -9056,7 +9056,7 @@
           "required": false,
           "desc": "How frequently the configured rule groups are re-synced from the object storage.",
           "fieldValue": null,
-          "fieldDefaultValue": 60000000000,
+          "fieldDefaultValue": 600000000000,
           "fieldFlag": "ruler.poll-interval",
           "fieldType": "duration",
           "fieldCategory": "advanced"

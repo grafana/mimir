@@ -73,7 +73,7 @@ The query-frontend also provides [query sharding]({{< relref "../../query-shardi
 
 The query-frontend scalability is limited by the configured number of workers per querier.
 
-When you don't use the [query-scheduler]({{< relref "../query-scheduler/index.md">}}), the query-frontend stores a queue of queries to execute.
+When you don't use the [query-scheduler]({{< relref "../query-scheduler" >}}), the query-frontend stores a queue of queries to execute.
 A querier runs `-querier.max-concurrent` workers and each worker connects to one of the query-frontend replicas to pull queries to execute.
 A querier worker executes one query at a time.
 

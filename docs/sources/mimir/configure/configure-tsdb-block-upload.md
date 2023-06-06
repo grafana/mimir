@@ -29,7 +29,7 @@ If your Grafana Mimir has multi-tenancy enabled, you can still use the preceding
 TSDB block upload for all tenants. If instead you wish to enable it per tenant, you can use the
 runtime configuration to set a per-tenant override:
 
-1. Enable [runtime configuration]({{< relref "about-runtime-configuration.md" >}}).
+1. Enable [runtime configuration]({{< relref "./about-runtime-configuration" >}}).
 1. Add an override for the tenant that should have TSDB block upload enabled:
 
 ```yaml

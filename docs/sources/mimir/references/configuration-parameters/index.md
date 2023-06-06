@@ -1368,7 +1368,7 @@ The `ruler` block configures the ruler.
 # (advanced) How frequently the configured rule groups are re-synced from the
 # object storage.
 # CLI flag: -ruler.poll-interval
-[poll_interval: <duration> | default = 1m]
+[poll_interval: <duration> | default = 10m]
 
 # Directory to store temporary rule files loaded by the Prometheus rule
 # managers. This directory is not required to be persisted between restarts.
