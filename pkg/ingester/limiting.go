@@ -26,24 +26,42 @@ const (
 
 	// Interval for updating resource (CPU/memory) utilization
 	resourceUtilizationUpdateInterval = time.Second
+
+	memPathV1 = "/sys/fs/cgroup/memory/memory.stat"
+	memPathV2 = "/sys/fs/cgroup/memory.current"
+	cpuPathV1 = "/sys/fs/cgroup/cpu/cpuacct.usage"
+	cpuPathV2 = "/sys/fs/cgroup/cpu.stat"
 )
 
-func scanCgroupV2() (float64, uint64, error) {
+type utilizationScanner interface {
+	// Method returns the method for getting resource utilization.
+	Method() string
+
+	// Scan returns CPU time and memory utilization, or an error.
+	Scan() (float64, uint64, error)
+}
+
+type cgroupV2Scanner struct {
+}
+
+func (s cgroupV2Scanner) Method() string {
+	return "cgroup v2"
+}
+
+func (s cgroupV2Scanner) Scan() (float64, uint64, error) {
 	// For reference, see https://git.kernel.org/pub/scm/linux/kernel/git/tj/cgroup.git/tree/Documentation/admin-guide/cgroup-v2.rst
-	const memPath = "/sys/fs/cgroup/memory.current"
-	memR, err := readFileNoStat(memPath)
+	memR, err := readFileNoStat(memPathV2)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer memR.Close()
 	var memUtil uint64
 	if _, err := fmt.Fscanf(memR, "%d", &memUtil); err != nil {
-		return 0, 0, errors.Wrapf(err, "failed scanning %s", memPath)
+		return 0, 0, errors.Wrapf(err, "failed scanning %s", memPathV2)
 	}
 
 	// For reference, see https://git.kernel.org/pub/scm/linux/kernel/git/tj/cgroup.git/tree/Documentation/admin-guide/cgroup-v2.rst
-	const cpuPath = "/sys/fs/cgroup/cpu.stat"
-	cpuR, err := readFileNoStat(cpuPath)
+	cpuR, err := readFileNoStat(cpuPathV2)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -56,7 +74,7 @@ func scanCgroupV2() (float64, uint64, error) {
 				break
 			}
 
-			return 0, 0, errors.Wrapf(err, "failed scanning %s", cpuPath)
+			return 0, 0, errors.Wrapf(err, "failed scanning %s", cpuPathV2)
 		}
 
 		if name == "usage_usec" {
@@ -65,15 +83,31 @@ func scanCgroupV2() (float64, uint64, error) {
 		}
 	}
 	if name != "usage_usec" {
-		return 0, 0, fmt.Errorf("failed scanning %s", cpuPath)
+		return 0, 0, fmt.Errorf("failed scanning %s", cpuPathV2)
 	}
 
 	return float64(cpuTime) / 1e06, memUtil, nil
 }
 
-func scanCgroupV1() (float64, uint64, error) {
-	const memPath = "/sys/fs/cgroup/memory/memory.stat"
-	memR, err := readFileNoStat(memPath)
+func newCgroupV2Scanner() (utilizationScanner, bool) {
+	if _, err := os.Stat(memPathV2); err != nil {
+		return cgroupV2Scanner{}, false
+	}
+	if _, err := os.Stat(cpuPathV2); err != nil {
+		return cgroupV2Scanner{}, false
+	}
+	return cgroupV2Scanner{}, true
+}
+
+type cgroupV1Scanner struct {
+}
+
+func (s cgroupV1Scanner) Method() string {
+	return "cgroup v1"
+}
+
+func (s cgroupV1Scanner) Scan() (float64, uint64, error) {
+	memR, err := readFileNoStat(memPathV1)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -90,7 +124,7 @@ func scanCgroupV1() (float64, uint64, error) {
 				break
 			}
 
-			return 0, 0, errors.Wrapf(err, "failed scanning %s", memPath)
+			return 0, 0, errors.Wrapf(err, "failed scanning %s", memPathV1)
 		}
 
 		if name == "rss" || name == "cache" {
@@ -102,12 +136,11 @@ func scanCgroupV1() (float64, uint64, error) {
 		}
 	}
 	if numMemStats != 2 {
-		return 0, 0, fmt.Errorf("failed scanning %s", memPath)
+		return 0, 0, fmt.Errorf("failed scanning %s", memPathV1)
 	}
 
 	// For reference, see https://www.kernel.org/doc/Documentation/cgroup-v1/cpuacct.txt
-	const cpuPath = "/sys/fs/cgroup/cpu/cpuacct.usage"
-	cpuR, err := readFileNoStat(cpuPath)
+	cpuR, err := readFileNoStat(cpuPathV1)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -115,18 +148,32 @@ func scanCgroupV1() (float64, uint64, error) {
 	// CPU time in nanoseconds
 	var cpuTime uint64
 	if _, err := fmt.Fscanf(cpuR, "%d", &cpuTime); err != nil {
-		return 0, 0, errors.Wrapf(err, "failed scanning %s", cpuPath)
+		return 0, 0, errors.Wrapf(err, "failed scanning %s", cpuPathV1)
 	}
 
 	return float64(cpuTime) / 1e09, memUtil, nil
 }
 
-func scanProcFS() (float64, uint64, error) {
-	p, err := procfs.Self()
-	if err != nil {
-		return 0, 0, errors.Wrap(err, "failed to get process info")
+func newCgroupV1Scanner() (utilizationScanner, bool) {
+	if _, err := os.Stat(memPathV1); err != nil {
+		return cgroupV1Scanner{}, false
 	}
-	ps, err := p.Stat()
+	if _, err := os.Stat(cpuPathV1); err != nil {
+		return cgroupV1Scanner{}, false
+	}
+	return cgroupV1Scanner{}, true
+}
+
+type procfsScanner struct {
+	proc procfs.Proc
+}
+
+func (s procfsScanner) Method() string {
+	return "/proc"
+}
+
+func (s procfsScanner) Scan() (float64, uint64, error) {
+	ps, err := s.proc.Stat()
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "failed to get process stats")
 	}
@@ -134,10 +181,22 @@ func scanProcFS() (float64, uint64, error) {
 	return ps.CPUTime(), uint64(ps.ResidentMemory()), nil
 }
 
+func newProcfsScanner() (utilizationScanner, bool) {
+	p, err := procfs.Self()
+	if err != nil {
+		return procfsScanner{}, false
+	}
+
+	return procfsScanner{
+		proc: p,
+	}, true
+}
+
 type utilizationBasedLimiter struct {
 	services.Service
 
-	logger log.Logger
+	logger             log.Logger
+	utilizationScanner utilizationScanner
 
 	// Read path memory threshold in bytes
 	readPathMemoryThreshold uint64
@@ -149,9 +208,9 @@ type utilizationBasedLimiter struct {
 	cpuUtilization atomic.Float64
 	// Last CPU time counter
 	lastCPUTime atomic.Float64
-	// Last time resource utilization was computed
-	lastResourceUtilizationUpdate atomic.Time
-	movingAvg                     ewma.MovingAverage
+	// The time of the last update
+	lastUpdate atomic.Time
+	movingAvg  ewma.MovingAverage
 }
 
 func newUtilizationBasedLimiter(cfg Config, logger log.Logger) *utilizationBasedLimiter {
@@ -162,39 +221,38 @@ func newUtilizationBasedLimiter(cfg Config, logger log.Logger) *utilizationBased
 		// Use a minute long window, each sample being a second apart
 		movingAvg: ewma.NewMovingAverage(60),
 	}
-	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, nil, l.updateResourceUtilization, nil)
+	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.init, l.update, nil)
 	return l
 }
 
-func (l *utilizationBasedLimiter) updateResourceUtilization(ctx context.Context) error {
-	lastUpdate := l.lastResourceUtilizationUpdate.Load()
-
-	var method string
-	cpuTime, memUtil, err := scanCgroupV2()
-	if err != nil && !os.IsNotExist(err) {
-		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats from cgroup v2", "err", err.Error())
-		return ctx.Err()
+func (l *utilizationBasedLimiter) init(ctx context.Context) error {
+	s, ok := newCgroupV2Scanner()
+	if ok {
+		l.utilizationScanner = s
+		return nil
 	}
-	if err == nil {
-		method = "cgroup v2"
-	} else {
-		// cgroup v2 not detected, try v1
-		cpuTime, memUtil, err = scanCgroupV1()
-		if err != nil && !os.IsNotExist(err) {
-			level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats from cgroup v1", "err", err.Error())
-			return ctx.Err()
-		}
-		if err == nil {
-			method = "cgroup v1"
-		} else {
-			// cgroup not detected, fall back to /proc
-			cpuTime, memUtil, err = scanProcFS()
-			if err != nil {
-				level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats from /proc", "err", err.Error())
-				return ctx.Err()
-			}
-			method = "/proc"
-		}
+	s, ok = newCgroupV1Scanner()
+	if ok {
+		l.utilizationScanner = s
+		return nil
+	}
+	s, ok = newProcfsScanner()
+	if ok {
+		l.utilizationScanner = s
+		return nil
+	}
+
+	return fmt.Errorf("unable to detect CPU/memory utilization, unsupported platform")
+}
+
+func (l *utilizationBasedLimiter) update(ctx context.Context) error {
+	lastUpdate := l.lastUpdate.Load()
+
+	cpuTime, memUtil, err := l.utilizationScanner.Scan()
+	if err != nil {
+		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "method",
+			l.utilizationScanner.Method(), "err", err.Error())
+		return ctx.Err()
 	}
 
 	l.memoryUtilization.Store(memUtil)
@@ -204,7 +262,7 @@ func (l *utilizationBasedLimiter) updateResourceUtilization(ctx context.Context)
 	lastCPUTime := l.lastCPUTime.Load()
 	l.lastCPUTime.Store(cpuTime)
 
-	l.lastResourceUtilizationUpdate.Store(now)
+	l.lastUpdate.Store(now)
 
 	if lastUpdate.IsZero() {
 		return ctx.Err()
@@ -215,8 +273,8 @@ func (l *utilizationBasedLimiter) updateResourceUtilization(ctx context.Context)
 	cpuA := l.movingAvg.Value()
 	l.cpuUtilization.Store(cpuA)
 
-	level.Debug(l.logger).Log("msg", "process resource utilization", "method", method, "memory_utilization", memUtil,
-		"smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
+	level.Debug(l.logger).Log("msg", "process resource utilization", "method", l.utilizationScanner.Method(),
+		"memory_utilization", memUtil, "smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
 	return ctx.Err()
 }
 
@@ -232,7 +290,7 @@ func (i *Ingester) checkReadOverloaded() error {
 func (l *utilizationBasedLimiter) checkReadOverloaded() error {
 	memUtil := l.memoryUtilization.Load()
 	cpuUtil := l.cpuUtilization.Load()
-	lastUpdate := l.lastResourceUtilizationUpdate.Load()
+	lastUpdate := l.lastUpdate.Load()
 	if lastUpdate.IsZero() {
 		return nil
 	}
