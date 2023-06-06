@@ -245,6 +245,7 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: 1.20.4
+          cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
         uses: actions/checkout@v3
       - name: Run Git Config
