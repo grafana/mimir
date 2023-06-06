@@ -94,7 +94,6 @@ func (p *PreallocTimeseries) RemoveLabel(labelName string) {
 			return
 		}
 	}
-	return
 }
 
 func (p *PreallocTimeseries) SetLabels(lbls labels.Labels) {
