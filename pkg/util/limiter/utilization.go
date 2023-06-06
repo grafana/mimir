@@ -9,10 +9,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/VividCortex/ewma"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/pkg/errors"
 	"github.com/prometheus/procfs"
 	"go.uber.org/atomic"
@@ -204,18 +204,21 @@ type UtilizationBasedLimiter struct {
 	lastCPUTime float64
 	// The time of the last update
 	lastUpdate     time.Time
-	movingAvg      ewma.MovingAverage
+	movingAvg      *math.EwmaRate
 	LimitingReason atomic.String
 }
 
 // NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
 func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log.Logger) *UtilizationBasedLimiter {
+	// Calculate alpha for a minute long window
+	// https://github.com/VividCortex/ewma#choosing-alpha
+	alpha := 2 / (60/resourceUtilizationUpdateInterval.Seconds() + 1)
 	l := &UtilizationBasedLimiter{
 		logger:      logger,
 		cpuLimit:    cpuLimit,
 		memoryLimit: memoryLimit,
 		// Use a minute long window, each sample being a second apart
-		movingAvg: ewma.NewMovingAverage(60),
+		movingAvg: math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
 	}
 	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.init, l.update, nil)
 	return l
@@ -263,8 +266,9 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	}
 
 	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
-	l.movingAvg.Add(cpuUtil)
-	cpuA := l.movingAvg.Value()
+	l.movingAvg.Add(int64(cpuUtil * 100))
+	l.movingAvg.Tick()
+	cpuA := float64(l.movingAvg.Rate()) / 100
 
 	level.Debug(l.logger).Log("msg", "process resource utilization", "method", l.utilizationScanner.Method(),
 		"memory_utilization", memUtil, "smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
