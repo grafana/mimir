@@ -456,6 +456,10 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
+	if i.cfg.UtilizationBasedLimitingEnabled {
+		servs = append(servs, services.NewTimerService(resourceUtilizationUpdateInterval, nil, i.updateResourceUtilization, nil))
+	}
+
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
 	shutdownMarkerFound, err := shutdownmarker.Exists(shutdownMarkerPath)
 	if err != nil {
@@ -531,9 +535,6 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	usageStatsUpdateTicker := time.NewTicker(usageStatsUpdateInterval)
 	defer usageStatsUpdateTicker.Stop()
 
-	resourceUtilizationUpdateTicker := time.NewTicker(resourceUtilizationUpdateInterval)
-	defer resourceUtilizationUpdateTicker.Stop()
-
 	for {
 		select {
 		case <-metadataPurgeTicker.C:
@@ -556,9 +557,6 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 
 		case <-usageStatsUpdateTicker.C:
 			i.updateUsageStats()
-
-		case <-resourceUtilizationUpdateTicker.C:
-			i.updateResourceUtilization()
 
 		case <-ctx.Done():
 			return nil

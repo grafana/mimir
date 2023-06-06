@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -124,18 +125,14 @@ func scanProcFS() (float64, uint64, error) {
 	return ps.CPUTime(), uint64(ps.ResidentMemory()), nil
 }
 
-func (i *Ingester) updateResourceUtilization() {
-	if !i.cfg.UtilizationBasedLimitingEnabled {
-		return
-	}
-
+func (i *Ingester) updateResourceUtilization(ctx context.Context) error {
 	lastUpdate := i.lastResourceUtilizationUpdate.Load()
 
 	var method string
 	cpuTime, memUtil, err := scanCgroupV2()
 	if err != nil && !os.IsNotExist(err) {
 		level.Warn(i.logger).Log("msg", "failed to get CPU and memory stats from cgroup v2", "err", err.Error())
-		return
+		return ctx.Err()
 	}
 	if err == nil {
 		method = "cgroup v2"
@@ -144,7 +141,7 @@ func (i *Ingester) updateResourceUtilization() {
 		cpuTime, memUtil, err = scanCgroupV1()
 		if err != nil && !os.IsNotExist(err) {
 			level.Warn(i.logger).Log("msg", "failed to get CPU and memory stats from cgroup v1", "err", err.Error())
-			return
+			return ctx.Err()
 		}
 		if err == nil {
 			method = "cgroup v1"
@@ -153,7 +150,7 @@ func (i *Ingester) updateResourceUtilization() {
 			cpuTime, memUtil, err = scanProcFS()
 			if err != nil {
 				level.Warn(i.logger).Log("msg", "failed to get CPU and memory stats from /proc", "err", err.Error())
-				return
+				return ctx.Err()
 			}
 			method = "/proc"
 		}
@@ -169,7 +166,7 @@ func (i *Ingester) updateResourceUtilization() {
 	i.lastResourceUtilizationUpdate.Store(now)
 
 	if lastUpdate.IsZero() {
-		return
+		return ctx.Err()
 	}
 
 	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
@@ -179,6 +176,7 @@ func (i *Ingester) updateResourceUtilization() {
 
 	level.Debug(i.logger).Log("msg", "process resource utilization", "method", method, "memory_utilization", memUtil,
 		"smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
+	return ctx.Err()
 }
 
 // checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.
