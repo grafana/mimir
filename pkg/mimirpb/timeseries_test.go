@@ -342,7 +342,7 @@ func TestPreallocTimeseries_RemoveLabel(t *testing.T) {
 		require.Nil(t, p.unmarshalData)
 	})
 
-	t.Run("with label", func(t *testing.T) {
+	t.Run("with no matching label", func(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
 				Labels: []LabelAdapter{
