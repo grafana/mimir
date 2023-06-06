@@ -37,6 +37,15 @@ message Series {
   repeated AggrChunk chunks  = 2 [(gogoproto.nullable) = false];
 }
 
+message StreamSeriesBatch {
+  repeated Series series = 1; // Only labels are populated here.
+}
+
+message StreamSeriesChunks {
+  uint64 series_index = 1; // Index into list of all series previously sent with QueryStreamSeries messages by this ingester during this query response.
+  repeated AggrChunk chunks = 2 [(gogoproto.nullable) = false];
+}
+
 message AggrChunk {
   int64 min_time = 1;
   int64 max_time = 2;

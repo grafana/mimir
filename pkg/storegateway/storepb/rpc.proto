@@ -79,6 +79,9 @@ message SeriesRequest {
 
   // Thanos shard_info.
   reserved 13;
+
+  // Why 100? TBD, it is just copied from ingesters and need to see if we still need 100 here.
+  uint64 streaming_chunks_batch_size = 100;
 }
 
 message Stats {
@@ -105,7 +108,13 @@ message SeriesResponse {
     /// stats is a object containing stats for a series response from the store-gateways so that we can collect stats
     /// related to the processing the series response on store-gateways did available to the querier and query-frontends.
     Stats stats = 4;
+
+    StreamSeriesBatch streaming_series = 5;
+
+    StreamSeriesChunks streaming_series_chunks = 6;
   }
+
+  bool is_end_of_series_stream = 7;
 }
 
 message LabelNamesRequest {
