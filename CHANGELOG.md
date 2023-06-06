@@ -4,7 +4,7 @@
 
 ### Jsonnet
 
-* [ENHANCEMENT] Add per-container map for environment variables.
+* [ENHANCEMENT] Add per-container map for environment variables. #5181
 
 ## 2.9.0-rc.0
 
