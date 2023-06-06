@@ -167,7 +167,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	pool.lazyLoadedTracker.CopyLazyLoadedState(pool.lazyReaders)
 	err = pool.lazyLoadedTracker.Persist()
 	require.NoError(t, err)
-	require.Condition(t, func() bool { return pool.lazyLoadedTracker.State.LazyLoadedBlocks[blockID.String()] == 0 }, "lazyLoadedBlocks state must be unset")
+	require.NotContains(t, pool.lazyLoadedTracker.State.LazyLoadedBlocks, blockID.String(), "lazyLoadedBlocks state must be unset")
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
