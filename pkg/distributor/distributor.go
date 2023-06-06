@@ -12,7 +12,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"sort"
 	"sync"
 	"time"
 
@@ -574,19 +573,6 @@ func removeLabel(labelName string, labels *[]mimirpb.LabelAdapter) bool {
 	return false
 }
 
-// Remove labels with value=="" from a slice of LabelPairs, updating the slice in-place.
-// Returns true if labels were modified.
-func removeEmptyLabelValues(labels *[]mimirpb.LabelAdapter) bool {
-	modified := false
-	for i := len(*labels) - 1; i >= 0; i-- {
-		if (*labels)[i].Value == "" {
-			*labels = append((*labels)[:i], (*labels)[i+1:]...)
-			modified = true
-		}
-	}
-	return modified
-}
-
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
 // and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
 // nil for the error means accept the sample.
@@ -759,9 +745,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
 			// series we're trying to dedupe when HA tracking moves over to a different replica.
 			for ix := range req.Timeseries {
-				if removeLabel(haReplicaLabel, &req.Timeseries[ix].Labels) {
-					req.Timeseries[ix].ClearUnmarshalData()
-				}
+				req.Timeseries[ix].RemoveLabel(haReplicaLabel)
 			}
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
@@ -806,25 +790,15 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 					continue
 				}
 				lb.Del(metaLabelTenantID)
-				ts.Labels = mimirpb.FromLabelsToLabelAdapters(lb.Labels())
-
-				// We can't reuse raw unmarshalled data for the timeseries after relabeling the series.
-				// (Maybe we could, if labels are exactly the same, but it's expensive to check.)
-				req.Timeseries[tsIdx].ClearUnmarshalData()
+				req.Timeseries[tsIdx].SetLabels(lb.Labels())
 			}
 
 			for _, labelName := range d.limits.DropLabels(userID) {
-				if removeLabel(labelName, &ts.Labels) {
-					// If we have dropped a label, we can't reuse raw unmarshalled data for the timeseries.
-					req.Timeseries[tsIdx].ClearUnmarshalData()
-				}
+				req.Timeseries[tsIdx].RemoveLabel(labelName)
 			}
 
 			// Prometheus strips empty values before storing; drop them now, before sharding to ingesters.
-			if removeEmptyLabelValues(&ts.Labels) {
-				// If we have modified the series, we can't reuse raw unmarshalled data for the timeseries.
-				req.Timeseries[tsIdx].ClearUnmarshalData()
-			}
+			req.Timeseries[tsIdx].RemoveEmptyLabelValues()
 
 			if len(ts.Labels) == 0 {
 				removeTsIndexes = append(removeTsIndexes, tsIdx)
@@ -837,10 +811,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
 			// later in the validation phase, we ignore them here.
 			// 3) Ingesters expect labels to be sorted in the Push request.
-			if sortLabelsIfNeeded(ts.Labels) {
-				// If we have reordered labels, we can't reuse raw unmarshalled data for the timeseries.
-				req.Timeseries[tsIdx].ClearUnmarshalData()
-			}
+			req.Timeseries[tsIdx].SortLabelsIfNeeded()
 		}
 
 		if len(removeTsIndexes) > 0 {
@@ -1235,30 +1206,6 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 
 func copyString(s string) string {
 	return string([]byte(s))
-}
-
-// sortLabelsIfNeeded returns true if labels were modified (sorted), false if no sorting was necessary.
-func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) bool {
-	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
-	// we can avoid extra memory allocations (mostly interface-related) this way.
-	sorted := true
-	last := ""
-	for _, l := range labels {
-		if last > l.Name {
-			sorted = false
-			break
-		}
-		last = l.Name
-	}
-
-	if sorted {
-		return false
-	}
-
-	sort.Slice(labels, func(i, j int) bool {
-		return labels[i].Name < labels[j].Name
-	})
-	return true
 }
 
 func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {

@@ -8,9 +8,11 @@ package mimirpb
 import (
 	"crypto/rand"
 	"reflect"
+	"sort"
 	"testing"
 	"unsafe"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -255,7 +257,7 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 		require.Equal(t, msg.unmarshalData, out)
 	})
 
-	msg.ClearUnmarshalData()
+	msg.clearUnmarshalData()
 	require.Nil(t, msg.unmarshalData)
 
 	t.Run("message without cached marshalled version: Marshal returns correct data", func(t *testing.T) {
@@ -279,4 +281,132 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 		require.Equal(t, n, len(out))
 		require.Equal(t, correctMarshaledData, out[:msg.Size()])
 	})
+}
+
+func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
+	t.Run("sorted", func(t *testing.T) {
+		sorted := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "bar", Value: "baz"},
+					{Name: "cluster", Value: "cluster"},
+					{Name: "sample", Value: "1"},
+				},
+			},
+			unmarshalData: []byte{1, 2, 3},
+		}
+		// no allocations if input is already sorted
+		require.Equal(t, 0.0, testing.AllocsPerRun(100, func() {
+			sorted.SortLabelsIfNeeded()
+		}))
+		require.NotNil(t, sorted.unmarshalData)
+	})
+
+	t.Run("unsorted", func(t *testing.T) {
+		unsorted := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "sample", Value: "1"},
+					{Name: "cluster", Value: "cluster"},
+					{Name: "bar", Value: "baz"},
+				},
+			},
+			unmarshalData: []byte{1, 2, 3},
+		}
+
+		unsorted.SortLabelsIfNeeded()
+
+		require.True(t, sort.SliceIsSorted(unsorted.Labels, func(i, j int) bool {
+			return unsorted.Labels[i].Name < unsorted.Labels[j].Name
+		}))
+		require.Nil(t, unsorted.unmarshalData)
+	})
+}
+
+func TestPreallocTimeseries_RemoveLabel(t *testing.T) {
+	t.Run("with label", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "bar", Value: "baz"},
+				},
+			},
+			unmarshalData: []byte{1, 2, 3},
+		}
+		p.RemoveLabel("bar")
+
+		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}}, p.Labels)
+		require.Nil(t, p.unmarshalData)
+	})
+
+	t.Run("with label", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "bar", Value: "baz"},
+				},
+			},
+			unmarshalData: []byte{1, 2, 3},
+		}
+		p.RemoveLabel("foo")
+
+		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.NotNil(t, p.unmarshalData)
+	})
+}
+
+func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
+	t.Run("with empty labels", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "empty1", Value: ""},
+					{Name: "bar", Value: "baz"},
+					{Name: "empty2", Value: ""},
+				},
+			},
+			unmarshalData: []byte{1, 2, 3},
+		}
+		p.RemoveEmptyLabelValues()
+
+		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.Nil(t, p.unmarshalData)
+	})
+
+	t.Run("without empty labels", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "bar", Value: "baz"},
+				},
+			},
+			unmarshalData: []byte{1, 2, 3},
+		}
+		p.RemoveLabel("foo")
+
+		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.NotNil(t, p.unmarshalData)
+	})
+}
+
+func TestPreallocTimeseries_SetLabels(t *testing.T) {
+	p := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "__name__", Value: "foo"},
+				{Name: "bar", Value: "baz"},
+			},
+		},
+		unmarshalData: []byte{1, 2, 3},
+	}
+	p.SetLabels(labels.FromStrings("__name__", "hello", "lbl", "world"))
+
+	require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}, p.Labels)
+	require.Nil(t, p.unmarshalData)
 }

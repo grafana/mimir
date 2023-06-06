@@ -8,6 +8,7 @@ package mimirpb
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"unsafe"
@@ -64,7 +65,7 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 
 func (p *PreallocWriteRequest) ClearTimeseriesUnmarshalData() {
 	for idx := range p.Timeseries {
-		p.Timeseries[idx].ClearUnmarshalData()
+		p.Timeseries[idx].clearUnmarshalData()
 	}
 }
 
@@ -83,8 +84,67 @@ type PreallocTimeseries struct {
 	unmarshalData []byte
 }
 
-// ClearUnmarshalData removes cached unmarshalled version of the message.
-func (p *PreallocTimeseries) ClearUnmarshalData() {
+// RemoveLabel removes the label labelName from this timeseries, if it exists.
+func (p *PreallocTimeseries) RemoveLabel(labelName string) {
+	for i := 0; i < len(p.Labels); i++ {
+		pair := p.Labels[i]
+		if pair.Name == labelName {
+			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
+			p.clearUnmarshalData()
+			return
+		}
+	}
+	return
+}
+
+func (p *PreallocTimeseries) SetLabels(lbls labels.Labels) {
+	p.Labels = FromLabelsToLabelAdapters(lbls)
+
+	// We can't reuse raw unmarshalled data for the timeseries after setting new labels.
+	// (Maybe we could, if labels are exactly the same, but it's expensive to check.)
+	p.clearUnmarshalData()
+}
+
+// RemoveEmptyLabelValues remove labels with value=="" from this timeseries, updating the slice in-place.
+func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
+	modified := false
+	for i := len(p.Labels) - 1; i >= 0; i-- {
+		if (p.Labels)[i].Value == "" {
+			p.Labels = append((p.Labels)[:i], (p.Labels)[i+1:]...)
+			modified = true
+		}
+	}
+	if modified {
+		p.clearUnmarshalData()
+	}
+}
+
+// SortLabelsIfNeeded sorts labels if they were not sorted before.
+func (p *PreallocTimeseries) SortLabelsIfNeeded() {
+	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
+	// we can avoid extra memory allocations (mostly interface-related) this way.
+	sorted := true
+	last := ""
+	for _, l := range p.Labels {
+		if last > l.Name {
+			sorted = false
+			break
+		}
+		last = l.Name
+	}
+
+	if sorted {
+		return
+	}
+
+	sort.Slice(p.Labels, func(i, j int) bool {
+		return p.Labels[i].Name < p.Labels[j].Name
+	})
+	p.clearUnmarshalData()
+}
+
+// clearUnmarshalData removes cached unmarshalled version of the message.
+func (p *PreallocTimeseries) clearUnmarshalData() {
 	p.unmarshalData = nil
 }
 
