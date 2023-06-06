@@ -64,8 +64,6 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-license
       - name: Check Docker-Compose YAML
         run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml check-mimir-read-write-mode-docker-compose-yaml
-      - name: "Debugging: check if GOMODCACHE is populated"
-        run: go env GOMODCACHE && ls -la "$(go env GOMODCACHE)"
 
   doc-validator:
     runs-on: ubuntu-latest
@@ -164,8 +162,6 @@ jobs:
         run: |
           echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
           ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
-      - name: "Debugging: check if GOMODCACHE is populated"
-        run: go env GOMODCACHE && ls -la "$(go env GOMODCACHE)"
 
   test-docs:
     runs-on: ubuntu-latest
@@ -225,8 +221,6 @@ jobs:
         with:
           name: Docker Images
           path: ./images.tar
-      - name: "Debugging: check if GOMODCACHE is populated"
-        run: go env GOMODCACHE && ls -la "$(go env GOMODCACHE)"
 
   integration:
     needs: build
@@ -290,8 +284,6 @@ jobs:
           echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
           echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
           ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
-      - name: "Debugging: check if GOMODCACHE is populated"
-        run: go env GOMODCACHE && ls -la "$(go env GOMODCACHE)"
 
   deploy:
     needs: [build, test, lint, integration]
