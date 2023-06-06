@@ -41,15 +41,23 @@ jobs:
         with:
           key: lint-golangci-lint-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', '.golangci.yml', 'Makefile') }}
           path: ${{ steps.golangcilintcache.outputs.path }}
-      - name: Get Go build cache path
-        id: gocache
+      - name: Get Go cache paths
+        id: goenv
         run: |
-          echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
       - name: Cache Go build cache
         uses: actions/cache@v3
         with:
           key: lint-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          path: ${{ steps.gocache.outputs.path }}
+          path: ${{ steps.goenv.outputs.gocache }}
+      # Although we use vendoring, this linting job downloads all modules to verify that what is vendored is correct,
+      # so it'll use GOMODCACHE. Other jobs don't need this.
+      - name: Cache Go module cache
+        uses: actions/cache@v3
+        with:
+          key: lint-go-mod-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          path: ${{ steps.goenv.outputs.gomodcache }}
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
