@@ -23,7 +23,7 @@
 * [ENHANCEMENT] Distributor: optimize sending of requests to ingesters by reusing memory buffers for marshalling requests. For now this optimization can be disabled by setting `-distributor.write-requests-buffer-pooling-enabled` to `false`. #5195
 * [ENHANCEMENT] Querier: add experimental `-querier.minimize-ingester-requests` option to initially query only the minimum set of ingesters required to reach quorum. #5202 #5259 #5263
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
-* [FEATURE] Ingester: Add optional CPU/memory utilization based read limiting, considered experimental. Disabled by default, enable via `-ingester.utilization-based-limiting-enabled` flag. #5012
+* [FEATURE] Ingester: Add optional CPU/memory utilization based read request limiting, considered experimental. Disabled by default, enable via `-ingester.utilization-based-limiting-enabled` flag. #5012
 
 * [CHANGE] Dashboards: show all workloads in selected namespace on "rollout progress" dashboard. #5113
 * [CHANGE] Dashboards: show the number of updated and ready pods for each workload in the "rollout progress" panel on the "rollout progress" dashboard. #5113
