@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/oklog/ulid"
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -20,6 +21,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 func TestReaderPool_NewBinaryReader(t *testing.T) {
@@ -36,7 +38,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 		},
 		"lazy reader and close on idle timeout are both enabled": {
 			lazyReaderEnabled:     true,
-			lazyReaderIdleTimeout: time.Minute,
+			lazyReaderIdleTimeout: 2 * time.Minute,
 		},
 	}
 
@@ -78,27 +80,10 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 
 func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	const idleTimeout = time.Second
-
-	ctx := context.Background()
-
-	tmpDir, err := os.MkdirTemp("", "test-indexheader")
-	require.NoError(t, err)
+	ctx, tmpDir, bkt, blockID, metrics, err := prepareReaderPool(t)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	require.NoError(t, err)
 	defer func() { require.NoError(t, bkt.Close()) }()
 
-	// Create block.
-	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
-		labels.FromStrings("a", "1"),
-		labels.FromStrings("a", "2"),
-		labels.FromStrings("a", "3"),
-	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
-	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
-
-	metrics := NewReaderPoolMetrics(nil)
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
 	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, metrics, HeadersLazyLoadedTracker{})
@@ -137,4 +122,70 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	require.True(t, !pool.isTracking(r.(*LazyBinaryReader)))
 	require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 	require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
+}
+
+func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
+	const idleTimeout = time.Second
+	ctx, tmpDir, bkt, blockID, metrics, err := prepareReaderPool(t)
+	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
+	defer func() { require.NoError(t, bkt.Close()) }()
+
+	lazyLoadedTracker := HeadersLazyLoadedTracker{
+		// Path stores where lazy loaded blocks will be tracked in per-tenant-files
+		Path: filepath.Join(tmpDir, "lazy-loaded.proto"),
+		State: storepb.HeadersLazyLoadedTrackerState{
+			UserId: "anonymous",
+		},
+	}
+	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
+	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
+	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, metrics, lazyLoadedTracker)
+	defer pool.Close()
+
+	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
+	require.NoError(t, err)
+	defer func() { require.NoError(t, r.Close()) }()
+
+	// Ensure it can read data.
+	labelNames, err := r.LabelNames()
+	require.NoError(t, err)
+	require.Equal(t, []string{"a"}, labelNames)
+	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
+	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
+
+	// lazyLoaded tracker will track the lazyLoadedBlocks into persistent file
+	pool.lazyLoadedTracker.CopyLazyLoadedState(pool.lazyReaders)
+	pool.lazyLoadedTracker.Persist()
+	require.Condition(t, func() bool { return pool.lazyLoadedTracker.State.LazyLoadedBlocks[blockID.String()] > 0 }, "lazyLoadedBlocks state must be set")
+
+	// Wait enough time before checking it.
+	time.Sleep(idleTimeout * 2)
+	pool.closeIdleReaders()
+
+	// lazyLoaded tracker will remove the track from persistent file
+	pool.lazyLoadedTracker.CopyLazyLoadedState(pool.lazyReaders)
+	pool.lazyLoadedTracker.Persist()
+	require.Condition(t, func() bool { return pool.lazyLoadedTracker.State.LazyLoadedBlocks[blockID.String()] == 0 }, "lazyLoadedBlocks state must be unset")
+}
+
+func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics, error) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "test-indexheader")
+	require.NoError(t, err)
+
+	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+
+	// Create block.
+	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("a", "3"),
+	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	require.NoError(t, err)
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+
+	metrics := NewReaderPoolMetrics(nil)
+	return ctx, tmpDir, bkt, blockID, metrics, err
 }
