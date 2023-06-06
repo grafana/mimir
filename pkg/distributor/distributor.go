@@ -1466,7 +1466,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	}
 
 	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
-		cardinalityMapByZone: map[string]map[string]map[string]uint64{},
+		cardinalityMapByZone: make(map[string]map[string]map[string]uint64, len(labelNames)),
 	}
 
 	labelValuesReq, err := toLabelValuesCardinalityRequest(labelNames, matchers)
@@ -1509,7 +1509,7 @@ func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*l
 }
 
 type labelValuesCardinalityConcurrentMap struct {
-	// cardinalityMapByZone stores a result for each zone.
+	// cardinalityMapByZone stores a result for each zone. map[label_name]map[label_value]map[zone]
 	cardinalityMapByZone map[string]map[string]map[string]uint64
 	lock                 sync.Mutex
 }
@@ -1545,7 +1545,7 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
 
 		// Create a new map for the label name if it doesn't exist
 		if _, ok := cm.cardinalityMapByZone[item.LabelName]; !ok {
-			cm.cardinalityMapByZone[item.LabelName] = map[string]map[string]uint64{}
+			cm.cardinalityMapByZone[item.LabelName] = make(map[string]map[string]uint64, len(item.LabelValueSeries))
 		}
 
 		for labelValue, seriesCount := range item.LabelValueSeries {
@@ -1570,7 +1570,7 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(cm.cardinalityMapByZone))
 	// Adjust label values' series count to return the max value across zones
 	for labelName, labelValueSeriesCountMapByZone := range cm.cardinalityMapByZone {
-		labelValueSeriesCountMap := map[string]uint64{}
+		labelValueSeriesCountMap := make(map[string]uint64, len(labelValueSeriesCountMapByZone))
 
 		for labelValue, seriesCountMapByZone := range labelValueSeriesCountMapByZone {
 			labelValueSeriesCountMap[labelValue] = approximateFromZones(zoneCount, replicationFactor, seriesCountMapByZone)
