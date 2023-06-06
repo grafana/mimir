@@ -76,14 +76,19 @@
   ingester_zone_b_args:: {},
   ingester_zone_c_args:: {},
 
-  newIngesterZoneContainer(zone, zone_args)::
+  ingester_zone_a_env_map:: $.ingester_env_map,
+  ingester_zone_b_env_map:: $.ingester_env_map,
+  ingester_zone_c_env_map:: $.ingester_env_map,
+
+  newIngesterZoneContainer(zone, zone_args, envmap={})::
     $.ingester_container +
     container.withArgs($.util.mapToFlags(
       $.ingester_args + zone_args + {
         'ingester.ring.zone-awareness-enabled': 'true',
         'ingester.ring.instance-availability-zone': 'zone-%s' % zone,
       },
-    )),
+    )) +
+    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}),
 
   newIngesterZoneStatefulSet(zone, container)::
     local name = 'ingester-zone-%s' % zone;
@@ -121,7 +126,7 @@
     service.mixin.spec.withClusterIp('None'),  // Headless.
 
   ingester_zone_a_container:: if !multi_zone_ingesters_deployed then null else
-    self.newIngesterZoneContainer('a', $.ingester_zone_a_args),
+    self.newIngesterZoneContainer('a', $.ingester_zone_a_args, $.ingester_zone_a_env_map),
 
   ingester_zone_a_statefulset: if !multi_zone_ingesters_deployed then null else
     self.newIngesterZoneStatefulSet('a', $.ingester_zone_a_container),
@@ -130,7 +135,7 @@
     $.newIngesterZoneService($.ingester_zone_a_statefulset),
 
   ingester_zone_b_container:: if !multi_zone_ingesters_deployed then null else
-    self.newIngesterZoneContainer('b', $.ingester_zone_b_args),
+    self.newIngesterZoneContainer('b', $.ingester_zone_b_args, $.ingester_zone_b_env_map),
 
   ingester_zone_b_statefulset: if !multi_zone_ingesters_deployed then null else
     self.newIngesterZoneStatefulSet('b', $.ingester_zone_b_container),
@@ -139,7 +144,7 @@
     $.newIngesterZoneService($.ingester_zone_b_statefulset),
 
   ingester_zone_c_container:: if !multi_zone_ingesters_deployed then null else
-    self.newIngesterZoneContainer('c', $.ingester_zone_c_args),
+    self.newIngesterZoneContainer('c', $.ingester_zone_c_args, $.ingester_zone_c_env_map),
 
   ingester_zone_c_statefulset: if !multi_zone_ingesters_deployed then null else
     self.newIngesterZoneStatefulSet('c', $.ingester_zone_c_container),
@@ -192,7 +197,11 @@
   store_gateway_zone_b_args:: {},
   store_gateway_zone_c_args:: {},
 
-  newStoreGatewayZoneContainer(zone, zone_args)::
+  store_gateway_zone_a_env_map:: $.store_gateway_env_map,
+  store_gateway_zone_b_env_map:: $.store_gateway_env_map,
+  store_gateway_zone_c_env_map:: $.store_gateway_env_map,
+
+  newStoreGatewayZoneContainer(zone, zone_args, envmap={})::
     $.store_gateway_container +
     container.withArgs($.util.mapToFlags(
       // This first block contains flags that can be overridden.
@@ -206,7 +215,8 @@
         // Use a different prefix so that both single-zone and multi-zone store-gateway rings can co-exists.
         'store-gateway.sharding-ring.prefix': 'multi-zone/',
       }
-    )),
+    )) +
+    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}),
 
   newStoreGatewayZoneStatefulSet(zone, container)::
     local name = 'store-gateway-zone-%s' % zone;
@@ -250,7 +260,7 @@
   },
 
   store_gateway_zone_a_container:: if !multi_zone_store_gateways_deployed then null else
-    self.newStoreGatewayZoneContainer('a', $.store_gateway_zone_a_args),
+    self.newStoreGatewayZoneContainer('a', $.store_gateway_zone_a_args, $.store_gateway_zone_a_env_map),
 
   store_gateway_zone_a_statefulset: if !multi_zone_store_gateways_deployed then null else
     (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container),
@@ -259,7 +269,7 @@
     self.newStoreGatewayZoneService($.store_gateway_zone_a_statefulset),
 
   store_gateway_zone_b_container:: if !multi_zone_store_gateways_deployed then null else
-    self.newStoreGatewayZoneContainer('b', $.store_gateway_zone_b_args),
+    self.newStoreGatewayZoneContainer('b', $.store_gateway_zone_b_args, $.store_gateway_zone_b_env_map),
 
   store_gateway_zone_b_statefulset: if !multi_zone_store_gateways_deployed then null else
     (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container),
@@ -268,7 +278,7 @@
     self.newStoreGatewayZoneService($.store_gateway_zone_b_statefulset),
 
   store_gateway_zone_c_container:: if !multi_zone_store_gateways_deployed then null else
-    self.newStoreGatewayZoneContainer('c', $.store_gateway_zone_c_args),
+    self.newStoreGatewayZoneContainer('c', $.store_gateway_zone_c_args, $.store_gateway_zone_c_env_map),
 
   store_gateway_zone_c_statefulset: if !multi_zone_store_gateways_deployed then null else
     (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('c', $.store_gateway_zone_c_container),
