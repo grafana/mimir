@@ -2264,6 +2264,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 		ingestersSeriesCountTotal uint64
 		expectedResult            *client.LabelValuesCardinalityResponse
 		expectedIngesters         int
+		happyIngesters            int
 		expectedSeriesCountTotal  uint64
 		ingesterZones             []string
 	}{
@@ -2273,6 +2274,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			ingestersSeriesCountTotal: 0,
 			expectedResult:            &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
 			expectedIngesters:         numIngesters,
+			happyIngesters:            numIngesters,
 			expectedSeriesCountTotal:  0,
 		},
 		"should return a map with the label values and series occurrences of a single label name": {
@@ -2286,6 +2288,22 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 				}},
 			},
 			expectedIngesters:        numIngesters,
+			happyIngesters:           numIngesters,
+			expectedSeriesCountTotal: 100,
+			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
+		},
+		"should return a map with the label values and series occurrences of a single label name, during single zone failure": {
+			labelNames:                []model.LabelName{labels.MetricName},
+			matchers:                  []*labels.Matcher{},
+			ingestersSeriesCountTotal: 100,
+			expectedResult: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{{
+					LabelName:        labels.MetricName,
+					LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
+				}},
+			},
+			expectedIngesters:        numIngesters,
+			happyIngesters:           numIngesters - 1,
 			expectedSeriesCountTotal: 100,
 			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
 		},
@@ -2306,6 +2324,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 				},
 			},
 			expectedIngesters:        numIngesters,
+			happyIngesters:           numIngesters,
 			expectedSeriesCountTotal: 100,
 		},
 	}
@@ -2315,7 +2334,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			// Create distributor
 			ds, ingesters, _ := prepare(t, prepConfig{
 				numIngesters:              numIngesters,
-				happyIngesters:            numIngesters,
+				happyIngesters:            testData.happyIngesters,
 				numDistributors:           1,
 				replicationFactor:         replicationFactor,
 				ingestersSeriesCountTotal: testData.ingestersSeriesCountTotal,

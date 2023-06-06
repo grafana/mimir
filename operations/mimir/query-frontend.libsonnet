@@ -19,17 +19,20 @@
 
   query_frontend_ports:: $.util.defaultPorts,
 
-  newQueryFrontendContainer(name, args)::
+  newQueryFrontendContainer(name, args, envmap={})::
     container.new(name, $._images.query_frontend) +
     container.withPorts($.query_frontend_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
+    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}) +
     $.jaeger_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '600Mi') +
     $.util.resourcesLimits(null, '1200Mi'),
 
+  query_frontend_env_map:: {},
+
   query_frontend_container::
-    self.newQueryFrontendContainer('query-frontend', $.query_frontend_args),
+    self.newQueryFrontendContainer('query-frontend', $.query_frontend_args, $.query_frontend_env_map),
 
   local deployment = $.apps.v1.deployment,
 

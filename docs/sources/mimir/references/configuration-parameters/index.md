@@ -3263,9 +3263,16 @@ bucket_store:
 
   index_header:
     # (advanced) Maximum number of idle file handles the store-gateway keeps
-    # open for each index-header file.
+    # open for each index header file.
     # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
     [max_idle_file_handles: <int> | default = 1]
+
+    # (advanced) If true, verify the checksum of index headers upon loading them
+    # (either on startup or lazily when lazy loading is enabled). Setting to
+    # true helps detect disk corruption at the cost of slowing down index header
+    # loading.
+    # CLI flag: -blocks-storage.bucket-store.index-header.verify-on-load
+    [verify_on_load: <boolean> | default = false]
 
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.

@@ -1461,12 +1461,13 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	// Make sure we get a successful response from all the ingesters
-	replicationSet.MaxErrors = 0
-	replicationSet.MaxUnavailableZones = 0
+	// If we have a single zone, we require all ingesters to respond.
+	if replicationSet.ZoneCount() == 1 {
+		replicationSet.MaxErrors = 0
+	}
 
 	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
-		cardinalityMap: map[string]map[string]uint64{},
+		cardinalityMapByZone: make(map[string]map[string]map[string]uint64, len(labelNames)),
 	}
 
 	labelValuesReq, err := toLabelValuesCardinalityRequest(labelNames, matchers, seriesScope)
@@ -1474,19 +1475,26 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	_, err = d.forReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
+		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
+		if err != nil {
+			return struct{}{}, err
+		}
+
+		client := poolClient.(ingester_client.IngesterClient)
+
 		stream, err := client.LabelValuesCardinality(ctx, labelValuesReq)
 		if err != nil {
-			return nil, err
+			return struct{}{}, err
 		}
 		defer func() { _ = stream.CloseSend() }()
 
-		return nil, cardinalityConcurrentMap.processLabelValuesCardinalityMessages(stream)
-	})
+		return struct{}{}, cardinalityConcurrentMap.processLabelValuesCardinalityMessages(desc.Zone, stream)
+	}, func(struct{}) {})
 	if err != nil {
 		return nil, err
 	}
-	return cardinalityConcurrentMap.toLabelValuesCardinalityResponse(d.ingestersRing.ReplicationFactor()), nil
+	return cardinalityConcurrentMap.toLabelValuesCardinalityResponse(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor()), nil
 }
 
 func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope querier.SeriesScope) (*ingester_client.LabelValuesCardinalityRequest, error) {
@@ -1511,12 +1519,12 @@ func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*l
 }
 
 type labelValuesCardinalityConcurrentMap struct {
-	cardinalityMap map[string]map[string]uint64
-	lock           sync.Mutex
+	// cardinalityMapByZone stores a result for each zone. map[label_name]map[label_value]map[zone]
+	cardinalityMapByZone map[string]map[string]map[string]uint64
+	lock                 sync.Mutex
 }
 
-func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessages(
-	stream ingester_client.Ingester_LabelValuesCardinalityClient) error {
+func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessages(zone string, stream ingester_client.Ingester_LabelValuesCardinalityClient) error {
 	for {
 		message, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -1524,7 +1532,7 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
 		} else if err != nil {
 			return err
 		}
-		cm.processLabelValuesCardinalityMessage(message)
+		cm.processLabelValuesCardinalityMessage(zone, message)
 	}
 	return nil
 }
@@ -1533,52 +1541,90 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
  * Build a map from all the responses received from all the ingesters.
  * Each label name will represent a key on the cardinalityMap which will have as value a second map, containing
  * as key the label_value and value the respective series_count. This series_count will represent the cumulative result
- * of all (label_name, label_value) tuples from all ingesters.
+ * of all (label_name, label_value) tuples from all ingesters, split by zone.
  *
  * Map: (label_name -> (label_value -> series_count))
  *
  * This method is called per each LabelValuesCardinalityResponse consumed from each ingester
  */
-func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessage(
-	message *ingester_client.LabelValuesCardinalityResponse) {
-
+func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessage(zone string, message *ingester_client.LabelValuesCardinalityResponse) {
 	cm.lock.Lock()
 	defer cm.lock.Unlock()
 
 	for _, item := range message.Items {
-		if _, exists := cm.cardinalityMap[item.LabelName]; !exists {
-			// Label name nonexistent
-			cm.cardinalityMap[item.LabelName] = map[string]uint64{}
+
+		// Create a new map for the label name if it doesn't exist
+		if _, ok := cm.cardinalityMapByZone[item.LabelName]; !ok {
+			cm.cardinalityMapByZone[item.LabelName] = make(map[string]map[string]uint64, len(item.LabelValueSeries))
 		}
+
 		for labelValue, seriesCount := range item.LabelValueSeries {
-			// Label name existent
-			cm.cardinalityMap[item.LabelName][labelValue] += seriesCount
+
+			// Create a new map for the label value if it doesn't exist
+			if _, ok := cm.cardinalityMapByZone[item.LabelName][labelValue]; !ok {
+				cm.cardinalityMapByZone[item.LabelName][labelValue] = map[string]uint64{}
+			}
+
+			// Add the series count to the map
+			cm.cardinalityMapByZone[item.LabelName][labelValue][zone] += seriesCount
 		}
 	}
 }
 
 // toLabelValuesCardinalityResponse adjust count of series to the replication factor and converts the map to `ingester_client.LabelValuesCardinalityResponse`.
-func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(replicationFactor int) *ingester_client.LabelValuesCardinalityResponse {
+func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(zoneCount int, replicationFactor int) *ingester_client.LabelValuesCardinalityResponse {
 	// we need to acquire the lock to prevent concurrent read/write to the map
 	cm.lock.Lock()
 	defer cm.lock.Unlock()
 
-	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(cm.cardinalityMap))
-	// Adjust label values' series count based on the ingester's replication factor
-	for labelName, labelValueSeriesCountMap := range cm.cardinalityMap {
-		adjustedSeriesCountMap := make(map[string]uint64, len(labelValueSeriesCountMap))
-		for labelValue, seriesCount := range labelValueSeriesCountMap {
-			adjustedSeriesCountMap[labelValue] = seriesCount / uint64(replicationFactor)
+	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(cm.cardinalityMapByZone))
+	// Adjust label values' series count to return the max value across zones
+	for labelName, labelValueSeriesCountMapByZone := range cm.cardinalityMapByZone {
+		labelValueSeriesCountMap := make(map[string]uint64, len(labelValueSeriesCountMapByZone))
+
+		for labelValue, seriesCountMapByZone := range labelValueSeriesCountMapByZone {
+			labelValueSeriesCountMap[labelValue] = approximateFromZones(zoneCount, replicationFactor, seriesCountMapByZone)
 		}
+
 		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
 			LabelName:        labelName,
-			LabelValueSeries: adjustedSeriesCountMap,
+			LabelValueSeries: labelValueSeriesCountMap,
 		})
 	}
 
 	return &ingester_client.LabelValuesCardinalityResponse{
 		Items: cardinalityItems,
 	}
+}
+
+// approximateFromZones computes a zonal value while factoring in replication.
+// e.g. series cardinality or ingestion rate.
+func approximateFromZones[T ~float64 | ~uint64](zoneCount int, replicationFactor int, seriesCountMapByZone map[string]T) T {
+	// If we have more than one zone, we return the max value across zones.
+	// Values can be different across zones due to incomplete replication or
+	// other issues. Any inconsistency should always be an underestimation of
+	// the real value, so we take the max to get the best available
+	// approximation.
+	if zoneCount > 1 {
+		var max T
+		for _, seriesCount := range seriesCountMapByZone {
+			if seriesCount > max {
+				max = seriesCount
+			}
+		}
+		return max
+	}
+
+	// If we have a single zone: we can't return the value directly because
+	// series will be replicated randomly across ingesters, and there's no way
+	// here to know how many unique series really exist. In this case, dividing
+	// by the replication factor will give us an approximation of the real
+	// value.
+	var sum T
+	for _, seriesCount := range seriesCountMapByZone {
+		sum += seriesCount
+	}
+	return sum / T(replicationFactor)
 }
 
 // LabelNames returns all of the label names.
@@ -1697,31 +1743,57 @@ func (d *Distributor) UserStats(ctx context.Context, activeSeriesOnly bool) (*Us
 		return nil, err
 	}
 
-	// Make sure we get a successful response from all of them.
-	replicationSet.MaxErrors = 0
-	replicationSet.MaxUnavailableZones = 0
+	// If we have a single zone, we can't tolerate any errors.
+	if replicationSet.ZoneCount() == 1 {
+		replicationSet.MaxErrors = 0
+	}
+
+	type zonedUserStatsResponse struct {
+		zone string
+		resp *ingester_client.UserStatsResponse
+	}
 
 	req := &ingester_client.UserStatsRequest{
 		ActiveSeriesOnly: activeSeriesOnly,
 	}
-	resps, err := d.forReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
-		return client.UserStats(ctx, req)
-	})
+	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
+		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
+		if err != nil {
+			return zonedUserStatsResponse{}, err
+		}
+
+		client := poolClient.(ingester_client.IngesterClient)
+		resp, err := client.UserStats(ctx, req)
+		if err != nil {
+			return zonedUserStatsResponse{}, err
+		}
+		return zonedUserStatsResponse{zone: desc.Zone, resp: resp}, nil
+	}, func(zusr zonedUserStatsResponse) {})
 	if err != nil {
 		return nil, err
 	}
 
-	totalStats := &UserStats{}
-	for _, resp := range resps {
-		r := resp.(*ingester_client.UserStatsResponse)
-		totalStats.IngestionRate += r.IngestionRate
-		totalStats.APIIngestionRate += r.ApiIngestionRate
-		totalStats.RuleIngestionRate += r.RuleIngestionRate
-		totalStats.NumSeries += r.NumSeries
+	var (
+		zoneIngestionRate     = map[string]float64{}
+		zoneAPIIngestionRate  = map[string]float64{}
+		zoneRuleIngestionRate = map[string]float64{}
+		zoneNumSeries         = map[string]uint64{}
+	)
+
+	// collect responses by zone
+	for _, r := range resps {
+		zoneIngestionRate[r.zone] += r.resp.IngestionRate
+		zoneAPIIngestionRate[r.zone] += r.resp.ApiIngestionRate
+		zoneRuleIngestionRate[r.zone] += r.resp.RuleIngestionRate
+		zoneNumSeries[r.zone] += r.resp.NumSeries
 	}
 
-	totalStats.IngestionRate /= float64(d.ingestersRing.ReplicationFactor())
-	totalStats.NumSeries /= uint64(d.ingestersRing.ReplicationFactor())
+	totalStats := &UserStats{
+		IngestionRate:     approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneIngestionRate),
+		APIIngestionRate:  approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneAPIIngestionRate),
+		RuleIngestionRate: approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneRuleIngestionRate),
+		NumSeries:         approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneNumSeries),
+	}
 
 	return totalStats, nil
 }

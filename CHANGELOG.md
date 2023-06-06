@@ -2,6 +2,27 @@
 
 ## main / unreleased
 
+### Grafana Mimir
+
+* [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
+* [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
+
+### Mixin
+
+### Jsonnet
+
+* [ENHANCEMENT] Add per-container map for environment variables. #5181
+
+### Mimirtool
+
+### Mimir Continuous Test
+
+### Query-tee
+
+### Documentation
+
+### Tools
+
 ## 2.9.0-rc.0
 
 ### Grafana Mimir
