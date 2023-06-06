@@ -125,12 +125,12 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, log
 		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
 	}
 
-	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols))
+	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
 	if err != nil {
 		return nil, fmt.Errorf("cannot load symbols: %w", err)
 	}
 
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
 	if err != nil {
 		return nil, err
 	}

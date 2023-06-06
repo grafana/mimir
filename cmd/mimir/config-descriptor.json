@@ -7175,11 +7175,22 @@
                   "kind": "field",
                   "name": "max_idle_file_handles",
                   "required": false,
-                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file.",
+                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index header file.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.max-idle-file-handles",
                   "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "verify_on_load",
+                  "required": false,
+                  "desc": "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.verify-on-load",
+                  "fieldType": "boolean",
                   "fieldCategory": "advanced"
                 }
               ],
