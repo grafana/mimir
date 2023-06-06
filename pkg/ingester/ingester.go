@@ -61,6 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
@@ -114,6 +115,9 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
+
+	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
+	queryLimitingCode = http.StatusServiceUnavailable
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -288,7 +292,7 @@ type Ingester struct {
 	minOutOfOrderTimeWindowSecondsStat *expvar.Int
 	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
 
-	utilizationBasedLimiter *utilizationBasedLimiter
+	utilizationBasedLimiter *limiter.UtilizationBasedLimiter
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -436,7 +440,11 @@ func (i *Ingester) starting(ctx context.Context) error {
 	}
 
 	if i.cfg.UtilizationBasedLimitingEnabled {
-		servs = append(servs, newUtilizationBasedLimiter(i.cfg, i.logger))
+		cpuThreshold := i.cfg.ReadPathUtilizationRatio * i.cfg.CPUUtilizationTarget
+		memThreshold := uint64(i.cfg.ReadPathUtilizationRatio * float64(i.cfg.MemoryUtilizationTarget))
+		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cpuThreshold, memThreshold,
+			log.WithPrefix(i.logger, "context", "read path"))
+		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
@@ -3048,4 +3056,20 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorHandling:      promhttp.HTTPErrorOnError,
 		Timeout:            10 * time.Second,
 	}).ServeHTTP(w, r)
+}
+
+// checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.
+func (i *Ingester) checkReadOverloaded() error {
+	if !i.cfg.UtilizationBasedLimitingEnabled {
+		return nil
+	}
+
+	reason := i.utilizationBasedLimiter.LimitingReason.Load()
+	if reason == "" {
+		return nil
+	}
+
+	level.Debug(i.logger).Log("msg", "rejecting read request due to resource utilization based limiting",
+		"reason", reason)
+	return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process queries, try again later")
 }

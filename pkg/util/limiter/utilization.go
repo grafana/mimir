@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ingester
+package limiter
 
 import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"time"
 
@@ -16,14 +15,10 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/procfs"
-	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 )
 
 const (
-	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
-	queryLimitingCode = http.StatusServiceUnavailable
-
 	// Interval for updating resource (CPU/memory) utilization
 	resourceUtilizationUpdateInterval = time.Second
 
@@ -192,29 +187,33 @@ func newProcfsScanner() (utilizationScanner, bool) {
 	}, true
 }
 
-type utilizationBasedLimiter struct {
+// UtilizationBasedLimiter is a Service offering limiting based on CPU and memory utilization.
+//
+// The respective CPU and memory utilization thresholds are configurable.
+type UtilizationBasedLimiter struct {
 	services.Service
 
 	logger             log.Logger
 	utilizationScanner utilizationScanner
 
-	// Read path memory threshold in bytes
-	readPathMemoryThreshold uint64
-	// Read path CPU threshold as a fraction of 1
-	readPathCPUThreshold float64
+	// Memory threshold in bytes
+	memoryThreshold uint64
+	// CPU threshold in cores
+	cpuThreshold float64
 	// Last CPU time counter
 	lastCPUTime float64
 	// The time of the last update
 	lastUpdate     time.Time
 	movingAvg      ewma.MovingAverage
-	limitingReason atomic.String
+	LimitingReason atomic.String
 }
 
-func newUtilizationBasedLimiter(cfg Config, logger log.Logger) *utilizationBasedLimiter {
-	l := &utilizationBasedLimiter{
-		logger:                  logger,
-		readPathCPUThreshold:    cfg.ReadPathUtilizationRatio * cfg.CPUUtilizationTarget,
-		readPathMemoryThreshold: uint64(cfg.ReadPathUtilizationRatio * float64(cfg.MemoryUtilizationTarget)),
+// NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuThreshold and memoryThreshold.
+func NewUtilizationBasedLimiter(cpuThreshold float64, memoryThreshold uint64, logger log.Logger) *UtilizationBasedLimiter {
+	l := &UtilizationBasedLimiter{
+		logger:          logger,
+		cpuThreshold:    cpuThreshold,
+		memoryThreshold: memoryThreshold,
 		// Use a minute long window, each sample being a second apart
 		movingAvg: ewma.NewMovingAverage(60),
 	}
@@ -222,7 +221,7 @@ func newUtilizationBasedLimiter(cfg Config, logger log.Logger) *utilizationBased
 	return l
 }
 
-func (l *utilizationBasedLimiter) init(ctx context.Context) error {
+func (l *UtilizationBasedLimiter) init(_ context.Context) error {
 	s, ok := newCgroupV2Scanner()
 	if ok {
 		l.utilizationScanner = s
@@ -242,13 +241,13 @@ func (l *utilizationBasedLimiter) init(ctx context.Context) error {
 	return fmt.Errorf("unable to detect CPU/memory utilization, unsupported platform")
 }
 
-func (l *utilizationBasedLimiter) update(ctx context.Context) error {
+func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	cpuTime, memUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "method",
 			l.utilizationScanner.Method(), "err", err.Error())
 		// Disable any limiting, since we can't tell resource utilization
-		l.limitingReason.Store("")
+		l.LimitingReason.Store("")
 		return ctx.Err()
 	}
 
@@ -270,8 +269,8 @@ func (l *utilizationBasedLimiter) update(ctx context.Context) error {
 	level.Debug(l.logger).Log("msg", "process resource utilization", "method", l.utilizationScanner.Method(),
 		"memory_utilization", memUtil, "smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
 
-	memPercent := 100 * (float64(memUtil) / float64(l.readPathMemoryThreshold))
-	cpuPercent := 100 * (cpuA / l.readPathCPUThreshold)
+	memPercent := 100 * (float64(memUtil) / float64(l.memoryThreshold))
+	cpuPercent := 100 * (cpuA / l.cpuThreshold)
 
 	var reason string
 	if memPercent >= 100 {
@@ -281,41 +280,25 @@ func (l *utilizationBasedLimiter) update(ctx context.Context) error {
 	}
 
 	enable := reason != ""
-	prevEnable := l.limitingReason.Load() != ""
+	prevEnable := l.LimitingReason.Load() != ""
 	if enable == prevEnable {
 		// No change
 		return ctx.Err()
 	}
 
 	if enable {
-		level.Info(l.logger).Log("msg", "enabling read path resource utilization based limiting",
-			"reason", reason, "memory_threshold", l.readPathMemoryThreshold,
-			"memory_percentage_of_threshold", memPercent, "cpu_threshold", l.readPathCPUThreshold,
+		level.Info(l.logger).Log("msg", "enabling resource utilization based limiting",
+			"reason", reason, "memory_threshold", l.memoryThreshold,
+			"memory_percentage_of_threshold", memPercent, "cpu_threshold", l.cpuThreshold,
 			"cpu_percentage_of_threshold", cpuPercent)
 	} else {
-		level.Info(l.logger).Log("msg", "disabling read path resource utilization based limiting",
-			"memory_threshold", l.readPathMemoryThreshold, "memory_percentage_of_threshold", memPercent,
-			"cpu_threshold", l.readPathCPUThreshold, "cpu_percentage_of_threshold", cpuPercent)
+		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
+			"memory_threshold", l.memoryThreshold, "memory_percentage_of_threshold", memPercent,
+			"cpu_threshold", l.cpuThreshold, "cpu_percentage_of_threshold", cpuPercent)
 	}
-	l.limitingReason.Store(reason)
+	l.LimitingReason.Store(reason)
 
 	return ctx.Err()
-}
-
-// checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.
-func (i *Ingester) checkReadOverloaded() error {
-	if !i.cfg.UtilizationBasedLimitingEnabled {
-		return nil
-	}
-
-	reason := i.utilizationBasedLimiter.limitingReason.Load()
-	if reason == "" {
-		return nil
-	}
-
-	level.Debug(i.logger).Log("msg", "rejecting read request due to resource utilization based limiting",
-		"reason", reason)
-	return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process queries, try again later")
 }
 
 // readFileNoStat returns an io.ReadCloser for fpath.
