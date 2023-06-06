@@ -157,7 +157,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	pool.lazyLoadedTracker.CopyLazyLoadedState(pool.lazyReaders)
 	err = pool.lazyLoadedTracker.Persist()
 	require.NoError(t, err)
-	require.Condition(t, func() bool { return pool.lazyLoadedTracker.State.LazyLoadedBlocks[blockID.String()] > 0 }, "lazyLoadedBlocks state must be set")
+	require.Greater(t, pool.lazyLoadedTracker.State.LazyLoadedBlocks[blockID.String()], 0, "lazyLoadedBlocks state must be set")
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
