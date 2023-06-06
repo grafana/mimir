@@ -964,20 +964,15 @@ instance_limits:
 # CLI flag: -ingester.utilization-based-limiting-enabled
 [utilization_based_limiting_enabled: <boolean> | default = false]
 
-# (experimental) CPU utilization target, as CPU cores, for CPU/memory
-# utilization based request limiting
-# CLI flag: -ingester.cpu-utilization-target
-[cpu_utilization_target: <float> | default = 0]
+# (experimental) CPU utilization limit, as CPU cores, for CPU/memory utilization
+# based read request limiting
+# CLI flag: -ingester.read-path-cpu-utilization-limit
+[read_path_cpu_utilization_limit: <float> | default = 0]
 
-# (experimental) Memory target, in bytes, for CPU/memory utilization based
+# (experimental) Memory limit, in bytes, for CPU/memory utilization based read
 # request limiting
-# CLI flag: -ingester.memory-utilization-target
-[memory_utilization_target: <int> | default = 0]
-
-# (experimental) Read path target ratio , as a fraction of 1, for CPU/memory
-# utilization based request limiting
-# CLI flag: -ingester.read-path-utilization-target-ratio
-[read_path_utilization_target_ratio: <float> | default = 0.8]
+# CLI flag: -ingester.read-path-memory-utilization-limit
+[read_path_memory_utilization_limit: <int> | default = 0]
 ```
 
 ### querier

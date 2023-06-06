@@ -165,9 +165,8 @@ type Config struct {
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 
 	UtilizationBasedLimitingEnabled bool    `yaml:"utilization_based_limiting_enabled" category:"experimental"`
-	CPUUtilizationTarget            float64 `yaml:"cpu_utilization_target" category:"experimental"`
-	MemoryUtilizationTarget         uint64  `yaml:"memory_utilization_target" category:"experimental"`
-	ReadPathUtilizationRatio        float64 `yaml:"read_path_utilization_target_ratio" category:"experimental"`
+	ReadPathCPUUtilizationLimit     float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
+	ReadPathMemoryUtilizationLimit  uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -189,10 +188,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
 
 	f.BoolVar(&cfg.UtilizationBasedLimitingEnabled, "ingester.utilization-based-limiting-enabled", false, "Enable CPU/memory utilization based read path request limiting")
-	f.Float64Var(&cfg.CPUUtilizationTarget, "ingester.cpu-utilization-target", 0, "CPU utilization target, as CPU cores, for CPU/memory utilization based request limiting")
-	f.Uint64Var(&cfg.MemoryUtilizationTarget, "ingester.memory-utilization-target", 0, "Memory target, in bytes, for CPU/memory utilization based request limiting")
-	f.Float64Var(&cfg.ReadPathUtilizationRatio, "ingester.read-path-utilization-target-ratio", 0.8,
-		"Read path target ratio , as a fraction of 1, for CPU/memory utilization based request limiting")
+	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting")
+	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting")
 }
 
 func (cfg *Config) Validate() error {
@@ -200,14 +197,11 @@ func (cfg *Config) Validate() error {
 		return nil
 	}
 
-	if cfg.CPUUtilizationTarget <= 0 {
-		return fmt.Errorf("CPU utilization target must be greater than 0")
+	if cfg.ReadPathCPUUtilizationLimit <= 0 {
+		return fmt.Errorf("read path CPU utilization limit must be greater than 0")
 	}
-	if cfg.MemoryUtilizationTarget <= 0 {
-		return fmt.Errorf("memory utilization target must be greater than 0")
-	}
-	if cfg.ReadPathUtilizationRatio <= 0 {
-		return fmt.Errorf("read path utilization target must be greater than 0")
+	if cfg.ReadPathMemoryUtilizationLimit <= 0 {
+		return fmt.Errorf("read path memory utilization limit must be greater than 0")
 	}
 
 	return nil
@@ -440,10 +434,8 @@ func (i *Ingester) starting(ctx context.Context) error {
 	}
 
 	if i.cfg.UtilizationBasedLimitingEnabled {
-		cpuThreshold := i.cfg.ReadPathUtilizationRatio * i.cfg.CPUUtilizationTarget
-		memThreshold := uint64(i.cfg.ReadPathUtilizationRatio * float64(i.cfg.MemoryUtilizationTarget))
-		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cpuThreshold, memThreshold,
-			log.WithPrefix(i.logger, "context", "read path"))
+		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(i.cfg.ReadPathCPUUtilizationLimit,
+			i.cfg.ReadPathMemoryUtilizationLimit, log.WithPrefix(i.logger, "context", "read path"))
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 

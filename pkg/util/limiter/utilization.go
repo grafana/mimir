@@ -189,17 +189,17 @@ func newProcfsScanner() (utilizationScanner, bool) {
 
 // UtilizationBasedLimiter is a Service offering limiting based on CPU and memory utilization.
 //
-// The respective CPU and memory utilization thresholds are configurable.
+// The respective CPU and memory utilization limits are configurable.
 type UtilizationBasedLimiter struct {
 	services.Service
 
 	logger             log.Logger
 	utilizationScanner utilizationScanner
 
-	// Memory threshold in bytes
-	memoryThreshold uint64
-	// CPU threshold in cores
-	cpuThreshold float64
+	// Memory limit in bytes
+	memoryLimit uint64
+	// CPU limit in cores
+	cpuLimit float64
 	// Last CPU time counter
 	lastCPUTime float64
 	// The time of the last update
@@ -208,12 +208,12 @@ type UtilizationBasedLimiter struct {
 	LimitingReason atomic.String
 }
 
-// NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuThreshold and memoryThreshold.
-func NewUtilizationBasedLimiter(cpuThreshold float64, memoryThreshold uint64, logger log.Logger) *UtilizationBasedLimiter {
+// NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
+func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log.Logger) *UtilizationBasedLimiter {
 	l := &UtilizationBasedLimiter{
-		logger:          logger,
-		cpuThreshold:    cpuThreshold,
-		memoryThreshold: memoryThreshold,
+		logger:      logger,
+		cpuLimit:    cpuLimit,
+		memoryLimit: memoryLimit,
 		// Use a minute long window, each sample being a second apart
 		movingAvg: ewma.NewMovingAverage(60),
 	}
@@ -269,8 +269,8 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	level.Debug(l.logger).Log("msg", "process resource utilization", "method", l.utilizationScanner.Method(),
 		"memory_utilization", memUtil, "smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
 
-	memPercent := 100 * (float64(memUtil) / float64(l.memoryThreshold))
-	cpuPercent := 100 * (cpuA / l.cpuThreshold)
+	memPercent := 100 * (float64(memUtil) / float64(l.memoryLimit))
+	cpuPercent := 100 * (cpuA / l.cpuLimit)
 
 	var reason string
 	if memPercent >= 100 {
@@ -288,13 +288,13 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 
 	if enable {
 		level.Info(l.logger).Log("msg", "enabling resource utilization based limiting",
-			"reason", reason, "memory_threshold", l.memoryThreshold,
-			"memory_percentage_of_threshold", memPercent, "cpu_threshold", l.cpuThreshold,
-			"cpu_percentage_of_threshold", cpuPercent)
+			"reason", reason, "memory_limit", l.memoryLimit,
+			"memory_percentage_of_limit", memPercent, "cpu_limit", l.cpuLimit,
+			"cpu_percentage_of_limit", cpuPercent)
 	} else {
 		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
-			"memory_threshold", l.memoryThreshold, "memory_percentage_of_threshold", memPercent,
-			"cpu_threshold", l.cpuThreshold, "cpu_percentage_of_threshold", cpuPercent)
+			"memory_limit", l.memoryLimit, "memory_percentage_of_limit", memPercent,
+			"cpu_limit", l.cpuLimit, "cpu_percentage_of_limit", cpuPercent)
 	}
 	l.LimitingReason.Store(reason)
 

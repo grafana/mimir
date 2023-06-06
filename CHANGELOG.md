@@ -26,9 +26,9 @@
 * [CHANGE] Dashboards: show all workloads in selected namespace on "rollout progress" dashboard. #5113
 * [CHANGE] Dashboards: show the number of updated and ready pods for each workload in the "rollout progress" panel on the "rollout progress" dashboard. #5113
 * [FEATURE] Ingester: Add optional CPU/memory utilization based read request limiting, considered experimental. Disabled by default, enable via `-ingester.utilization-based-limiting-enabled` flag. The following flags configure the feature: #5012
-* `-ingester.cpu-utilization-target`
-* `-ingester.memory-utilization-target`
-* `-ingester.read-path-utilization-target-ratio`
+* `-ingester.read-path-cpu-utilization-limit`
+* `-ingester.read-path-memory-utilization-limit"`
+
 * [ENHANCEMENT] Dashboards: adjust layout of "rollout progress" dashboard panels so that the "rollout progress" panel doesn't require scrolling. #5113
 * [ENHANCEMENT] Dashboards: show container name first in "pods count per version" panel on "rollout progress" dashboard. #5113
 * [BUGFIX] Dashboards: fix "unhealthy pods" panel on "rollout progress" dashboard showing only a number rather than the name of the workload and the number of unhealthy pods if only one workload has unhealthy pods. #5113 #5200

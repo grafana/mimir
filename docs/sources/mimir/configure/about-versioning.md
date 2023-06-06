@@ -89,9 +89,8 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
   - CPU/memory utilization based read request limiting:
     - `-ingester.utilization-based-limiting-enabled`
-    - `-ingester.cpu-utilization-target`
-    - `-ingester.memory-utilization-target`
-    - `-ingester.read-path-utilization-target-ratio`
+    - `-ingester.read-path-cpu-utilization-limit`
+    - `-ingester.read-path-memory-utilization-limit"`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`, `-querier.streaming-chunks-per-ingester-buffer-size`)
