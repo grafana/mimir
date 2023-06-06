@@ -48,24 +48,26 @@
 
   store_gateway_ports:: $.util.defaultPorts,
 
+  store_gateway_env_map:: {
+    // Dynamically set GOMAXPROCS based on CPU request.
+    GOMAXPROCS: std.toString(
+      std.ceil(
+        std.max(
+          $.util.parseCPU($.store_gateway_container.resources.requests.cpu) * 2,
+          $.util.parseCPU($.store_gateway_container.resources.requests.cpu) + 4
+        ),
+      )
+    ),
+    // Dynamically set GOMEMLIMIT based on memory request.
+    GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory))),
+  },
+
   store_gateway_container::
     container.new('store-gateway', $._images.store_gateway) +
     container.withPorts($.store_gateway_ports) +
     container.withArgsMixin($.util.mapToFlags($.store_gateway_args)) +
     container.withVolumeMountsMixin([volumeMount.new('store-gateway-data', '/data')]) +
-    container.withEnvMixin([
-      // Dynamically set GOMAXPROCS based on CPU request.
-      envVar.new('GOMAXPROCS', std.toString(
-        std.ceil(
-          std.max(
-            $.util.parseCPU($.store_gateway_container.resources.requests.cpu) * 2,
-            $.util.parseCPU($.store_gateway_container.resources.requests.cpu) + 4
-          ),
-        )
-      )),
-      // Dynamically set GOMEMLIMIT based on memory request.
-      envVar.new('GOMEMLIMIT', std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory)))),
-    ]) +
+    (if std.length($.store_gateway_env_map) > 0 then container.withEnvMap($.store_gateway_env_map) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
     $.util.readinessProbe +

@@ -46,10 +46,13 @@
 
   local name = 'ingester',
 
+  ingester_env_map:: {},
+
   ingester_container::
     container.new(name, $._images.ingester) +
     container.withPorts($.ingester_ports) +
     container.withArgsMixin($.util.mapToFlags($.ingester_args)) +
+    (if std.length($.ingester_env_map) > 0 then container.withEnvMap($.ingester_env_map) else {}) +
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
     $.util.readinessProbe +
