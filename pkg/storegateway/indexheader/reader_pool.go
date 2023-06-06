@@ -64,7 +64,7 @@ type HeadersLazyLoadedTracker struct {
 // CopyLazyLoadedState copies the list of lazy loaded block to map tracked by State.
 func (h *HeadersLazyLoadedTracker) CopyLazyLoadedState(lazyReaders map[*LazyBinaryReader]struct{}) {
 	h.State.LazyLoadedBlocks = make(map[string]int64)
-	for k := range lazyReaders {
+	for r := range lazyReaders {
 		if k.reader != nil {
 			h.State.LazyLoadedBlocks[k.blockID] = k.usedAt.Load() / int64(time.Millisecond)
 		}
