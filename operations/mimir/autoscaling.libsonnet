@@ -28,7 +28,7 @@
     autoscaling_ruler_query_frontend_min_replicas: error 'you must set autoscaling_ruler_query_frontend_min_replicas in the _config',
     autoscaling_ruler_query_frontend_max_replicas: error 'you must set autoscaling_ruler_query_frontend_max_replicas in the _config',
     autoscaling_ruler_query_frontend_memory_target_utilization: 1,
-  
+
     autoscaling_alertmanager_enabled: false,
     autoscaling_alertmanager_min_replicas: error 'you must set autoscaling_alertmanager_min_replicas in the _config',
     autoscaling_alertmanager_max_replicas: error 'you must set autoscaling_alertmanager_max_replicas in the _config',
@@ -424,7 +424,7 @@
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,
-  
+
   // Alertmanager
 
   newAlertmanagerScaledObject(name, alertmanager_cpu_requests, alertmanager_memory_requests, min_replicas, max_replicas, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
@@ -438,7 +438,7 @@
         query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
 
         // Threshold is expected to be a string.
-        // Since alertmanager is very memory-intensive as opposed to cpu-intensive, we don't bother 
+        // Since alertmanager is very memory-intensive as opposed to cpu-intensive, we don't bother
         // with the any target utilization calculation for cpu, to keep things simpler and cheaper.
         threshold: std.toString(cpuToMilliCPUInt(alertmanager_cpu_requests)),
       },
