@@ -2181,7 +2181,7 @@ func TestDistributor_LabelValuesCardinality_ExpectedAllIngestersResponsesToBeCom
 	ctx, ds := prepareWithZoneAwarenessAndZoneDelay(t, createSeries(10000))
 
 	names := []model.LabelName{labels.MetricName}
-	response, err := ds[0].labelValuesCardinality(ctx, names, []*labels.Matcher{}, querier.InMemoryScope)
+	response, err := ds[0].labelValuesCardinality(ctx, names, []*labels.Matcher{}, querier.InMemoryMethod)
 	require.NoError(t, err)
 	require.Len(t, response.Items, 1)
 	// labelValuesCardinality must wait for all responses from all ingesters
@@ -2354,7 +2354,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			// the final ingester may not have received series yet.
 			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
 			test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
-				seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, querier.InMemoryScope)
+				seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, querier.InMemoryMethod)
 				require.NoError(t, err)
 				assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
 				// Make sure the resultant label names are sorted
@@ -2422,7 +2422,7 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			_, _, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, []*labels.Matcher{}, querier.InMemoryScope)
+			_, _, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, []*labels.Matcher{}, querier.InMemoryMethod)
 			if testData.expectedHTTPGrpcError == nil {
 				require.NoError(t, err)
 			} else {
@@ -2449,7 +2449,7 @@ func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
 		// Set the first ingester as unhappy
 		ingesters[0].happy = false
 
-		_, _, err := ds[0].LabelValuesCardinality(ctx, []model.LabelName{labels.MetricName}, []*labels.Matcher{}, querier.InMemoryScope)
+		_, _, err := ds[0].LabelValuesCardinality(ctx, []model.LabelName{labels.MetricName}, []*labels.Matcher{}, querier.InMemoryMethod)
 		require.Error(t, err)
 	})
 }

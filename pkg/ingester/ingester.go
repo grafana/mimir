@@ -49,6 +49,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 
@@ -1278,7 +1279,7 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 		return &client.UserStatsResponse{}, nil
 	}
 
-	return createUserStats(db, req), nil
+	return createUserStats(db, req)
 }
 
 func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
@@ -1295,9 +1296,13 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 		Stats: make([]*client.UserIDStatsResponse, 0, len(users)),
 	}
 	for userID, db := range users {
+		userStats, err := createUserStats(db, req)
+		if err != nil {
+			return nil, err
+		}
 		response.Stats = append(response.Stats, &client.UserIDStatsResponse{
 			UserId: userID,
-			Data:   createUserStats(db, req),
+			Data:   userStats,
 		})
 	}
 	return response, nil
@@ -1359,8 +1364,11 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 		return err
 	}
 
-	postingsForMatchersFn := tsdb.PostingsForMatchers
-	if req.GetActiveSeriesOnly() {
+	var postingsForMatchersFn func(ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
+	switch req.GetCountMethod() {
+	case string(querier.InMemoryMethod):
+		postingsForMatchersFn = tsdb.PostingsForMatchers
+	case string(querier.ActiveMethod):
 		postingsForMatchersFn = func(ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			postings, err := tsdb.PostingsForMatchers(ix, ms...)
 			if err != nil {
@@ -1368,6 +1376,8 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 			}
 			return activeseries.NewPostings(db.activeSeries, postings), nil
 		}
+	default:
+		return fmt.Errorf("unknown count method %q", req.GetCountMethod())
 	}
 
 	return labelValuesCardinality(
@@ -1380,16 +1390,19 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	)
 }
 
-func createUserStats(db *userTSDB, req *client.UserStatsRequest) *client.UserStatsResponse {
+func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserStatsResponse, error) {
 	apiRate := db.ingestedAPISamples.Rate()
 	ruleRate := db.ingestedRuleSamples.Rate()
 
 	var series uint64
-	if req.GetActiveSeriesOnly() {
+	switch req.GetCountMethod() {
+	case string(querier.InMemoryMethod):
+		series = db.Head().NumSeries()
+	case string(querier.ActiveMethod):
 		activeSeries := db.activeSeries.Active()
 		series = uint64(activeSeries)
-	} else {
-		series = db.Head().NumSeries()
+	default:
+		return nil, fmt.Errorf("unknown count method %q", req.GetCountMethod())
 	}
 
 	return &client.UserStatsResponse{
@@ -1397,7 +1410,7 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) *client.UserSta
 		ApiIngestionRate:  apiRate,
 		RuleIngestionRate: ruleRate,
 		NumSeries:         series,
-	}
+	}, nil
 }
 
 const queryStreamBatchMessageSize = 1 * 1024 * 1024

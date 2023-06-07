@@ -1417,7 +1417,7 @@ func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_clie
 // LabelValuesCardinality performs the following two operations in parallel:
 //   - queries ingesters for label values cardinality of a set of labelNames
 //   - queries ingesters for user stats to get the ingester's series head count
-func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope querier.SeriesScope) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
+func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod querier.CountMethod) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
 	var totalSeries uint64
 	var labelValuesCardinalityResponse *ingester_client.LabelValuesCardinalityResponse
 
@@ -1434,14 +1434,14 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 	// Run labelValuesCardinality and UserStats methods in parallel
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error {
-		response, err := d.labelValuesCardinality(ctx, labelNames, matchers, seriesScope)
+		response, err := d.labelValuesCardinality(ctx, labelNames, matchers, countMethod)
 		if err == nil {
 			labelValuesCardinalityResponse = response
 		}
 		return err
 	})
 	group.Go(func() error {
-		response, err := d.UserStats(ctx, seriesScope == querier.ActiveScope)
+		response, err := d.UserStats(ctx, countMethod)
 		if err == nil {
 			totalSeries = response.NumSeries
 		}
@@ -1455,7 +1455,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
-func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope querier.SeriesScope) (*ingester_client.LabelValuesCardinalityResponse, error) {
+func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod querier.CountMethod) (*ingester_client.LabelValuesCardinalityResponse, error) {
 	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
@@ -1470,7 +1470,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		cardinalityMapByZone: make(map[string]map[string]map[string]uint64, len(labelNames)),
 	}
 
-	labelValuesReq, err := toLabelValuesCardinalityRequest(labelNames, matchers, seriesScope)
+	labelValuesReq, err := toLabelValuesCardinalityRequest(labelNames, matchers, countMethod)
 	if err != nil {
 		return nil, err
 	}
@@ -1497,7 +1497,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	return cardinalityConcurrentMap.toLabelValuesCardinalityResponse(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor()), nil
 }
 
-func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope querier.SeriesScope) (*ingester_client.LabelValuesCardinalityRequest, error) {
+func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher, countMethod querier.CountMethod) (*ingester_client.LabelValuesCardinalityRequest, error) {
 	matchersProto, err := ingester_client.ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
@@ -1506,16 +1506,7 @@ func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*l
 	for _, labelName := range labelNames {
 		labelNamesStr = append(labelNamesStr, string(labelName))
 	}
-	var activeSeriesOnly bool
-	switch seriesScope {
-	case querier.ActiveScope:
-		activeSeriesOnly = true
-	case querier.InMemoryScope:
-		activeSeriesOnly = false
-	default:
-		return nil, fmt.Errorf("unknown series scope %v", seriesScope)
-	}
-	return &ingester_client.LabelValuesCardinalityRequest{LabelNames: labelNamesStr, Matchers: matchersProto, ActiveSeriesOnly: activeSeriesOnly}, nil
+	return &ingester_client.LabelValuesCardinalityRequest{LabelNames: labelNamesStr, Matchers: matchersProto, CountMethod: string(countMethod)}, nil
 }
 
 type labelValuesCardinalityConcurrentMap struct {
@@ -1737,7 +1728,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetad
 }
 
 // UserStats returns statistics about the current user.
-func (d *Distributor) UserStats(ctx context.Context, activeSeriesOnly bool) (*UserStats, error) {
+func (d *Distributor) UserStats(ctx context.Context, countMethod querier.CountMethod) (*UserStats, error) {
 	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
@@ -1754,7 +1745,7 @@ func (d *Distributor) UserStats(ctx context.Context, activeSeriesOnly bool) (*Us
 	}
 
 	req := &ingester_client.UserStatsRequest{
-		ActiveSeriesOnly: activeSeriesOnly,
+		CountMethod: string(countMethod),
 	}
 	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
 		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)

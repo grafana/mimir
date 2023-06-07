@@ -716,8 +716,8 @@ func (m *mockDistributor) LabelNamesAndValues(ctx context.Context, matchers []*l
 	return args.Get(0).(*client.LabelNamesAndValuesResponse), args.Error(1)
 }
 
-func (m *mockDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope SeriesScope) (uint64, *client.LabelValuesCardinalityResponse, error) {
-	args := m.Called(ctx, labelNames, matchers, seriesScope)
+func (m *mockDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
+	args := m.Called(ctx, labelNames, matchers, countMethod)
 	return args.Get(0).(uint64), args.Get(1).(*client.LabelValuesCardinalityResponse), args.Error(2)
 }
 

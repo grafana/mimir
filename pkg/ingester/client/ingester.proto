@@ -54,7 +54,7 @@ message LabelValues {
 message LabelValuesCardinalityRequest {
   repeated string label_names = 1;
   repeated LabelMatcher matchers = 2;
-  bool active_series_only = 3;
+  string count_method = 3;
 }
 
 message LabelValuesCardinalityResponse {
@@ -181,7 +181,7 @@ message LabelNamesResponse {
 }
 
 message UserStatsRequest {
-  bool active_series_only = 1;
+  string count_method = 1;
 }
 
 message UserStatsResponse {

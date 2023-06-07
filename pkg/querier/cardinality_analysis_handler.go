@@ -27,7 +27,7 @@ const (
 	minLimit           = 0
 	maxLimit           = 500
 	defaultLimit       = 20
-	defaultSeriesScope = InMemoryScope
+	defaultCountMethod = InMemoryMethod
 )
 
 // LabelNamesCardinalityHandler creates handler for label names cardinality endpoint.
@@ -73,13 +73,13 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 			return
 		}
 
-		labelNames, matchers, seriesScope, limit, err := extractLabelValuesRequestParams(r)
+		labelNames, matchers, countMethod, limit, err := extractLabelValuesRequestParams(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, labelNames, matchers, seriesScope)
+		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, labelNames, matchers, countMethod)
 		if err != nil {
 			respondFromError(err, w)
 			return
@@ -106,7 +106,7 @@ func extractLabelNamesRequestParams(r *http.Request) ([]*labels.Matcher, int, er
 }
 
 // extractLabelValuesRequestParams parses query params from GET requests and parses request body from POST requests
-func extractLabelValuesRequestParams(r *http.Request) (labelNames []model.LabelName, matchers []*labels.Matcher, seriesScope SeriesScope, limit int, err error) {
+func extractLabelValuesRequestParams(r *http.Request) (labelNames []model.LabelName, matchers []*labels.Matcher, countMethod CountMethod, limit int, err error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, nil, "", 0, err
 	}
@@ -126,12 +126,12 @@ func extractLabelValuesRequestParams(r *http.Request) (labelNames []model.LabelN
 		return nil, nil, "", 0, err
 	}
 
-	seriesScope, err = extractSeriesScope(r)
+	countMethod, err = extractCountMethod(r)
 	if err != nil {
 		return nil, nil, "", 0, err
 	}
 
-	return labelNames, matchers, seriesScope, limit, nil
+	return labelNames, matchers, countMethod, limit, nil
 }
 
 // extractSelector parses and gets selector query parameter containing a single matcher
@@ -168,19 +168,19 @@ func extractLimit(r *http.Request) (limit int, err error) {
 	return limit, nil
 }
 
-// extractSeriesScope parses and validates request param `include_active_series` if it's defined, otherwise returns default value.
-func extractSeriesScope(r *http.Request) (seriesScope SeriesScope, err error) {
-	activeSeriesOnlyParams := r.Form["scope"]
-	if len(activeSeriesOnlyParams) == 0 {
-		return defaultSeriesScope, nil
+// extractCountMethod parses and validates request param `count_method` if it's defined, otherwise returns default value.
+func extractCountMethod(r *http.Request) (countMethod CountMethod, err error) {
+	countMethodParams := r.Form["count_method"]
+	if len(countMethodParams) == 0 {
+		return defaultCountMethod, nil
 	}
-	switch SeriesScope(activeSeriesOnlyParams[0]) {
-	case ActiveScope:
-		return ActiveScope, nil
-	case InMemoryScope:
-		return InMemoryScope, nil
+	switch CountMethod(countMethodParams[0]) {
+	case ActiveMethod:
+		return ActiveMethod, nil
+	case InMemoryMethod:
+		return InMemoryMethod, nil
 	default:
-		return "", fmt.Errorf("invalid 'scope' param '%v'. valid options are: [%s]", activeSeriesOnlyParams[0], strings.Join([]string{string(ActiveScope), string(InMemoryScope)}, ","))
+		return "", fmt.Errorf("invalid 'count_method' param '%v'. valid options are: [%s]", countMethodParams[0], strings.Join([]string{string(ActiveMethod), string(InMemoryMethod)}, ","))
 	}
 }
 
