@@ -49,7 +49,7 @@ func setupGrpc(t testing.TB) (*mockServer, *grpc.ClientConn) {
 func TestWriteRequestBufferingClient_Push(t *testing.T) {
 	serv, conn := setupGrpc(t)
 
-	bufferingClient := NewWriteRequestBufferingClient(NewIngesterClient(conn), conn)
+	bufferingClient := newWriteRequestBufferingClient(NewIngesterClient(conn), conn)
 
 	var requestsToSends []*mimirpb.WriteRequest
 	for i := 0; i < 10; i++ {
@@ -90,9 +90,39 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 	})
 }
 
+func TestWriteRequestBufferingClient_Push_WithMultipleMarshalCalls(t *testing.T) {
+	serv, conn := setupGrpc(t)
+
+	bufferingClient := newWriteRequestBufferingClient(NewIngesterClient(conn), conn)
+	bufferingClient.pushRawFn = func(ctx context.Context, conn *grpc.ClientConn, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+		// Call Marshal several times. We are testing if all buffers from the pool are returned.
+		_, _ = msg.(*wrappedRequest).Marshal()
+		_, _ = msg.(*wrappedRequest).Marshal()
+		_, _ = msg.(*wrappedRequest).Marshal()
+
+		return pushRaw(ctx, conn, msg, opts...)
+	}
+
+	req := createRequest("test", 100)
+
+	pool := &pool2.TrackedPool{Parent: &sync.Pool{}}
+	slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 512*1024)
+
+	ctx := WithPool(context.Background(), slabPool)
+
+	_, err := bufferingClient.Push(ctx, req)
+	require.NoError(t, err)
+
+	require.Equal(t, serv.requests(), []*mimirpb.WriteRequest{req})
+
+	// Verify that all buffers from the pool were returned.
+	require.Greater(t, pool.Gets.Load(), int64(0))
+	require.Equal(t, int64(0), pool.Balance.Load())
+}
+
 func BenchmarkWriteRequestBufferingClient_Push(b *testing.B) {
-	bufferingClient := NewWriteRequestBufferingClient(&dummyIngesterClient{}, nil)
-	bufferingClient.pushRawFn = func(ctx context.Context, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	bufferingClient := newWriteRequestBufferingClient(&dummyIngesterClient{}, nil)
+	bufferingClient.pushRawFn = func(ctx context.Context, conn *grpc.ClientConn, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 		_, err := msg.(proto.Marshaler).Marshal()
 		return nil, err
 	}
@@ -123,7 +153,7 @@ func BenchmarkWriteRequestBufferingClient_Push(b *testing.B) {
 func TestWriteRequestBufferingClient_PushConcurrent(t *testing.T) {
 	serv, conn := setupGrpc(t)
 
-	bufferingClient := NewWriteRequestBufferingClient(NewIngesterClient(conn), conn)
+	bufferingClient := newWriteRequestBufferingClient(NewIngesterClient(conn), conn)
 	serv.trackSamples = true
 
 	pool := &pool2.TrackedPool{Parent: &sync.Pool{}}

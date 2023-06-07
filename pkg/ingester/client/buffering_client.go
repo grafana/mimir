@@ -9,6 +9,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
+// This is a copy of (*ingesterClient).Push method, but accepting any message type.
+func pushRaw(ctx context.Context, conn *grpc.ClientConn, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	out := new(mimirpb.WriteResponse)
+	err := conn.Invoke(ctx, "/cortex.Ingester/Push", msg, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // bufferPoolingIngesterClient implements IngesterClient, but overrides Push method to add pooling of buffers used to marshal write requests.
 type bufferPoolingIngesterClient struct {
 	client IngesterClient
@@ -16,19 +26,19 @@ type bufferPoolingIngesterClient struct {
 	conn *grpc.ClientConn
 
 	// This refers to pushRaw function, but is overriden in the benchmark to avoid doing actual grpc calls.
-	pushRawFn func(ctx context.Context, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error)
+	pushRawFn func(ctx context.Context, conn *grpc.ClientConn, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error)
 }
 
-func NewWriteRequestBufferingClient(client IngesterClient, conn *grpc.ClientConn) *bufferPoolingIngesterClient {
+func newWriteRequestBufferingClient(client IngesterClient, conn *grpc.ClientConn) *bufferPoolingIngesterClient {
 	c := &bufferPoolingIngesterClient{
-		client: client,
-		conn:   conn,
+		client:    client,
+		conn:      conn,
+		pushRawFn: pushRaw,
 	}
-	c.pushRawFn = c.pushRaw
 	return c
 }
 
-// Push request is overridden from IngesterClient interface.
+// Push wraps WriteRequest to implement buffer pooling.
 func (c *bufferPoolingIngesterClient) Push(ctx context.Context, in *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	p := GetPool(ctx)
 	if p == nil {
@@ -39,22 +49,10 @@ func (c *bufferPoolingIngesterClient) Push(ctx context.Context, in *mimirpb.Writ
 		WriteRequest: in,
 		slabPool:     p,
 	}
-	// We can return all buffers back to slabPool after this method is finished.
+	// We can return all buffers back to slabPool when this method finishes.
 	defer wr.ReturnBuffersToPool()
 
-	return c.pushRawFn(ctx, wr, opts...)
-}
-
-func (c *bufferPoolingIngesterClient) pushRaw(ctx context.Context, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	// Use underlying grpc client to invoke method with our wrapped request.
-	// This is a copy of (*ingesterClient).Push method, but passing the wrapped request.
-	// When this wrapped request is marshaled, it will use buffer from our pool.
-	out := new(mimirpb.WriteResponse)
-	err := c.conn.Invoke(ctx, "/cortex.Ingester/Push", msg, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
+	return c.pushRawFn(ctx, c.conn, wr, opts...)
 }
 
 func (c *bufferPoolingIngesterClient) QueryStream(ctx context.Context, in *QueryRequest, opts ...grpc.CallOption) (Ingester_QueryStreamClient, error) {
@@ -121,7 +119,7 @@ type wrappedRequest struct {
 
 	slabPool    *pool.FastReleasingSlabPool[byte]
 	slabId      int
-	moreSlabIds []int // In case Marshal gets called multiple times.
+	moreSlabIds []int // Used in case when Marshal gets called multiple times.
 }
 
 func (w *wrappedRequest) Marshal() ([]byte, error) {
