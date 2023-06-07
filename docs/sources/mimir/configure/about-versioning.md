@@ -113,6 +113,7 @@ The following features are currently experimental:
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
 - Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+- Timeseries Unmarshal caching optimization in distributor (`-enable-timeseries-unmarshal-caching-optimization`)
 
 ## Deprecated features
 

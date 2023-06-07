@@ -199,6 +199,10 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 }
 
 func TestPreallocTimeseries_Unmarshal(t *testing.T) {
+	defer func() {
+		TimeseriesUnmarshalCachingEnabled = true
+	}()
+
 	// Prepare message
 	msg := PreallocTimeseries{}
 	{
@@ -218,6 +222,14 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 		data, err := src.Marshal()
 		require.NoError(t, err)
 
+		TimeseriesUnmarshalCachingEnabled = false
+
+		require.NoError(t, msg.Unmarshal(data))
+		require.True(t, src.Equal(msg.TimeSeries))
+		require.Nil(t, msg.marshalledData)
+
+		TimeseriesUnmarshalCachingEnabled = true
+
 		require.NoError(t, msg.Unmarshal(data))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.NotNil(t, msg.marshalledData)
@@ -226,19 +238,22 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 	correctMarshaledData := make([]byte, len(msg.marshalledData))
 	copy(correctMarshaledData, msg.marshalledData)
 
-	// Set cached version to random bytes (make a new slice, because labels in TimeSeries use the original byte slice).
-	msg.marshalledData = make([]byte, 100)
-	_, err := rand.Read(msg.marshalledData)
+	randomData := make([]byte, 100)
+	_, err := rand.Read(randomData)
 	require.NoError(t, err)
 
+	// Set cached version to random bytes. We make a new slice, because labels in TimeSeries use the original byte slice.
+	msg.marshalledData = make([]byte, len(randomData))
+	copy(msg.marshalledData, randomData)
+
 	t.Run("message with cached marshalled version: Size returns length of cached data", func(t *testing.T) {
-		require.Equal(t, len(msg.marshalledData), msg.Size())
+		require.Equal(t, len(randomData), msg.Size())
 	})
 
 	t.Run("message with cached marshalled version: Marshal returns cached data", func(t *testing.T) {
 		out, err := msg.Marshal()
 		require.NoError(t, err)
-		require.Equal(t, msg.marshalledData, out)
+		require.Equal(t, randomData, out)
 	})
 
 	t.Run("message with cached marshalled version: MarshalTo returns cached data", func(t *testing.T) {
@@ -246,7 +261,7 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 		n, err := msg.MarshalTo(out)
 		require.NoError(t, err)
 		require.Equal(t, n, msg.Size())
-		require.Equal(t, msg.marshalledData, out[:msg.Size()])
+		require.Equal(t, randomData, out[:msg.Size()])
 	})
 
 	t.Run("message with cached marshalled version: MarshalToSizedBuffer returns cached data", func(t *testing.T) {
@@ -254,7 +269,7 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 		n, err := msg.MarshalToSizedBuffer(out)
 		require.NoError(t, err)
 		require.Equal(t, n, len(out))
-		require.Equal(t, msg.marshalledData, out)
+		require.Equal(t, randomData, out)
 	})
 
 	msg.clearUnmarshalData()
