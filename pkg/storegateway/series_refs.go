@@ -746,15 +746,21 @@ func openBlockSeriesChunkRefsSetsIterator(
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	chunkRangesPerSeries int,
 	stats *safeQueryStats,
+	ps []storage.SeriesRef, // If this is not empty, these posting are used as it as without fetching new ones.
+	pendingMatchers []*labels.Matcher, // This is used in conjunction with 'ps'.
 	logger log.Logger,
-) (seriesChunkRefsSetIterator, error) {
+) (seriesChunkRefsSetIterator, []storage.SeriesRef, []*labels.Matcher, error) {
 	if batchSize <= 0 {
-		return nil, errors.New("set size must be a positive number")
+		return nil, nil, nil, errors.New("set size must be a positive number")
 	}
 
-	ps, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
-	if err != nil {
-		return nil, errors.Wrap(err, "expanded matching postings")
+	// TODO: cache the filtered postings instead later.
+	if len(ps) == 0 {
+		var err error
+		ps, pendingMatchers, err = indexr.ExpandedPostings(ctx, matchers, stats)
+		if err != nil {
+			return nil, nil, nil, errors.Wrap(err, "expanded matching postings")
+		}
 	}
 
 	var iterator seriesChunkRefsSetIterator
@@ -778,7 +784,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		iterator = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, iterator, stats)
 	}
 
-	return seriesStreamingFetchRefsDurationIterator(iterator, stats), nil
+	return seriesStreamingFetchRefsDurationIterator(iterator, stats), ps, pendingMatchers, nil
 }
 
 // seriesStreamingFetchRefsDurationIterator tracks the time spent loading series and chunk refs.
