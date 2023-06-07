@@ -1860,14 +1860,16 @@ alertmanager_client:
     # CLI flag: -alertmanager.alertmanager-client.backoff-retries
     [max_retries: <int> | default = 10]
 
-  # (advanced) Initial stream window size. Values less than the default are not
-  # supported and are ignored.
+  # (experimental) Initial stream window size. Values less than the default are
+  # not supported and are ignored. Setting this to a value other than the
+  # default disables the BDP estimator.
   # CLI flag: -alertmanager.alertmanager-client.initial-stream-window-size
   [initial_stream_window_size: <int> | default = 63KiB1023B]
 
-  # (advanced) Initial connection window size. Values less than the default are
-  # not supported and are ignored.
-  # CLI flag: -alertmanager.alertmanager-clientinitial-connection-window-size
+  # (experimental) Initial connection window size. Values less than the default
+  # are not supported and are ignored. Setting this to a value other than the
+  # default disables the BDP estimator.
+  # CLI flag: -alertmanager.alertmanager-client.initial-connection-window-size
   [initial_connection_window_size: <int> | default = 63KiB1023B]
 
   # (advanced) Enable TLS in the gRPC client. This flag needs to be enabled when
@@ -2089,14 +2091,16 @@ backoff_config:
   # CLI flag: -<prefix>.backoff-retries
   [max_retries: <int> | default = 10]
 
-# (advanced) Initial stream window size. Values less than the default are not
-# supported and are ignored.
+# (experimental) Initial stream window size. Values less than the default are
+# not supported and are ignored. Setting this to a value other than the default
+# disables the BDP estimator.
 # CLI flag: -<prefix>.initial-stream-window-size
 [initial_stream_window_size: <int> | default = 63KiB1023B]
 
-# (advanced) Initial connection window size. Values less than the default are
-# not supported and are ignored.
-# CLI flag: -<prefix>initial-connection-window-size
+# (experimental) Initial connection window size. Values less than the default
+# are not supported and are ignored. Setting this to a value other than the
+# default disables the BDP estimator.
+# CLI flag: -<prefix>.initial-connection-window-size
 [initial_connection_window_size: <int> | default = 63KiB1023B]
 
 # (advanced) Enable TLS in the gRPC client. This flag needs to be enabled when

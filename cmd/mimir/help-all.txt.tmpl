@@ -125,8 +125,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -alertmanager.alertmanager-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -alertmanager.alertmanager-client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -alertmanager.alertmanager-client.initial-stream-window-size value
-    	Initial stream window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -alertmanager.alertmanager-client.remote-timeout duration
     	Timeout for downstream alertmanagers. (default 2s)
   -alertmanager.alertmanager-client.tls-ca-path string
@@ -145,8 +147,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -alertmanager.alertmanager-client.tls-server-name string
     	Override the expected name on the server certificate.
-  -alertmanager.alertmanager-clientinitial-connection-window-size value
-    	Initial connection window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
   -alertmanager.configs.fallback string
     	Filename of fallback config to use if none specified for instance.
   -alertmanager.configs.poll-interval duration
@@ -1205,8 +1205,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ingester.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -ingester.client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.initial-stream-window-size value
-    	Initial stream window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
@@ -1223,8 +1225,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
-  -ingester.clientinitial-connection-window-size value
-    	Initial connection window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
@@ -1535,8 +1535,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.frontend-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -querier.frontend-client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.frontend-client.initial-stream-window-size value
-    	Initial stream window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.frontend-client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.frontend-client.tls-cert-path string
@@ -1553,8 +1555,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.frontend-client.tls-server-name string
     	Override the expected name on the server certificate.
-  -querier.frontend-clientinitial-connection-window-size value
-    	Initial connection window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
   -querier.id string
     	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
   -querier.iterators
@@ -1647,8 +1647,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -query-frontend.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -query-frontend.grpc-client-config.initial-stream-window-size value
-    	Initial stream window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -query-frontend.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-frontend.grpc-client-config.tls-cert-path string
@@ -1665,8 +1667,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
-  -query-frontend.grpc-client-configinitial-connection-window-size value
-    	Initial connection window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
   -query-frontend.instance-addr string
     	IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).
   -query-frontend.instance-interface-names string
@@ -1833,8 +1833,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-scheduler.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -query-scheduler.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -query-scheduler.grpc-client-config.initial-stream-window-size value
-    	Initial stream window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -query-scheduler.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.grpc-client-config.tls-cert-path string
@@ -1851,8 +1853,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
-  -query-scheduler.grpc-client-configinitial-connection-window-size value
-    	Initial connection window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
   -query-scheduler.max-used-instances int
@@ -2163,8 +2163,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -ruler.client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.client.initial-stream-window-size value
-    	Initial stream window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.client.tls-cert-path string
@@ -2181,8 +2183,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.client.tls-server-name string
     	Override the expected name on the server certificate.
-  -ruler.clientinitial-connection-window-size value
-    	Initial connection window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
   -ruler.disabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
   -ruler.enable-api
@@ -2235,8 +2235,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -ruler.query-frontend.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.query-frontend.grpc-client-config.initial-stream-window-size value
-    	Initial stream window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.query-frontend.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.query-frontend.grpc-client-config.tls-cert-path string
@@ -2253,8 +2255,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
-  -ruler.query-frontend.grpc-client-configinitial-connection-window-size value
-    	Initial connection window size. Values less than the default are not supported and are ignored. (default 63KiB1023B)
   -ruler.query-frontend.query-result-response-format string
     	Format to use when retrieving query results from query-frontends. Supported values: json, protobuf (default "protobuf")
   -ruler.query-stats-enabled

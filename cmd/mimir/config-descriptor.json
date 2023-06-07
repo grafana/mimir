@@ -1843,23 +1843,23 @@
               "kind": "field",
               "name": "initial_stream_window_size",
               "required": false,
-              "desc": "Initial stream window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
               "fieldFlag": "ingester.client.initial-stream-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
               "name": "initial_connection_window_size",
               "required": false,
-              "desc": "Initial connection window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
-              "fieldFlag": "ingester.clientinitial-connection-window-size",
+              "fieldFlag": "ingester.client.initial-connection-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -3650,23 +3650,23 @@
               "kind": "field",
               "name": "initial_stream_window_size",
               "required": false,
-              "desc": "Initial stream window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
               "fieldFlag": "querier.frontend-client.initial-stream-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
               "name": "initial_connection_window_size",
               "required": false,
-              "desc": "Initial connection window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
-              "fieldFlag": "querier.frontend-clientinitial-connection-window-size",
+              "fieldFlag": "querier.frontend-client.initial-connection-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -4019,23 +4019,23 @@
               "kind": "field",
               "name": "initial_stream_window_size",
               "required": false,
-              "desc": "Initial stream window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
               "fieldFlag": "query-frontend.grpc-client-config.initial-stream-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
               "name": "initial_connection_window_size",
               "required": false,
-              "desc": "Initial connection window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
-              "fieldFlag": "query-frontend.grpc-client-configinitial-connection-window-size",
+              "fieldFlag": "query-frontend.grpc-client-config.initial-connection-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -9116,23 +9116,23 @@
               "kind": "field",
               "name": "initial_stream_window_size",
               "required": false,
-              "desc": "Initial stream window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
               "fieldFlag": "ruler.client.initial-stream-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
               "name": "initial_connection_window_size",
               "required": false,
-              "desc": "Initial connection window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
-              "fieldFlag": "ruler.clientinitial-connection-window-size",
+              "fieldFlag": "ruler.client.initial-connection-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -10081,23 +10081,23 @@
                   "kind": "field",
                   "name": "initial_stream_window_size",
                   "required": false,
-                  "desc": "Initial stream window size. Values less than the default are not supported and are ignored.",
+                  "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
                   "fieldValue": null,
                   "fieldDefaultValue": null,
                   "fieldFlag": "ruler.query-frontend.grpc-client-config.initial-stream-window-size",
                   "fieldType": "int",
-                  "fieldCategory": "advanced"
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
                   "name": "initial_connection_window_size",
                   "required": false,
-                  "desc": "Initial connection window size. Values less than the default are not supported and are ignored.",
+                  "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
                   "fieldValue": null,
                   "fieldDefaultValue": null,
-                  "fieldFlag": "ruler.query-frontend.grpc-client-configinitial-connection-window-size",
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.initial-connection-window-size",
                   "fieldType": "int",
-                  "fieldCategory": "advanced"
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -12048,23 +12048,23 @@
               "kind": "field",
               "name": "initial_stream_window_size",
               "required": false,
-              "desc": "Initial stream window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
               "fieldFlag": "alertmanager.alertmanager-client.initial-stream-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
               "name": "initial_connection_window_size",
               "required": false,
-              "desc": "Initial connection window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
-              "fieldFlag": "alertmanager.alertmanager-clientinitial-connection-window-size",
+              "fieldFlag": "alertmanager.alertmanager-client.initial-connection-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -13379,23 +13379,23 @@
               "kind": "field",
               "name": "initial_stream_window_size",
               "required": false,
-              "desc": "Initial stream window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
               "fieldFlag": "query-scheduler.grpc-client-config.initial-stream-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
               "name": "initial_connection_window_size",
               "required": false,
-              "desc": "Initial connection window size. Values less than the default are not supported and are ignored.",
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
               "fieldValue": null,
               "fieldDefaultValue": null,
-              "fieldFlag": "query-scheduler.grpc-client-configinitial-connection-window-size",
+              "fieldFlag": "query-scheduler.grpc-client-config.initial-connection-window-size",
               "fieldType": "int",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
