@@ -566,8 +566,17 @@ GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_values
 Returns realtime label values cardinality associated to request param `label_names[]` across all ingesters, for the authenticated tenant, in `JSON` format.
 It returns the series count per label value associated to request param `label_names[]`.
 
-As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
-cutting between the calls.
+Two methods of counting are available, `inmemory` and `active`. This choice is controlled via the `count_method` parameter.
+
+The `inmemory` counting method counts the number of series using all values from currently opened TSDBs in ingesters.
+Two subsequent calls may return completely different results, if ingester did a block cutting between the calls.
+This method of counting is most useful for understanding ingester memory usage.
+
+The `active` counting method counts also uses values from currently opened TSDBs in ingesters, but it filters out series that have not received a sample within active series idle timeout.
+The duration of this timeout is controlled via the `ingester.active-series-metrics-idle-timeout` parameter.
+This method of counting is most useful for understanding which label values are contributing to the current sample ingestion in Mimir.
+Two subsequent calls will likely return similar results, as this window of time is not related to the block cutting on ingesters.
+Values will change only as a result of changes in the ingestion rate of Mimir.
 
 The items in the field `labels` are sorted by `series_count` in DESC order and by `label_name` in ASC order.
 The items in the field `cardinality` are sorted by `series_count` in DESC order and by `label_value` in ASC order.
@@ -582,6 +591,7 @@ Requires [authentication](#authentication).
 
 - **label_names[]** - _required_ - specifies labels for which cardinality must be provided.
 - **selector** - _optional_ - specifies PromQL selector that will be used to filter series that must be analyzed.
+- **count_method** - _optional_ - specifies which series counting method will be used. (default="inmemory", available options=["inmemory", "active"])
 - **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0, max=500).
 
 #### Response schema
