@@ -353,6 +353,10 @@ overrides_exporter:
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
+
+# (experimental) Enables optimized marshaling of timeseries.
+# CLI flag: -timeseries-unmarshal-caching-optimization-enabled
+[timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
 ```
 
 ### common
@@ -4101,7 +4105,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
 # STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA,
-# INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
+# INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
 # CLI flag: -<prefix>.s3.storage-class
 [storage_class: <string> | default = ""]
 
