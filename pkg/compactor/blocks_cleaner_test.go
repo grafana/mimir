@@ -734,7 +734,7 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
 	checkBlock(t, "user-1", bucketClient, block2, true, false)
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", log.NewNopLogger()))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 
 	// check that no blocks were marked for deletion, because deletion delay is set to 0.
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
@@ -744,7 +744,7 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	// The delay time must be very short since these temporary files were just created
 	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Nanosecond
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", log.NewNopLogger()))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 
 	// check that first block was marked for deletion (partial block updated far in the past), but not the second one, because it's not partial.
 	checkBlock(t, "user-1", bucketClient, block1, false, true)
@@ -818,11 +818,11 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Hour
 	cfgProvider.userPartialBlockDelay["user-2"] = 1 * time.Nanosecond
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", log.NewNopLogger()))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 	checkBlock(t, "user-1", bucketClient, block1, false, false) // This block was updated too recently, so we don't mark it for deletion just yet.
 	checkBlock(t, "user-2", bucketClient, block2, true, false)  // No change for user-2.
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-2", log.NewNopLogger()))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-2", logger))
 	checkBlock(t, "user-1", bucketClient, block1, false, false) // No change for user-1
 	checkBlock(t, "user-2", bucketClient, block2, true, false)  // Block with corrupted meta is NOT marked for deletion.
 
@@ -884,7 +884,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 
 	// Run the cleanup.
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", log.NewNopLogger()))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 
 	// Ensure the block has NOT been marked for deletion.
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
