@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
+* [FEATURE] Cardinality API: Add a new `count_method` parameter which enables counting active series #5136
 * [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 
 ### Mixin
