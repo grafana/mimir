@@ -18,7 +18,7 @@ jobs:
   conftest:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
+      image: grafana/mimir-build-image:felix-update-go-to-1.20.5-31cf42ae2
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
