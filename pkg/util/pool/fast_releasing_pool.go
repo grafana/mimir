@@ -35,8 +35,8 @@ const (
 
 // Release decreases reference counter for given slab ID. (Slab ids equal to or less than 0 are ignored).
 // If reference counter is 0, slab may be returned to the delegate pool.
-func (b *FastReleasingSlabPool[T]) Release(slabId int) {
-	if slabId <= 0 {
+func (b *FastReleasingSlabPool[T]) Release(slabID int) {
+	if slabID <= 0 {
 		return
 	}
 
@@ -51,11 +51,11 @@ func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	if slabId >= len(b.slabs) {
-		panic(fmt.Sprintf("invalid slab id: %d", slabId))
+	if slabID >= len(b.slabs) {
+		panic(fmt.Sprintf("invalid slab id: %d", slabID))
 	}
 
-	ts := b.slabs[slabId]
+	ts := b.slabs[slabID]
 	if ts == nil {
 		panic("nil slab")
 	}
@@ -66,7 +66,7 @@ func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 
 	ts.references--
 	if ts.references == 0 {
-		b.slabs[slabId] = nil
+		b.slabs[slabID] = nil
 		slabToRelease = ts.slab
 	}
 }
@@ -86,20 +86,20 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	slabId := 0
+	slabID := 0
 	ts := (*trackedSlab[T])(nil)
 
 	// Look at last few slabs, since we assume that these slabs have the most free space.
 	for sid := len(b.slabs) - 1; sid >= len(b.slabs)-freeSlabChecks && sid >= 0; sid-- {
 		s := b.slabs[sid]
 		if s != nil && len(s.slab)-s.nextFreeIndex >= size {
-			slabId = sid
+			slabID = sid
 			ts = s
 			break
 		}
 	}
 
-	if slabId == 0 {
+	if slabID == 0 {
 		var slab []T
 
 		if fromDelegate := b.delegate.Get(); fromDelegate != nil {
@@ -111,7 +111,7 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 		ts = &trackedSlab[T]{
 			slab: slab,
 		}
-		slabId = len(b.slabs)
+		slabID = len(b.slabs)
 		b.slabs = append(b.slabs, ts)
 	}
 
@@ -119,5 +119,5 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 	ts.nextFreeIndex += size
 	ts.references++
 
-	return out, slabId
+	return out, slabID
 }

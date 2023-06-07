@@ -21,24 +21,23 @@ import (
 
 func setupGrpc(t testing.TB) (*mockServer, *grpc.ClientConn) {
 	server := grpc.NewServer()
-	l, err := net.Listen("tcp", "127.0.0.1:")
-	require.NoError(t, err)
 
 	ingServ := &mockServer{}
-
 	RegisterIngesterServer(server, ingServ)
 
-	go func() {
-		_ = server.Serve(l)
-	}()
-
+	l, err := net.Listen("tcp", "127.0.0.1:")
+	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = l.Close()
 	})
 
+	// Start gRPC server.
+	go func() {
+		_ = server.Serve(l)
+	}()
+
 	c, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
-
 	t.Cleanup(func() {
 		_ = c.Close()
 	})
