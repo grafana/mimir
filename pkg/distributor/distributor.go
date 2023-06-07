@@ -590,7 +590,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS int64) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS int64) error {
 	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
@@ -621,7 +621,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	}
 
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
-		mimirpb.ClearExemplars(ts.TimeSeries)
+		ts.ClearExemplars()
 		return nil
 	}
 
@@ -635,12 +635,8 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 			return err
 		}
 		if !validation.ExemplarTimestampOK(d.exemplarValidationMetrics, userID, minExemplarTS, e) {
-			// Delete this exemplar by moving the last one on top and shortening the slice
-			last := len(ts.Exemplars) - 1
-			if i < last {
-				ts.Exemplars[i] = ts.Exemplars[last]
-			}
-			ts.Exemplars = ts.Exemplars[:last]
+			ts.DeleteExemplarByMovingLast(i)
+			// Don't increase index i. After moving last exemplar to this index, we want to check it again.
 			continue
 		}
 		i++
@@ -865,7 +861,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		// (If we didn't find any samples this will be 0, and we won't reject any exemplars.)
 		var minExemplarTS int64
 		if earliestSampleTimestampMs != math.MaxInt64 {
-			minExemplarTS = earliestSampleTimestampMs - 300000
+			minExemplarTS = earliestSampleTimestampMs - 5*time.Minute.Milliseconds()
 		}
 
 		var firstPartialErr error
@@ -880,7 +876,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, ts, userID, group, skipLabelNameValidation, minExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelNameValidation, minExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.

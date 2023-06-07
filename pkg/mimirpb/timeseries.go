@@ -142,6 +142,21 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 	p.clearUnmarshalData()
 }
 
+func (p *PreallocTimeseries) ClearExemplars() {
+	ClearExemplars(p.TimeSeries)
+	p.clearUnmarshalData()
+}
+
+// DeleteExemplarByMovingLast deletes the exemplar by moving the last one on top and shortening the slice
+func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
+	last := len(p.Exemplars) - 1
+	if ix < last {
+		p.Exemplars[ix] = p.Exemplars[last]
+	}
+	p.Exemplars = p.Exemplars[:last]
+	p.clearUnmarshalData()
+}
+
 // clearUnmarshalData removes cached unmarshalled version of the message.
 func (p *PreallocTimeseries) clearUnmarshalData() {
 	p.marshalledData = nil

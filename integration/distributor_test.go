@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -26,10 +27,15 @@ func TestDistributor(t *testing.T) {
 	queryStart := queryEnd.Add(-1 * time.Hour)
 	queryStep := 10 * time.Minute
 
+	overridesWithExemplars := func(maxExemplars int) string {
+		return fmt.Sprintf("overrides:\n  \"%s\":\n    max_global_exemplars_per_user: %d\n", userID, maxExemplars)
+	}
+
 	testCases := map[string]struct {
-		inSeries      [][]prompb.TimeSeries
-		runtimeConfig string
-		queries       map[string]model.Matrix
+		inSeries        [][]prompb.TimeSeries
+		runtimeConfig   string
+		queries         map[string]model.Matrix
+		exemplarQueries map[string][]promv1.ExemplarQueryResult
 	}{
 		"no special features": {
 			inSeries: [][]prompb.TimeSeries{{{
@@ -149,6 +155,56 @@ overrides:
         action: replace
 `,
 		},
+
+		"series with exemplars": {
+			inSeries: [][]prompb.TimeSeries{{{
+				Labels:    []prompb.Label{{Name: "__name__", Value: "foobar_with_exemplars"}},
+				Samples:   []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+				Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "test", Value: "test"}}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
+			}}},
+			exemplarQueries: map[string][]promv1.ExemplarQueryResult{
+				"foobar_with_exemplars": {{
+					SeriesLabels: model.LabelSet{
+						"__name__": "foobar_with_exemplars",
+					},
+					Exemplars: []promv1.Exemplar{{
+						Labels:    model.LabelSet{"test": "test"},
+						Value:     123.0,
+						Timestamp: model.Time(queryStart.UnixMilli()),
+					}},
+				}},
+			},
+			runtimeConfig: overridesWithExemplars(100),
+		},
+
+		"series with old exemplars": {
+			inSeries: [][]prompb.TimeSeries{{{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "foobar_with_old_exemplars"}},
+				Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+				Exemplars: []prompb.Exemplar{{
+					Labels:    []prompb.Label{{Name: "test", Value: "test"}},
+					Value:     123.0,
+					Timestamp: queryStart.Add(-10 * time.Minute).UnixMilli(), // Exemplars older than 10 minutes from oldest sample for the series in the request are dropped by distributor.
+				}},
+			}}},
+			exemplarQueries: map[string][]promv1.ExemplarQueryResult{
+				"foobar_with_old_exemplars": {},
+			},
+			runtimeConfig: overridesWithExemplars(100),
+		},
+
+		"sending series with exemplars, when exemplars are disabled": {
+			inSeries: [][]prompb.TimeSeries{{{
+				Labels:    []prompb.Label{{Name: "__name__", Value: "foobar_with_exemplars_disabled"}},
+				Samples:   []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+				Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "test", Value: "test"}}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
+			}}},
+			exemplarQueries: map[string][]promv1.ExemplarQueryResult{
+				"foobar_with_exemplars_disabled": {},
+			},
+			// By disabling exemplars via runtime config, distributor will stop sending them to ingester.
+			runtimeConfig: overridesWithExemplars(0),
+		},
 	}
 
 	s, err := e2e.NewScenario(networkName)
@@ -171,8 +227,6 @@ overrides:
 		"-distributor.ha-tracker.store":                "consul",
 		"-distributor.ha-tracker.consul.hostname":      consul.NetworkHTTPEndpoint(),
 		"-distributor.ha-tracker.prefix":               "prom_ha/",
-		"-runtime-config.file":                         filepath.Join(e2e.ContainerSharedDir, "runtime.yaml"),
-		"-runtime-config.reload-period":                "100ms",
 	}
 
 	flags := mergeFlags(
@@ -181,9 +235,23 @@ overrides:
 		baseFlags,
 	)
 
+	// We want only distributor to be reloading runtime config.
+	distributorFlags := mergeFlags(flags, map[string]string{
+		"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, "runtime.yaml"),
+		"-runtime-config.reload-period": "100ms",
+		// Set non-zero default for number of exemplars. That way our values used in the test (0 and 100) will show up in runtime config diff.
+		"-ingester.max-global-exemplars-per-user": "3",
+	})
+
+	// Ingester will not reload runtime config.
+	ingesterFlags := mergeFlags(flags, map[string]string{
+		// Ingester will always see exemplars enabled. We do this to avoid waiting for ingester to apply new setting to TSDB.
+		"-ingester.max-global-exemplars-per-user": "100",
+	})
+
 	// Start Mimir components.
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), distributorFlags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
 
@@ -232,6 +300,13 @@ overrides:
 				require.NoError(t, err)
 
 				require.Equal(t, res.String(), result.String())
+			}
+
+			for q, expResult := range tc.exemplarQueries {
+				result, err := client.QueryExemplars(q, queryStart, queryEnd)
+				require.NoError(t, err)
+
+				require.Equal(t, expResult, result)
 			}
 		})
 	}
