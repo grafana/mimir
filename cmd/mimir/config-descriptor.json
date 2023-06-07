@@ -1476,6 +1476,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "write_requests_buffer_pooling_enabled",
+          "required": false,
+          "desc": "Enable pooling of buffers used for marshaling write requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.write-request-buffer-pooling-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
