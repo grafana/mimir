@@ -25,7 +25,11 @@ var (
 )
 
 // ReadIndex reads, parses and returns a bucket index from the bucket.
+// ReadIndex has a one-minute timeout for completing the read against the bucket.
 func ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) (*Index, error) {
+	ctx, cancel := context.WithTimeout(ctx, readIndexTimeout)
+	defer cancel()
+
 	userBkt := bucket.NewUserBucketClient(userID, bkt, cfgProvider)
 
 	// Get the bucket index.

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"io"
 	"path"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
@@ -90,7 +91,12 @@ type NoCompactMark struct {
 func (n *NoCompactMark) markerFilename() string { return NoCompactMarkFilename }
 
 // ReadMarker reads the given mark file from <dir>/<marker filename>.json in bucket.
+// ReadMarker has a one-minute timeout for completing the read against the bucket.
+// This protects against operations that can take unbounded time.
 func ReadMarker(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, marker Marker) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
 	markerFile := path.Join(dir, marker.markerFilename())
 	r, err := bkt.ReaderWithExpectedErrs(bkt.IsObjNotFoundErr).Get(ctx, markerFile)
 	if err != nil {
