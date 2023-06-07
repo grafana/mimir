@@ -1,45 +1,205 @@
 package pool
 
 import (
-	"fmt"
 	"math/rand"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewFastReleasingSlabPool(t *testing.T) {
+func TestFastReleasingSlabPool(t *testing.T) {
+	t.Run("byte slices do not overlap when fit on the same slab", func(t *testing.T) {
+		delegatePool := &TrackedPool{Parent: &sync.Pool{}}
+		slabPool := NewFastReleasingSlabPool[byte](delegatePool, 10)
+
+		sliceA, slabIdA := slabPool.Get(5)
+		require.Len(t, sliceA, 5)
+		require.Equal(t, 5, cap(sliceA))
+		copy(sliceA, "12345")
+
+		sliceB, slabIdB := slabPool.Get(5)
+		require.Len(t, sliceB, 5)
+		require.Equal(t, 5, cap(sliceB))
+		copy(sliceB, "67890")
+
+		require.Equal(t, "12345", string(sliceA))
+		require.Equal(t, "67890", string(sliceB))
+
+		require.Equal(t, 2, len(slabPool.slabs)) // first slab (id=0) is always nil
+		require.Nil(t, slabPool.slabs[0])
+		require.Equal(t, 2, slabPool.slabs[1].references)
+		require.Equal(t, 10, slabPool.slabs[1].nextFreeIndex)
+
+		slabPool.Release(slabIdA)
+
+		require.Equal(t, 2, len(slabPool.slabs))
+		require.Nil(t, slabPool.slabs[0])
+		require.Equal(t, 1, slabPool.slabs[1].references)
+		require.Equal(t, 10, slabPool.slabs[1].nextFreeIndex)
+
+		slabPool.Release(slabIdB)
+
+		require.Equal(t, 2, len(slabPool.slabs))
+		require.Nil(t, slabPool.slabs[0])
+		require.Nil(t, slabPool.slabs[1])
+
+		// Allocating another slice needs a new slab.
+		sliceC, slabIdC := slabPool.Get(5)
+		require.Len(t, sliceC, 5)
+		require.Equal(t, 5, cap(sliceB))
+
+		require.Equal(t, 3, len(slabPool.slabs))
+		require.Nil(t, slabPool.slabs[0])
+		require.Nil(t, slabPool.slabs[1])
+		require.Equal(t, 1, slabPool.slabs[2].references)
+		require.Equal(t, 5, slabPool.slabs[2].nextFreeIndex)
+
+		slabPool.Release(slabIdC)
+
+		require.Equal(t, 3, len(slabPool.slabs))
+		require.Nil(t, slabPool.slabs[0])
+		require.Nil(t, slabPool.slabs[1])
+		require.Nil(t, slabPool.slabs[2])
+
+		require.Zero(t, delegatePool.Balance.Load())
+		require.Equal(t, int(delegatePool.Gets.Load()), 2)
+	})
+
+	t.Run("a new slab is created when the new slice doesn't fit on an existing one", func(t *testing.T) {
+		delegatePool := &TrackedPool{Parent: &sync.Pool{}}
+		slabPool := NewFastReleasingSlabPool[byte](delegatePool, 10)
+
+		sliceA, slabIdA := slabPool.Get(5)
+		assert.Len(t, sliceA, 5)
+		assert.Equal(t, 5, cap(sliceA))
+		copy(sliceA, "12345")
+
+		require.Equal(t, 2, len(slabPool.slabs))
+		require.Equal(t, 10, len(slabPool.slabs[1].slab))
+		require.Equal(t, 5, slabPool.slabs[1].nextFreeIndex)
+		require.Equal(t, 1, slabPool.slabs[1].references)
+
+		// Size doesn't fit the existing slab, so a new one will be created.
+		sliceB, slabIdB := slabPool.Get(6)
+		assert.Len(t, sliceB, 6)
+		assert.Equal(t, 6, cap(sliceB))
+		copy(sliceB, "67890-")
+
+		require.Equal(t, 3, len(slabPool.slabs))
+		require.Nil(t, slabPool.slabs[0])
+		require.Equal(t, 10, len(slabPool.slabs[1].slab))
+		require.Equal(t, 5, slabPool.slabs[1].nextFreeIndex)
+		require.Equal(t, 1, slabPool.slabs[1].references)
+		require.Equal(t, 10, len(slabPool.slabs[2].slab))
+		require.Equal(t, 6, slabPool.slabs[2].nextFreeIndex)
+		require.Equal(t, 1, slabPool.slabs[2].references)
+
+		// Size fits in the last slab.
+		sliceC, slabIdC := slabPool.Get(3)
+		assert.Len(t, sliceC, 3)
+		assert.Equal(t, 3, cap(sliceC))
+		copy(sliceC, "abc")
+
+		require.Equal(t, 3, len(slabPool.slabs))
+		require.Nil(t, slabPool.slabs[0])
+		require.Equal(t, 10, len(slabPool.slabs[1].slab))
+		require.Equal(t, 5, slabPool.slabs[1].nextFreeIndex)
+		require.Equal(t, 1, slabPool.slabs[1].references)
+		require.Equal(t, 10, len(slabPool.slabs[2].slab))
+		require.Equal(t, 9, slabPool.slabs[2].nextFreeIndex)
+		require.Equal(t, 2, slabPool.slabs[2].references)
+
+		// Size fits in the previous last slab.
+		sliceD, slabIdD := slabPool.Get(3)
+		assert.Len(t, sliceD, 3)
+		assert.Equal(t, 3, cap(sliceD))
+		copy(sliceD, "def")
+
+		require.Equal(t, 3, len(slabPool.slabs))
+		require.Nil(t, slabPool.slabs[0])
+		require.Equal(t, 10, len(slabPool.slabs[1].slab))
+		require.Equal(t, 8, slabPool.slabs[1].nextFreeIndex)
+		require.Equal(t, 2, slabPool.slabs[1].references)
+		require.Equal(t, 10, len(slabPool.slabs[2].slab))
+		require.Equal(t, 9, slabPool.slabs[2].nextFreeIndex)
+		require.Equal(t, 2, slabPool.slabs[2].references)
+
+		assert.Equal(t, "12345", string(sliceA))
+		assert.Equal(t, "67890-", string(sliceB))
+		assert.Equal(t, "abc", string(sliceC))
+		assert.Equal(t, "def", string(sliceD))
+
+		slabPool.Release(slabIdA)
+		slabPool.Release(slabIdB)
+		slabPool.Release(slabIdC)
+		slabPool.Release(slabIdD)
+
+		require.Equal(t, 3, len(slabPool.slabs))
+		require.Nil(t, slabPool.slabs[0])
+		require.Nil(t, slabPool.slabs[1])
+		require.Nil(t, slabPool.slabs[2])
+
+		require.Zero(t, delegatePool.Balance.Load())
+		require.Greater(t, int(delegatePool.Gets.Load()), 0)
+	})
+}
+
+func TestFastReleasingSlabPool_Fuzzy(t *testing.T) {
+	const (
+		numRuns           = 100
+		numRequestsPerRun = 100
+		slabSize          = 100
+	)
+
+	type assertion struct {
+		expected []byte
+		actual   []byte
+		slabId   int
+	}
+
 	delegatePool := &TrackedPool{Parent: &sync.Pool{}}
 
-	const slabSize = 1024
-	const slabsToGet = 100
-
-	s := NewFastReleasingSlabPool[byte](delegatePool, slabSize)
-
+	// Randomise the seed but log it in case we need to reproduce the test on failure.
 	seed := time.Now().UnixNano()
-	r := rand.New(rand.NewSource(seed))
+	rnd := rand.New(rand.NewSource(seed))
+	t.Log("random generator seed:", seed)
 
-	totalSize := 0
-	var slabs []int
-	for i := 0; i < slabsToGet; i++ {
-		size := r.Intn(256) + 100
-		bs, si := s.Get(size)
-		slabs = append(slabs, si)
+	for r := 0; r < numRuns; r++ {
+		slabPool := NewFastReleasingSlabPool[byte](delegatePool, slabSize)
+		var assertions []assertion
 
-		require.Equal(t, size, len(bs))
-		require.Equal(t, size, cap(bs))
+		for n := 0; n < numRequestsPerRun; n++ {
+			// Get a random size between 1 and (slabSize + 10)
+			size := 1 + rnd.Intn(slabSize+9)
 
-		totalSize += size
+			slice, slabId := slabPool.Get(size)
+
+			// Write some data to the slice.
+			expected := make([]byte, size)
+			_, err := rnd.Read(expected)
+			require.NoError(t, err)
+
+			copy(slice, expected)
+
+			// Keep track of it, so we can check no data was overwritten later on.
+			assertions = append(assertions, assertion{
+				expected: expected,
+				actual:   slice,
+				slabId:   slabId,
+			})
+		}
+
+		// Ensure no data was overwritten.
+		for _, assertion := range assertions {
+			require.Equal(t, assertion.expected, assertion.actual)
+
+			slabPool.Release(assertion.slabId)
+		}
+
+		require.Zero(t, delegatePool.Balance.Load())
+		require.Greater(t, int(delegatePool.Gets.Load()), 0)
 	}
-
-	// Return all slabs
-	for _, si := range slabs {
-		s.Release(si)
-	}
-
-	fmt.Println("total size:", totalSize, "slabs:", delegatePool.Gets.Load(), "balance:", delegatePool.Balance.Load())
-	require.Greater(t, delegatePool.Gets.Load(), int64(0))
-	require.Equal(t, int64(0), delegatePool.Balance.Load())
 }

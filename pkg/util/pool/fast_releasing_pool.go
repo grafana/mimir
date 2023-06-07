@@ -20,6 +20,7 @@ type trackedSlab[T any] struct {
 	nextFreeIndex int
 }
 
+// NewFastReleasingSlabPool returns new "fast-releasing" slab pool.
 func NewFastReleasingSlabPool[T any](delegate Interface, slabSize int) *FastReleasingSlabPool[T] {
 	return &FastReleasingSlabPool[T]{
 		delegate: delegate,
