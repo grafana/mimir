@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -31,7 +32,7 @@ const (
 	freeSlabChecks = 3
 )
 
-// Release decreases reference counter for given slab.
+// Release decreases reference counter for given slab ID. (Slab ids equal or less than 0 are ignored).
 // If reference counter is 0, slab may be returned to the delegate pool.
 func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 	if slabId <= 0 {
@@ -40,7 +41,7 @@ func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 
 	var slabToRelease []T
 	defer func() {
-		// Return of the slab is done via defer, so that it can be done without the lock.
+		// Return of the slab is done via defer, so that it can be done outside the lock.
 		if slabToRelease != nil {
 			b.delegate.Put(slabToRelease)
 		}
@@ -50,12 +51,16 @@ func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 	defer b.mtx.Unlock()
 
 	if slabId >= len(b.slabs) {
-		panic("invalid slabId")
+		panic(fmt.Sprintf("invalid slab id: %d", slabId))
 	}
 
 	ts := b.slabs[slabId]
-	if ts == nil || ts.references <= 0 {
-		panic("invalid reference count")
+	if ts == nil {
+		panic("nil slab")
+	}
+	if ts.references <= 0 {
+		// This should never happen, because we release slabs with 0 references immediately.
+		panic(fmt.Sprintf("invalid reference count: %d", ts.references))
 	}
 
 	ts.references--
@@ -83,7 +88,7 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 	slabId := 0
 	ts := (*trackedSlab[T])(nil)
 
-	// Look at last few slabs (with most free space).
+	// Look at last few slabs, since we assume that these slabs has most free space.
 	for sid := len(b.slabs) - 1; sid >= len(b.slabs)-freeSlabChecks && sid >= 0; sid-- {
 		s := b.slabs[sid]
 		if s != nil && len(s.slab)-s.nextFreeIndex >= size {
@@ -96,10 +101,10 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 	if slabId == 0 {
 		var slab []T
 
-		if fromDelegate := b.delegate.Get(); fromDelegate == nil {
-			slab = make([]T, b.slabSize, b.slabSize)
-		} else {
+		if fromDelegate := b.delegate.Get(); fromDelegate != nil {
 			slab = (fromDelegate).([]T)
+		} else {
+			slab = make([]T, b.slabSize, b.slabSize)
 		}
 
 		ts = &trackedSlab[T]{

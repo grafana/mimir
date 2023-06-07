@@ -169,6 +169,8 @@ type Config struct {
 	// and access the deserialized write requests before/after they are pushed.
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
+
+	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -182,6 +184,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
+	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-request-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -1206,10 +1209,16 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Metadata:   metadata,
 		Source:     source,
 	}
-	wrappedReq := &wrappedRequest{WriteRequest: &req, slabPool: slabPool}
-	defer wrappedReq.ReturnSliceToPool()
 
-	_, err = ingester_client.PushRaw(ctx, c, wrappedReq)
+	if d.cfg.WriteRequestsBufferPoolingEnabled {
+		wrappedReq := &wrappedRequest{WriteRequest: &req, slabPool: slabPool}
+		defer wrappedReq.ReturnSliceToPoolIfNeeded()
+
+		_, err = ingester_client.PushRaw(ctx, c, wrappedReq)
+	} else {
+		_, err = c.Push(ctx, &req)
+	}
+
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
@@ -1227,23 +1236,24 @@ type wrappedRequest struct {
 }
 
 func (w *wrappedRequest) Marshal() ([]byte, error) {
-	w.ReturnSliceToPool()
-
+	w.ReturnSliceToPoolIfNeeded()
 	size := w.WriteRequest.Size()
 	buf, slabId := w.slabPool.Get(size)
 
 	w.slabId = slabId
 
-	n, err := w.WriteRequest.MarshalToSizedBuffer(buf)
+	n, err := w.WriteRequest.MarshalToSizedBuffer(buf[:size])
 	if err != nil {
 		return nil, err
 	}
 	return buf[:n], nil
 }
 
-func (w *wrappedRequest) ReturnSliceToPool() {
-	w.slabPool.Release(w.slabId)
-	w.slabId = 0
+func (w *wrappedRequest) ReturnSliceToPoolIfNeeded() {
+	if w.slabId > 0 && w.slabPool != nil {
+		w.slabPool.Release(w.slabId)
+		w.slabId = 0
+	}
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
