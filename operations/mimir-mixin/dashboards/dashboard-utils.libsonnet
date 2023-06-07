@@ -690,6 +690,74 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  barChart(queries, legends='', thresholds=[], unit='short', min=null, max=null)::
+    super.queryPanel(queries, legends) + {
+      type: 'barchart',
+      targets: [
+        target {
+          // Reset defaults from queryPanel().
+          format: null,
+          intervalFactor: null,
+          step: null,
+        }
+        for target in super.targets
+      ],
+      fieldConfig: {
+        defaults: {
+          color: { mode: 'thresholds' },
+          mappings: [],
+          max: max,
+          min: min,
+          thresholds: {
+            mode: 'absolute',
+            steps: thresholds,
+          },
+          unit: unit,
+          custom: {
+            lineWidth: 1,
+            fillOpacity: 80,
+            gradientMode: 'none',
+            axisPlacement: 'auto',
+            axisLabel: '',
+            axisColorMode: 'text',
+            scaleDistribution: {
+              type: 'linear',
+            },
+            axisCenteredZero: false,
+            hideFrom: {
+              tooltip: false,
+              viz: false,
+              legend: false,
+            },
+            thresholdsStyle: {
+              mode: 'off',
+            },
+          },
+        },
+      },
+      options: {
+        orientation: 'auto',
+        xTickLabelRotation: 0,
+        xTickLabelSpacing: 0,
+        showValue: 'auto',
+        stacking: 'none',
+        groupWidth: 0.7,
+        barWidth: 0.97,
+        barRadius: 0,
+        fullHighlight: false,
+        tooltip: {
+          mode: 'single',
+          sort: 'none',
+        },
+        legend: {
+          showLegend: true,
+          displayMode: 'list',
+          placement: 'bottom',
+          calcs: [],
+        },
+      },
+    },
+
   // Switches a panel from lines (default) to bars.
   bars:: {
     bars: true,
