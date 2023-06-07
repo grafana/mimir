@@ -82,6 +82,7 @@ type Distributor struct {
 	ingestersRing ring.ReadRing
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
+	bytesPool     sync.Pool
 
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
@@ -1129,7 +1130,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	cleanupInDefer = false
 
 	if d.cfg.WriteRequestsBufferPoolingEnabled {
-		slabPool := pool2.NewFastReleasingSlabPool[byte](pool, writeRequestSlabPoolSize)
+		slabPool := pool2.NewFastReleasingSlabPool[byte](d.bytesPool, writeRequestSlabPoolSize)
 		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
 	}
 
@@ -1223,8 +1224,6 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	}
 	return errors.Wrap(err, "failed pushing to ingester")
 }
-
-var pool = &sync.Pool{}
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
 func (d *Distributor) forReplicationSet(ctx context.Context, replicationSet ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (interface{}, error)) ([]interface{}, error) {
