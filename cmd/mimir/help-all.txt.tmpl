@@ -60,7 +60,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -alertmanager-storage.s3.storage-class string
-    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
   -alertmanager-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -alertmanager-storage.storage-prefix string
@@ -662,7 +662,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -blocks-storage.s3.storage-class string
-    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
   -blocks-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -blocks-storage.storage-prefix string
@@ -812,7 +812,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -common.storage.s3.storage-class string
-    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
   -common.storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -common.storage.swift.auth-url string
@@ -2022,7 +2022,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -ruler-storage.s3.storage-class string
-    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
   -ruler-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -ruler-storage.storage-prefix string
