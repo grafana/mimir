@@ -49,7 +49,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 
@@ -1366,9 +1365,9 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 
 	var postingsForMatchersFn func(ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
 	switch req.GetCountMethod() {
-	case string(querier.InMemoryMethod):
+	case client.IN_MEMORY:
 		postingsForMatchersFn = tsdb.PostingsForMatchers
-	case string(querier.ActiveMethod):
+	case client.ACTIVE:
 		postingsForMatchersFn = func(ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			postings, err := tsdb.PostingsForMatchers(ix, ms...)
 			if err != nil {
@@ -1396,9 +1395,9 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserSt
 
 	var series uint64
 	switch req.GetCountMethod() {
-	case string(querier.InMemoryMethod):
+	case client.IN_MEMORY:
 		series = db.Head().NumSeries()
-	case string(querier.ActiveMethod):
+	case client.ACTIVE:
 		activeSeries := db.activeSeries.Active()
 		series = uint64(activeSeries)
 	default:

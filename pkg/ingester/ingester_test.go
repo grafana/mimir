@@ -56,7 +56,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -4469,7 +4468,7 @@ func Test_Ingester_UserStats(t *testing.T) {
 	assert.InDelta(t, float64(0), res.RuleIngestionRate, 0.0001)
 	assert.Equal(t, uint64(3), res.NumSeries)
 
-	res, err = i.UserStats(ctx, &client.UserStatsRequest{CountMethod: string(querier.ActiveMethod)})
+	res, err = i.UserStats(ctx, &client.UserStatsRequest{CountMethod: client.IN_MEMORY})
 	require.NoError(t, err)
 	assert.InDelta(t, 0.2, res.ApiIngestionRate, 0.0001)
 	assert.InDelta(t, float64(0), res.RuleIngestionRate, 0.0001)

@@ -1506,7 +1506,22 @@ func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*l
 	for _, labelName := range labelNames {
 		labelNamesStr = append(labelNamesStr, string(labelName))
 	}
-	return &ingester_client.LabelValuesCardinalityRequest{LabelNames: labelNamesStr, Matchers: matchersProto, CountMethod: string(countMethod)}, nil
+	ingesterCountMethod, err := toIngesterCountMethod(countMethod)
+	if err != nil {
+		return nil, err
+	}
+	return &ingester_client.LabelValuesCardinalityRequest{LabelNames: labelNamesStr, Matchers: matchersProto, CountMethod: ingesterCountMethod}, nil
+}
+
+func toIngesterCountMethod(countMethod querier.CountMethod) (ingester_client.CountMethod, error) {
+	switch countMethod {
+	case querier.InMemoryMethod:
+		return ingester_client.IN_MEMORY, nil
+	case querier.ActiveMethod:
+		return ingester_client.ACTIVE, nil
+	default:
+		return ingester_client.IN_MEMORY, fmt.Errorf("unknown count method %q", countMethod)
+	}
 }
 
 type labelValuesCardinalityConcurrentMap struct {
@@ -1744,8 +1759,12 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod querier.CountMe
 		resp *ingester_client.UserStatsResponse
 	}
 
+	ingesterCountMethod, err := toIngesterCountMethod(countMethod)
+	if err != nil {
+		return nil, err
+	}
 	req := &ingester_client.UserStatsRequest{
-		CountMethod: string(countMethod),
+		CountMethod: ingesterCountMethod,
 	}
 	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
 		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)

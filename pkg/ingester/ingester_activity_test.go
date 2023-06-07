@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/querier"
 )
 
 func TestRequestActivity(t *testing.T) {
@@ -29,8 +28,8 @@ func TestRequestActivity(t *testing.T) {
 			expected: "test: user=\"\" trace=\"\" request=&MetricsMetadataRequest{}",
 		},
 		{
-			request:  &client.LabelValuesCardinalityRequest{LabelNames: []string{"hello", "world"}, Matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "test", Value: "value"}}, CountMethod: string(querier.InMemoryMethod)},
-			expected: "test: user=\"\" trace=\"\" request=&LabelValuesCardinalityRequest{LabelNames:[hello world],Matchers:[]*LabelMatcher{&LabelMatcher{Type:EQUAL,Name:test,Value:value,},},CountMethod:\"inmemory\",}",
+			request:  &client.LabelValuesCardinalityRequest{LabelNames: []string{"hello", "world"}, Matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "test", Value: "value"}}, CountMethod: client.IN_MEMORY},
+			expected: "test: user=\"\" trace=\"\" request=&LabelValuesCardinalityRequest{LabelNames:[hello world],Matchers:[]*LabelMatcher{&LabelMatcher{Type:EQUAL,Name:test,Value:value,},},CountMethod:IN_MEMORY,}",
 		},
 	} {
 		assert.Equal(t, tc.expected, requestActivity(context.Background(), "test", tc.request))

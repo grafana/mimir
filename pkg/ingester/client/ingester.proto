@@ -51,10 +51,15 @@ message LabelValues {
   repeated string values = 2;
 }
 
+enum CountMethod {
+  IN_MEMORY = 0;
+  ACTIVE = 1;
+}
+
 message LabelValuesCardinalityRequest {
   repeated string label_names = 1;
   repeated LabelMatcher matchers = 2;
-  string count_method = 3;
+  CountMethod count_method = 3;
 }
 
 message LabelValuesCardinalityResponse {
@@ -181,7 +186,7 @@ message LabelNamesResponse {
 }
 
 message UserStatsRequest {
-  string count_method = 1;
+  CountMethod count_method = 1;
 }
 
 message UserStatsResponse {
