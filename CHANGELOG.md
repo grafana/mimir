@@ -89,6 +89,7 @@
 * [ENHANCEMENT] Update Docker base images from `alpine:3.17.3` to `alpine:3.18.0`. #5065
 * [ENHANCEMENT] Compactor: reduced the number of "object exists" API calls issued by the compactor to the object storage when syncing block's `meta.json` files. #5063
 * [ENHANCEMENT] Distributor: Push request rate limits (`-distributor.request-rate-limit` and `-distributor.request-burst-size`) and their associated YAML configuration are now stable. #5124
+* [ENHANCEMENT] Go: updated to 1.20.5. #5185
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
