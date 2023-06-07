@@ -208,6 +208,7 @@ const (
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
+			clientConfig.WriteRequestsBufferPoolingEnabled = cfg.WriteRequestsBufferPoolingEnabled
 			return ingester_client.MakeIngesterClient(addr, clientConfig)
 		}
 	}
@@ -1125,7 +1126,10 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
-	slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 1024*1024)
+	if d.cfg.WriteRequestsBufferPoolingEnabled {
+		slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 1024*1024)
+		localCtx = ingester_client.WithPool(localCtx, slabPool)
+	}
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
 		var timeseriesCount, metadataCount int
@@ -1148,7 +1152,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 			}
 		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source, slabPool)
+		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1197,7 +1201,7 @@ func copyString(s string) string {
 	return string([]byte(s))
 }
 
-func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum, slabPool *pool2.FastReleasingSlabPool[byte]) error {
+func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
 	if err != nil {
 		return err
@@ -1210,15 +1214,7 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Source:     source,
 	}
 
-	if d.cfg.WriteRequestsBufferPoolingEnabled {
-		wrappedReq := &wrappedRequest{WriteRequest: &req, slabPool: slabPool}
-		defer wrappedReq.ReturnSliceToPoolIfNeeded()
-
-		_, err = ingester_client.PushRaw(ctx, c, wrappedReq)
-	} else {
-		_, err = c.Push(ctx, &req)
-	}
-
+	_, err = c.Push(ctx, &req)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
@@ -1227,34 +1223,6 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 }
 
 var pool = &sync.Pool{}
-
-type wrappedRequest struct {
-	*mimirpb.WriteRequest
-
-	slabPool *pool2.FastReleasingSlabPool[byte]
-	slabId   int
-}
-
-func (w *wrappedRequest) Marshal() ([]byte, error) {
-	w.ReturnSliceToPoolIfNeeded()
-	size := w.WriteRequest.Size()
-	buf, slabId := w.slabPool.Get(size)
-
-	w.slabId = slabId
-
-	n, err := w.WriteRequest.MarshalToSizedBuffer(buf[:size])
-	if err != nil {
-		return nil, err
-	}
-	return buf[:n], nil
-}
-
-func (w *wrappedRequest) ReturnSliceToPoolIfNeeded() {
-	if w.slabId > 0 && w.slabPool != nil {
-		w.slabPool.Release(w.slabId)
-		w.slabId = 0
-	}
-}
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
 func (d *Distributor) forReplicationSet(ctx context.Context, replicationSet ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (interface{}, error)) ([]interface{}, error) {

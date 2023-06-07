@@ -7,11 +7,6 @@ package client
 
 import (
 	context "context"
-	"fmt"
-
-	"google.golang.org/grpc"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // SendQueryStream wraps the stream's Send() checking if the context is done
@@ -77,24 +72,4 @@ func containsChunk(a []Chunk, b Chunk) bool {
 		}
 	}
 	return false
-}
-
-// PushRaw is a copy of (*ingesterClient).Push method, but accepting message with `interface{}` type instead of `*mimirpb.WriteRequest`.
-// Any message that can be marshaled into bytes by gRPC can be passed here.
-func PushRaw(ctx context.Context, client IngesterClient, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	// unwrap client to find *ingesterClient.
-	if c, ok := client.(*closableHealthAndIngesterClient); ok {
-		client = c.IngesterClient
-	}
-	c, ok := client.(*ingesterClient)
-	if !ok {
-		return nil, fmt.Errorf("invalid ingester client: %T", client)
-	}
-
-	out := new(mimirpb.WriteResponse)
-	err := c.cc.Invoke(ctx, "/cortex.Ingester/Push", msg, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }

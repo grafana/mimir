@@ -47,11 +47,19 @@ func MakeIngesterClient(addr string, cfg Config) (HealthAndIngesterClient, error
 	if err != nil {
 		return nil, err
 	}
-	return &closableHealthAndIngesterClient{
-		IngesterClient: NewIngesterClient(conn),
+
+	ingClient := NewIngesterClient(conn)
+	var res HealthAndIngesterClient
+	res = &closableHealthAndIngesterClient{
+		IngesterClient: ingClient,
 		HealthClient:   grpc_health_v1.NewHealthClient(conn),
 		conn:           conn,
-	}, nil
+	}
+
+	if cfg.WriteRequestsBufferPoolingEnabled {
+		res = NewWriteRequestBufferingClient(res, conn)
+	}
+	return res, nil
 }
 
 func (c *closableHealthAndIngesterClient) Close() error {
@@ -60,7 +68,8 @@ func (c *closableHealthAndIngesterClient) Close() error {
 
 // Config is the configuration struct for the ingester client
 type Config struct {
-	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between distributors and ingesters."`
+	GRPCClientConfig                  grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between distributors and ingesters."`
+	WriteRequestsBufferPoolingEnabled bool              `yaml:"-"`
 }
 
 // RegisterFlags registers configuration settings used by the ingester client config.
