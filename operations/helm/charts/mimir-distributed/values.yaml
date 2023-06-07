@@ -1,3 +1,4 @@
+dummyForTest: true
 # Grafana Enterprise Metrics specific values and features are found after the `enterprise:` key
 #
 # The default values specified in this file are enough to deploy all of the
