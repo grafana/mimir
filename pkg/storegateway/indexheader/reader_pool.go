@@ -61,17 +61,17 @@ type HeadersLazyLoadedTracker struct {
 	Path  string
 }
 
-// CopyLazyLoadedState copies the list of lazy loaded block to map tracked by State.
-func (h *HeadersLazyLoadedTracker) CopyLazyLoadedState(lazyReaders map[*LazyBinaryReader]struct{}) {
+// copyLazyLoadedState copies the list of lazy loaded block to map tracked by State.
+func (h *HeadersLazyLoadedTracker) copyLazyLoadedState(lazyReaders map[*LazyBinaryReader]struct{}) {
 	h.State.LazyLoadedBlocks = make(map[string]int64)
 	for r := range lazyReaders {
-		if k.reader != nil {
-			h.State.LazyLoadedBlocks[k.blockID] = k.usedAt.Load() / int64(time.Millisecond)
+		if r.reader != nil {
+			h.State.LazyLoadedBlocks[r.blockID] = r.usedAt.Load() / int64(time.Millisecond)
 		}
 	}
 }
 
-func (h *HeadersLazyLoadedTracker) Persist() error {
+func (h *HeadersLazyLoadedTracker) persist() error {
 	data, err := h.State.Marshal()
 	if err != nil {
 		return err
@@ -104,15 +104,14 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 				select {
 				case <-p.close:
 					return
-				// Persist lazy loaded blocks in file every one minute
-				case <-time.After(1 * time.Minute):
-					// We copy the state of blocks that are being lazy loaded from LazyBinaryReaders.
+				case <-time.After(time.Minute):
+					// We copy the state of blocks that are being lazy loaded from LazyBinaryReaders using lock.
 					p.lazyReadersMx.Lock()
-					p.lazyLoadedTracker.CopyLazyLoadedState(p.lazyReaders)
+					p.lazyLoadedTracker.copyLazyLoadedState(p.lazyReaders)
 					p.lazyReadersMx.Unlock()
 
-					// Then we persist the state to files.
-					if err := p.lazyLoadedTracker.Persist(); err != nil {
+					// Then we persist the state to files so that we are not holding lock for too long.
+					if err := p.lazyLoadedTracker.persist(); err != nil {
 						level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
 					}
 				}

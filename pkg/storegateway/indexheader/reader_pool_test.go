@@ -154,8 +154,8 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
 	// lazyLoaded tracker will track the lazyLoadedBlocks into persistent file
-	pool.lazyLoadedTracker.CopyLazyLoadedState(pool.lazyReaders)
-	err = pool.lazyLoadedTracker.Persist()
+	pool.lazyLoadedTracker.copyLazyLoadedState(pool.lazyReaders)
+	err = pool.lazyLoadedTracker.persist()
 	require.NoError(t, err)
 	require.Greater(t, pool.lazyLoadedTracker.State.LazyLoadedBlocks[blockID.String()], 0, "lazyLoadedBlocks state must be set")
 
@@ -164,8 +164,8 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	pool.closeIdleReaders()
 
 	// lazyLoaded tracker will remove the track from persistent file
-	pool.lazyLoadedTracker.CopyLazyLoadedState(pool.lazyReaders)
-	err = pool.lazyLoadedTracker.Persist()
+	pool.lazyLoadedTracker.copyLazyLoadedState(pool.lazyReaders)
+	err = pool.lazyLoadedTracker.persist()
 	require.NoError(t, err)
 	require.NotContains(t, pool.lazyLoadedTracker.State.LazyLoadedBlocks, blockID.String(), "lazyLoadedBlocks state must be unset")
 }
