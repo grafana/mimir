@@ -49,17 +49,15 @@ func MakeIngesterClient(addr string, cfg Config) (HealthAndIngesterClient, error
 	}
 
 	ingClient := NewIngesterClient(conn)
-	var res HealthAndIngesterClient
-	res = &closableHealthAndIngesterClient{
+	if cfg.WriteRequestsBufferPoolingEnabled {
+		ingClient = NewWriteRequestBufferingClient(ingClient, conn)
+	}
+
+	return &closableHealthAndIngesterClient{
 		IngesterClient: ingClient,
 		HealthClient:   grpc_health_v1.NewHealthClient(conn),
 		conn:           conn,
-	}
-
-	if cfg.WriteRequestsBufferPoolingEnabled {
-		res = NewWriteRequestBufferingClient(res, conn)
-	}
-	return res, nil
+	}, nil
 }
 
 func (c *closableHealthAndIngesterClient) Close() error {

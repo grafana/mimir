@@ -4,31 +4,35 @@ import (
 	"context"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
-// bufferPoolingClient implements IngesterClient, but overrides Push method to add pooling of buffers used to marshal write requests.
-type bufferPoolingClient struct {
-	upstream HealthAndIngesterClient
+// bufferPoolingIngesterClient implements IngesterClient, but overrides Push method to add pooling of buffers used to marshal write requests.
+type bufferPoolingIngesterClient struct {
+	client IngesterClient
 
 	conn *grpc.ClientConn
+
+	// This refers to pushRaw function, but is overriden in the benchmark to avoid doing actual grpc calls.
+	pushRawFn func(ctx context.Context, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error)
 }
 
-func NewWriteRequestBufferingClient(upstream HealthAndIngesterClient, conn *grpc.ClientConn) HealthAndIngesterClient {
-	return &bufferPoolingClient{
-		upstream: upstream,
-		conn:     conn,
+func NewWriteRequestBufferingClient(client IngesterClient, conn *grpc.ClientConn) *bufferPoolingIngesterClient {
+	c := &bufferPoolingIngesterClient{
+		client: client,
+		conn:   conn,
 	}
+	c.pushRawFn = c.pushRaw
+	return c
 }
 
 // Push request is overridden from IngesterClient interface.
-func (c *bufferPoolingClient) Push(ctx context.Context, in *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+func (c *bufferPoolingIngesterClient) Push(ctx context.Context, in *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	p := GetPool(ctx)
 	if p == nil {
-		return c.upstream.Push(ctx, in, opts...)
+		return c.client.Push(ctx, in, opts...)
 	}
 
 	wr := &wrappedRequest{
@@ -38,68 +42,59 @@ func (c *bufferPoolingClient) Push(ctx context.Context, in *mimirpb.WriteRequest
 	// We can return all buffers back to slabPool after this method is finished.
 	defer wr.ReturnBuffersToPool()
 
+	return c.pushRawFn(ctx, wr, opts...)
+}
+
+func (c *bufferPoolingIngesterClient) pushRaw(ctx context.Context, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	// Use underlying grpc client to invoke method with our wrapped request.
 	// This is a copy of (*ingesterClient).Push method, but passing the wrapped request.
 	// When this wrapped request is marshaled, it will use buffer from our pool.
 	out := new(mimirpb.WriteResponse)
-	err := c.conn.Invoke(ctx, "/cortex.Ingester/Push", wr, out, opts...)
+	err := c.conn.Invoke(ctx, "/cortex.Ingester/Push", msg, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
-
 }
 
-func (c *bufferPoolingClient) QueryStream(ctx context.Context, in *QueryRequest, opts ...grpc.CallOption) (Ingester_QueryStreamClient, error) {
-	return c.upstream.QueryStream(ctx, in, opts...)
+func (c *bufferPoolingIngesterClient) QueryStream(ctx context.Context, in *QueryRequest, opts ...grpc.CallOption) (Ingester_QueryStreamClient, error) {
+	return c.client.QueryStream(ctx, in, opts...)
 }
 
-func (c *bufferPoolingClient) QueryExemplars(ctx context.Context, in *ExemplarQueryRequest, opts ...grpc.CallOption) (*ExemplarQueryResponse, error) {
-	return c.upstream.QueryExemplars(ctx, in, opts...)
+func (c *bufferPoolingIngesterClient) QueryExemplars(ctx context.Context, in *ExemplarQueryRequest, opts ...grpc.CallOption) (*ExemplarQueryResponse, error) {
+	return c.client.QueryExemplars(ctx, in, opts...)
 }
 
-func (c *bufferPoolingClient) LabelValues(ctx context.Context, in *LabelValuesRequest, opts ...grpc.CallOption) (*LabelValuesResponse, error) {
-	return c.upstream.LabelValues(ctx, in, opts...)
+func (c *bufferPoolingIngesterClient) LabelValues(ctx context.Context, in *LabelValuesRequest, opts ...grpc.CallOption) (*LabelValuesResponse, error) {
+	return c.client.LabelValues(ctx, in, opts...)
 }
 
-func (c *bufferPoolingClient) LabelNames(ctx context.Context, in *LabelNamesRequest, opts ...grpc.CallOption) (*LabelNamesResponse, error) {
-	return c.upstream.LabelNames(ctx, in, opts...)
+func (c *bufferPoolingIngesterClient) LabelNames(ctx context.Context, in *LabelNamesRequest, opts ...grpc.CallOption) (*LabelNamesResponse, error) {
+	return c.client.LabelNames(ctx, in, opts...)
 }
 
-func (c *bufferPoolingClient) UserStats(ctx context.Context, in *UserStatsRequest, opts ...grpc.CallOption) (*UserStatsResponse, error) {
-	return c.upstream.UserStats(ctx, in, opts...)
+func (c *bufferPoolingIngesterClient) UserStats(ctx context.Context, in *UserStatsRequest, opts ...grpc.CallOption) (*UserStatsResponse, error) {
+	return c.client.UserStats(ctx, in, opts...)
 }
 
-func (c *bufferPoolingClient) AllUserStats(ctx context.Context, in *UserStatsRequest, opts ...grpc.CallOption) (*UsersStatsResponse, error) {
-	return c.upstream.AllUserStats(ctx, in, opts...)
+func (c *bufferPoolingIngesterClient) AllUserStats(ctx context.Context, in *UserStatsRequest, opts ...grpc.CallOption) (*UsersStatsResponse, error) {
+	return c.client.AllUserStats(ctx, in, opts...)
 }
 
-func (c *bufferPoolingClient) MetricsForLabelMatchers(ctx context.Context, in *MetricsForLabelMatchersRequest, opts ...grpc.CallOption) (*MetricsForLabelMatchersResponse, error) {
-	return c.upstream.MetricsForLabelMatchers(ctx, in, opts...)
+func (c *bufferPoolingIngesterClient) MetricsForLabelMatchers(ctx context.Context, in *MetricsForLabelMatchersRequest, opts ...grpc.CallOption) (*MetricsForLabelMatchersResponse, error) {
+	return c.client.MetricsForLabelMatchers(ctx, in, opts...)
 }
 
-func (c *bufferPoolingClient) MetricsMetadata(ctx context.Context, in *MetricsMetadataRequest, opts ...grpc.CallOption) (*MetricsMetadataResponse, error) {
-	return c.upstream.MetricsMetadata(ctx, in, opts...)
+func (c *bufferPoolingIngesterClient) MetricsMetadata(ctx context.Context, in *MetricsMetadataRequest, opts ...grpc.CallOption) (*MetricsMetadataResponse, error) {
+	return c.client.MetricsMetadata(ctx, in, opts...)
 }
 
-func (c *bufferPoolingClient) LabelNamesAndValues(ctx context.Context, in *LabelNamesAndValuesRequest, opts ...grpc.CallOption) (Ingester_LabelNamesAndValuesClient, error) {
-	return c.upstream.LabelNamesAndValues(ctx, in, opts...)
+func (c *bufferPoolingIngesterClient) LabelNamesAndValues(ctx context.Context, in *LabelNamesAndValuesRequest, opts ...grpc.CallOption) (Ingester_LabelNamesAndValuesClient, error) {
+	return c.client.LabelNamesAndValues(ctx, in, opts...)
 }
 
-func (c *bufferPoolingClient) LabelValuesCardinality(ctx context.Context, in *LabelValuesCardinalityRequest, opts ...grpc.CallOption) (Ingester_LabelValuesCardinalityClient, error) {
-	return c.upstream.LabelValuesCardinality(ctx, in, opts...)
-}
-
-func (c *bufferPoolingClient) Check(ctx context.Context, in *grpc_health_v1.HealthCheckRequest, opts ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
-	return c.upstream.Check(ctx, in, opts...)
-}
-
-func (c *bufferPoolingClient) Watch(ctx context.Context, in *grpc_health_v1.HealthCheckRequest, opts ...grpc.CallOption) (grpc_health_v1.Health_WatchClient, error) {
-	return c.upstream.Watch(ctx, in, opts...)
-}
-
-func (c *bufferPoolingClient) Close() error {
-	return c.upstream.Close()
+func (c *bufferPoolingIngesterClient) LabelValuesCardinality(ctx context.Context, in *LabelValuesCardinalityRequest, opts ...grpc.CallOption) (Ingester_LabelValuesCardinalityClient, error) {
+	return c.client.LabelValuesCardinality(ctx, in, opts...)
 }
 
 type poolKey int
