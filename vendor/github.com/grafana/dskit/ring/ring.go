@@ -1013,7 +1013,7 @@ func (r *Ring) casRing(ctx context.Context, f func(in interface{}) (out interfac
 	return r.KVClient.CAS(ctx, r.key, f)
 }
 
-func (r *Ring) getRing(ctx context.Context) (*Desc, error) {
+func (r *Ring) getRing(_ context.Context) (*Desc, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 

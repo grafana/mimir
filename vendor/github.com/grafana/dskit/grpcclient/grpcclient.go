@@ -4,7 +4,6 @@ import (
 	"flag"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	grpcbackoff "google.golang.org/grpc/backoff"
@@ -28,8 +27,8 @@ type Config struct {
 	BackoffOnRatelimits bool           `yaml:"backoff_on_ratelimits" category:"advanced"`
 	BackoffConfig       backoff.Config `yaml:"backoff_config"`
 
-	InitialStreamWindowSize     flagext.Bytes `yaml:"initial_stream_window_size" category:"advanced"`
-	InitialConnectionWindowSize flagext.Bytes `yaml:"initial_connection_window_size" category:"advanced"`
+	InitialStreamWindowSize     flagext.Bytes `yaml:"initial_stream_window_size" category:"experimental"`
+	InitialConnectionWindowSize flagext.Bytes `yaml:"initial_connection_window_size" category:"experimental"`
 
 	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
 	TLS        tls.ClientConfig `yaml:",inline"`
@@ -45,11 +44,13 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
+const defaultInitialWindowSize = 65535 // From https://github.com/grpc/grpc-go/blob/c9d3ea5673252d212c69f3d3c10ce1d7b287a86b/internal/transport/defaults.go#L28
+
 // RegisterFlagsWithPrefix registers flags with prefix.
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	// Set the default values.
-	must(cfg.InitialStreamWindowSize.Set("65535B"))
-	must(cfg.InitialConnectionWindowSize.Set("65535B"))
+	cfg.InitialStreamWindowSize = defaultInitialWindowSize
+	cfg.InitialConnectionWindowSize = defaultInitialWindowSize
 
 	f.IntVar(&cfg.MaxRecvMsgSize, prefix+".grpc-max-recv-msg-size", 100<<20, "gRPC client max receive message size (bytes).")
 	f.IntVar(&cfg.MaxSendMsgSize, prefix+".grpc-max-send-msg-size", 100<<20, "gRPC client max send message size (bytes).")
@@ -57,8 +58,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Float64Var(&cfg.RateLimit, prefix+".grpc-client-rate-limit", 0., "Rate limit for gRPC client; 0 means disabled.")
 	f.IntVar(&cfg.RateLimitBurst, prefix+".grpc-client-rate-limit-burst", 0, "Rate limit burst for gRPC client.")
 	f.BoolVar(&cfg.BackoffOnRatelimits, prefix+".backoff-on-ratelimits", false, "Enable backoff and retry when we hit rate limits.")
-	f.Var(&cfg.InitialStreamWindowSize, prefix+".initial-stream-window-size", "Initial stream window size. Values less than the default are not supported and are ignored.")
-	f.Var(&cfg.InitialConnectionWindowSize, prefix+"initial-connection-window-size", "Initial connection window size. Values less than the default are not supported and are ignored.")
+	f.Var(&cfg.InitialStreamWindowSize, prefix+".initial-stream-window-size", "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.")
+	f.Var(&cfg.InitialConnectionWindowSize, prefix+"initial-connection-window-size", "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.")
 	f.BoolVar(&cfg.TLSEnabled, prefix+".tls-enabled", cfg.TLSEnabled, "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.")
 	f.DurationVar(&cfg.ConnectTimeout, prefix+".connect-timeout", 0, "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.")
 	f.DurationVar(&cfg.ConnectBackoffBaseDelay, prefix+".connect-backoff-base-delay", time.Second, "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0.")
@@ -69,7 +70,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
 
-func (cfg *Config) Validate(log log.Logger) error {
+func (cfg *Config) Validate() error {
 	switch cfg.GRPCCompression {
 	case gzip.Name, snappy.Name, "":
 		// valid
@@ -127,6 +128,16 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 		)
 	}
 
+	if cfg.InitialStreamWindowSize > defaultInitialWindowSize {
+		// We only want to explicitly set the window size if it's not the default, as setting the window size (even to the default) always disables the BDP estimator.
+		opts = append(opts, grpc.WithInitialWindowSize(int32(cfg.InitialStreamWindowSize)))
+	}
+
+	if cfg.InitialConnectionWindowSize > defaultInitialWindowSize {
+		// We only want to explicitly set the window size if it's not the default, as setting the window size (even to the default) always disables the BDP estimator.
+		opts = append(opts, grpc.WithInitialConnWindowSize(int32(cfg.InitialConnectionWindowSize)))
+	}
+
 	return append(
 		opts,
 		grpc.WithDefaultCallOptions(cfg.CallOptions()...),
@@ -137,13 +148,5 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 			Timeout:             time.Second * 10,
 			PermitWithoutStream: true,
 		}),
-		grpc.WithInitialConnWindowSize(int32(cfg.InitialConnectionWindowSize)),
-		grpc.WithInitialWindowSize(int32(cfg.InitialStreamWindowSize)),
 	), nil
-}
-
-func must(err error) {
-	if err != nil {
-		panic(err)
-	}
 }
