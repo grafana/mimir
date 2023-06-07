@@ -65,10 +65,12 @@ const (
 
 	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
 	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
-)
 
-const (
 	instanceIngestionRateTickInterval = time.Second
+
+	// Size of "slab" when using pooled buffers for marshaling write requests. When handling single Push request
+	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
+	writeRequestSlabPoolSize = 512 * 1024
 )
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -1127,8 +1129,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	cleanupInDefer = false
 
 	if d.cfg.WriteRequestsBufferPoolingEnabled {
-		slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 1024*1024)
-		localCtx = ingester_client.WithPool(localCtx, slabPool)
+		slabPool := pool2.NewFastReleasingSlabPool[byte](pool, writeRequestSlabPoolSize)
+		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
 	}
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {

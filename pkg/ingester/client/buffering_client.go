@@ -99,7 +99,7 @@ type poolKey int
 
 var poolKeyValue poolKey = 1
 
-func WithPool(ctx context.Context, pool *pool.FastReleasingSlabPool[byte]) context.Context {
+func WithSlabPool(ctx context.Context, pool *pool.FastReleasingSlabPool[byte]) context.Context {
 	if pool != nil {
 		return context.WithValue(ctx, poolKeyValue, pool)
 	}

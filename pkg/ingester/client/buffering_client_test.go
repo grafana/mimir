@@ -74,7 +74,7 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 		pool := &pool2.TrackedPool{Parent: &sync.Pool{}}
 		slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 512*1024)
 
-		ctx := WithPool(context.Background(), slabPool)
+		ctx := WithSlabPool(context.Background(), slabPool)
 
 		for _, r := range requestsToSends {
 			_, err := bufferingClient.Push(ctx, r)
@@ -108,7 +108,7 @@ func TestWriteRequestBufferingClient_Push_WithMultipleMarshalCalls(t *testing.T)
 	pool := &pool2.TrackedPool{Parent: &sync.Pool{}}
 	slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 512*1024)
 
-	ctx := WithPool(context.Background(), slabPool)
+	ctx := WithSlabPool(context.Background(), slabPool)
 
 	_, err := bufferingClient.Push(ctx, req)
 	require.NoError(t, err)
@@ -140,7 +140,7 @@ func BenchmarkWriteRequestBufferingClient_Push(b *testing.B) {
 	})
 
 	b.Run("push with pooling", func(b *testing.B) {
-		ctx := WithPool(context.Background(), pool2.NewFastReleasingSlabPool[byte](&sync.Pool{}, 512*1024))
+		ctx := WithSlabPool(context.Background(), pool2.NewFastReleasingSlabPool[byte](&sync.Pool{}, 512*1024))
 		for i := 0; i < b.N; i++ {
 			_, err := bufferingClient.Push(ctx, req)
 			if err != nil {
@@ -159,7 +159,7 @@ func TestWriteRequestBufferingClient_PushConcurrent(t *testing.T) {
 	pool := &pool2.TrackedPool{Parent: &sync.Pool{}}
 	slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 512*1024)
 
-	ctx := WithPool(context.Background(), slabPool)
+	ctx := WithSlabPool(context.Background(), slabPool)
 
 	wg := sync.WaitGroup{}
 
