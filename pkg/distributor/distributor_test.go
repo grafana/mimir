@@ -1510,7 +1510,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				numDistributors: 1,
 			})
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, ts, "user", "test-group", false, tc.minExemplarTS)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, tc.minExemplarTS)
 				assert.NoError(t, err)
 			}
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
@@ -3918,50 +3918,6 @@ func TestDistributorValidation(t *testing.T) {
 	}
 }
 
-func TestRemoveReplicaLabel(t *testing.T) {
-	replicaLabel := "replica"
-	clusterLabel := "cluster"
-	cases := []struct {
-		labelsIn  []mimirpb.LabelAdapter
-		labelsOut []mimirpb.LabelAdapter
-	}{
-		// Replica label is present
-		{
-			labelsIn: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: "replica", Value: replicaLabel},
-			},
-			labelsOut: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-			},
-		},
-		// Replica label is not present
-		{
-			labelsIn: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: "cluster", Value: clusterLabel},
-			},
-			labelsOut: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: "cluster", Value: clusterLabel},
-			},
-		},
-	}
-
-	for _, c := range cases {
-		removeLabel(replicaLabel, &c.labelsIn)
-		assert.Equal(t, c.labelsOut, c.labelsIn)
-	}
-}
-
 // This is not great, but we deal with unsorted labels in prePushRelabelMiddleware.
 func TestShardByAllLabelsReturnsWrongResultsForUnsortedLabels(t *testing.T) {
 	val1 := shardByAllLabels("test", []mimirpb.LabelAdapter{
@@ -3977,33 +3933,6 @@ func TestShardByAllLabelsReturnsWrongResultsForUnsortedLabels(t *testing.T) {
 	})
 
 	assert.NotEqual(t, val1, val2)
-}
-
-func TestSortLabels(t *testing.T) {
-	sorted := []mimirpb.LabelAdapter{
-		{Name: "__name__", Value: "foo"},
-		{Name: "bar", Value: "baz"},
-		{Name: "cluster", Value: "cluster"},
-		{Name: "sample", Value: "1"},
-	}
-
-	// no allocations if input is already sorted
-	require.Equal(t, 0.0, testing.AllocsPerRun(100, func() {
-		sortLabelsIfNeeded(sorted)
-	}))
-
-	unsorted := []mimirpb.LabelAdapter{
-		{Name: "__name__", Value: "foo"},
-		{Name: "sample", Value: "1"},
-		{Name: "cluster", Value: "cluster"},
-		{Name: "bar", Value: "baz"},
-	}
-
-	sortLabelsIfNeeded(unsorted)
-
-	require.True(t, sort.SliceIsSorted(unsorted, func(i, j int) bool {
-		return unsorted[i].Name < unsorted[j].Name
-	}))
 }
 
 func TestDistributor_Push_Relabel(t *testing.T) {
