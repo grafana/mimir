@@ -50,7 +50,7 @@ func MakeIngesterClient(addr string, cfg Config) (HealthAndIngesterClient, error
 
 	ingClient := NewIngesterClient(conn)
 	if cfg.WriteRequestsBufferPoolingEnabled {
-		ingClient = newWriteRequestBufferingClient(ingClient, conn)
+		ingClient = newBufferPoolingIngesterClient(ingClient, conn)
 	}
 
 	return &closableHealthAndIngesterClient{

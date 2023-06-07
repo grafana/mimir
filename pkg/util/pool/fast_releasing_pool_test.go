@@ -15,12 +15,12 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		delegatePool := &TrackedPool{Parent: &sync.Pool{}}
 		slabPool := NewFastReleasingSlabPool[byte](delegatePool, 10)
 
-		sliceA, slabIdA := slabPool.Get(5)
+		sliceA, slabIDA := slabPool.Get(5)
 		require.Len(t, sliceA, 5)
 		require.Equal(t, 5, cap(sliceA))
 		copy(sliceA, "12345")
 
-		sliceB, slabIdB := slabPool.Get(5)
+		sliceB, slabIDB := slabPool.Get(5)
 		require.Len(t, sliceB, 5)
 		require.Equal(t, 5, cap(sliceB))
 		copy(sliceB, "67890")
@@ -33,21 +33,21 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		require.Equal(t, 2, slabPool.slabs[1].references)
 		require.Equal(t, 10, slabPool.slabs[1].nextFreeIndex)
 
-		slabPool.Release(slabIdA)
+		slabPool.Release(slabIDA)
 
 		require.Equal(t, 2, len(slabPool.slabs))
 		require.Nil(t, slabPool.slabs[0])
 		require.Equal(t, 1, slabPool.slabs[1].references)
 		require.Equal(t, 10, slabPool.slabs[1].nextFreeIndex)
 
-		slabPool.Release(slabIdB)
+		slabPool.Release(slabIDB)
 
 		require.Equal(t, 2, len(slabPool.slabs))
 		require.Nil(t, slabPool.slabs[0])
 		require.Nil(t, slabPool.slabs[1])
 
 		// Allocating another slice needs a new slab.
-		sliceC, slabIdC := slabPool.Get(5)
+		sliceC, slabIDC := slabPool.Get(5)
 		require.Len(t, sliceC, 5)
 		require.Equal(t, 5, cap(sliceB))
 
@@ -57,7 +57,7 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		require.Equal(t, 1, slabPool.slabs[2].references)
 		require.Equal(t, 5, slabPool.slabs[2].nextFreeIndex)
 
-		slabPool.Release(slabIdC)
+		slabPool.Release(slabIDC)
 
 		require.Equal(t, 3, len(slabPool.slabs))
 		require.Nil(t, slabPool.slabs[0])
@@ -65,14 +65,14 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		require.Nil(t, slabPool.slabs[2])
 
 		require.Zero(t, delegatePool.Balance.Load())
-		require.Equal(t, int(delegatePool.Gets.Load()), 2)
+		require.Equal(t, 2, int(delegatePool.Gets.Load()))
 	})
 
 	t.Run("a new slab is created when the new slice doesn't fit on an existing one", func(t *testing.T) {
 		delegatePool := &TrackedPool{Parent: &sync.Pool{}}
 		slabPool := NewFastReleasingSlabPool[byte](delegatePool, 10)
 
-		sliceA, slabIdA := slabPool.Get(5)
+		sliceA, slabIDA := slabPool.Get(5)
 		assert.Len(t, sliceA, 5)
 		assert.Equal(t, 5, cap(sliceA))
 		copy(sliceA, "12345")
@@ -83,7 +83,7 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		require.Equal(t, 1, slabPool.slabs[1].references)
 
 		// Size doesn't fit the existing slab, so a new one will be created.
-		sliceB, slabIdB := slabPool.Get(6)
+		sliceB, slabIDB := slabPool.Get(6)
 		assert.Len(t, sliceB, 6)
 		assert.Equal(t, 6, cap(sliceB))
 		copy(sliceB, "67890-")
@@ -98,7 +98,7 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		require.Equal(t, 1, slabPool.slabs[2].references)
 
 		// Size fits in the last slab.
-		sliceC, slabIdC := slabPool.Get(3)
+		sliceC, slabIDC := slabPool.Get(3)
 		assert.Len(t, sliceC, 3)
 		assert.Equal(t, 3, cap(sliceC))
 		copy(sliceC, "abc")
@@ -113,7 +113,7 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		require.Equal(t, 2, slabPool.slabs[2].references)
 
 		// Size fits in the previous last slab.
-		sliceD, slabIdD := slabPool.Get(3)
+		sliceD, slabIDD := slabPool.Get(3)
 		assert.Len(t, sliceD, 3)
 		assert.Equal(t, 3, cap(sliceD))
 		copy(sliceD, "def")
@@ -132,10 +132,10 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		assert.Equal(t, "abc", string(sliceC))
 		assert.Equal(t, "def", string(sliceD))
 
-		slabPool.Release(slabIdA)
-		slabPool.Release(slabIdB)
-		slabPool.Release(slabIdC)
-		slabPool.Release(slabIdD)
+		slabPool.Release(slabIDA)
+		slabPool.Release(slabIDB)
+		slabPool.Release(slabIDC)
+		slabPool.Release(slabIDD)
 
 		require.Equal(t, 3, len(slabPool.slabs))
 		require.Nil(t, slabPool.slabs[0])

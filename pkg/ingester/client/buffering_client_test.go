@@ -49,23 +49,24 @@ func setupGrpc(t testing.TB) (*mockServer, *grpc.ClientConn) {
 func TestWriteRequestBufferingClient_Push(t *testing.T) {
 	serv, conn := setupGrpc(t)
 
-	bufferingClient := newWriteRequestBufferingClient(NewIngesterClient(conn), conn)
+	// Converted to IngesterClient to make sure we only use methods from the interface.
+	bufferingClient := IngesterClient(newBufferPoolingIngesterClient(NewIngesterClient(conn), conn))
 
-	var requestsToSends []*mimirpb.WriteRequest
+	var requestsToSend []*mimirpb.WriteRequest
 	for i := 0; i < 10; i++ {
-		requestsToSends = append(requestsToSends, createRequest("test", 100+10*i))
+		requestsToSend = append(requestsToSend, createRequest("test", 100+10*i))
 	}
 
 	t.Run("push without pooling", func(t *testing.T) {
 		serv.clearRequests()
 
-		for _, r := range requestsToSends {
+		for _, r := range requestsToSend {
 			_, err := bufferingClient.Push(context.Background(), r)
 			require.NoError(t, err)
 		}
 
 		reqs := serv.requests()
-		require.Equal(t, reqs, requestsToSends)
+		require.Equal(t, requestsToSend, reqs)
 	})
 
 	t.Run("push with pooling", func(t *testing.T) {
@@ -76,24 +77,24 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 
 		ctx := WithSlabPool(context.Background(), slabPool)
 
-		for _, r := range requestsToSends {
+		for _, r := range requestsToSend {
 			_, err := bufferingClient.Push(ctx, r)
 			require.NoError(t, err)
 		}
 
 		reqs := serv.requests()
-		require.Equal(t, reqs, requestsToSends)
+		require.Equal(t, requestsToSend, reqs)
 
 		// Verify that pool was used.
 		require.Greater(t, pool.Gets.Load(), int64(0))
-		require.Equal(t, int64(0), pool.Balance.Load())
+		require.Zero(t, pool.Balance.Load())
 	})
 }
 
 func TestWriteRequestBufferingClient_Push_WithMultipleMarshalCalls(t *testing.T) {
 	serv, conn := setupGrpc(t)
 
-	bufferingClient := newWriteRequestBufferingClient(NewIngesterClient(conn), conn)
+	bufferingClient := newBufferPoolingIngesterClient(NewIngesterClient(conn), conn)
 	bufferingClient.pushRawFn = func(ctx context.Context, conn *grpc.ClientConn, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 		// Call Marshal several times. We are testing if all buffers from the pool are returned.
 		_, _ = msg.(*wrappedRequest).Marshal()
@@ -117,11 +118,11 @@ func TestWriteRequestBufferingClient_Push_WithMultipleMarshalCalls(t *testing.T)
 
 	// Verify that all buffers from the pool were returned.
 	require.Greater(t, pool.Gets.Load(), int64(0))
-	require.Equal(t, int64(0), pool.Balance.Load())
+	require.Zero(t, pool.Balance.Load())
 }
 
 func BenchmarkWriteRequestBufferingClient_Push(b *testing.B) {
-	bufferingClient := newWriteRequestBufferingClient(&dummyIngesterClient{}, nil)
+	bufferingClient := newBufferPoolingIngesterClient(&dummyIngesterClient{}, nil)
 	bufferingClient.pushRawFn = func(ctx context.Context, conn *grpc.ClientConn, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 		_, err := msg.(proto.Marshaler).Marshal()
 		return nil, err
@@ -153,7 +154,7 @@ func BenchmarkWriteRequestBufferingClient_Push(b *testing.B) {
 func TestWriteRequestBufferingClient_PushConcurrent(t *testing.T) {
 	serv, conn := setupGrpc(t)
 
-	bufferingClient := newWriteRequestBufferingClient(NewIngesterClient(conn), conn)
+	bufferingClient := newBufferPoolingIngesterClient(NewIngesterClient(conn), conn)
 	serv.trackSamples = true
 
 	pool := &pool2.TrackedPool{Parent: &sync.Pool{}}
@@ -198,9 +199,9 @@ func TestWriteRequestBufferingClient_PushConcurrent(t *testing.T) {
 
 	wg.Wait()
 
-	// Verify that pool usage.
+	// Verify that pool was used.
 	require.Greater(t, pool.Gets.Load(), int64(0))
-	require.Equal(t, int64(0), pool.Balance.Load())
+	require.Zero(t, pool.Balance.Load())
 }
 
 func createRequest(metricName string, seriesPerRequest int) *mimirpb.WriteRequest {
@@ -274,7 +275,7 @@ type dummyIngesterClient struct {
 	IngesterClient
 }
 
-func (d *dummyIngesterClient) Push(ctx context.Context, in *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+func (d *dummyIngesterClient) Push(_ context.Context, in *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	_, err := in.Marshal()
 	return nil, err
 }

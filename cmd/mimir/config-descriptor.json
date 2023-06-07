@@ -1484,7 +1484,7 @@
           "desc": "Enable pooling of buffers used for marshaling write requests.",
           "fieldValue": null,
           "fieldDefaultValue": true,
-          "fieldFlag": "distributor.write-request-buffer-pooling-enabled",
+          "fieldFlag": "distributor.write-requests-buffer-pooling-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }

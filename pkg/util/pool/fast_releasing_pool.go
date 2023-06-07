@@ -20,7 +20,7 @@ type trackedSlab[T any] struct {
 	nextFreeIndex int
 }
 
-// NewFastReleasingSlabPool returns new "fast-releasing" slab pool.
+// NewFastReleasingSlabPool returns a new "fast-releasing" slab pool.
 func NewFastReleasingSlabPool[T any](delegate Interface, slabSize int) *FastReleasingSlabPool[T] {
 	return &FastReleasingSlabPool[T]{
 		delegate: delegate,
@@ -33,7 +33,7 @@ const (
 	freeSlabChecks = 3
 )
 
-// Release decreases reference counter for given slab ID. (Slab ids equal or less than 0 are ignored).
+// Release decreases reference counter for given slab ID. (Slab ids equal to or less than 0 are ignored).
 // If reference counter is 0, slab may be returned to the delegate pool.
 func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 	if slabId <= 0 {
@@ -71,7 +71,7 @@ func (b *FastReleasingSlabPool[T]) Release(slabId int) {
 	}
 }
 
-// Get returns a slice of T with the given length and capacity (both matches).
+// Get returns a slice of T with the given length and capacity (both match), and slab ID that needs be used in Release call.
 func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 	if size <= 0 {
 		return nil, 0
@@ -89,7 +89,7 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 	slabId := 0
 	ts := (*trackedSlab[T])(nil)
 
-	// Look at last few slabs, since we assume that these slabs has most free space.
+	// Look at last few slabs, since we assume that these slabs have the most free space.
 	for sid := len(b.slabs) - 1; sid >= len(b.slabs)-freeSlabChecks && sid >= 0; sid-- {
 		s := b.slabs[sid]
 		if s != nil && len(s.slab)-s.nextFreeIndex >= size {
@@ -105,7 +105,7 @@ func (b *FastReleasingSlabPool[T]) Get(size int) ([]T, int) {
 		if fromDelegate := b.delegate.Get(); fromDelegate != nil {
 			slab = (fromDelegate).([]T)
 		} else {
-			slab = make([]T, b.slabSize, b.slabSize)
+			slab = make([]T, b.slabSize)
 		}
 
 		ts = &trackedSlab[T]{
