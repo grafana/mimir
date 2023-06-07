@@ -28,6 +28,11 @@
     autoscaling_ruler_query_frontend_min_replicas: error 'you must set autoscaling_ruler_query_frontend_min_replicas in the _config',
     autoscaling_ruler_query_frontend_max_replicas: error 'you must set autoscaling_ruler_query_frontend_max_replicas in the _config',
     autoscaling_ruler_query_frontend_memory_target_utilization: 1,
+  
+    autoscaling_alertmanager_enabled: false,
+    autoscaling_alertmanager_min_replicas: error 'you must set autoscaling_alertmanager_min_replicas in the _config',
+    autoscaling_alertmanager_max_replicas: error 'you must set autoscaling_alertmanager_max_replicas in the _config',
+    autoscaling_alertmanager_memory_target_utilization: 1,
   },
 
   assert !$._config.autoscaling_querier_enabled || $._config.query_scheduler_enabled
@@ -419,4 +424,54 @@
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,
+  
+  // Alertmanager
+
+  newAlertmanagerScaledObject(name, alertmanager_cpu_requests, alertmanager_memory_requests, min_replicas, max_replicas, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
+    min_replica_count: min_replicas,
+    max_replica_count: max_replicas,
+
+    triggers: [
+      {
+        metric_name: 'cortex_%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+        query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
+
+        // Threshold is expected to be a string.
+        // Since alertmanager is very memory-intensive as opposed to cpu-intensive, we don't bother 
+        // with the any target utilization calculation for cpu, to keep things simpler and cheaper.
+        threshold: std.toString(cpuToMilliCPUInt(alertmanager_cpu_requests)),
+      },
+      {
+        metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+        // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all alertmanagers over 15m.
+        query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
+
+        // Threshold is expected to be a string.
+        threshold: std.toString(std.ceil($.util.siToBytes(alertmanager_memory_requests) * memory_target_utilization)),
+      },
+    ],
+  }),
+
+  alertmanager_statefulset: overrideSuperIfExists(
+    'alertmanager_statefulset',
+    if !$._config.autoscaling_alertmanager_enabled then {} else removeReplicasFromSpec
+  ),
+
+  alertmanager_scaled_object: if !$._config.autoscaling_alertmanager_enabled then null else
+    $.newAlertmanagerScaledObject(
+      name='alertmanager',
+      alertmanager_cpu_requests=$.alertmanager_container.resources.requests.cpu,
+      alertmanager_memory_requests=$.alertmanager_container.resources.requests.memory,
+      min_replicas=$._config.autoscaling_alertmanager_min_replicas,
+      max_replicas=$._config.autoscaling_alertmanager_max_replicas,
+      memory_target_utilization=$._config.autoscaling_alertmanager_memory_target_utilization,
+    ) + {
+      spec+: {
+        scaleTargetRef+: {
+          kind: 'StatefulSet',
+        },
+      },
+    },
 }
