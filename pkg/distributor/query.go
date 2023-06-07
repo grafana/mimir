@@ -303,7 +303,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
-	results, err := ring.DoUntilQuorum(ctx, replicationSet, queryIngester, cleanup)
+	results, err := ring.DoUntilQuorum(ctx, replicationSet, false, queryIngester, cleanup)
 	if err != nil {
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}
