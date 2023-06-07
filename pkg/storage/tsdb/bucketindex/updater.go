@@ -21,7 +21,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var (
@@ -40,7 +39,7 @@ type Updater struct {
 func NewUpdater(bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *Updater {
 	return &Updater{
 		bkt:    bucket.NewUserBucketClient(userID, bkt, cfgProvider),
-		logger: util_log.WithUserID(userID, logger),
+		logger: logger,
 	}
 }
 
@@ -97,6 +96,8 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 		}
 	}
 
+	level.Info(w.logger).Log("msg", "listed all blocks in storage", "newly_discovered", len(discovered), "old_discovered", len(old))
+
 	// Remaining blocks are new ones and we have to fetch the meta.json for each of them, in order
 	// to find out if their upload has been completed (meta.json is uploaded last) and get the block
 	// information to store in the bucket index.
@@ -119,6 +120,7 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 		}
 		return nil, nil, err
 	}
+	level.Info(w.logger).Log("msg", "fetched blocks metas for newly discovered blocks", "total_blocks", len(blocks), "partial_errors", len(partials))
 
 	return blocks, partials, nil
 }
@@ -176,6 +178,8 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 		return nil, err
 	}
 
+	level.Info(w.logger).Log("msg", "listed deletion markers", "count", len(discovered))
+
 	// Since deletion marks are immutable, all markers already existing in the index can just be copied.
 	for _, m := range old {
 		if _, ok := discovered[m.ID]; ok {
@@ -202,6 +206,8 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 
 		out = append(out, m)
 	}
+
+	level.Info(w.logger).Log("msg", "updated deletion markers for recently marked blocks", "count", len(discovered), "total_deletion_markers", len(out))
 
 	return out, nil
 }
