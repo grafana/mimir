@@ -7,7 +7,6 @@
 * [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
 * [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. For now this feature can be disabled by setting `-timeseries-unmarshal-caching-optimization-enabled=false`. #5137
-* [FEATURE] Alertmanager: Add horizontal pod autoscaler config to the mixin, that can be enabled using `autoscaling_alertmanager_enabled: true`.
 
 ### Mixin
 * [CHANGE] Dashboards: show all workloads in selected namespace on "rollout progress" dashboard. #5113
@@ -19,6 +18,7 @@
 ### Jsonnet
 
 * [ENHANCEMENT] Add per-container map for environment variables. #5181
+* [FEATURE] Alertmanager: Add horizontal pod autoscaler config, that can be enabled using `autoscaling_alertmanager_enabled: true`.
 
 ### Mimirtool
 
