@@ -8,7 +8,7 @@
 * [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. For now this feature can be disabled by setting `-timeseries-unmarshal-caching-optimization-enabled=false`. #5137
 * [ENHANCEMENT] Add advanced CLI flags to control gRPC client behaviour: #5161
-  * `-<prefix>.connect-timeout` 
+  * `-<prefix>.connect-timeout`
   * `-<prefix>.connect-backoff-base-delay`
   * `-<prefix>.connect-backoff-max-delay`
   * `-<prefix>.initial-stream-window-size`
