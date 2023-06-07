@@ -82,7 +82,6 @@ type Distributor struct {
 	ingestersRing ring.ReadRing
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
-	bytesPool     sync.Pool
 
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
@@ -137,6 +136,9 @@ type Distributor struct {
 	metadataValidationMetrics *validation.MetadataValidationMetrics
 
 	PushWithMiddlewares push.Func
+
+	// Pool of []byte used when marshalling write requests.
+	writeRequestBytePool sync.Pool
 }
 
 // Config contains the configuration required to
@@ -1130,7 +1132,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	cleanupInDefer = false
 
 	if d.cfg.WriteRequestsBufferPoolingEnabled {
-		slabPool := pool2.NewFastReleasingSlabPool[byte](d.bytesPool, writeRequestSlabPoolSize)
+		slabPool := pool2.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
 		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
 	}
 
