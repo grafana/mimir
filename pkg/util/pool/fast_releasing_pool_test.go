@@ -157,7 +157,7 @@ func TestFastReleasingSlabPool_Fuzzy(t *testing.T) {
 	type assertion struct {
 		expected []byte
 		actual   []byte
-		slabId   int
+		slabID   int
 	}
 
 	delegatePool := &TrackedPool{Parent: &sync.Pool{}}
@@ -175,7 +175,7 @@ func TestFastReleasingSlabPool_Fuzzy(t *testing.T) {
 			// Get a random size between 1 and (slabSize + 10)
 			size := 1 + rnd.Intn(slabSize+9)
 
-			slice, slabId := slabPool.Get(size)
+			slice, slabID := slabPool.Get(size)
 
 			// Write some data to the slice.
 			expected := make([]byte, size)
@@ -188,7 +188,7 @@ func TestFastReleasingSlabPool_Fuzzy(t *testing.T) {
 			assertions = append(assertions, assertion{
 				expected: expected,
 				actual:   slice,
-				slabId:   slabId,
+				slabID:   slabID,
 			})
 		}
 
@@ -196,7 +196,7 @@ func TestFastReleasingSlabPool_Fuzzy(t *testing.T) {
 		for _, assertion := range assertions {
 			require.Equal(t, assertion.expected, assertion.actual)
 
-			slabPool.Release(assertion.slabId)
+			slabPool.Release(assertion.slabID)
 		}
 
 		require.Zero(t, delegatePool.Balance.Load())
