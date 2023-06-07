@@ -35,7 +35,6 @@
 * [ENHANCEMENT] Ingester, store-gateway: clear the shutdown marker after a successful shutdown to enable reusing their persistent volumes in case the ingester or store-gateway is restarted. #4985
 * [ENHANCEMENT] Store-gateway, query-frontend: Reduced memory allocations when looking up cached entries from Memcached. #4862
 * [ENHANCEMENT] Alertmanager: Add additional template function `queryFromGeneratorURL` returning query URL decoded query from the `GeneratorURL` field of an alert. #4301
-* [ENHANCEMENT] Go: update to 1.20.4. #4092
 * [ENHANCEMENT] Ruler: added experimental ruler storage cache support. The cache should reduce the number of "list objects" API calls issued to the object storage when there are 2+ ruler replicas running in a Mimir cluster. The cache can be configured setting `-ruler-storage.cache.*` CLI flags or their respective YAML config options. #4950 #5054
 * [ENHANCEMENT] Store-gateway: added HTTP `/store-gateway/prepare-shutdown` endpoint for gracefully scaling down of store-gateways. A gauge `cortex_store_gateway_prepare_shutdown_requested` has been introduced for tracing this process. #4955
 * [ENHANCEMENT] Updated Kuberesolver dependency (github.com/sercand/kuberesolver) from v2.4.0 to v4.0.0 and gRPC dependency (google.golang.org/grpc) from v1.47.0 to v1.53.0. #4922
@@ -61,6 +60,7 @@
 * [ENHANCEMENT] Update Docker base images from `alpine:3.17.3` to `alpine:3.18.0`. #5065
 * [ENHANCEMENT] Compactor: reduced the number of "object exists" API calls issued by the compactor to the object storage when syncing block's `meta.json` files. #5063
 * [ENHANCEMENT] Distributor: Push request rate limits (`-distributor.request-rate-limit` and `-distributor.request-burst-size`) and their associated YAML configuration are now stable. #5124
+* [ENHANCEMENT] Go: updated to 1.20.5. #5185
 * [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
 * [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
 * [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
