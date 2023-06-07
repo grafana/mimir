@@ -231,14 +231,14 @@ overrides:
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	baseFlags := map[string]string{
-		"-distributor.ingestion-tenant-shard-size":          "0",
-		"-ingester.ring.heartbeat-period":                   "1s",
-		"-distributor.ha-tracker.enable":                    "true",
-		"-distributor.ha-tracker.enable-for-all-users":      "true",
-		"-distributor.ha-tracker.store":                     "consul",
-		"-distributor.ha-tracker.consul.hostname":           consul.NetworkHTTPEndpoint(),
-		"-distributor.ha-tracker.prefix":                    "prom_ha/",
-		"-enable-timeseries-unmarshal-caching-optimization": strconv.FormatBool(cachingUnmarshalDataEnabled),
+		"-distributor.ingestion-tenant-shard-size":           "0",
+		"-ingester.ring.heartbeat-period":                    "1s",
+		"-distributor.ha-tracker.enable":                     "true",
+		"-distributor.ha-tracker.enable-for-all-users":       "true",
+		"-distributor.ha-tracker.store":                      "consul",
+		"-distributor.ha-tracker.consul.hostname":            consul.NetworkHTTPEndpoint(),
+		"-distributor.ha-tracker.prefix":                     "prom_ha/",
+		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(cachingUnmarshalDataEnabled),
 	}
 
 	flags := mergeFlags(
