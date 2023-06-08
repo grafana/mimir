@@ -132,7 +132,7 @@ func (c *ActiveSeries) Active() int {
 // slice of active series matching each one of the custom trackers provided (in
 // the same order as custom trackers are defined). This method does not purge
 // expired entries, so Purge should be called periodically.
-func (c *ActiveSeries) ActiveWithMatchers(now time.Time) (int, []int) {
+func (c *ActiveSeries) ActiveWithMatchers() (int, []int) {
 	c.matchersMutex.RLock()
 	defer c.matchersMutex.RUnlock()
 
