@@ -116,3 +116,25 @@ message Hints {
 message QueryStatistics {
   uint64 EstimatedSeriesCount = 1;
 }
+
+// CachedHTTPResponse holds a generic HTTP response in the query results cache.
+message CachedHTTPResponse  {
+  // CacheKey contains the non-hashed cache key, used to guarantee there haven't
+  // been any hashed cache key collision.
+  string CacheKey = 1;
+
+  // StatusCode contains the HTTP response status code.
+  int32 StatusCode = 2;
+
+  // Body contains the HTTP response body.
+  bytes Body = 3;
+
+  // Headers contains the HTTP response headers.
+  repeated CachedHTTPHeader Headers = 4;
+}
+
+// CachedHTTPHeader holds a HTTP header.
+message CachedHTTPHeader {
+  string Name = 1;
+  string Value = 2;
+}

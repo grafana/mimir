@@ -415,6 +415,10 @@ func (m multiTenantMockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(userID str
 	return m.byTenant[userID].resultsCacheOutOfOrderWindowTTL
 }
 
+func (m multiTenantMockLimits) ResultsCacheTTLForCardinalityQuery(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTLForCardinalityQuery
+}
+
 func (m multiTenantMockLimits) CreationGracePeriod(userID string) time.Duration {
 	return m.byTenant[userID].creationGracePeriod
 }
@@ -424,23 +428,24 @@ func (m multiTenantMockLimits) NativeHistogramsIngestionEnabled(userID string) b
 }
 
 type mockLimits struct {
-	maxQueryLookback                 time.Duration
-	maxQueryLength                   time.Duration
-	maxTotalQueryLength              time.Duration
-	maxQueryExpressionSizeBytes      int
-	maxCacheFreshness                time.Duration
-	maxQueryParallelism              int
-	maxShardedQueries                int
-	maxRegexpSizeBytes               int
-	splitInstantQueriesInterval      time.Duration
-	totalShards                      int
-	compactorShards                  int
-	compactorBlocksRetentionPeriod   time.Duration
-	outOfOrderTimeWindow             time.Duration
-	creationGracePeriod              time.Duration
-	nativeHistogramsIngestionEnabled bool
-	resultsCacheTTL                  time.Duration
-	resultsCacheOutOfOrderWindowTTL  time.Duration
+	maxQueryLookback                   time.Duration
+	maxQueryLength                     time.Duration
+	maxTotalQueryLength                time.Duration
+	maxQueryExpressionSizeBytes        int
+	maxCacheFreshness                  time.Duration
+	maxQueryParallelism                int
+	maxShardedQueries                  int
+	maxRegexpSizeBytes                 int
+	splitInstantQueriesInterval        time.Duration
+	totalShards                        int
+	compactorShards                    int
+	compactorBlocksRetentionPeriod     time.Duration
+	outOfOrderTimeWindow               time.Duration
+	creationGracePeriod                time.Duration
+	nativeHistogramsIngestionEnabled   bool
+	resultsCacheTTL                    time.Duration
+	resultsCacheOutOfOrderWindowTTL    time.Duration
+	resultsCacheTTLForCardinalityQuery time.Duration
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -503,6 +508,10 @@ func (m mockLimits) ResultsCacheTTL(string) time.Duration {
 
 func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(string) time.Duration {
 	return m.resultsCacheOutOfOrderWindowTTL
+}
+
+func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {
+	return m.resultsCacheTTLForCardinalityQuery
 }
 
 func (m mockLimits) CreationGracePeriod(string) time.Duration {

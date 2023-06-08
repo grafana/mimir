@@ -2856,6 +2856,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.results-cache-ttl-for-out-of-order-time-window
 [results_cache_ttl_for_out_of_order_time_window: <duration> | default = 10m]
 
+# (experimental) Time to live duration for cached cardinality query results. The
+# value 0 disabled the cache.
+# CLI flag: -query-frontend.results-cache-ttl-for-cardinality-query
+[results_cache_ttl_for_cardinality_query: <duration> | default = 0s]
+
 # (experimental) Max size of the raw query, in bytes. 0 to not apply a limit to
 # the size of the query.
 # CLI flag: -query-frontend.max-query-expression-size-bytes

@@ -3161,6 +3161,17 @@
         },
         {
           "kind": "field",
+          "name": "results_cache_ttl_for_cardinality_query",
+          "required": false,
+          "desc": "Time to live duration for cached cardinality query results. The value 0 disabled the cache.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.results-cache-ttl-for-cardinality-query",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_query_expression_size_bytes",
           "required": false,
           "desc": "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.",
