@@ -9,8 +9,8 @@ weight: 50
 
 The query-scheduler supports two service discovery mechanisms:
 
-- [DNS-based service discovery]({{< relref "../../../references/architecture/components/query-scheduler/index.md#dns-based-service-discovery" >}})
-- [Ring-based service discovery]({{< relref "../../../references/architecture/components/query-scheduler/index.md#ring-based-service-discovery" >}})
+- [DNS-based service discovery]({{< relref "../../references/architecture/components/query-scheduler/index.md#dns-based-service-discovery" >}})
+- [Ring-based service discovery]({{< relref "../../references/architecture/components/query-scheduler/index.md#ring-based-service-discovery" >}})
 
 To migrate the query-scheduler from DNS-based to ring-based service discovery when your Mimir cluster is deployed using Jsonnet:
 
@@ -24,7 +24,7 @@ To migrate the query-scheduler from DNS-based to ring-based service discovery wh
    }
    ```
 1. Wait until query-scheduler changes have been applied.
-1. Open the [query-scheduler ring status]({{< relref "../../../references/http-api/index.md#query-scheduler-ring-status" >}}) page and ensure all query-scheduler instances are registered to the ring.
+1. Open the [query-scheduler ring status]({{< relref "../../references/http-api/index.md#query-scheduler-ring-status" >}}) page and ensure all query-scheduler instances are registered to the ring.
 1. Configure query-frontend and querier instances to discover query-schedulers via the ring:
    ```jsonnet
    {
