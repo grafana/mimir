@@ -47,8 +47,12 @@ func MakeIngesterClient(addr string, cfg Config) (HealthAndIngesterClient, error
 	if err != nil {
 		return nil, err
 	}
+
+	ingClient := NewIngesterClient(conn)
+	ingClient = newBufferPoolingIngesterClient(ingClient, conn)
+
 	return &closableHealthAndIngesterClient{
-		IngesterClient: NewIngesterClient(conn),
+		IngesterClient: ingClient,
 		HealthClient:   grpc_health_v1.NewHealthClient(conn),
 		conn:           conn,
 	}, nil

@@ -63,7 +63,7 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
-func (p *PreallocWriteRequest) ClearTimeseriesUnmarshalData() {
+func (p *WriteRequest) ClearTimeseriesUnmarshalData() {
 	for idx := range p.Timeseries {
 		p.Timeseries[idx].clearUnmarshalData()
 	}
