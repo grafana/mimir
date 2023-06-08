@@ -35,6 +35,7 @@
 ### Jsonnet
 
 * [FEATURE] Alertmanager: Add horizontal pod autoscaler config, that can be enabled using `autoscaling_alertmanager_enabled: true`. #5194 #5249
+* [ENHANCEMENT] Enable the `track_sizes` feature for Memcached pods. #5209
 * [ENHANCEMENT] Add per-container map for environment variables. #5181
 
 ### Mimirtool
