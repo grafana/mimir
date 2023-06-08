@@ -1582,7 +1582,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.streaming-chunks-per-ingester-buffer-size uint
-    	[experimental] Number of series to buffer per ingester when streaming chunks from ingesters. (default 512)
+    	[experimental] Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-queries-with-step
