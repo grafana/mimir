@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -616,23 +617,42 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			return ringDesc, true, nil
 		}
 
-		// If the ingester failed to clean its ring entry up it can leave its state in LEAVING
-		// OR unregister_on_shutdown=false
-		// Move it into ACTIVE to ensure the ingester joins the ring.
-		if instanceDesc.State == LEAVING && len(instanceDesc.Tokens) == i.cfg.NumTokens {
+		tokens := Tokens(instanceDesc.Tokens)
+		level.Info(i.logger).Log("msg", "existing instance found in ring", "state", instanceDesc.State, "tokens",
+			len(tokens), "ring", i.RingName)
+
+		// If the ingester fails to clean its ring entry up or unregister_on_shutdown=false, it can leave behind its
+		// ring state as LEAVING. Make sure to switch to the ACTIVE state.
+		if instanceDesc.State == LEAVING {
+			delta := i.cfg.NumTokens - len(tokens)
+			if delta > 0 {
+				// We need more tokens
+				level.Info(i.logger).Log("msg", "existing instance has too few tokens, adding difference",
+					"current_tokens", len(tokens), "desired_tokens", i.cfg.NumTokens)
+				newTokens := GenerateTokens(delta, ringDesc.GetTokens())
+				tokens = append(tokens, newTokens...)
+				sort.Sort(tokens)
+			} else if delta < 0 {
+				// We have too many tokens
+				level.Info(i.logger).Log("msg", "existing instance has too many tokens, removing difference",
+					"current_tokens", len(tokens), "desired_tokens", i.cfg.NumTokens)
+				// Make sure we don't pick the N smallest tokens, since that would increase the chance of the instance receiving only smaller hashes.
+				rand.Shuffle(len(tokens), tokens.Swap)
+				tokens = tokens[0:i.cfg.NumTokens]
+				sort.Sort(tokens)
+			}
+
 			instanceDesc.State = ACTIVE
+			instanceDesc.Tokens = tokens
 		}
+
+		// Set the local state based on the updated instance.
+		i.setState(instanceDesc.State)
+		i.setTokens(tokens)
 
 		// We're taking over this entry, update instanceDesc with our values
 		instanceDesc.Addr = i.Addr
 		instanceDesc.Zone = i.Zone
-
-		// We exist in the ring, so assume the ring is right and copy out tokens & state out of there.
-		i.setState(instanceDesc.State)
-		tokens, _ := ringDesc.TokensFor(i.ID)
-		i.setTokens(tokens)
-
-		level.Info(i.logger).Log("msg", "existing entry found in ring", "state", i.GetState(), "tokens", len(tokens), "ring", i.RingName)
 
 		// Update the ring if the instance has been changed. We don't want to rely on heartbeat update, as heartbeat
 		// can be configured to long time, and until then lifecycler would not report this instance as ready in CheckReady.
