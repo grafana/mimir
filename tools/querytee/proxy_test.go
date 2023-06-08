@@ -167,11 +167,13 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 
 			// Start the proxy.
 			cfg := ProxyConfig{
-				BackendEndpoints:      strings.Join(backendURLs, ","),
-				PreferredBackend:      strconv.Itoa(testData.preferredBackendIdx),
-				ServerHTTPServicePort: 0,
-				ServerGRPCServicePort: 0,
-				BackendReadTimeout:    time.Second,
+				BackendEndpoints:         strings.Join(backendURLs, ","),
+				PreferredBackend:         strconv.Itoa(testData.preferredBackendIdx),
+				ServerHTTPServiceAddress: "localhost",
+				ServerHTTPServicePort:    0,
+				ServerGRPCServiceAddress: "localhost",
+				ServerGRPCServicePort:    0,
+				BackendReadTimeout:       time.Second,
 			}
 
 			if len(backendURLs) == 2 {
@@ -323,7 +325,9 @@ func TestProxy_Passthrough(t *testing.T) {
 			cfg := ProxyConfig{
 				BackendEndpoints:               strings.Join(backendURLs, ","),
 				PreferredBackend:               strconv.Itoa(testData.preferredBackendIdx),
+				ServerHTTPServiceAddress:       "localhost",
 				ServerHTTPServicePort:          0,
+				ServerGRPCServiceAddress:       "localhost",
 				ServerGRPCServicePort:          0,
 				BackendReadTimeout:             time.Second,
 				PassThroughNonRegisteredRoutes: true,
@@ -377,9 +381,11 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		// Start backend servers.
 		for _, backend := range backends {
 			server, err := server.New(server.Config{
-				HTTPListenPort: 0,
-				GRPCListenPort: 0,
-				Registerer:     prometheus.NewRegistry(),
+				HTTPListenAddress: "localhost",
+				HTTPListenPort:    0,
+				GRPCListenAddress: "localhost",
+				GRPCListenPort:    0,
+				Registerer:        prometheus.NewRegistry(),
 			})
 			require.NoError(t, err)
 			server.HTTP.Path(pathPrefix).Methods("GET").Handler(backend.handler)
@@ -393,11 +399,13 @@ func TestProxyHTTPGRPC(t *testing.T) {
 
 		// Start the proxy.
 		cfg := ProxyConfig{
-			BackendEndpoints:      strings.Join(backendURLs, ","),
-			PreferredBackend:      strconv.Itoa(0), // First backend server is preferred response
-			ServerHTTPServicePort: 0,
-			ServerGRPCServicePort: 0,
-			BackendReadTimeout:    time.Second,
+			BackendEndpoints:         strings.Join(backendURLs, ","),
+			PreferredBackend:         strconv.Itoa(0), // First backend server is preferred response
+			ServerHTTPServiceAddress: "localhost",
+			ServerHTTPServicePort:    0,
+			ServerGRPCServiceAddress: "localhost",
+			ServerGRPCServicePort:    0,
+			BackendReadTimeout:       time.Second,
 		}
 
 		p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
@@ -427,9 +435,11 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		// Start backend servers.
 		for _, backend := range backends {
 			server, err := server.New(server.Config{
-				HTTPListenPort: 0,
-				GRPCListenPort: 0,
-				Registerer:     prometheus.NewRegistry(),
+				HTTPListenAddress: "localhost",
+				HTTPListenPort:    0,
+				GRPCListenAddress: "localhost",
+				GRPCListenPort:    0,
+				Registerer:        prometheus.NewRegistry(),
 			})
 			require.NoError(t, err)
 			server.HTTP.Path(pathPrefix).Methods("GET").Handler(backend.handler)
@@ -443,11 +453,13 @@ func TestProxyHTTPGRPC(t *testing.T) {
 
 		// Start the proxy.
 		cfg := ProxyConfig{
-			BackendEndpoints:      strings.Join(backendURLs, ","),
-			PreferredBackend:      strconv.Itoa(0), // First backend server is preferred response
-			ServerHTTPServicePort: 0,
-			ServerGRPCServicePort: 0,
-			BackendReadTimeout:    time.Second,
+			BackendEndpoints:         strings.Join(backendURLs, ","),
+			PreferredBackend:         strconv.Itoa(0), // First backend server is preferred response
+			ServerHTTPServiceAddress: "localhost",
+			ServerHTTPServicePort:    0,
+			ServerGRPCServiceAddress: "localhost",
+			ServerGRPCServicePort:    0,
+			BackendReadTimeout:       time.Second,
 		}
 
 		p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
@@ -498,11 +510,10 @@ func mockQueryResponse(path string, status int, res string) http.HandlerFunc {
 //   - http: HTTPListenAddr()
 //   - grpc: GRPCListenAddr()
 func getServerAddress(proto string, server *server.Server) string {
-	// server.Server has no address configured, so address is set as '[::]'
 	if proto == "http" {
-		return strings.ReplaceAll(server.HTTPListenAddr().String(), "[::]", "http://localhost")
+		return "http://" + server.HTTPListenAddr().String()
 	} else if proto == "grpc" {
-		return strings.ReplaceAll(server.GRPCListenAddr().String(), "[::]", "dns:///localhost")
+		return "dns:///" + server.GRPCListenAddr().String()
 	}
 
 	return ""
