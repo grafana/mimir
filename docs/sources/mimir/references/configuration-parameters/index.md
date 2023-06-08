@@ -353,6 +353,10 @@ overrides_exporter:
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
+
+# (experimental) Enables optimized marshaling of timeseries.
+# CLI flag: -timeseries-unmarshal-caching-optimization-enabled
+[timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
 ```
 
 ### common
@@ -764,6 +768,10 @@ instance_limits:
   # per-tenant. Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
+
+# (experimental) Enable pooling of buffers used for marshaling write requests.
+# CLI flag: -distributor.write-requests-buffer-pooling-enabled
+[write_requests_buffer_pooling_enabled: <boolean> | default = false]
 ```
 
 ### ingester
@@ -1065,7 +1073,7 @@ store_gateway_client:
 # (experimental) Number of series to buffer per ingester when streaming chunks
 # from ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
-[streaming_chunks_per_ingester_series_buffer_size: <int> | default = 512]
+[streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
@@ -1839,7 +1847,7 @@ alertmanager_client:
   # CLI flag: -alertmanager.alertmanager-client.grpc-client-rate-limit-burst
   [rate_limit_burst: <int> | default = 0]
 
-  # (advanced) Enable backoff and retry when we hit ratelimits.
+  # (advanced) Enable backoff and retry when we hit rate limits.
   # CLI flag: -alertmanager.alertmanager-client.backoff-on-ratelimits
   [backoff_on_ratelimits: <boolean> | default = false]
 
@@ -1856,7 +1864,19 @@ alertmanager_client:
     # CLI flag: -alertmanager.alertmanager-client.backoff-retries
     [max_retries: <int> | default = 10]
 
-  # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
+  # (experimental) Initial stream window size. Values less than the default are
+  # not supported and are ignored. Setting this to a value other than the
+  # default disables the BDP estimator.
+  # CLI flag: -alertmanager.alertmanager-client.initial-stream-window-size
+  [initial_stream_window_size: <int> | default = 63KiB1023B]
+
+  # (experimental) Initial connection window size. Values less than the default
+  # are not supported and are ignored. Setting this to a value other than the
+  # default disables the BDP estimator.
+  # CLI flag: -alertmanager.alertmanager-client.initial-connection-window-size
+  [initial_connection_window_size: <int> | default = 63KiB1023B]
+
+  # (advanced) Enable TLS in the gRPC client. This flag needs to be enabled when
   # any other TLS flag is set. If set to false, insecure connection to gRPC
   # server will be used.
   # CLI flag: -alertmanager.alertmanager-client.tls-enabled
@@ -1923,6 +1943,21 @@ alertmanager_client:
   # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   # CLI flag: -alertmanager.alertmanager-client.tls-min-version
   [tls_min_version: <string> | default = ""]
+
+  # (advanced) The maximum amount of time to establish a connection. A value of
+  # 0 means default gRPC connect timeout and backoff.
+  # CLI flag: -alertmanager.alertmanager-client.connect-timeout
+  [connect_timeout: <duration> | default = 0s]
+
+  # (advanced) Initial backoff delay after first connection failure. Only
+  # relevant if ConnectTimeout > 0.
+  # CLI flag: -alertmanager.alertmanager-client.connect-backoff-base-delay
+  [connect_backoff_base_delay: <duration> | default = 1s]
+
+  # (advanced) Maximum backoff delay when establishing a connection. Only
+  # relevant if ConnectTimeout > 0.
+  # CLI flag: -alertmanager.alertmanager-client.connect-backoff-max-delay
+  [connect_backoff_max_delay: <duration> | default = 5s]
 
 # (advanced) The interval between persisting the current alertmanager state
 # (notification log and silences) to object storage. This is only used when
@@ -2043,7 +2078,7 @@ The `grpc_client` block configures the gRPC client used to communicate between t
 # CLI flag: -<prefix>.grpc-client-rate-limit-burst
 [rate_limit_burst: <int> | default = 0]
 
-# (advanced) Enable backoff and retry when we hit ratelimits.
+# (advanced) Enable backoff and retry when we hit rate limits.
 # CLI flag: -<prefix>.backoff-on-ratelimits
 [backoff_on_ratelimits: <boolean> | default = false]
 
@@ -2060,7 +2095,19 @@ backoff_config:
   # CLI flag: -<prefix>.backoff-retries
   [max_retries: <int> | default = 10]
 
-# (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
+# (experimental) Initial stream window size. Values less than the default are
+# not supported and are ignored. Setting this to a value other than the default
+# disables the BDP estimator.
+# CLI flag: -<prefix>.initial-stream-window-size
+[initial_stream_window_size: <int> | default = 63KiB1023B]
+
+# (experimental) Initial connection window size. Values less than the default
+# are not supported and are ignored. Setting this to a value other than the
+# default disables the BDP estimator.
+# CLI flag: -<prefix>.initial-connection-window-size
+[initial_connection_window_size: <int> | default = 63KiB1023B]
+
+# (advanced) Enable TLS in the gRPC client. This flag needs to be enabled when
 # any other TLS flag is set. If set to false, insecure connection to gRPC server
 # will be used.
 # CLI flag: -<prefix>.tls-enabled
@@ -2127,6 +2174,21 @@ backoff_config:
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.tls-min-version
 [tls_min_version: <string> | default = ""]
+
+# (advanced) The maximum amount of time to establish a connection. A value of 0
+# means default gRPC connect timeout and backoff.
+# CLI flag: -<prefix>.connect-timeout
+[connect_timeout: <duration> | default = 0s]
+
+# (advanced) Initial backoff delay after first connection failure. Only relevant
+# if ConnectTimeout > 0.
+# CLI flag: -<prefix>.connect-backoff-base-delay
+[connect_backoff_base_delay: <duration> | default = 1s]
+
+# (advanced) Maximum backoff delay when establishing a connection. Only relevant
+# if ConnectTimeout > 0.
+# CLI flag: -<prefix>.connect-backoff-max-delay
+[connect_backoff_max_delay: <duration> | default = 5s]
 ```
 
 ### frontend_worker
@@ -4101,7 +4163,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
 # STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA,
-# INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR
+# INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
 # CLI flag: -<prefix>.s3.storage-class
 [storage_class: <string> | default = ""]
 

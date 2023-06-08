@@ -98,6 +98,14 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string) (*anal
 		}
 		analyze.ParseMetricsInBoard(output, board)
 	}
+
+	var metricsUsed model.LabelValues
+	for metric := range output.OverallMetrics {
+		metricsUsed = append(metricsUsed, model.LabelValue(metric))
+	}
+	sort.Sort(metricsUsed)
+	output.MetricsUsed = metricsUsed
+
 	return output, nil
 }
 
@@ -111,13 +119,6 @@ func unmarshalDashboard(data []byte, link sdk.FoundBoard) (minisdk.Board, error)
 }
 
 func writeOut(mig *analyze.MetricsInGrafana, outputFile string) error {
-	var metricsUsed model.LabelValues
-	for metric := range mig.OverallMetrics {
-		metricsUsed = append(metricsUsed, model.LabelValue(metric))
-	}
-	sort.Sort(metricsUsed)
-
-	mig.MetricsUsed = metricsUsed
 	out, err := json.MarshalIndent(mig, "", "  ")
 	if err != nil {
 		return err

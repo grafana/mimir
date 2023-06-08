@@ -8,7 +8,6 @@ package client
 import (
 	"flag"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -48,8 +47,12 @@ func MakeIngesterClient(addr string, cfg Config) (HealthAndIngesterClient, error
 	if err != nil {
 		return nil, err
 	}
+
+	ingClient := NewIngesterClient(conn)
+	ingClient = newBufferPoolingIngesterClient(ingClient, conn)
+
 	return &closableHealthAndIngesterClient{
-		IngesterClient: NewIngesterClient(conn),
+		IngesterClient: ingClient,
 		HealthClient:   grpc_health_v1.NewHealthClient(conn),
 		conn:           conn,
 	}, nil
@@ -69,8 +72,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
 }
 
-func (cfg *Config) Validate(log log.Logger) error {
-	return cfg.GRPCClientConfig.Validate(log)
+func (cfg *Config) Validate() error {
+	return cfg.GRPCClientConfig.Validate()
 }
 
 type CombinedQueryStreamResponse struct {

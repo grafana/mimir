@@ -135,6 +135,10 @@ push-multiarch-build-image: ## Push the docker build image.
 	# Build and push mimir build image for linux/amd64 and linux/arm64
 	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --progress=plain --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
 
+.PHONY: print-build-image
+print-build-image:
+	@echo $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
+
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
 DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
@@ -178,7 +182,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= charleskorn-poddisruptionbudget-ba2264123
+LATEST_BUILD_IMAGE_TAG ?= felix-update-go-to-1.20.5-31cf42ae2
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden

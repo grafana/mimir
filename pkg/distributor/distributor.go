@@ -12,7 +12,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"sort"
 	"sync"
 	"time"
 
@@ -47,6 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -66,10 +66,12 @@ const (
 
 	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
 	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
-)
 
-const (
 	instanceIngestionRateTickInterval = time.Second
+
+	// Size of "slab" when using pooled buffers for marshaling write requests. When handling single Push request
+	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
+	writeRequestSlabPoolSize = 512 * 1024
 )
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -135,6 +137,9 @@ type Distributor struct {
 	metadataValidationMetrics *validation.MetadataValidationMetrics
 
 	PushWithMiddlewares push.Func
+
+	// Pool of []byte used when marshalling write requests.
+	writeRequestBytePool sync.Pool
 }
 
 // Config contains the configuration required to
@@ -170,6 +175,8 @@ type Config struct {
 	// and access the deserialized write requests before/after they are pushed.
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
+
+	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -183,6 +190,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
+	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -562,26 +570,6 @@ func shardByAllLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
 	return h
 }
 
-// Remove the label labelName from a slice of LabelAdapters if it exists.
-func removeLabel(labelName string, labels *[]mimirpb.LabelAdapter) {
-	for i := 0; i < len(*labels); i++ {
-		pair := (*labels)[i]
-		if pair.Name == labelName {
-			*labels = append((*labels)[:i], (*labels)[i+1:]...)
-			return
-		}
-	}
-}
-
-// Remove labels with value=="" from a slice of LabelPairs, updating the slice in-place.
-func removeEmptyLabelValues(labels *[]mimirpb.LabelAdapter) {
-	for i := len(*labels) - 1; i >= 0; i-- {
-		if (*labels)[i].Value == "" {
-			*labels = append((*labels)[:i], (*labels)[i+1:]...)
-		}
-	}
-}
-
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
 // and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
 // nil for the error means accept the sample.
@@ -612,7 +600,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS int64) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS int64) error {
 	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
@@ -643,7 +631,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	}
 
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
-		mimirpb.ClearExemplars(ts.TimeSeries)
+		ts.ClearExemplars()
 		return nil
 	}
 
@@ -657,12 +645,8 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 			return err
 		}
 		if !validation.ExemplarTimestampOK(d.exemplarValidationMetrics, userID, minExemplarTS, e) {
-			// Delete this exemplar by moving the last one on top and shortening the slice
-			last := len(ts.Exemplars) - 1
-			if i < last {
-				ts.Exemplars[i] = ts.Exemplars[last]
-			}
-			ts.Exemplars = ts.Exemplars[:last]
+			ts.DeleteExemplarByMovingLast(i)
+			// Don't increase index i. After moving last exemplar to this index, we want to check it again.
 			continue
 		}
 		i++
@@ -753,8 +737,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			// If we found both the cluster and replica labels, we only want to include the cluster label when
 			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
 			// series we're trying to dedupe when HA tracking moves over to a different replica.
-			for _, ts := range req.Timeseries {
-				removeLabel(haReplicaLabel, &ts.Labels)
+			for ix := range req.Timeseries {
+				req.Timeseries[ix].RemoveLabel(haReplicaLabel)
 			}
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
@@ -799,15 +783,15 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 					continue
 				}
 				lb.Del(metaLabelTenantID)
-				ts.Labels = mimirpb.FromLabelsToLabelAdapters(lb.Labels())
+				req.Timeseries[tsIdx].SetLabels(lb.Labels())
 			}
 
 			for _, labelName := range d.limits.DropLabels(userID) {
-				removeLabel(labelName, &ts.Labels)
+				req.Timeseries[tsIdx].RemoveLabel(labelName)
 			}
 
 			// Prometheus strips empty values before storing; drop them now, before sharding to ingesters.
-			removeEmptyLabelValues(&ts.Labels)
+			req.Timeseries[tsIdx].RemoveEmptyLabelValues()
 
 			if len(ts.Labels) == 0 {
 				removeTsIndexes = append(removeTsIndexes, tsIdx)
@@ -820,7 +804,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
 			// later in the validation phase, we ignore them here.
 			// 3) Ingesters expect labels to be sorted in the Push request.
-			sortLabelsIfNeeded(ts.Labels)
+			req.Timeseries[tsIdx].SortLabelsIfNeeded()
 		}
 
 		if len(removeTsIndexes) > 0 {
@@ -887,7 +871,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		// (If we didn't find any samples this will be 0, and we won't reject any exemplars.)
 		var minExemplarTS int64
 		if earliestSampleTimestampMs != math.MaxInt64 {
-			minExemplarTS = earliestSampleTimestampMs - 300000
+			minExemplarTS = earliestSampleTimestampMs - 5*time.Minute.Milliseconds()
 		}
 
 		var firstPartialErr error
@@ -902,7 +886,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, ts, userID, group, skipLabelNameValidation, minExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelNameValidation, minExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
@@ -1147,6 +1131,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
+	if d.cfg.WriteRequestsBufferPoolingEnabled {
+		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
+		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
+	}
+
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
 		var timeseriesCount, metadataCount int
 		for _, i := range indexes {
@@ -1217,28 +1206,6 @@ func copyString(s string) string {
 	return string([]byte(s))
 }
 
-func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
-	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
-	// we can avoid extra memory allocations (mostly interface-related) this way.
-	sorted := true
-	last := ""
-	for _, l := range labels {
-		if last > l.Name {
-			sorted = false
-			break
-		}
-		last = l.Name
-	}
-
-	if sorted {
-		return
-	}
-
-	sort.Slice(labels, func(i, j int) bool {
-		return labels[i].Name < labels[j].Name
-	})
-}
-
 func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
 	if err != nil {
@@ -1251,6 +1218,7 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Metadata:   metadata,
 		Source:     source,
 	}
+
 	_, err = c.Push(ctx, &req)
 	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 		// Wrap HTTP gRPC error with more explanatory message.
@@ -1475,7 +1443,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
+	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, false, func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
 		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
 		if err != nil {
 			return struct{}{}, err
@@ -1766,7 +1734,7 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod querier.CountMe
 	req := &ingester_client.UserStatsRequest{
 		CountMethod: ingesterCountMethod,
 	}
-	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
+	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, false, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
 		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
 		if err != nil {
 			return zonedUserStatsResponse{}, err

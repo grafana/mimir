@@ -19,18 +19,23 @@ import (
 
 type queryLimiterCtxKey struct{}
 
+const cardinalityStrategy = "Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query"
+
 var (
 	ctxKey                = &queryLimiterCtxKey{}
-	MaxSeriesHitMsgFormat = globalerror.MaxSeriesPerQuery.MessageWithPerTenantLimitConfig(
+	MaxSeriesHitMsgFormat = globalerror.MaxSeriesPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
 		"the query exceeded the maximum number of series (limit: %d series)",
+		cardinalityStrategy,
 		validation.MaxSeriesPerQueryFlag,
 	)
-	MaxChunkBytesHitMsgFormat = globalerror.MaxChunkBytesPerQuery.MessageWithPerTenantLimitConfig(
+	MaxChunkBytesHitMsgFormat = globalerror.MaxChunkBytesPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
 		"the query exceeded the aggregated chunks size limit (limit: %d bytes)",
+		cardinalityStrategy,
 		validation.MaxChunkBytesPerQueryFlag,
 	)
-	MaxChunksPerQueryLimitMsgFormat = globalerror.MaxChunksPerQuery.MessageWithPerTenantLimitConfig(
+	MaxChunksPerQueryLimitMsgFormat = globalerror.MaxChunksPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
 		"the query exceeded the maximum number of chunks (limit: %d chunks)",
+		cardinalityStrategy,
 		validation.MaxChunksPerQueryFlag,
 	)
 )

@@ -17,7 +17,11 @@ import (
 )
 
 func TestServerStopViaContext(t *testing.T) {
-	serv, err := server.New(server.Config{Registerer: prometheus.NewPedanticRegistry()})
+	serv, err := server.New(server.Config{
+		HTTPListenAddress: "localhost",
+		GRPCListenAddress: "localhost",
+		Registerer:        prometheus.NewPedanticRegistry(),
+	})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -31,7 +35,11 @@ func TestServerStopViaContext(t *testing.T) {
 }
 
 func TestServerStopViaShutdown(t *testing.T) {
-	serv, err := server.New(server.Config{Registerer: prometheus.NewPedanticRegistry()})
+	serv, err := server.New(server.Config{
+		HTTPListenAddress: "localhost",
+		GRPCListenAddress: "localhost",
+		Registerer:        prometheus.NewPedanticRegistry(),
+	})
 	require.NoError(t, err)
 
 	s := NewServerService(serv, func() []services.Service { return nil })
@@ -45,7 +53,11 @@ func TestServerStopViaShutdown(t *testing.T) {
 }
 
 func TestServerStopViaStop(t *testing.T) {
-	serv, err := server.New(server.Config{Registerer: prometheus.NewPedanticRegistry()})
+	serv, err := server.New(server.Config{
+		HTTPListenAddress: "localhost",
+		GRPCListenAddress: "localhost",
+		Registerer:        prometheus.NewPedanticRegistry(),
+	})
 	require.NoError(t, err)
 
 	s := NewServerService(serv, func() []services.Service { return nil })
