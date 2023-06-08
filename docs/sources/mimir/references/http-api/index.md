@@ -566,16 +566,16 @@ GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_values
 Returns realtime label values cardinality associated to request param `label_names[]` across all ingesters, for the authenticated tenant, in `JSON` format.
 It returns the series count per label value associated to request param `label_names[]`.
 
-Two methods of counting are available, `inmemory` and `active`. This choice is controlled via the `count_method` parameter.
+Two methods of counting are available: `inmemory` and `active`. To choose one, use the `count_method` parameter.
 
 The `inmemory` method counts the number of series in currently opened TSDBs in Mimir's ingesters.
-Two subsequent calls may return completely different results if an ingester cut a block between calls.
+Two subsequent calls might return completely different results if an ingester cut a block between calls.
 This method of counting is most useful for understanding ingester memory usage.
 
 The `active` method also counts series in currently opened TSDBs in Mimir's ingesters, but filters out series that have not received a sample within a configurable duration of time. 
-Use the `ingester.active-series-metrics-idle-timeout` parameter to configure this duration.
-This method of counting is most useful for understanding which label values are represented in the samples ingested by Mimir in the last `ingester.active-series-metrics-idle-timeout`.
-Two subsequent calls will likely return similar results, as this window of time is not related to the block cutting on ingesters.
+To configure this duration, use the `-ingester.active-series-metrics-idle-timeout` parameter.
+This method of counting is most useful for understanding what label values are represented in the samples ingested by Mimir in the last `-ingester.active-series-metrics-idle-timeout`.
+Two subsequent calls will likely return similar results, because this window of time is not related to the block cutting on ingesters.
 Values will change only as a result of changes in the data ingested by Mimir. 
 
 The items in the field `labels` are sorted by `series_count` in DESC order and by `label_name` in ASC order.
