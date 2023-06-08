@@ -46,8 +46,8 @@ var (
 )
 
 type Config struct {
-	Enabled          bool   `yaml:"enabled" category:"experimental"`
-	InstallationMode string `yaml:"installation_mode" category:"experimental"`
+	Enabled          bool   `yaml:"enabled"`
+	InstallationMode string `yaml:"installation_mode"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet

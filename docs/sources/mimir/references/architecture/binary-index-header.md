@@ -9,7 +9,7 @@ weight: 40
 
 # Grafana Mimir binary index-header
 
-To query series inside blocks from object storage, the [store-gateway]({{< relref "components/store-gateway.md" >}}) must obtain information about each block index.
+To query series inside blocks from object storage, the [store-gateway]({{< relref "./components/store-gateway" >}}) must obtain information about each block index.
 To obtain the required information, the store-gateway builds an index-header for each block and stores it on local disk.
 
 The store-gateway uses `GET byte range request` to build the index-header, which contains specific sections of the block's index. The store-gateway uses the index-header at query time.

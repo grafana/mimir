@@ -10,18 +10,18 @@ weight: 30
 
 # Installing Grafana Mimir dashboards and alerts
 
-Grafana Mimir is shipped with a comprehensive set of production-ready Grafana [dashboards]({{< relref "dashboards/_index.md" >}}) and alerts to monitor the state and health of a Mimir cluster.
+Grafana Mimir is shipped with a comprehensive set of production-ready Grafana [dashboards]({{< relref "./dashboards" >}}) and alerts to monitor the state and health of a Mimir cluster.
 
 ## Requirements
 
-- Grafana Mimir dashboards and alerts [require specific labels]({{< relref "requirements.md" >}}) to be set by Prometheus or Grafana Agent when scraping your Mimir cluster metrics
+- Grafana Mimir dashboards and alerts [require specific labels]({{< relref "./requirements" >}}) to be set by Prometheus or Grafana Agent when scraping your Mimir cluster metrics
 - Some dashboards require recording rules that you should install in your Prometheus
 
 ## Install from package
 
 Grafana Mimir provides ready to use Grafana dashboards in the `.json` format and Prometheus alerts in the `.yaml` format, that you can directly import into your Grafana installation and Prometheus config.
 
-The packaged dashboards and alerts have been compiled from the sources using a default configuration and don't allow you to customize the [required metrics label names]({{< relref "requirements.md" >}}).
+The packaged dashboards and alerts have been compiled from the sources using a default configuration and don't allow you to customize the [required metrics label names]({{< relref "./requirements" >}}).
 If you need to customize the required metrics label names please choose one of the other installation options.
 
 1. Download [dashboards](https://github.com/grafana/mimir/tree/main/operations/mimir-mixin-compiled/dashboards), [recording rules](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/rules.yaml) and [alerts](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/alerts.yaml) from Grafana Mimir repository
@@ -31,7 +31,7 @@ If you need to customize the required metrics label names please choose one of t
 ## Install from sources
 
 Grafana Mimir dashboards and alerts are built using [Jsonnet](https://jsonnet.org) language and you can compile them from sources.
-If you choose this option, you can change the configuration to match your deployment, like customizing the [required label names]({{< relref "requirements.md" >}}).
+If you choose this option, you can change the configuration to match your deployment, like customizing the [required label names]({{< relref "./requirements" >}}).
 
 1. Checkout Mimir source code
    ```bash

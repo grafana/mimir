@@ -59,6 +59,7 @@ data:
     frontend:
       cache_results: true
       parallelize_shardable_queries: true
+      query_sharding_target_series_per_shard: 2500
       results_cache:
         backend: memcached
         memcached:

@@ -17,10 +17,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - name: Get build image from Makefile
+        id: build_image_step
+        run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+    outputs:
+      build_image: ${{ steps.build_image_step.outputs.build_image }}
+
   lint:
     runs-on: ubuntu-latest
+    needs:
+      - prepare
     container:
-      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
+      image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -76,21 +89,45 @@ jobs:
   doc-validator:
     runs-on: ubuntu-latest
     container:
-      image: grafana/doc-validator:v1.9.0
+      image: grafana/doc-validator:v3.0.0
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Run doc-validator tool (mimir)
-        run: doc-validator ./docs/sources/mimir /docs/mimir/latest
+        run: >
+          doc-validator
+          docs/sources/mimir
+          /docs/mimir/latest
+          | reviewdog
+          -f=rdjsonl
+          --fail-on-error
+          --filter-mode=nofilter
+          --name=doc-validator
+          --reporter=github-pr-review
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       - name: Run doc-validator tool (helm-charts)
-        run: doc-validator ./docs/sources/helm-charts /docs/mimir/latest
+        run: >
+          doc-validator
+          docs/sources/helm-charts
+          /docs/helm-charts/mimir-distributed/latest
+          | reviewdog
+          -f=rdjsonl
+          --fail-on-error
+          --filter-mode=nofilter
+          --name=doc-validator
+          --reporter=github-pr-review
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
   lint-jsonnet:
     runs-on: ubuntu-latest
+    needs:
+      - prepare
     container:
-      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
+      image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -117,8 +154,10 @@ jobs:
 
   lint-helm:
     runs-on: ubuntu-latest
+    needs:
+      - prepare
     container:
-      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
+      image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -146,8 +185,10 @@ jobs:
       matrix:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
+    needs:
+      - prepare
     container:
-      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
+      image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -190,8 +231,10 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    needs:
+      - prepare
     container:
-      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
+      image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -242,9 +285,9 @@ jobs:
         test_group_total: [6]
     steps:
       - name: Upgrade golang
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
-          go-version: 1.20.4
+          go-version: 1.20.5
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
         uses: actions/checkout@v3
@@ -295,12 +338,12 @@ jobs:
           ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   deploy:
-    needs: [build, test, lint, integration]
+    needs: [prepare, build, test, lint, integration]
     # Only deploy images on pushes to the grafana/mimir repo, which either are tag pushes or weekly release branch pushes.
     if: (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r') ) && github.event_name == 'push' && github.repository == 'grafana/mimir'
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:charleskorn-poddisruptionbudget-ba2264123
+      image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v3

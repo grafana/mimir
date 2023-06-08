@@ -32,27 +32,27 @@
 
   querier_ports:: $.util.defaultPorts,
 
-  querier_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
-  },
-
-  newQuerierContainer(name, args)::
+  newQuerierContainer(name, args, envmap={})::
     container.new(name, $._images.querier) +
     container.withPorts($.querier_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
-    container.withEnvMap($.querier_env_map) +
+    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
 
+  querier_env_map:: {
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
+  },
+
   querier_container::
-    self.newQuerierContainer('querier', $.querier_args),
+    self.newQuerierContainer('querier', $.querier_args, $.querier_env_map),
 
   local deployment = $.apps.v1.deployment,
 
   newQuerierDeployment(name, container)::
-    deployment.new(name, $._config.querier.replicas, [container]) +
+    deployment.new(name, 6, [container]) +
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
