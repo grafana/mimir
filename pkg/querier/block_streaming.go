@@ -34,7 +34,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 	}
 
 	currLabels := mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.next].Labels)
-	seriesIdxStart, seriesIdxEnd := bqss.next, bqss.next
+	seriesIdxStart := bqss.next
 	bqss.next++
 
 	// Merge chunks for current series. Chunks may come in multiple responses, but as soon
@@ -43,9 +43,8 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 	for bqss.next < len(bqss.series) && labels.Compare(currLabels, mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.next].Labels)) == 0 {
 		bqss.next++
 	}
-	seriesIdxEnd = bqss.next - 1
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, seriesIdxEnd, bqss.streamReader)
+	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.next-1, bqss.streamReader)
 	return true
 }
 

@@ -1662,7 +1662,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				maxT = testCase.maxT
 			}
 
-			iterator, err := openBlockSeriesChunkRefsSetsIterator(
+			iterator, _, _, err := openBlockSeriesChunkRefsSetsIterator(
 				ctx,
 				testCase.batchSize,
 				"",
@@ -1677,6 +1677,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				maxT,
 				2,
 				newSafeQueryStats(),
+				nil, nil,
 				nil,
 			)
 			require.NoError(t, err)
@@ -1763,7 +1764,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 			block.pendingReaders.Add(2) // this is hacky, but can be replaced only block.indexReade() accepts a strategy
 			querySeries := func(indexReader *bucketIndexReader) []seriesChunkRefsSet {
 				hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
-				iterator, err := openBlockSeriesChunkRefsSetsIterator(
+				iterator, _, _, err := openBlockSeriesChunkRefsSetsIterator(
 					ctx,
 					testCase.batchSize,
 					"",
@@ -1778,6 +1779,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					block.meta.MaxTime,
 					2,
 					newSafeQueryStats(),
+					nil, nil,
 					nil,
 				)
 				require.NoError(t, err)
@@ -1826,7 +1828,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 					b.ResetTimer()
 
 					for i := 0; i < b.N; i++ {
-						iterator, err := openBlockSeriesChunkRefsSetsIterator(
+						iterator, _, _, err := openBlockSeriesChunkRefsSetsIterator(
 							ctx,
 							5000,
 							"",
@@ -1841,6 +1843,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							block.meta.MaxTime,
 							2,
 							newSafeQueryStats(),
+							nil, nil,
 							nil,
 						)
 						require.NoError(b, err)
@@ -2374,7 +2377,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 					// All test cases have a single matcher, so the strategy wouldn't really make a difference.
 					// Pending matchers are tested in other tests.
 					indexReader := b.indexReader(selectAllStrategy{})
-					ss, err := openBlockSeriesChunkRefsSetsIterator(
+					ss, _, _, err := openBlockSeriesChunkRefsSetsIterator(
 						context.Background(),
 						batchSize,
 						"",
@@ -2389,6 +2392,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta.MaxTime,
 						1,
 						statsColdCache,
+						nil, nil,
 						log.NewNopLogger(),
 					)
 
@@ -2405,7 +2409,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 					}
 
 					statsWarnCache := newSafeQueryStats()
-					ss, err = openBlockSeriesChunkRefsSetsIterator(
+					ss, _, _, err = openBlockSeriesChunkRefsSetsIterator(
 						context.Background(),
 						batchSize,
 						"",
@@ -2420,6 +2424,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta.MaxTime,
 						1,
 						statsWarnCache,
+						nil, nil,
 						log.NewNopLogger(),
 					)
 					require.NoError(t, err)

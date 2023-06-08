@@ -28,7 +28,7 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 
 	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(1000))
 	block := newTestBucketBlock()
-	seriesRefsIterator, err := openBlockSeriesChunkRefsSetsIterator(
+	seriesRefsIterator, _, _, err := openBlockSeriesChunkRefsSetsIterator(
 		ctx,
 		5000,
 		"tenant-1",
@@ -43,6 +43,7 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 		block.meta.MaxTime,
 		2,
 		newSafeQueryStats(),
+		nil, nil,
 		log.NewNopLogger(),
 	)
 	require.NoError(t, err)
