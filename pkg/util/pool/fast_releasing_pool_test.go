@@ -18,11 +18,13 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		sliceA, slabIDA := slabPool.Get(5)
 		require.Len(t, sliceA, 5)
 		require.Equal(t, 5, cap(sliceA))
+		require.Equal(t, 1, slabIDA) // Make sure first slabID is 1.
 		copy(sliceA, "12345")
 
 		sliceB, slabIDB := slabPool.Get(5)
 		require.Len(t, sliceB, 5)
 		require.Equal(t, 5, cap(sliceB))
+		require.Greater(t, slabIDB, 0)
 		copy(sliceB, "67890")
 
 		require.Equal(t, "12345", string(sliceA))
@@ -49,7 +51,8 @@ func TestFastReleasingSlabPool(t *testing.T) {
 		// Allocating another slice needs a new slab.
 		sliceC, slabIDC := slabPool.Get(5)
 		require.Len(t, sliceC, 5)
-		require.Equal(t, 5, cap(sliceB))
+		require.Equal(t, 5, cap(sliceC))
+		require.Greater(t, slabIDC, 0)
 
 		require.Equal(t, 3, len(slabPool.slabs))
 		require.Nil(t, slabPool.slabs[0])
@@ -144,6 +147,43 @@ func TestFastReleasingSlabPool(t *testing.T) {
 
 		require.Zero(t, delegatePool.Balance.Load())
 		require.Greater(t, int(delegatePool.Gets.Load()), 0)
+	})
+
+	t.Run("releasing slabID 0", func(t *testing.T) {
+		delegatePool := &TrackedPool{Parent: &sync.Pool{}}
+		slabPool := NewFastReleasingSlabPool[byte](delegatePool, 10)
+
+		slabPool.Release(0)
+	})
+
+	t.Run("releasing slabID 1", func(t *testing.T) {
+		delegatePool := &TrackedPool{Parent: &sync.Pool{}}
+		slabPool := NewFastReleasingSlabPool[byte](delegatePool, 10)
+
+		defer func() {
+			p := recover()
+			require.Equal(t, "invalid slab id: 1", p)
+		}()
+
+		// Ignored
+		slabPool.Release(1)
+		require.Fail(t, "Release should panic")
+	})
+
+	t.Run("releasing slab too many times", func(t *testing.T) {
+		delegatePool := &TrackedPool{Parent: &sync.Pool{}}
+		slabPool := NewFastReleasingSlabPool[byte](delegatePool, 10)
+
+		_, slabID := slabPool.Get(10)
+		require.Greater(t, slabID, 0)
+		slabPool.Release(slabID)
+
+		defer func() {
+			p := recover()
+			require.Equal(t, "nil slab", p)
+		}()
+		slabPool.Release(slabID)
+		require.Fail(t, "Release of same slab too many times should panic")
 	})
 }
 

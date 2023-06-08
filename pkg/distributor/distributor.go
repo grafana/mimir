@@ -45,7 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	pool2 "github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -189,7 +189,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
-	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
+	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -1132,7 +1132,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	cleanupInDefer = false
 
 	if d.cfg.WriteRequestsBufferPoolingEnabled {
-		slabPool := pool2.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
+		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
 		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
 	}
 

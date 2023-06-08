@@ -25,7 +25,8 @@ func NewFastReleasingSlabPool[T any](delegate Interface, slabSize int) *FastRele
 	return &FastReleasingSlabPool[T]{
 		delegate: delegate,
 		slabSize: slabSize,
-		slabs:    []*trackedSlab[T]{nil}, // slabId = 0 is invalid.
+		// slabID = 0 is invalid, next valid slab we add will have index 1.
+		slabs: make([]*trackedSlab[T], 1, 10),
 	}
 }
 
