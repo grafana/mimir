@@ -42,7 +42,8 @@ message StreamingSeries {
 }
 
 message StreamSeriesBatch {
-  repeated StreamingSeries series = 1; // Only labels are populated here.
+  repeated StreamingSeries series = 1;
+  bool is_end_of_series_stream = 2;
 }
 
 message StreamSeriesChunks {

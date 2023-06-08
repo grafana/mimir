@@ -39,12 +39,11 @@ func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
 	}
 }
 
-func NewStreamSeriesResponse(series *StreamSeriesBatch, endOfStream bool) *SeriesResponse {
+func NewStreamSeriesResponse(series *StreamSeriesBatch) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_StreamingSeries{
 			StreamingSeries: series,
 		},
-		IsEndOfSeriesStream: endOfStream,
 	}
 }
 

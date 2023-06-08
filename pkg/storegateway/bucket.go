@@ -654,7 +654,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 			if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
 				msg := &grpc.PreparedMsg{}
-				if err = msg.Encode(srv, storepb.NewStreamSeriesResponse(seriesBatch, false)); err != nil {
+				if err = msg.Encode(srv, storepb.NewStreamSeriesResponse(seriesBatch)); err != nil {
 					return status.Error(codes.Internal, errors.Wrap(err, "encode streaming series response").Error())
 				}
 
@@ -669,7 +669,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 		// Send any remaining series and signal that there are no more series.
 		msg := &grpc.PreparedMsg{}
-		if err = msg.Encode(srv, storepb.NewStreamSeriesResponse(seriesBatch, true)); err != nil {
+		seriesBatch.IsEndOfSeriesStream = true
+		if err = msg.Encode(srv, storepb.NewStreamSeriesResponse(seriesBatch)); err != nil {
 			return status.Error(codes.Internal, errors.Wrap(err, "encode streaming series response").Error())
 		}
 		// Send the message.
