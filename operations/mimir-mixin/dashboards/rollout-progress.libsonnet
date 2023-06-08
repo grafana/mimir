@@ -320,7 +320,7 @@ local filename = 'mimir-rollout-progress.json';
             textMode: 'value_and_name',
           },
           id: 10,
-          gridPos: { h: 5, w: 10, x: 0, y: 13 },
+          gridPos: { h: 3, w: 10, x: 0, y: 13 },
         },
 
         //
