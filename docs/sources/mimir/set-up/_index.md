@@ -1,9 +1,12 @@
 ---
+aliases:
+  - operators-guide/deploying-grafana-mimir/
 title: Set up
 menuTitle: Set up
-description: Learn how to set up a Mimir server or cluster and visualize data.
-aliases:
-  -
+description: Learn how to set up a Grafana Mimir server or cluster and visualize data.
+keywords:
+  - Mimir deployment
+  - Mimir Kubernetes
 weight: 15
 ---
 
