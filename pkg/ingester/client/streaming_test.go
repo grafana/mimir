@@ -222,12 +222,12 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 		"query selects too many chunks": {
 			maxChunks:     2,
 			maxChunkBytes: 200,
-			expectedError: "attempted to read series at index 0 from stream, but the stream has failed: the query exceeded the maximum number of chunks (limit: 2 chunks) (err-mimir-max-chunks-per-query). To adjust the related per-tenant limit, configure -querier.max-fetched-chunks-per-query, or contact your service administrator.",
+			expectedError: "attempted to read series at index 0 from stream, but the stream has failed: the query exceeded the maximum number of chunks (limit: 2 chunks) (err-mimir-max-chunks-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunks-per-query, or contact your service administrator.",
 		},
 		"query selects too many chunk bytes": {
 			maxChunks:     4,
 			maxChunkBytes: 100,
-			expectedError: "attempted to read series at index 0 from stream, but the stream has failed: the query exceeded the aggregated chunks size limit (limit: 100 bytes) (err-mimir-max-chunks-bytes-per-query). To adjust the related per-tenant limit, configure -querier.max-fetched-chunk-bytes-per-query, or contact your service administrator.",
+			expectedError: "attempted to read series at index 0 from stream, but the stream has failed: the query exceeded the aggregated chunks size limit (limit: 100 bytes) (err-mimir-max-chunks-bytes-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunk-bytes-per-query, or contact your service administrator.",
 		},
 	}
 
@@ -251,7 +251,7 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 				require.EqualError(t, err, testCase.expectedError)
 			}
 
-			require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed")
+			require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed")
 		})
 	}
 }

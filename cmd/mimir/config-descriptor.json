@@ -1657,7 +1657,7 @@
           "required": false,
           "desc": "Number of series to buffer per ingester when streaming chunks from ingesters.",
           "fieldValue": null,
-          "fieldDefaultValue": 512,
+          "fieldDefaultValue": 256,
           "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
           "fieldType": "int",
           "fieldCategory": "experimental"

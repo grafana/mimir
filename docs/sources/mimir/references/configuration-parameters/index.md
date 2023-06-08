@@ -1069,7 +1069,7 @@ store_gateway_client:
 # (experimental) Number of series to buffer per ingester when streaming chunks
 # from ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
-[streaming_chunks_per_ingester_series_buffer_size: <int> | default = 512]
+[streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
