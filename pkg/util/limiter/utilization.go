@@ -30,17 +30,16 @@ const (
 )
 
 type utilizationScanner interface {
-	// Method returns the method for getting resource utilization.
-	Method() string
+	fmt.Stringer
 
-	// Scan returns CPU time and memory utilization, or an error.
+	// Scan returns CPU time in seconds and memory utilization in bytes, or an error.
 	Scan() (float64, uint64, error)
 }
 
 type cgroupV2Scanner struct {
 }
 
-func (s cgroupV2Scanner) Method() string {
+func (s cgroupV2Scanner) String() string {
 	return "cgroup v2"
 }
 
@@ -64,6 +63,7 @@ func (s cgroupV2Scanner) Scan() (float64, uint64, error) {
 	defer cpuR.Close()
 	var name string
 	var cpuTime uint64
+	const usageUsec = "usage_usec"
 	for {
 		if _, err := fmt.Fscanf(cpuR, "%s %d\n", &name, &cpuTime); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -73,12 +73,12 @@ func (s cgroupV2Scanner) Scan() (float64, uint64, error) {
 			return 0, 0, errors.Wrapf(err, "failed scanning %s", cpuPathV2)
 		}
 
-		if name == "usage_usec" {
+		if name == usageUsec {
 			// This is CPU time in microseconds
 			break
 		}
 	}
-	if name != "usage_usec" {
+	if name != usageUsec {
 		return 0, 0, fmt.Errorf("failed scanning %s", cpuPathV2)
 	}
 
@@ -98,7 +98,7 @@ func newCgroupV2Scanner() (utilizationScanner, bool) {
 type cgroupV1Scanner struct {
 }
 
-func (s cgroupV1Scanner) Method() string {
+func (s cgroupV1Scanner) String() string {
 	return "cgroup v1"
 }
 
@@ -164,7 +164,7 @@ type procfsScanner struct {
 	proc procfs.Proc
 }
 
-func (s procfsScanner) Method() string {
+func (s procfsScanner) String() string {
 	return "/proc"
 }
 
@@ -249,7 +249,7 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	cpuTime, memUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "method",
-			l.utilizationScanner.Method(), "err", err.Error())
+			l.utilizationScanner.String(), "err", err.Error())
 		// Disable any limiting, since we can't tell resource utilization
 		l.LimitingReason.Store("")
 		return ctx.Err()
@@ -271,7 +271,7 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	l.movingAvg.Tick()
 	cpuA := float64(l.movingAvg.Rate()) / 100
 
-	level.Debug(l.logger).Log("msg", "process resource utilization", "method", l.utilizationScanner.Method(),
+	level.Debug(l.logger).Log("msg", "process resource utilization", "method", l.utilizationScanner.String(),
 		"memory_utilization", memUtil, "smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
 
 	memPercent := 100 * (float64(memUtil) / float64(l.memoryLimit))

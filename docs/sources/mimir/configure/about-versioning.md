@@ -88,7 +88,7 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
   - CPU/memory utilization based read request limiting:
-    - `-ingester.utilization-based-limiting-enabled`
+    - `-ingester.utilization-limits-enabled
     - `-ingester.read-path-cpu-utilization-limit`
     - `-ingester.read-path-memory-utilization-limit"`
 - Querier

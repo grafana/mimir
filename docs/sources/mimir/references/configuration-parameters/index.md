@@ -961,8 +961,8 @@ instance_limits:
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 
 # (experimental) Enable CPU/memory utilization based read path request limiting
-# CLI flag: -ingester.utilization-based-limiting-enabled
-[utilization_based_limiting_enabled: <boolean> | default = false]
+# CLI flag: -ingester.utilization-limits-enabled
+[utilization_limits_enabled: <boolean> | default = false]
 
 # (experimental) CPU utilization limit, as CPU cores, for CPU/memory utilization
 # based read request limiting
