@@ -181,7 +181,7 @@ func TestWriteRequestBufferingClient_PushConcurrent(t *testing.T) {
 
 			for i := 0; i < requestsPerGoroutine; i++ {
 				for _, ts := range req.Timeseries {
-					ser := mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels).String()
+					ser := mimirpb.FromLabelAdaptersToLabels(ts.Labels).String()
 					sentSamples[ser] = append(sentSamples[ser], ts.Samples...)
 				}
 
@@ -241,7 +241,7 @@ func (ms *mockServer) Push(_ context.Context, r *mimirpb.WriteRequest) (*mimirpb
 		}
 
 		for _, ts := range r.Timeseries {
-			ser := mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels).String()
+			ser := mimirpb.FromLabelAdaptersToLabels(ts.Labels).String()
 			ms.samplesPerSeries[ser] = append(ms.samplesPerSeries[ser], ts.Samples...)
 		}
 	}
