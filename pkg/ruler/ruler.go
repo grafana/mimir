@@ -136,12 +136,12 @@ type Config struct {
 }
 
 // Validate config and returns error on failure
-func (cfg *Config) Validate(limits validation.Limits, log log.Logger) error {
+func (cfg *Config) Validate(limits validation.Limits) error {
 	if limits.RulerTenantShardSize < 0 {
 		return errInvalidTenantShardSize
 	}
 
-	if err := cfg.ClientTLSConfig.Validate(log); err != nil {
+	if err := cfg.ClientTLSConfig.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ruler gRPC client config")
 	}
 

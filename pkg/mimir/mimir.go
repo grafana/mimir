@@ -230,7 +230,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.RulerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid rulestore config")
 	}
-	if err := c.Ruler.Validate(c.LimitsConfig, log); err != nil {
+	if err := c.Ruler.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid ruler config")
 	}
 	if err := c.BlocksStorage.Validate(log); err != nil {
@@ -246,13 +246,13 @@ func (c *Config) Validate(log log.Logger) error {
 		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
-	if err := c.IngesterClient.Validate(log); err != nil {
+	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
-	if err := c.Worker.Validate(log); err != nil {
+	if err := c.Worker.Validate(); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
 	}
-	if err := c.Frontend.Validate(log); err != nil {
+	if err := c.Frontend.Validate(); err != nil {
 		return errors.Wrap(err, "invalid query-frontend config")
 	}
 	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {

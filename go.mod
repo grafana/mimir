@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20230516002259-a1723267ecd1
+	github.com/grafana/dskit v0.0.0-20230607061845-18528bf8d022
 	github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
 	github.com/hashicorp/golang-lru v0.6.0
 	github.com/json-iterator/go v1.1.12
@@ -30,22 +30,22 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.25.1-0.20230502165937-0f3ab929fa37
 	github.com/prometheus/client_golang v1.15.1
-	github.com/prometheus/client_model v0.3.0
-	github.com/prometheus/common v0.42.0
+	github.com/prometheus/client_model v0.4.0
+	github.com/prometheus/common v0.43.0
 	github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e
 	github.com/segmentio/fasthash v0.0.0-20180216231524-a72b379d632e
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/afero v1.9.2
 	github.com/stretchr/testify v1.8.4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	github.com/weaveworks/common v0.0.0-20230509123641-102db1b5bbb9
+	github.com/weaveworks/common v0.0.0-20230511094633-334485600903
 	go.uber.org/atomic v1.10.0
 	go.uber.org/goleak v1.2.1
 	golang.org/x/crypto v0.7.0
 	golang.org/x/net v0.10.0
 	golang.org/x/sync v0.2.0
 	golang.org/x/time v0.3.0
-	google.golang.org/grpc v1.53.0
+	google.golang.org/grpc v1.55.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -153,7 +153,7 @@ require (
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
-	github.com/golang/glog v1.0.0 // indirect
+	github.com/golang/glog v1.1.0 // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/gnostic v0.6.9 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
@@ -212,6 +212,7 @@ require (
 	github.com/sercand/kuberesolver/v4 v4.0.0 // indirect
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546 // indirect
+	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/cobra v1.5.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect

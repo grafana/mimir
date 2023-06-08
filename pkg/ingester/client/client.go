@@ -8,7 +8,6 @@ package client
 import (
 	"flag"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -69,8 +68,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
 }
 
-func (cfg *Config) Validate(log log.Logger) error {
-	return cfg.GRPCClientConfig.Validate(log)
+func (cfg *Config) Validate() error {
+	return cfg.GRPCClientConfig.Validate()
 }
 
 type CombinedQueryStreamResponse struct {

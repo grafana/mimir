@@ -80,7 +80,7 @@ func NewPool(clientName string, cfg PoolConfig, discovery PoolServiceDiscovery, 
 	return p
 }
 
-func (p *Pool) iteration(ctx context.Context) error {
+func (p *Pool) iteration(_ context.Context) error {
 	p.removeStaleClients()
 	if p.cfg.HealthCheckEnabled {
 		p.cleanUnhealthy()

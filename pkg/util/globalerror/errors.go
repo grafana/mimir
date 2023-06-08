@@ -87,6 +87,15 @@ func (id ID) MessageWithPerTenantLimitConfig(msg, flag string, addFlags ...strin
 	return fmt.Sprintf("%s (%s%s). To adjust the related per-tenant limit%s, configure %s, or contact your service administrator.", msg, errPrefix, id, plural, flagsList)
 }
 
+// MessageWithStrategyAndPerTenantLimitConfig returns the provided msg, appending the error id and a
+// suggestion on which strategy to follow to try not hitting the limit, plus which configuration
+// flag(s) to otherwise change the per-tenant limit.
+func (id ID) MessageWithStrategyAndPerTenantLimitConfig(msg, strategy, flag string, addFlags ...string) string {
+	flagsList, plural := buildFlagsList(flag, addFlags...)
+	return fmt.Sprintf("%s (%s%s). %s. Otherwise, to adjust the related per-tenant limit%s, configure %s, or contact your service administrator.",
+		msg, errPrefix, id, strategy, plural, flagsList)
+}
+
 func buildFlagsList(flag string, addFlags ...string) (string, string) {
 	var sb strings.Builder
 	sb.WriteString("-")

@@ -552,7 +552,7 @@ heartbeatLoop:
 }
 
 // initRing is the first thing we do when we start. It:
-// - add an ingester entry to the ring
+// - adds an ingester entry to the ring
 // - copies out our state and tokens if they exist
 func (i *Lifecycler) initRing(ctx context.Context) error {
 	var (
@@ -616,7 +616,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			return ringDesc, true, nil
 		}
 
-		// If the ingester failed to clean its ring entry up in can leave its state in LEAVING
+		// If the ingester failed to clean its ring entry up it can leave its state in LEAVING
 		// OR unregister_on_shutdown=false
 		// Move it into ACTIVE to ensure the ingester joins the ring.
 		if instanceDesc.State == LEAVING && len(instanceDesc.Tokens) == i.cfg.NumTokens {
@@ -673,7 +673,7 @@ func (i *Lifecycler) verifyTokens(ctx context.Context) bool {
 		ringTokens, takenTokens := ringDesc.TokensFor(i.ID)
 
 		if !i.compareTokens(ringTokens) {
-			// uh, oh... our tokens are not our anymore. Let's try new ones.
+			// uh, oh... our tokens are not ours anymore. Let's try new ones.
 			needTokens := i.cfg.NumTokens - len(ringTokens)
 
 			level.Info(i.logger).Log("msg", "generating new tokens", "count", needTokens, "ring", i.RingName)

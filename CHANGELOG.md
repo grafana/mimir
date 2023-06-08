@@ -5,8 +5,17 @@
 ### Grafana Mimir
 
 * [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
+* [CHANGE] Querier: change the default value of the experimental `-querier.streaming-chunks-per-ingester-buffer-size` flag to 128. #5203
 * [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. For now this feature can be disabled by setting `-timeseries-unmarshal-caching-optimization-enabled=false`. #5137
+* [ENHANCEMENT] Add advanced CLI flags to control gRPC client behaviour: #5161
+  * `-<prefix>.connect-timeout`
+  * `-<prefix>.connect-backoff-base-delay`
+  * `-<prefix>.connect-backoff-max-delay`
+  * `-<prefix>.initial-stream-window-size`
+  * `-<prefix>.initial-connection-window-size`
+* [ENHANCEMENT] Query-frontend: added "response_size_bytes" field to "query stats" log. #5196
+* [ENHANCEMENT] Querier: Refine error messages for per-tenant query limits, informing the user of the preferred strategy for not hitting the limit, in addition to how they may tweak the limit. #5059
 * [BUGFIX] Querier: don't leak memory when processing query requests from query-frontends (ie. when the query-scheduler is disabled). #5199
 
 ### Mixin
