@@ -23,7 +23,6 @@ To set up Mimir, you need to:
 
 ## Plan your deployment
 
-How you choose to deploy Mimir depends upon your tracing needs.
 Mimir has two deployment modes: monolithic or microservices.
 
 A [mimir-distributed](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed) Helm chart that deploys Grafana Mimir in [microservices mode]({{< relref "../references/architecture/deployment-modes/index.md#microservices-mode" >}}) is available in the [grafana/helm-charts](https://grafana.github.io/helm-charts/) Helm repository.
