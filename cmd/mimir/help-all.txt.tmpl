@@ -106,9 +106,15 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.alertmanager-client.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -alertmanager.alertmanager-client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -alertmanager.alertmanager-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -alertmanager.alertmanager-client.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -alertmanager.alertmanager-client.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -alertmanager.alertmanager-client.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
   -alertmanager.alertmanager-client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -alertmanager.alertmanager-client.grpc-client-rate-limit-burst int
@@ -119,6 +125,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -alertmanager.alertmanager-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -alertmanager.alertmanager-client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -alertmanager.alertmanager-client.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -alertmanager.alertmanager-client.remote-timeout duration
     	Timeout for downstream alertmanagers. (default 2s)
   -alertmanager.alertmanager-client.tls-ca-path string
@@ -128,7 +138,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.alertmanager-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -alertmanager.alertmanager-client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -alertmanager.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -alertmanager.alertmanager-client.tls-key-path string
@@ -1176,9 +1186,15 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -ingester.client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -ingester.client.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -ingester.client.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -ingester.client.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
   -ingester.client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ingester.client.grpc-client-rate-limit-burst int
@@ -1189,6 +1205,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ingester.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -ingester.client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ingester.client.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
@@ -1196,7 +1216,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ingester.client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ingester.client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ingester.client.tls-key-path string
@@ -1496,9 +1516,15 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -querier.frontend-client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -querier.frontend-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -querier.frontend-client.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -querier.frontend-client.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -querier.frontend-client.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
   -querier.frontend-client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -querier.frontend-client.grpc-client-rate-limit-burst int
@@ -1509,6 +1535,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.frontend-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -querier.frontend-client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -querier.frontend-client.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.frontend-client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.frontend-client.tls-cert-path string
@@ -1516,7 +1546,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -querier.frontend-client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -querier.frontend-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -querier.frontend-client.tls-key-path string
@@ -1598,9 +1628,15 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.grpc-client-config.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -query-frontend.grpc-client-config.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -query-frontend.grpc-client-config.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -query-frontend.grpc-client-config.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -query-frontend.grpc-client-config.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
   -query-frontend.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
@@ -1611,6 +1647,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -query-frontend.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -query-frontend.grpc-client-config.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -query-frontend.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-frontend.grpc-client-config.tls-cert-path string
@@ -1618,7 +1658,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.grpc-client-config.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -query-frontend.grpc-client-config.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-frontend.grpc-client-config.tls-key-path string
@@ -1774,9 +1814,15 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -query-scheduler.grpc-client-config.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -query-scheduler.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -query-scheduler.grpc-client-config.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -query-scheduler.grpc-client-config.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -query-scheduler.grpc-client-config.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
   -query-scheduler.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -query-scheduler.grpc-client-config.grpc-client-rate-limit-burst int
@@ -1787,6 +1833,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-scheduler.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -query-scheduler.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -query-scheduler.grpc-client-config.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -query-scheduler.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.grpc-client-config.tls-cert-path string
@@ -1794,7 +1844,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -query-scheduler.grpc-client-config.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -query-scheduler.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-scheduler.grpc-client-config.tls-key-path string
@@ -2094,9 +2144,15 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -ruler.client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -ruler.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -ruler.client.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -ruler.client.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -ruler.client.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
   -ruler.client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ruler.client.grpc-client-rate-limit-burst int
@@ -2107,6 +2163,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -ruler.client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ruler.client.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.client.tls-cert-path string
@@ -2114,7 +2174,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ruler.client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ruler.client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.client.tls-key-path string
@@ -2156,9 +2216,15 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-frontend.grpc-client-config.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -ruler.query-frontend.grpc-client-config.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -ruler.query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -ruler.query-frontend.grpc-client-config.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -ruler.query-frontend.grpc-client-config.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -ruler.query-frontend.grpc-client-config.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
   -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
@@ -2169,6 +2235,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -ruler.query-frontend.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ruler.query-frontend.grpc-client-config.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.query-frontend.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.query-frontend.grpc-client-config.tls-cert-path string
@@ -2176,7 +2246,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-frontend.grpc-client-config.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ruler.query-frontend.grpc-client-config.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.query-frontend.grpc-client-config.tls-key-path string
