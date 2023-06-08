@@ -377,9 +377,11 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		// Start backend servers.
 		for _, backend := range backends {
 			server, err := server.New(server.Config{
-				HTTPListenPort: 0,
-				GRPCListenPort: 0,
-				Registerer:     prometheus.NewRegistry(),
+				HTTPListenAddress: "localhost",
+				HTTPListenPort:    0,
+				GRPCListenAddress: "localhost",
+				GRPCListenPort:    0,
+				Registerer:        prometheus.NewRegistry(),
 			})
 			require.NoError(t, err)
 			server.HTTP.Path(pathPrefix).Methods("GET").Handler(backend.handler)
@@ -427,9 +429,11 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		// Start backend servers.
 		for _, backend := range backends {
 			server, err := server.New(server.Config{
-				HTTPListenPort: 0,
-				GRPCListenPort: 0,
-				Registerer:     prometheus.NewRegistry(),
+				HTTPListenAddress: "localhost",
+				HTTPListenPort:    0,
+				GRPCListenAddress: "localhost",
+				GRPCListenPort:    0,
+				Registerer:        prometheus.NewRegistry(),
 			})
 			require.NoError(t, err)
 			server.HTTP.Path(pathPrefix).Methods("GET").Handler(backend.handler)
@@ -498,11 +502,10 @@ func mockQueryResponse(path string, status int, res string) http.HandlerFunc {
 //   - http: HTTPListenAddr()
 //   - grpc: GRPCListenAddr()
 func getServerAddress(proto string, server *server.Server) string {
-	// server.Server has no address configured, so address is set as '[::]'
 	if proto == "http" {
-		return strings.ReplaceAll(server.HTTPListenAddr().String(), "[::]", "http://localhost")
+		return "http://" + server.HTTPListenAddr().String()
 	} else if proto == "grpc" {
-		return strings.ReplaceAll(server.GRPCListenAddr().String(), "[::]", "dns:///localhost")
+		return "dns:///" + server.GRPCListenAddr().String()
 	}
 
 	return ""

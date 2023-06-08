@@ -155,13 +155,15 @@ func (p *Proxy) Start() error {
 	// Setup server first, so we can fail early if the ports are in use.
 	serv, err := server.New(server.Config{
 		// HTTP configs
+		HTTPListenAddress:             "localhost",
 		HTTPListenPort:                p.cfg.ServerHTTPServicePort,
 		HTTPServerReadTimeout:         1 * time.Minute,
 		HTTPServerWriteTimeout:        2 * time.Minute,
 		ServerGracefulShutdownTimeout: 0,
 
 		// gRPC configs
-		GRPCListenPort: p.cfg.ServerGRPCServicePort,
+		GRPCListenAddress: "localhost",
+		GRPCListenPort:    p.cfg.ServerGRPCServicePort,
 		// Same size configurations as in Mimir default gRPC configuration values
 		GPRCServerMaxRecvMsgSize:           100 * 1024 * 1024,
 		GRPCServerMaxSendMsgSize:           100 * 1024 * 1024,

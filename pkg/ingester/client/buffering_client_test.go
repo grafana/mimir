@@ -27,7 +27,7 @@ func setupGrpc(t testing.TB) (*mockServer, *grpc.ClientConn) {
 	ingServ := &mockServer{}
 	RegisterIngesterServer(server, ingServ)
 
-	l, err := net.Listen("tcp", "127.0.0.1:")
+	l, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = l.Close()
