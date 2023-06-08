@@ -96,7 +96,7 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 		}
 	}
 
-	level.Info(w.logger).Log("msg", "listed all blocks in storage", "newly_discovered", len(discovered), "old_discovered", len(old))
+	level.Info(w.logger).Log("msg", "listed all blocks in storage", "newly_discovered", len(discovered), "existing", len(old))
 
 	// Remaining blocks are new ones and we have to fetch the meta.json for each of them, in order
 	// to find out if their upload has been completed (meta.json is uploaded last) and get the block
