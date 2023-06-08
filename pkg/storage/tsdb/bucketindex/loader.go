@@ -23,12 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const (
-	// readIndexTimeout is the maximum allowed time when reading a single bucket index
-	// from the storage. It's hard-coded to a reasonably high value.
-	readIndexTimeout = time.Minute
-)
-
 type LoaderConfig struct {
 	CheckInterval         time.Duration
 	UpdateOnStaleInterval time.Duration
