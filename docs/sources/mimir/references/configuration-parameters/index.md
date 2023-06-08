@@ -1080,8 +1080,8 @@ store_gateway_client:
 # ingesters queried only if needed due to failures from the initial set of
 # ingesters. Enabling this option reduces resource consumption for the happy
 # path at the cost of increased latency for the unhappy path.
-# CLI flag: -querier.minimise-ingester-requests
-[minimise_ingester_requests: <boolean> | default = false]
+# CLI flag: -querier.minimize-ingester-requests
+[minimize_ingester_requests: <boolean> | default = false]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.

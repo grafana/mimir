@@ -165,7 +165,7 @@ type Config struct {
 	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
 	PreferStreamingChunks                      bool          `yaml:"-"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
-	MinimiseIngesterRequests                   bool          `yaml:"-"`
+	MinimizeIngesterRequests                   bool          `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
