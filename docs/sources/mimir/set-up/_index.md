@@ -1,6 +1,6 @@
 ---
 aliases:
-  - operators-guide/deploying-grafana-mimir/
+  - operators-guide/deploy-grafana-mimir/
 title: Set up
 menuTitle: Set up
 description: Learn how to set up a Grafana Mimir server or cluster and visualize data.
