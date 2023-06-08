@@ -251,7 +251,7 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 				require.EqualError(t, err, testCase.expectedError)
 			}
 
-			require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed")
+			require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed")
 		})
 	}
 }
