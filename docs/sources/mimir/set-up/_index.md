@@ -4,8 +4,10 @@ menuTitle: Set up
 description: Learn how to set up a Mimir server or cluster and visualize data.
 aliases:
   -
-weight: 300
+weight: 15
 ---
+
+<!-- This page is borrowed from Tempo, in case there are aspects that we would like to keep. -->
 
 # Set up Mimir
 
@@ -20,6 +22,10 @@ To set up Mimir, you need to:
 
 How you choose to deploy Mimir depends upon your tracing needs.
 Mimir has two deployment modes: monolithic or microservices.
+
+A [mimir-distributed](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed) Helm chart that deploys Grafana Mimir in [microservices mode]({{< relref "../../references/architecture/deployment-modes/index.md#microservices-mode" >}}) is available in the [grafana/helm-charts](https://grafana.github.io/helm-charts/) Helm repository.
+
+Alternatively, you can use a set of Jsonnet files to deploy Grafana Mimir in microservices mode using Jsonnet and Tanka.
 
 Read [Plan your deployment]({{< relref "./deployment" >}}) to determine the best method to deploy Mimir.
 
