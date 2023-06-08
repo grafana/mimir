@@ -707,7 +707,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			if err != nil {
 				return errors.Wrapf(err, "failed to create series request")
 			}
-
+			
+			req.StreamingChunksBatchSize = 128
 			stream, err := c.Series(gCtx, req)
 			if err != nil {
 				if shouldStopQueryFunc(err) {
