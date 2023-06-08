@@ -213,7 +213,6 @@ const (
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
-			clientConfig.WriteRequestsBufferPoolingEnabled = cfg.WriteRequestsBufferPoolingEnabled
 			return ingester_client.MakeIngesterClient(addr, clientConfig)
 		}
 	}
