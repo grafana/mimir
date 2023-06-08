@@ -31,7 +31,8 @@ func TestPostings_Expand(t *testing.T) {
 		activeSeries.UpdateSeries(series[i], uint64(allStorageRefs[i]), time.Unix(int64(i), 0))
 	}
 
-	allActive, _, valid := activeSeries.ActiveWithMatchers(mockedTime)
+	valid := activeSeries.Purge(mockedTime)
+	allActive, _ := activeSeries.ActiveWithMatchers(mockedTime)
 	require.True(t, valid)
 	require.Equal(t, 2, allActive)
 
@@ -62,7 +63,8 @@ func TestPostings_Seek(t *testing.T) {
 		activeSeries.UpdateSeries(series[i], uint64(allStorageRefs[i]), time.Unix(int64(i), 0))
 	}
 
-	allActive, _, valid := activeSeries.ActiveWithMatchers(mockedTime)
+	valid := activeSeries.Purge(mockedTime)
+	allActive, _ := activeSeries.ActiveWithMatchers(mockedTime)
 	require.True(t, valid)
 	require.Equal(t, 2, allActive)
 
@@ -93,7 +95,8 @@ func TestPostings_SeekToEnd(t *testing.T) {
 		activeSeries.UpdateSeries(series[i], uint64(allStorageRefs[i]), time.Unix(int64(i), 0))
 	}
 
-	allActive, _, valid := activeSeries.ActiveWithMatchers(mockedTime)
+	valid := activeSeries.Purge(mockedTime)
+	allActive, _ := activeSeries.ActiveWithMatchers(mockedTime)
 	require.True(t, valid)
 	require.Equal(t, 0, allActive)
 

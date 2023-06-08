@@ -94,6 +94,18 @@ func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.T
 	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref)
 }
 
+// Purge purges expired entries and returns true if enough time has passed since
+// last reload. This should be called periodically to avoid unbounded memory
+// growth.
+func (c *ActiveSeries) Purge(now time.Time) bool {
+	c.matchersMutex.Lock()
+	defer c.matchersMutex.Unlock()
+	purgeTime := now.Add(-c.timeout)
+	c.purge(purgeTime)
+
+	return !c.lastMatchersUpdate.After(purgeTime)
+}
+
 // purge removes expired entries from the cache.
 func (c *ActiveSeries) purge(keepUntil time.Time) {
 	for s := 0; s < numStripes; s++ {
@@ -107,7 +119,7 @@ func (c *ActiveSeries) ContainsRef(ref uint64) bool {
 }
 
 // Active returns the total number of active series. This method does not purge
-// expired entries, so ActiveWithMatchers should still be called periodically.
+// expired entries, so Purge should be called periodically.
 func (c *ActiveSeries) Active() int {
 	total := 0
 	for s := 0; s < numStripes; s++ {
@@ -116,19 +128,13 @@ func (c *ActiveSeries) Active() int {
 	return total
 }
 
-// ActiveWithMatchers returns the total number of active series, as well as a slice of active series matching each one of the
-// custom trackers provided (in the same order as custom trackers are defined).
-// The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
-// This should be called periodically to avoid unbounded memory growth.
-func (c *ActiveSeries) ActiveWithMatchers(now time.Time) (int, []int, bool) {
-	c.matchersMutex.Lock()
-	defer c.matchersMutex.Unlock()
-	purgeTime := now.Add(-c.timeout)
-	c.purge(purgeTime)
-
-	if c.lastMatchersUpdate.After(purgeTime) {
-		return 0, nil, false
-	}
+// ActiveWithMatchers returns the total number of active series, as well as a
+// slice of active series matching each one of the custom trackers provided (in
+// the same order as custom trackers are defined). This method does not purge
+// expired entries, so Purge should be called periodically.
+func (c *ActiveSeries) ActiveWithMatchers(now time.Time) (int, []int) {
+	c.matchersMutex.RLock()
+	defer c.matchersMutex.RUnlock()
 
 	total := 0
 	totalMatching := resizeAndClear(len(c.matchers.MatcherNames()), nil)
@@ -136,7 +142,7 @@ func (c *ActiveSeries) ActiveWithMatchers(now time.Time) (int, []int, bool) {
 		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
 	}
 
-	return total, totalMatching, true
+	return total, totalMatching
 }
 
 func (s *seriesStripe) containsRef(ref uint64) bool {

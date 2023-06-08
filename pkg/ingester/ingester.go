@@ -527,11 +527,12 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
 			i.replaceMatchers(activeseries.NewMatchers(newMatchersConfig), userDB, now)
 		}
-		allActive, activeMatching, valid := userDB.activeSeries.ActiveWithMatchers(now)
+		valid := userDB.activeSeries.Purge(now)
 		if !valid {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
 		} else {
+			allActive, activeMatching := userDB.activeSeries.ActiveWithMatchers(now)
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
