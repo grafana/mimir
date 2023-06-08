@@ -16,7 +16,7 @@ weight: 15
 
 {{< section menuTitle="true" >}}
 
-<!-- 
+<!--
 To set up Mimir, you need to:
 
 1. Plan your deployment
