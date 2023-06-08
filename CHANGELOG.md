@@ -67,6 +67,7 @@
 * [BUGFIX] Backend: Check that alertmanager's data-dir doesn't overlap with bucket-sync dir. #4921
 * [BUGFIX] Alertmanager: Allow to rate-limit webex, telegram and discord notifications. #4979
 * [BUGFIX] Store-gateway: panics when decoding LabelValues responses that contain more than 655360 values. These responses are no longer cached. #5021
+* [BUGFIX] Querier: don't leak memory when processing query requests from query-frontends (ie. when the query-scheduler is disabled). #5199
 
 ### Documentation
 
