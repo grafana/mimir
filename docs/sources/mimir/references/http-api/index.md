@@ -568,15 +568,15 @@ It returns the series count per label value associated to request param `label_n
 
 Two methods of counting are available, `inmemory` and `active`. This choice is controlled via the `count_method` parameter.
 
-The `inmemory` counting method counts the number of series using all values from currently opened TSDBs in ingesters.
-Two subsequent calls may return completely different results, if ingester did a block cutting between the calls.
+The `inmemory` method counts the number of series in currently opened TSDBs in Mimir's ingesters.
+Two subsequent calls may return completely different results if an ingester cut a block between calls.
 This method of counting is most useful for understanding ingester memory usage.
 
-The `active` counting method counts also uses values from currently opened TSDBs in ingesters, but it filters out series that have not received a sample within active series idle timeout.
-The duration of this timeout is controlled via the `ingester.active-series-metrics-idle-timeout` parameter.
-This method of counting is most useful for understanding which label values are contributing to the current sample ingestion in Mimir.
+The `active` method also counts series in currently opened TSDBs in Mimir's ingesters, but filters out series that have not received a sample within a configurable duration of time. 
+Use the `ingester.active-series-metrics-idle-timeout` parameter to configure this duration.
+This method of counting is most useful for understanding which label values are represented in the samples ingested by Mimir in the last `ingester.active-series-metrics-idle-timeout`.
 Two subsequent calls will likely return similar results, as this window of time is not related to the block cutting on ingesters.
-Values will change only as a result of changes in the ingestion rate of Mimir.
+Values will change only as a result of changes in the data ingested by Mimir. 
 
 The items in the field `labels` are sorted by `series_count` in DESC order and by `label_name` in ASC order.
 The items in the field `cardinality` are sorted by `series_count` in DESC order and by `label_value` in ASC order.
