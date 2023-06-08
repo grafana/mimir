@@ -47,7 +47,6 @@ type seriesStripe struct {
 
 // seriesEntry holds a timestamp for single series.
 type seriesEntry struct {
-	lbs     labels.Labels
 	nanos   *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
 	matches preAllocDynamicSlice //  Index of the matcher matching
 }
@@ -87,10 +86,10 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 }
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
-func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.Time, labelsCopy func(labels.Labels) labels.Labels) {
+func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.Time) {
 	stripeID := ref % numStripes
 
-	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, labelsCopy)
+	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref)
 }
 
 // purge removes expired entries from the cache.
@@ -137,13 +136,13 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int) int {
 	return s.active
 }
 
-func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref uint64, labelsCopy func(labels.Labels) labels.Labels) {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref uint64) {
 	nowNanos := now.UnixNano()
 
 	e := s.findEntryForSeries(ref)
 	entryTimeSet := false
 	if e == nil {
-		e, entryTimeSet = s.findOrCreateEntryForSeries(ref, series, nowNanos, labelsCopy)
+		e, entryTimeSet = s.findOrCreateEntryForSeries(ref, series, nowNanos)
 	}
 
 	if !entryTimeSet {
@@ -169,7 +168,7 @@ func (s *seriesStripe) findEntryForSeries(ref uint64) *atomic.Int64 {
 	return s.refs[ref].nanos
 }
 
-func (s *seriesStripe) findOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64, labelsCopy func(labels.Labels) labels.Labels) (*atomic.Int64, bool) {
+func (s *seriesStripe) findOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64) (*atomic.Int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -189,7 +188,6 @@ func (s *seriesStripe) findOrCreateEntryForSeries(ref uint64, series labels.Labe
 	}
 
 	e := seriesEntry{
-		lbs:     labelsCopy(series),
 		nanos:   atomic.NewInt64(nowNanos),
 		matches: matches,
 	}
