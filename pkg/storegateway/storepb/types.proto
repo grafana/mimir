@@ -37,8 +37,12 @@ message Series {
   repeated AggrChunk chunks  = 2 [(gogoproto.nullable) = false];
 }
 
+message StreamingSeries {
+  repeated cortexpb.LabelPair labels      = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+}
+
 message StreamSeriesBatch {
-  repeated Series series = 1; // Only labels are populated here.
+  repeated StreamingSeries series = 1; // Only labels are populated here.
 }
 
 message StreamSeriesChunks {

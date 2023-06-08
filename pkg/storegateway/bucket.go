@@ -632,9 +632,9 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 
 		// TODO: should we pool the seriesBuffer/seriesBatch?
-		seriesBuffer := make([]*storepb.Series, req.StreamingChunksBatchSize)
+		seriesBuffer := make([]*storepb.StreamingSeries, req.StreamingChunksBatchSize)
 		for i := range seriesBuffer {
-			seriesBuffer[i] = &storepb.Series{}
+			seriesBuffer[i] = &storepb.StreamingSeries{}
 		}
 		seriesBatch := &storepb.StreamSeriesBatch{
 			Series: seriesBuffer[:0],
