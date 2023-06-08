@@ -38,7 +38,7 @@ Grafana Mimir is available as a [pre-compiled binary, OS_specific packaging](htt
 <!-- -->
 The following procedures provide example Mimir deployments that you can use as a starting point:
 
-- Deploy with Helm (microservices and monolithic)
+- Deploy with Helm (microservices)
 - Deploy on Linux (monolithic)
 - [Deploy on Kubernetes using Tanka]({{< relref "jsonnet/deploy">}}) (microservices)
 
