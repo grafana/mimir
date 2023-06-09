@@ -423,6 +423,8 @@ func (resp *PrometheusResponse) minTime() int64 {
 	return result[0].Samples[0].TimestampMs
 }
 
+// EncodeCachedHTTPResponse encodes the input http.Response into CachedHTTPResponse.
+// The input res.Body is replaced in this function, so that it can be safely consumed again.
 func EncodeCachedHTTPResponse(cacheKey string, res *http.Response) (*CachedHTTPResponse, error) {
 	// Read the response.
 	body, err := readResponseBody(res)

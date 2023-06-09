@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/querier/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -72,8 +72,10 @@ func (c *cardinalityQueryCache) RoundTrip(req *http.Request) (*http.Response, er
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// Skip the cache if disabled for the tenant.
-	cacheTTL := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, c.limits.ResultsCacheTTLForCardinalityQuery)
+	// Skip the cache if disabled for the tenant. We look at the minimum TTL so that we skip the cache
+	// if it's disabled for any of tenants.
+	// TODO unit test
+	cacheTTL := validation.MinDurationPerTenant(tenantIDs, c.limits.ResultsCacheTTLForCardinalityQuery)
 	if cacheTTL <= 0 {
 		level.Debug(spanLog).Log("msg", "cache disabled for the tenant")
 		return c.next.RoundTrip(req)
@@ -87,7 +89,7 @@ func (c *cardinalityQueryCache) RoundTrip(req *http.Request) (*http.Response, er
 		level.Info(spanLog).Log("msg", "skipped cardinality query caching because failed to parse the request", "err", err)
 
 		// We skip the caching but let the downstream try to handle it anyway,
-		// since it's not our responsibility to decide how to response in this case.
+		// since it's not our responsibility to decide how to respond in this case.
 		return c.next.RoundTrip(req)
 	}
 
@@ -105,8 +107,7 @@ func (c *cardinalityQueryCache) RoundTrip(req *http.Request) (*http.Response, er
 	}
 
 	// Store the result in the cache.
-	if isCardinalityQueryResponseCachable(res) {
-		// The res.Body will be replaced after calling the following function.
+	if isCardinalityQueryResponseCacheable(res) {
 		cachedRes, err := EncodeCachedHTTPResponse(cacheKey, res)
 		if err != nil {
 			level.Warn(spanLog).Log("msg", "failed to read cardinality query response before storing it to cache", "err", err)
@@ -181,6 +182,6 @@ func generateCardinalityQueryRequestCacheKey(tenantIDs []string, req cardinality
 	return
 }
 
-func isCardinalityQueryResponseCachable(res *http.Response) bool {
+func isCardinalityQueryResponseCacheable(res *http.Response) bool {
 	return res.StatusCode >= 200 && res.StatusCode < 300
 }

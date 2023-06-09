@@ -146,13 +146,13 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 	}{
 		"label names request": {
 			url:            mustParseURL(t, `/prometheus/api/v1/cardinality/label_names?selector={job="test"}&limit=100`),
-			cacheKey:       `user-1:job="test"|100`,
-			hashedCacheKey: cardinalityLabelNamesQueryCachePrefix + cacheHashKey(`user-1:job="test"|100`),
+			cacheKey:       "user-1:job=\"test\"\x00100",
+			hashedCacheKey: cardinalityLabelNamesQueryCachePrefix + cacheHashKey("user-1:job=\"test\"\x00100"),
 		},
 		"label values request": {
 			url:            mustParseURL(t, `/prometheus/api/v1/cardinality/label_values?selector={job="test"}&label_names[]=metric_1&label_names[]=metric_2&limit=100`),
-			cacheKey:       `user-1:metric_1,metric_2|job="test"|100`,
-			hashedCacheKey: cardinalityLabelValuesQueryCachePrefix + cacheHashKey(`user-1:metric_1,metric_2|job="test"|100`),
+			cacheKey:       "user-1:metric_1\x01metric_2\x00job=\"test\"\x00100",
+			hashedCacheKey: cardinalityLabelValuesQueryCachePrefix + cacheHashKey("user-1:metric_1\x01metric_2\x00job=\"test\"\x00100"),
 		},
 	}
 

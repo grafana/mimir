@@ -23,7 +23,8 @@ const (
 	maxLimit     = 500
 	defaultLimit = 20
 
-	stringSeparator = '|'
+	stringParamSeparator = rune(0)
+	stringValueSeparator = rune(1)
 )
 
 type RequestType int
@@ -41,13 +42,13 @@ func (r *LabelNamesRequest) String() string {
 	// Add matchers.
 	for idx, matcher := range r.Matchers {
 		if idx > 0 {
-			b.WriteRune(',')
+			b.WriteRune(stringValueSeparator)
 		}
 		b.WriteString(matcher.String())
 	}
 
 	// Add limit.
-	b.WriteRune(stringSeparator)
+	b.WriteRune(stringParamSeparator)
 	b.WriteString(strconv.Itoa(r.Limit))
 
 	return b.String()
@@ -57,8 +58,8 @@ func (r *LabelNamesRequest) RequestType() RequestType {
 	return RequestTypeLabelNames
 }
 
-// TODO doc
-// TODO test (GET and POST)
+// DecodeLabelNamesRequest decodes the input http.Request into a LabelNamesRequest.
+// The input http.Request can either be a GET or POST.
 func DecodeLabelNamesRequest(r *http.Request) (*LabelNamesRequest, error) {
 	var (
 		parsed = &LabelNamesRequest{}
@@ -97,22 +98,22 @@ func (r *LabelValuesRequest) String() string {
 	// Add label names.
 	for idx, name := range r.LabelNames {
 		if idx > 0 {
-			b.WriteRune(',')
+			b.WriteRune(stringValueSeparator)
 		}
 		b.WriteString(string(name))
 	}
 
 	// Add matchers.
-	b.WriteRune(stringSeparator)
+	b.WriteRune(stringParamSeparator)
 	for idx, matcher := range r.Matchers {
 		if idx > 0 {
-			b.WriteRune(',')
+			b.WriteRune(stringValueSeparator)
 		}
 		b.WriteString(matcher.String())
 	}
 
 	// Add limit.
-	b.WriteRune(stringSeparator)
+	b.WriteRune(stringParamSeparator)
 	b.WriteString(strconv.Itoa(r.Limit))
 
 	return b.String()
@@ -122,8 +123,8 @@ func (r *LabelValuesRequest) RequestType() RequestType {
 	return RequestTypeLabelValues
 }
 
-// DecodeLabelValuesRequest parses query params from GET requests and parses request body from POST requests.
-// TODO test (GET and POST)
+// DecodeLabelValuesRequest decodes the input http.Request into a LabelValuesRequest.
+// The input http.Request can either be a GET or POST.
 func DecodeLabelValuesRequest(r *http.Request) (*LabelValuesRequest, error) {
 	var (
 		parsed = &LabelValuesRequest{}
@@ -166,7 +167,7 @@ func extractSelector(r *http.Request) (matchers []*labels.Matcher, err error) {
 		return nil, errors.Wrap(err, "failed to parse selector")
 	}
 
-	// TODO doc + test
+	// Ensure stable sorting (improves query results cache hit ratio).
 	slices.SortFunc(matchers, func(a, b *labels.Matcher) bool {
 		if a.Name != b.Name {
 			return a.Name < b.Name
@@ -218,7 +219,7 @@ func extractLabelNames(r *http.Request) ([]model.LabelName, error) {
 		labelNames = append(labelNames, labelName)
 	}
 
-	// TODO doc + test
+	// Ensure stable sorting (improves query results cache hit ratio).
 	slices.Sort(labelNames)
 
 	return labelNames, nil
