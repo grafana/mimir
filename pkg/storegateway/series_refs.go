@@ -712,19 +712,19 @@ func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 }
 
 type loadingSeriesChunkRefsSetIterator struct {
-	ctx                  context.Context
-	postingsSetIterator  *postingsSetsIterator
-	indexr               *bucketIndexReader
-	indexCache           indexcache.IndexCache
-	stats                *safeQueryStats
-	blockID              ulid.ULID
-	shard                *sharding.ShardSelector
-	seriesHasher         seriesHasher
-	skipChunks           bool
-	minTime, maxTime     int64
-	tenantID             string
-	chunkRangesPerSeries int
-	logger               log.Logger
+	ctx                         context.Context
+	postingsSetIterator         *postingsSetsIterator
+	indexr                      *bucketIndexReader
+	indexCache                  indexcache.IndexCache
+	stats                       *safeQueryStats
+	blockID                     ulid.ULID
+	shard                       *sharding.ShardSelector
+	seriesHasher                seriesHasher
+	skipChunks, streamingSeries bool
+	minTime, maxTime            int64
+	tenantID                    string
+	chunkRangesPerSeries        int
+	logger                      log.Logger
 
 	chunkMetasBuffer []chunks.Meta
 
@@ -743,6 +743,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHasher seriesHasher,
 	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
+	streamingSeries bool, // If true, along with skipChunks=true, the series returned overlap with query mint and maxt.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	chunkRangesPerSeries int,
 	stats *safeQueryStats,
@@ -774,6 +775,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		shard,
 		seriesHasher,
 		skipChunks,
+		streamingSeries,
 		minTime,
 		maxTime,
 		tenantID,
@@ -806,13 +808,14 @@ func newLoadingSeriesChunkRefsSetIterator(
 	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
 	skipChunks bool,
+	streamingSeries bool,
 	minTime int64,
 	maxTime int64,
 	tenantID string,
 	chunkRangesPerSeries int,
 	logger log.Logger,
 ) *loadingSeriesChunkRefsSetIterator {
-	if skipChunks {
+	if skipChunks && !streamingSeries {
 		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
 	}
 
@@ -826,6 +829,7 @@ func newLoadingSeriesChunkRefsSetIterator(
 		shard:                shard,
 		seriesHasher:         seriesHasher,
 		skipChunks:           skipChunks,
+		streamingSeries:      streamingSeries,
 		minTime:              minTime,
 		maxTime:              maxTime,
 		tenantID:             tenantID,
@@ -847,7 +851,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	nextPostings := s.postingsSetIterator.At()
 
 	var cachedSeriesID cachedSeriesForPostingsID
-	if s.skipChunks {
+	if s.skipChunks && !s.streamingSeries {
 		var err error
 		// Calculate the cache ID before we filter out anything from the postings,
 		// so that the key doesn't depend on the series hash cache or any other filtering we do on the postings list.
@@ -1118,7 +1122,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
 func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) ([]symbolizedLabel, []chunks.Meta, error) {
-	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.skipChunks, stats, lsetPool)
+	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.minTime, s.maxTime, s.skipChunks, s.streamingSeries, stats, lsetPool)
 	if !ok || err != nil {
 		return nil, nil, errors.Wrap(err, "loadSeries")
 	}

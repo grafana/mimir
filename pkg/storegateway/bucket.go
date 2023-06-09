@@ -532,6 +532,9 @@ type seriesChunks struct {
 
 // Series implements the storepb.StoreServer interface.
 func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) (err error) {
+	if req.SkipChunks {
+		req.StreamingChunksBatchSize = 0
+	}
 	defer func() {
 		if err == nil {
 			return
@@ -832,7 +835,6 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 		g, _     = errgroup.WithContext(ctx)
 		begin    = time.Now()
 	)
-
 	for i, b := range blocks {
 		b := b
 		i := i
@@ -864,6 +866,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				shardSelector,
 				cachedSeriesHasher{blockSeriesHashCache},
 				req.SkipChunks,
+				req.StreamingChunksBatchSize > 0,
 				req.MinTime, req.MaxTime,
 				s.numChunksRangesPerSeries,
 				stats,
@@ -1165,7 +1168,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 		matchers,
 		nil,
 		cachedSeriesHasher{nil},
-		true,
+		true, false,
 		minTime, maxTime,
 		1, // we skip chunks, so this doesn't make any difference
 		stats,
@@ -1385,7 +1388,7 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 		b.meta,
 		nil,
 		nil,
-		true,
+		true, false,
 		b.meta.MinTime,
 		b.meta.MaxTime,
 		b.userID,
@@ -1742,7 +1745,7 @@ type symbolizedLabel struct {
 // decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
 // If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if at least single chunk is within time range.
 // decodeSeries returns false, when there are no series data for given time range.
-func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, skipChunks bool) (ok bool, lset []symbolizedLabel, err error) {
+func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, resMint, resMaxt int64, skipChunks, streamingSeries bool) (ok bool, lset []symbolizedLabel, err error) {
 
 	*chks = (*chks)[:0]
 
@@ -1777,15 +1780,23 @@ func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]ch
 
 		// Found a chunk.
 		if skipChunks {
-			// We are not interested in chunks and we know there is at least one, that's enough to return series.
-			return true, lset, nil
+			if streamingSeries {
+				// We are not interested in chunks, but we want the series to overlap with the query mint-maxt.
+				if maxt >= resMint && mint <= resMaxt {
+					// Chunk overlaps.
+					return true, lset, nil
+				}
+			} else {
+				// We are not interested in chunks and we know there is at least one, that's enough to return series.
+				return true, lset, nil
+			}
+		} else {
+			*chks = append(*chks, chunks.Meta{
+				Ref:     chunks.ChunkRef(ref),
+				MinTime: mint,
+				MaxTime: maxt,
+			})
 		}
-
-		*chks = append(*chks, chunks.Meta{
-			Ref:     chunks.ChunkRef(ref),
-			MinTime: mint,
-			MaxTime: maxt,
-		})
 
 		mint = maxt
 	}

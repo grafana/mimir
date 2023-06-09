@@ -755,12 +755,12 @@ func (l *bucketIndexLoadedSeries) addSeries(ref storage.SeriesRef, data []byte) 
 // Error is returned on decoding error or if the reference does not resolve to a known series.
 //
 // It's NOT safe to call this function concurrently with addSeries().
-func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, chks *[]chunks.Meta, skipChunks bool, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) (ok bool, _ []symbolizedLabel, err error) {
+func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, chks *[]chunks.Meta, mint, maxt int64, skipChunks, streamingSeries bool, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) (ok bool, _ []symbolizedLabel, err error) {
 	b, ok := l.series[ref]
 	if !ok {
 		return false, nil, errors.Errorf("series %d not found", ref)
 	}
 	stats.seriesProcessed++
 	stats.seriesProcessedSizeSum += len(b)
-	return decodeSeries(b, lsetPool, chks, skipChunks)
+	return decodeSeries(b, lsetPool, chks, mint, maxt, skipChunks, streamingSeries)
 }

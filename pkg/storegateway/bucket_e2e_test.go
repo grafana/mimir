@@ -67,7 +67,7 @@ type storeSuite struct {
 }
 
 func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt objstore.Bucket,
-	series []labels.Labels, extLset labels.Labels) (minTime, maxTime int64) {
+	series []labels.Labels, extLset labels.Labels, differentBlockTimes bool) (minTime, maxTime int64) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
@@ -85,6 +85,13 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 		// gets created each. This way we can easily verify we got 10 chunks per series below.
 		id1, err := block.CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset)
 		assert.NoError(t, err)
+		if differentBlockTimes {
+			// This shifts the 2nd block ahead by 2hrs. This way the first and the
+			// last blocks created have no overlapping blocks.
+			mint = maxt
+			maxt = timestamp.FromTime(now.Add(2 * time.Hour))
+			maxTime = maxt
+		}
 		id2, err := block.CreateBlock(ctx, dir, series[4:], 10, mint, maxt, extLset)
 		assert.NoError(t, err)
 
@@ -117,6 +124,7 @@ type prepareStoreConfig struct {
 	chunksCache          chunkscache.Cache
 	metricsRegistry      *prometheus.Registry
 	postingsStrategy     postingsSelectionStrategy
+	differentBlockTime   bool
 }
 
 func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareStoreConfig {
@@ -164,7 +172,7 @@ func withManyParts() prepareStoreConfigOption {
 func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
-	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset)
+	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset, cfg.differentBlockTime)
 
 	s := &storeSuite{
 		logger:          log.NewNopLogger(),
@@ -218,10 +226,16 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	return s
 }
 
+type testBucketStoreCase struct {
+	req              *storepb.SeriesRequest
+	expected         [][]mimirpb.LabelAdapter
+	expectedChunkLen int
+}
+
 // TODO(bwplotka): Benchmark Series.
 //
 //nolint:revive
-func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
+func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, additionalCases ...testBucketStoreCase) {
 	t.Helper()
 
 	mint, maxt := s.store.TimeRange()
@@ -239,11 +253,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 	srv := newBucketStoreTestServer(t, s.store)
 
 	// TODO(bwplotka): Add those test cases to TSDB querier_test.go as well, there are no tests for matching.
-	for i, tcase := range []struct {
-		req              *storepb.SeriesRequest
-		expected         [][]mimirpb.LabelAdapter
-		expectedChunkLen int
-	}{
+	testCases := []testBucketStoreCase{
 		{
 			req: &storepb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
@@ -416,10 +426,11 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
 			},
 		},
-	} {
-		for _, streamingBatchSize := range []uint64{0, 1, 10} {
+	}
+	for i, tcase := range append(testCases, additionalCases...) {
+		for _, streamingBatchSize := range []int{0, 1, 2, 10} {
 			if ok := t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
-				tcase.req.StreamingChunksBatchSize = streamingBatchSize
+				tcase.req.StreamingChunksBatchSize = uint64(streamingBatchSize)
 				seriesSet, _, _, err := srv.Series(context.Background(), tcase.req)
 				require.NoError(t, err)
 
@@ -505,6 +516,69 @@ func TestBucketStore_e2e(t *testing.T) {
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache2)
 			testBucketStore_e2e(t, ctx, s)
+		})
+	})
+}
+
+func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		s := newSuite(func(config *prepareStoreConfig) {
+			config.differentBlockTime = true
+		})
+
+		_, maxt := s.store.TimeRange()
+		additionalCases := []testBucketStoreCase{
+			{ // This tests if the first phase of streaming that sends only the series is filtering the series by chunk time range.
+				// The request time range overlaps with 2 blocks with 4 timeseries each, but only the 2nd block
+				// has some overlapping data that should be returned.
+				req: &storepb.SeriesRequest{
+					Matchers: []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
+					},
+					MinTime: maxt - 121*int64(time.Minute/time.Millisecond),
+					MaxTime: maxt,
+				},
+				expectedChunkLen: 1,
+				expected: [][]mimirpb.LabelAdapter{
+					{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+					{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
+					{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}},
+					{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}},
+				},
+			},
+		}
+
+		if ok := t.Run("no caches", func(t *testing.T) {
+			s.cache.SwapIndexCacheWith(noopCache{})
+			s.cache.SwapChunksCacheWith(chunkscache.NoopCache{})
+			testBucketStore_e2e(t, ctx, s, additionalCases...)
+		}); !ok {
+			return
+		}
+
+		if ok := t.Run("with large, sufficient index cache", func(t *testing.T) {
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
+				MaxItemSize: 1e5,
+				MaxSize:     2e5,
+			})
+			assert.NoError(t, err)
+			s.cache.SwapIndexCacheWith(indexCache)
+			testBucketStore_e2e(t, ctx, s, additionalCases...)
+		}); !ok {
+			return
+		}
+
+		t.Run("with small index cache", func(t *testing.T) {
+			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
+				MaxItemSize: 50,
+				MaxSize:     100,
+			})
+			assert.NoError(t, err)
+			s.cache.SwapIndexCacheWith(indexCache2)
+			testBucketStore_e2e(t, ctx, s, additionalCases...)
 		})
 	})
 }

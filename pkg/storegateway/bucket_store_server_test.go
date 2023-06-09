@@ -198,7 +198,8 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			}
 		}
 	}
-	if req.StreamingChunksBatchSize > 0 {
+
+	if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
 		// Get the streaming chunks.
 		idx := -1
 		for _, batch := range streamingSeriesSet {
@@ -212,7 +213,8 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 
 				chks := res.GetStreamingSeriesChunks()
 				if chks == nil {
-					continue
+					err = errors.Errorf("expected streaming chunks, got something else")
+					return
 				}
 				if chks.SeriesIndex != uint64(idx) {
 					err = errors.Errorf("mismatch in series ref when getting streaming chunks, exp %d, got %d", idx, chks.SeriesIndex)
@@ -242,6 +244,13 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		}
 
 		res, err = stream.Recv()
+		for err != nil {
+			if res.GetHints() == nil && res.GetStats() == nil {
+				err = errors.Errorf("got unexpected response type")
+				break
+			}
+			res, err = stream.Recv()
+		}
 		if errors.Is(err, io.EOF) {
 			err = nil
 		}

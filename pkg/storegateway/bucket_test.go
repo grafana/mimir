@@ -1164,7 +1164,7 @@ func loadSeries(ctx context.Context, tb test.TB, postings []storage.SeriesRef, i
 		indexr.block.meta,
 		nil,
 		nil,
-		true,
+		true, false,
 		0,
 		0,
 		"",
