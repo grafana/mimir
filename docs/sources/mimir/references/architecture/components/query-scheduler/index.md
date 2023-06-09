@@ -104,7 +104,7 @@ To migrate the query-scheduler from [DNS-based service discovery](#dns-based-ser
    # - Ecd:    -query-scheduler.ring.etcd.*
    ```
 
-> **Note:** If your Mimir cluster is deployed using Jsonnet, see [Migrate query-scheduler from DNS-based to ring-based service discovery]({{ < relref "../../../set-up/jsonnet/migrate-query-scheduler-from-dns-to-ring-based-service-discovery" > }}).
+> **Note:** If your Mimir cluster is deployed using Jsonnet, see [Migrate query-scheduler from DNS-based to ring-based service discovery]({{< relref "../../../set-up/jsonnet/migrate-query-scheduler-from-dns-to-ring-based-service-discovery" >}}).
 
 ## Operational considerations
 
