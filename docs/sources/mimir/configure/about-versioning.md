@@ -97,6 +97,7 @@ The following features are currently experimental:
   - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
+  - Cardinality query result caching (`-query-frontend.results-cache-ttl-for-cardinality-query`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
