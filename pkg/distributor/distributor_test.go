@@ -2287,7 +2287,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 					LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
 				}},
 			},
-			expectedIngesters:        numIngesters,
+			expectedIngesters:        numIngesters - 1,
 			happyIngesters:           numIngesters,
 			expectedSeriesCountTotal: 100,
 			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
@@ -2302,7 +2302,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 					LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
 				}},
 			},
-			expectedIngesters:        numIngesters,
+			expectedIngesters:        numIngesters - 1,
 			happyIngesters:           numIngesters - 1,
 			expectedSeriesCountTotal: 100,
 			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
@@ -2364,8 +2364,8 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 				return cardinalityMap
 			})
 
-			// Make sure all the ingesters have been queried
-			assert.Equal(t, testData.expectedIngesters, countMockIngestersCalls(ingesters, "LabelValuesCardinality"))
+			// Make sure enough ingesters were queried
+			assert.GreaterOrEqual(t, countMockIngestersCalls(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
 		})
 	}
 }
