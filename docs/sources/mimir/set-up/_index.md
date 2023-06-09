@@ -1,5 +1,6 @@
 ---
 aliases:
+  - ../operators-guide/deploy-grafana-mimir-with-puppet/
   - operators-guide/deploy-grafana-mimir/
 title: Set up Mimir
 menuTitle: Set up
