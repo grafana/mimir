@@ -417,19 +417,22 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 		},
 	} {
-		if ok := t.Run(fmt.Sprint(i), func(t *testing.T) {
-			seriesSet, _, _, err := srv.Series(context.Background(), tcase.req)
-			require.NoError(t, err)
+		for _, streamingBatchSize := range []uint64{0, 1, 10} {
+			if ok := t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
+				tcase.req.StreamingChunksBatchSize = streamingBatchSize
+				seriesSet, _, _, err := srv.Series(context.Background(), tcase.req)
+				require.NoError(t, err)
 
-			assert.Equal(t, len(tcase.expected), len(seriesSet))
+				assert.Equal(t, len(tcase.expected), len(seriesSet))
 
-			for i, s := range seriesSet {
-				assert.Equal(t, tcase.expected[i], s.Labels)
-				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
+				for i, s := range seriesSet {
+					assert.Equal(t, tcase.expected[i], s.Labels)
+					assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
+				}
+				assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
+			}); !ok {
+				return
 			}
-			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
-		}); !ok {
-			return
 		}
 	}
 }
