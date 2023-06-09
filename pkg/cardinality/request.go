@@ -34,7 +34,7 @@ type LabelNamesRequest struct {
 	Limit    int
 }
 
-// Strings returns a full representation of the request. This returned string can be
+// Strings returns a full representation of the request. The returned string can be
 // used to uniquely identify the request.
 func (r *LabelNamesRequest) String() string {
 	b := strings.Builder{}
@@ -59,7 +59,7 @@ func (r *LabelNamesRequest) RequestType() RequestType {
 }
 
 // DecodeLabelNamesRequest decodes the input http.Request into a LabelNamesRequest.
-// The input http.Request can either be a GET or POST.
+// The input http.Request can either be a GET or POST with URL-encoded parameters.
 func DecodeLabelNamesRequest(r *http.Request) (*LabelNamesRequest, error) {
 	var (
 		parsed = &LabelNamesRequest{}
@@ -90,7 +90,7 @@ type LabelValuesRequest struct {
 	Limit      int
 }
 
-// Strings returns a full representation of the request. This returned string can be
+// Strings returns a full representation of the request. The returned string can be
 // used to uniquely identify the request.
 func (r *LabelValuesRequest) String() string {
 	b := strings.Builder{}
@@ -124,7 +124,7 @@ func (r *LabelValuesRequest) RequestType() RequestType {
 }
 
 // DecodeLabelValuesRequest decodes the input http.Request into a LabelValuesRequest.
-// The input http.Request can either be a GET or POST.
+// The input http.Request can either be a GET or POST with URL-encoded parameters.
 func DecodeLabelValuesRequest(r *http.Request) (*LabelValuesRequest, error) {
 	var (
 		parsed = &LabelValuesRequest{}

@@ -3163,7 +3163,7 @@
           "kind": "field",
           "name": "results_cache_ttl_for_cardinality_query",
           "required": false,
-          "desc": "Time to live duration for cached cardinality query results. The value 0 disabled the cache.",
+          "desc": "Time to live duration for cached cardinality query results. The value 0 disables the cache.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.results-cache-ttl-for-cardinality-query",
