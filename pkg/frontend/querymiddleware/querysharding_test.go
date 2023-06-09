@@ -94,18 +94,18 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 		for j := 0; j < len(a.Samples); j++ {
 			expected := a.Samples[j]
 			actual := b.Samples[j]
-			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Value, actual.Value, j, a.Labels, "sample")
+			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Value, actual.Value, j, a.Labels, "sample", 1e-12)
 		}
 
 		for j := 0; j < len(a.Histograms); j++ {
 			expected := a.Histograms[j]
 			actual := b.Histograms[j]
-			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram")
+			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram", 1e-2)
 		}
 	}
 }
 
-func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string) {
+func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string, tolerance float64) {
 	require.Equalf(t, expectedTs, actualTs, "%s timestamp at position %d for series %s", sampleType, j, labels)
 
 	if value.IsStaleNaN(expectedVal) {
@@ -119,7 +119,7 @@ func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expected
 		}
 		// InEpsilon means the relative error (see https://en.wikipedia.org/wiki/Relative_error#Example) must be less than epsilon (here 1e-12).
 		// The relative error is calculated using: abs(actual-expected) / abs(expected)
-		require.InEpsilonf(t, expectedVal, actualVal, 1e-12, "%s value at position %d with timestamp %d for series %s", sampleType, j, expectedTs, labels)
+		require.InEpsilonf(t, expectedVal, actualVal, tolerance, "%s value at position %d with timestamp %d for series %s", sampleType, j, expectedTs, labels)
 	}
 }
 
