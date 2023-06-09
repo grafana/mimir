@@ -12,7 +12,7 @@
   * `cortex_frontend_query_result_cache_hits_total{request_type="query_range|cardinality"}`
 * [FEATURE] Ingester: Add optional CPU/memory utilization based read request limiting, considered experimental. Disabled by default, enable via `-ingester.utilization-limits-enabled` flag. The following flags configure the feature: #5012
 * `-ingester.read-path-cpu-utilization-limit`
-* `-ingester.read-path-memory-utilization-limit`*
+* `-ingester.read-path-memory-utilization-limit`
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. For now this feature can be disabled by setting `-timeseries-unmarshal-caching-optimization-enabled=false`. #5137
 * [ENHANCEMENT] Add advanced CLI flags to control gRPC client behaviour: #5161
   * `-<prefix>.connect-timeout`
