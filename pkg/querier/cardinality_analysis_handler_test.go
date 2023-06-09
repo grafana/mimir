@@ -745,7 +745,7 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			distributor := mockDistributorLabelValuesCardinality(
-				[]model.LabelName{"foo", "bar"},
+				[]model.LabelName{"bar", "foo"},
 				[]*labels.Matcher(nil),
 				uint64(0),
 				&client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
