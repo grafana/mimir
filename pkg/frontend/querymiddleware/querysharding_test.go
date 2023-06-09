@@ -41,7 +41,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
-	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -100,7 +99,7 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 		for j := 0; j < len(a.Histograms); j++ {
 			expected := a.Histograms[j]
 			actual := b.Histograms[j]
-			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram", 1e-2)
+			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram", 1e-12)
 		}
 	}
 }
@@ -2081,7 +2080,24 @@ func newSeriesInner(metric labels.Labels, from, to time.Time, step time.Duration
 }
 
 func generateTestHistogram(v float64) *histogram.FloatHistogram {
-	h := util_test.GenerateTestFloatHistogram(int(v))
+	//based on util_test.GenerateTestFloatHistogram(int(v)) but without converting to int
+	h := &histogram.FloatHistogram{
+		Count:         10 + (v * 8),
+		ZeroCount:     2 + v,
+		ZeroThreshold: 0.001,
+		Sum:           18.4 * (v + 1),
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{v + 1, v + 2, v + 1, v + 1},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []float64{v + 1, v + 2, v + 1, v + 1},
+	}
 	if value.IsStaleNaN(v) {
 		h.Sum = v
 	}
