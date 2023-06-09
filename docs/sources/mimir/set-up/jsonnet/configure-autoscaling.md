@@ -1,6 +1,6 @@
 ---
 aliases:
-  - ../../deploying-grafana-mimir/jsonnet/configuring-autoscaling/
+  - ../../operators-guide/deploying-grafana-mimir/jsonnet/configuring-autoscaling/
   - configuring-autoscaling/
   - ../../operators-guide/deploy-grafana-mimir/jsonnet/configure-autoscaling/
 description: Learn how to configure Grafana Mimir autoscaling when using Jsonnet.
