@@ -1,6 +1,6 @@
 ---
 aliases:
-  - ../../deploying-grafana-mimir/jsonnet/migrating-from-consul-to-memberlist/
+  - ../../operators-guide/deploying-grafana-mimir/jsonnet/migrating-from-consul-to-memberlist/
   - migrating-from-consul-to-memberlist/
   - ../../operators-guide/deploy-grafana-mimir/jsonnet/migrate-from-consul-to-memberlist/
 description:
