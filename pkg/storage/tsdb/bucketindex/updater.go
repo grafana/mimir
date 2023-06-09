@@ -124,6 +124,11 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 }
 
 func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Block, error) {
+	// Set a generous timeout for fetching the meta.json and getting the attributes of the same file.
+	// This protects against operations that can take unbounded time.
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
 	metaFile := path.Join(id.String(), block.MetaFilename)
 
 	// Get the block's meta.json file.
