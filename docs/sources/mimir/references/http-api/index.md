@@ -572,11 +572,11 @@ The `inmemory` method counts the number of series in currently opened TSDBs in M
 Two subsequent calls might return completely different results if an ingester cut a block between calls.
 This method of counting is most useful for understanding ingester memory usage.
 
-The `active` method also counts series in currently opened TSDBs in Mimir's ingesters, but filters out series that have not received a sample within a configurable duration of time. 
+The `active` method also counts series in currently opened TSDBs in Mimir's ingesters, but filters out series that have not received a sample within a configurable duration of time.
 To configure this duration, use the `-ingester.active-series-metrics-idle-timeout` parameter.
 This method of counting is most useful for understanding what label values are represented in the samples ingested by Mimir in the last `-ingester.active-series-metrics-idle-timeout`.
 Two subsequent calls will likely return similar results, because this window of time is not related to the block cutting on ingesters.
-Values will change only as a result of changes in the data ingested by Mimir. 
+Values will change only as a result of changes in the data ingested by Mimir.
 
 The items in the field `labels` are sorted by `series_count` in DESC order and by `label_name` in ASC order.
 The items in the field `cardinality` are sorted by `series_count` in DESC order and by `label_value` in ASC order.
