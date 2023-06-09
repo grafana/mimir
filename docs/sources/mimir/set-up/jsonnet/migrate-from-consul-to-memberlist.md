@@ -2,6 +2,7 @@
 aliases:
   - ../../deploying-grafana-mimir/jsonnet/migrating-from-consul-to-memberlist/
   - migrating-from-consul-to-memberlist/
+  - ../../operators-guide/deploy-grafana-mimir/jsonnet/migrate-from-consul-to-memberlist/
 description:
   Learn how to migrate from using Consul as KV store for hash rings to
   using memberlist without any downtime.

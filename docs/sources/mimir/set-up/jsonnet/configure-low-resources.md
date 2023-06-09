@@ -2,6 +2,7 @@
 aliases:
   - ../../deploying-grafana-mimir/jsonnet/configuring-low-resources/
   - configuring-low-resources/
+  - ../../operators-guide/deploy-grafana-mimir/jsonnet/configure-low-resources/
 description: Learn how to configure Grafana Mimir when using Jsonnet.
 menuTitle: Configure low resources
 title: Configure Grafana Mimir to use low resources with Jsonnet

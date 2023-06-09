@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../operators-guide/deploy-grafana-mimir/jsonnet/migrate-from-microservices-to-read-write/
 description: Migrate from a cluster deployed as microservices to
   one in read-write mode.
 menuTitle: Migrate from microservices to read-write mode

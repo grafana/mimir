@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../operators-guide/deploy-grafana-mimir/jsonnet/configure-deployment-mode/
 description: Learn how to configure Grafana Mimir deployment mode.
 menuTitle: Configure deployment mode
 title: Configure deployment mode
