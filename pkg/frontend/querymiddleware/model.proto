@@ -121,10 +121,10 @@ message QueryStatistics {
 message CachedHTTPResponse  {
   // cacheKey contains the non-hashed cache key, used to guarantee there haven't
   // been any hashed cache key collision.
-  string cacheKey = 1;
+  string cache_key = 1;
 
   // statusCode contains the HTTP response status code.
-  int32 statusCode = 2;
+  int32 status_code = 2;
 
   // headers contains the HTTP response headers.
   repeated CachedHTTPHeader headers = 3;
