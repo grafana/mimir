@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../operators-guide/deploy-grafana-mimir/jsonnet/configure-object-storage-backend/
 description: Learn how to configure the Grafana Mimir object storage backend when using Jsonnet.
 menuTitle: Configure object storage
 title: Configure the Grafana Mimir object storage backend with Jsonnet
@@ -69,7 +71,7 @@ It is a good practice to keep them in secrets. In that case environment variable
 
 ## Google Cloud Storage (`gcs`) storage configuration options
 
-There are multiple [ways to configure Google Cloud Storage client]({{< relref "../../../references/configuration-parameters#gcs_storage_backend" >}}).
+There are multiple [ways to configure Google Cloud Storage client]({{< relref "../../references/configuration-parameters#gcs_storage_backend" >}}).
 If you run Mimir on Google Cloud Platform it is possible that [the environment already has the credentials configured](https://cloud.google.com/storage/docs/authentication#libauth),
 in that case the minimum jsonnet configuration is valid:
 

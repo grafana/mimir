@@ -1050,7 +1050,7 @@ How it **works**:
 
 - HPA's can be configured to autoscale Mimir components based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
 - HPA periodically queries updated metrics and updates the number of desired replicas based on that
-- Please refer to [Mimir's Autoscaling documentation]({{< relref "../deploy-grafana-mimir/jsonnet/configure-autoscaling.md" >}}) and the upstream [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information
+- Refer to [Mimir's Autoscaling documentation]({{< relref "../../set-up/jsonnet/configure-autoscaling" >}}) and the upstream [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information.
 
 How to **investigate**:
 

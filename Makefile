@@ -70,7 +70,7 @@ DOC_EMBED := $(DOC_SOURCES_PATH)/configure/configure-the-query-frontend-work-wit
 	$(DOC_SOURCES_PATH)/configure/mirror-requests-to-a-second-cluster/index.md \
 	$(DOC_SOURCES_PATH)/references/architecture/components/overrides-exporter.md \
 	$(DOC_SOURCES_PATH)/get-started/_index.md \
-	$(DOC_SOURCES_PATH)/operators-guide/deploy-grafana-mimir/jsonnet/deploy.md
+	$(DOC_SOURCES_PATH)/set-up/jsonnet/deploy.md
 
 .PHONY: image-tag
 image-tag: ## Print the docker image tag.

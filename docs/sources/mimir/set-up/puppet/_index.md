@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../operators-guide/deploy-grafana-mimir-with-puppet/
 description: Learn how to deploy Grafana Mimir with puppet.
 keywords:
   - Mimir deployment
