@@ -26,10 +26,14 @@ const (
 	// If such file is present in block dir, it means the block has to excluded from compaction (both vertical and horizontal) or rewrite (e.g deletions).
 	NoCompactMarkFilename = "no-compact-mark.json"
 
+	PerSeriesRetentionMarkFilename = "retention-mark.json"
+
 	// DeletionMarkVersion1 is the version of deletion-mark file supported by Thanos.
 	DeletionMarkVersion1 = 1
 	// NoCompactMarkVersion1 is the version of no-compact-mark file supported by Thanos.
 	NoCompactMarkVersion1 = 1
+	// PerSeriesRetentionMarkVersion1 this is the version of the per-series retention mark file supported by Mimir
+	PerSeriesRetentionMarkVersion1 = 1
 )
 
 var (
@@ -44,6 +48,21 @@ var (
 type Marker interface {
 	markerFilename() string
 }
+
+// PerSeriesRetentionMark stores block id and when block was marked for per-series retention.
+type PerSeriesRetentionMark struct {
+	// ID of the tsdb block.
+	ID ulid.ULID `json:"id"`
+	// Version of the file.
+	Version int `json:"version"`
+	// Details is a human-readable string giving details of reason.
+	Details string `json:"details,omitempty"`
+
+	// RetentionAppliedTime is a unix timestamp of when the per series retention was applied.
+	RetentionAppliedTime int64 `json:"deletion_time"`
+}
+
+func (m *PerSeriesRetentionMark) markerFilename() string { return PerSeriesRetentionMarkFilename }
 
 // DeletionMark stores block id and when block was marked for deletion.
 type DeletionMark struct {
@@ -117,6 +136,10 @@ func ReadMarker(ctx context.Context, logger log.Logger, bkt objstore.Instrumente
 	case DeletionMarkFilename:
 		if version := marker.(*DeletionMark).Version; version != DeletionMarkVersion1 {
 			return errors.Errorf("unexpected deletion-mark file version %d, expected %d", version, DeletionMarkVersion1)
+		}
+	case PerSeriesRetentionMarkFilename:
+		if version := marker.(*PerSeriesRetentionMark).Version; version != PerSeriesRetentionMarkVersion1 {
+			return errors.Errorf("unexpected per-series-retention-mark file version %d, expected %d", version, PerSeriesRetentionMarkVersion1)
 		}
 	}
 	return nil

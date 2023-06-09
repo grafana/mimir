@@ -141,6 +141,36 @@ func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, origErr error
 	return origErr
 }
 
+func MarkForPerSeriesRetention(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, details string, markedForRetention prometheus.Counter) error {
+	retentionMarkFile := path.Join(id.String(), PerSeriesRetentionMarkFilename)
+	retentionMarkExists, err := bkt.Exists(ctx, retentionMarkFile)
+	if err != nil {
+		return errors.Wrapf(err, "check exists %s in bucket", retentionMarkFile)
+	}
+	if retentionMarkExists {
+		level.Warn(logger).Log("msg", "requested to mark for deletion, but file already exists; this should not happen; investigate", "err", errors.Errorf("file %s already exists in bucket", retentionMarkFile))
+		return nil
+	}
+
+	retentionMark, err := json.Marshal(PerSeriesRetentionMark{
+		ID:           id,
+		RetentionAppliedTime: time.Now().Unix(),
+		Version:      PerSeriesRetentionMarkVersion1,
+		Details:      details,
+	})
+	if err != nil {
+		return errors.Wrap(err, "json encode per series retention mark")
+	}
+
+	if err := bkt.Upload(ctx, retentionMarkFile, bytes.NewBuffer(retentionMark)); err != nil {
+		return errors.Wrapf(err, "upload file %s to bucket", retentionMark)
+	}
+	markedForRetention.Inc()
+	level.Info(logger).Log("msg", "block has been marked for deletion", "block", id)
+	return nil
+
+}
+
 // MarkForDeletion creates a file which stores information about when the block was marked for deletion.
 func MarkForDeletion(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, details string, markedForDeletion prometheus.Counter) error {
 	deletionMarkFile := path.Join(id.String(), DeletionMarkFilename)

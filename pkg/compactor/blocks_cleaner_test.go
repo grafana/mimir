@@ -512,6 +512,26 @@ func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 	assert.ElementsMatch(t, []ulid.ULID{id3}, result.GetULIDs())
 }
 
+func TestBlocksCleaner_ListBlocksOutsideRetentionPeriodRetained(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+
+	id1 := createTSDBBlock(t, bucketClient, "user-1", 5000, 6000, 2, nil)
+	id2 := createTSDBBlock(t, bucketClient, "user-1", 6000, 7000, 2, nil)
+	id3 := createTSDBBlock(t, bucketClient, "user-1", 7000, 8000, 2, nil)
+
+	w := bucketindex.NewUpdater(bucketClient, "user-1", nil, logger)
+	idx, _, err := w.UpdateIndex(ctx, nil)
+	require.NoError(t, err)
+
+	assert.ElementsMatch(t, []ulid.ULID{id1, id2, id3}, idx.Blocks.GetULIDs())
+
+	idx.PerSeriesRetentionMarks
+}
+
+
 func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)

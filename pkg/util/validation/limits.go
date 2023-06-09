@@ -154,6 +154,9 @@ type Limits struct {
 	CompactorBlockUploadValidationEnabled bool           `yaml:"compactor_block_upload_validation_enabled" json:"compactor_block_upload_validation_enabled"`
 	CompactorBlockUploadVerifyChunks      bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
 	CompactorBlockUploadMaxBlockSizeBytes int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes" category:"advanced"`
+	CompactorPerSeriesRetentionEnabled    bool           `yaml:"compactor_per_series_retention_enabled" json:"compactor_per_series_retention_enabled"`
+	CompactorPerSeriesRetentionPeriod     model.Duration `yaml:"compactor_per_series_retention_period" json:"compactor_per_series_retention_period"`
+	CompactorPerSeriesRetentionMatchers   string         `yaml:"compactor_per_series_retention_matchers" json:"compactor_per_series_retention_matchers"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -252,6 +255,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.CompactorBlockUploadValidationEnabled, "compactor.block-upload-validation-enabled", true, "Enable block upload validation for the tenant.")
 	f.BoolVar(&l.CompactorBlockUploadVerifyChunks, "compactor.block-upload-verify-chunks", true, "Verify chunks when uploading blocks via the upload API for the tenant.")
 	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
+	f.BoolVar(&l.CompactorPerSeriesRetentionEnabled, "compactor.per-series-retention-enabled", false, "Enable per-series retention for the tenant")
+	f.Var(&l.CompactorPerSeriesRetentionPeriod, "compactor.per-series-retention-period","Delete blocks that have had per-series retention applied older than the specified per-series retention period. Also used by query-frontend to avoid querying beyond the retention period.")
+	f.StringVar(&l.CompactorPerSeriesRetentionMatchers, "compactor.per-series-retention-matchers", "", "A set of matchers applied to a block to specifiy the series that will be retained for the per-series retention period")
 
 	// Query-frontend.
 	f.Var(&l.MaxTotalQueryLength, maxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.")
@@ -669,6 +675,23 @@ func (o *Overrides) CompactorBlockUploadVerifyChunks(tenantID string) bool {
 // CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated for a given user.
 func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
 	return o.getOverridesForUser(userID).CompactorBlockUploadMaxBlockSizeBytes
+}
+
+// CompactorPerSeriesRetentionEnabled returns if a tenant has per-series retention enabled
+func (o *Overrides) CompactorPerSeriesRetentionEnabled(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).CompactorPerSeriesRetentionEnabled
+}
+
+// CompactorPerSeriesRetentionPeriod returns the per-series extended retention period for a tenant
+func (o *Overrides) CompactorPerSeriesRetentionPeriod(tenantID string) time.Duration {
+	delay := time.Duration(o.getOverridesForUser(tenantID).CompactorPerSeriesRetentionPeriod)
+	// TODO: validate delay is > base retention time
+	return delay
+}
+
+// CompactorPerSeriesRetentionMatchers returns a string representing a matcher for the series to retain with per-series retention
+func (o *Overrides) CompactorPerSeriesRetentionMatchers(tenantID string) string {
+	return o.getOverridesForUser(tenantID).CompactorPerSeriesRetentionMatchers
 }
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.

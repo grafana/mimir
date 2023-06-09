@@ -214,6 +214,16 @@ type ConfigProvider interface {
 
 	// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated for a given user.
 	CompactorBlockUploadMaxBlockSizeBytes(userID string) int64
+
+	// CompactorPerSeriesRetentionEnabled returns if a tenant has per-series retention enabled
+	CompactorPerSeriesRetentionEnabled(tenantID string) bool
+
+	// CompactorPerSeriesRetentionPeriod returns the per-series extended retention period for a tenant
+	CompactorPerSeriesRetentionPeriod(tenantID string) time.Duration
+
+	// CompactorPerSeriesRetentionMatchers returns a string representing a matcher for the series to retain with per-series retention
+	CompactorPerSeriesRetentionMatchers(tenantID string) string
+
 }
 
 // MultitenantCompactor is a multi-tenant TSDB blocks compactor based on Thanos.

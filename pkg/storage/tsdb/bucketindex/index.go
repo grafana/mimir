@@ -42,6 +42,8 @@ type Index struct {
 	// List of block deletion marks.
 	BlockDeletionMarks BlockDeletionMarks `json:"block_deletion_marks"`
 
+	PerSeriesRetentionMarks PerSeriesRetentionMarks
+
 	// UpdatedAt is a unix timestamp (seconds precision) of when the index has been updated
 	// (written in the storage) the last time.
 	UpdatedAt int64 `json:"updated_at"`
@@ -244,6 +246,18 @@ func (s BlockDeletionMarks) Clone() BlockDeletionMarks {
 	}
 	return clone
 }
+
+// PerSeriesRetentionMark holds the information about a block's per-series retention mark in the index.
+type PerSeriesRetentionMark struct {
+	// Block ID.
+	ID ulid.ULID `json:"block_id"`
+
+	// DeletionTime is a unix timestamp (seconds precision) of when the block was marked to be deleted.
+	AppliedRetentionTime int64 `json:"applied_retention_time"`
+}
+
+// PerSeriesRetentionMarks is a list of blocks that have been retained by per-series retention
+type PerSeriesRetentionMarks []*PerSeriesRetentionMark
 
 // Blocks holds a set of blocks in the index. No ordering guaranteed.
 type Blocks []*Block

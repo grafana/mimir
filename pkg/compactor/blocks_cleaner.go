@@ -382,7 +382,8 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 		// We do not want to stop the remaining work in the cleaner if an
 		// error occurs here. Errors are logged in the function.
 		retention := c.cfgProvider.CompactorBlocksRetentionPeriod(userID)
-		c.applyUserRetentionPeriod(ctx, idx, retention, userBucket, userLogger)
+		perSeriesRetentionEnabled := c.cfgProvider.CompactorPerSeriesRetentionEnabled(userID)
+		c.applyUserRetentionPeriod(ctx, idx, retention, perSeriesRetentionEnabled, userBucket, userLogger)
 	}
 
 	// Generate an updated in-memory version of the bucket index.
@@ -528,7 +529,7 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 }
 
 // applyUserRetentionPeriod marks blocks for deletion which have aged past the retention period.
-func (c *BlocksCleaner) applyUserRetentionPeriod(ctx context.Context, idx *bucketindex.Index, retention time.Duration, userBucket objstore.Bucket, userLogger log.Logger) {
+func (c *BlocksCleaner) applyUserRetentionPeriod(ctx context.Context, idx *bucketindex.Index, retention time.Duration, perSeriesRetentionEnabled bool, userBucket objstore.Bucket, userLogger log.Logger) {
 	// The retention period of zero is a special value indicating to never delete.
 	if retention <= 0 {
 		return
@@ -540,9 +541,17 @@ func (c *BlocksCleaner) applyUserRetentionPeriod(ctx context.Context, idx *bucke
 	// Attempt to mark all blocks. It is not critical if a marking fails, as
 	// the cleaner will retry applying the retention in its next cycle.
 	for _, b := range blocks {
-		level.Info(userLogger).Log("msg", "applied retention: marking block for deletion", "block", b.ID, "maxTime", b.MaxTime)
-		if err := block.MarkForDeletion(ctx, userLogger, userBucket, b.ID, fmt.Sprintf("block exceeding retention of %v", retention), c.blocksMarkedForDeletion); err != nil {
-			level.Warn(userLogger).Log("msg", "failed to mark block for deletion", "block", b.ID, "err", err)
+		// Could check here for if it's also out of per-series retention period here since this will just retain anything or run list for per-series retention
+		if perSeriesRetentionEnabled {
+			level.Info(userLogger).Log("msg", "applied per-series retention: marking block for per-series retention", "block", b.ID, "maxTime", b.MaxTime)
+			if err := block.MarkForPerSeriesRetention(ctx, userLogger, userBucket, b.ID, fmt.Sprintf("block marked for per-series retention at %v", retention), nil); err != nil {
+				level.Warn(userLogger).Log("msg", "failed to mark block for per-series retention", "block", b.ID, "err", err)
+			}
+		} else {
+			level.Info(userLogger).Log("msg", "applied retention: marking block for deletion", "block", b.ID, "maxTime", b.MaxTime)
+			if err := block.MarkForDeletion(ctx, userLogger, userBucket, b.ID, fmt.Sprintf("block exceeding retention of %v", retention), c.blocksMarkedForDeletion); err != nil {
+				level.Warn(userLogger).Log("msg", "failed to mark block for deletion", "block", b.ID, "err", err)
+			}
 		}
 	}
 }
@@ -553,9 +562,12 @@ func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Tim
 	// Whilst re-marking a block is not harmful, it is wasteful and generates
 	// a warning log message. Use the block deletion marks already in-memory
 	// to prevent marking blocks already marked for deletion.
-	marked := make(map[ulid.ULID]struct{}, len(idx.BlockDeletionMarks))
+	marked := make(map[ulid.ULID]struct{}, len(idx.BlockDeletionMarks)+len(idx.PerSeriesRetentionMarks))
 	for _, d := range idx.BlockDeletionMarks {
 		marked[d.ID] = struct{}{}
+	}
+	for _, r := range idx.PerSeriesRetentionMarks{
+		marked[r.ID] = struct{}{}
 	}
 
 	for _, b := range idx.Blocks {
