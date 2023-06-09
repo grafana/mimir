@@ -1675,6 +1675,17 @@
         },
         {
           "kind": "field",
+          "name": "minimize_ingester_requests",
+          "required": false,
+          "desc": "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.minimize-ingester-requests",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
@@ -3145,6 +3156,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "query-frontend.results-cache-ttl-for-out-of-order-time-window",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "results_cache_ttl_for_cardinality_query",
+          "required": false,
+          "desc": "Time to live duration for cached cardinality query results. The value 0 disables the cache.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.results-cache-ttl-for-cardinality-query",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

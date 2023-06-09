@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../operators-guide/deploy-grafana-mimir/jsonnet/configure-deployment-mode/
 description: Learn how to configure Grafana Mimir deployment mode.
 menuTitle: Configure deployment mode
 title: Configure deployment mode
@@ -7,7 +9,7 @@ weight: 40
 
 # Configure deployment mode
 
-Grafana Mimir supports multiple [deployment modes]({{< relref "../../../references/architecture/deployment-modes/index.md" >}}). By default, the provided Jsonnet deploys in microservices mode. Monolithic mode is not supported in Jsonnet.
+Grafana Mimir supports multiple [deployment modes]({{< relref "../../references/architecture/deployment-modes/index.md" >}}). By default, the provided Jsonnet deploys in microservices mode. Monolithic mode is not supported in Jsonnet.
 
 ## Use Read-Write deployment mode
 

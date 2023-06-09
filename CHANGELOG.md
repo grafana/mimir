@@ -7,6 +7,7 @@
 * [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
 * [CHANGE] Querier: change the default value of the experimental `-querier.streaming-chunks-per-ingester-buffer-size` flag to 128. #5203
 * [FEATURE] Cardinality API: Add a new `count_method` parameter which enables counting active series #5136
+* [FEATURE] Query-frontend: added experimental support to cache cardinality query responses. The cache will be used when `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than 0. #5212
 * [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. For now this feature can be disabled by setting `-timeseries-unmarshal-caching-optimization-enabled=false`. #5137
 * [ENHANCEMENT] Add advanced CLI flags to control gRPC client behaviour: #5161
@@ -18,15 +19,17 @@
 * [ENHANCEMENT] Query-frontend: added "response_size_bytes" field to "query stats" log. #5196
 * [ENHANCEMENT] Querier: Refine error messages for per-tenant query limits, informing the user of the preferred strategy for not hitting the limit, in addition to how they may tweak the limit. #5059
 * [ENHANCEMENT] Distributor: optimize sending of requests to ingesters by reusing memory buffers for marshalling requests. For now this optimization can be disabled by setting `-distributor.write-requests-buffer-pooling-enabled` to `false`. #5195
+* [ENHANCEMENT] Querier: add experimental `-querier.minimize-ingester-requests` option to initially query only the minimum set of ingesters required to reach quorum. #5202
 * [BUGFIX] Querier: don't leak memory when processing query requests from query-frontends (ie. when the query-scheduler is disabled). #5199
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 
 ### Mixin
+
 * [CHANGE] Dashboards: show all workloads in selected namespace on "rollout progress" dashboard. #5113
 * [CHANGE] Dashboards: show the number of updated and ready pods for each workload in the "rollout progress" panel on the "rollout progress" dashboard. #5113
 * [ENHANCEMENT] Dashboards: adjust layout of "rollout progress" dashboard panels so that the "rollout progress" panel doesn't require scrolling. #5113
 * [ENHANCEMENT] Dashboards: show container name first in "pods count per version" panel on "rollout progress" dashboard. #5113
-* [BUGFIX] Dashboards: fix "unhealthy pods" panel on "rollout progress" dashboard showing only a number rather than the name of the workload and the number of unhealthy pods if only one workload has unhealthy pods. #5113
+* [BUGFIX] Dashboards: fix "unhealthy pods" panel on "rollout progress" dashboard showing only a number rather than the name of the workload and the number of unhealthy pods if only one workload has unhealthy pods. #5113 #5200
 
 ### Jsonnet
 

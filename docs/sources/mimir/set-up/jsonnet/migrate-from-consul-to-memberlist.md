@@ -1,7 +1,8 @@
 ---
 aliases:
-  - ../../deploying-grafana-mimir/jsonnet/migrating-from-consul-to-memberlist/
+  - ../../operators-guide/deploying-grafana-mimir/jsonnet/migrating-from-consul-to-memberlist/
   - migrating-from-consul-to-memberlist/
+  - ../../operators-guide/deploy-grafana-mimir/jsonnet/migrate-from-consul-to-memberlist/
 description:
   Learn how to migrate from using Consul as KV store for hash rings to
   using memberlist without any downtime.
@@ -39,7 +40,7 @@ If you are running Mimir hash rings with Consul and would like to migrate to mem
 
 Step 1 configures components to use `multi` KV store, with `consul` as primary and memberlist as secondary stores.
 This step requires rollout of all Mimir components.
-After applying this step all Mimir components will expose [`/memberlist`]({{< relref "../../../references/http-api/index.md#memberlist-cluster" >}}) page on HTTP admin interface, which can be used to check health of memberlist cluster.
+After applying this step all Mimir components will expose [`/memberlist`]({{< relref "../../references/http-api/index.md#memberlist-cluster" >}}) page on HTTP admin interface, which can be used to check health of memberlist cluster.
 
 ## Step 2: Enable KV store mirroring
 
@@ -62,8 +63,8 @@ You can monitor following metrics to check if mirroring was enabled on all compo
 - `rate(cortex_multikv_mirror_writes_total[1m])` – shows rate of writes to secondary KV store in writes per second.
 - `rate(cortex_multikv_mirror_write_errors_total[1m])` – shows rate of write errors to secondary KV store, in errors per second.
 
-After mirroring is enabled, you should see a key for each Mimir hash ring in the [Memberlist cluster information]({{< relref "../../../references/http-api/index.md#memberlist-cluster" >}}) admin page.
-See [list of components that use hash ring]({{< relref "../../../references/architecture/hash-ring/index.md" >}}).
+After mirroring is enabled, you should see a key for each Mimir hash ring in the [Memberlist cluster information]({{< relref "../../references/http-api/index.md#memberlist-cluster" >}}) admin page.
+See [list of components that use hash ring]({{< relref "../../references/architecture/hash-ring/index.md" >}}).
 
 ## Step 3: Switch Primary and Secondary store
 

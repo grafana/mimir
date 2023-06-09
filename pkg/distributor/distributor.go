@@ -40,9 +40,9 @@ import (
 
 	"github.com/grafana/dskit/tenant"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -166,6 +166,7 @@ type Config struct {
 	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
 	PreferStreamingChunks                      bool          `yaml:"-"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
+	MinimizeIngesterRequests                   bool          `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
@@ -1385,7 +1386,7 @@ func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_clie
 // LabelValuesCardinality performs the following two operations in parallel:
 //   - queries ingesters for label values cardinality of a set of labelNames
 //   - queries ingesters for user stats to get the ingester's series head count
-func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod querier.CountMethod) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
+func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
 	var totalSeries uint64
 	var labelValuesCardinalityResponse *ingester_client.LabelValuesCardinalityResponse
 
@@ -1423,7 +1424,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
-func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod querier.CountMethod) (*ingester_client.LabelValuesCardinalityResponse, error) {
+func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityResponse, error) {
 	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
@@ -1465,7 +1466,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	return cardinalityConcurrentMap.toLabelValuesCardinalityResponse(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor()), nil
 }
 
-func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher, countMethod querier.CountMethod) (*ingester_client.LabelValuesCardinalityRequest, error) {
+func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityRequest, error) {
 	matchersProto, err := ingester_client.ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
@@ -1481,11 +1482,11 @@ func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*l
 	return &ingester_client.LabelValuesCardinalityRequest{LabelNames: labelNamesStr, Matchers: matchersProto, CountMethod: ingesterCountMethod}, nil
 }
 
-func toIngesterCountMethod(countMethod querier.CountMethod) (ingester_client.CountMethod, error) {
+func toIngesterCountMethod(countMethod cardinality.CountMethod) (ingester_client.CountMethod, error) {
 	switch countMethod {
-	case querier.InMemoryMethod:
+	case cardinality.InMemoryMethod:
 		return ingester_client.IN_MEMORY, nil
-	case querier.ActiveMethod:
+	case cardinality.ActiveMethod:
 		return ingester_client.ACTIVE, nil
 	default:
 		return ingester_client.IN_MEMORY, fmt.Errorf("unknown count method %q", countMethod)
@@ -1711,7 +1712,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetad
 }
 
 // UserStats returns statistics about the current user.
-func (d *Distributor) UserStats(ctx context.Context, countMethod querier.CountMethod) (*UserStats, error) {
+func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.CountMethod) (*UserStats, error) {
 	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err

@@ -1075,6 +1075,14 @@ store_gateway_client:
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
 [streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
 
+# (experimental) If true, when querying ingesters, only the minimum required
+# ingesters required to reach quorum will be queried initially, with other
+# ingesters queried only if needed due to failures from the initial set of
+# ingesters. Enabling this option reduces resource consumption for the happy
+# path at the cost of increased latency for the unhappy path.
+# CLI flag: -querier.minimize-ingester-requests
+[minimize_ingester_requests: <boolean> | default = false]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
 # CLI flag: -querier.max-concurrent
@@ -2847,6 +2855,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # returned in the query results sooner.
 # CLI flag: -query-frontend.results-cache-ttl-for-out-of-order-time-window
 [results_cache_ttl_for_out_of_order_time_window: <duration> | default = 10m]
+
+# (experimental) Time to live duration for cached cardinality query results. The
+# value 0 disables the cache.
+# CLI flag: -query-frontend.results-cache-ttl-for-cardinality-query
+[results_cache_ttl_for_cardinality_query: <duration> | default = 0s]
 
 # (experimental) Max size of the raw query, in bytes. 0 to not apply a limit to
 # the size of the query.

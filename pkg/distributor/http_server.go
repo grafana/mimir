@@ -8,7 +8,7 @@ package distributor
 import (
 	"net/http"
 
-	"github.com/grafana/mimir/pkg/querier"
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -22,7 +22,7 @@ type UserStats struct {
 
 // UserStatsHandler handles user stats to the Distributor.
 func (d *Distributor) UserStatsHandler(w http.ResponseWriter, r *http.Request) {
-	stats, err := d.UserStats(r.Context(), querier.InMemoryMethod)
+	stats, err := d.UserStats(r.Context(), cardinality.InMemoryMethod)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

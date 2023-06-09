@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -1045,7 +1046,7 @@ func (m *errDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMetada
 	return nil, errDistributorError
 }
 
-func (m *errDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
+func (m *errDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, errDistributorError
 }
 
@@ -1079,7 +1080,7 @@ func (d *emptyDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMeta
 	return nil, nil
 }
 
-func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
+func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, nil
 }
 

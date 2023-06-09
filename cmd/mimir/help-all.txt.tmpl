@@ -1587,6 +1587,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
+  -querier.minimize-ingester-requests
+    	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.
   -querier.prefer-streaming-chunks
     	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.
   -querier.query-ingesters-within duration
@@ -1709,6 +1711,8 @@ Usage of ./cmd/mimir/mimir:
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
   -query-frontend.results-cache-ttl duration
     	[experimental] Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
+  -query-frontend.results-cache-ttl-for-cardinality-query duration
+    	[experimental] Time to live duration for cached cardinality query results. The value 0 disables the cache.
   -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
     	[experimental] Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -query-frontend.results-cache-ttl so that incoming out-of-order samples are returned in the query results sooner. (default 10m)
   -query-frontend.results-cache.backend string
