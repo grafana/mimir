@@ -82,8 +82,8 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 			name:     "selector with metric name to be parse",
 			selector: "metric{env!='prod'}",
 			expectedMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchNotEqual, "env", "prod"),
 				labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric"),
+				labels.MustNewMatcher(labels.MatchNotEqual, "env", "prod"),
 			},
 		},
 		{
@@ -359,17 +359,17 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			postRequestForm: url.Values{
 				"label_names[]": []string{"foo", "bar"},
 			},
-			labelNames: []model.LabelName{"foo", "bar"},
+			labelNames: []model.LabelName{"bar", "foo"},
 			matcher:    []*labels.Matcher(nil),
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{
 					{
-						LabelName:        "foo",
-						LabelValueSeries: map[string]uint64{"test_1": 10},
-					},
-					{
 						LabelName:        "bar",
 						LabelValueSeries: map[string]uint64{"test_1": 20},
+					},
+					{
+						LabelName:        "foo",
+						LabelValueSeries: map[string]uint64{"test_1": 10},
 					},
 				},
 			},
@@ -400,16 +400,16 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			postRequestForm: url.Values{
 				"label_names[]": []string{"foo", "bar"},
 			},
-			labelNames: []model.LabelName{"foo", "bar"},
+			labelNames: []model.LabelName{"bar", "foo"},
 			matcher:    []*labels.Matcher(nil),
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{
 					{
-						LabelName:        "foo",
+						LabelName:        "bar",
 						LabelValueSeries: map[string]uint64{"test_1": 10},
 					},
 					{
-						LabelName:        "bar",
+						LabelName:        "foo",
 						LabelValueSeries: map[string]uint64{"test_1": 10},
 					},
 				},
