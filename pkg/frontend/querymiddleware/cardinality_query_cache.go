@@ -54,7 +54,6 @@ func newCardinalityQueryCacheRoundTripper(cache cache.Cache, limits Limits, next
 	}
 }
 
-// TODO metrics?
 func (c *cardinalityQueryCache) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
 
