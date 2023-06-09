@@ -254,7 +254,7 @@ func TestIngester_Push(t *testing.T) {
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
-					[]*mimirpb.Exemplar{
+					[]mimirpb.Exemplar{
 						{
 							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,

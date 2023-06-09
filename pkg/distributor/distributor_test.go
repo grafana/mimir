@@ -3796,7 +3796,7 @@ func TestDistributorValidation(t *testing.T) {
 		metadata           []*mimirpb.MetricMetadata
 		labels             []labels.Labels
 		samples            []mimirpb.Sample
-		exemplars          []*mimirpb.Exemplar
+		exemplars          []mimirpb.Exemplar
 		expectedStatusCode int32
 		expectedErr        string
 	}{
@@ -3808,7 +3808,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
-			exemplars: []*mimirpb.Exemplar{{
+			exemplars: []mimirpb.Exemplar{{
 				Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123abc"}},
 				TimestampMs: int64(now),
 				Value:       1,
@@ -3881,7 +3881,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
-			exemplars: []*mimirpb.Exemplar{{
+			exemplars: []mimirpb.Exemplar{{
 				Labels:      nil,
 				TimestampMs: int64(now),
 				Value:       1,
