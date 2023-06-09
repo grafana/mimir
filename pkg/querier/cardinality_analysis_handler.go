@@ -69,7 +69,7 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 			return
 		}
 
-		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, cardinalityRequest.LabelNames, cardinalityRequest.Matchers)
+		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, cardinalityRequest.LabelNames, cardinalityRequest.Matchers, cardinalityRequest.CountMethod)
 		if err != nil {
 			respondFromError(err, w)
 			return

@@ -15,13 +15,21 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+type CountMethod string
+
+const (
+	InMemoryMethod CountMethod = "inmemory"
+	ActiveMethod   CountMethod = "active"
+)
+
 const (
 	RequestTypeLabelNames  = RequestType(iota)
 	RequestTypeLabelValues = RequestType(iota)
 
-	minLimit     = 0
-	maxLimit     = 500
-	defaultLimit = 20
+	minLimit           = 0
+	maxLimit           = 500
+	defaultLimit       = 20
+	defaultCountMethod = InMemoryMethod
 
 	stringParamSeparator = rune(0)
 	stringValueSeparator = rune(1)
@@ -85,9 +93,10 @@ func DecodeLabelNamesRequest(r *http.Request) (*LabelNamesRequest, error) {
 }
 
 type LabelValuesRequest struct {
-	LabelNames []model.LabelName
-	Matchers   []*labels.Matcher
-	Limit      int
+	LabelNames  []model.LabelName
+	Matchers    []*labels.Matcher
+	CountMethod CountMethod
+	Limit       int
 }
 
 // Strings returns a full representation of the request. The returned string can be
@@ -111,6 +120,10 @@ func (r *LabelValuesRequest) String() string {
 		}
 		b.WriteString(matcher.String())
 	}
+
+	// Add count method.
+	b.WriteRune(stringParamSeparator)
+	b.WriteString(string(r.CountMethod))
 
 	// Add limit.
 	b.WriteRune(stringParamSeparator)
@@ -146,6 +159,11 @@ func DecodeLabelValuesRequest(r *http.Request) (*LabelValuesRequest, error) {
 	}
 
 	parsed.Limit, err = extractLimit(r)
+	if err != nil {
+		return nil, err
+	}
+
+	parsed.CountMethod, err = extractCountMethod(r)
 	if err != nil {
 		return nil, err
 	}
@@ -223,4 +241,20 @@ func extractLabelNames(r *http.Request) ([]model.LabelName, error) {
 	slices.Sort(labelNames)
 
 	return labelNames, nil
+}
+
+// extractCountMethod parses and validates request param `count_method` if it's defined, otherwise returns default value.
+func extractCountMethod(r *http.Request) (countMethod CountMethod, err error) {
+	countMethodParams := r.Form["count_method"]
+	if len(countMethodParams) == 0 {
+		return defaultCountMethod, nil
+	}
+	switch CountMethod(countMethodParams[0]) {
+	case ActiveMethod:
+		return ActiveMethod, nil
+	case InMemoryMethod:
+		return InMemoryMethod, nil
+	default:
+		return "", fmt.Errorf("invalid 'count_method' param '%v'. valid options are: [%s]", countMethodParams[0], strings.Join([]string{string(ActiveMethod), string(InMemoryMethod)}, ","))
+	}
 }
