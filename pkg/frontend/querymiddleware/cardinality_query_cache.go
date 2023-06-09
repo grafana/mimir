@@ -74,7 +74,6 @@ func (c *cardinalityQueryCache) RoundTrip(req *http.Request) (*http.Response, er
 
 	// Skip the cache if disabled for the tenant. We look at the minimum TTL so that we skip the cache
 	// if it's disabled for any of tenants.
-	// TODO unit test
 	cacheTTL := validation.MinDurationPerTenant(tenantIDs, c.limits.ResultsCacheTTLForCardinalityQuery)
 	if cacheTTL <= 0 {
 		level.Debug(spanLog).Log("msg", "cache disabled for the tenant")

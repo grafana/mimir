@@ -120,6 +120,14 @@ func (m *InstrumentedMockCache) Delete(ctx context.Context, key string) error {
 	return m.cache.Delete(ctx, key)
 }
 
+func (m *InstrumentedMockCache) GetItems() map[string]Item {
+	return m.cache.GetItems()
+}
+
+func (m *InstrumentedMockCache) Flush() {
+	m.cache.Flush()
+}
+
 func (m *InstrumentedMockCache) CountStoreCalls() int {
 	return int(m.storeCount.Load())
 }
