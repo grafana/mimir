@@ -1075,6 +1075,14 @@ store_gateway_client:
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
 [streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
 
+# (experimental) If true, when querying ingesters, only the minimum required
+# ingesters required to reach quorum will be queried initially, with other
+# ingesters queried only if needed due to failures from the initial set of
+# ingesters. Enabling this option reduces resource consumption for the happy
+# path at the cost of increased latency for the unhappy path.
+# CLI flag: -querier.minimize-ingester-requests
+[minimize_ingester_requests: <boolean> | default = false]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
 # CLI flag: -querier.max-concurrent
