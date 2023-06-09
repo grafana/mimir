@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DmitriyVTitov/size"
 	"github.com/dgraph-io/ristretto"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
@@ -66,10 +65,12 @@ type FastRegexMatcher struct {
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
-	// Check the cache.
-	if matcher, ok := fastRegexMatcherCache.Get(v); ok {
-		return matcher.(*FastRegexMatcher), nil
-	}
+	/*
+		// Check the cache.
+		if matcher, ok := fastRegexMatcherCache.Get(v); ok {
+			return matcher.(*FastRegexMatcher), nil
+		}
+	*/
 
 	// Create a new matcher.
 	matcher, err := newFastRegexMatcherWithoutCache(v)
@@ -77,8 +78,10 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		return nil, err
 	}
 
-	// Cache it.
-	fastRegexMatcherCache.SetWithTTL(v, matcher, int64(size.Of(matcher)), fastRegexMatcherCacheTTL)
+	/*
+		// Cache it.
+		fastRegexMatcherCache.SetWithTTL(v, matcher, int64(size.Of(matcher)), fastRegexMatcherCacheTTL)
+	*/
 
 	return matcher, nil
 }
@@ -88,33 +91,47 @@ func newFastRegexMatcherWithoutCache(v string) (*FastRegexMatcher, error) {
 		reString: v,
 	}
 
-	m.stringMatcher, m.setMatches = optimizeAlternatingLiterals(v)
-	if m.stringMatcher != nil {
-		// If we already have a string matcher, we don't need to parse the regex
-		// or compile the matchString function. This also avoids the behavior in
-		// compileMatchStringFunction where it prefers to use setMatches when
-		// available, even if the string matcher is faster.
-		m.matchString = m.stringMatcher.Matches
-	} else {
-		parsed, err := syntax.Parse(v, syntax.Perl)
-		if err != nil {
-			return nil, err
-		}
-		// Simplify the syntax tree to run faster.
-		parsed = parsed.Simplify()
-		m.re, err = regexp.Compile("^(?:" + parsed.String() + ")$")
-		if err != nil {
-			return nil, err
-		}
-		if parsed.Op == syntax.OpConcat {
-			m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
-		}
-		if matches, caseSensitive := findSetMatches(parsed); caseSensitive {
-			m.setMatches = matches
-		}
-		m.stringMatcher = stringMatcherFromRegexp(parsed)
-		m.matchString = m.compileMatchStringFunction()
+	parsed, err := syntax.Parse(v, syntax.Perl)
+	if err != nil {
+		return nil, err
 	}
+	// Simplify the syntax tree to run faster.
+	parsed = parsed.Simplify()
+	m.re, err = regexp.Compile("^(?:" + parsed.String() + ")$")
+	if err != nil {
+		return nil, err
+	}
+	m.matchString = m.compileMatchStringFunction()
+
+	/*
+		m.stringMatcher, m.setMatches = optimizeAlternatingLiterals(v)
+		if m.stringMatcher != nil {
+			// If we already have a string matcher, we don't need to parse the regex
+			// or compile the matchString function. This also avoids the behavior in
+			// compileMatchStringFunction where it prefers to use setMatches when
+			// available, even if the string matcher is faster.
+			m.matchString = m.stringMatcher.Matches
+		} else {
+			parsed, err := syntax.Parse(v, syntax.Perl)
+			if err != nil {
+				return nil, err
+			}
+			// Simplify the syntax tree to run faster.
+			parsed = parsed.Simplify()
+			m.re, err = regexp.Compile("^(?:" + parsed.String() + ")$")
+			if err != nil {
+				return nil, err
+			}
+			if parsed.Op == syntax.OpConcat {
+				m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
+			}
+			if matches, caseSensitive := findSetMatches(parsed); caseSensitive {
+				m.setMatches = matches
+			}
+			m.stringMatcher = stringMatcherFromRegexp(parsed)
+			m.matchString = m.compileMatchStringFunction()
+		}
+	*/
 
 	return m, nil
 }
