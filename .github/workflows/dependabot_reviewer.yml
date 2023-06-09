@@ -29,9 +29,7 @@ jobs:
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
         run: |
           cfg_path=".github/workflows/whitelist.json"
-        
           IFS=', ' read -r -a libsUpdated <<< "${{ steps.metadata.outputs.dependency-names }}"
-
           # Loop through the array to make sure all updated libraries are whitelisted
           all_in_whitelist="true"
           reason_array=()
@@ -40,7 +38,6 @@ jobs:
           for lib in "${libsUpdated[@]}"; do
             exists=$(jq --arg lib "$lib" 'any(.[]; .name == $lib)' $cfg_path)
             if [[ "$exists" != "true" ]]; then
-              echo "$lib is not in the whitelist, manual review is required."
               all_in_whitelist="false"
               break
             else
@@ -50,12 +47,10 @@ jobs:
 
           if [[ "$all_in_whitelist" == "true" ]]; then
             reasons=$(IFS=','; echo "${reason_array[*]}")
-            echo "All dependencies are in the whitelist. with reason $reasons"
-            echo "::set-output name=reasons::$reasons"
-            echo "::set-output name=allInWhitelist::true"
+            echo "reasons=$reasons" >> $GITHUB_ENV
+            echo "allInWhitelist=true" >> $GITHUB_ENV
           else
-            echo "Not all dependencies are in the whitelist."
-            echo "::set-output name=allInWhitelist::false"
+            echo "allInWhitelist=false" >> $GITHUB_ENV
           fi
 
       - name: Approve and auto-merge
