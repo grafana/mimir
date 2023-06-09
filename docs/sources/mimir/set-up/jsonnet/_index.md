@@ -1,7 +1,6 @@
 ---
 aliases:
   - ../operators-guide/deploying-grafana-mimir/jsonnet/
-  - ../../operators-guide/deploy-grafana-mimir/jsonnet/
   - ../operators-guide/deploy-grafana-mimir/jsonnet/
 description: Learn how to deploy Grafana Mimir on Kubernetes with Jsonnet and Tanka.
 keywords:
