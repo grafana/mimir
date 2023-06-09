@@ -59,6 +59,10 @@ import (
 
 func TestMimir(t *testing.T) {
 	cfg := Config{
+		Server: server.Config{
+			HTTPListenAddress: "localhost",
+			GRPCListenAddress: "localhost",
+		},
 		Ingester: ingester.Config{
 			BlocksStorageConfig: tsdb.BlocksStorageConfig{
 				Bucket: bucket.Config{

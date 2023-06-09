@@ -65,6 +65,7 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if downstreamRes.err != nil {
 		http.Error(w, downstreamRes.err.Error(), http.StatusInternalServerError)
 	} else {
+		w.Header().Set("Content-Type", downstreamRes.contentType)
 		w.WriteHeader(downstreamRes.status)
 		if _, err := w.Write(downstreamRes.body); err != nil {
 			level.Warn(p.logger).Log("msg", "Unable to write response", "err", err)

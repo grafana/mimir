@@ -1027,10 +1027,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, hash, startAppend, func(l labels.Labels) labels.Labels {
-				// we must already have copied the labels if succeededSamplesCount has been incremented.
-				return copiedLabels
-			})
+			activeSeries.UpdateSeries(nonCopiedLabels, uint64(ref), startAppend)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {

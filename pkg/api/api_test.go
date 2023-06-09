@@ -29,7 +29,9 @@ func (fl *FakeLogger) Log(...interface{}) error {
 func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 	cfg := Config{}
 	serverCfg := server.Config{
-		MetricsNamespace: "without_source_ip_extractor",
+		HTTPListenAddress: "localhost",
+		GRPCListenAddress: "localhost",
+		MetricsNamespace:  "without_source_ip_extractor",
 	}
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
@@ -42,8 +44,10 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 func TestNewApiWithSourceIPExtractor(t *testing.T) {
 	cfg := Config{}
 	serverCfg := server.Config{
-		LogSourceIPs:     true,
-		MetricsNamespace: "with_source_ip_extractor",
+		LogSourceIPs:      true,
+		HTTPListenAddress: "localhost",
+		GRPCListenAddress: "localhost",
+		MetricsNamespace:  "with_source_ip_extractor",
 	}
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)

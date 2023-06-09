@@ -6,10 +6,13 @@
 package mimirpb
 
 import (
+	"crypto/rand"
 	"reflect"
+	"sort"
 	"testing"
 	"unsafe"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -193,4 +196,232 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 
 	// dst1 should use much smaller buffer than dst2.
 	assert.Less(t, cap(*dst1.yoloSlice), cap(*dst2.yoloSlice))
+}
+
+func TestPreallocTimeseries_Unmarshal(t *testing.T) {
+	defer func() {
+		TimeseriesUnmarshalCachingEnabled = true
+	}()
+
+	// Prepare message
+	msg := PreallocTimeseries{}
+	{
+		src := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "sampleLabel1", Value: "sampleValue1"},
+					{Name: "sampleLabel2", Value: "sampleValue2"},
+				},
+				Samples: []Sample{
+					{Value: 1, TimestampMs: 2},
+					{Value: 3, TimestampMs: 4},
+				},
+			},
+		}
+
+		data, err := src.Marshal()
+		require.NoError(t, err)
+
+		TimeseriesUnmarshalCachingEnabled = false
+
+		require.NoError(t, msg.Unmarshal(data))
+		require.True(t, src.Equal(msg.TimeSeries))
+		require.Nil(t, msg.marshalledData)
+
+		TimeseriesUnmarshalCachingEnabled = true
+
+		require.NoError(t, msg.Unmarshal(data))
+		require.True(t, src.Equal(msg.TimeSeries))
+		require.NotNil(t, msg.marshalledData)
+	}
+
+	correctMarshaledData := make([]byte, len(msg.marshalledData))
+	copy(correctMarshaledData, msg.marshalledData)
+
+	randomData := make([]byte, 100)
+	_, err := rand.Read(randomData)
+	require.NoError(t, err)
+
+	// Set cached version to random bytes. We make a new slice, because labels in TimeSeries use the original byte slice.
+	msg.marshalledData = make([]byte, len(randomData))
+	copy(msg.marshalledData, randomData)
+
+	t.Run("message with cached marshalled version: Size returns length of cached data", func(t *testing.T) {
+		require.Equal(t, len(randomData), msg.Size())
+	})
+
+	t.Run("message with cached marshalled version: Marshal returns cached data", func(t *testing.T) {
+		out, err := msg.Marshal()
+		require.NoError(t, err)
+		require.Equal(t, randomData, out)
+	})
+
+	t.Run("message with cached marshalled version: MarshalTo returns cached data", func(t *testing.T) {
+		out := make([]byte, 2*msg.Size())
+		n, err := msg.MarshalTo(out)
+		require.NoError(t, err)
+		require.Equal(t, n, msg.Size())
+		require.Equal(t, randomData, out[:msg.Size()])
+	})
+
+	t.Run("message with cached marshalled version: MarshalToSizedBuffer returns cached data", func(t *testing.T) {
+		out := make([]byte, msg.Size())
+		n, err := msg.MarshalToSizedBuffer(out)
+		require.NoError(t, err)
+		require.Equal(t, n, len(out))
+		require.Equal(t, randomData, out)
+	})
+
+	msg.clearUnmarshalData()
+	require.Nil(t, msg.marshalledData)
+
+	t.Run("message without cached marshalled version: Marshal returns correct data", func(t *testing.T) {
+		out, err := msg.Marshal()
+		require.NoError(t, err)
+		require.Equal(t, correctMarshaledData, out)
+	})
+
+	t.Run("message without cached marshalled version: MarshalTo returns correct data", func(t *testing.T) {
+		out := make([]byte, 2*msg.Size())
+		n, err := msg.MarshalTo(out)
+		require.NoError(t, err)
+		require.Equal(t, n, msg.Size())
+		require.Equal(t, correctMarshaledData, out[:msg.Size()])
+	})
+
+	t.Run("message with cached marshalled version: MarshalToSizedBuffer returns correct data", func(t *testing.T) {
+		out := make([]byte, msg.Size())
+		n, err := msg.MarshalToSizedBuffer(out)
+		require.NoError(t, err)
+		require.Equal(t, n, len(out))
+		require.Equal(t, correctMarshaledData, out[:msg.Size()])
+	})
+}
+
+func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
+	t.Run("sorted", func(t *testing.T) {
+		sorted := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "bar", Value: "baz"},
+					{Name: "cluster", Value: "cluster"},
+					{Name: "sample", Value: "1"},
+				},
+			},
+			marshalledData: []byte{1, 2, 3},
+		}
+		// no allocations if input is already sorted
+		require.Equal(t, 0.0, testing.AllocsPerRun(100, func() {
+			sorted.SortLabelsIfNeeded()
+		}))
+		require.NotNil(t, sorted.marshalledData)
+	})
+
+	t.Run("unsorted", func(t *testing.T) {
+		unsorted := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "sample", Value: "1"},
+					{Name: "cluster", Value: "cluster"},
+					{Name: "bar", Value: "baz"},
+				},
+			},
+			marshalledData: []byte{1, 2, 3},
+		}
+
+		unsorted.SortLabelsIfNeeded()
+
+		require.True(t, sort.SliceIsSorted(unsorted.Labels, func(i, j int) bool {
+			return unsorted.Labels[i].Name < unsorted.Labels[j].Name
+		}))
+		require.Nil(t, unsorted.marshalledData)
+	})
+}
+
+func TestPreallocTimeseries_RemoveLabel(t *testing.T) {
+	t.Run("with label", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "bar", Value: "baz"},
+				},
+			},
+			marshalledData: []byte{1, 2, 3},
+		}
+		p.RemoveLabel("bar")
+
+		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}}, p.Labels)
+		require.Nil(t, p.marshalledData)
+	})
+
+	t.Run("with no matching label", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "bar", Value: "baz"},
+				},
+			},
+			marshalledData: []byte{1, 2, 3},
+		}
+		p.RemoveLabel("foo")
+
+		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.NotNil(t, p.marshalledData)
+	})
+}
+
+func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
+	t.Run("with empty labels", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "empty1", Value: ""},
+					{Name: "bar", Value: "baz"},
+					{Name: "empty2", Value: ""},
+				},
+			},
+			marshalledData: []byte{1, 2, 3},
+		}
+		p.RemoveEmptyLabelValues()
+
+		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.Nil(t, p.marshalledData)
+	})
+
+	t.Run("without empty labels", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels: []LabelAdapter{
+					{Name: "__name__", Value: "foo"},
+					{Name: "bar", Value: "baz"},
+				},
+			},
+			marshalledData: []byte{1, 2, 3},
+		}
+		p.RemoveLabel("foo")
+
+		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.NotNil(t, p.marshalledData)
+	})
+}
+
+func TestPreallocTimeseries_SetLabels(t *testing.T) {
+	p := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "__name__", Value: "foo"},
+				{Name: "bar", Value: "baz"},
+			},
+		},
+		marshalledData: []byte{1, 2, 3},
+	}
+	p.SetLabels(labels.FromStrings("__name__", "hello", "lbl", "world"))
+
+	require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}, p.Labels)
+	require.Nil(t, p.marshalledData)
 }

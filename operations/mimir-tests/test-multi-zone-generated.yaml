@@ -1223,6 +1223,15 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: ingester-a-only
+        - name: GOGC
+          value: "off"
+        - name: GOMEMLIMIT
+          value: 1Gi
+        - name: Z
+          value: "123"
         image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1341,6 +1350,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
         image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1459,6 +1471,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
         image: grafana/mimir:2.8.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1802,6 +1817,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: A
+          value: all-store-gateways
         - name: GOMAXPROCS
           value: "5"
         - name: GOMEMLIMIT
@@ -1937,6 +1954,10 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: A
+          value: zone-b
+        - name: GOGC
+          value: "1000"
         - name: GOMAXPROCS
           value: "5"
         - name: GOMEMLIMIT
@@ -2072,6 +2093,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: A
+          value: all-store-gateways
         - name: GOMAXPROCS
           value: "5"
         - name: GOMEMLIMIT
