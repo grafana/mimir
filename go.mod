@@ -70,7 +70,7 @@ require (
 	go.opentelemetry.io/collector/pdata v1.0.0-rc7
 	go.opentelemetry.io/otel v1.14.0
 	go.opentelemetry.io/otel/trace v1.14.0
-	go.uber.org/multierr v1.9.0
+	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	google.golang.org/api v0.125.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
