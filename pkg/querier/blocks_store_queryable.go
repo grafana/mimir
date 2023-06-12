@@ -713,7 +713,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			// But this is an acceptable workaround for now.
 			skipChunks := sp != nil && sp.Func == "series"
 
-			req, err := createSeriesRequest(minT, maxT, convertedMatchers, skipChunks, blockIDs)
+			req, err := createSeriesRequest(minT, maxT, convertedMatchers, skipChunks, blockIDs, q.streamingChunksBatchSize)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create series request")
 			}
@@ -1049,7 +1049,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	return valueSets, warnings, queriedBlocks, nil
 }
 
-func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID) (*storepb.SeriesRequest, error) {
+func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
 	// Selectively query only specific blocks.
 	hints := &hintspb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
@@ -1067,11 +1067,12 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 	}
 
 	return &storepb.SeriesRequest{
-		MinTime:    minT,
-		MaxTime:    maxT,
-		Matchers:   matchers,
-		Hints:      anyHints,
-		SkipChunks: skipChunks,
+		MinTime:                  minT,
+		MaxTime:                  maxT,
+		Matchers:                 matchers,
+		Hints:                    anyHints,
+		SkipChunks:               skipChunks,
+		StreamingChunksBatchSize: streamingBatchSize,
 	}, nil
 }
 
