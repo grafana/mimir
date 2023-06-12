@@ -67,7 +67,7 @@ type storeSuite struct {
 }
 
 func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt objstore.Bucket,
-	series []labels.Labels, extLset labels.Labels, differentBlockTimes bool) (minTime, maxTime int64) {
+	series []labels.Labels, extLset labels.Labels, shiftedBlocks bool) (minTime, maxTime int64) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
@@ -85,7 +85,7 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 		// gets created each. This way we can easily verify we got 10 chunks per series below.
 		id1, err := block.CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset)
 		assert.NoError(t, err)
-		if differentBlockTimes {
+		if shiftedBlocks {
 			// This shifts the 2nd block ahead by 2hrs. This way the first and the
 			// last blocks created have no overlapping blocks.
 			mint = maxt
@@ -124,7 +124,7 @@ type prepareStoreConfig struct {
 	chunksCache          chunkscache.Cache
 	metricsRegistry      *prometheus.Registry
 	postingsStrategy     postingsSelectionStrategy
-	differentBlockTime   bool
+	shiftedBlocks        bool
 }
 
 func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareStoreConfig {
@@ -172,7 +172,7 @@ func withManyParts() prepareStoreConfigOption {
 func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
-	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset, cfg.differentBlockTime)
+	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset, cfg.shiftedBlocks)
 
 	s := &storeSuite{
 		logger:          log.NewNopLogger(),
@@ -428,7 +428,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 		},
 	}
 	for i, tcase := range append(testCases, additionalCases...) {
-		for _, streamingBatchSize := range []int{0, 1, 2, 10} {
+		for _, streamingBatchSize := range []int{0, 1, 2, 10, 256} {
 			if ok := t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
 				tcase.req.StreamingChunksBatchSize = uint64(streamingBatchSize)
 				seriesSet, _, _, err := srv.Series(context.Background(), tcase.req)
@@ -526,7 +526,7 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 		defer cancel()
 
 		s := newSuite(func(config *prepareStoreConfig) {
-			config.differentBlockTime = true
+			config.shiftedBlocks = true
 		})
 
 		_, maxt := s.store.TimeRange()

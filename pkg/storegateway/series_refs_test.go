@@ -1116,17 +1116,19 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		assert.NoError(t, appender.Commit())
 	})
 
-	testCases := map[string]struct {
-		blockFactory func() *bucketBlock // if nil, defaultTestBlockFactory is used
-		shard        *sharding.ShardSelector
-		matchers     []*labels.Matcher
-		seriesHasher seriesHasher
-		skipChunks   bool
-		minT, maxT   int64
-		batchSize    int
+	type testCase struct {
+		blockFactory                func() *bucketBlock // if nil, defaultTestBlockFactory is used
+		shard                       *sharding.ShardSelector
+		matchers                    []*labels.Matcher
+		seriesHasher                seriesHasher
+		skipChunks, streamingSeries bool
+		minT, maxT                  int64
+		batchSize                   int
 
 		expectedSets []seriesChunkRefsSet
-	}{
+	}
+
+	testCases := map[string]testCase{
 		"loads one batch": {
 			minT:      0,
 			maxT:      10000,
@@ -1307,51 +1309,95 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				return sets
 			}(),
 		},
+		"skip chunks with streaming on 1": {
+			minT:            0,
+			maxT:            25,
+			batchSize:       100,
+			skipChunks:      true,
+			streamingSeries: true, // mint and maxt is considered.
+			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1")},
+					{lset: labels.FromStrings("l1", "v2")},
+				}},
+			},
+		},
+		"skip chunks with streaming on 2": {
+			minT:            15,
+			maxT:            35,
+			batchSize:       100,
+			skipChunks:      true,
+			streamingSeries: true, // mint and maxt is considered.
+			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+				}},
+			},
+		},
+	}
+
+	runTest := func(tc testCase) {
+		// Setup
+		blockFactory := defaultTestBlockFactory
+		if tc.blockFactory != nil {
+			blockFactory = tc.blockFactory
+		}
+		block := blockFactory()
+		indexr := block.indexReader(selectAllStrategy{})
+		postings, _, err := indexr.ExpandedPostings(context.Background(), tc.matchers, newSafeQueryStats())
+		require.NoError(t, err)
+		postingsIterator := newPostingsSetsIterator(
+			postings,
+			tc.batchSize,
+		)
+		hasher := tc.seriesHasher
+		if hasher == nil {
+			hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
+		}
+		loadingIterator := newLoadingSeriesChunkRefsSetIterator(
+			context.Background(),
+			postingsIterator,
+			indexr,
+			noopCache{},
+			newSafeQueryStats(),
+			block.meta,
+			tc.shard,
+			hasher,
+			tc.skipChunks,
+			tc.streamingSeries,
+			tc.minT,
+			tc.maxT,
+			"t1",
+			1,
+			log.NewNopLogger(),
+		)
+
+		// Tests
+		sets := readAllSeriesChunkRefsSet(loadingIterator)
+		assert.NoError(t, loadingIterator.Err())
+		assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, tc.expectedSets, sets)
 	}
 
 	for testName, testCase := range testCases {
-		testName, testCase := testName, testCase
+		testName, tc := testName, testCase
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-
-			// Setup
-			blockFactory := defaultTestBlockFactory
-			if testCase.blockFactory != nil {
-				blockFactory = testCase.blockFactory
+			if tc.skipChunks {
+				runTest(tc)
+			} else {
+				// We test with both streaming on and off when we are fetching chunks.
+				for _, streaming := range []bool{true, false} {
+					tcCopy := tc
+					t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+						t.Parallel()
+						tcCopy.streamingSeries = streaming
+						runTest(tcCopy)
+					})
+				}
 			}
-			block := blockFactory()
-			indexr := block.indexReader(selectAllStrategy{})
-			postings, _, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
-			require.NoError(t, err)
-			postingsIterator := newPostingsSetsIterator(
-				postings,
-				testCase.batchSize,
-			)
-			hasher := testCase.seriesHasher
-			if hasher == nil {
-				hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
-			}
-			loadingIterator := newLoadingSeriesChunkRefsSetIterator(
-				context.Background(),
-				postingsIterator,
-				indexr,
-				noopCache{},
-				newSafeQueryStats(),
-				block.meta,
-				testCase.shard,
-				hasher,
-				testCase.skipChunks, false,
-				testCase.minT,
-				testCase.maxT,
-				"t1",
-				1,
-				log.NewNopLogger(),
-			)
-
-			// Tests
-			sets := readAllSeriesChunkRefsSet(loadingIterator)
-			assert.NoError(t, loadingIterator.Err())
-			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, testCase.expectedSets, sets)
 		})
 	}
 }
