@@ -29,9 +29,9 @@ The following steps describe how a query moves through the query-frontend.
 > **Note:** In this scenario, a query-scheduler is not deployed.
 
 1. A query-frontend receives a query.
-1. If the query is a range query, the query-frontend [splits it by time]({{< relref ".#splitting" >}}) into multiple smaller queries that can be parallelized.
+1. If the query is a range query, the query-frontend [splits it by time]({{< relref "#splitting" >}}) into multiple smaller queries that can be parallelized.
 1. The query-frontend checks the results cache. If the query result is in the cache, the query-frontend returns the cached result. If not, query execution continues according to the steps below.
-1. If [query-sharding]({{< relref ".#about-query-sharding" >}}) is enabled, the query-frontend attempts to shard the query for further parallelization.
+1. If [query-sharding]({{< relref "#about-query-sharding" >}}) is enabled, the query-frontend attempts to shard the query for further parallelization.
 1. The query-frontend places the query (or _queries_ if splitting or sharding of the initial query occurred) in an in-memory queue, where it waits to be picked up by a querier.
 1. A querier picks up the query from the queue and executes it. If the query was split or sharded into multiple subqueries, different queriers can pick up each of the individual queries.
 1. A querier or queriers return the result to query-frontend, which then aggregates and forwards the results to the client.

@@ -11,7 +11,7 @@ weight: 10
 # Migrate from Cortex to Grafana Mimir
 
 As an operator, you can migrate a Jsonnet deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
-The overview includes the steps required for any environment. To migrate deployment environments with Jsonnet, see [Migrate to Grafana Mimir using Jsonnent]({{< relref ".#migrate-to-grafana-mimir-using-jsonnet" >}}).
+The overview includes the steps required for any environment. To migrate deployment environments with Jsonnet, see [Migrate to Grafana Mimir using Jsonnent]({{< relref "#migrate-to-grafana-mimir-using-jsonnet" >}}).
 
 > **Note:** This document was tested with Cortex versions 1.10 and 1.11. It might work with more recent versions of Cortex, but that is not guaranteed.
 

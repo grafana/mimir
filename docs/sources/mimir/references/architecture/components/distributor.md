@@ -52,7 +52,7 @@ If any of these rates is exceeded, the distributor drops the request and returns
 Internally, these limits are implemented using a per-distributor local rate limiter.
 The local rate limiter for each distributor is configured with a limit of `limit / N`, where `N` is the number of healthy distributor replicas.
 The distributor automatically adjusts the request and ingestion rate limits if the number of distributor replicas change.
-Because these rate limits are implemented using a per-distributor local rate limiter, they require that write requests are [evenly distributed across the pool of distributors]({{< relref ".#load-balancing-across-distributors" >}}).
+Because these rate limits are implemented using a per-distributor local rate limiter, they require that write requests are [evenly distributed across the pool of distributors]({{< relref "#load-balancing-across-distributors" >}}).
 
 Use the following flags to configure the rate limits:
 

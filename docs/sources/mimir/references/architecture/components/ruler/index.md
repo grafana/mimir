@@ -137,13 +137,13 @@ The ruler supports the following backends:
 - [Google Cloud Storage](https://cloud.google.com/storage/): `-ruler-storage.backend=gcs`
 - [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/): `-ruler-storage.backend=azure`
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift): `-ruler-storage.backend=swift`
-- [Local storage]({{< relref ".#local-storage" >}}): `-ruler-storage.backend=local`
+- [Local storage]({{< relref "#local-storage" >}}): `-ruler-storage.backend=local`
 
 ### Local storage
 
 The `local` storage backend reads [Prometheus recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) from the local filesystem.
 
-> **Note:** Local storage is a read-only backend that does not support the creation and deletion of rules through the [Configuration API]({{< relref ".#via-the-http-configuration-api" >}}).
+> **Note:** Local storage is a read-only backend that does not support the creation and deletion of rules through the [Configuration API]({{< relref "#via-the-http-configuration-api" >}}).
 
 When all rulers have the same rule files, local storage supports ruler sharding.
 To facilitate sharding in Kubernetes, mount a [Kubernetes ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) into every ruler pod.
