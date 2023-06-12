@@ -1,7 +1,9 @@
 ---
 aliases:
+  - ../operators-guide/operators-guide/operators-guide/secure/securing-communications-with-tls/
+  - ../operators-guide/operators-guide/secure/securing-communications-with-tls/
+  - ../operators-guide/operators-guide/securing/securing-communications-with-tls/
   - ../operators-guide/secure/securing-communications-with-tls/
-  - ../securing/securing-communications-with-tls/
 description: Learn how to configure TLS between Grafana Mimir components.
 menuTitle: Securing communications with TLS
 title: Securing Grafana Mimir communications with TLS

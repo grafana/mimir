@@ -1,8 +1,10 @@
 ---
 aliases:
+  - ../operators-guide/operators-guide/operators-guide/use-exemplars/view-exemplar-data/
+  - ../operators-guide/operators-guide/use-exemplars/view-exemplar-data/
+  - ../operators-guide/operators-guide/use-exemplars/viewing-exemplar-data/
+  - ../operators-guide/operators-guide/using-exemplars/viewing-exemplar-data/
   - ../operators-guide/use-exemplars/view-exemplar-data/
-  - ../using-exemplars/viewing-exemplar-data/
-  - ./viewing-exemplar-data/
 description: Learn how to view exemplar data in Grafana Mimir.
 menuTitle: View exemplar data
 title: View exemplar data in Grafana Explore

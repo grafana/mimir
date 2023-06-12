@@ -1,7 +1,7 @@
 ---
 aliases:
   - ../operators-guide/run-production-environment/
-  - ./running-production-environment/
+  - ../operators-guide/running-production-environment/
 description: Learn how to run Grafana Mimir in production.
 menuTitle: Run in production
 title: Run Grafana Mimir in production

@@ -1,5 +1,7 @@
 ---
 aliases:
+  - ../operators-guide/operators-guide/operators-guide/tools/query-tee/
+  - ../operators-guide/operators-guide/tools/query-tee/
   - ../operators-guide/tools/query-tee/
 description:
   Use query-tee to compare query results and performance between two Grafana

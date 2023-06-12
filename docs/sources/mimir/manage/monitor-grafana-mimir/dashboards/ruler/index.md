@@ -1,8 +1,8 @@
 ---
 aliases:
   - ../../../operators-guide/monitor-grafana-mimir/dashboards/ruler/
-  - ../../monitoring-grafana-mimir/dashboards/ruler/
-  - ../../visualizing-metrics/dashboards/ruler/
+  - ../../../operators-guide/monitoring-grafana-mimir/dashboards/ruler/
+  - ../../../operators-guide/visualizing-metrics/dashboards/ruler/
 description: View an example Ruler dashboard.
 menuTitle: Ruler
 title: Grafana Mimir Ruler dashboard

@@ -1,5 +1,6 @@
 ---
 aliases:
+  - ../operators-guide/operators-guide/operators-guide/tools/tenant-injector/
   - ../operators-guide/tools/tenant-injector/
 description:
   Use the tenant injector to query data for a tenant during development

@@ -1,8 +1,8 @@
 ---
 aliases:
   - ../../../operators-guide/monitor-grafana-mimir/dashboards/scaling/
-  - ../../monitoring-grafana-mimir/dashboards/scaling/
-  - ../../visualizing-metrics/dashboards/scaling/
+  - ../../../operators-guide/monitoring-grafana-mimir/dashboards/scaling/
+  - ../../../operators-guide/visualizing-metrics/dashboards/scaling/
 description: View an example Scaling dashboard.
 menuTitle: Scaling
 title: Grafana Mimir scaling dashboard

@@ -1,7 +1,7 @@
 ---
 aliases:
   - ../operators-guide/use-exemplars/
-  - ./using-exemplars/
+  - ../operators-guide/using-exemplars/
 description: Learn how to use exemplars with Grafana Mimir.
 keywords:
   - Mimir exemplars

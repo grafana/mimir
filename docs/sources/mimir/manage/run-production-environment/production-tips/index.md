@@ -1,7 +1,7 @@
 ---
 aliases:
   - ../../operators-guide/run-production-environment/production-tips/
-  - ../running-production-environment/production-tips/
+  - ../../operators-guide/running-production-environment/production-tips/
 description: Learn tips for setting up a production Grafana Mimir cluster.
 menuTitle: Production tips
 title: Grafana Mimir production tips

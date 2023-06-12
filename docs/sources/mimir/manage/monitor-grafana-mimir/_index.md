@@ -1,7 +1,7 @@
 ---
 aliases:
   - ../operators-guide/monitor-grafana-mimir/
-  - ./monitoring-grafana-mimir/
+  - ../operators-guide/monitoring-grafana-mimir/
   - /visualizing-metrics/
 description: View example Grafana Mimir dashboards.
 keywords:

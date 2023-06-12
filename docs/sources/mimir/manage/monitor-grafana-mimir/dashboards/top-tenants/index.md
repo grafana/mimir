@@ -1,8 +1,8 @@
 ---
 aliases:
   - ../../../operators-guide/monitor-grafana-mimir/dashboards/top-tenants/
-  - ../../monitoring-grafana-mimir/dashboards/top-tenants/
-  - ../../visualizing-metrics/dashboards/top-tenants/
+  - ../../../operators-guide/monitoring-grafana-mimir/dashboards/top-tenants/
+  - ../../../operators-guide/visualizing-metrics/dashboards/top-tenants/
 description: Review a description of the Top tenants dashboard.
 menuTitle: Top tenants
 title: Grafana Mimir Top tenants dashboard

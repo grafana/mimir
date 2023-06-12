@@ -1,8 +1,8 @@
 ---
 aliases:
   - ../../../operators-guide/monitor-grafana-mimir/dashboards/reads/
-  - ../../monitoring-grafana-mimir/dashboards/reads/
-  - ../../visualizing-metrics/dashboards/reads/
+  - ../../../operators-guide/monitoring-grafana-mimir/dashboards/reads/
+  - ../../../operators-guide/visualizing-metrics/dashboards/reads/
 description: View an example Reads dashboard.
 menuTitle: Reads
 title: Grafana Mimir Reads dashboard
