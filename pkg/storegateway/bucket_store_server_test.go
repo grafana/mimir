@@ -244,7 +244,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		}
 
 		res, err = stream.Recv()
-		for err != nil {
+		for err == nil {
 			if res.GetHints() == nil && res.GetStats() == nil {
 				err = errors.Errorf("got unexpected response type")
 				break
