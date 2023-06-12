@@ -3,20 +3,23 @@
 package querier
 
 import (
-	"errors"
 	"fmt"
 	"io"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+// StreamingSeries holds the labels of the streaming series and the source to get the chunks
+// for the series.
 type StreamingSeries struct {
 	Labels []mimirpb.LabelAdapter
 	Source StreamingSeriesSource
@@ -29,7 +32,7 @@ type StreamingSeriesSource struct {
 	SeriesIndex  uint64
 }
 
-// SeriesChunksStreamReader is responsible for managing the streaming of chunks from an ingester and buffering
+// SeriesChunksStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
 // chunks in memory until they are consumed by the PromQL engine.
 type SeriesChunksStreamReader struct {
 	client              storegatewaypb.StoreGateway_SeriesClient
@@ -56,11 +59,11 @@ func NewSeriesChunksStreamReader(client storegatewaypb.StoreGateway_SeriesClient
 // This method should only be called if StartBuffering is not called.
 func (s *SeriesChunksStreamReader) Close() {
 	if err := s.client.CloseSend(); err != nil {
-		level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
+		level.Warn(s.log).Log("msg", "closing storegateway client stream failed", "err", err)
 	}
 }
 
-// StartBuffering begins streaming series' chunks from the store gateway associated with
+// StartBuffering begins streaming series' chunks from the storegateway associated with
 // this SeriesChunksStreamReader. Once all series have been consumed with GetChunks, all resources
 // associated with this SeriesChunksStreamReader are cleaned up.
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
@@ -75,7 +78,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 	go func() {
 		defer func() {
 			if err := s.client.CloseSend(); err != nil {
-				level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
+				level.Warn(s.log).Log("msg", "closing storegateway client stream failed", "err", err)
 			}
 
 			close(s.seriesCunksChan)
@@ -111,7 +114,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 			}
 
 			if err := s.queryLimiter.AddChunks(len(c.Chunks)); err != nil {
-				s.errorChan <- err
+				s.errorChan <- validation.LimitError(err.Error())
 				return
 			}
 
@@ -120,7 +123,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				chunkBytes += ch.Size()
 			}
 			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
-				s.errorChan <- err
+				s.errorChan <- validation.LimitError(err.Error())
 				return
 			}
 
@@ -155,7 +158,10 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]storepb.Aggr
 		select {
 		case err, haveError := <-s.errorChan:
 			if haveError {
-				return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
+				if _, ok := err.(validation.LimitError); ok {
+					return nil, err
+				}
+				return nil, errors.Wrapf(err, "attempted to read series at index %v from stream, but the stream has failed", seriesIndex)
 			}
 		default:
 		}

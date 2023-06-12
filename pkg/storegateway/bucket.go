@@ -629,7 +629,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		reusePendingMatchers = make([][]*labels.Matcher, len(blocks))
 
 		// TODO: what to do with hints here?
-		seriesSet, _, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, nil, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
+		seriesSet, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, nil, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
 		if err != nil {
 			return err
 		}
@@ -642,6 +642,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		seriesBatch := &storepb.StreamSeriesBatch{
 			Series: seriesBuffer[:0],
 		}
+		// TODO: can we send this in parallel while we start fetching the chunks below?
 		for seriesSet.Next() {
 			var lset labels.Labels
 			// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
@@ -668,6 +669,22 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 				seriesBatch.Series = seriesBatch.Series[:0]
 			}
+		}
+
+		// We need to send hints and stats before sending the chunks.
+		// Also, these need to be sent before we send IsEndOfSeriesStream=true.
+		var anyHints *types.Any
+		if anyHints, err = types.MarshalAny(resHints); err != nil {
+			return status.Error(codes.Unknown, errors.Wrap(err, "marshal series response hints").Error())
+		}
+
+		if err := srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
+			return status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
+		}
+
+		unsafeStats := stats.export()
+		if err := srv.Send(storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum + unsafeStats.seriesProcessedSizeSum)); err != nil {
+			return status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
 		}
 
 		// Send any remaining series and signal that there are no more series.
@@ -787,21 +804,24 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		return
 	}
 
-	var anyHints *types.Any
-	if anyHints, err = types.MarshalAny(resHints); err != nil {
-		err = status.Error(codes.Unknown, errors.Wrap(err, "marshal series response hints").Error())
-		return
-	}
+	if req.StreamingChunksBatchSize == 0 || req.SkipChunks {
+		// Hints and stats were not sent before, so send it now.
+		var anyHints *types.Any
+		if anyHints, err = types.MarshalAny(resHints); err != nil {
+			err = status.Error(codes.Unknown, errors.Wrap(err, "marshal series response hints").Error())
+			return
+		}
 
-	if err = srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
-		err = status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
-		return
-	}
+		if err = srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
+			err = status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
+			return
+		}
 
-	unsafeStats := stats.export()
-	if err = srv.Send(storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum + unsafeStats.seriesProcessedSizeSum)); err != nil {
-		err = status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
-		return
+		unsafeStats := stats.export()
+		if err = srv.Send(storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum + unsafeStats.seriesProcessedSizeSum)); err != nil {
+			err = status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
+			return
+		}
 	}
 
 	return err

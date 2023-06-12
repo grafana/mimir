@@ -32,6 +32,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -763,76 +764,132 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			ctx := limiter.AddQueryLimiterToContext(context.Background(), testData.queryLimiter)
-			reg := prometheus.NewPedanticRegistry()
-			stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
-			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
+			for _, streaming := range []bool{false, true} {
+				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+					ctx := limiter.AddQueryLimiterToContext(context.Background(), testData.queryLimiter)
+					reg := prometheus.NewPedanticRegistry()
 
-			q := &blocksStoreQuerier{
-				ctx:         ctx,
-				minT:        minT,
-				maxT:        maxT,
-				userID:      "user-1",
-				finder:      finder,
-				stores:      stores,
-				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
-				logger:      log.NewNopLogger(),
-				metrics:     newBlocksStoreQueryableMetrics(reg),
-				limits:      testData.limits,
-			}
+					if streaming {
+						// Convert the storegateway response to streaming response.
+						for _, res := range testData.storeSetResponses {
+							m, ok := res.(map[BlocksStoreClient][]ulid.ULID)
+							if ok {
+								for k, _ := range m {
+									mockClient := k.(*storeGatewayClientMock)
+									var seriesResponses []*storepb.Series
+									var newResponses []*storepb.SeriesResponse
+									for i, mr := range mockClient.mockedSeriesResponses {
+										s := mr.GetSeries()
+										if s != nil {
+											seriesResponses = append(seriesResponses, s)
+											continue
+										}
+										for _, s := range seriesResponses {
+											newResponses = append(newResponses, mockStreamingSeriesBatchResponse(false, s.Labels))
+										}
+										newResponses = append(newResponses, mockClient.mockedSeriesResponses[i:]...)
+										newResponses = append(newResponses, mockStreamingSeriesBatchResponse(true))
+										for idx, s := range seriesResponses {
+											newResponses = append(newResponses, mockStreamingSeriesChunksResponse(uint64(idx), s.Chunks))
+										}
+										break
+									}
+									mockClient.mockedSeriesResponses = newResponses
+								}
+							}
+						}
+					}
 
-			matchers := []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName),
-			}
-			if testData.queryShardID != "" {
-				matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, sharding.ShardLabel, testData.queryShardID))
-			}
+					stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
+					finder := &blocksFinderMock{}
+					finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
 
-			sp := &storage.SelectHints{Start: minT, End: maxT}
-			set := q.Select(true, sp, matchers...)
-			if testData.expectedErr != nil {
-				assert.ErrorContains(t, set.Err(), testData.expectedErr.Error())
-				assert.IsType(t, set.Err(), testData.expectedErr)
-				assert.False(t, set.Next())
-				assert.Nil(t, set.Warnings())
-				return
-			}
+					q := &blocksStoreQuerier{
+						ctx:         ctx,
+						minT:        minT,
+						maxT:        maxT,
+						userID:      "user-1",
+						finder:      finder,
+						stores:      stores,
+						consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+						logger:      log.NewNopLogger(),
+						metrics:     newBlocksStoreQueryableMetrics(reg),
+						limits:      testData.limits,
+					}
 
-			require.NoError(t, set.Err())
-			assert.Len(t, set.Warnings(), 0)
+					matchers := []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName),
+					}
+					if testData.queryShardID != "" {
+						matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, sharding.ShardLabel, testData.queryShardID))
+					}
 
-			// Read all returned series and their values.
-			var actualSeries []seriesResult
-			var it chunkenc.Iterator
-			for set.Next() {
-				var actualValues []valueResult
+					sp := &storage.SelectHints{Start: minT, End: maxT}
+					set := q.Select(true, sp, matchers...)
+					if testData.expectedErr != nil {
+						if streaming && set.Err() == nil {
+							// In case of streaming, the error can happen during iteration.
+							foundErr := false
+							for set.Next() {
+								it := set.At().Iterator(nil)
+								for it.Next() != chunkenc.ValNone {
+								}
+								err := it.Err()
+								if err != nil {
+									assert.ErrorContains(t, err, testData.expectedErr.Error())
+									// TODO: it is non-trivial to match the type here. The error
+									// gets wrapping multiple times. Is it necessary to return the exact type?
+									//assert.IsType(t, testData.expectedErr, err)
+									foundErr = true
+									break
+								}
+							}
+							assert.True(t, foundErr)
+						} else {
+							assert.ErrorContains(t, set.Err(), testData.expectedErr.Error())
+							assert.IsType(t, set.Err(), testData.expectedErr)
+							assert.False(t, set.Next())
+							assert.Nil(t, set.Warnings())
+						}
+						return
+					}
 
-				it = set.At().Iterator(it)
-				for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-					assert.Equal(t, valType, chunkenc.ValFloat)
-					t, v := it.At()
-					actualValues = append(actualValues, valueResult{
-						t: t,
-						v: v,
-					})
-				}
+					require.NoError(t, set.Err())
+					assert.Len(t, set.Warnings(), 0)
 
-				require.NoError(t, it.Err())
+					// Read all returned series and their values.
+					var actualSeries []seriesResult
+					var it chunkenc.Iterator
+					for set.Next() {
+						var actualValues []valueResult
 
-				actualSeries = append(actualSeries, seriesResult{
-					lbls:   set.At().Labels(),
-					values: actualValues,
+						it = set.At().Iterator(it)
+						for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+							assert.Equal(t, valType, chunkenc.ValFloat)
+							t, v := it.At()
+							actualValues = append(actualValues, valueResult{
+								t: t,
+								v: v,
+							})
+						}
+
+						require.NoError(t, it.Err())
+
+						actualSeries = append(actualSeries, seriesResult{
+							lbls:   set.At().Labels(),
+							values: actualValues,
+						})
+					}
+					require.NoError(t, set.Err())
+					assert.Equal(t, testData.expectedSeries, actualSeries)
+
+					// Assert on metrics (optional, only for test cases defining it).
+					if testData.expectedMetrics != "" {
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics),
+							"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query",
+							"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total"))
+					}
 				})
-			}
-			require.NoError(t, set.Err())
-			assert.Equal(t, testData.expectedSeries, actualSeries)
-
-			// Assert on metrics (optional, only for test cases defining it).
-			if testData.expectedMetrics != "" {
-				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics),
-					"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query",
-					"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total"))
 			}
 		})
 	}
@@ -1905,6 +1962,7 @@ type storeGatewayClientMock struct {
 
 func (m *storeGatewayClientMock) Series(context.Context, *storepb.SeriesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
 	seriesClient := &storeGatewaySeriesClientMock{
+		ClientStream:    grpcClientStreamMock{},
 		mockedResponses: m.mockedSeriesResponses,
 	}
 
@@ -1941,6 +1999,15 @@ func (m *storeGatewaySeriesClientMock) Recv() (*storepb.SeriesResponse, error) {
 	m.mockedResponses = m.mockedResponses[1:]
 	return res, nil
 }
+
+type grpcClientStreamMock struct{}
+
+func (grpcClientStreamMock) Header() (metadata.MD, error) { return nil, nil }
+func (grpcClientStreamMock) Trailer() metadata.MD         { return nil }
+func (grpcClientStreamMock) CloseSend() error             { return nil }
+func (grpcClientStreamMock) Context() context.Context     { return context.Background() }
+func (grpcClientStreamMock) SendMsg(m interface{}) error  { return nil }
+func (grpcClientStreamMock) RecvMsg(m interface{}) error  { return nil }
 
 type cancelerStoreGatewaySeriesClientMock struct {
 	storeGatewaySeriesClientMock
@@ -2029,6 +2096,30 @@ func mockSeriesResponseWithChunks(lbls labels.Labels, chunks ...storepb.AggrChun
 			Series: &storepb.Series{
 				Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
 				Chunks: chunks,
+			},
+		},
+	}
+}
+
+func mockStreamingSeriesBatchResponse(endOfStream bool, lbls ...[]mimirpb.LabelAdapter) *storepb.SeriesResponse {
+	res := &storepb.StreamSeriesBatch{}
+	for _, l := range lbls {
+		res.Series = append(res.Series, &storepb.StreamingSeries{Labels: l})
+	}
+	res.IsEndOfSeriesStream = endOfStream
+	return &storepb.SeriesResponse{
+		Result: &storepb.SeriesResponse_StreamingSeries{
+			StreamingSeries: res,
+		},
+	}
+}
+
+func mockStreamingSeriesChunksResponse(index uint64, chks []storepb.AggrChunk) *storepb.SeriesResponse {
+	return &storepb.SeriesResponse{
+		Result: &storepb.SeriesResponse_StreamingSeriesChunks{
+			StreamingSeriesChunks: &storepb.StreamSeriesChunks{
+				SeriesIndex: index,
+				Chunks:      chks,
 			},
 		},
 	}
