@@ -143,13 +143,14 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 type BlocksStoreQueryable struct {
 	services.Service
 
-	stores          BlocksStoreSet
-	finder          BlocksFinder
-	consistency     *BlocksConsistencyChecker
-	logger          log.Logger
-	queryStoreAfter time.Duration
-	metrics         *blocksStoreQueryableMetrics
-	limits          BlocksStoreLimits
+	stores                   BlocksStoreSet
+	finder                   BlocksFinder
+	consistency              *BlocksConsistencyChecker
+	logger                   log.Logger
+	queryStoreAfter          time.Duration
+	metrics                  *blocksStoreQueryableMetrics
+	limits                   BlocksStoreLimits
+	streamingChunksBatchSize uint64
 
 	// Subservices manager.
 	subservices        *services.Manager
@@ -162,6 +163,7 @@ func NewBlocksStoreQueryable(
 	consistency *BlocksConsistencyChecker,
 	limits BlocksStoreLimits,
 	queryStoreAfter time.Duration,
+	streamingChunksBatchSize uint64,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*BlocksStoreQueryable, error) {
@@ -171,15 +173,16 @@ func NewBlocksStoreQueryable(
 	}
 
 	q := &BlocksStoreQueryable{
-		stores:             stores,
-		finder:             finder,
-		consistency:        consistency,
-		queryStoreAfter:    queryStoreAfter,
-		logger:             logger,
-		subservices:        manager,
-		subservicesWatcher: services.NewFailureWatcher(),
-		metrics:            newBlocksStoreQueryableMetrics(reg),
-		limits:             limits,
+		stores:                   stores,
+		finder:                   finder,
+		consistency:              consistency,
+		queryStoreAfter:          queryStoreAfter,
+		logger:                   logger,
+		subservices:              manager,
+		subservicesWatcher:       services.NewFailureWatcher(),
+		metrics:                  newBlocksStoreQueryableMetrics(reg),
+		limits:                   limits,
+		streamingChunksBatchSize: streamingChunksBatchSize,
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stopping)
@@ -261,7 +264,12 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		reg,
 	)
 
-	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, logger, reg)
+	streamingBufferSize := querierCfg.StreamingChunksPerIngesterSeriesBufferSize
+	if !querierCfg.PreferStreamingChunks {
+		streamingBufferSize = 0
+	}
+
+	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
@@ -301,30 +309,32 @@ func (q *BlocksStoreQueryable) Querier(ctx context.Context, mint, maxt int64) (s
 	}
 
 	return &blocksStoreQuerier{
-		ctx:             ctx,
-		minT:            mint,
-		maxT:            maxt,
-		userID:          userID,
-		finder:          q.finder,
-		stores:          q.stores,
-		metrics:         q.metrics,
-		limits:          q.limits,
-		consistency:     q.consistency,
-		logger:          q.logger,
-		queryStoreAfter: q.queryStoreAfter,
+		ctx:                      ctx,
+		minT:                     mint,
+		maxT:                     maxt,
+		userID:                   userID,
+		finder:                   q.finder,
+		stores:                   q.stores,
+		metrics:                  q.metrics,
+		limits:                   q.limits,
+		streamingChunksBatchSize: q.streamingChunksBatchSize,
+		consistency:              q.consistency,
+		logger:                   q.logger,
+		queryStoreAfter:          q.queryStoreAfter,
 	}, nil
 }
 
 type blocksStoreQuerier struct {
-	ctx         context.Context
-	minT, maxT  int64
-	userID      string
-	finder      BlocksFinder
-	stores      BlocksStoreSet
-	metrics     *blocksStoreQueryableMetrics
-	consistency *BlocksConsistencyChecker
-	limits      BlocksStoreLimits
-	logger      log.Logger
+	ctx                      context.Context
+	minT, maxT               int64
+	userID                   string
+	finder                   BlocksFinder
+	stores                   BlocksStoreSet
+	metrics                  *blocksStoreQueryableMetrics
+	consistency              *BlocksConsistencyChecker
+	limits                   BlocksStoreLimits
+	streamingChunksBatchSize uint64
+	logger                   log.Logger
 
 	// If set, the querier manipulates the max time to not be greater than
 	// "now - queryStoreAfter" so that most recent blocks are not queried.
