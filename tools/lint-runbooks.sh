@@ -19,7 +19,7 @@ fi
 
 # Check if each alert is referenced in the runbooks.
 for ALERT in $ALERTS; do
-  if ! grep -q "# ${ALERT}$" "${SCRIPT_DIR}/../docs/sources/mimir/operators-guide/mimir-runbooks/_index.md"; then
+  if ! grep -q "# ${ALERT}$" "${SCRIPT_DIR}/../docs/sources/mimir/manage/mimir-runbooks/_index.md"; then
     echo "Missing runbook for alert: $ALERT"
     STATUS=1
   fi
