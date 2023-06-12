@@ -30,7 +30,7 @@ jobs:
         run: |
           cfg_path=".github/workflows/allowlist.json"
           IFS=', ' read -r -a libsUpdated <<< "${{ steps.metadata.outputs.dependency-names }}"
-          # Loop through the array to make sure all updated libraries are allowlisted
+          # Loop through the array to make sure all updated libraries are in the allowlist
           all_in_allowlist="true"
           reason_array=()
 
@@ -59,9 +59,9 @@ jobs:
           gh pr merge --auto --squash "$PR_URL"
           gh pr review $PR_URL \
           --approve -b "**I'm approving** this pull request because it includes a patch or minor \
-          update to dependencies that are already allowlisted.
+          update to dependencies that are already in the allowlist.
 
-          The reason this library is allowlisted is that ${{ steps.check-allowlist.outputs.reasons}}"
+          The reason this library is in the allowlist is that ${{ steps.check-allowlist.outputs.reasons}}"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
