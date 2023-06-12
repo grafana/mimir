@@ -1,8 +1,6 @@
 ---
 aliases:
-  - ../operators-guide/operators-guide/operators-guide/tools/mimirtool/
-  - ../operators-guide/operators-guide/tools/mimirtool/
-  - ../operators-guide/tools/mimirtool/
+  - ../../operators-guide/tools/mimirtool/
 description:
   Use Mimirtool to perform common tasks in Grafana Mimir or Grafana Cloud
   Metrics.

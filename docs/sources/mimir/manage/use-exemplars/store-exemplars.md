@@ -1,10 +1,8 @@
 ---
 aliases:
-  - ../operators-guide/operators-guide/operators-guide/use-exemplars/store-exemplars/
-  - ../operators-guide/operators-guide/use-exemplars/store-exemplars/
-  - ../operators-guide/operators-guide/use-exemplars/storing-exemplars/
-  - ../operators-guide/operators-guide/using-exemplars/storing-exemplars/
-  - ../operators-guide/use-exemplars/store-exemplars/
+  - ../../operators-guide/use-exemplars/storing-exemplars/
+  - ../../operators-guide/using-exemplars/storing-exemplars/
+  - ../../operators-guide/use-exemplars/store-exemplars/
 description: Learn how to store exemplars in Grafana Mimir.
 menuTitle: Store exemplars
 title: Store exemplars in Grafana Mimir

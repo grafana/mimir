@@ -1,8 +1,6 @@
 ---
 aliases:
-  - ../operators-guide/operators-guide/operators-guide/tools/listblocks/
-  - ../operators-guide/operators-guide/tools/listblocks/
-  - ../operators-guide/tools/listblocks/
+  - ../../operators-guide/tools/listblocks/
 description: Listblocks show the block details of a tenant.
 menuTitle: Listblocks
 title: Grafana Mimir listblocks

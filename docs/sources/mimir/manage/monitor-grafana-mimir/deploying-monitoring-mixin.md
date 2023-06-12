@@ -1,10 +1,8 @@
 ---
 aliases:
-  - ../operators-guide/monitor-grafana-mimir/deploying-monitoring-mixin/
-  - ../operators-guide/operators-guide/monitor-grafana-mimir/deploying-monitoring-mixin/
-  - ../operators-guide/operators-guide/monitoring-grafana-mimir/deploying-monitoring-mixin/
-  - ../operators-guide/operators-guide/operators-guide/monitor-grafana-mimir/deploying-monitoring-mixin/
-  - ../operators-guide/operators-guide/visualizing-metrics/deploying-monitor-mixin/
+  - ../../operators-guide/monitoring-grafana-mimir/deploying-monitoring-mixin/
+  - ../../operators-guide/visualizing-metrics/deploying-monitor-mixin/
+  - ../../operators-guide/monitor-grafana-mimir/deploying-monitoring-mixin/
 description: Learn how to deploy the Grafana Mimir monitoring mixin.
 menuTitle: Deploying the monitoring mixin
 title: Deploying the Grafana Mimir monitoring mixin

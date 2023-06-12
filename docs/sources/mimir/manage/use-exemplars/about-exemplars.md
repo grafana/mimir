@@ -1,9 +1,7 @@
 ---
 aliases:
-  - ../operators-guide/operators-guide/operators-guide/use-exemplars/about-exemplars/
-  - ../operators-guide/operators-guide/use-exemplars/about-exemplars/
-  - ../operators-guide/operators-guide/using-exemplars/about-exemplars/
-  - ../operators-guide/use-exemplars/about-exemplars/
+  - ../../operators-guide/using-exemplars/about-exemplars/
+  - ../../operators-guide/use-exemplars/about-exemplars/
 description:
   Learn about using exemplars in Grafana Mimir to identify high cardinality
   in time series events.

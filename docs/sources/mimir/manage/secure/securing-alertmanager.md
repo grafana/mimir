@@ -1,8 +1,7 @@
 ---
 aliases:
-  - ../operators-guide/operators-guide/operators-guide/secure/securing-alertmanager/
-  - ../operators-guide/operators-guide/securing/securing-alertmanager/
-  - ../operators-guide/secure/securing-alertmanager/
+  - ../../operators-guide/securing/securing-alertmanager/
+  - ../../operators-guide/secure/securing-alertmanager/
 description: Learn how to secure the Alertmanager.
 menuTitle: Securing Alertmanager
 title: Securing Grafana Mimir Alertmanager

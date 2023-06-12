@@ -1,9 +1,7 @@
 ---
 aliases:
-  - ../operators-guide/operators-guide/operators-guide/secure/authentication-and-authorization/
-  - ../operators-guide/operators-guide/secure/authentication-and-authorization/
-  - ../operators-guide/operators-guide/securing/authentication-and-authorization/
-  - ../operators-guide/secure/authentication-and-authorization/
+  - ../../operators-guide/securing/authentication-and-authorization/
+  - ../../operators-guide/secure/authentication-and-authorization/
 description: Learn how to configure and run Grafana Mimir with multi-tenancy.
 menuTitle: Authentication and authorization
 title: Grafana Mimir authentication and authorization

@@ -1,9 +1,7 @@
 ---
 aliases:
-  - ../operators-guide/operators-guide/operators-guide/run-production-environment/planning-capacity/
-  - ../operators-guide/operators-guide/run-production-environment/planning-capacity/
-  - ../operators-guide/operators-guide/running-production-environment/planning-capacity/
-  - ../operators-guide/run-production-environment/planning-capacity/
+  - ../../operators-guide/running-production-environment/planning-capacity/
+  - ../../operators-guide/run-production-environment/planning-capacity/
 description: Learn how to plan the resources required to deploy Grafana Mimir.
 menuTitle: Planning capacity
 title: Planning Grafana Mimir capacity
