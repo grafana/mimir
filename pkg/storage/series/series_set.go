@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -27,7 +28,9 @@ type ConcreteSeriesSet struct {
 // NewConcreteSeriesSetFromUnsortedSeries instantiates an in-memory series set from a slice
 // of unsorted series. The series will be sorted in place by their labels.
 func NewConcreteSeriesSetFromUnsortedSeries(series []storage.Series) storage.SeriesSet {
-	sort.Sort(byLabels(series))
+	slices.SortFunc(series, func(a, b storage.Series) bool {
+		return labels.Compare(a.Labels(), b.Labels()) < 0
+	})
 	return NewConcreteSeriesSetFromSortedSeries(series)
 }
 
@@ -298,12 +301,6 @@ func metricToLabels(m model.Metric) labels.Labels {
 	builder.Sort() // PromQL expects all labels to be sorted.
 	return builder.Labels()
 }
-
-type byLabels []storage.Series
-
-func (b byLabels) Len() int           { return len(b) }
-func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i].Labels(), b[j].Labels()) < 0 }
 
 type seriesSetWithWarnings struct {
 	wrapped  storage.SeriesSet

@@ -99,6 +99,16 @@ func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
 	return builder.Labels()
 }
 
+// FromLabelAdaptersToLabels converts []LabelAdapter to labels.Labels, given a ScratchBuilder.
+// It assumes the LabelAdapters are in the correct order already.
+func FromLabelAdaptersToLabelsSB(builder *labels.ScratchBuilder, ls []LabelAdapter) labels.Labels {
+	builder.Reset()
+	for _, v := range ls {
+		builder.Add(v.Name, v.Value)
+	}
+	return builder.Labels()
+}
+
 // Build a labels.Labels from LabelAdaptors, with amortized zero allocations.
 func FromLabelAdaptersOverwriteLabels(builder *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) {
 	builder.Reset()

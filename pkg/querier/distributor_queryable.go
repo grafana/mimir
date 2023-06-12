@@ -150,13 +150,14 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	}
 
 	serieses := make([]storage.Series, 0, len(results.Chunkseries))
+	builder := labels.NewScratchBuilder(0)
 	for _, result := range results.Chunkseries {
 		// Sometimes the ingester can send series that have no data.
 		if len(result.Chunks) == 0 {
 			continue
 		}
 
-		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
+		ls := mimirpb.FromLabelAdaptersToLabelsSB(&builder, result.Labels)
 
 		chunks, err := client.FromChunks(ls, result.Chunks)
 		if err != nil {
