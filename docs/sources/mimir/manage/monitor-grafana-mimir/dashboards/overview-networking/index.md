@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../../operators-guide/monitor-grafana-mimir/dashboards/overview-networking/
 description: View an example Overview networking dashboard.
 menuTitle: Overview networking
 title: Grafana Mimir Overview networking dashboard

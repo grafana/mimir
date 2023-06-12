@@ -1,7 +1,8 @@
 ---
 aliases:
-  - ../../visualizing-metrics/dashboards/overrides/
+  - ../../../operators-guide/monitor-grafana-mimir/dashboards/overrides/
   - ../../monitoring-grafana-mimir/dashboards/overrides/
+  - ../../visualizing-metrics/dashboards/overrides/
 description: View an example Overrides dashboard.
 menuTitle: Overrides
 title: Grafana Mimir Overrides dashboard

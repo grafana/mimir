@@ -1,5 +1,6 @@
 ---
 aliases:
+  - ../operators-guide/secure/encrypting-data-at-rest/
   - ../securing/encrypting-data-at-rest/
 description: Learn how to configure object storage encryption.
 menuTitle: Encrypting data at rest

@@ -1,7 +1,8 @@
 ---
 aliases:
-  - ../../visualizing-metrics/dashboards/queries/
+  - ../../../operators-guide/monitor-grafana-mimir/dashboards/queries/
   - ../../monitoring-grafana-mimir/dashboards/queries/
+  - ../../visualizing-metrics/dashboards/queries/
 description: View an example Queries dashboard.
 menuTitle: Queries
 title: Grafana Mimir Queries dashboard

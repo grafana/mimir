@@ -10,7 +10,7 @@ weight: 10
 # About Grafana Mimir tenant IDs
 
 Within a Grafana Mimir cluster, the tenant ID is the unique identifier of a tenant.
-For information about how Grafana Mimir components use tenant IDs, refer to [Authentication and authorization]({{< relref "../operators-guide/secure/authentication-and-authorization" >}}).
+For information about how Grafana Mimir components use tenant IDs, refer to [Authentication and authorization]({{< relref "../manage/secure/authentication-and-authorization" >}}).
 
 ## Restrictions
 

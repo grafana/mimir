@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ./operators-guide/
 description:
   This guide contains information about deploying, configuring, and maintaining
   Grafana Mimir.

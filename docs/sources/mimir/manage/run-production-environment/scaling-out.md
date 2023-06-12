@@ -1,5 +1,6 @@
 ---
 aliases:
+  - ../operators-guide/run-production-environment/scaling-out/
   - ../running-production-environment/scaling-out/
 description: Learn how to scale out Grafana Mimir.
 menuTitle: Scaling out

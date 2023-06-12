@@ -1,5 +1,6 @@
 ---
 aliases:
+  - ../operators-guide/use-exemplars/about-exemplars/
   - ../using-exemplars/about-exemplars/
 description:
   Learn about using exemplars in Grafana Mimir to identify high cardinality

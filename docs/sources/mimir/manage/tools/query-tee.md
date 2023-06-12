@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../operators-guide/tools/query-tee/
 description:
   Use query-tee to compare query results and performance between two Grafana
   Mimir clusters.

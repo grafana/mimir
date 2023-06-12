@@ -1,7 +1,8 @@
 ---
 aliases:
-  - ../../visualizing-metrics/dashboards/tenants/
+  - ../../../operators-guide/monitor-grafana-mimir/dashboards/tenants/
   - ../../monitoring-grafana-mimir/dashboards/tenants/
+  - ../../visualizing-metrics/dashboards/tenants/
 description: View an example Tenants dashboard.
 menuTitle: Tenants
 title: Grafana Mimir Tenants dashboard

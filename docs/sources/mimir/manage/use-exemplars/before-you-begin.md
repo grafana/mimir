@@ -1,5 +1,6 @@
 ---
 aliases:
+  - ../operators-guide/use-exemplars/before-you-begin/
   - ../using-exemplars/before-you-begin/
 description: Refer to this checklist before you begin using exemplars in Grafana Mimir.
 menuTitle: Before you begin

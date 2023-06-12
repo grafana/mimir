@@ -1,7 +1,8 @@
 ---
 aliases:
-  - ../../visualizing-metrics/dashboards/writes/
+  - ../../../operators-guide/monitor-grafana-mimir/dashboards/writes/
   - ../../monitoring-grafana-mimir/dashboards/writes/
+  - ../../visualizing-metrics/dashboards/writes/
 description: View an example Writes dashboard.
 menuTitle: Writes
 title: Grafana Mimir Writes dashboard

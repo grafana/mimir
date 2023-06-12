@@ -1,7 +1,8 @@
 ---
 aliases:
-  - ../../visualizing-metrics/dashboards/rollout-progress/
+  - ../../../operators-guide/monitor-grafana-mimir/dashboards/rollout-progress/
   - ../../monitoring-grafana-mimir/dashboards/rollout-progress/
+  - ../../visualizing-metrics/dashboards/rollout-progress/
 description: View an example Rollout progress dashboard.
 menuTitle: Rollout progress
 title: Grafana Mimir Rollout progress dashboard

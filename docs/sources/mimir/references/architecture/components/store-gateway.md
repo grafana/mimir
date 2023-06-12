@@ -132,7 +132,7 @@ The store-gateway supports the following type of caches:
 - [Metadata cache](#metadata-cache)
 
 We recommend that you use caching in a production environment.
-For more information about configuring the cache, refer to [production tips]({{< relref "../../../operators-guide/run-production-environment/production-tips#caching" >}}).
+For more information about configuring the cache, refer to [production tips]({{< relref "../../../manage/run-production-environment/production-tips#caching" >}}).
 
 ### Index cache
 

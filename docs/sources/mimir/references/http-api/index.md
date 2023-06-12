@@ -115,7 +115,7 @@ If you disable multi-tenancy, Grafana Mimir doesn't require any request to inclu
 
 Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` flag or its respective YAML configuration option.
 
-For more information about authentication and authorization, refer to [Authentication and Authorization]({{< relref "../../operators-guide/secure/authentication-and-authorization" >}}).
+For more information about authentication and authorization, refer to [Authentication and Authorization]({{< relref "../../manage/secure/authentication-and-authorization" >}}).
 
 ## All services
 
@@ -705,7 +705,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../operators-guide/tools/mimirtool#list-rules" >}}).
+> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
 
 **Example response**
 
@@ -800,7 +800,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../operators-guide/tools/mimirtool#get-rule-group" >}}) .
+> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
 
 ### Set rule group
 
@@ -816,7 +816,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../operators-guide/tools/mimirtool#load-rule-group" >}}) .
+> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -844,7 +844,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../operators-guide/tools/mimirtool#delete-rule-group" >}}).
+> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
 
 ### Delete namespace
 
@@ -932,7 +932,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../operators-guide/tools/mimirtool#get-alertmanager-configuration" >}}).
+> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
 
 ### Set Alertmanager configuration
 
@@ -948,7 +948,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../operators-guide/tools/mimirtool#load-alertmanager-configuration" >}}).
+> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -988,7 +988,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../operators-guide/tools/mimirtool#delete-alertmanager-configuration" >}}).
+> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
 
 ## Store-gateway
 

@@ -1,7 +1,8 @@
 ---
 aliases:
-  - ../../visualizing-metrics/dashboards/writes-networking/
+  - ../../../operators-guide/monitor-grafana-mimir/dashboards/writes-networking/
   - ../../monitoring-grafana-mimir/dashboards/writes-networking/
+  - ../../visualizing-metrics/dashboards/writes-networking/
 description: View an example Writes networking dashboard.
 menuTitle: Writes networking
 title: Grafana Mimir Writes networking dashboard

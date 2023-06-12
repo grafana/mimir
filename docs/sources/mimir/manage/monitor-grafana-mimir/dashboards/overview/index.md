@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../../operators-guide/monitor-grafana-mimir/dashboards/overview/
 description: View an example Overview dashboard.
 menuTitle: Overview
 title: Grafana Mimir Overview dashboard

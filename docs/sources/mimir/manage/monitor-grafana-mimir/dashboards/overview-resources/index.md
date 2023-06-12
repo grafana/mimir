@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../../operators-guide/monitor-grafana-mimir/dashboards/overview-resources/
 description: View an example Overview resources dashboard.
 menuTitle: Overview resources
 title: Grafana Mimir Overview resources dashboard

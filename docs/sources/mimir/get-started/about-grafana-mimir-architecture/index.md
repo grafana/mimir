@@ -46,14 +46,14 @@ For example, when running in the cloud, include an AWS EBS volume or a GCP persi
 If you are running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a persistent volume claim for the ingesters.
 The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The location of the filesystem and the location of the local TSDB blocks cannot be decoupled.
 
-For more information, refer to [timeline of block uploads]({{< relref "../../operators-guide/run-production-environment/production-tips#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "../../references/architecture/components/ingester" >}}).
+For more information, refer to [timeline of block uploads]({{< relref "../../manage/run-production-environment/production-tips#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "../../references/architecture/components/ingester" >}}).
 
 #### Series sharding and replication
 
 By default, each time series is replicated to three ingesters, and each ingester writes its own block to the long-term storage.
 The [Compactor]({{< relref "../../references/architecture/components/compactor" >}}) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
 Blocks compaction significantly reduces storage utilization.
-For more information, refer to [Compactor]({{< relref "../../references/architecture/components/compactor" >}}) and [Production tips]({{< relref "../../operators-guide/run-production-environment/production-tips" >}}).
+For more information, refer to [Compactor]({{< relref "../../references/architecture/components/compactor" >}}) and [Production tips]({{< relref "../../manage/run-production-environment/production-tips" >}}).
 
 ### The read path
 
@@ -78,7 +78,7 @@ After the querier executes the query, it returns the results to the query-fronte
 Prometheus instances scrape samples from various targets and push them to Grafana Mimir by using Prometheus’ [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations).
 The remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
 
-Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization]({{< relref "../../operators-guide/secure/authentication-and-authorization" >}}) are handled by an external reverse proxy.
+Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization]({{< relref "../../manage/secure/authentication-and-authorization" >}}) are handled by an external reverse proxy.
 
 Incoming samples (writes from Prometheus) are handled by the [distributor]({{< relref "../../references/architecture/components/distributor" >}}), and incoming reads (PromQL queries) are handled by the [query frontend]({{< relref "../../references/architecture/components/query-frontend" >}}).
 

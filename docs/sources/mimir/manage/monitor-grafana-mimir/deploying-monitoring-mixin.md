@@ -1,7 +1,8 @@
 ---
 aliases:
-  - ../visualizing-metrics/deploying-monitor-mixin/
   - ../monitoring-grafana-mimir/deploying-monitoring-mixin/
+  - ../operators-guide/monitor-grafana-mimir/deploying-monitoring-mixin/
+  - ../visualizing-metrics/deploying-monitor-mixin/
 description: Learn how to deploy the Grafana Mimir monitoring mixin.
 menuTitle: Deploying the monitoring mixin
 title: Deploying the Grafana Mimir monitoring mixin

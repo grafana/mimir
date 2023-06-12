@@ -1,7 +1,8 @@
 ---
 aliases:
-  - ../../visualizing-metrics/dashboards/compactor/
+  - ../../../operators-guide/monitor-grafana-mimir/dashboards/compactor/
   - ../../monitoring-grafana-mimir/dashboards/compactor/
+  - ../../visualizing-metrics/dashboards/compactor/
 description: View an example Compactor dashboard.
 menuTitle: Compactor
 title: Grafana Mimir Compactor dashboard

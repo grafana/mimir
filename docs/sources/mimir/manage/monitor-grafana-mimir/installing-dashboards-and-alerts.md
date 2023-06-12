@@ -1,7 +1,8 @@
 ---
 aliases:
-  - ../visualizing-metrics/installing-dashboards-and-alerts/
   - ../monitoring-grafana-mimir/installing-dashboards-and-alerts/
+  - ../operators-guide/monitor-grafana-mimir/installing-dashboards-and-alerts/
+  - ../visualizing-metrics/installing-dashboards-and-alerts/
 description: Learn how to install Grafana Mimir dashboards and alerts.
 menuTitle: Installing dashboards and alerts
 title: Installing Grafana Mimir dashboards and alerts

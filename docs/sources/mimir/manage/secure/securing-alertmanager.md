@@ -1,5 +1,6 @@
 ---
 aliases:
+  - ../operators-guide/secure/securing-alertmanager/
   - ../securing/securing-alertmanager/
 description: Learn how to secure the Alertmanager.
 menuTitle: Securing Alertmanager
