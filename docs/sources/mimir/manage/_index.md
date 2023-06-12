@@ -1,8 +1,7 @@
 ---
 aliases:
   - ./operators-guide/
-description:
-  Learn how to deploy, configure, and manage Grafana Mimir.
+description: Learn how to deploy, configure, and manage Grafana Mimir.
 keywords:
   - Grafana Mimir architecture
   - Mimir architecture
