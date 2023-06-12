@@ -816,7 +816,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 							foundErr := false
 							for set.Next() {
 								it := set.At().Iterator(nil)
-								for it.Next() != chunkenc.ValNone {
+								for it.Next() != chunkenc.ValNone { // nolint
 								}
 								err := it.Err()
 								if err != nil {
