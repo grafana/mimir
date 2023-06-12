@@ -46,7 +46,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-query-frontend.cache-results=false"
-            - "-query-frontend.scheduler-address={{ template "mimir.fullname" . }}-ruler-query-scheduler.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}"
+            - "-query-frontend.scheduler-address={{ template "mimir.fullname" . }}-ruler-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}"
 
           {{- range $key, $value := .Values.ruler_query_frontend.extraArgs }}
             - "-{{ $key }}={{ $value }}"

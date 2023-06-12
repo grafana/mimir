@@ -44,7 +44,7 @@ spec:
             - "-target=querier"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
-            - "-querier.scheduler-address={{ template "mimir.fullname" . }}-ruler-query-scheduler.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}"
+            - "-querier.scheduler-address={{ template "mimir.fullname" . }}-ruler-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}"
           {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
             {{- if not .Values.ingester.zoneAwareReplication.migration.readPath }}
             - "-ingester.ring.zone-awareness-enabled=false"
