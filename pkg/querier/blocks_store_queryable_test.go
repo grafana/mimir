@@ -764,6 +764,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			// Non-streaming should be tested first because in the streaming case,
+			// the below code changes the testData in-place.
 			for _, streaming := range []bool{false, true} {
 				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
 					ctx := limiter.AddQueryLimiterToContext(context.Background(), testData.queryLimiter)
@@ -776,25 +778,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 							if ok {
 								for k, _ := range m {
 									mockClient := k.(*storeGatewayClientMock)
-									var seriesResponses []*storepb.Series
-									var newResponses []*storepb.SeriesResponse
-									for i, mr := range mockClient.mockedSeriesResponses {
-										s := mr.GetSeries()
-										if s != nil {
-											seriesResponses = append(seriesResponses, s)
-											continue
-										}
-										for _, s := range seriesResponses {
-											newResponses = append(newResponses, mockStreamingSeriesBatchResponse(false, s.Labels))
-										}
-										newResponses = append(newResponses, mockClient.mockedSeriesResponses[i:]...)
-										newResponses = append(newResponses, mockStreamingSeriesBatchResponse(true))
-										for idx, s := range seriesResponses {
-											newResponses = append(newResponses, mockStreamingSeriesChunksResponse(uint64(idx), s.Chunks))
-										}
-										break
-									}
-									mockClient.mockedSeriesResponses = newResponses
+									mockClient.mockedSeriesResponses = generateStreamingResponses(mockClient.mockedSeriesResponses)
 								}
 							}
 						}
@@ -893,6 +877,26 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			}
 		})
 	}
+}
+
+func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*storepb.SeriesResponse {
+	var series, chunks, others []*storepb.SeriesResponse
+	for i, mr := range seriesResponses {
+		s := mr.GetSeries()
+		if s != nil {
+			series = append(series, mockStreamingSeriesBatchResponse(false, s.Labels))
+			chunks = append(chunks, mockStreamingSeriesChunksResponse(uint64(len(series)-1), s.Chunks))
+			continue
+		}
+		others = seriesResponses[i:]
+		break
+	}
+
+	seriesResponses = append(seriesResponses[:0], series...)
+	seriesResponses = append(seriesResponses, others...)
+	seriesResponses = append(seriesResponses, mockStreamingSeriesBatchResponse(true))
+	seriesResponses = append(seriesResponses, chunks...)
+	return seriesResponses
 }
 
 func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
@@ -1760,57 +1764,67 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			block1 := ulid.MustNew(1, nil)
-			block2 := ulid.MustNew(2, nil)
+			// Non-streaming should be tested first because in the streaming case,
+			// the below code changes the testData in-place.
+			for _, streaming := range []bool{false, true} {
+				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+					block1 := ulid.MustNew(1, nil)
+					block2 := ulid.MustNew(2, nil)
 
-			// Mock the finder to simulate we need to query two blocks.
-			finder := &blocksFinderMock{
-				Service: services.NewIdleService(nil, nil),
+					// Mock the finder to simulate we need to query two blocks.
+					finder := &blocksFinderMock{
+						Service: services.NewIdleService(nil, nil),
+					}
+					finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{
+						{ID: block1},
+						{ID: block2},
+					}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
+
+					// Mock the store-gateway response, to simulate the case each block is queried from a different gateway.
+					gateway1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: append(testData.storeGateway1Responses, mockHintsResponse(block1))}
+					gateway2 := &storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: append(testData.storeGateway2Responses, mockHintsResponse(block2))}
+					if streaming {
+						gateway1.mockedSeriesResponses = generateStreamingResponses(gateway1.mockedSeriesResponses)
+						gateway2.mockedSeriesResponses = generateStreamingResponses(gateway2.mockedSeriesResponses)
+					}
+
+					stores := &blocksStoreSetMock{
+						Service: services.NewIdleService(nil, nil),
+						mockedResponses: []interface{}{
+							map[BlocksStoreClient][]ulid.ULID{
+								gateway1: {block1},
+								gateway2: {block2},
+							},
+						},
+					}
+
+					// Instantiate the querier that will be executed to run the query.
+					logger := log.NewNopLogger()
+					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
+					require.NoError(t, err)
+					require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
+					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
+
+					engine := promql.NewEngine(promql.EngineOpts{
+						Logger:     logger,
+						Timeout:    10 * time.Second,
+						MaxSamples: 1e6,
+					})
+
+					// Query metrics.
+					ctx := user.InjectOrgID(context.Background(), "user-1")
+					q, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, queryStart, queryEnd, 15*time.Second)
+					require.NoError(t, err)
+
+					res := q.Exec(ctx)
+					require.NoError(t, err)
+					require.NoError(t, res.Err)
+
+					matrix, err := res.Matrix()
+					require.NoError(t, err)
+					assert.Equal(t, testData.expected, matrix)
+				})
 			}
-			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{
-				{ID: block1},
-				{ID: block2},
-			}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
-
-			// Mock the store-gateway response, to simulate the case each block is queried from a different gateway.
-			gateway1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: append(testData.storeGateway1Responses, mockHintsResponse(block1))}
-			gateway2 := &storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: append(testData.storeGateway2Responses, mockHintsResponse(block2))}
-
-			stores := &blocksStoreSetMock{
-				Service: services.NewIdleService(nil, nil),
-				mockedResponses: []interface{}{
-					map[BlocksStoreClient][]ulid.ULID{
-						gateway1: {block1},
-						gateway2: {block2},
-					},
-				},
-			}
-
-			// Instantiate the querier that will be executed to run the query.
-			logger := log.NewNopLogger()
-			queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
-			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
-			defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
-
-			engine := promql.NewEngine(promql.EngineOpts{
-				Logger:     logger,
-				Timeout:    10 * time.Second,
-				MaxSamples: 1e6,
-			})
-
-			// Query metrics.
-			ctx := user.InjectOrgID(context.Background(), "user-1")
-			q, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, queryStart, queryEnd, 15*time.Second)
-			require.NoError(t, err)
-
-			res := q.Exec(ctx)
-			require.NoError(t, err)
-			require.NoError(t, res.Err)
-
-			matrix, err := res.Matrix()
-			require.NoError(t, err)
-			assert.Equal(t, testData.expected, matrix)
 		})
 	}
 }
