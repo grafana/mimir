@@ -776,7 +776,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						for _, res := range testData.storeSetResponses {
 							m, ok := res.(map[BlocksStoreClient][]ulid.ULID)
 							if ok {
-								for k, _ := range m {
+								for k := range m {
 									mockClient := k.(*storeGatewayClientMock)
 									mockClient.mockedSeriesResponses = generateStreamingResponses(mockClient.mockedSeriesResponses)
 								}
@@ -2020,8 +2020,8 @@ func (grpcClientStreamMock) Header() (metadata.MD, error) { return nil, nil }
 func (grpcClientStreamMock) Trailer() metadata.MD         { return nil }
 func (grpcClientStreamMock) CloseSend() error             { return nil }
 func (grpcClientStreamMock) Context() context.Context     { return context.Background() }
-func (grpcClientStreamMock) SendMsg(m interface{}) error  { return nil }
-func (grpcClientStreamMock) RecvMsg(m interface{}) error  { return nil }
+func (grpcClientStreamMock) SendMsg(interface{}) error    { return nil }
+func (grpcClientStreamMock) RecvMsg(interface{}) error    { return nil }
 
 type cancelerStoreGatewaySeriesClientMock struct {
 	storeGatewaySeriesClientMock

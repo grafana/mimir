@@ -1391,6 +1391,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				// We test with both streaming on and off when we are fetching chunks.
 				for _, streaming := range []bool{true, false} {
 					tcCopy := tc
+					streaming := streaming
 					t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
 						t.Parallel()
 						tcCopy.streamingSeries = streaming
