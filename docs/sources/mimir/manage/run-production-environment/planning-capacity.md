@@ -32,7 +32,7 @@ When Grafana Mimir is running in microservices mode, you can estimate the requir
 
 ### Distributor
 
-The [distributor]({{< relref "../../references/architecture/components/distributor.md" >}}) component resources utilization is determined by the number of received samples per second.
+The [distributor]({{< relref "../../references/architecture/components/distributor" >}}) component resources utilization is determined by the number of received samples per second.
 
 Estimated required CPU and memory:
 
@@ -53,7 +53,7 @@ Estimated required CPU and memory:
 
 ### Ingester
 
-The [ingester]({{< relref "../../references/architecture/components/ingester.md" >}}) component resources’ utilization is determined by the number of series that are in memory.
+The [ingester]({{< relref "../../references/architecture/components/ingester" >}}) component resources’ utilization is determined by the number of series that are in memory.
 
 Estimated required CPU, memory, and disk space:
 
@@ -77,7 +77,7 @@ Estimated required CPU, memory, and disk space:
 
 ### Query-frontend
 
-The [query-frontend]({{< relref "../../references/architecture/components/query-frontend/index.md" >}}) component resources utilization is determined by the number of queries per second.
+The [query-frontend]({{< relref "../../references/architecture/components/query-frontend" >}}) component resources utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 
@@ -86,7 +86,7 @@ Estimated required CPU and memory:
 
 ### (Optional) Query-scheduler
 
-The [query-scheduler]({{< relref "../../references/architecture/components/query-scheduler/index.md" >}}) component resources’ utilization is determined by the number of queries per second.
+The [query-scheduler]({{< relref "../../references/architecture/components/query-scheduler" >}}) component resources’ utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 
@@ -95,7 +95,7 @@ Estimated required CPU and memory:
 
 ### Querier
 
-The [querier]({{< relref "../../references/architecture/components/querier.md" >}}) component resources utilization is determined by the number of queries per second.
+The [querier]({{< relref "../../references/architecture/components/querier" >}}) component resources utilization is determined by the number of queries per second.
 
 Estimated required CPU and memory:
 
@@ -106,7 +106,7 @@ Estimated required CPU and memory:
 
 ### Store-gateway
 
-The [store-gateway]({{< relref "../../references/architecture/components/store-gateway.md" >}}) component resources’ utilization is determined by the number of queries per second and active series before ingesters replication.
+The [store-gateway]({{< relref "../../references/architecture/components/store-gateway" >}}) component resources’ utilization is determined by the number of queries per second and active series before ingesters replication.
 
 Estimated required CPU, memory, and disk space:
 
@@ -127,15 +127,15 @@ Estimated required CPU, memory, and disk space:
 
 ### (Optional) Ruler
 
-The [ruler]({{< relref "../../references/architecture/components/ruler/index.md" >}}) component resources utilization is determined by the number of rules evaluated per second.
+The [ruler]({{< relref "../../references/architecture/components/ruler" >}}) component resources utilization is determined by the number of rules evaluated per second.
 
-When [internal]({{< relref "../../references/architecture/components/ruler/index.md#internal" >}}) mode is used (default), rules evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
+When [internal]({{< relref "../../references/architecture/components/ruler#internal" >}}) mode is used (default), rules evaluation is computationally equal to queries execution, so the querier resources recommendations apply to ruler too.
 
-When [remote]({{< relref "../../references/architecture/components/ruler/index.md#internal" >}}) operational mode is used, most of the computational load is shifted to query-frontend and querier components. So those should be scaled accordingly to deal both with queries and rules evaluation workload.
+When [remote]({{< relref "../../references/architecture/components/ruler#internal" >}}) operational mode is used, most of the computational load is shifted to query-frontend and querier components. So those should be scaled accordingly to deal both with queries and rules evaluation workload.
 
 ### Compactor
 
-The [compactor]({{< relref "../../references/architecture/components/compactor/index.md" >}}) component resources utilization is determined by the number of active series.
+The [compactor]({{< relref "../../references/architecture/components/compactor" >}}) component resources utilization is determined by the number of active series.
 
 The compactor can scale horizontally both in Grafana Mimir clusters with one tenant and multiple tenants.
 We recommend to run at least one compactor instance every 20 million active series ingested in total in the Grafana Mimir cluster, calculated before ingesters replication.
@@ -146,7 +146,7 @@ Assuming you run one compactor instance every 20 million active series, the esti
 - Memory: 4GB
 - Disk: 300GB
 
-For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../../references/architecture/components/compactor/index.md#compactor-disk-utilization" >}}).
+For more information about disk requirements, refer to [Compactor disk utilization]({{< relref "../../references/architecture/components/compactor#compactor-disk-utilization" >}}).
 
 **To estimate the number of active series before ingesters replication, query the number of active series across all Prometheus servers:**
 
@@ -156,7 +156,7 @@ sum(prometheus_tsdb_head_series)
 
 ### (Optional) Alertmanager
 
-The [Alertmanager]({{< relref "../../references/architecture/components/alertmanager.md" >}}) component resources’ utilization is determined by the number of alerts firing at the same time.
+The [Alertmanager]({{< relref "../../references/architecture/components/alertmanager" >}}) component resources’ utilization is determined by the number of alerts firing at the same time.
 
 Estimated required CPU and memory:
 

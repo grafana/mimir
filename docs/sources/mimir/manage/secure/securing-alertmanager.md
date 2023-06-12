@@ -20,6 +20,6 @@ Although hardening the network is out of the scope for Grafana Mimir, Grafana Mi
 - To block specific network addresses in Alertmanager receivers, set `-alertmanager.receivers-firewall-block-cidr-networks` to a comma-separated list of network CIDRs to block.
 - To block private and local addresses in Alertmanager receivers, set `-alertmanager.receivers-firewall-block-private-addresses=true`.
 
-You can override the Alertmanager built-in firewall settings on a per-tenant basis in the overrides section of the [runtime configuration]({{< relref "../../configure/about-runtime-configuration.md" >}}).
+You can override the Alertmanager built-in firewall settings on a per-tenant basis in the overrides section of the [runtime configuration]({{< relref "../../configure/about-runtime-configuration" >}}).
 
 > **Note:** You can disable the Alertmanager configuration API by setting `-alertmanager.enable-api=false`.

@@ -1,9 +1,11 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/ruler/
-title: "(Optional) Grafana Mimir ruler"
-menuTitle: "(Optional) Ruler"
-description: "The ruler evaluates PromQL expressions defined in recording and alerting rules."
+description:
+  The ruler evaluates PromQL expressions defined in recording and alerting
+  rules.
+menuTitle: (Optional) Ruler
+title: (Optional) Grafana Mimir ruler
 weight: 130
 ---
 
@@ -23,8 +25,8 @@ To evaluate rules, the ruler connects directly to ingesters and store-gateways, 
 
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
-- [Querier]({{< relref "../../../../references/configuration-parameters/index.md#querier" >}})
-- [Distributor]({{< relref "../../../../references/configuration-parameters/index.md#distributor" >}})
+- [Querier]({{< relref "../../../configuration-parameters#querier" >}})
+- [Distributor]({{< relref "../../../configuration-parameters#distributor" >}})
 
 > **Note**: When this mode is used, no query acceleration techniques are used and the evaluation of very high cardinality queries could take longer than the evaluation interval, eventually leading to missing data points in the evaluated recording rules.
 
@@ -34,7 +36,7 @@ Configuration of the built-in querier and distributor uses their respective conf
 
 ### Remote
 
-In this mode the ruler delegates rules evaluation to the query-frontend. When enabled, the ruler leverages all the query acceleration techniques employed by the query-frontend, such as [query sharding]({{< relref "../../query-sharding/index.md" >}}).
+In this mode the ruler delegates rules evaluation to the query-frontend. When enabled, the ruler leverages all the query acceleration techniques employed by the query-frontend, such as [query sharding]({{< relref "../../query-sharding" >}}).
 To enable the remote operational mode, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
 Communication between ruler and query-frontend is established over gRPC, so you can make use of client-side load balancing by prefixing the query-frontend address URL with `dns://`.
 
@@ -52,9 +54,9 @@ After the alert has been active for the entire `for` duration, it enters the **F
 The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.
 
 Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag. This flag supports the DNS service discovery format.
-For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../../../../configure/about-dns-service-discovery.md" >}}).
+For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../../../../configure/about-dns-service-discovery" >}}).
 
-If you're using [Mimir's Alertmanager]({{< relref "../alertmanager.md" >}}), point the address to Alertmanager's API.
+If you're using [Mimir's Alertmanager]({{< relref "../alertmanager" >}}), point the address to Alertmanager's API.
 You can configure Alertmanager’s API prefix via the `-http.alertmanager-http-prefix` flag, which defaults to `/alertmanager`.
 For example, if Alertmanager is listening at `http://mimir-alertmanager.namespace.svc.cluster.local` and it is using the default API prefix, set `-ruler.alertmanager-url` to `http://mimir-alertmanager.namespace.svc.cluster.local/alertmanager`.
 
@@ -103,9 +105,9 @@ present on series returned with cross-tenant query federation.
 
 The ruler supports multi-tenancy and horizontal scalability.
 To achieve horizontal scalability, the ruler shards the execution of rules by rule groups.
-Ruler replicas form their own [hash ring]({{< relref "../../hash-ring/index.md" >}}) stored in the [KV store]({{< relref "../../key-value-store.md" >}}) to divide the work of the executing rules.
+Ruler replicas form their own [hash ring]({{< relref "../../hash-ring" >}}) stored in the [KV store]({{< relref "../../key-value-store" >}}) to divide the work of the executing rules.
 
-To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../../../configure/configure-hash-rings.md" >}}).
+To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../../../configure/configure-hash-rings" >}}).
 
 ## Manage alerting and recording rules
 
@@ -114,7 +116,7 @@ There is more than one way to manage alerting and recording rules.
 ### Via the `mimirtool` CLI tool
 
 The `mimirtool rules` command offers utility subcommands for linting, formatting, and uploading rules to Grafana Mimir.
-For more information, refer to the [`mimirtool rules`]({{< relref "../../../../operators-guide/tools/mimirtool.md#rules" >}}).
+For more information, refer to the [`mimirtool rules`]({{< relref "../../../../operators-guide/tools/mimirtool#rules" >}}).
 
 ### Via the `grafana/mimir/operations/mimir-rules-action` GitHub Action
 
@@ -124,7 +126,7 @@ For more information, refer to the [documentation of the action](https://github.
 ### Via the HTTP configuration API
 
 The ruler HTTP configuration API enables tenants to create, update, and delete rule groups.
-For a complete list of endpoints and example requests, refer to [ruler]({{< relref "../../../../references/http-api/index.md#ruler" >}}).
+For a complete list of endpoints and example requests, refer to [ruler]({{< relref "../../../http-api#ruler" >}}).
 
 ## State
 
@@ -135,13 +137,13 @@ The ruler supports the following backends:
 - [Google Cloud Storage](https://cloud.google.com/storage/): `-ruler-storage.backend=gcs`
 - [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/): `-ruler-storage.backend=azure`
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift): `-ruler-storage.backend=swift`
-- [Local storage]({{< relref "#local-storage" >}}): `-ruler-storage.backend=local`
+- [Local storage]({{< relref ".#local-storage" >}}): `-ruler-storage.backend=local`
 
 ### Local storage
 
 The `local` storage backend reads [Prometheus recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) from the local filesystem.
 
-> **Note:** Local storage is a read-only backend that does not support the creation and deletion of rules through the [Configuration API]({{< relref "#via-the-http-configuration-api" >}}).
+> **Note:** Local storage is a read-only backend that does not support the creation and deletion of rules through the [Configuration API]({{< relref ".#via-the-http-configuration-api" >}}).
 
 When all rulers have the same rule files, local storage supports ruler sharding.
 To facilitate sharding in Kubernetes, mount a [Kubernetes ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) into every ruler pod.

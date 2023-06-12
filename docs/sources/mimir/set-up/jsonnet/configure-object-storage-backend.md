@@ -1,7 +1,9 @@
 ---
 aliases:
   - ../../operators-guide/deploy-grafana-mimir/jsonnet/configure-object-storage-backend/
-description: Learn how to configure the Grafana Mimir object storage backend when using Jsonnet.
+description:
+  Learn how to configure the Grafana Mimir object storage backend when
+  using Jsonnet.
 menuTitle: Configure object storage
 title: Configure the Grafana Mimir object storage backend with Jsonnet
 weight: 20

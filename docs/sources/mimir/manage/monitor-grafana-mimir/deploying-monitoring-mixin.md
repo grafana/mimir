@@ -11,7 +11,7 @@ weight: 20
 # Deploying the Grafana Mimir monitoring mixin
 
 Grafana Mimir exposes a `/metrics` endpoint returning Prometheus metrics. You can configure your Prometheus server to scrape Grafana Mimir or you can use the built-in functionality of the [Helm chart to automatically send these metrics to a remote]({{< relref "./collecting-metrics-and-logs" >}}).
-The endpoint is exposed on the Mimir HTTP server address / port which can be customized through `-server.http-listen-address` and `-server.http-listen-port` CLI flags or their respective YAML [config options]({{< relref "../../references/configuration-parameters/index.md" >}}).
+The endpoint is exposed on the Mimir HTTP server address / port which can be customized through `-server.http-listen-address` and `-server.http-listen-port` CLI flags or their respective YAML [config options]({{< relref "../../references/configuration-parameters" >}}).
 
 ## Dashboards and alerts
 
@@ -20,7 +20,7 @@ Grafana Mimir is shipped with a comprehensive set of production-ready Grafana da
 Dashboards provide both a high-level and in-depth view of every aspect of a Grafana Mimir cluster.
 You can take a look at all the available dashboards in [this overview]({{< relref "./dashboards" >}}).
 
-Alerts allow you to monitor the health of a Mimir cluster. For each alert, we provide detailed [runbooks]({{< relref "../mimir-runbooks/_index.md" >}}) to further investigate and fix the issue.
+Alerts allow you to monitor the health of a Mimir cluster. For each alert, we provide detailed [runbooks]({{< relref "../mimir-runbooks" >}}) to further investigate and fix the issue.
 
 The [requirements documentation]({{< relref "./requirements" >}}) lists prerequisites for using the Grafana Mimir dashboards and alerts.
 

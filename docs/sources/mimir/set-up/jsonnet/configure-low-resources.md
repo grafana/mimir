@@ -39,7 +39,7 @@ mimir {
 
 Default scaling of Mimir components in the provided Jsonnet is opinionated and based on engineers’ years of experience running it at Grafana Labs.
 The default resource requests and limits are also fine-tuned for the provided alerting rules.
-For more information, see [Monitor Grafana Mimir]({{< relref "../../operators-guide/monitor-grafana-mimir/_index.md" >}}).
+For more information, see [Monitor Grafana Mimir]({{< relref "../../operators-guide/monitor-grafana-mimir" >}}).
 
 However, there are use cases where you might want to change the default resource requests, their limits, or both.
 For example, if you are just testing Mimir and you want to run it on a small (possibly one-node) Kubernetes cluster, and you do not have tens of gigabytes of memory or multiple cores to schedule the components, consider overriding the scaling requirements as follows:

@@ -1,7 +1,9 @@
 ---
-title: "Grafana mimir-continuous-test"
-menuTitle: "Mimir-continuous-test"
-description: "Use mimir-continuous-test to continuously run smoke tests on live Grafana Mimir clusters."
+description:
+  Use mimir-continuous-test to continuously run smoke tests on live Grafana
+  Mimir clusters.
+menuTitle: Mimir-continuous-test
+title: Grafana mimir-continuous-test
 weight: 30
 ---
 
@@ -85,5 +87,5 @@ mimir_continuous_test_query_result_checks_failed_total{test="<name>"}
 
 ### Alerts
 
-[Grafana Mimir alerts]({{< relref "../monitor-grafana-mimir/installing-dashboards-and-alerts.md" >}}) include checks on failures that mimir-continuous-test tracks.
+[Grafana Mimir alerts]({{< relref "../monitor-grafana-mimir/installing-dashboards-and-alerts" >}}) include checks on failures that mimir-continuous-test tracks.
 When running mimir-continuous-test, use the provided alerts.

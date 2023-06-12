@@ -1,9 +1,9 @@
 ---
 aliases:
   - ../operators-guide/configure/configure-metrics-storage-retention/
-title: "Configure Grafana Mimir metrics storage retention"
-menuTitle: "Metrics storage retention"
-description: "Learn how to configure Grafana Mimir metrics storage retention."
+description: Learn how to configure Grafana Mimir metrics storage retention.
+menuTitle: Metrics storage retention
+title: Configure Grafana Mimir metrics storage retention
 weight: 70
 ---
 
@@ -16,7 +16,7 @@ You can configure the object storage retention to automatically delete all metri
 
 ## Configure the storage retention
 
-The [compactor]({{< relref "../references/architecture/components/compactor/index.md" >}}) is the Mimir component that is responsible for enforcing the storage retention.
+The [compactor]({{< relref "../references/architecture/components/compactor" >}}) is the Mimir component that is responsible for enforcing the storage retention.
 To configure the storage retention, set the CLI flag `-compactor.blocks-retention-period` or change the following YAML configuration:
 
 ```yaml

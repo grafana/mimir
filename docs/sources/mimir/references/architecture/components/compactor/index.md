@@ -1,9 +1,11 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/compactor/
-title: "Grafana Mimir compactor"
-menuTitle: "Compactor"
-description: "The compactor increases query performance and reduces long-term storage usage."
+description:
+  The compactor increases query performance and reduces long-term storage
+  usage.
+menuTitle: Compactor
+title: Grafana Mimir compactor
 weight: 10
 ---
 
@@ -14,7 +16,7 @@ The compactor increases query performance and reduces long-term storage usage by
 The compactor is the component responsible for:
 
 - Compacting multiple blocks of a given tenant into a single, optimized larger block. This deduplicates chunks and reduces the size of the index, resulting in reduced storage costs. Querying fewer blocks is faster, so it also increases query speed.
-- Keeping the per-tenant bucket index updated. The [bucket index]({{< relref "../../bucket-index/index.md" >}}) is used by [queriers]({{< relref "../querier.md" >}}), [store-gateways]({{< relref "../store-gateway.md" >}}), and [rulers]({{< relref "../ruler/index.md" >}}) to discover both new blocks and deleted blocks in the storage.
+- Keeping the per-tenant bucket index updated. The [bucket index]({{< relref "../../bucket-index" >}}) is used by [queriers]({{< relref "../querier" >}}), [store-gateways]({{< relref "../store-gateway" >}}), and [rulers]({{< relref "../ruler" >}}) to discover both new blocks and deleted blocks in the storage.
 - Deleting blocks that are no longer within a configurable retention period.
 
 The compactor is stateless.
@@ -40,7 +42,7 @@ Compaction can be tuned for clusters with large tenants. Configuration specifies
 - **Vertical scaling**<br />
   The setting `-compactor.compaction-concurrency` configures the max number of concurrent compactions running in a single compactor instance. Each compaction uses one CPU core.
 - **Horizontal scaling**<br />
-  By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding]({{< relref "../../../../configure/configure-shuffle-sharding/index.md" >}}) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant.
+  By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding]({{< relref "../../../../configure/configure-shuffle-sharding" >}}) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant.
 
 ## Compaction algorithm
 
@@ -75,9 +77,9 @@ The compactor shards compaction jobs, either from a single tenant or multiple te
 
 Whenever the pool of compactors grows or shrinks, tenants and jobs are resharded across the available compactor instances without any manual intervention.
 
-Compactor sharding uses a [hash ring]({{< relref "../../hash-ring/index.md" >}}). At startup, a compactor generates random tokens and registers itself to the compactor hash ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and to compact blocks for each tenant whose hash matches the token ranges assigned to the instance itself within the hash ring.
+Compactor sharding uses a [hash ring]({{< relref "../../hash-ring" >}}). At startup, a compactor generates random tokens and registers itself to the compactor hash ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and to compact blocks for each tenant whose hash matches the token ranges assigned to the instance itself within the hash ring.
 
-To configure the compactors' hash ring, refer to [configuring hash rings]({{< relref "../../../../configure/configure-hash-rings.md" >}}).
+To configure the compactors' hash ring, refer to [configuring hash rings]({{< relref "../../../../configure/configure-hash-rings" >}}).
 
 ### Waiting for a stable hash ring at startup
 
@@ -122,7 +124,7 @@ The soft delete mechanism gives queriers, rulers, and store-gateways time to dis
 The compactor is responsible for enforcing the storage retention, deleting the blocks that contain samples that are older than the configured retention period from the long-term storage.
 The storage retention is disabled by default, and no data will be deleted from the long-term storage unless you explicitly configure the retention period.
 
-For more information, refer to [Configure metrics storage retention]({{< relref "../../../../configure/configure-metrics-storage-retention.md" >}}).
+For more information, refer to [Configure metrics storage retention]({{< relref "../../../../configure/configure-metrics-storage-retention" >}}).
 
 ## Compactor disk utilization
 
@@ -138,7 +140,7 @@ Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (the defa
 
 ## Compactor configuration
 
-Refer to the [compactor]({{< relref "../../../../references/configuration-parameters/index.md#compactor" >}})
-block section and the [limits]({{< relref "../../../../references/configuration-parameters/index.md#limits" >}}) block section for details of compaction-related configuration.
+Refer to the [compactor]({{< relref "../../../configuration-parameters#compactor" >}})
+block section and the [limits]({{< relref "../../../configuration-parameters#limits" >}}) block section for details of compaction-related configuration.
 
-The [alertmanager]({{< relref "../alertmanager.md" >}}) and [ruler]({{< relref "../ruler/index.md" >}}) components can also use object storage to store their configurations and rules uploaded by users. In that case a separate bucket should be created to store alertmanager configurations and rules: using the same bucket between ruler/alertmanager and blocks will cause issues with the compactor.
+The [alertmanager]({{< relref "../alertmanager" >}}) and [ruler]({{< relref "../ruler" >}}) components can also use object storage to store their configurations and rules uploaded by users. In that case a separate bucket should be created to store alertmanager configurations and rules: using the same bucket between ruler/alertmanager and blocks will cause issues with the compactor.

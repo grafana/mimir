@@ -1,7 +1,9 @@
 ---
-title: "Grafana Mimir query-tee"
-menuTitle: "Query-tee"
-description: "Use query-tee to compare query results and performance between two Grafana Mimir clusters."
+description:
+  Use query-tee to compare query results and performance between two Grafana
+  Mimir clusters.
+menuTitle: Query-tee
+title: Grafana Mimir query-tee
 weight: 30
 ---
 
@@ -137,7 +139,7 @@ cortex_querytee_responses_compared_total{route="<route>",result="<success|fail>"
 
 ### Ruler remote operational mode test
 
-When the ruler is configured with the [remote evaluation mode]({{< relref "../../references/architecture/components/ruler/index.md" >}}) you can use the query-tee to compare rule evaluations too.
+When the ruler is configured with the [remote evaluation mode]({{< relref "../../references/architecture/components/ruler" >}}) you can use the query-tee to compare rule evaluations too.
 To test ruler evaluations with query-tee, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler with query-tee's gRPC address:
 
 ```

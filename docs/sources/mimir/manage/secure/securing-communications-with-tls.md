@@ -143,8 +143,8 @@ Each of the components listed above support the following TLS configuration opti
 - `*.tls-enabled=<boolean>`: Enable TLS in the client.
 - `*.tls-server-name=<string>`: Override the expected name on the server certificate.
 - `*.tls-insecure-skip-verify=<boolean>`: Skip validating the server certificate.
-- `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. For the list of supported cipher suites, refer to [Grafana Mimir configuration parameters]({{< relref "../../references/configuration-parameters/index.md" >}}).
-- `*.tls-min-version=<string>`: Minimum TLS version required. For the list of supported versions, refer to [Grafana Mimir configuration parameters]({{< relref "../../references/configuration-parameters/index.md" >}}).
+- `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. For the list of supported cipher suites, refer to [Grafana Mimir configuration parameters]({{< relref "../../references/configuration-parameters" >}}).
+- `*.tls-min-version=<string>`: Minimum TLS version required. For the list of supported versions, refer to [Grafana Mimir configuration parameters]({{< relref "../../references/configuration-parameters" >}}).
 
 The following example shows how to configure the gRPC client flags in the querier used to connect to the query-frontend:
 

@@ -1,7 +1,7 @@
 ---
-title: "Grafana Mimir listblocks"
-menuTitle: "Listblocks"
-description: "Listblocks show the block details of a tenant."
+description: Listblocks show the block details of a tenant.
+menuTitle: Listblocks
+title: Grafana Mimir listblocks
 weight: 10
 ---
 

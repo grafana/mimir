@@ -1,9 +1,9 @@
 ---
 aliases:
   - ../../operators-guide/architecture/key-value-store/
-title: "Grafana Mimir key-value store"
-menuTitle: "Key-value store"
-description: "The key-value store is a database that stores data indexed by key."
+description: The key-value store is a database that stores data indexed by key.
+menuTitle: Key-value store
+title: Grafana Mimir key-value store
 weight: 70
 ---
 
@@ -13,7 +13,7 @@ A key-value (KV) store is a database that stores data indexed by key.
 Grafana Mimir requires a key-value store for the following features:
 
 - [Hash ring]({{< relref "./hash-ring" >}})
-- [(Optional) Distributor high-availability tracker]({{< relref "../../configure/configure-high-availability-deduplication.md" >}})
+- [(Optional) Distributor high-availability tracker]({{< relref "../../configure/configure-high-availability-deduplication" >}})
 
 ## Supported key-value store backends
 
@@ -30,20 +30,20 @@ The data is shared between the instances using peer-to-peer communication and no
 
 We recommend that you use memberlist to run Grafana Mimir.
 
-To configure memberlist, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings.md" >}}).
+To configure memberlist, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings" >}}).
 
-> **Note:** The Gossip-based memberlist protocol is not supported for the [optional distributor high-availability tracker]({{< relref "../../configure/configure-high-availability-deduplication.md" >}}).
+> **Note:** The Gossip-based memberlist protocol is not supported for the [optional distributor high-availability tracker]({{< relref "../../configure/configure-high-availability-deduplication" >}}).
 
 ### Consul
 
 Grafana Mimir supports [Consul](https://www.consul.io) as a backend KV store.
 If you want to use Consul, you must install it. The Grafana Mimir installation does not include Consul.
 
-To configure Consul, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings.md" >}}).
+To configure Consul, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings" >}}).
 
 ### Etcd
 
 Grafana Mimir supports [etcd](https://etcd.io) as a backend KV store.
 If you want to use etcd, you must install it. The Grafana Mimir installation does not include etcd.
 
-To configure etcd, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings.md" >}}).
+To configure etcd, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings" >}}).
