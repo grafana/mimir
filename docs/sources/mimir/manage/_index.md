@@ -2,8 +2,7 @@
 aliases:
   - ./operators-guide/
 description:
-  This guide contains information about deploying, configuring, and maintaining
-  Grafana Mimir.
+  Learn how to deploy, configure, and manage Grafana Mimir.
 keywords:
   - Grafana Mimir architecture
   - Mimir architecture
@@ -11,20 +10,20 @@ keywords:
   - query sharding
   - Mimir deployment
   - deploying Mimir
-menuTitle: Operator and user guide
-title: Grafana Mimir operator and user guide
+menuTitle: Manage
+title: Manage Grafana Mimir
 weight: 20
 ---
 
-# Grafana Mimir operator and user guide
+# Manage Grafana Mimir
 
-This guide describes the decisions Grafana Mimir operators and users make and the actions they perform to deploy, configure, and maintain Grafana Mimir.
+This section of the documentation is for you if you are:
 
-The intended audience for this guide includes:
+- an operator who are responsible for deploying and configuring Grafana Mimir.
+- a user who are responsible for viewing Grafana Mimir dashboards to troubleshoot production environment issues.
 
-- Operators who are responsible for deploying and configuring Grafana Mimir.
-- Users who are responsible for viewing Grafana Mimir dashboards to troubleshoot production environment issues.
+When deploying, configuring, and managing Grafana Mimir, as an operators or user, you need to make several decisions and take related action.
 
-This guide contains the following sections:
+The following subsections help you with those decisions and actions:
 
 {{< section menuTitle="true" >}}
