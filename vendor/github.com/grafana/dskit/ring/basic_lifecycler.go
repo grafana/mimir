@@ -87,10 +87,13 @@ type BasicLifecycler struct {
 
 	// Whether to keep the instance in the ring or to unregister it on shutdown
 	keepInstanceInTheRingOnShutdown *atomic.Bool
+
+	tokenGenerator TokenGenerator
 }
 
 // NewBasicLifecycler makes a new BasicLifecycler.
 func NewBasicLifecycler(cfg BasicLifecyclerConfig, ringName, ringKey string, store kv.Client, delegate BasicLifecyclerDelegate, logger log.Logger, reg prometheus.Registerer) (*BasicLifecycler, error) {
+	tokenGenerator := newRandomTokenGenerator()
 	l := &BasicLifecycler{
 		cfg:                             cfg,
 		ringName:                        ringName,
@@ -101,6 +104,7 @@ func NewBasicLifecycler(cfg BasicLifecyclerConfig, ringName, ringKey string, sto
 		metrics:                         NewBasicLifecyclerMetrics(ringName, reg),
 		actorChan:                       make(chan func()),
 		keepInstanceInTheRingOnShutdown: atomic.NewBool(cfg.KeepInstanceInTheRingOnShutdown),
+		tokenGenerator:                  tokenGenerator,
 	}
 
 	l.metrics.tokensToOwn.Set(float64(cfg.NumTokens))
@@ -141,6 +145,10 @@ func (l *BasicLifecycler) GetTokens() Tokens {
 	}
 
 	return l.currInstanceDesc.GetTokens()
+}
+
+func (l *BasicLifecycler) GetTokenGenerator() TokenGenerator {
+	return l.tokenGenerator
 }
 
 // GetRegisteredAt returns the timestamp when the instance has been registered to the ring
@@ -365,7 +373,7 @@ func (l *BasicLifecycler) verifyTokens(ctx context.Context) bool {
 		needTokens := l.cfg.NumTokens - len(actualTokens)
 
 		level.Info(l.logger).Log("msg", "generating new tokens", "count", needTokens, "ring", l.ringName)
-		newTokens := GenerateTokens(needTokens, takenTokens)
+		newTokens := l.tokenGenerator.GenerateTokens(needTokens, takenTokens)
 
 		actualTokens = append(actualTokens, newTokens...)
 		sort.Sort(actualTokens)

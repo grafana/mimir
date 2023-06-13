@@ -139,6 +139,8 @@ type Lifecycler struct {
 	instancesInZoneCount  int
 	zonesCount            int
 
+	tokenGenerator TokenGenerator
+
 	lifecyclerMetrics *LifecyclerMetrics
 	logger            log.Logger
 }
@@ -168,6 +170,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		flushTransferer = NewNoopFlushTransferer()
 	}
 
+	tokenGenerator := newRandomTokenGenerator()
 	l := &Lifecycler{
 		cfg:                   cfg,
 		flushTransferer:       flushTransferer,
@@ -182,6 +185,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		Zone:                  cfg.Zone,
 		actorChan:             make(chan func()),
 		state:                 PENDING,
+		tokenGenerator:        tokenGenerator,
 		lifecyclerMetrics:     NewLifecyclerMetrics(ringName, reg),
 		logger:                logger,
 	}
@@ -629,7 +633,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				// We need more tokens
 				level.Info(i.logger).Log("msg", "existing instance has too few tokens, adding difference",
 					"current_tokens", len(tokens), "desired_tokens", i.cfg.NumTokens)
-				newTokens := GenerateTokens(delta, ringDesc.GetTokens())
+				newTokens := i.tokenGenerator.GenerateTokens(delta, ringDesc.GetTokens())
 				tokens = append(tokens, newTokens...)
 				sort.Sort(tokens)
 			} else if delta < 0 {
@@ -697,7 +701,7 @@ func (i *Lifecycler) verifyTokens(ctx context.Context) bool {
 			needTokens := i.cfg.NumTokens - len(ringTokens)
 
 			level.Info(i.logger).Log("msg", "generating new tokens", "count", needTokens, "ring", i.RingName)
-			newTokens := GenerateTokens(needTokens, takenTokens)
+			newTokens := i.tokenGenerator.GenerateTokens(needTokens, takenTokens)
 
 			ringTokens = append(ringTokens, newTokens...)
 			sort.Sort(ringTokens)
@@ -757,7 +761,7 @@ func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) er
 			level.Error(i.logger).Log("msg", "tokens already exist for this instance - wasn't expecting any!", "num_tokens", len(myTokens), "ring", i.RingName)
 		}
 
-		newTokens := GenerateTokens(i.cfg.NumTokens-len(myTokens), takenTokens)
+		newTokens := i.tokenGenerator.GenerateTokens(i.cfg.NumTokens-len(myTokens), takenTokens)
 		i.setState(targetState)
 
 		myTokens = append(myTokens, newTokens...)
