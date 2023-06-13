@@ -16,7 +16,11 @@ jobs:
     - uses: actions/checkout@v3
     - uses: actions/setup-go@v4
       with:
+<<<<<<< Updated upstream
         go-version: '1.20.5'
+=======
+        go-version: ${{ steps.go-version.outputs.go-version }}
+>>>>>>> Stashed changes
     - uses: helm/kind-action@v1.7.0
     - name: Download yq
       uses: dsaltares/fetch-gh-release-asset@a40c8b4a0471f9ab81bdf73a010f74cc51476ad4
