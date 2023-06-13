@@ -202,7 +202,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
-	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc) (ingesterQueryResult, error) {
+	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cleanup context.CancelFunc) (ingesterQueryResult, error) {
 		client, err := d.ingesterPool.GetClientFor(ing.Addr)
 		if err != nil {
 			return ingesterQueryResult{}, err
@@ -219,6 +219,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				if err := stream.CloseSend(); err != nil {
 					level.Warn(d.log).Log("msg", "closing ingester client stream failed", "err", err)
 				}
+
+				cleanup()
 			}
 		}()
 
@@ -287,7 +289,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := ingester_client.NewSeriesChunksStreamReader(stream, streamingSeriesCount, queryLimiter, d.log)
+					streamReader := ingester_client.NewSeriesChunksStreamReader(stream, streamingSeriesCount, queryLimiter, cleanup, d.log)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}
@@ -303,7 +305,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
-	results, err := ring.DoUntilQuorum(ctx, replicationSet, d.cfg.MinimizeIngesterRequests, queryIngester, cleanup)
+	results, err := ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, d.cfg.MinimizeIngesterRequests, queryIngester, cleanup)
 	if err != nil {
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}
