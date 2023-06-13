@@ -70,7 +70,7 @@ func (s *SeriesChunksStreamReader) Close() {
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
 // To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's storegatewaypb.StoreGateway_SeriesClient.
 func (s *SeriesChunksStreamReader) StartBuffering() {
-	s.seriesCunksChan = make(chan *storepb.StreamSeriesChunksBatch, 1)
+	s.seriesCunksChan = make(chan *storepb.StreamSeriesChunksBatch, 10)
 
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
