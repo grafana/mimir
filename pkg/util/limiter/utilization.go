@@ -23,7 +23,7 @@ const (
 	// Interval for updating resource (CPU/memory) utilization
 	resourceUtilizationUpdateInterval = time.Second
 
-	memPathV2 = "/sys/fs/cgroup/memory.current"
+	memPathV2 = "/sys/fs/cgroup/memory.stat"
 	cpuPathV2 = "/sys/fs/cgroup/cpu.stat"
 	memPathV1 = "/sys/fs/cgroup/memory/memory.stat"
 	cpuPathV1 = "/sys/fs/cgroup/cpu/cpuacct.usage"
@@ -51,8 +51,28 @@ func (s cgroupV2Scanner) Scan() (float64, uint64, error) {
 	}
 	defer memR.Close()
 	var memUtil uint64
-	if _, err := fmt.Fscanf(memR, "%d", &memUtil); err != nil {
-		return 0, 0, errors.Wrapf(err, "failed scanning %s", memPathV2)
+	found := false
+	for {
+		var name string
+		var val uint64
+		if _, err := fmt.Fscanf(memR, "%s %d\n", &name, &val); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+
+			return 0, 0, errors.Wrapf(err, "failed scanning %s", memPathV2)
+		}
+
+		// TODO: Find out if there are more memory types that should be included
+		// The "rss" field for cgroup v1 equates anonymous and swap cache memory ("includes transparent hugepages")
+		if name == "anon" {
+			memUtil += val
+			found = true
+			break
+		}
+	}
+	if !found {
+		return 0, 0, fmt.Errorf("failed scanning %s", memPathV2)
 	}
 
 	// For reference, see https://git.kernel.org/pub/scm/linux/kernel/git/tj/cgroup.git/tree/Documentation/admin-guide/cgroup-v2.rst
@@ -108,10 +128,10 @@ func (s cgroupV1Scanner) Scan() (float64, uint64, error) {
 		return 0, 0, err
 	}
 	defer memR.Close()
-	// Summing RSS and cache for memory usage
+	// Using RSS for memory usage
 	// For reference, see section 5.5 in https://www.kernel.org/doc/Documentation/cgroup-v1/memory.txt
 	var memUtil uint64
-	var numMemStats int
+	found := false
 	for {
 		var name string
 		var val uint64
@@ -123,15 +143,13 @@ func (s cgroupV1Scanner) Scan() (float64, uint64, error) {
 			return 0, 0, errors.Wrapf(err, "failed scanning %s", memPathV1)
 		}
 
-		if name == "rss" || name == "cache" {
+		if name == "rss" {
 			memUtil += val
-			numMemStats++
-			if numMemStats == 2 {
-				break
-			}
+			found = true
+			break
 		}
 	}
-	if numMemStats != 2 {
+	if !found {
 		return 0, 0, fmt.Errorf("failed scanning %s", memPathV1)
 	}
 
