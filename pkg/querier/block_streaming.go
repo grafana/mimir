@@ -43,7 +43,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 
 	// Chunks may come in multiple responses, but as soon as the response has chunks for a new series,
 	// we can stop searching. Series are sorted. See documentation for StoreClient.Series call for details.
-	// The actualy merging of chunks happens in the Iterator() call where chunks are fetched.
+	// The actually merging of chunks happens in the Iterator() call where chunks are fetched.
 	for bqss.next < len(bqss.series) && labels.Compare(currLabels, mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.next].Labels)) == 0 {
 		bqss.next++
 	}
