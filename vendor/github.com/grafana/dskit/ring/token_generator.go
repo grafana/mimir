@@ -12,15 +12,15 @@ type TokenGenerator interface {
 	GenerateTokens(tokensCount int, takenTokens []uint32) Tokens
 }
 
-type randomTokenGenerator struct{}
+type RandomTokenGenerator struct{}
 
-func newRandomTokenGenerator() *randomTokenGenerator {
-	return &randomTokenGenerator{}
+func NewRandomTokenGenerator() *RandomTokenGenerator {
+	return &RandomTokenGenerator{}
 }
 
 // GenerateTokens generates unique tokensCount random tokens, none of which clash
 // with takenTokens. Generated tokens are sorted.
-func (t *randomTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
+func (t *RandomTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
 	if tokensCount <= 0 {
 		return []uint32{}
 	}

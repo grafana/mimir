@@ -93,7 +93,7 @@ type BasicLifecycler struct {
 
 // NewBasicLifecycler makes a new BasicLifecycler.
 func NewBasicLifecycler(cfg BasicLifecyclerConfig, ringName, ringKey string, store kv.Client, delegate BasicLifecyclerDelegate, logger log.Logger, reg prometheus.Registerer) (*BasicLifecycler, error) {
-	tokenGenerator := newRandomTokenGenerator()
+	tokenGenerator := NewRandomTokenGenerator()
 	l := &BasicLifecycler{
 		cfg:                             cfg,
 		ringName:                        ringName,

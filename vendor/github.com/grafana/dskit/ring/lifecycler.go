@@ -170,7 +170,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		flushTransferer = NewNoopFlushTransferer()
 	}
 
-	tokenGenerator := newRandomTokenGenerator()
+	tokenGenerator := NewRandomTokenGenerator()
 	l := &Lifecycler{
 		cfg:                   cfg,
 		flushTransferer:       flushTransferer,
