@@ -625,7 +625,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	var reusePendingMatchers [][]*labels.Matcher
 	if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
 		// The streaming feature is enabled where we stream the series labels first, followed
-		// by the chunks later. Fetch only the labels here.
+		// by the chunks later. Send only the labels here.
 		req.SkipChunks = true
 
 		reusePostings = make([][]storage.SeriesRef, len(blocks))
@@ -636,72 +636,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return err
 		}
 
-		// TODO: should we pool the seriesBuffer/seriesBatch?
-		seriesBuffer := make([]*storepb.StreamingSeries, req.StreamingChunksBatchSize)
-		for i := range seriesBuffer {
-			seriesBuffer[i] = &storepb.StreamingSeries{}
-		}
-		seriesBatch := &storepb.StreamSeriesBatch{
-			Series: seriesBuffer[:0],
-		}
-		// TODO: can we send this in parallel while we start fetching the chunks below?
-		for seriesSet.Next() {
-			var lset labels.Labels
-			// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
-			// because the subsequent call to seriesSet.Next() may release it.
-			// TODO: check if it is safe to hold the lset.
-			lset, _ = seriesSet.At()
-
-			// We are re-using the slice for every batch this way.
-			seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
-			seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
-
-			// TODO: Add relevant trace spans and timers.
-
-			if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
-				msg := &grpc.PreparedMsg{}
-				if err = msg.Encode(srv, storepb.NewStreamSeriesResponse(seriesBatch)); err != nil {
-					return status.Error(codes.Internal, errors.Wrap(err, "encode streaming series response").Error())
-				}
-
-				// Send the message.
-				if err = srv.SendMsg(msg); err != nil {
-					return status.Error(codes.Unknown, errors.Wrap(err, "send streaming series response").Error())
-				}
-
-				seriesBatch.Series = seriesBatch.Series[:0]
-			}
-		}
-
-		// We need to send hints and stats before sending the chunks.
-		// Also, these need to be sent before we send IsEndOfSeriesStream=true.
-		var anyHints *types.Any
-		if anyHints, err = types.MarshalAny(resHints); err != nil {
-			return status.Error(codes.Unknown, errors.Wrap(err, "marshal series response hints").Error())
-		}
-
-		if err := srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
-			return status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
-		}
-
-		unsafeStats := stats.export()
-		if err := srv.Send(storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum + unsafeStats.seriesProcessedSizeSum)); err != nil {
-			return status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
-		}
-
-		// Send any remaining series and signal that there are no more series.
-		msg := &grpc.PreparedMsg{}
-		seriesBatch.IsEndOfSeriesStream = true
-		if err = msg.Encode(srv, storepb.NewStreamSeriesResponse(seriesBatch)); err != nil {
-			return status.Error(codes.Internal, errors.Wrap(err, "encode streaming series response").Error())
-		}
-		// Send the message.
-		if err = srv.SendMsg(msg); err != nil {
-			return status.Error(codes.Unknown, errors.Wrap(err, "send streaming series response").Error())
-		}
-
-		if seriesSet.Err() != nil {
-			return errors.Wrap(seriesSet.Err(), "expand series set")
+		// This also sends the hints and the stats.
+		err = s.sendStreamingSeriesLabelsHintsStats(req, srv, stats, seriesSet, resHints)
+		if err != nil {
+			return err
 		}
 
 		req.SkipChunks = false
@@ -717,89 +655,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	// Merge the sub-results from each selected block.
 	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
-		var (
-			iterationBegin = time.Now()
-			encodeDuration = time.Duration(0)
-			sendDuration   = time.Duration(0)
-			seriesCount    int
-			chunksCount    int
-		)
-
-		// Once the iteration is done we will update the stats.
-		defer stats.update(func(stats *queryStats) {
-			stats.mergedSeriesCount += seriesCount
-			stats.mergedChunksCount += chunksCount
-
-			// The time spent iterating over the series set is the
-			// actual time spent fetching series and chunks, encoding and sending them to the client.
-			// We split the timings to have a better view over how time is spent.
-			stats.streamingSeriesFetchSeriesAndChunksDuration += stats.streamingSeriesWaitBatchLoadedDuration
-			stats.streamingSeriesEncodeResponseDuration += encodeDuration
-			stats.streamingSeriesSendResponseDuration += sendDuration
-			stats.streamingSeriesOtherDuration += time.Duration(util_math.Max(0, int64(time.Since(iterationBegin)-
-				stats.streamingSeriesFetchSeriesAndChunksDuration-encodeDuration-sendDuration)))
-		})
-
-		for seriesSet.Next() {
-			// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
-			// because the subsequent call to seriesSet.Next() may release it.
-			lset, chks := seriesSet.At()
-			seriesCount++
-			msg := &grpc.PreparedMsg{}
-			if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
-				// We only need to stream chunks here because the series labels have already
-				// been sent above.
-				// TODO: is the 'is end of stream' parameter required here?
-				streamingChunks := storepb.StreamSeriesChunks{
-					SeriesIndex: uint64(seriesCount - 1),
-					Chunks:      chks,
-				}
-
-				// Encode the message. We encode it ourselves into a PreparedMsg in order to measure
-				// the time it takes.
-				encodeBegin := time.Now()
-				if err = msg.Encode(srv, storepb.NewStreamSeriesChunksResponse(&streamingChunks)); err != nil {
-					err = status.Error(codes.Internal, errors.Wrap(err, "encode streaming chunks response").Error())
-					return
-				}
-				encodeDuration += time.Since(encodeBegin)
-			} else {
-				var series storepb.Series
-				if !req.SkipChunks {
-					series.Chunks = chks
-				}
-				series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
-
-				// Encode the message. We encode it ourselves into a PreparedMsg in order to measure
-				// the time it takes.
-				encodeBegin := time.Now()
-				if err = msg.Encode(srv, storepb.NewSeriesResponse(&series)); err != nil {
-					err = status.Error(codes.Internal, errors.Wrap(err, "encode series response").Error())
-					return
-				}
-				encodeDuration += time.Since(encodeBegin)
-			}
-
-			if !req.SkipChunks {
-				chunksCount += len(chks)
-				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chks)))
-			}
-
-			// Send the message.
-			sendBegin := time.Now()
-			if err = srv.SendMsg(msg); err != nil {
-				// TODO: set the right error wrapper message.
-				err = status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
-				return
-			}
-			sendDuration += time.Since(sendBegin)
-		}
-		if seriesSet.Err() != nil {
-			err = errors.Wrap(seriesSet.Err(), "expand series set")
+		err = s.sendSeriesChunks(req, srv, seriesSet, stats)
+		if err != nil {
 			return
 		}
-
-		err = nil
 	})
 
 	if err != nil {
@@ -808,25 +667,190 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	if req.StreamingChunksBatchSize == 0 || req.SkipChunks {
 		// Hints and stats were not sent before, so send it now.
-		var anyHints *types.Any
-		if anyHints, err = types.MarshalAny(resHints); err != nil {
-			err = status.Error(codes.Unknown, errors.Wrap(err, "marshal series response hints").Error())
-			return
-		}
-
-		if err = srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
-			err = status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
-			return
-		}
-
-		unsafeStats := stats.export()
-		if err = srv.Send(storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum + unsafeStats.seriesProcessedSizeSum)); err != nil {
-			err = status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
-			return
-		}
+		return s.sendHintsAndStats(srv, resHints, stats)
 	}
 
-	return err
+	return nil
+}
+
+// sendStreamingSeriesLabelsHintsStats sends the labels of the streaming series.
+// Since hints and stats need to be sent before the "end of stream" streaming series message,
+// this function also sends the hints and the stats.
+func (s *BucketStore) sendStreamingSeriesLabelsHintsStats(
+	req *storepb.SeriesRequest,
+	srv storepb.Store_SeriesServer,
+	stats *safeQueryStats,
+	seriesSet storepb.SeriesSet,
+	resHints *hintspb.SeriesResponseHints,
+) error {
+	// TODO: should we pool the seriesBuffer/seriesBatch?
+	seriesBuffer := make([]*storepb.StreamingSeries, req.StreamingChunksBatchSize)
+	for i := range seriesBuffer {
+		seriesBuffer[i] = &storepb.StreamingSeries{}
+	}
+	seriesBatch := &storepb.StreamSeriesBatch{
+		Series: seriesBuffer[:0],
+	}
+	// TODO: can we send this in parallel while we start fetching the chunks below?
+	for seriesSet.Next() {
+		var lset labels.Labels
+		// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
+		// because the subsequent call to seriesSet.Next() may release it.
+		// TODO: check if it is safe to hold the lset.
+		lset, _ = seriesSet.At()
+
+		// We are re-using the slice for every batch this way.
+		seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
+		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
+
+		// TODO: Add relevant trace spans and timers.
+
+		if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
+			msg := &grpc.PreparedMsg{}
+			if err := msg.Encode(srv, storepb.NewStreamSeriesResponse(seriesBatch)); err != nil {
+				return status.Error(codes.Internal, errors.Wrap(err, "encode streaming series response").Error())
+			}
+
+			// Send the message.
+			if err := srv.SendMsg(msg); err != nil {
+				return status.Error(codes.Unknown, errors.Wrap(err, "send streaming series response").Error())
+			}
+
+			seriesBatch.Series = seriesBatch.Series[:0]
+		}
+	}
+	if seriesSet.Err() != nil {
+		return errors.Wrap(seriesSet.Err(), "expand series set")
+	}
+
+	// We need to send hints and stats before sending the chunks.
+	// Also, these need to be sent before we send IsEndOfSeriesStream=true.
+	if err := s.sendHintsAndStats(srv, resHints, stats); err != nil {
+		return err
+	}
+
+	// Send any remaining series and signal that there are no more series.
+	msg := &grpc.PreparedMsg{}
+	seriesBatch.IsEndOfSeriesStream = true
+	if err := msg.Encode(srv, storepb.NewStreamSeriesResponse(seriesBatch)); err != nil {
+		return status.Error(codes.Internal, errors.Wrap(err, "encode streaming series response").Error())
+	}
+	// Send the message.
+	if err := srv.SendMsg(msg); err != nil {
+		return status.Error(codes.Unknown, errors.Wrap(err, "send streaming series response").Error())
+	}
+
+	if seriesSet.Err() != nil {
+		return errors.Wrap(seriesSet.Err(), "expand series set")
+	}
+
+	return nil
+}
+
+func (s *BucketStore) sendSeriesChunks(
+	req *storepb.SeriesRequest,
+	srv storepb.Store_SeriesServer,
+	seriesSet storepb.SeriesSet,
+	stats *safeQueryStats,
+) (err error) {
+	var (
+		iterationBegin = time.Now()
+		encodeDuration = time.Duration(0)
+		sendDuration   = time.Duration(0)
+		seriesCount    int
+		chunksCount    int
+	)
+
+	// Once the iteration is done we will update the stats.
+	defer stats.update(func(stats *queryStats) {
+		stats.mergedSeriesCount += seriesCount
+		stats.mergedChunksCount += chunksCount
+
+		// The time spent iterating over the series set is the
+		// actual time spent fetching series and chunks, encoding and sending them to the client.
+		// We split the timings to have a better view over how time is spent.
+		stats.streamingSeriesFetchSeriesAndChunksDuration += stats.streamingSeriesWaitBatchLoadedDuration
+		stats.streamingSeriesEncodeResponseDuration += encodeDuration
+		stats.streamingSeriesSendResponseDuration += sendDuration
+		stats.streamingSeriesOtherDuration += time.Duration(util_math.Max(0, int64(time.Since(iterationBegin)-
+			stats.streamingSeriesFetchSeriesAndChunksDuration-encodeDuration-sendDuration)))
+	})
+
+	for seriesSet.Next() {
+		// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
+		// because the subsequent call to seriesSet.Next() may release it.
+		lset, chks := seriesSet.At()
+		seriesCount++
+		msg := &grpc.PreparedMsg{}
+		if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
+			// We only need to stream chunks here because the series labels have already
+			// been sent above.
+			// TODO: is the 'is end of stream' parameter required here?
+			streamingChunks := storepb.StreamSeriesChunks{
+				SeriesIndex: uint64(seriesCount - 1),
+				Chunks:      chks,
+			}
+
+			// Encode the message. We encode it ourselves into a PreparedMsg in order to measure
+			// the time it takes.
+			encodeBegin := time.Now()
+			if err := msg.Encode(srv, storepb.NewStreamSeriesChunksResponse(&streamingChunks)); err != nil {
+				return status.Error(codes.Internal, errors.Wrap(err, "encode streaming chunks response").Error())
+			}
+			encodeDuration += time.Since(encodeBegin)
+		} else {
+			var series storepb.Series
+			if !req.SkipChunks {
+				series.Chunks = chks
+			}
+			series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
+
+			// Encode the message. We encode it ourselves into a PreparedMsg in order to measure
+			// the time it takes.
+			encodeBegin := time.Now()
+			if err := msg.Encode(srv, storepb.NewSeriesResponse(&series)); err != nil {
+				return status.Error(codes.Internal, errors.Wrap(err, "encode series response").Error())
+			}
+			encodeDuration += time.Since(encodeBegin)
+		}
+
+		if !req.SkipChunks {
+			chunksCount += len(chks)
+			s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chks)))
+		}
+
+		// Send the message.
+		sendBegin := time.Now()
+		if err := srv.SendMsg(msg); err != nil {
+			// TODO: set the right error wrapper message.
+			return status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
+		}
+		sendDuration += time.Since(sendBegin)
+	}
+	if seriesSet.Err() != nil {
+		return errors.Wrap(seriesSet.Err(), "expand series set")
+	}
+
+	return nil
+}
+
+func (s *BucketStore) sendHintsAndStats(srv storepb.Store_SeriesServer, resHints *hintspb.SeriesResponseHints, stats *safeQueryStats) error {
+	var anyHints *types.Any
+	var err error
+	if anyHints, err = types.MarshalAny(resHints); err != nil {
+		return status.Error(codes.Unknown, errors.Wrap(err, "marshal series response hints").Error())
+	}
+
+	if err := srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
+		return status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
+	}
+
+	unsafeStats := stats.export()
+	if err := srv.Send(storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum + unsafeStats.seriesProcessedSizeSum)); err != nil {
+		return status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
+	}
+
+	return nil
 }
 
 func chunksSize(chks []storepb.AggrChunk) (size int) {
