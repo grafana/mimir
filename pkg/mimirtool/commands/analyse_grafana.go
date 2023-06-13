@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ type GrafanaAnalyzeCommand struct {
 	apiKey      string
 	readTimeout time.Duration
 	folders     folderTitles
+	folderIDs   folderIDs
 
 	outputFile    string
 	datasourceUID string
@@ -49,6 +51,21 @@ func (f folderTitles) IsCumulative() bool {
 	return true
 }
 
+type folderIDs []string
+
+func (f *folderIDs) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
+func (f folderIDs) String() string {
+	return strings.Join(f, ",")
+}
+
+func (f folderIDs) IsCumulative() bool {
+	return true
+}
+
 func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
@@ -61,11 +78,20 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	params := []sdk.SearchParam{
+	var params []sdk.SearchParam
+	if len(cmd.folderIDs) > 0 {
+		for _, folderIdStr := range cmd.folderIDs {
+			if folderIdInt, err := strconv.Atoi(folderIdStr); err == nil {
+				params = append(params, sdk.SearchFolderID(folderIdInt))
+			}
+		}
+	}
+	params = append(params,
 		sdk.SearchType(sdk.SearchTypeDashboard),
 		sdk.SearchQuery(""),
 		sdk.SearchStarred(false),
-	}
+	)
+
 	boardLinks, err := c.Search(ctx, params...)
 	if err != nil {
 		return err
