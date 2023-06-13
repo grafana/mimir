@@ -111,7 +111,7 @@ message SeriesResponse {
 
     StreamSeriesBatch streaming_series = 5;
 
-    StreamSeriesChunks streaming_series_chunks = 6;
+    StreamSeriesChunksBatch streaming_series_chunks = 6;
   }
 }
 

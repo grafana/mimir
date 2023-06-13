@@ -98,7 +98,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		conn               *grpc.ClientConn
 		stream             storepb.Store_SeriesClient
 		res                *storepb.SeriesResponse
-		streamingSeriesSet []*storepb.StreamSeriesBatch
+		streamingSeriesSet []*storepb.StreamingSeries
 	)
 
 	// Create a gRPC connection to the server.
@@ -191,7 +191,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 				return
 			}
 
-			streamingSeriesSet = append(streamingSeriesSet, copiedSeries)
+			streamingSeriesSet = append(streamingSeriesSet, copiedSeries.Series...)
 
 			if recvSeries.IsEndOfSeriesStream {
 				break
@@ -202,17 +202,17 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 	if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
 		// Get the streaming chunks.
 		idx := -1
-		for _, batch := range streamingSeriesSet {
-			for _, s := range batch.Series {
-				idx++
-				// We don't expect EOF errors here.
-				res, err = stream.Recv()
-				if err != nil {
-					return
-				}
+		for idx < len(streamingSeriesSet)-1 {
+			// We don't expect EOF errors here.
+			res, err = stream.Recv()
+			if err != nil {
+				return
+			}
 
-				chks := res.GetStreamingSeriesChunks()
-				if chks == nil {
+			chksBatch := res.GetStreamingSeriesChunks()
+			for _, chks := range chksBatch.Chunks {
+				idx++
+				if chksBatch == nil {
 					err = errors.Errorf("expected streaming chunks, got something else")
 					return
 				}
@@ -237,7 +237,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 				}
 
 				seriesSet = append(seriesSet, &storepb.Series{
-					Labels: s.Labels,
+					Labels: streamingSeriesSet[idx].Labels,
 					Chunks: copiedChunks.Chunks,
 				})
 			}

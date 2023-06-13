@@ -41,7 +41,8 @@ type SeriesChunksStreamReader struct {
 	stats               *stats.Stats
 	log                 log.Logger
 
-	seriesCunksChan chan *storepb.StreamSeriesChunks
+	seriesCunksChan chan *storepb.StreamSeriesChunksBatch
+	chunksBatch     []*storepb.StreamSeriesChunks
 	errorChan       chan error
 }
 
@@ -69,7 +70,7 @@ func (s *SeriesChunksStreamReader) Close() {
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
 // To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's storegatewaypb.StoreGateway_SeriesClient.
 func (s *SeriesChunksStreamReader) StartBuffering() {
-	s.seriesCunksChan = make(chan *storepb.StreamSeriesChunks, 30) // TODO: increase or reduce the channel size.
+	s.seriesCunksChan = make(chan *storepb.StreamSeriesChunksBatch, 1)
 
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
@@ -151,22 +152,33 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
 func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, error) {
-	chks, haveChunks := <-s.seriesCunksChan
+	if len(s.chunksBatch) == 0 {
+		chks, haveChunks := <-s.seriesCunksChan
 
-	if !haveChunks {
-		// If there's an error, report it.
-		select {
-		case err, haveError := <-s.errorChan:
-			if haveError {
-				if _, ok := err.(validation.LimitError); ok {
-					return nil, err
+		if !haveChunks {
+			// If there's an error, report it.
+			select {
+			case err, haveError := <-s.errorChan:
+				if haveError {
+					if _, ok := err.(validation.LimitError); ok {
+						return nil, err
+					}
+					return nil, errors.Wrapf(err, "attempted to read series at index %v from stream, but the stream has failed", seriesIndex)
 				}
-				return nil, errors.Wrapf(err, "attempted to read series at index %v from stream, but the stream has failed", seriesIndex)
+			default:
 			}
-		default:
+
+			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
 		}
 
-		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
+		s.chunksBatch = chks.Chunks
+	}
+
+	chks := s.chunksBatch[0]
+	if len(s.chunksBatch) > 1 {
+		s.chunksBatch = s.chunksBatch[1:]
+	} else {
+		s.chunksBatch = nil
 	}
 
 	if chks.SeriesIndex != seriesIndex {

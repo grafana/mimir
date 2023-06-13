@@ -47,7 +47,7 @@ func NewStreamSeriesResponse(series *StreamSeriesBatch) *SeriesResponse {
 	}
 }
 
-func NewStreamSeriesChunksResponse(series *StreamSeriesChunks) *SeriesResponse {
+func NewStreamSeriesChunksResponse(series *StreamSeriesChunksBatch) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_StreamingSeriesChunks{
 			StreamingSeriesChunks: series,

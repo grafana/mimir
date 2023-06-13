@@ -51,6 +51,11 @@ message StreamSeriesChunks {
   repeated AggrChunk chunks = 2 [(gogoproto.nullable) = false];
 }
 
+message StreamSeriesChunksBatch {
+  repeated StreamSeriesChunks chunks = 1;
+}
+
+
 message AggrChunk {
   int64 min_time = 1;
   int64 max_time = 2;
