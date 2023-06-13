@@ -774,20 +774,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					}
 				}
 
-				if ss := resp.GetStreamingSeries(); ss != nil {
-					for _, s := range ss.Series {
-						// Add series fingerprint to query limiter; will return error if we are over the limit
-						limitErr := queryLimiter.AddSeries(s.Labels)
-						if limitErr != nil {
-							return validation.LimitError(limitErr.Error())
-						}
-					}
-					myStreamingSeries = append(myStreamingSeries, ss.Series...)
-					if ss.IsEndOfSeriesStream {
-						break
-					}
-				}
-
 				if w := resp.GetWarning(); w != "" {
 					myWarnings = append(myWarnings, errors.New(w))
 				}
@@ -808,6 +794,21 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 				if s := resp.GetStats(); s != nil {
 					indexBytesFetched += s.FetchedIndexBytes
+				}
+
+				if ss := resp.GetStreamingSeries(); ss != nil {
+					for _, s := range ss.Series {
+						// Add series fingerprint to query limiter; will return error if we are over the limit
+						limitErr := queryLimiter.AddSeries(s.Labels)
+						if limitErr != nil {
+							return validation.LimitError(limitErr.Error())
+						}
+					}
+					myStreamingSeries = append(myStreamingSeries, ss.Series...)
+					if ss.IsEndOfSeriesStream {
+						// We expect "end of stream" to be sent after the hints and the stats have been sent.
+						break
+					}
 				}
 			}
 

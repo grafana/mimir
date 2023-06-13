@@ -88,6 +88,7 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 		if shiftedBlocks {
 			// This shifts the 2nd block ahead by 2hrs. This way the first and the
 			// last blocks created have no overlapping blocks.
+			// This is used to test some case with streaming series.
 			mint = maxt
 			maxt = timestamp.FromTime(now.Add(2 * time.Hour))
 			maxTime = maxt

@@ -618,6 +618,9 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		readers = newChunkReaders(chunkReaders)
 	}
 
+	// If we are streaming the series labels and chunks separately, we don't need to fetch the postings
+	// twice. So we use these slices to re-use it.
+	// Each reusePostings[i] and reusePendingMatchers[i] corresponds to a single block.
 	var reusePostings [][]storage.SeriesRef
 	var reusePendingMatchers [][]*labels.Matcher
 	if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
@@ -628,7 +631,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		reusePostings = make([][]storage.SeriesRef, len(blocks))
 		reusePendingMatchers = make([][]*labels.Matcher, len(blocks))
 
-		// TODO: what to do with hints here?
 		seriesSet, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, nil, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
 		if err != nil {
 			return err
@@ -845,8 +847,8 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
-	reusePostings [][]storage.SeriesRef,
-	reusePendingMatchers [][]*labels.Matcher,
+	reusePostings [][]storage.SeriesRef, // Used if not empty.
+	reusePendingMatchers [][]*labels.Matcher, // Used if not empty.
 ) (storepb.SeriesSet, *hintspb.SeriesResponseHints, error) {
 	var (
 		resHints = &hintspb.SeriesResponseHints{}

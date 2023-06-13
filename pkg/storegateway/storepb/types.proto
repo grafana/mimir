@@ -47,7 +47,7 @@ message StreamSeriesBatch {
 }
 
 message StreamSeriesChunks {
-  uint64 series_index = 1; // Index into list of all series previously sent with QueryStreamSeries messages by this ingester during this query response.
+  uint64 series_index = 1; // Index into list of all series previously sent with SeriesResponse messages by this storegateway during this query response.
   repeated AggrChunk chunks = 2 [(gogoproto.nullable) = false];
 }
 

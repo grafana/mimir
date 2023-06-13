@@ -747,7 +747,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	chunkRangesPerSeries int,
 	stats *safeQueryStats,
-	ps []storage.SeriesRef, // If this is not empty, these posting are used as it as without fetching new ones.
+	ps []storage.SeriesRef, // If this is not empty, these posting are used as it is without fetching new ones.
 	pendingMatchers []*labels.Matcher, // This is used in conjunction with 'ps'.
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, []storage.SeriesRef, []*labels.Matcher, error) {

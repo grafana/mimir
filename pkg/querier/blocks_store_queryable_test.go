@@ -894,6 +894,7 @@ func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*st
 
 	seriesResponses = append(seriesResponses[:0], series...)
 	seriesResponses = append(seriesResponses, others...)
+	// End of stream response goes after the hints and stats.
 	seriesResponses = append(seriesResponses, mockStreamingSeriesBatchResponse(true))
 	seriesResponses = append(seriesResponses, chunks...)
 	return seriesResponses
@@ -1976,7 +1977,7 @@ type storeGatewayClientMock struct {
 
 func (m *storeGatewayClientMock) Series(context.Context, *storepb.SeriesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
 	seriesClient := &storeGatewaySeriesClientMock{
-		ClientStream:    grpcClientStreamMock{},
+		ClientStream:    grpcClientStreamMock{}, // Required to not panic.
 		mockedResponses: m.mockedSeriesResponses,
 	}
 
