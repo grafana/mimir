@@ -274,7 +274,7 @@ jobs:
           path: ./images.tar
 
   integration:
-    needs: build
+    needs: [prepare, build] 
     runs-on: ubuntu-latest
     strategy:
       # Do not abort other groups when one fails.
@@ -284,10 +284,16 @@ jobs:
         test_group_id:    [0, 1, 2, 3, 4, 5]
         test_group_total: [6]
     steps:
+      - name: Get Go version
+        id: go-version
+        container:
+        image: ${{ needs.prepare.outputs.build_image }}
+        run: |
+          echo "go-version=$(go version)" >> "$GITHUB_OUTPUT"
       - name: Upgrade golang
         uses: actions/setup-go@v4
         with:
-          go-version: 1.20.5
+          go-version: ${{ steps.go-version.outputs.go-version }}
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
         uses: actions/checkout@v3
