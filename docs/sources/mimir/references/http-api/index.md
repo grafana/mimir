@@ -569,11 +569,11 @@ GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_values
 Returns label values cardinality associated to request param `label_names[]` across all ingesters, for the authenticated tenant, in `JSON` format.
 It returns the series count per label value associated to request param `label_names[]`.
 
-The items in the field `labels` are sorted by `series_count` in DESC order and by `label_name` in ASC order.
+The items in the field `labels` are sorted by `series_count` in descending order and by `label_name` in ascending order.
 The items in the field `cardinality` are sorted by `series_count` in DESC order and by `label_value` in ASC order.
-The count of `cardinality` items is limited by request param `limit`.
+The count of `cardinality` items is limited by request parameter `limit`.
 
-This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
+This endpoint is disabled by default; you can enable it via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML configuration option).
 
 Requires [authentication](#authentication).
 
