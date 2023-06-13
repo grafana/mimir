@@ -454,11 +454,6 @@
     ],
   }),
 
-  alertmanager_statefulset: overrideSuperIfExists(
-    'alertmanager_statefulset',
-    if !$._config.autoscaling_alertmanager_enabled then {} else removeReplicasFromSpec
-  ),
-
   alertmanager_scaled_object: if !$._config.autoscaling_alertmanager_enabled then null else
     $.newAlertmanagerScaledObject(
       name='alertmanager',
@@ -474,4 +469,9 @@
         },
       },
     },
+
+  alertmanager_statefulset: overrideSuperIfExists(
+    'alertmanager_statefulset',
+    if !$._config.autoscaling_alertmanager_enabled then {} else removeReplicasFromSpec
+  ),
 }
