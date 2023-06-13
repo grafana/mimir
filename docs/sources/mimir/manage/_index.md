@@ -11,7 +11,7 @@ keywords:
   - deploying Mimir
 menuTitle: Manage
 title: Manage Grafana Mimir
-weight: 20
+weight: 40
 ---
 
 # Manage Grafana Mimir
