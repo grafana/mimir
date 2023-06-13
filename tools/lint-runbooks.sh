@@ -39,7 +39,7 @@ for ID in $ERROR_IDS; do
   # Prepend the expected prefix.
   ID="err-mimir-${ID}"
 
-  if ! grep -q "# ${ID}$" "${SCRIPT_DIR}/../docs/sources/mimir/operators-guide/mimir-runbooks/_index.md"; then
+  if ! grep -q "# ${ID}$" "${SCRIPT_DIR}/../docs/sources/mimir/manage/mimir-runbooks/_index.md"; then
     echo "Missing runbook for error: $ID"
     STATUS=1
   fi
