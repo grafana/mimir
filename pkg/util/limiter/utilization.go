@@ -22,11 +22,6 @@ import (
 const (
 	// Interval for updating resource (CPU/memory) utilization
 	resourceUtilizationUpdateInterval = time.Second
-
-	memPathV2 = "/sys/fs/cgroup/memory.stat"
-	cpuPathV2 = "/sys/fs/cgroup/cpu.stat"
-	memPathV1 = "/sys/fs/cgroup/memory/memory.stat"
-	cpuPathV1 = "/sys/fs/cgroup/cpu/cpuacct.usage"
 )
 
 type utilizationScanner interface {
@@ -34,148 +29,6 @@ type utilizationScanner interface {
 
 	// Scan returns CPU time in seconds and memory utilization in bytes, or an error.
 	Scan() (float64, uint64, error)
-}
-
-type cgroupV2Scanner struct {
-}
-
-func (s cgroupV2Scanner) String() string {
-	return "cgroup v2"
-}
-
-func (s cgroupV2Scanner) Scan() (float64, uint64, error) {
-	// For reference, see https://git.kernel.org/pub/scm/linux/kernel/git/tj/cgroup.git/tree/Documentation/admin-guide/cgroup-v2.rst
-	memR, err := readFileNoStat(memPathV2)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer memR.Close()
-	var memUtil uint64
-	found := false
-	for {
-		var name string
-		var val uint64
-		if _, err := fmt.Fscanf(memR, "%s %d\n", &name, &val); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-
-			return 0, 0, errors.Wrapf(err, "failed scanning %s", memPathV2)
-		}
-
-		// TODO: Find out if there are more memory types that should be included
-		// The "rss" field for cgroup v1 equates anonymous and swap cache memory ("includes transparent hugepages")
-		if name == "anon" {
-			memUtil += val
-			found = true
-			break
-		}
-	}
-	if !found {
-		return 0, 0, fmt.Errorf("failed scanning %s", memPathV2)
-	}
-
-	// For reference, see https://git.kernel.org/pub/scm/linux/kernel/git/tj/cgroup.git/tree/Documentation/admin-guide/cgroup-v2.rst
-	cpuR, err := readFileNoStat(cpuPathV2)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer cpuR.Close()
-	var name string
-	var cpuTime uint64
-	const usageUsec = "usage_usec"
-	for {
-		if _, err := fmt.Fscanf(cpuR, "%s %d\n", &name, &cpuTime); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-
-			return 0, 0, errors.Wrapf(err, "failed scanning %s", cpuPathV2)
-		}
-
-		if name == usageUsec {
-			// This is CPU time in microseconds
-			break
-		}
-	}
-	if name != usageUsec {
-		return 0, 0, fmt.Errorf("failed scanning %s", cpuPathV2)
-	}
-
-	return float64(cpuTime) / 1e06, memUtil, nil
-}
-
-func newCgroupV2Scanner() (utilizationScanner, bool) {
-	if _, err := os.Stat(memPathV2); err != nil {
-		return cgroupV2Scanner{}, false
-	}
-	if _, err := os.Stat(cpuPathV2); err != nil {
-		return cgroupV2Scanner{}, false
-	}
-	return cgroupV2Scanner{}, true
-}
-
-type cgroupV1Scanner struct {
-}
-
-func (s cgroupV1Scanner) String() string {
-	return "cgroup v1"
-}
-
-func (s cgroupV1Scanner) Scan() (float64, uint64, error) {
-	memR, err := readFileNoStat(memPathV1)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer memR.Close()
-	// Using RSS for memory usage
-	// For reference, see section 5.5 in https://www.kernel.org/doc/Documentation/cgroup-v1/memory.txt
-	var memUtil uint64
-	found := false
-	for {
-		var name string
-		var val uint64
-		if _, err := fmt.Fscanf(memR, "%s %d\n", &name, &val); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-
-			return 0, 0, errors.Wrapf(err, "failed scanning %s", memPathV1)
-		}
-
-		if name == "rss" {
-			memUtil += val
-			found = true
-			break
-		}
-	}
-	if !found {
-		return 0, 0, fmt.Errorf("failed scanning %s", memPathV1)
-	}
-
-	// For reference, see https://www.kernel.org/doc/Documentation/cgroup-v1/cpuacct.txt
-	cpuR, err := readFileNoStat(cpuPathV1)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer cpuR.Close()
-	// CPU time in nanoseconds
-	var cpuTime uint64
-	if _, err := fmt.Fscanf(cpuR, "%d", &cpuTime); err != nil {
-		return 0, 0, errors.Wrapf(err, "failed scanning %s", cpuPathV1)
-	}
-
-	return float64(cpuTime) / 1e09, memUtil, nil
-}
-
-func newCgroupV1Scanner() (utilizationScanner, bool) {
-	if _, err := os.Stat(memPathV1); err != nil {
-		return cgroupV1Scanner{}, false
-	}
-	if _, err := os.Stat(cpuPathV1); err != nil {
-		return cgroupV1Scanner{}, false
-	}
-	return cgroupV1Scanner{}, true
 }
 
 type procfsScanner struct {
@@ -193,17 +46,6 @@ func (s procfsScanner) Scan() (float64, uint64, error) {
 	}
 
 	return ps.CPUTime(), uint64(ps.ResidentMemory()), nil
-}
-
-func newProcfsScanner() (utilizationScanner, bool) {
-	p, err := procfs.Self()
-	if err != nil {
-		return procfsScanner{}, false
-	}
-
-	return procfsScanner{
-		proc: p,
-	}, true
 }
 
 // UtilizationBasedLimiter is a Service offering limiting based on CPU and memory utilization.
@@ -244,23 +86,15 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log
 }
 
 func (l *UtilizationBasedLimiter) init(_ context.Context) error {
-	s, ok := newCgroupV2Scanner()
-	if ok {
-		l.utilizationScanner = s
-		return nil
-	}
-	s, ok = newCgroupV1Scanner()
-	if ok {
-		l.utilizationScanner = s
-		return nil
-	}
-	s, ok = newProcfsScanner()
-	if ok {
-		l.utilizationScanner = s
-		return nil
+	p, err := procfs.Self()
+	if err != nil {
+		return errors.Wrap(err, "unable to detect CPU/memory utilization, unsupported platform")
 	}
 
-	return fmt.Errorf("unable to detect CPU/memory utilization, unsupported platform")
+	l.utilizationScanner = procfsScanner{
+		proc: p,
+	}
+	return nil
 }
 
 func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
