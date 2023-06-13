@@ -4,13 +4,15 @@ package querier
 
 import (
 	"fmt"
-	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"math"
+	"testing"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
-	"math"
-	"testing"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
