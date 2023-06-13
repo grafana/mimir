@@ -52,7 +52,7 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 		_ = services.StopAndAwaitTerminated(context.Background(), s)
 	})
 
-	l, err := net.Listen("tcp", "")
+	l, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
 	go func() {
@@ -362,7 +362,7 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 		frontendGrpcServer := grpc.NewServer()
 		frontendv2pb.RegisterFrontendForQuerierServer(frontendGrpcServer, fm)
 
-		l, err := net.Listen("tcp", "")
+		l, err := net.Listen("tcp", "localhost:0")
 		require.NoError(t, err)
 
 		frontendAddress = l.Addr().String()

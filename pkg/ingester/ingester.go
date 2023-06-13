@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
@@ -526,11 +527,12 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
 			i.replaceMatchers(activeseries.NewMatchers(newMatchersConfig), userDB, now)
 		}
-		allActive, activeMatching, valid := userDB.activeSeries.Active(now)
+		valid := userDB.activeSeries.Purge(now)
 		if !valid {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
 		} else {
+			allActive, activeMatching := userDB.activeSeries.ActiveWithMatchers()
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
@@ -1027,10 +1029,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, uint64(ref), startAppend, func(l labels.Labels) labels.Labels {
-				// we must already have copied the labels if succeededSamplesCount has been incremented.
-				return copiedLabels
-			})
+			activeSeries.UpdateSeries(nonCopiedLabels, uint64(ref), startAppend)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -1262,7 +1261,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	return result, nil
 }
 
-func (i *Ingester) UserStats(ctx context.Context, _ *client.UserStatsRequest) (*client.UserStatsResponse, error) {
+func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (*client.UserStatsResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
@@ -1277,10 +1276,10 @@ func (i *Ingester) UserStats(ctx context.Context, _ *client.UserStatsRequest) (*
 		return &client.UserStatsResponse{}, nil
 	}
 
-	return createUserStats(db), nil
+	return createUserStats(db, req)
 }
 
-func (i *Ingester) AllUserStats(context.Context, *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
+func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
@@ -1294,9 +1293,13 @@ func (i *Ingester) AllUserStats(context.Context, *client.UserStatsRequest) (*cli
 		Stats: make([]*client.UserIDStatsResponse, 0, len(users)),
 	}
 	for userID, db := range users {
+		userStats, err := createUserStats(db, req)
+		if err != nil {
+			return nil, err
+		}
 		response.Stats = append(response.Stats, &client.UserIDStatsResponse{
 			UserId: userID,
-			Data:   createUserStats(db),
+			Data:   userStats,
 		})
 	}
 	return response, nil
@@ -1357,25 +1360,54 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err != nil {
 		return err
 	}
+
+	var postingsForMatchersFn func(ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
+	switch req.GetCountMethod() {
+	case client.IN_MEMORY:
+		postingsForMatchersFn = tsdb.PostingsForMatchers
+	case client.ACTIVE:
+		postingsForMatchersFn = func(ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+			postings, err := tsdb.PostingsForMatchers(ix, ms...)
+			if err != nil {
+				return nil, err
+			}
+			return activeseries.NewPostings(db.activeSeries, postings), nil
+		}
+	default:
+		return fmt.Errorf("unknown count method %q", req.GetCountMethod())
+	}
+
 	return labelValuesCardinality(
 		req.GetLabelNames(),
 		matchers,
 		idx,
-		tsdb.PostingsForMatchers,
+		postingsForMatchersFn,
 		labelValuesCardinalityTargetSizeBytes,
 		srv,
 	)
 }
 
-func createUserStats(db *userTSDB) *client.UserStatsResponse {
+func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserStatsResponse, error) {
 	apiRate := db.ingestedAPISamples.Rate()
 	ruleRate := db.ingestedRuleSamples.Rate()
+
+	var series uint64
+	switch req.GetCountMethod() {
+	case client.IN_MEMORY:
+		series = db.Head().NumSeries()
+	case client.ACTIVE:
+		activeSeries := db.activeSeries.Active()
+		series = uint64(activeSeries)
+	default:
+		return nil, fmt.Errorf("unknown count method %q", req.GetCountMethod())
+	}
+
 	return &client.UserStatsResponse{
 		IngestionRate:     apiRate + ruleRate,
 		ApiIngestionRate:  apiRate,
 		RuleIngestionRate: ruleRate,
-		NumSeries:         db.Head().NumSeries(),
-	}
+		NumSeries:         series,
+	}, nil
 }
 
 const queryStreamBatchMessageSize = 1 * 1024 * 1024

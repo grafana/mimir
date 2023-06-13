@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r240-9563a04
+  tag: r242-987d851
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -64,6 +64,10 @@ global:
   # -- Pod annotations for all pods directly managed by this chart. Usable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen
   podAnnotations: {}
+
+  # -- Pod labels for all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen
+  podLabels: {}
 
 serviceAccount:
   # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
@@ -380,8 +384,7 @@ mimir:
       querier:
         remote_read:
           query_address: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
-
-        graphite_fallback: http://{{ template "mimir.fullname" . }}-graphite-web.{{ .Release.Namespace}}.svc:{{ include "mimir.serverHttpListenPort" .  }}
+        proxy_bad_requests: false
 
         schemas:
           default_storage_schemas_file: /etc/graphite-proxy/storage-schemas.conf
@@ -2905,7 +2908,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r240-721041f2
+    tag: r242-71d3fd0a
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3250,63 +3253,6 @@ graphite:
     extraVolumes: []
     extraVolumeMounts: []
 
-  web:
-    replicas: 1
-
-    image:
-      repository: docker.io/raintank/graphite-mt
-      tag: 8-7ebde4c60-v2
-      pullPolicy: IfNotPresent
-
-    service:
-      annotations: {}
-      labels: {}
-
-    # -- Resources for graphite-web pods
-    resources:
-      requests:
-        cpu: 100m
-        memory: 512Mi
-    # -- The name of the PriorityClass for graphite-web pods
-    priorityClassName: null
-    # -- Labels for graphite-web pods
-    podLabels: {}
-    # -- Annotations for graphite-web pods
-    podAnnotations: {}
-    # -- Node selector for graphite-web pods
-    nodeSelector: {}
-    # -- Affinity for graphite-web pods
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-                - key: app.kubernetes.io/component
-                  operator: In
-                  values:
-                    - graphite-web
-            topologyKey: 'kubernetes.io/hostname'
-
-    strategy:
-      type: RollingUpdate
-    # -- Grace period to allow the graphite-web to shutdown before it is killed
-    terminationGracePeriodSeconds: 30
-    # -- Tolerations for graphite-web pods
-    tolerations: []
-    # -- Pod Disruption Budget
-    podDisruptionBudget:
-      maxUnavailable: 1
-
-    # -- SecurityContext override for graphite web pods
-    securityContext: {}
-
-    containerSecurityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop: [ALL]
-
-
 # Graphite's aggregation cache. If you want to know more about it please check
 # https://grafana.com/docs/enterprise-metrics/latest/graphite/graphite_querier/#aggregation-cache
 gr-aggr-cache:
@@ -3438,7 +3384,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r240-9563a04
+    tag: r242-987d851
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3458,7 +3404,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r240-9563a04
+    tag: r242-987d851
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

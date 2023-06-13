@@ -241,6 +241,9 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.podLabels" -}}
+{{- with .ctx.Values.global.podLabels }}
+{{ toYaml . }}
+{{- end }}
 {{- if .ctx.Values.enterprise.legacyLabels }}
 {{- if .component -}}
 app: {{ include "mimir.name" .ctx }}-{{ .component }}
@@ -405,7 +408,6 @@ Examples:
   "gr-aggr-cache" "gr-aggr-cache"
   "gr-metricname-cache" "gr-metricname-cache"
   "graphite-querier" "graphite.querier"
-  "graphite-web" "graphite.web"
   "graphite-write-proxy" "graphite.write_proxy"
   "index-cache" "index-cache"
   "ingester" "ingester"

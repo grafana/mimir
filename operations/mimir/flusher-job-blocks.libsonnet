@@ -14,6 +14,8 @@
   local volumeMount = $.core.v1.volumeMount,
   local volume = $.core.v1.volume,
 
+  flusher_env_map:: {},
+
   flusher_container::
     container.new('flusher', $._images.flusher) +
     container.withPorts($.util.defaultPorts) +
@@ -21,6 +23,7 @@
       target: 'flusher',
       'blocks-storage.tsdb.retention-period': '10000h',  // don't delete old blocks too soon.
     })) +
+    (if std.length($.flusher_env_map) > 0 then container.withEnvMap($.flusher_env_map) else {}) +
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
     $.util.readinessProbe +

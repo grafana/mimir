@@ -86,6 +86,7 @@ A request sent from the query-tee to a backend includes HTTP basic authenticatio
 ### Backend response selection
 
 The query-tee enables you to configure a preferred backend that selects the response to send back to the client.
+The query-tee returns the `Content-Type` header, HTTP status code, and body of the response from the preferred backend.
 The preferred backend can be configured via `-backend.preferred=<hostname>`.
 The value of the preferred backend configuration option must be the hostname of one of the configured backends.
 

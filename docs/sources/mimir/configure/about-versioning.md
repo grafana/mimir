@@ -97,6 +97,7 @@ The following features are currently experimental:
   - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
+  - Cardinality query result caching (`-query-frontend.results-cache-ttl-for-cardinality-query`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -113,6 +114,8 @@ The following features are currently experimental:
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
 - Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+- Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
+- Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 
 ## Deprecated features
 

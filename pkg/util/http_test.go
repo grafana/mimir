@@ -203,6 +203,7 @@ func TestParseProtoReader(t *testing.T) {
 				return
 			}
 			assert.Nil(t, err)
+			fromWire.ClearTimeseriesUnmarshalData() // non-nil unmarshal buffer in PreallocTimeseries breaks equality test
 			assert.Equal(t, req, &fromWire)
 		})
 	}

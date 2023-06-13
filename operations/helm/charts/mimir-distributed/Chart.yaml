@@ -1,8 +1,8 @@
 apiVersion: v2
-version: 4.5.0-weekly.240
-appVersion: r240
+version: 4.5.0-weekly.242
+appVersion: r242
 description: "Grafana Mimir"
-home: https://grafana.com/docs/mimir/v2.8.x/
+home: https://grafana.com/docs/helm-charts/mimir-distributed/latest/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
 kubeVersion: ^1.20.0-0
 name: mimir-distributed

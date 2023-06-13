@@ -40,7 +40,7 @@
     container.withArgsMixin($.util.mapToFlags($.mimir_read_args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
-    container.withEnvMap($.mimir_read_env_map) +
+    (if std.length($.mimir_read_env_map) > 0 then container.withEnvMap($.mimir_read_env_map) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
 

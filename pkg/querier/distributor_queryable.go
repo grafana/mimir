@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -36,7 +37,7 @@ type Distributor interface {
 	MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error)
 	MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error)
 	LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error)
-	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
+	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
 func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryChunkMetrics *stats.QueryChunkMetrics, logger log.Logger) QueryableWithFilter {

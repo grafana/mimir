@@ -125,6 +125,7 @@ type Limits struct {
 	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
 	ResultsCacheTTL                        model.Duration `yaml:"results_cache_ttl" json:"results_cache_ttl" category:"experimental"`
 	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window" category:"experimental"`
+	ResultsCacheTTLForCardinalityQuery     model.Duration `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query" category:"experimental"`
 	MaxQueryExpressionSizeBytes            int            `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes" category:"experimental"`
 
 	// Cardinality
@@ -259,6 +260,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
 	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
+	f.Var(&l.ResultsCacheTTLForCardinalityQuery, "query-frontend.results-cache-ttl-for-cardinality-query", "Time to live duration for cached cardinality query results. The value 0 disables the cache.")
 	f.IntVar(&l.MaxQueryExpressionSizeBytes, maxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
 
 	// Store-gateway.
@@ -828,6 +830,10 @@ func (o *Overrides) ResultsCacheTTLForOutOfOrderTimeWindow(user string) time.Dur
 	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForOutOfOrderTimeWindow)
 }
 
+func (o *Overrides) ResultsCacheTTLForCardinalityQuery(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForCardinalityQuery)
+}
+
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
 	if o.tenantLimits != nil {
 		l := o.tenantLimits.ByUserID(userID)
@@ -906,6 +912,20 @@ func LargestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) 
 		return 0
 	}
 	return *result
+}
+
+// MinDurationPerTenant is returning the minimum duration per tenant. Without
+// tenants given it will return a time.Duration(0).
+func MinDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
+	result := time.Duration(0)
+	for idx, tenantID := range tenantIDs {
+		v := f(tenantID)
+
+		if idx == 0 || v < result {
+			result = v
+		}
+	}
+	return result
 }
 
 // MaxDurationPerTenant is returning the maximum duration per tenant. Without

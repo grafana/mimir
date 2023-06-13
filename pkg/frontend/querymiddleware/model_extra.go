@@ -6,9 +6,12 @@
 package querymiddleware
 
 import (
+	"bytes"
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
@@ -418,4 +421,50 @@ func (resp *PrometheusResponse) minTime() int64 {
 		return -1
 	}
 	return result[0].Samples[0].TimestampMs
+}
+
+// EncodeCachedHTTPResponse encodes the input http.Response into CachedHTTPResponse.
+// The input res.Body is replaced in this function, so that it can be safely consumed again.
+func EncodeCachedHTTPResponse(cacheKey string, res *http.Response) (*CachedHTTPResponse, error) {
+	// Read the response.
+	body, err := readResponseBody(res)
+	if err != nil {
+		return nil, err
+	}
+
+	// Since we've already consumed the response Body we have to replace it on the response,
+	// otherwise the caller will get a response with a closed Body.
+	res.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	// When preallocating the slice we assume that header as 1 value (which is the most common case).
+	headers := make([]*CachedHTTPHeader, 0, len(res.Header))
+	for name, values := range res.Header {
+		for _, value := range values {
+			headers = append(headers, &CachedHTTPHeader{
+				Name:  name,
+				Value: value,
+			})
+		}
+	}
+
+	return &CachedHTTPResponse{
+		CacheKey:   cacheKey,
+		StatusCode: int32(res.StatusCode),
+		Body:       body,
+		Headers:    headers,
+	}, nil
+}
+
+func DecodeCachedHTTPResponse(res *CachedHTTPResponse) *http.Response {
+	headers := http.Header{}
+	for _, header := range res.Headers {
+		headers[header.Name] = append(headers[header.Name], header.Value)
+	}
+
+	return &http.Response{
+		StatusCode:    int(res.StatusCode),
+		Body:          io.NopCloser(bytes.NewReader(res.Body)),
+		Header:        headers,
+		ContentLength: int64(len(res.Body)),
+	}
 }

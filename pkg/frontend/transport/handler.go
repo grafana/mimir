@@ -208,7 +208,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeError(w, err)
-		f.reportQueryStats(r, params, queryResponseTime, stats, err)
+		f.reportQueryStats(r, params, queryResponseTime, 0, stats, err)
 		return
 	}
 
@@ -223,13 +223,13 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(resp.StatusCode)
 	// we don't check for copy error as there is no much we can do at this point
-	_, _ = io.Copy(w, resp.Body)
+	queryResponseSize, _ := io.Copy(w, resp.Body)
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
 		f.reportSlowQuery(r, params, queryResponseTime)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, queryResponseTime, stats, nil)
+		f.reportQueryStats(r, params, queryResponseTime, queryResponseSize, stats, nil)
 	}
 }
 
@@ -250,7 +250,7 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, stats *querier_stats.Stats, queryErr error) {
+func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, queryResponseSizeBytes int64, stats *querier_stats.Stats, queryErr error) {
 	tenantIDs, err := tenant.TenantIDs(r.Context())
 	if err != nil {
 		return
@@ -281,6 +281,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"path", r.URL.Path,
 		"user_agent", r.UserAgent(),
 		"response_time", queryResponseTime,
+		"response_size_bytes", queryResponseSizeBytes,
 		"query_wall_time_seconds", wallTime.Seconds(),
 		"fetched_series_count", numSeries,
 		"fetched_chunk_bytes", numBytes,

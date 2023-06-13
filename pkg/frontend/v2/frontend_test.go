@@ -46,7 +46,7 @@ func setupFrontend(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc f
 }
 
 func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, opts ...grpc.ServerOption) (*Frontend, *mockScheduler) {
-	l, err := net.Listen("tcp", "")
+	l, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
 	server := grpc.NewServer(opts...)
@@ -422,7 +422,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(&cfg)
 			testData.setup(&cfg)
 
-			actualErr := cfg.Validate(log.NewNopLogger())
+			actualErr := cfg.Validate()
 			if testData.expectedErr == "" {
 				require.NoError(t, actualErr)
 			} else {

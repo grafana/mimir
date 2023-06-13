@@ -45,6 +45,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -1510,7 +1511,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				numDistributors: 1,
 			})
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, ts, "user", "test-group", false, tc.minExemplarTS)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, tc.minExemplarTS)
 				assert.NoError(t, err)
 			}
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
@@ -2180,7 +2181,7 @@ func TestDistributor_LabelValuesCardinality_ExpectedAllIngestersResponsesToBeCom
 	ctx, ds := prepareWithZoneAwarenessAndZoneDelay(t, createSeries(10000))
 
 	names := []model.LabelName{labels.MetricName}
-	response, err := ds[0].labelValuesCardinality(ctx, names, []*labels.Matcher{})
+	response, err := ds[0].labelValuesCardinality(ctx, names, []*labels.Matcher{}, cardinality.InMemoryMethod)
 	require.NoError(t, err)
 	require.Len(t, response.Items, 1)
 	// labelValuesCardinality must wait for all responses from all ingesters
@@ -2263,6 +2264,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 		ingestersSeriesCountTotal uint64
 		expectedResult            *client.LabelValuesCardinalityResponse
 		expectedIngesters         int
+		happyIngesters            int
 		expectedSeriesCountTotal  uint64
 		ingesterZones             []string
 	}{
@@ -2272,6 +2274,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			ingestersSeriesCountTotal: 0,
 			expectedResult:            &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
 			expectedIngesters:         numIngesters,
+			happyIngesters:            numIngesters,
 			expectedSeriesCountTotal:  0,
 		},
 		"should return a map with the label values and series occurrences of a single label name": {
@@ -2284,7 +2287,23 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 					LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
 				}},
 			},
-			expectedIngesters:        numIngesters,
+			expectedIngesters:        numIngesters - 1,
+			happyIngesters:           numIngesters,
+			expectedSeriesCountTotal: 100,
+			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
+		},
+		"should return a map with the label values and series occurrences of a single label name, during single zone failure": {
+			labelNames:                []model.LabelName{labels.MetricName},
+			matchers:                  []*labels.Matcher{},
+			ingestersSeriesCountTotal: 100,
+			expectedResult: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{{
+					LabelName:        labels.MetricName,
+					LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
+				}},
+			},
+			expectedIngesters:        numIngesters - 1,
+			happyIngesters:           numIngesters - 1,
 			expectedSeriesCountTotal: 100,
 			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
 		},
@@ -2305,6 +2324,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 				},
 			},
 			expectedIngesters:        numIngesters,
+			happyIngesters:           numIngesters,
 			expectedSeriesCountTotal: 100,
 		},
 	}
@@ -2314,7 +2334,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			// Create distributor
 			ds, ingesters, _ := prepare(t, prepConfig{
 				numIngesters:              numIngesters,
-				happyIngesters:            numIngesters,
+				happyIngesters:            testData.happyIngesters,
 				numDistributors:           1,
 				replicationFactor:         replicationFactor,
 				ingestersSeriesCountTotal: testData.ingestersSeriesCountTotal,
@@ -2334,7 +2354,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			// the final ingester may not have received series yet.
 			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
 			test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
-				seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers)
+				seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, cardinality.InMemoryMethod)
 				require.NoError(t, err)
 				assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
 				// Make sure the resultant label names are sorted
@@ -2344,8 +2364,8 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 				return cardinalityMap
 			})
 
-			// Make sure all the ingesters have been queried
-			assert.Equal(t, testData.expectedIngesters, countMockIngestersCalls(ingesters, "LabelValuesCardinality"))
+			// Make sure enough ingesters were queried
+			assert.GreaterOrEqual(t, countMockIngestersCalls(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
 		})
 	}
 }
@@ -2402,7 +2422,7 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			_, _, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, []*labels.Matcher{})
+			_, _, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, []*labels.Matcher{}, cardinality.InMemoryMethod)
 			if testData.expectedHTTPGrpcError == nil {
 				require.NoError(t, err)
 			} else {
@@ -2429,7 +2449,7 @@ func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
 		// Set the first ingester as unhappy
 		ingesters[0].happy = false
 
-		_, _, err := ds[0].LabelValuesCardinality(ctx, []model.LabelName{labels.MetricName}, []*labels.Matcher{})
+		_, _, err := ds[0].LabelValuesCardinality(ctx, []model.LabelName{labels.MetricName}, []*labels.Matcher{}, cardinality.InMemoryMethod)
 		require.Error(t, err)
 	})
 }
@@ -3899,50 +3919,6 @@ func TestDistributorValidation(t *testing.T) {
 	}
 }
 
-func TestRemoveReplicaLabel(t *testing.T) {
-	replicaLabel := "replica"
-	clusterLabel := "cluster"
-	cases := []struct {
-		labelsIn  []mimirpb.LabelAdapter
-		labelsOut []mimirpb.LabelAdapter
-	}{
-		// Replica label is present
-		{
-			labelsIn: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: "replica", Value: replicaLabel},
-			},
-			labelsOut: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-			},
-		},
-		// Replica label is not present
-		{
-			labelsIn: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: "cluster", Value: clusterLabel},
-			},
-			labelsOut: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: "cluster", Value: clusterLabel},
-			},
-		},
-	}
-
-	for _, c := range cases {
-		removeLabel(replicaLabel, &c.labelsIn)
-		assert.Equal(t, c.labelsOut, c.labelsIn)
-	}
-}
-
 // This is not great, but we deal with unsorted labels in prePushRelabelMiddleware.
 func TestShardByAllLabelsReturnsWrongResultsForUnsortedLabels(t *testing.T) {
 	val1 := shardByAllLabels("test", []mimirpb.LabelAdapter{
@@ -3958,33 +3934,6 @@ func TestShardByAllLabelsReturnsWrongResultsForUnsortedLabels(t *testing.T) {
 	})
 
 	assert.NotEqual(t, val1, val2)
-}
-
-func TestSortLabels(t *testing.T) {
-	sorted := []mimirpb.LabelAdapter{
-		{Name: "__name__", Value: "foo"},
-		{Name: "bar", Value: "baz"},
-		{Name: "cluster", Value: "cluster"},
-		{Name: "sample", Value: "1"},
-	}
-
-	// no allocations if input is already sorted
-	require.Equal(t, 0.0, testing.AllocsPerRun(100, func() {
-		sortLabelsIfNeeded(sorted)
-	}))
-
-	unsorted := []mimirpb.LabelAdapter{
-		{Name: "__name__", Value: "foo"},
-		{Name: "sample", Value: "1"},
-		{Name: "cluster", Value: "cluster"},
-		{Name: "bar", Value: "baz"},
-	}
-
-	sortLabelsIfNeeded(unsorted)
-
-	require.True(t, sort.SliceIsSorted(unsorted, func(i, j int) bool {
-		return unsorted[i].Name < unsorted[j].Name
-	}))
 }
 
 func TestDistributor_Push_Relabel(t *testing.T) {
