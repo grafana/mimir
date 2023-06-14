@@ -1,8 +1,6 @@
 "services":
   "alertmanager-1":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -27,8 +25,6 @@
       - "./activity:/activity"
   "alertmanager-2":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -53,8 +49,6 @@
       - "./activity:/activity"
   "alertmanager-3":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -79,8 +73,6 @@
       - "./activity:/activity"
   "compactor":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -105,8 +97,6 @@
       - "./activity:/activity"
   "distributor-1":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -130,8 +120,6 @@
       - "./activity:/activity"
   "distributor-2":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -166,8 +154,6 @@
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir"
   "ingester-1":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -193,8 +179,6 @@
       - ".data-ingester-1:/tmp/mimir-tsdb-ingester:delegated"
   "ingester-2":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -286,8 +270,6 @@
       - "../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml"
   "querier":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -312,8 +294,6 @@
       - "./activity:/activity"
   "query-frontend":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -338,8 +318,6 @@
       - "./activity:/activity"
   "query-scheduler":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -364,8 +342,6 @@
       - "./activity:/activity"
   "ruler-1":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -390,8 +366,6 @@
       - "./activity:/activity"
   "ruler-2":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -416,8 +390,6 @@
       - "./activity:/activity"
   "store-gateway-1":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
@@ -442,8 +414,6 @@
       - "./activity:/activity"
   "store-gateway-2":
     "build":
-      "args":
-        - "ALPINE_VERSION=3.18.0"
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":

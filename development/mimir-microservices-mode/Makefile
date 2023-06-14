@@ -5,10 +5,10 @@
 # Or follow instructions on https://github.com/google/go-jsonnet
 
 .DEFAULT_GOAL := docker-compose.yml
-ALPINE_VERSION:=$(shell make -s -f ../../Makefile print-alpine-version)
+
 # intended to update new changes from jsonnet to yml, but not to overwrite if yml is newer
 docker-compose.yml: docker-compose.jsonnet
-	jsonnet --ext-str "ALPINE_VERSION=${ALPINE_VERSION}" -S docker-compose.jsonnet -o docker-compose.yml
+	jsonnet -S docker-compose.jsonnet -o docker-compose.yml
 
 .PHONY: check
 check: clean docker-compose.yml
