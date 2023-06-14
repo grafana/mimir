@@ -25,3 +25,28 @@ curl \
   -H "Content-Type: application/json" \
   --fail-with-body \
   "${MIMIR_GATEWAY_HOST}:8080/graphite/tags"
+
+echo ""
+echo ""
+
+echo "# Getting functions"
+# this will return 400 when using values.yaml as graphite-web is not enabled there
+curl \
+  -X GET \
+  -H "Authorization: Basic ${MIMIR_BASIC_AUTH}" \
+  -H "Content-Type: application/json" \
+  --fail-with-body \
+  "${MIMIR_GATEWAY_HOST}:8080/graphite/functions"
+
+echo ""
+
+echo "# Running query"
+curl \
+  -X GET \
+  -H "Authorization: Basic ${MIMIR_BASIC_AUTH}" \
+  -H "Content-Type: application/json" \
+  --fail-with-body \
+  "${MIMIR_GATEWAY_HOST}:8080/graphite/render?target=seriesByTag(\"service=foo\")&from=-5m"
+
+echo ""
+echo ""

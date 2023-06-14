@@ -291,7 +291,7 @@ func newQueryTripperware(
 		// Inject the cardinality query cache roundtripper only if the query results cache is enabled.
 		cardinality := next
 		if cfg.CacheResults {
-			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, next, log)
+			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, next, log, registerer)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
