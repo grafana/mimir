@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"net/url"
+	reflect "reflect"
 	"strings"
 	"sync"
 
@@ -162,7 +163,15 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 
 	// Whether to use TLS or not.
 	if rulerConfig.Notifier.TLSEnabled {
-		if rulerConfig.Notifier.TLS.Reader != nil {
+		if rulerConfig.Notifier.TLS.Reader == nil || reflect.ValueOf(rulerConfig.Notifier.TLS.Reader).IsNil() {
+			amConfig.HTTPClientConfig.TLSConfig = config_util.TLSConfig{
+				CAFile:             rulerConfig.Notifier.TLS.CAPath,
+				CertFile:           rulerConfig.Notifier.TLS.CertPath,
+				KeyFile:            rulerConfig.Notifier.TLS.KeyPath,
+				InsecureSkipVerify: rulerConfig.Notifier.TLS.InsecureSkipVerify,
+				ServerName:         rulerConfig.Notifier.TLS.ServerName,
+			}
+		} else {
 			cert, err := rulerConfig.Notifier.TLS.Reader.ReadSecret(rulerConfig.Notifier.TLS.CertPath)
 			if err != nil {
 				return nil, err
@@ -185,14 +194,6 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 				CA:                 string(ca),
 				Cert:               string(cert),
 				Key:                config_util.Secret(key),
-				InsecureSkipVerify: rulerConfig.Notifier.TLS.InsecureSkipVerify,
-				ServerName:         rulerConfig.Notifier.TLS.ServerName,
-			}
-		} else {
-			amConfig.HTTPClientConfig.TLSConfig = config_util.TLSConfig{
-				CAFile:             rulerConfig.Notifier.TLS.CAPath,
-				CertFile:           rulerConfig.Notifier.TLS.CertPath,
-				KeyFile:            rulerConfig.Notifier.TLS.KeyPath,
 				InsecureSkipVerify: rulerConfig.Notifier.TLS.InsecureSkipVerify,
 				ServerName:         rulerConfig.Notifier.TLS.ServerName,
 			}
