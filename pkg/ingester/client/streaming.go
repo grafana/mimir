@@ -35,6 +35,7 @@ type SeriesChunksStreamReader struct {
 	client              Ingester_QueryStreamClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
+	cleanup             func()
 	log                 log.Logger
 
 	seriesBatchChan chan []QueryStreamSeriesChunks
@@ -42,11 +43,12 @@ type SeriesChunksStreamReader struct {
 	seriesBatch     []QueryStreamSeriesChunks
 }
 
-func NewSeriesChunksStreamReader(client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, log log.Logger) *SeriesChunksStreamReader {
+func NewSeriesChunksStreamReader(client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		queryLimiter:        queryLimiter,
+		cleanup:             cleanup,
 		log:                 log,
 	}
 }
@@ -57,6 +59,8 @@ func (s *SeriesChunksStreamReader) Close() {
 	if err := s.client.CloseSend(); err != nil {
 		level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
 	}
+
+	s.cleanup()
 }
 
 // StartBuffering begins streaming series' chunks from the ingester associated with
@@ -73,9 +77,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 	go func() {
 		defer func() {
-			if err := s.client.CloseSend(); err != nil {
-				level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
-			}
+			s.Close()
 
 			close(s.seriesBatchChan)
 			close(s.errorChan)

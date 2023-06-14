@@ -547,7 +547,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230609090147-e93a97f8661a
+# github.com/grafana/dskit v0.0.0-20230613113909-44a4ba32cc3c
 ## explicit; go 1.18
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache

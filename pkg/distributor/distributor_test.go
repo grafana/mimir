@@ -1708,7 +1708,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 				func(_ interface{}) (interface{}, bool, error) {
 					d := &ring.Desc{}
-					d.AddIngester("ingester-1", "127.0.0.1", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
+					d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now())
 					return d, true, nil
 				},
 			)
