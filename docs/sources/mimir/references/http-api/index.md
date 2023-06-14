@@ -538,7 +538,7 @@ Requires [authentication](#authentication).
 
 #### Caching
 
-The response of this API endpoint could be fetched from the query-frontend results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than 0.
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than `0`.
 
 #### Request params
 
@@ -593,7 +593,7 @@ Values will change only as a result of changes in the data ingested by Mimir.
 
 #### Caching
 
-The response of this API endpoint could be fetched from the query-frontend results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than 0.
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than `0`.
 
 #### Request params
 
