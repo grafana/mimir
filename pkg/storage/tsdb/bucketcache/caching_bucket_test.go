@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -56,10 +57,12 @@ func TestChunksCaching(t *testing.T) {
 		maxGetRangeRequests    int
 		cacheLookupDisabled    bool
 		expectedLength         int64
+		expectedFetchRequests  int64
 		expectedFetchedBytes   int64
 		expectedCachedBytes    int64
 		expectedRefetchedBytes int64
 		expectedCacheRequests  int64
+		expectedCacheKeys      int64
 		expectedCacheHits      float64
 	}{
 		{
@@ -67,8 +70,10 @@ func TestChunksCaching(t *testing.T) {
 			offset:                555555,
 			length:                55555,
 			expectedLength:        55555,
+			expectedFetchRequests: 1,
 			expectedFetchedBytes:  5 * subrangeSize,
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     5,
 			expectedCacheHits:     0,
 		},
 
@@ -77,8 +82,10 @@ func TestChunksCaching(t *testing.T) {
 			offset:                555555,
 			length:                55555,
 			expectedLength:        55555,
+			expectedFetchRequests: 0,
 			expectedCachedBytes:   5 * subrangeSize,
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     5,
 			expectedCacheHits:     1,
 		},
 
@@ -87,8 +94,10 @@ func TestChunksCaching(t *testing.T) {
 			offset:                length - 10,
 			length:                3000,
 			expectedLength:        10,
+			expectedFetchRequests: 1,
 			expectedFetchedBytes:  8576, // Last (incomplete) subrange is fetched.
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     1,
 			expectedCacheHits:     0,
 		},
 
@@ -97,8 +106,10 @@ func TestChunksCaching(t *testing.T) {
 			offset:                1040100,
 			length:                subrangeSize,
 			expectedLength:        8476,
+			expectedFetchRequests: 0,
 			expectedCachedBytes:   8576,
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     1,
 			expectedCacheHits:     1,
 		},
 
@@ -108,8 +119,10 @@ func TestChunksCaching(t *testing.T) {
 			length:                length,
 			expectedLength:        length,
 			expectedCachedBytes:   5*subrangeSize + 8576, // 5 subrange cached from first test, plus last incomplete subrange.
+			expectedFetchRequests: 2,
 			expectedFetchedBytes:  60 * subrangeSize,
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     int64(math.Ceil(float64(length) / float64(subrangeSize))),
 			expectedCacheHits:     0.09,
 		},
 
@@ -118,8 +131,10 @@ func TestChunksCaching(t *testing.T) {
 			offset:                0,
 			length:                length,
 			expectedLength:        length,
+			expectedFetchRequests: 0,
 			expectedCachedBytes:   length, // Entire file is now cached.
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     int64(math.Ceil(float64(length) / float64(subrangeSize))),
 			expectedCacheHits:     1,
 		},
 
@@ -129,8 +144,10 @@ func TestChunksCaching(t *testing.T) {
 			length:                length,
 			expectedLength:        length,
 			expectedFetchedBytes:  length,
+			expectedFetchRequests: 1,
 			expectedCachedBytes:   0, // Cache is flushed.
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     int64(math.Ceil(float64(length) / float64(subrangeSize))),
 			expectedCacheHits:     0,
 			init: func() {
 				cache.Flush()
@@ -142,9 +159,11 @@ func TestChunksCaching(t *testing.T) {
 			offset:                0,
 			length:                10 * subrangeSize,
 			expectedLength:        10 * subrangeSize,
+			expectedFetchRequests: 1,
 			expectedFetchedBytes:  3 * subrangeSize,
 			expectedCachedBytes:   7 * subrangeSize,
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     10,
 			expectedCacheHits:     7.0 / 10.0,
 			init: func() {
 				ctx := context.Background()
@@ -160,9 +179,11 @@ func TestChunksCaching(t *testing.T) {
 			offset:                0,
 			length:                10 * subrangeSize,
 			expectedLength:        10 * subrangeSize,
+			expectedFetchRequests: 1,
 			expectedFetchedBytes:  3 * subrangeSize,
 			expectedCachedBytes:   7 * subrangeSize,
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     10,
 			expectedCacheHits:     7.0 / 10.0,
 			init: func() {
 				ctx := context.Background()
@@ -178,9 +199,11 @@ func TestChunksCaching(t *testing.T) {
 			offset:                0,
 			length:                10 * subrangeSize,
 			expectedLength:        10 * subrangeSize,
+			expectedFetchRequests: 1,
 			expectedFetchedBytes:  3 * subrangeSize,
 			expectedCachedBytes:   7 * subrangeSize,
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     10,
 			expectedCacheHits:     7.0 / 10.0,
 			init: func() {
 				ctx := context.Background()
@@ -196,9 +219,11 @@ func TestChunksCaching(t *testing.T) {
 			offset:                0,
 			length:                10 * subrangeSize,
 			expectedLength:        10 * subrangeSize,
+			expectedFetchRequests: 3,
 			expectedFetchedBytes:  7 * subrangeSize,
 			expectedCachedBytes:   3 * subrangeSize,
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     10,
 			expectedCacheHits:     3.0 / 10.0,
 			init: func() {
 				// Delete all but 3 subranges in the middle, and keep unlimited number of ranged subrequests.
@@ -216,11 +241,13 @@ func TestChunksCaching(t *testing.T) {
 			offset:                 0,
 			length:                 10 * subrangeSize,
 			expectedLength:         10 * subrangeSize,
+			expectedFetchRequests:  1,
 			expectedFetchedBytes:   7 * subrangeSize,
 			expectedCachedBytes:    3 * subrangeSize,
 			expectedRefetchedBytes: 3 * subrangeSize, // Entire object fetched, 3 subranges are "refetched".
 			maxGetRangeRequests:    1,
 			expectedCacheRequests:  1,
+			expectedCacheKeys:      10,
 			expectedCacheHits:      3.0 / 10.0,
 			init: func() {
 				// Delete all but 3 subranges in the middle, but only allow 1 subrequest.
@@ -238,10 +265,12 @@ func TestChunksCaching(t *testing.T) {
 			offset:                0,
 			length:                10 * subrangeSize,
 			expectedLength:        10 * subrangeSize,
+			expectedFetchRequests: 2,
 			expectedFetchedBytes:  7 * subrangeSize,
 			expectedCachedBytes:   3 * subrangeSize,
 			maxGetRangeRequests:   2,
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     10,
 			expectedCacheHits:     3.0 / 10.0,
 			init: func() {
 				// Delete all but one subranges in the middle, and allow 2 subrequests. They will be: 0-80000, 128000-160000.
@@ -255,14 +284,16 @@ func TestChunksCaching(t *testing.T) {
 		},
 
 		{
-			name:                  "should skip cache look but store the subranges to cache when cache lookup is disabled",
+			name:                  "should skip cache lookup but store the subranges to cache when cache lookup is disabled",
 			offset:                0,
 			length:                length,
 			cacheLookupDisabled:   true,
 			expectedLength:        length,
+			expectedFetchRequests: 1,
 			expectedFetchedBytes:  length,
 			expectedCachedBytes:   0,
 			expectedCacheRequests: 0, // No cache lookup.
+			expectedCacheKeys:     0,
 			expectedCacheHits:     0,
 			init: func() {
 				// Cleanup the cache.
@@ -276,9 +307,11 @@ func TestChunksCaching(t *testing.T) {
 			length:                length,
 			cacheLookupDisabled:   false,
 			expectedLength:        length,
+			expectedFetchRequests: 0,
 			expectedFetchedBytes:  0,
 			expectedCachedBytes:   length,
 			expectedCacheRequests: 1,
+			expectedCacheKeys:     int64(math.Ceil(float64(length) / float64(subrangeSize))),
 			expectedCacheHits:     1,
 		},
 	} {
@@ -303,7 +336,9 @@ func TestChunksCaching(t *testing.T) {
 
 			assert.Equal(t, tc.expectedCacheRequests, int64(promtest.ToFloat64(cachingBucket.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName))))
 			assert.InDelta(t, tc.expectedCacheHits, promtest.ToFloat64(cachingBucket.operationHits.WithLabelValues(objstore.OpGetRange, cfgName)), 0.01)
+			assert.Equal(t, tc.expectedCacheKeys, int64(promtest.ToFloat64(cachingBucket.fetchedGetRangeRequests.WithLabelValues(originCache, cfgName))))
 			assert.Equal(t, tc.expectedCachedBytes, int64(promtest.ToFloat64(cachingBucket.fetchedGetRangeBytes.WithLabelValues(originCache, cfgName))))
+			assert.Equal(t, tc.expectedFetchRequests, int64(promtest.ToFloat64(cachingBucket.fetchedGetRangeRequests.WithLabelValues(originBucket, cfgName))))
 			assert.Equal(t, tc.expectedFetchedBytes, int64(promtest.ToFloat64(cachingBucket.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName))))
 			assert.Equal(t, tc.expectedRefetchedBytes, int64(promtest.ToFloat64(cachingBucket.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName))))
 		})

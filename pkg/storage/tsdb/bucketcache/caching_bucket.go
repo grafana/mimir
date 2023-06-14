@@ -95,9 +95,10 @@ type CachingBucket struct {
 	cfg      *CachingBucketConfig
 	logger   log.Logger
 
-	requestedGetRangeBytes *prometheus.CounterVec
-	fetchedGetRangeBytes   *prometheus.CounterVec
-	refetchedGetRangeBytes *prometheus.CounterVec
+	requestedGetRangeBytes  *prometheus.CounterVec
+	fetchedGetRangeRequests *prometheus.CounterVec
+	fetchedGetRangeBytes    *prometheus.CounterVec
+	refetchedGetRangeBytes  *prometheus.CounterVec
 
 	operationConfigs  map[string][]*operationConfig
 	operationRequests *prometheus.CounterVec
@@ -123,6 +124,10 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 			Name: "thanos_store_bucket_cache_getrange_requested_bytes_total",
 			Help: "Total number of bytes requested via GetRange.",
 		}, []string{"config"}),
+		fetchedGetRangeRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "thanos_store_bucket_cache_getrange_fetched_requests_total",
+			Help: "Total number of requests issued either to the cache or the bucket to fetch data because of GetRange operation. For requests issued to the cache, it counts the number of cache keys looked up, including cache misses.",
+		}, []string{"origin", "config"}),
 		fetchedGetRangeBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_getrange_fetched_bytes_total",
 			Help: "Total number of bytes fetched because of GetRange operation. Data from bucket is then stored to cache.",
@@ -149,6 +154,8 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 
 			if op == objstore.OpGetRange {
 				cb.requestedGetRangeBytes.WithLabelValues(n)
+				cb.fetchedGetRangeRequests.WithLabelValues(originCache, n)
+				cb.fetchedGetRangeRequests.WithLabelValues(originBucket, n)
 				cb.fetchedGetRangeBytes.WithLabelValues(originCache, n)
 				cb.fetchedGetRangeBytes.WithLabelValues(originBucket, n)
 				cb.refetchedGetRangeBytes.WithLabelValues(originCache, n)
@@ -481,6 +488,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 			totalCachedBytes += int64(len(b))
 		}
 
+		cb.fetchedGetRangeRequests.WithLabelValues(originCache, cfgName).Add(float64(len(keys)))
 		cb.fetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(totalCachedBytes))
 		cb.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName).Inc()
 		cb.operationHits.WithLabelValues(objstore.OpGetRange, cfgName).Add(float64(len(hits)) / float64(len(keys)))
@@ -535,6 +543,8 @@ func (cb *CachingBucket) fetchMissingSubranges(ctx context.Context, name string,
 				return errors.Wrapf(err, "fetching range [%d, %d]", m.start, m.end)
 			}
 			defer runutil.CloseWithLogOnErr(cb.logger, r, "fetching range [%d, %d]", m.start, m.end)
+
+			cb.fetchedGetRangeRequests.WithLabelValues(originBucket, cfgName).Inc()
 
 			for off := m.start; off < m.end && gctx.Err() == nil; off += cfg.subrangeSize {
 				key := cacheKeys[off]
