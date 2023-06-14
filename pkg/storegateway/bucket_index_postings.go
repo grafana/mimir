@@ -363,6 +363,9 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 // `__name__="cpu_seconds_total"` selects 500K series, then the strategy calculates that the whole query will
 // select no more than 500K series. It uses this to calculate that in the worst case we will fetch 500K * tsdb.EstimatedSeriesP99Size
 // bytes for the series = 256 MB. So it will not fetch more than 256 MB of posting lists.
+//
+// We found that this strategy may cause increased API calls for cases where it omits the __name__ posting group.
+// Because of this now the strategy always selects the __name__ posting group regardless of its size.
 type worstCaseFetchedDataStrategy struct {
 	// postingListActualSizeFactor affects how posting lists are summed together.
 	// Postings lists have different sizes in the bucket and the cache.
@@ -393,15 +396,33 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 		atLeastOneIntersectingSelected bool
 		maxSelectedSize                = maxSelectedSeriesCount * tsdb.EstimatedSeriesP99Size
 	)
+	selected = groups
 	for i, g := range groups {
 		postingListSize := int64(float64(g.totalSize) * s.postingListActualSizeFactor)
 		if atLeastOneIntersectingSelected && selectedSize+postingListSize > maxSelectedSize {
-			return groups[:i], groups[i:]
+			selected = groups[:i]
+			omitted = groups[i:]
+			break
 		}
 		selectedSize += postingListSize
 		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
 	}
-	return groups, nil
+
+	// We want to include the __name__ group because excluding it is more likely to make
+	// makes the more sparse in the index. Selecting more sparse series results in more API calls
+	// to the object store. This is because series are first sorted by their __name__ label
+	// (assuming there are no labels starting with uppercase letters).
+	for i, g := range omitted {
+		if len(g.keys) > 0 && g.keys[0].Name == labels.MetricName {
+			// Since the underlying slice for selected and omitted in the same, we need to swap the group so that
+			// we don't overwrite the first group when we append to selected.
+			omitted[0], omitted[i] = omitted[i], omitted[0]
+			omitted = omitted[1:]
+			selected = append(selected, g)
+			break
+		}
+	}
+	return selected, omitted
 }
 
 // numSeriesInSmallestIntersectingPostingGroup receives a sorted slice of posting groups by their totalSize.
