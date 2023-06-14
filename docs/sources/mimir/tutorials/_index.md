@@ -1,7 +1,7 @@
 ---
-title: "Tutorials"
-menuTitle: "Tutorials"
-description: "Grafana Mimir tutorials"
+description: Grafana Mimir tutorials
+menuTitle: Tutorials
+title: Tutorials
 weight: 40
 ---
 

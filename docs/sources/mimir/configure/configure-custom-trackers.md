@@ -23,7 +23,7 @@ active_series_custom_trackers:
   prod: '{namespace=~"prod-.*"}'
 ```
 
-If you configure a custom tracker for an ingester, the ingester exposes a `cortex_ingester_active_series_custom_tracker` gauge metric on its [/metrics endpoint]({{< relref "../references/http-api/index.md#metrics" >}}).
+If you configure a custom tracker for an ingester, the ingester exposes a `cortex_ingester_active_series_custom_tracker` gauge metric on its [/metrics endpoint]({{< relref "../references/http-api#metrics" >}}).
 
 Each custom tracker counts the active series matching its label pattern on a per-tenant basis, which means that each custom tracker generates as many as `# of tenants` series with metric name `cortex_ingester_active_series_custom_tracker`. To reduce the cardinality of this metric, only custom trackers that have matched at least one series are exposed on the metric, and they are removed if they become `0`.
 
@@ -39,7 +39,7 @@ cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_1"}      
 cortex_ingester_active_series_custom_tracker{name="prod", user="tenant_with_only_prod_metrics"}   3
 ```
 
-For specific tenants, you can override the default configuration as previously described. To do so, edit the [runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
+For specific tenants, you can override the default configuration as previously described. To do so, edit the [runtime configuration]({{< relref "./about-runtime-configuration" >}}).
 
 You can override the active series custom trackers’ configuration for the tenant `tenant_with_only_prod_metrics` to track two services instead of the default matchers. See the following example:
 
@@ -60,6 +60,6 @@ cortex_ingester_active_series_custom_tracker{name="service1", user="tenant_with_
 cortex_ingester_active_series_custom_tracker{name="service2", user="tenant_with_only_prod_metrics"}                 2
 ```
 
-To set up runtime overrides, refer to [runtime configuration]({{< relref "./about-runtime-configuration.md" >}}).
+To set up runtime overrides, refer to [runtime configuration]({{< relref "./about-runtime-configuration" >}}).
 
 > **Note:** The custom active series trackers are exposed on each ingester. To understand the count of active series matching a particular label pattern in your Grafana Mimir cluster at a global level, you must collect and sum this metric across all ingesters. If you're running Grafana Mimir with a `replication_factor` > 1, you must also adjust for the fact that the same series will be replicated `RF` times across your ingesters.

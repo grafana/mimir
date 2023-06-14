@@ -3377,7 +3377,7 @@ smoke_test:
 
 # -- Settings for mimir-continuous-test.
 # This continuously writes and reads metrics from Mimir.
-# https://grafana.com/docs/mimir/latest/operators-guide/tools/mimir-continuous-test/
+# https://grafana.com/docs/mimir/latest/manage/tools/mimir-continuous-test/
 continuous_test:
   enabled: false
   # -- Number of replicas to start of continuous test

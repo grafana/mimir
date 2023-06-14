@@ -1,15 +1,17 @@
 ---
 aliases:
   - ../operators-guide/reference-http-api/
-title: "Grafana Mimir HTTP API"
-menuTitle: "HTTP API"
-description: "Use the HTTP API to write and query time-series data, and to operate a Grafana Mimir cluster."
-weight: 120
+description:
+  Use the HTTP API to write and query time-series data, and to operate
+  a Grafana Mimir cluster.
 keywords:
   - Mimir API
   - Mimir endpoints
   - Mimir communication
   - Mimir querying
+menuTitle: HTTP API
+title: Grafana Mimir HTTP API
+weight: 120
 ---
 
 # Grafana Mimir HTTP API
@@ -20,7 +22,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 
 - **Microservices mode**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
-- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../../references/architecture/deployment-modes/index.md" >}}) for the grouping of components.
+- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../architecture/deployment-modes" >}}) for the grouping of components.
 
 ## Endpoints
 
@@ -113,7 +115,7 @@ If you disable multi-tenancy, Grafana Mimir doesn't require any request to inclu
 
 Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` flag or its respective YAML configuration option.
 
-For more information about authentication and authorization, refer to [Authentication and Authorization]({{< relref "../../operators-guide/secure/authentication-and-authorization.md" >}}).
+For more information about authentication and authorization, refer to [Authentication and Authorization]({{< relref "../../manage/secure/authentication-and-authorization" >}}).
 
 ## All services
 
@@ -173,7 +175,7 @@ This endpoint displays empty configuration flags, it exists only to be compatibl
 GET /runtime_config
 ```
 
-This endpoint displays the [runtime configuration]({{< relref "../../configure/about-runtime-configuration.md" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
+This endpoint displays the [runtime configuration]({{< relref "../../configure/about-runtime-configuration" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
 The endpoint is only available if Grafana Mimir is configured with the `-runtime-config.file` option.
 
 #### Different modes
@@ -283,7 +285,7 @@ The endpoint is only available if Grafana Mimir is configured with the `-runtime
 
 ## Distributor
 
-The following endpoints relate to the [distributor]({{< relref "../../references/architecture/components/distributor.md" >}}).
+The following endpoints relate to the [distributor]({{< relref "../architecture/components/distributor" >}}).
 
 ### Remote write
 
@@ -349,7 +351,7 @@ This endpoint displays a web page with the current status of the HA tracker, inc
 
 ## Ingester
 
-The following endpoints relate to the [ingester]({{< relref "../../references/architecture/components/ingester.md" >}}).
+The following endpoints relate to the [ingester]({{< relref "../architecture/components/ingester" >}}).
 
 ### Flush chunks / blocks
 
@@ -425,7 +427,7 @@ This endpoint displays a web page with the ingesters hash ring status, including
 
 ## Querier / Query-frontend
 
-The following endpoints are exposed both by the [querier]({{< relref "../../references/architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../../references/architecture/components/query-frontend/index.md" >}}).
+The following endpoints are exposed both by the [querier]({{< relref "../architecture/components/querier" >}}) and [query-frontend]({{< relref "../architecture/components/query-frontend" >}}).
 
 ### Instant query
 
@@ -711,7 +713,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../operators-guide/tools/mimirtool.md#list-rules" >}}).
+> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
 
 **Example response**
 
@@ -806,7 +808,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../operators-guide/tools/mimirtool.md#get-rule-group" >}}) .
+> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
 
 ### Set rule group
 
@@ -822,7 +824,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../operators-guide/tools/mimirtool.md#load-rule-group" >}}) .
+> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -850,7 +852,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../operators-guide/tools/mimirtool.md#delete-rule-group" >}}).
+> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
 
 ### Delete namespace
 
@@ -938,7 +940,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../operators-guide/tools/mimirtool.md#get-alertmanager-configuration" >}}).
+> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
 
 ### Set Alertmanager configuration
 
@@ -954,7 +956,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../operators-guide/tools/mimirtool.md#load-alertmanager-configuration" >}}).
+> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -994,7 +996,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../operators-guide/tools/mimirtool.md#delete-alertmanager-configuration" >}}).
+> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
 
 ## Store-gateway
 

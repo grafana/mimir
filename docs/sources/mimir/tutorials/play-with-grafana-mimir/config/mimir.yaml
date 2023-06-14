@@ -1,6 +1,6 @@
 # Do not use this configuration in production.
 # It is for demonstration purposes only.
-# Run Mimir in single process mode, with all components running in 1 process. 
+# Run Mimir in single process mode, with all components running in 1 process.
 target: all,alertmanager,overrides-exporter
 
 # Configure Mimir to use Minio as object storage backend.
@@ -20,9 +20,9 @@ blocks_storage:
   tsdb:
     dir: /data/ingester
 
-# Use memberlist, a gossip-based protocol, to enable the 3 Mimir replicas to communicate 
+# Use memberlist, a gossip-based protocol, to enable the 3 Mimir replicas to communicate
 memberlist:
-  join_members: [ mimir-1, mimir-2, mimir-3 ]
+  join_members: [mimir-1, mimir-2, mimir-3]
 
 ruler:
   rule_path: /data/ruler

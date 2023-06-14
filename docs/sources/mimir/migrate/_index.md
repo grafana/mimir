@@ -1,9 +1,9 @@
 ---
 aliases:
   - migration-guide/
-title: "Migrate to Grafana Mimir"
-menuTitle: "Migrate"
-description: "Refer to these guides when migrating to Grafana Mimir."
+description: Refer to these guides when migrating to Grafana Mimir.
+menuTitle: Migrate
+title: Migrate to Grafana Mimir
 weight: 30
 ---
 
