@@ -190,10 +190,12 @@ std.manifestYamlDoc({
     },
 
     local options = defaultOptions + serviceOptions,
-
     build: {
       context: '.',
       dockerfile: 'dev.dockerfile',
+      args: [
+        std.format('%s=%s', ['ALPINE_VERSION', std.extVar('ALPINE_VERSION')]),
+      ],
     },
     image: 'mimir',
     command: [

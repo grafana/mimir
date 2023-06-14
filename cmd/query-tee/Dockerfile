@@ -2,8 +2,8 @@
 # Provenance-includes-location: https://github.com/cortexproject/cortex/cmd/query-tee/Dockerfile
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
-
-FROM       alpine:3.18.0
+ARG ALPINE_VERSION=please-use-make-to-build-images
+FROM       alpine:${ALPINE_VERSION}
 RUN        apk add --no-cache ca-certificates tzdata
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
 ARG        TARGETOS

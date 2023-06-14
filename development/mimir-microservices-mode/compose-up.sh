@@ -7,7 +7,6 @@
 set -e
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-
 # Make sure docker-compose.yml is up-to-date.
 cd $SCRIPT_DIR && make
 

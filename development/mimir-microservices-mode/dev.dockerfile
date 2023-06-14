@@ -2,7 +2,9 @@ FROM golang:1.20.5
 ENV CGO_ENABLED=0
 RUN go install github.com/go-delve/delve/cmd/dlv@v1.20.2
 
-FROM alpine:3.18.0
+# check the alpine version in makefile, and use that version as --build-arg
+ARG ALPINE_VERSION=please-use-make-to-build-images
+FROM       alpine:$ALPINE_VERSION
 
 RUN     mkdir /mimir
 WORKDIR /mimir

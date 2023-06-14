@@ -45,6 +45,7 @@ ifneq (,$(findstring refs/tags/, $(GITHUB_REF)))
 endif
 IMAGE_TAG ?= $(if $(IMAGE_TAG_FROM_GIT_TAG),$(IMAGE_TAG_FROM_GIT_TAG),$(shell ./tools/image-tag))
 GIT_REVISION := $(shell git rev-parse --short HEAD)
+ALPINE_VERSION := "3.18.0"
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 UPTODATE := .uptodate
 
@@ -92,7 +93,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 %/$(UPTODATE): GOOS=linux
 %/$(UPTODATE): %/Dockerfile
 	@echo
-	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
+	$(SUDO) docker build --build-arg=ALPINE_VERSION=$(ALPINE_VERSION) --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
 	@echo
@@ -116,7 +117,7 @@ push-multiarch-%/$(UPTODATE):
 		$(MAKE) GOOS=linux GOARCH=amd64 BINARY_SUFFIX=_linux_amd64 $(DIR)/$(shell basename $(DIR)); \
 		$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 $(DIR)/$(shell basename $(DIR)); \
 	fi
-	$(SUDO) docker buildx build -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
+	$(SUDO) docker buildx build --build-arg=ALPINE_VERSION=$(ALPINE_VERSION) -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
 
 push-multiarch-mimir: ## Push mimir docker image.
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
@@ -133,7 +134,7 @@ fetch-build-image: ## Fetch latest the docker build image. It can be used instea
 push-multiarch-build-image: ## Push the docker build image.
 	@echo
 	# Build and push mimir build image for linux/amd64 and linux/arm64
-	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --progress=plain --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
+	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --progress=plain --build-arg=ALPINE_VERSION=$(ALPINE_VERSION) --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
 
 .PHONY: print-build-image
 print-build-image:
@@ -620,3 +621,6 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 
 docs: doc
 	cd docs && $(MAKE) docs
+
+print-alpine-version:
+	@echo $(ALPINE_VERSION)
