@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
@@ -118,6 +119,35 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
 						mockSeriesResponse(metricNameLabel, minT, 1),
 						mockSeriesResponse(metricNameLabel, minT+1, 2),
+						mockHintsResponse(block1, block2),
+						mockStatsResponse(50),
+					}}: {block1, block2},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: metricNameLabel,
+					values: []valueResult{
+						{t: minT, v: 1},
+						{t: minT + 1, v: 2},
+					},
+				},
+			},
+		},
+		"a single store-gateway instance holds the required blocks (single returned series) - multiple chunks per series for stats": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponseWithChunks(metricNameLabel,
+							createAggrChunkWithSamples(promql.FPoint{minT, 1}),
+							createAggrChunkWithSamples(promql.FPoint{minT + 1, 2}),
+						),
 						mockHintsResponse(block1, block2),
 						mockStatsResponse(50),
 					}}: {block1, block2},
@@ -768,16 +798,23 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			// the below code changes the testData in-place.
 			for _, streaming := range []bool{false, true} {
 				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
-					ctx := limiter.AddQueryLimiterToContext(context.Background(), testData.queryLimiter)
 					reg := prometheus.NewPedanticRegistry()
 
-					if streaming {
-						// Convert the storegateway response to streaming response.
-						for _, res := range testData.storeSetResponses {
-							m, ok := res.(map[BlocksStoreClient][]ulid.ULID)
-							if ok {
-								for k := range m {
-									mockClient := k.(*storeGatewayClientMock)
+					// Count the number of series to check the stats later.
+					seriesCount, chunksCount := 0, 0
+					for _, res := range testData.storeSetResponses {
+						m, ok := res.(map[BlocksStoreClient][]ulid.ULID)
+						if ok {
+							for k := range m {
+								mockClient := k.(*storeGatewayClientMock)
+								for _, sr := range mockClient.mockedSeriesResponses {
+									if s := sr.GetSeries(); s != nil {
+										seriesCount++
+										chunksCount += len(s.Chunks)
+									}
+								}
+								if streaming {
+									// Convert the storegateway response to streaming response.
 									mockClient.mockedSeriesResponses = generateStreamingResponses(mockClient.mockedSeriesResponses)
 								}
 							}
@@ -788,6 +825,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					finder := &blocksFinderMock{}
 					finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
 
+					ctx := limiter.AddQueryLimiterToContext(context.Background(), testData.queryLimiter)
+					st, ctx := stats.ContextWithEmptyStats(ctx)
 					q := &blocksStoreQuerier{
 						ctx:         ctx,
 						minT:        minT,
@@ -864,6 +903,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					}
 					require.NoError(t, set.Err())
 					assert.Equal(t, testData.expectedSeries, actualSeries)
+					assert.Equal(t, seriesCount, int(st.FetchedSeriesCount))
+					assert.Equal(t, chunksCount, int(st.FetchedChunksCount))
 
 					// Assert on metrics (optional, only for test cases defining it).
 					if testData.expectedMetrics != "" {

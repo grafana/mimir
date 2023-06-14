@@ -718,7 +718,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				return errors.Wrapf(err, "failed to create series request")
 			}
 
-			stream, err := c.Series(gCtx, req)
+			stream, err := c.Series(q.ctx, req)
 			if err != nil {
 				if shouldStopQueryFunc(err) {
 					return err
@@ -830,6 +830,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 			} else if len(myStreamingSeries) > 0 {
+				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
 				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
 				streamReader = storegateway.NewSeriesChunksStreamReader(stream, len(myStreamingSeries), queryLimiter, reqStats, q.logger)
 				level.Debug(spanLog).Log("msg", "received streaming series from store-gateway",

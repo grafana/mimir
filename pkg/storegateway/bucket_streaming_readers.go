@@ -107,15 +107,19 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 			}
 
 			chunkBytes := 0
-			for _, ch := range c.Series {
-				chunkBytes += ch.Size()
+			numChunks := 0
+			for _, s := range c.Series {
+				numChunks += len(s.Chunks)
+				for _, ch := range s.Chunks {
+					chunkBytes += ch.Size()
+				}
 			}
 			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
 				s.errorChan <- validation.LimitError(err.Error())
 				return
 			}
 
-			s.stats.AddFetchedChunks(uint64(len(c.Series)))
+			s.stats.AddFetchedChunks(uint64(numChunks))
 			s.stats.AddFetchedChunkBytes(uint64(chunkBytes))
 
 			select {
