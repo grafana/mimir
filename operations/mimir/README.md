@@ -1,7 +1,7 @@
 # Jsonnet for Grafana Mimir on Kubernetes
 
 This folder contains the Jsonnet for deploying Grafana Mimir in Kubernetes.
-The documentation for the Mimir Jsonnet is published at [https://grafana.com/docs/mimir/next/manage/deploy-grafana-mimir/jsonnet/](https://grafana.com/docs/mimir/next/manage/deploy-grafana-mimir/jsonnet/).
+For documentation about Mimir Jsonnet, go to [https://grafana.com/docs/mimir/next/](https://grafana.com/docs/mimir/next/).
 
 ## Contributing
 
