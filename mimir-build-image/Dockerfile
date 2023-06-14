@@ -2,10 +2,10 @@
 # Provenance-includes-location: https://github.com/cortexproject/cortex/build-image/Dockerfile
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
-
+ARG GO_VERSION=please-use-make-to-build-images
 FROM k8s.gcr.io/kustomize/kustomize:v4.5.5 as kustomize
 FROM alpine/helm:3.11.1 as helm
-FROM golang:1.20.5-bullseye
+FROM golang:${GO_VERSION}-bullseye
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"

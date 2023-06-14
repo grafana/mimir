@@ -1,4 +1,6 @@
-FROM golang:1.20.5
+
+ARG GO_VERSION=please-use-compose-up-to-build-images
+FROM golang:${GO_VERSION}
 ENV CGO_ENABLED=0
 RUN go install github.com/go-delve/delve/cmd/dlv@v1.20.2
 

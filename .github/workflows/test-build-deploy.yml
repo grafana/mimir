@@ -22,11 +22,14 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
-      - name: Get build image from Makefile
-        id: build_image_step
-        run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+      - name: Get variables from Makefile
+        id: get_variables_step
+        run: |
+          echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+          echo "go_version=$(make print-go-version)" >> "$GITHUB_OUTPUT"
     outputs:
-      build_image: ${{ steps.build_image_step.outputs.build_image }}
+      build_image: ${{ steps.get_variables_step.outputs.build_image }}
+      go_version: ${{ steps.get_variables_step.outputs.go_version }}
 
   lint:
     runs-on: ubuntu-latest
@@ -302,7 +305,7 @@ jobs:
           path: ./images.tar
 
   integration:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     strategy:
       # Do not abort other groups when one fails.
@@ -315,7 +318,7 @@ jobs:
       - name: Upgrade golang
         uses: actions/setup-go@v4
         with:
-          go-version: 1.20.5
+          go-version: ${{ needs.prepare.outputs.go_version }}
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
         uses: actions/checkout@v3
