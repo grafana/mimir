@@ -418,7 +418,7 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 			// we don't overwrite the first group when we append to selected.
 			omitted[0], omitted[i] = omitted[i], omitted[0]
 			omitted = omitted[1:]
-			selected = append(selected, g)
+			selected = selected[:len(selected)+1]
 			break
 		}
 	}
