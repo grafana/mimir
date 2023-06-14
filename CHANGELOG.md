@@ -34,6 +34,7 @@
 
 ### Jsonnet
 
+* [FEATURE] Alertmanager: Add horizontal pod autoscaler config, that can be enabled using `autoscaling_alertmanager_enabled: true`.
 * [ENHANCEMENT] Add per-container map for environment variables. #5181
 
 ### Mimirtool
