@@ -28,14 +28,22 @@ import (
 )
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
-	testQuerierWithBlocksStorageRunningInMicroservicesMode(t, generateFloatSeries)
+	for _, streamingEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("streaming=%t", streamingEnabled), func(t *testing.T) {
+			testQuerierWithBlocksStorageRunningInMicroservicesMode(t, streamingEnabled, generateFloatSeries)
+		})
+	}
 }
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesModeWithHistograms(t *testing.T) {
-	testQuerierWithBlocksStorageRunningInMicroservicesMode(t, generateHistogramSeries)
+	for _, streamingEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("streaming=%t", streamingEnabled), func(t *testing.T) {
+			testQuerierWithBlocksStorageRunningInMicroservicesMode(t, streamingEnabled, generateHistogramSeries)
+		})
+	}
 }
 
-func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, seriesGenerator func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)) {
+func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, streamingEnabled bool, seriesGenerator func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)) {
 	tests := map[string]struct {
 		tenantShardSize      int
 		indexCacheBackend    string
@@ -162,6 +170,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
 				"-query-frontend.query-stats-enabled":                          "true",
 				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
+				"-querier.prefer-streaming-chunks":                             strconv.FormatBool(streamingEnabled),
 			})
 
 			// Start store-gateways.

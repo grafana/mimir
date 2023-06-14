@@ -718,7 +718,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				return errors.Wrapf(err, "failed to create series request")
 			}
 
-			stream, err := c.Series(q.ctx, req)
+			stream, err := c.Series(gCtx, req)
 			if err != nil {
 				if shouldStopQueryFunc(err) {
 					return err

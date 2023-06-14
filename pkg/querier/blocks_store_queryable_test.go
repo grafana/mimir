@@ -145,8 +145,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				map[BlocksStoreClient][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
 						mockSeriesResponseWithChunks(metricNameLabel,
-							createAggrChunkWithSamples(promql.FPoint{minT, 1}),
-							createAggrChunkWithSamples(promql.FPoint{minT + 1, 2}),
+							createAggrChunkWithSamples(promql.FPoint{T: minT, F: 1}),
+							createAggrChunkWithSamples(promql.FPoint{T: minT + 1, F: 2}),
 						),
 						mockHintsResponse(block1, block2),
 						mockStatsResponse(50),
