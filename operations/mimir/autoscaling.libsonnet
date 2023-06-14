@@ -472,6 +472,6 @@
 
   alertmanager_statefulset: overrideSuperIfExists(
     'alertmanager_statefulset',
-    if !$._config.autoscaling_alertmanager_enabled then {} else removeReplicasFromSpec
+    if !$._config.autoscaling_alertmanager_enabled then {} else $.removeReplicasFromSpec
   ),
 }
