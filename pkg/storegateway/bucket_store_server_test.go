@@ -210,7 +210,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			}
 
 			chksBatch := res.GetStreamingSeriesChunks()
-			for _, chks := range chksBatch.Chunks {
+			for _, chks := range chksBatch.Series {
 				idx++
 				if chksBatch == nil {
 					err = errors.Errorf("expected streaming chunks, got something else")

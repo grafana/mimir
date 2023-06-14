@@ -583,7 +583,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 
 		level.Debug(logger).Log("msg", "consistency check failed", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(missingBlocks), " "))
 
-		// The next attempt should just query the missing blocks.
+		// The nextSeriesIndex attempt should just query the missing blocks.
 		remainingBlocks = missingBlocks
 	}
 
@@ -697,7 +697,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		spanLog       = spanlogger.FromContext(ctx, q.logger)
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
-		streamReaders []*SeriesChunksStreamReader
+		streamReaders []*storegateway.SeriesChunksStreamReader
 	)
 
 	// Concurrently fetch series from all clients.
@@ -813,7 +813,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			}
 
 			reqStats.AddFetchedIndexBytes(indexBytesFetched)
-			var streamReader *SeriesChunksStreamReader
+			var streamReader *storegateway.SeriesChunksStreamReader
 			if len(mySeries) > 0 {
 				chunksFetched, chunkBytes := countChunksAndBytes(mySeries...)
 
@@ -830,11 +830,11 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 			} else if len(myStreamingSeries) > 0 {
-				reqStats.AddFetchedSeries(uint64(len(mySeries)))
-				streamReader = NewSeriesChunksStreamReader(stream, len(myStreamingSeries), queryLimiter, reqStats, q.logger)
+				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
+				streamReader = storegateway.NewSeriesChunksStreamReader(stream, len(myStreamingSeries), queryLimiter, reqStats, q.logger)
 				level.Debug(spanLog).Log("msg", "received streaming series from store-gateway",
 					"instance", c.RemoteAddress(),
-					"fetched series", len(mySeries),
+					"fetched series", len(myStreamingSeries),
 					"fetched index bytes", indexBytesFetched,
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))

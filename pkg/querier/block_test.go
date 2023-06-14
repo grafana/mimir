@@ -231,7 +231,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 				{
 					Labels: mkZLabels("__name__", "overlapping2"),
 					Chunks: []storepb.AggrChunk{
-						// entire range overlaps with the next chunk, so this chunks contributes 0 samples (it will be sorted as second)
+						// entire range overlaps with the nextSeriesIndex chunk, so this chunks contributes 0 samples (it will be sorted as second)
 						createAggrChunkWithSineSamples(now.Add(3*time.Second), now.Add(7*time.Second-5*time.Millisecond), 5*time.Millisecond),
 					},
 				},

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package querier
+package storegateway
 
 import (
 	"fmt"
@@ -10,7 +10,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -18,19 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// StreamingSeries holds the labels of the streaming series and the source to get the chunks
-// for the series.
-type StreamingSeries struct {
-	Labels []mimirpb.LabelAdapter
-	Source StreamingSeriesSource
-}
-
-// StreamingSeriesSource holds the relationship between a stream of chunks from a SeriesChunksStreamReader
-// and the expected position of a series' chunks in that stream.
-type StreamingSeriesSource struct {
-	StreamReader *SeriesChunksStreamReader
-	SeriesIndex  uint64
-}
+// The code in this file is used by the queriers to read the streaming chunks from the storegateway.
 
 // SeriesChunksStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
 // chunks in memory until they are consumed by the PromQL engine.
@@ -41,9 +28,9 @@ type SeriesChunksStreamReader struct {
 	stats               *stats.Stats
 	log                 log.Logger
 
-	seriesCunksChan chan *storepb.StreamSeriesChunksBatch
-	chunksBatch     []*storepb.StreamSeriesChunks
-	errorChan       chan error
+	seriesChunksChan chan *storepb.StreamSeriesChunksBatch
+	chunksBatch      []*storepb.StreamSeriesChunks
+	errorChan        chan error
 }
 
 func NewSeriesChunksStreamReader(client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *SeriesChunksStreamReader {
@@ -70,7 +57,7 @@ func (s *SeriesChunksStreamReader) Close() {
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
 // To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's storegatewaypb.StoreGateway_SeriesClient.
 func (s *SeriesChunksStreamReader) StartBuffering() {
-	s.seriesCunksChan = make(chan *storepb.StreamSeriesChunksBatch, 10)
+	s.seriesChunksChan = make(chan *storepb.StreamSeriesChunksBatch, 2)
 
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
@@ -82,7 +69,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				level.Warn(s.log).Log("msg", "closing storegateway client stream failed", "err", err)
 			}
 
-			close(s.seriesCunksChan)
+			close(s.seriesChunksChan)
 			close(s.errorChan)
 		}()
 
@@ -114,13 +101,13 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				return
 			}
 
-			if err := s.queryLimiter.AddChunks(len(c.Chunks)); err != nil {
+			if err := s.queryLimiter.AddChunks(len(c.Series)); err != nil {
 				s.errorChan <- validation.LimitError(err.Error())
 				return
 			}
 
 			chunkBytes := 0
-			for _, ch := range c.Chunks {
+			for _, ch := range c.Series {
 				chunkBytes += ch.Size()
 			}
 			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
@@ -128,7 +115,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				return
 			}
 
-			s.stats.AddFetchedChunks(uint64(len(c.Chunks)))
+			s.stats.AddFetchedChunks(uint64(len(c.Series)))
 			s.stats.AddFetchedChunkBytes(uint64(chunkBytes))
 
 			select {
@@ -142,7 +129,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				// which is true at the time of writing.
 				s.errorChan <- s.client.Context().Err()
 				return
-			case s.seriesCunksChan <- c:
+			case s.seriesChunksChan <- c:
 				// Batch enqueued successfully, nothing else to do for this batch.
 			}
 		}
@@ -153,9 +140,9 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 // This method must be called with monotonically increasing values of seriesIndex.
 func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, error) {
 	if len(s.chunksBatch) == 0 {
-		chks, haveChunks := <-s.seriesCunksChan
+		chks, channelOpen := <-s.seriesChunksChan
 
-		if !haveChunks {
+		if !channelOpen {
 			// If there's an error, report it.
 			select {
 			case err, haveError := <-s.errorChan:
@@ -171,7 +158,7 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]storepb.Aggr
 			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
 		}
 
-		s.chunksBatch = chks.Chunks
+		s.chunksBatch = chks.Series
 	}
 
 	chks := s.chunksBatch[0]

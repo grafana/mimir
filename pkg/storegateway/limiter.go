@@ -15,14 +15,14 @@ import (
 )
 
 type ChunksLimiter interface {
-	// Reserve num chunks out of the total number of chunks enforced by the limiter.
+	// Reserve num chunks out of the total number of chunks enforced by the mockLimiter.
 	// Returns an error if the limit has been exceeded. This function must be
 	// goroutine safe.
 	Reserve(num uint64) error
 }
 
 type SeriesLimiter interface {
-	// Reserve num series out of the total number of series enforced by the limiter.
+	// Reserve num series out of the total number of series enforced by the mockLimiter.
 	// Returns an error if the limit has been exceeded. This function must be
 	// goroutine safe.
 	Reserve(num uint64) error
@@ -45,7 +45,7 @@ type Limiter struct {
 	failedOnce    sync.Once
 }
 
-// NewLimiter returns a new limiter with a specified limit. 0 disables the limit.
+// NewLimiter returns a new mockLimiter with a specified limit. 0 disables the limit.
 func NewLimiter(limit uint64, ctr prometheus.Counter) *Limiter {
 	return &Limiter{limit: limit, failedCounter: ctr}
 }

@@ -18,37 +18,37 @@ import (
 // Implementation of storage.SeriesSet, based on individual responses from store client.
 type blockStreamingQuerierSeriesSet struct {
 	series       []*storepb.StreamingSeries
-	streamReader chunkStreamer
+	streamReader chunkStreamReader
 
 	// next response to process
-	next int
+	nextSeriesIndex int
 
 	currSeries storage.Series
 }
 
-type chunkStreamer interface {
+type chunkStreamReader interface {
 	GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, error)
 }
 
 func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 	bqss.currSeries = nil
 
-	if bqss.next >= len(bqss.series) {
+	if bqss.nextSeriesIndex >= len(bqss.series) {
 		return false
 	}
 
-	currLabels := mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.next].Labels)
-	seriesIdxStart := bqss.next // First series in this group. We might merge with more below.
-	bqss.next++
+	currLabels := mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.nextSeriesIndex].Labels)
+	seriesIdxStart := bqss.nextSeriesIndex // First series in this group. We might merge with more below.
+	bqss.nextSeriesIndex++
 
 	// Chunks may come in multiple responses, but as soon as the response has chunks for a new series,
 	// we can stop searching. Series are sorted. See documentation for StoreClient.Series call for details.
 	// The actually merging of chunks happens in the Iterator() call where chunks are fetched.
-	for bqss.next < len(bqss.series) && labels.Compare(currLabels, mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.next].Labels)) == 0 {
-		bqss.next++
+	for bqss.nextSeriesIndex < len(bqss.series) && labels.Compare(currLabels, mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.nextSeriesIndex].Labels)) == 0 {
+		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.next-1, bqss.streamReader)
+	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader)
 	return true
 }
 
@@ -65,7 +65,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Warnings() storage.Warnings {
 }
 
 // newBlockStreamingQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
-func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamer) *blockStreamingQuerierSeries {
+func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader) *blockStreamingQuerierSeries {
 	return &blockStreamingQuerierSeries{
 		labels:         lbls,
 		seriesIdxStart: seriesIdxStart,
@@ -77,14 +77,14 @@ func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesId
 type blockStreamingQuerierSeries struct {
 	labels                       labels.Labels
 	seriesIdxStart, seriesIdxEnd int
-	streamReader                 chunkStreamer
+	streamReader                 chunkStreamReader
 }
 
 func (bqs *blockStreamingQuerierSeries) Labels() labels.Labels {
 	return bqs.labels
 }
 
-func (bqs *blockStreamingQuerierSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
+func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunkenc.Iterator {
 	// Fetch the chunks from the stream.
 	var allChunks []storepb.AggrChunk
 	for i := bqs.seriesIdxStart; i <= bqs.seriesIdxEnd; i++ {
@@ -103,7 +103,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(_ chunkenc.Iterator) chunkenc.I
 		return allChunks[i].MinTime < allChunks[j].MinTime
 	})
 
-	it, err := newBlockQuerierSeriesIterator(bqs.Labels(), allChunks)
+	it, err := newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
 	if err != nil {
 		return series.NewErrIterator(err)
 	}

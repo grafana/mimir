@@ -16,10 +16,10 @@ import (
 )
 
 func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
-
 	cases := map[string]struct {
-		input     []testSeries
-		expResult []testSeries
+		input              []testSeries
+		expResult          []testSeries
+		errorChunkStreamer bool
 	}{
 		"simple case of one series": {
 			input: []testSeries{
@@ -121,21 +121,58 @@ func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 				},
 			},
 		},
+		"multiple unique series but with erroring chunk streamer": {
+			errorChunkStreamer: true,
+			input: []testSeries{
+				{
+					lbls:   labels.FromStrings("foo", "bar1"),
+					values: []testSample{{1, 1}, {2, 1}, {5, 10}},
+				},
+				{
+					lbls:   labels.FromStrings("foo", "bar2"),
+					values: []testSample{{2, 2}, {9, 2}},
+				},
+				{
+					lbls:   labels.FromStrings("foo", "bar3"),
+					values: []testSample{{3, 3}},
+				},
+			},
+			expResult: []testSeries{
+				{
+					lbls: labels.FromStrings("foo", "bar1"),
+				},
+				{
+					lbls: labels.FromStrings("foo", "bar2"),
+				},
+				{
+					lbls: labels.FromStrings("foo", "bar3"),
+				},
+			},
+		},
 	}
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			ss := &blockStreamingQuerierSeriesSet{streamReader: &mockChunkStreamer{series: c.input}}
+			ss := &blockStreamingQuerierSeriesSet{streamReader: &mockChunkStreamer{series: c.input, causeError: c.errorChunkStreamer}}
 			for _, s := range c.input {
 				ss.series = append(ss.series, &storepb.StreamingSeries{
 					Labels: mimirpb.FromLabelsToLabelAdapters(s.lbls),
 				})
 			}
 			idx := 0
+			var it chunkenc.Iterator
 			for ss.Next() {
 				s := ss.At()
 				require.Equal(t, c.expResult[idx].lbls, s.Labels())
-				it := s.Iterator(nil)
+				it = s.Iterator(it)
+				if c.errorChunkStreamer {
+					require.Error(t, it.Err())
+					idx++
+					// If chunk streamer errors out, we still go through every
+					// series but we don't get any samples. So we continue here
+					// and check all the series.
+					continue
+				}
 				var actSamples []testSample
 				for it.Next() != chunkenc.ValNone {
 					ts, val := it.At()
@@ -162,11 +199,15 @@ type testSample struct {
 }
 
 type mockChunkStreamer struct {
-	series []testSeries
-	next   int
+	series     []testSeries
+	next       int
+	causeError bool
 }
 
 func (m *mockChunkStreamer) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, error) {
+	if m.causeError {
+		return nil, fmt.Errorf("mocked error")
+	}
 	if m.next >= len(m.series) {
 		return nil, fmt.Errorf("out of chunks")
 	}

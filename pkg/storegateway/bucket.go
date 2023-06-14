@@ -119,9 +119,9 @@ type BucketStore struct {
 	// Query gate which limits the maximum amount of concurrent queries.
 	queryGate gate.Gate
 
-	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
+	// chunksLimiterFactory creates a new mockLimiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
-	// seriesLimiterFactory creates a new limiter used to limit the number of touched series by each Series() call,
+	// seriesLimiterFactory creates a new mockLimiter used to limit the number of touched series by each Series() call,
 	// or LabelName and LabelValues calls when used with matchers.
 	seriesLimiterFactory SeriesLimiterFactory
 	partitioners         blockPartitioners
@@ -788,7 +788,7 @@ func (s *BucketStore) sendSeriesChunks(
 		}
 	}
 	chunksBatch := &storepb.StreamSeriesChunksBatch{
-		Chunks: chunksBuffer[:0],
+		Series: chunksBuffer[:0],
 	}
 	for seriesSet.Next() {
 		// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
@@ -799,13 +799,13 @@ func (s *BucketStore) sendSeriesChunks(
 		if streamingChunks {
 			// We only need to stream chunks here because the series labels have already
 			// been sent above.
-			chunksBatch.Chunks = chunksBatch.Chunks[:len(chunksBatch.Chunks)+1]
-			last := chunksBatch.Chunks[len(chunksBatch.Chunks)-1]
+			chunksBatch.Series = chunksBatch.Series[:len(chunksBatch.Series)+1]
+			last := chunksBatch.Series[len(chunksBatch.Series)-1]
 			last.Chunks = chks
 			last.SeriesIndex = uint64(seriesCount - 1)
 
 			batchSizeBytes += last.Size()
-			if (batchSizeBytes > 0 && batchSizeBytes > queryStreamBatchMessageSize) || len(chunksBatch.Chunks) >= int(req.StreamingChunksBatchSize) {
+			if (batchSizeBytes > 0 && batchSizeBytes > queryStreamBatchMessageSize) || len(chunksBatch.Series) >= int(req.StreamingChunksBatchSize) {
 				response = storepb.NewStreamSeriesChunksResponse(chunksBatch)
 			}
 		} else {
@@ -824,24 +824,13 @@ func (s *BucketStore) sendSeriesChunks(
 		}
 
 		if response != nil {
-			// Encode the message. We encode it ourselves into a PreparedMsg in order to measure
-			// the time it takes.
-			encodeBegin := time.Now()
-			msg := &grpc.PreparedMsg{}
-			if err := msg.Encode(srv, response); err != nil {
-				return status.Error(codes.Internal, errors.Wrap(err, "encode series response").Error())
+			err := s.sendChunks(srv, response, &encodeDuration, &sendDuration)
+			if err != nil {
+				return err
 			}
-			encodeDuration += time.Since(encodeBegin)
-
-			// Send the message.
-			sendBegin := time.Now()
-			if err := srv.SendMsg(msg); err != nil {
-				return status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
-			}
-			sendDuration += time.Since(sendBegin)
 
 			if streamingChunks {
-				chunksBatch.Chunks = chunksBatch.Chunks[:0]
+				chunksBatch.Series = chunksBatch.Series[:0]
 				batchSizeBytes = 0
 			}
 		}
@@ -850,22 +839,29 @@ func (s *BucketStore) sendSeriesChunks(
 		return errors.Wrap(seriesSet.Err(), "expand series set")
 	}
 
-	if streamingChunks && len(chunksBatch.Chunks) > 0 {
+	if streamingChunks && len(chunksBatch.Series) > 0 {
 		// Still some chunks left to send.
-		encodeBegin := time.Now()
-		msg := &grpc.PreparedMsg{}
-		if err := msg.Encode(srv, storepb.NewStreamSeriesChunksResponse(chunksBatch)); err != nil {
-			return status.Error(codes.Internal, errors.Wrap(err, "encode series response").Error())
-		}
-		encodeDuration += time.Since(encodeBegin)
-
-		// Send the message.
-		sendBegin := time.Now()
-		if err := srv.SendMsg(msg); err != nil {
-			return status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
-		}
-		sendDuration += time.Since(sendBegin)
+		return s.sendChunks(srv, storepb.NewStreamSeriesChunksResponse(chunksBatch), &encodeDuration, &sendDuration)
 	}
+
+	return nil
+}
+
+func (s *BucketStore) sendChunks(srv storepb.Store_SeriesServer, chunks interface{}, encodeDuration, sendDuration *time.Duration) error {
+	// We encode it ourselves into a PreparedMsg in order to measure the time it takes.
+	encodeBegin := time.Now()
+	msg := &grpc.PreparedMsg{}
+	if err := msg.Encode(srv, chunks); err != nil {
+		return status.Error(codes.Internal, errors.Wrap(err, "encode series response").Error())
+	}
+	*encodeDuration += time.Since(encodeBegin)
+
+	// Send the message.
+	sendBegin := time.Now()
+	if err := srv.SendMsg(msg); err != nil {
+		return status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
+	}
+	*sendDuration += time.Since(sendBegin)
 
 	return nil
 }
@@ -904,8 +900,8 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	chunkReaders *bucketChunkReaders,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
-	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
-	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
+	chunksLimiter ChunksLimiter, // Rate mockLimiter for loading chunks.
+	seriesLimiter SeriesLimiter, // Rate mockLimiter for loading series.
 	stats *safeQueryStats,
 	reusePostings [][]storage.SeriesRef, // Used if not empty.
 	reusePendingMatchers [][]*labels.Matcher, // Used if not empty.

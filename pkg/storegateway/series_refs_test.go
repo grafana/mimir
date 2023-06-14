@@ -1083,8 +1083,8 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			iterator := newLimitingSeriesChunkRefsSetIterator(
 				newSliceSeriesChunkRefsSetIterator(testCase.upstreamErr, testCase.sets...),
-				&limiter{limit: testCase.chunksLimit},
-				&limiter{limit: testCase.seriesLimit},
+				&mockLimiter{limit: testCase.chunksLimit},
+				&mockLimiter{limit: testCase.seriesLimit},
 			)
 
 			sets := readAllSeriesChunkRefsSet(iterator)
@@ -2604,12 +2604,12 @@ func (s *sliceSeriesChunkRefsSetIterator) Err() error {
 	return nil
 }
 
-type limiter struct {
+type mockLimiter struct {
 	limit   int
 	current atomic.Uint64
 }
 
-func (l *limiter) Reserve(num uint64) error {
+func (l *mockLimiter) Reserve(num uint64) error {
 	if l.current.Add(num) > uint64(l.limit) {
 		return errors.New("test limit exceeded")
 	}

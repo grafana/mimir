@@ -52,7 +52,7 @@ message StreamSeriesChunks {
 }
 
 message StreamSeriesChunksBatch {
-  repeated StreamSeriesChunks chunks = 1;
+  repeated StreamSeriesChunks series = 1;
 }
 
 

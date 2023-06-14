@@ -821,9 +821,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 								err := it.Err()
 								if err != nil {
 									assert.ErrorContains(t, err, testData.expectedErr.Error())
-									// TODO: it is non-trivial to match the type here. The error
-									// gets wrapping multiple times. Is it necessary to return the exact type?
-									//assert.IsType(t, testData.expectedErr, err)
+									assert.ErrorIs(t, err, testData.expectedErr)
 									foundErr = true
 									break
 								}
@@ -2133,7 +2131,7 @@ func mockStreamingSeriesChunksResponse(index uint64, chks []storepb.AggrChunk) *
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_StreamingSeriesChunks{
 			StreamingSeriesChunks: &storepb.StreamSeriesChunksBatch{
-				Chunks: []*storepb.StreamSeriesChunks{
+				Series: []*storepb.StreamSeriesChunks{
 					{
 						SeriesIndex: index,
 						Chunks:      chks,
