@@ -44,6 +44,8 @@ var (
 )
 
 type splitAndCacheMiddlewareMetrics struct {
+	*resultsCacheMetrics
+
 	splitQueriesCount              prometheus.Counter
 	queryResultCacheAttemptedCount prometheus.Counter
 	queryResultCacheSkippedCount   *prometheus.CounterVec
@@ -51,6 +53,7 @@ type splitAndCacheMiddlewareMetrics struct {
 
 func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCacheMiddlewareMetrics {
 	m := &splitAndCacheMiddlewareMetrics{
+		resultsCacheMetrics: newResultsCacheMetrics("query_range", reg),
 		splitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_split_queries_total",
 			Help: "Total number of underlying query requests after the split by interval is applied.",
@@ -344,7 +347,10 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 		spanLog.LogKV("key", key, "hashedKey", hashed)
 	}
 
+	// Lookup the cache.
+	s.metrics.cacheRequests.Add(float64(len(keys)))
 	founds := s.cache.Fetch(ctx, hashedKeys)
+	s.metrics.cacheHits.Add(float64(len(founds)))
 
 	// Decode all cached responses.
 	extents := make([][]Extent, len(keys))

@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
@@ -39,18 +40,20 @@ type cardinalityQueryRequest interface {
 // cardinalityQueryCache is a http.RoundTripped wrapping the downstream with an HTTP response cache.
 // This RoundTripper is used to add caching support to cardinality analysis API endpoints.
 type cardinalityQueryCache struct {
-	cache  cache.Cache
-	limits Limits
-	next   http.RoundTripper
-	logger log.Logger
+	cache   cache.Cache
+	limits  Limits
+	metrics *resultsCacheMetrics
+	next    http.RoundTripper
+	logger  log.Logger
 }
 
-func newCardinalityQueryCacheRoundTripper(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger) http.RoundTripper {
+func newCardinalityQueryCacheRoundTripper(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
 	return &cardinalityQueryCache{
-		cache:  cache,
-		limits: limits,
-		next:   next,
-		logger: logger,
+		cache:   cache,
+		limits:  limits,
+		metrics: newResultsCacheMetrics("cardinality", reg),
+		next:    next,
+		logger:  logger,
 	}
 }
 
@@ -92,9 +95,11 @@ func (c *cardinalityQueryCache) RoundTrip(req *http.Request) (*http.Response, er
 	}
 
 	// Lookup the cache.
+	c.metrics.cacheRequests.Inc()
 	cacheKey, hashedCacheKey := generateCardinalityQueryRequestCacheKey(tenantIDs, queryReq)
 	res := c.fetchCachedResponse(ctx, cacheKey, hashedCacheKey)
 	if res != nil {
+		c.metrics.cacheHits.Inc()
 		level.Debug(spanLog).Log("msg", "response fetched from the cache")
 		return res, nil
 	}

@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,6 +50,7 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 		expectedHeader           http.Header
 		expectedBody             []byte
 		expectedDownstreamCalled bool
+		expectedLookupFromCache  bool
 		expectedStoredToCache    bool
 	}{
 		"should fetch the response from the downstream and store it the cache if the downstream request succeed": {
@@ -56,6 +60,7 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 			expectedHeader:           http.Header{"Content-Type": []string{"application/json"}},
 			expectedBody:             []byte(`{content:"fresh"}`),
 			expectedDownstreamCalled: true,
+			expectedLookupFromCache:  true,
 			expectedStoredToCache:    true,
 		},
 		"should not store the response in the cache if disabled for the tenant": {
@@ -65,6 +70,7 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 			expectedHeader:           http.Header{"Content-Type": []string{"application/json"}},
 			expectedBody:             []byte(`{content:"fresh"}`),
 			expectedDownstreamCalled: true,
+			expectedLookupFromCache:  false,
 			expectedStoredToCache:    false,
 		},
 		"should not store the response in the cache if disabled for the request": {
@@ -75,24 +81,27 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 			expectedHeader:           http.Header{"Content-Type": []string{"application/json"}},
 			expectedBody:             []byte(`{content:"fresh"}`),
 			expectedDownstreamCalled: true,
+			expectedLookupFromCache:  false,
 			expectedStoredToCache:    false,
 		},
 		"should not store the response in the cache if the downstream returned a 4xx status code": {
-			cacheTTL:                 0,
+			cacheTTL:                 time.Minute,
 			downstreamRes:            downstreamRes(400, []byte(`{error:"400"}`)),
 			expectedStatusCode:       400,
 			expectedHeader:           http.Header{"Content-Type": []string{"application/json"}},
 			expectedBody:             []byte(`{error:"400"}`),
 			expectedDownstreamCalled: true,
+			expectedLookupFromCache:  true,
 			expectedStoredToCache:    false,
 		},
 		"should not store the response in the cache if the downstream returned a 5xx status code": {
-			cacheTTL:                 0,
+			cacheTTL:                 time.Minute,
 			downstreamRes:            downstreamRes(500, []byte(`{error:"500"}`)),
 			expectedStatusCode:       500,
 			expectedHeader:           http.Header{"Content-Type": []string{"application/json"}},
 			expectedBody:             []byte(`{error:"500"}`),
 			expectedDownstreamCalled: true,
+			expectedLookupFromCache:  true,
 			expectedStoredToCache:    false,
 		},
 		"should fetch the response from the cache if the cached response is not expired": {
@@ -109,6 +118,7 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 			expectedHeader:           http.Header{"Content-Type": []string{"application/json"}},
 			expectedBody:             []byte(`{content:"cached"}`),
 			expectedDownstreamCalled: false, // Should not call the downstream.
+			expectedLookupFromCache:  true,
 			expectedStoredToCache:    false, // Should not store anything to the cache.
 		},
 		"should fetch the response from the downstream and overwrite the cached response if corrupted": {
@@ -121,6 +131,7 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 			expectedHeader:           http.Header{"Content-Type": []string{"application/json"}},
 			expectedBody:             []byte(`{content:"fresh"}`),
 			expectedDownstreamCalled: true,
+			expectedLookupFromCache:  true,
 			expectedStoredToCache:    true,
 		},
 		"should fetch the response from the downstream and overwrite the cached response if a key collision was detected": {
@@ -137,6 +148,7 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 			expectedHeader:           http.Header{"Content-Type": []string{"application/json"}},
 			expectedBody:             []byte(`{content:"fresh"}`),
 			expectedDownstreamCalled: true,
+			expectedLookupFromCache:  true,
 			expectedStoredToCache:    true,
 		},
 	}
@@ -187,7 +199,8 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 					}
 					initialStoreCallsCount := cacheBackend.CountStoreCalls()
 
-					rt := newCardinalityQueryCacheRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t))
+					reg := prometheus.NewPedanticRegistry()
+					rt := newCardinalityQueryCacheRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t), reg)
 					res, err := rt.RoundTrip(req)
 					require.NoError(t, err)
 
@@ -220,6 +233,29 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 					} else {
 						assert.Equal(t, initialStoreCallsCount, cacheBackend.CountStoreCalls())
 					}
+
+					// Assert on metrics.
+					expectedRequestsCount := 0
+					expectedHitsCount := 0
+					if testData.expectedLookupFromCache {
+						expectedRequestsCount = 1
+						if !testData.expectedDownstreamCalled {
+							expectedHitsCount = 1
+						}
+					}
+
+					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+						# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
+        	            # TYPE cortex_frontend_query_result_cache_requests_total counter
+        	            cortex_frontend_query_result_cache_requests_total{request_type="cardinality"} %d
+
+						# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
+        	            # TYPE cortex_frontend_query_result_cache_hits_total counter
+        	            cortex_frontend_query_result_cache_hits_total{request_type="cardinality"} %d
+					`, expectedRequestsCount, expectedHitsCount)),
+						"cortex_frontend_query_result_cache_requests_total",
+						"cortex_frontend_query_result_cache_hits_total",
+					))
 				})
 			}
 		})
@@ -279,7 +315,7 @@ func TestCardinalityQueryCache_RoundTrip_WithTenantFederation(t *testing.T) {
 			cacheBackend := cache.NewInstrumentedMockCache()
 			limits := multiTenantMockLimits{byTenant: testData.limits}
 
-			rt := newCardinalityQueryCacheRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t))
+			rt := newCardinalityQueryCacheRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t), nil)
 			res, err := rt.RoundTrip(req)
 			require.NoError(t, err)
 
