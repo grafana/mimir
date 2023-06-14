@@ -523,19 +523,22 @@ Requires [authentication](#authentication).
 GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_names
 ```
 
-Returns realtime label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
+Returns label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
 It counts distinct label values per label name.
 
 As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
 cutting between the calls.
 
 The items in the field `cardinality` are sorted by `label_values_count` in DESC order and by `label_name` in ASC order.
-
 The count of items is limited by `limit` request param.
 
 This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+#### Caching
+
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than `0`.
 
 #### Request params
 
@@ -563,8 +566,18 @@ Requires [authentication](#authentication).
 GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_values
 ```
 
-Returns realtime label values cardinality associated to request param `label_names[]` across all ingesters, for the authenticated tenant, in `JSON` format.
+Returns label values cardinality associated to request param `label_names[]` across all ingesters, for the authenticated tenant, in `JSON` format.
 It returns the series count per label value associated to request param `label_names[]`.
+
+The items in the field `labels` are sorted by `series_count` in descending order and by `label_name` in ascending order.
+The items in the field `cardinality` are sorted by `series_count` in DESC order and by `label_value` in ASC order.
+The count of `cardinality` items is limited by request parameter `limit`.
+
+This endpoint is disabled by default; you can enable it via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML configuration option).
+
+Requires [authentication](#authentication).
+
+#### Count series by `inmemory` or `active`
 
 Two methods of counting are available: `inmemory` and `active`. To choose one, use the `count_method` parameter.
 
@@ -578,14 +591,9 @@ This method of counting is most useful for understanding what label values are r
 Two subsequent calls will likely return similar results, because this window of time is not related to the block cutting on ingesters.
 Values will change only as a result of changes in the data ingested by Mimir.
 
-The items in the field `labels` are sorted by `series_count` in DESC order and by `label_name` in ASC order.
-The items in the field `cardinality` are sorted by `series_count` in DESC order and by `label_value` in ASC order.
+#### Caching
 
-The count of `cardinality` items is limited by request param `limit`.
-
-This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
-
-Requires [authentication](#authentication).
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than `0`.
 
 #### Request params
 
