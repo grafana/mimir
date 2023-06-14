@@ -150,9 +150,9 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 // This method must be called with monotonically increasing values of seriesIndex.
 func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error) {
 	if len(s.seriesBatch) == 0 {
-		batch, haveBatch := <-s.seriesBatchChan
+		batch, channelOpen := <-s.seriesBatchChan
 
-		if !haveBatch {
+		if !channelOpen {
 			// If there's an error, report it.
 			select {
 			case err, haveError := <-s.errorChan:
