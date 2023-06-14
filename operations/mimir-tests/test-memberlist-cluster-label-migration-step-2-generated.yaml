@@ -1087,6 +1087,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1140,6 +1141,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1193,6 +1195,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1246,6 +1249,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
