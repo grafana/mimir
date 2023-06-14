@@ -794,34 +794,42 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			// Non-streaming should be tested first because in the streaming case,
-			// the below code changes the testData in-place.
-			for _, streaming := range []bool{false, true} {
+			for _, streaming := range []bool{true, false} {
 				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
 					reg := prometheus.NewPedanticRegistry()
 
 					// Count the number of series to check the stats later.
+					// We also make a copy of the testData.storeSetResponses where relevant so that
+					// we can run the streaming and non-streaming case in any order.
+					var storeSetResponses []interface{}
 					seriesCount, chunksCount := 0, 0
 					for _, res := range testData.storeSetResponses {
 						m, ok := res.(map[BlocksStoreClient][]ulid.ULID)
-						if ok {
-							for k := range m {
-								mockClient := k.(*storeGatewayClientMock)
-								for _, sr := range mockClient.mockedSeriesResponses {
-									if s := sr.GetSeries(); s != nil {
-										seriesCount++
-										chunksCount += len(s.Chunks)
-									}
-								}
-								if streaming {
-									// Convert the storegateway response to streaming response.
-									mockClient.mockedSeriesResponses = generateStreamingResponses(mockClient.mockedSeriesResponses)
+						if !ok {
+							storeSetResponses = append(storeSetResponses, res)
+							continue
+						}
+						newMap := make(map[BlocksStoreClient][]ulid.ULID, len(m))
+						for k, v := range m {
+							mockClient := k.(*storeGatewayClientMock)
+							for _, sr := range mockClient.mockedSeriesResponses {
+								if s := sr.GetSeries(); s != nil {
+									seriesCount++
+									chunksCount += len(s.Chunks)
 								}
 							}
+
+							shallowCopy := *mockClient
+							if streaming {
+								// Convert the storegateway response to streaming response.
+								shallowCopy.mockedSeriesResponses = generateStreamingResponses(shallowCopy.mockedSeriesResponses)
+							}
+							newMap[&shallowCopy] = v
 						}
+						storeSetResponses = append(storeSetResponses, newMap)
 					}
 
-					stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
+					stores := &blocksStoreSetMock{mockedResponses: storeSetResponses}
 					finder := &blocksFinderMock{}
 					finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
 
@@ -919,7 +927,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 }
 
 func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*storepb.SeriesResponse {
-	var series, chunks, others []*storepb.SeriesResponse
+	var series, chunks, others, final []*storepb.SeriesResponse
 	for i, mr := range seriesResponses {
 		s := mr.GetSeries()
 		if s != nil {
@@ -931,12 +939,12 @@ func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*st
 		break
 	}
 
-	seriesResponses = append(seriesResponses[:0], series...)
-	seriesResponses = append(seriesResponses, others...)
+	final = append(final, series...)
+	final = append(final, others...)
 	// End of stream response goes after the hints and stats.
-	seriesResponses = append(seriesResponses, mockStreamingSeriesBatchResponse(true))
-	seriesResponses = append(seriesResponses, chunks...)
-	return seriesResponses
+	final = append(final, mockStreamingSeriesBatchResponse(true))
+	final = append(final, chunks...)
+	return final
 }
 
 func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
@@ -1804,9 +1812,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			// Non-streaming should be tested first because in the streaming case,
-			// the below code changes the testData in-place.
-			for _, streaming := range []bool{false, true} {
+			for _, streaming := range []bool{true, false} {
 				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
 					block1 := ulid.MustNew(1, nil)
 					block2 := ulid.MustNew(2, nil)
