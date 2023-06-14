@@ -365,7 +365,7 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 // bytes for the series = 256 MB. So it will not fetch more than 256 MB of posting lists.
 //
 // We found that this strategy may cause increased API calls for cases where it omits the __name__ posting group.
-// Because of this now the strategy always selects the __name__ posting group regardless of its size.
+// Because of this, the strategy always selects the __name__ posting group regardless of its size.
 type worstCaseFetchedDataStrategy struct {
 	// postingListActualSizeFactor affects how posting lists are summed together.
 	// Postings lists have different sizes in the bucket and the cache.
