@@ -161,7 +161,7 @@
     ],
   }),
 
-  local newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, memory_target_utilization) = self.newScaledObject(
+  newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, memory_target_utilization):: self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: min_replicas,
       max_replica_count: max_replicas,
@@ -212,7 +212,7 @@
   // Helper methods
   //
 
-  local removeReplicasFromSpec = {
+  removeReplicasFromSpec:: {
     spec+: {
       // Remove the "replicas" field so that Flux doesn't reconcile it.
       replicas+:: null,
@@ -245,11 +245,11 @@
 
   querier_deployment: overrideSuperIfExists(
     'querier_deployment',
-    if !$._config.autoscaling_querier_enabled then {} else removeReplicasFromSpec
+    if !$._config.autoscaling_querier_enabled then {} else $.removeReplicasFromSpec
   ),
 
   query_frontend_scaled_object: if !$._config.autoscaling_query_frontend_enabled then null else
-    newQueryFrontendScaledObject(
+    $.newQueryFrontendScaledObject(
       name='query-frontend',
       cpu_requests=$.query_frontend_container.resources.requests.cpu,
       memory_requests=$.query_frontend_container.resources.requests.memory,
@@ -259,7 +259,7 @@
     ),
   query_frontend_deployment: overrideSuperIfExists(
     'query_frontend_deployment',
-    if $._config.autoscaling_query_frontend_enabled then removeReplicasFromSpec else
+    if $._config.autoscaling_query_frontend_enabled then $.removeReplicasFromSpec else
       if ($._config.query_sharding_enabled && $._config.autoscaling_querier_enabled) then
         queryFrontendReplicas($._config.autoscaling_querier_max_replicas) else
         {}
@@ -300,11 +300,11 @@
 
   ruler_querier_deployment: overrideSuperIfExists(
     'ruler_querier_deployment',
-    if !$._config.autoscaling_ruler_querier_enabled then {} else removeReplicasFromSpec
+    if !$._config.autoscaling_ruler_querier_enabled then {} else $.removeReplicasFromSpec
   ),
 
   ruler_query_frontend_scaled_object: if !$._config.autoscaling_ruler_query_frontend_enabled || !$._config.ruler_remote_evaluation_enabled then null else
-    newQueryFrontendScaledObject(
+    $.newQueryFrontendScaledObject(
       name='ruler-query-frontend',
       cpu_requests=$.ruler_query_frontend_container.resources.requests.cpu,
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
@@ -314,7 +314,7 @@
     ),
   ruler_query_frontend_deployment: overrideSuperIfExists(
     'ruler_query_frontend_deployment',
-    if $._config.autoscaling_ruler_query_frontend_enabled then removeReplicasFromSpec else
+    if $._config.autoscaling_ruler_query_frontend_enabled then $.removeReplicasFromSpec else
       if ($._config.query_sharding_enabled && $._config.autoscaling_ruler_querier_enabled) then
         queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas) else
         {}
@@ -363,7 +363,7 @@
 
   distributor_deployment: overrideSuperIfExists(
     'distributor_deployment',
-    if !$._config.autoscaling_distributor_enabled then {} else removeReplicasFromSpec
+    if !$._config.autoscaling_distributor_enabled then {} else $.removeReplicasFromSpec
   ),
 
   // Ruler
@@ -413,7 +413,7 @@
 
   ruler_deployment: overrideSuperIfExists(
     'ruler_deployment',
-    if !$._config.autoscaling_ruler_enabled then {} else removeReplicasFromSpec
+    if !$._config.autoscaling_ruler_enabled then {} else $.removeReplicasFromSpec
   ),
 
   // Utility used to override a field only if exists in super.
