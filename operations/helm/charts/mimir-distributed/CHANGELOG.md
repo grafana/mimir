@@ -28,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 4.5.0
+
 * [CHANGE] Query-frontend: enable cardinality estimation via `frontend.query_sharding_target_series_per_shard` in the Mimir configuration for query sharding by default if `results-cache.enabled` is true. #5128
 * [CHANGE] Remove `graphite-web` component from the graphite proxy. The `graphite-web` component had several configuration issues which meant it was failing to process requests. #5133
 * [ENHANCEMENT] Set `nginx` and `gateway` Nginx read timeout (`proxy_read_timeout`) to 300 seconds (increase from default 60 seconds), so that it doesn't interfere with the querier's default 120 seconds timeout (`mimir.structuredConfig.querier.timeout`). #4924
