@@ -104,7 +104,7 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 			l.utilizationScanner.String(), "err", err.Error())
 		// Disable any limiting, since we can't tell resource utilization
 		l.LimitingReason.Store("")
-		return ctx.Err()
+		return nil
 	}
 
 	now := time.Now().UTC()
@@ -115,7 +115,7 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	l.lastCPUTime = cpuTime
 
 	if lastUpdate.IsZero() {
-		return ctx.Err()
+		return nil
 	}
 
 	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
@@ -134,7 +134,7 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	prevEnable := l.LimitingReason.Load() != ""
 	if enable == prevEnable {
 		// No change
-		return ctx.Err()
+		return nil
 	}
 
 	if enable {
@@ -146,7 +146,7 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	}
 	l.LimitingReason.Store(reason)
 
-	return ctx.Err()
+	return nil
 }
 
 // readFileNoStat returns an io.ReadCloser for fpath.
