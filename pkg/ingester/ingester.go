@@ -115,9 +115,6 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
-
-	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
-	queryLimitingCode = http.StatusServiceUnavailable
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -3061,7 +3058,6 @@ func (i *Ingester) checkReadOverloaded() error {
 		return nil
 	}
 
-	level.Debug(i.logger).Log("msg", "rejecting read request due to resource utilization based limiting",
-		"reason", reason)
-	return httpgrpc.Errorf(queryLimitingCode, "the ingester is currently too busy to process queries, try again later")
+	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
+	return httpgrpc.Errorf(http.StatusServiceUnavailable, "the ingester is currently too busy to process queries, try again later")
 }
