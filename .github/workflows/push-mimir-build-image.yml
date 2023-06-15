@@ -1,0 +1,134 @@
+name: Build and Push mimir-build-image
+
+# configure trigger by pull request or manually
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - mimir-build-image/Dockerfile  
+
+
+jobs: 
+  prepare_variables:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: khan/pull-request-comment-trigger@v1.1.0
+        id: trigger
+        with:
+          trigger: '@mimir-build-image'
+          reaction: rocket
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+      - name: Get Variables
+        id: variables
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+          # if [[ ${{ github.event_name }} == 'pull_request' && ${{ github.event.pull_request.user.login }} == 'dependabot[bot]' ]]; then
+            echo "triggered=true" >> $GITHUB_OUTPUT
+            echo "pull_request_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+            echo "pull_request_url=${{ github.event.pull_request.html_url }}" >> $GITHUB_OUTPUT
+            echo "login=${{ github.event.pull_request.user.login }}" >> $GITHUB_OUTPUT
+          else 
+            echo "triggered=false" >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      triggered: ${{ steps.variables.outputs.triggered }}
+      pull_request_number: ${{ steps.variables.outputs.pull_request_number }}
+      pull_request_url: ${{ steps.variables.outputs.pull_request_url }}
+      login: ${{ steps.variables.outputs.login }}
+
+  build_and_push:
+    runs-on: ubuntu-latest
+    needs: prepare_variables
+    if: needs.prepare_variables.outputs.triggered == 'true'
+    # If the PR is raised by dependabot, then build the image
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Checkout Pull Request Branch
+        run: gh pr checkout ${{ needs.prepare_variables.outputs.pull_request_number }}
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Prepare Variables
+        id: prepare
+        run: |
+          echo "path=mimir-build-image/Dockerfile" >> $GITHUB_OUTPUT
+          echo "image=grafana/mimir-build-image" >> $GITHUB_OUTPUT
+
+      - name: Compute Image Tag
+        id: compute_hash
+        run: |
+          current_hash=$(md5sum ${{ steps.prepare.outputs.path }} | awk '{print $1}')
+          echo "the file path is ${{ steps.prepare.outputs.path }}"
+          echo "build tag is $current_hash"
+          tag="${{ needs.prepare_variables.outputs.pull_request_number }}_$current_hash"
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+
+      - name: Check Should Build Image
+        id: check_build
+        run: |
+          echo "Checking if image should be built"
+          response=$(curl --silent --head -lL https://hub.docker.com/v2/repositories/${{ steps.prepare.outputs.image }}/tags/${{ steps.compute_hash.outputs.tag }})
+          if [[ ! ($response == *"200 OK"*) ]]; then
+            echo "${{ steps.compute_hash.outputs.tag }} doesn't exists"
+            echo "build=true" >> $GITHUB_OUTPUT
+          else
+            echo "${{ steps.compute_hash.outputs.tag }} already exists"
+            echo "build=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Add Comment to the PR
+        id: notification
+        run: | 
+          if [[${{ steps.check_build.outputs.build == 'true' }}]]; then
+            gh pr comment $PR_URL --body "**This PR triggers the build of the mimir-build-image**
+            image would be auto built and pushed to docker hub, a commit would be added to PR with new image version."
+          else
+            echo "This PR will not trigger a build of the mimir-build-image"
+            gh pr comment $PR_URL --body "**This PR can not trigger a build of the mimir-build-image**
+            Only PR raised by dependabot can trigger a build of the mimir-build-image."
+          fi
+        env:
+          PR_URL: ${{ needs.prepare_variables.outputs.pull_request_url }}
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Build and Push Docker Image
+        if: steps.check_build.outputs.build == 'true'
+        run: |
+          echo "Building and Pushing Docker Image"
+          make push-multiarch-build-image IMAGE_TAG=${{ steps.compute_hash.outputs.tag }}
+      
+      - name: Add commit to PR in order to update Build Image version
+        run: |
+          echo "Get current Build Image Version"
+          main_version=$(echo $(make print-build-image) | cut -d ':' -f 2)
+          echo "Current Build Image Version is $main_version"
+          echo "Built Image Version is $TAG"
+          if [ "$main_version" = "$TAG" ]; then
+            echo "Build Image Version is already up to date"
+          else
+            echo "Build Image Version is not up to date"
+            sed -i "s/$main_version/${{ steps.compute_hash.outputs.tag }}/g" Makefile
+            git config --global user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
+            git config --global user.name "${{ github.event.pull_request.user.login }}"
+            git add Makefile
+            git commit -m "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
+            git push
+          fi 
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          TAG: ${{ steps.compute_hash.outputs.tag }}
