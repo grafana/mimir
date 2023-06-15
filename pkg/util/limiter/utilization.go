@@ -123,16 +123,10 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	l.movingAvg.Tick()
 	cpuA := float64(l.movingAvg.Rate()) / 100
 
-	level.Debug(l.logger).Log("msg", "process resource utilization", "method", l.utilizationScanner.String(),
-		"memory_utilization", memUtil, "smoothed_cpu_utilization", cpuA, "raw_cpu_utilization", cpuUtil)
-
-	memPercent := 100 * (float64(memUtil) / float64(l.memoryLimit))
-	cpuPercent := 100 * (cpuA / l.cpuLimit)
-
 	var reason string
-	if memPercent >= 100 {
+	if memUtil >= l.memoryLimit {
 		reason = "memory"
-	} else if cpuPercent >= 100 {
+	} else if cpuA >= l.cpuLimit {
 		reason = "cpu"
 	}
 
@@ -145,13 +139,10 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 
 	if enable {
 		level.Info(l.logger).Log("msg", "enabling resource utilization based limiting",
-			"reason", reason, "memory_limit", l.memoryLimit,
-			"memory_percentage_of_limit", memPercent, "cpu_limit", l.cpuLimit,
-			"cpu_percentage_of_limit", cpuPercent)
+			"reason", reason, "memory_limit", l.memoryLimit, "cpu_limit", l.cpuLimit)
 	} else {
 		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
-			"memory_limit", l.memoryLimit, "memory_percentage_of_limit", memPercent,
-			"cpu_limit", l.cpuLimit, "cpu_percentage_of_limit", cpuPercent)
+			"memory_limit", l.memoryLimit, "cpu_limit", l.cpuLimit)
 	}
 	l.LimitingReason.Store(reason)
 
