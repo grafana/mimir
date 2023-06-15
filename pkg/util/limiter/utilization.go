@@ -66,7 +66,7 @@ type UtilizationBasedLimiter struct {
 	// The time of the last update
 	lastUpdate     time.Time
 	movingAvg      *math.EwmaRate
-	LimitingReason atomic.String
+	limitingReason atomic.String
 }
 
 // NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
@@ -83,6 +83,12 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log
 	}
 	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.init, l.update, nil)
 	return l
+}
+
+// LimitingReason returns the current reason for limiting, if any.
+// If an empty string is returned, limiting is disabled.
+func (l *UtilizationBasedLimiter) LimitingReason() string {
+	return l.limitingReason.Load()
 }
 
 func (l *UtilizationBasedLimiter) init(_ context.Context) error {
@@ -103,7 +109,7 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "method",
 			l.utilizationScanner.String(), "err", err.Error())
 		// Disable any limiting, since we can't tell resource utilization
-		l.LimitingReason.Store("")
+		l.limitingReason.Store("")
 		return nil
 	}
 
@@ -131,7 +137,7 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	}
 
 	enable := reason != ""
-	prevEnable := l.LimitingReason.Load() != ""
+	prevEnable := l.limitingReason.Load() != ""
 	if enable == prevEnable {
 		// No change
 		return nil
@@ -144,7 +150,7 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
 			"memory_limit", l.memoryLimit, "cpu_limit", l.cpuLimit)
 	}
-	l.LimitingReason.Store(reason)
+	l.limitingReason.Store(reason)
 
 	return nil
 }

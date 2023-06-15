@@ -3056,7 +3056,7 @@ func (i *Ingester) checkReadOverloaded() error {
 		return nil
 	}
 
-	reason := i.utilizationBasedLimiter.LimitingReason.Load()
+	reason := i.utilizationBasedLimiter.LimitingReason()
 	if reason == "" {
 		return nil
 	}
