@@ -801,8 +801,20 @@ func (s *BucketStore) sendSeriesChunks(
 			// been sent above.
 			chunksBatch.Series = chunksBatch.Series[:len(chunksBatch.Series)+1]
 			last := chunksBatch.Series[len(chunksBatch.Series)-1]
-			last.Chunks = chks
+			last.Chunks = append(last.Chunks[:0], chks...)
 			last.SeriesIndex = uint64(seriesCount - 1)
+			// Copy the chunk bytes to avoid race.
+			for i := range last.Chunks {
+				raw := last.Chunks[i].Raw
+				if raw == nil {
+					continue
+				}
+				newChk := storepb.Chunk{
+					Type: raw.Type,
+					Data: append(make([]byte, 0, len(raw.Data)), raw.Data...),
+				}
+				last.Chunks[i].Raw = &newChk
+			}
 
 			batchSizeBytes += last.Size()
 			if (batchSizeBytes > 0 && batchSizeBytes > queryStreamBatchMessageSize) || len(chunksBatch.Series) >= int(req.StreamingChunksBatchSize) {
