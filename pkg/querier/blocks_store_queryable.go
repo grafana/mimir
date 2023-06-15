@@ -435,7 +435,7 @@ func (q *blocksStoreQuerier) Close() error {
 }
 
 func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.selectSorted")
+	spanLog, _ := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.selectSorted")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := sp.Start, sp.End
@@ -452,7 +452,7 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 	}
 
 	queryFunc := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		seriesSets, queriedBlocks, warnings, err := q.fetchSeriesFromStores(spanCtx, sp, clients, minT, maxT, convertedMatchers)
+		seriesSets, queriedBlocks, warnings, err := q.fetchSeriesFromStores(q.ctx, sp, clients, minT, maxT, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
@@ -463,7 +463,7 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		return queriedBlocks, nil
 	}
 
-	err = q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, shard, queryFunc)
+	err = q.queryWithConsistencyCheck(q.ctx, spanLog, minT, maxT, shard, queryFunc)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -688,7 +688,7 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // considered serious errors. All other errors are not returned, but they give rise to fetch retrials.
 func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, convertedMatchers []storepb.LabelMatcher) ([]storage.SeriesSet, []ulid.ULID, storage.Warnings, error) {
 	var (
-		reqCtx        = grpc_metadata.AppendToOutgoingContext(context.Background(), storegateway.GrpcContextMetadataTenantID, q.userID)
+		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, q.userID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		seriesSets    = []storage.SeriesSet(nil)
