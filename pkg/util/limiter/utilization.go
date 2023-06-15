@@ -81,7 +81,7 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log
 		// Use a minute long window, each sample being a second apart
 		movingAvg: math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
 	}
-	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.init, l.update, nil)
+	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.starting, l.update, nil)
 	return l
 }
 
@@ -91,7 +91,7 @@ func (l *UtilizationBasedLimiter) LimitingReason() string {
 	return l.limitingReason.Load()
 }
 
-func (l *UtilizationBasedLimiter) init(_ context.Context) error {
+func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
 	p, err := procfs.Self()
 	if err != nil {
 		return errors.Wrap(err, "unable to detect CPU/memory utilization, unsupported platform")
