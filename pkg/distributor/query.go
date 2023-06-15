@@ -26,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*ingester_client.ExemplarQueryResponse, error) {
@@ -242,7 +241,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 			if len(resp.Timeseries) > 0 {
 				for _, series := range resp.Timeseries {
 					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
-						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
+						return ingesterQueryResult{}, limitErr
 					}
 				}
 
@@ -250,17 +249,17 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 			} else if len(resp.Chunkseries) > 0 {
 				// Enforce the max chunks limits.
 				if chunkLimitErr := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); chunkLimitErr != nil {
-					return ingesterQueryResult{}, validation.LimitError(chunkLimitErr.Error())
+					return ingesterQueryResult{}, chunkLimitErr
 				}
 
 				for _, series := range resp.Chunkseries {
 					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
-						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
+						return ingesterQueryResult{}, limitErr
 					}
 				}
 
 				if chunkBytesLimitErr := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); chunkBytesLimitErr != nil {
-					return ingesterQueryResult{}, validation.LimitError(chunkBytesLimitErr.Error())
+					return ingesterQueryResult{}, chunkBytesLimitErr
 				}
 
 				result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
@@ -270,7 +269,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 				for _, s := range resp.StreamingSeries {
 					if limitErr := queryLimiter.AddSeries(s.Labels); limitErr != nil {
-						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
+						return ingesterQueryResult{}, limitErr
 					}
 
 					labelsBatch = append(labelsBatch, mimirpb.FromLabelAdaptersToLabels(s.Labels))
