@@ -960,10 +960,6 @@ instance_limits:
 # CLI flag: -ingester.ignore-series-limit-for-metric-names
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 
-# (experimental) Enable CPU/memory utilization based read path request limiting
-# CLI flag: -ingester.utilization-limits-enabled
-[utilization_limits_enabled: <boolean> | default = false]
-
 # (experimental) CPU utilization limit, as CPU cores, for CPU/memory utilization
 # based read request limiting
 # CLI flag: -ingester.read-path-cpu-utilization-limit

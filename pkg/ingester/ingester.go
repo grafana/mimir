@@ -161,7 +161,7 @@ type Config struct {
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 
-	UtilizationLimitsEnabled       bool    `yaml:"utilization_limits_enabled" category:"experimental"`
+	utilizationLimitsEnabled       bool    `yaml:"-"`
 	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
 	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
 }
@@ -184,13 +184,13 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
 
-	f.BoolVar(&cfg.UtilizationLimitsEnabled, "ingester.utilization-limits-enabled", false, "Enable CPU/memory utilization based read path request limiting")
 	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting")
 	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting")
 }
 
 func (cfg *Config) Validate() error {
-	if !cfg.UtilizationLimitsEnabled {
+	cfg.utilizationLimitsEnabled = cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0
+	if !cfg.utilizationLimitsEnabled {
 		return nil
 	}
 
@@ -430,7 +430,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	if i.cfg.UtilizationLimitsEnabled {
+	if i.cfg.utilizationLimitsEnabled {
 		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(i.cfg.ReadPathCPUUtilizationLimit,
 			i.cfg.ReadPathMemoryUtilizationLimit, log.WithPrefix(i.logger, "context", "read path"))
 		servs = append(servs, i.utilizationBasedLimiter)
@@ -3049,7 +3049,7 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 
 // checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.
 func (i *Ingester) checkReadOverloaded() error {
-	if !i.cfg.UtilizationLimitsEnabled {
+	if !i.cfg.utilizationLimitsEnabled {
 		return nil
 	}
 
