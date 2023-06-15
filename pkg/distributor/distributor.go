@@ -1444,7 +1444,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, true, func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
+	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, d.cfg.MinimizeIngesterRequests, func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
 		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
 		if err != nil {
 			return struct{}{}, err
@@ -1735,7 +1735,7 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 	req := &ingester_client.UserStatsRequest{
 		CountMethod: ingesterCountMethod,
 	}
-	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, true, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
+	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.cfg.MinimizeIngesterRequests, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
 		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
 		if err != nil {
 			return zonedUserStatsResponse{}, err
