@@ -147,10 +147,12 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) {
 
 	if enable {
 		level.Info(l.logger).Log("msg", "enabling resource utilization based limiting",
-			"reason", reason, "memory_limit", l.memoryLimit, "cpu_limit", l.cpuLimit)
+			"reason", reason, "memory_limit", l.memoryLimit, "memory_utilization", memUtil,
+			"cpu_limit", l.cpuLimit, "cpu_utilization", cpuA)
 	} else {
 		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
-			"memory_limit", l.memoryLimit, "cpu_limit", l.cpuLimit)
+			"memory_limit", l.memoryLimit, "memory_utilization", memUtil,
+			"cpu_limit", l.cpuLimit, "cpu_utilization", cpuA)
 	}
 	l.limitingReason.Store(reason)
 }
