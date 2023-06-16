@@ -3057,6 +3057,7 @@ func (i *Ingester) checkReadOverloaded() error {
 		return nil
 	}
 
+	i.metrics.utilizationLimitedRequests.WithLabelValues(reason).Inc()
 	return tooBusyError
 }
 
