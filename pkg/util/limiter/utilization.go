@@ -92,7 +92,7 @@ func (l *UtilizationBasedLimiter) LimitingReason() string {
 func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
 	p, err := procfs.Self()
 	if err != nil {
-		return errors.Wrap(err, "unable to detect CPU/memory utilization, unsupported platform")
+		return errors.Wrap(err, "unable to detect CPU/memory utilization, unsupported platform. Please disable utilization based limiting")
 	}
 
 	l.utilizationScanner = procfsScanner{
