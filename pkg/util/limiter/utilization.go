@@ -5,8 +5,6 @@ package limiter
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
 	"time"
 
 	"github.com/go-kit/log"
@@ -103,7 +101,7 @@ func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
 	return nil
 }
 
-func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
+func (l *UtilizationBasedLimiter) update(_ context.Context) error {
 	cpuTime, memUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "method",
@@ -153,27 +151,4 @@ func (l *UtilizationBasedLimiter) update(ctx context.Context) error {
 	l.limitingReason.Store(reason)
 
 	return nil
-}
-
-// readFileNoStat returns an io.ReadCloser for fpath.
-//
-// We make sure to avoid calling os.Stat, since many files in /proc and /sys report incorrect file sizes (either 0 or 4096).
-// The reader is limited at 1024 kB.
-func readFileNoStat(fpath string) (io.ReadCloser, error) {
-	const maxBufferSize = 1024 * 1024
-
-	f, err := os.Open(fpath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, err
-		}
-		return nil, errors.Wrapf(err, "failed to open %q", fpath)
-	}
-
-	return readCloser{Reader: io.LimitReader(f, maxBufferSize), Closer: f}, nil
-}
-
-type readCloser struct {
-	io.Reader
-	io.Closer
 }
