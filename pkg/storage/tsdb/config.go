@@ -335,18 +335,19 @@ func (cfg *TSDBConfig) IsBlocksShippingEnabled() bool {
 
 // BucketStoreConfig holds the config information for Bucket Stores used by the querier and store-gateway.
 type BucketStoreConfig struct {
-	SyncDir                  string              `yaml:"sync_dir"`
-	SyncInterval             time.Duration       `yaml:"sync_interval" category:"advanced"`
-	MaxConcurrent            int                 `yaml:"max_concurrent" category:"advanced"`
-	TenantSyncConcurrency    int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
-	BlockSyncConcurrency     int                 `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency      int                 `yaml:"meta_sync_concurrency" category:"advanced"`
-	IndexCache               IndexCacheConfig    `yaml:"index_cache"`
-	ChunksCache              ChunksCacheConfig   `yaml:"chunks_cache"`
-	MetadataCache            MetadataCacheConfig `yaml:"metadata_cache"`
-	IgnoreDeletionMarksDelay time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
-	BucketIndex              BucketIndexConfig   `yaml:"bucket_index"`
-	IgnoreBlocksWithin       time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
+	SyncDir                           string              `yaml:"sync_dir"`
+	SyncInterval                      time.Duration       `yaml:"sync_interval" category:"advanced"`
+	MaxConcurrent                     int                 `yaml:"max_concurrent" category:"advanced"`
+	TenantSyncConcurrency             int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
+	BlockSyncConcurrency              int                 `yaml:"block_sync_concurrency" category:"advanced"`
+	IndexHeaderLazyLoadingConcurrency int                 `yaml:"index_header_lazy_loading_concurrency" category:"advanced"`
+	MetaSyncConcurrency               int                 `yaml:"meta_sync_concurrency" category:"advanced"`
+	IndexCache                        IndexCacheConfig    `yaml:"index_cache"`
+	ChunksCache                       ChunksCacheConfig   `yaml:"chunks_cache"`
+	MetadataCache                     MetadataCacheConfig `yaml:"metadata_cache"`
+	IgnoreDeletionMarksDelay          time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
+	BucketIndex                       BucketIndexConfig   `yaml:"bucket_index"`
+	IgnoreBlocksWithin                time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
 	// Chunk pool.
 	DeprecatedMaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes" category:"deprecated"`             // Deprecated. TODO: Remove in Mimir 2.11.
@@ -412,6 +413,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 100, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 10, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 20, "Maximum number of concurrent blocks synching per tenant.")
+	f.IntVar(&cfg.IndexHeaderLazyLoadingConcurrency, "blocks-storage.bucket-store.index-header-lazy-loading-concurrency", 20, "Maximum number of concurrent index headers being loaded in per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from object storage per tenant.")
 	f.DurationVar(&cfg.IgnoreDeletionMarksDelay, "blocks-storage.bucket-store.ignore-deletion-marks-delay", time.Hour*1, "Duration after which the blocks marked for deletion will be filtered out while fetching blocks. "+
 		"The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet.")
