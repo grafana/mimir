@@ -1213,16 +1213,21 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	}
 
 	// We expect rule groups to have been sharded between the rulers.
-	test.Poll(t, time.Second, numRuleGroups, func() interface{} {
+	test.Poll(t, time.Second, []int{numRuleGroups, len(rulers)}, func() interface{} {
 		var actualRuleGroupsCount int
+		var actualRulersWithRuleGroups int
 
 		for _, ruler := range rulers {
 			actualRuleGroups, err := ruler.getLocalRules(userID, AnyRule)
 			require.NoError(t, err)
 			actualRuleGroupsCount += len(actualRuleGroups)
+
+			if len(actualRuleGroups) > 0 {
+				actualRulersWithRuleGroups++
+			}
 		}
 
-		return actualRuleGroupsCount
+		return []int{actualRuleGroupsCount, actualRulersWithRuleGroups}
 	})
 
 	// Change the tenant's ruler shard size to 1, so that only 1 ruler will load all the rule groups after the next sync.
