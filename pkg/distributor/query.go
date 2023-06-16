@@ -140,18 +140,9 @@ func mergeExemplarSets(a, b []mimirpb.Exemplar) []mimirpb.Exemplar {
 func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.ExemplarQueryRequest) (*ingester_client.ExemplarQueryResponse, error) {
 	// Fetch exemplars from multiple ingesters in parallel, using the replicationSet
 	// to deal with consistency.
-	results, err := replicationSet.Do(ctx, 0, func(ctx context.Context, ing *ring.InstanceDesc) (interface{}, error) {
-		client, err := d.ingesterPool.GetClientFor(ing.Addr)
-		if err != nil {
-			return nil, err
-		}
 
-		resp, err := client.(ingester_client.IngesterClient).QueryExemplars(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-
-		return resp, nil
+	results, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.ExemplarQueryResponse, error) {
+		return client.QueryExemplars(ctx, req)
 	})
 	if err != nil {
 		return nil, err
@@ -160,11 +151,10 @@ func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSe
 	return mergeExemplarQueryResponses(results), nil
 }
 
-func mergeExemplarQueryResponses(results []interface{}) *ingester_client.ExemplarQueryResponse {
+func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryResponse) *ingester_client.ExemplarQueryResponse {
 	var keys []string
 	exemplarResults := make(map[string]mimirpb.TimeSeries)
-	for _, result := range results {
-		r := result.(*ingester_client.ExemplarQueryResponse)
+	for _, r := range results {
 		for _, ts := range r.Timeseries {
 			lbls := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
 			e, ok := exemplarResults[lbls]
