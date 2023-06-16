@@ -1581,13 +1581,10 @@ func Test_Ingester_LabelNames(t *testing.T) {
 	})
 
 	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origEnabled := i.cfg.utilizationLimitsEnabled
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {
-			i.cfg.utilizationLimitsEnabled = origEnabled
 			i.utilizationBasedLimiter = origLimiter
 		})
-		i.cfg.utilizationLimitsEnabled = true
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
@@ -1642,13 +1639,10 @@ func Test_Ingester_LabelValues(t *testing.T) {
 	}
 
 	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origEnabled := i.cfg.utilizationLimitsEnabled
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {
-			i.cfg.utilizationLimitsEnabled = origEnabled
 			i.utilizationBasedLimiter = origLimiter
 		})
-		i.cfg.utilizationLimitsEnabled = true
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.LabelValues(ctx, &client.LabelValuesRequest{})
@@ -1839,13 +1833,10 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 	}
 
 	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origEnabled := i.cfg.utilizationLimitsEnabled
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {
-			i.cfg.utilizationLimitsEnabled = origEnabled
 			i.utilizationBasedLimiter = origLimiter
 		})
-		i.cfg.utilizationLimitsEnabled = true
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err := i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{}, nil)
@@ -1954,13 +1945,10 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 	}
 
 	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origEnabled := i.cfg.utilizationLimitsEnabled
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {
-			i.cfg.utilizationLimitsEnabled = origEnabled
 			i.utilizationBasedLimiter = origLimiter
 		})
-		i.cfg.utilizationLimitsEnabled = true
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err := i.LabelValuesCardinality(&client.LabelValuesCardinalityRequest{}, nil)
@@ -2482,13 +2470,10 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 	}
 
 	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origEnabled := i.cfg.utilizationLimitsEnabled
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {
-			i.cfg.utilizationLimitsEnabled = origEnabled
 			i.utilizationBasedLimiter = origLimiter
 		})
-		i.cfg.utilizationLimitsEnabled = true
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{})
@@ -2876,13 +2861,10 @@ func TestIngester_QueryStream(t *testing.T) {
 	}
 
 	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origEnabled := i.cfg.utilizationLimitsEnabled
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {
-			i.cfg.utilizationLimitsEnabled = origEnabled
 			i.utilizationBasedLimiter = origLimiter
 		})
-		i.cfg.utilizationLimitsEnabled = true
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err = i.QueryStream(&client.QueryRequest{}, nil)
@@ -3330,13 +3312,10 @@ func TestIngester_QueryExemplars(t *testing.T) {
 	})
 
 	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origEnabled := i.cfg.utilizationLimitsEnabled
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {
-			i.cfg.utilizationLimitsEnabled = origEnabled
 			i.utilizationBasedLimiter = origLimiter
 		})
-		i.cfg.utilizationLimitsEnabled = true
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{})
@@ -4591,13 +4570,10 @@ func Test_Ingester_UserStats(t *testing.T) {
 	assert.Equal(t, uint64(3), res.NumSeries)
 
 	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origEnabled := i.cfg.utilizationLimitsEnabled
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {
-			i.cfg.utilizationLimitsEnabled = origEnabled
 			i.utilizationBasedLimiter = origLimiter
 		})
-		i.cfg.utilizationLimitsEnabled = true
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.UserStats(ctx, &client.UserStatsRequest{})

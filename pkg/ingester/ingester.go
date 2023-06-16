@@ -429,7 +429,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	if cfg.ReadPathCPUUtilizationLimit > 0 && cfg.ReadPathMemoryUtilizationLimit > 0 {
+	if i.cfg.ReadPathCPUUtilizationLimit > 0 && i.cfg.ReadPathMemoryUtilizationLimit > 0 {
 		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(i.cfg.ReadPathCPUUtilizationLimit,
 			i.cfg.ReadPathMemoryUtilizationLimit, log.WithPrefix(i.logger, "context", "read path"))
 		servs = append(servs, i.utilizationBasedLimiter)
