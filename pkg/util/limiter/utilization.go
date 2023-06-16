@@ -63,7 +63,7 @@ type UtilizationBasedLimiter struct {
 	lastCPUTime float64
 	// The time of the last update
 	lastUpdate     time.Time
-	movingAvg      *math.EwmaRate
+	cpuMovingAvg   *math.EwmaRate
 	limitingReason atomic.String
 }
 
@@ -77,7 +77,7 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log
 		cpuLimit:    cpuLimit,
 		memoryLimit: memoryLimit,
 		// Use a minute long window, each sample being a second apart
-		movingAvg: math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
+		cpuMovingAvg: math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
 	}
 	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.starting, l.update, nil)
 	return l
@@ -127,9 +127,9 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) {
 	}
 
 	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
-	l.movingAvg.Add(int64(cpuUtil * 100))
-	l.movingAvg.Tick()
-	cpuA := float64(l.movingAvg.Rate()) / 100
+	l.cpuMovingAvg.Add(int64(cpuUtil * 100))
+	l.cpuMovingAvg.Tick()
+	cpuA := float64(l.cpuMovingAvg.Rate()) / 100
 
 	var reason string
 	if memUtil >= l.memoryLimit {
