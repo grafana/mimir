@@ -103,6 +103,58 @@ func (g *instrumentedGate) Done() {
 	g.gate.Done()
 }
 
+// NewReader wraps a Gate implementation with one that records max number of reader load
+// requests, currently load requests, and the duration of calls to the Start method.
+func NewReader(reg prometheus.Registerer, maxConcurrent int, gate Gate) Gate {
+	g := &readerGate{
+		gate: gate,
+		max: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "gate_loads_concurrent_max",
+			Help: "Number of maximum concurrent loads allowed.",
+		}),
+		inflight: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "gate_loads_in_flight",
+			Help: "Number of loads that are currently in flight.",
+		}),
+		duration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "gate_duration_seconds",
+			Help:    "How many seconds it took for loads to wait at the gate.",
+			Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
+		}),
+	}
+
+	g.max.Set(float64(maxConcurrent))
+	return g
+}
+
+type readerGate struct {
+	gate Gate
+
+	max      prometheus.Gauge
+	inflight prometheus.Gauge
+	duration prometheus.Histogram
+}
+
+func (g *readerGate) Start(ctx context.Context) error {
+	start := time.Now()
+	defer func() {
+		g.duration.Observe(time.Since(start).Seconds())
+	}()
+
+	err := g.gate.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	g.inflight.Inc()
+	return nil
+}
+
+func (g *readerGate) Done() {
+	g.inflight.Dec()
+	g.gate.Done()
+}
+
 func NewRejecting(maxConcurrent int) Gate {
 	return &rejectingGate{
 		ch: make(chan struct{}, maxConcurrent),
