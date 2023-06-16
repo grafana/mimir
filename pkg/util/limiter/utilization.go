@@ -102,16 +102,20 @@ func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
 }
 
 func (l *UtilizationBasedLimiter) update(_ context.Context) error {
+	l.compute(time.Now())
+	return nil
+}
+
+func (l *UtilizationBasedLimiter) compute(now time.Time) {
 	cpuTime, memUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "method",
 			l.utilizationScanner.String(), "err", err.Error())
 		// Disable any limiting, since we can't tell resource utilization
 		l.limitingReason.Store("")
-		return nil
+		return
 	}
 
-	now := time.Now().UTC()
 	lastUpdate := l.lastUpdate
 	l.lastUpdate = now
 
@@ -119,7 +123,7 @@ func (l *UtilizationBasedLimiter) update(_ context.Context) error {
 	l.lastCPUTime = cpuTime
 
 	if lastUpdate.IsZero() {
-		return nil
+		return
 	}
 
 	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
@@ -138,7 +142,7 @@ func (l *UtilizationBasedLimiter) update(_ context.Context) error {
 	prevEnable := l.limitingReason.Load() != ""
 	if enable == prevEnable {
 		// No change
-		return nil
+		return
 	}
 
 	if enable {
@@ -149,6 +153,4 @@ func (l *UtilizationBasedLimiter) update(_ context.Context) error {
 			"memory_limit", l.memoryLimit, "cpu_limit", l.cpuLimit)
 	}
 	l.limitingReason.Store(reason)
-
-	return nil
 }
