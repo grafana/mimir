@@ -49,9 +49,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/shutdownmarker"
-
 	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -60,12 +57,15 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
+	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -160,6 +160,9 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
+
+	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
+	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -179,6 +182,25 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DefaultLimits.RegisterFlags(f)
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
+
+	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting")
+	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting")
+}
+
+func (cfg *Config) Validate() error {
+	utilizationLimitsEnabled := cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0
+	if !utilizationLimitsEnabled {
+		return nil
+	}
+
+	if cfg.ReadPathCPUUtilizationLimit <= 0 {
+		return fmt.Errorf("read path CPU utilization limit must be greater than 0")
+	}
+	if cfg.ReadPathMemoryUtilizationLimit <= 0 {
+		return fmt.Errorf("read path memory utilization limit must be greater than 0")
+	}
+
+	return nil
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -259,6 +281,8 @@ type Ingester struct {
 	tenantsWithOutOfOrderEnabledStat   *expvar.Int
 	minOutOfOrderTimeWindowSecondsStat *expvar.Int
 	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
+
+	utilizationBasedLimiter utilizationBasedLimiter
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -403,6 +427,12 @@ func (i *Ingester) starting(ctx context.Context) error {
 		}
 		closeIdleService := services.NewTimerService(interval, nil, i.closeAndDeleteIdleUserTSDBs, nil)
 		servs = append(servs, closeIdleService)
+	}
+
+	if i.cfg.ReadPathCPUUtilizationLimit > 0 && i.cfg.ReadPathMemoryUtilizationLimit > 0 {
+		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(i.cfg.ReadPathCPUUtilizationLimit,
+			i.cfg.ReadPathMemoryUtilizationLimit, log.WithPrefix(i.logger, "context", "read path"))
+		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
@@ -1071,6 +1101,9 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
@@ -1125,6 +1158,9 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
 
 	labelName, startTimestampMs, endTimestampMs, matchers, err := client.FromLabelValuesRequest(req)
 	if err != nil {
@@ -1159,6 +1195,9 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
 	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
 
@@ -1196,6 +1235,9 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 // MetricsForLabelMatchers implements IngesterServer.
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (*client.MetricsForLabelMatchersResponse, error) {
 	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
 
@@ -1265,6 +1307,9 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1313,6 +1358,10 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return err
+	}
+
 	userID, err := tenant.TenantID(server.Context())
 	if err != nil {
 		return err
@@ -1341,6 +1390,10 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return err
+	}
+
 	userID, err := tenant.TenantID(srv.Context())
 	if err != nil {
 		return err
@@ -1415,6 +1468,9 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 // QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
 	if err := i.checkRunning(); err != nil {
+		return err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
 		return err
 	}
 
@@ -2896,7 +2952,7 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 	}
 }
 
-// MetricsMetadata returns all the metric metadata of a user.
+// MetricsMetadata returns all the metrics metadata of a user.
 func (i *Ingester) MetricsMetadata(ctx context.Context, _ *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
@@ -2988,4 +3044,25 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorHandling:      promhttp.HTTPErrorOnError,
 		Timeout:            10 * time.Second,
 	}).ServeHTTP(w, r)
+}
+
+// checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.
+func (i *Ingester) checkReadOverloaded() error {
+	if i.utilizationBasedLimiter == nil {
+		return nil
+	}
+
+	reason := i.utilizationBasedLimiter.LimitingReason()
+	if reason == "" {
+		return nil
+	}
+
+	i.metrics.utilizationLimitedRequests.WithLabelValues(reason).Inc()
+	return tooBusyError
+}
+
+type utilizationBasedLimiter interface {
+	services.Service
+
+	LimitingReason() string
 }
