@@ -96,8 +96,8 @@ func (p *PreallocTimeseries) RemoveLabel(labelName string) {
 	}
 }
 
-func (p *PreallocTimeseries) SetLabels(lbls labels.Labels) {
-	p.Labels = FromLabelsToLabelAdapters(lbls)
+func (p *PreallocTimeseries) SetLabels(lbls []LabelAdapter) {
+	p.Labels = lbls
 
 	// We can't reuse raw unmarshalled data for the timeseries after setting new labels.
 	// (Maybe we could, if labels are exactly the same, but it's expensive to check.)

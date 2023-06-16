@@ -212,6 +212,34 @@ jobs:
           echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
           ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
+  test-stringlabels:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    container:
+      image: ${{ needs.prepare.outputs.build_image }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - name: Run Git Config
+        run: git config --global --add safe.directory '*'
+      - name: Symlink Expected Path to Workspace
+        run: |
+          mkdir -p /go/src/github.com/grafana/mimir
+          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Get Go build cache path
+        id: gocache
+        run: |
+          echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - name: Cache Go build cache
+        uses: actions/cache@v3
+        with:
+          key: build-go-test-stringlabels-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          path: ${{ steps.gocache.outputs.path }}
+      - name: Run Tests with -tags stringlabels
+        run: |
+          go test -tags=netgo,stringlabels -timeout 5m -count 1 ./...
+
   test-docs:
     runs-on: ubuntu-latest
     steps:

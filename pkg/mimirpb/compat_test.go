@@ -8,6 +8,7 @@ package mimirpb
 import (
 	stdlibjson "encoding/json"
 	"math"
+	"reflect"
 	"strconv"
 	"testing"
 	"unsafe"
@@ -186,10 +187,6 @@ func TestFromLabelAdaptersToLabels(t *testing.T) {
 	actual := FromLabelAdaptersToLabels(input)
 
 	assert.Equal(t, expected, actual)
-
-	// All strings must NOT be copied.
-	assert.Equal(t, uintptr(unsafe.Pointer(&input[0].Name)), uintptr(unsafe.Pointer(&actual[0].Name)))
-	assert.Equal(t, uintptr(unsafe.Pointer(&input[0].Value)), uintptr(unsafe.Pointer(&actual[0].Value)))
 }
 
 func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
@@ -200,8 +197,10 @@ func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
 	assert.Equal(t, expected, actual)
 
 	// All strings must be copied.
-	assert.NotEqual(t, uintptr(unsafe.Pointer(&input[0].Name)), uintptr(unsafe.Pointer(&actual[0].Name)))
-	assert.NotEqual(t, uintptr(unsafe.Pointer(&input[0].Value)), uintptr(unsafe.Pointer(&actual[0].Value)))
+	actualValue := actual.Get("hello")
+	hInputValue := (*reflect.StringHeader)(unsafe.Pointer(&input[0].Value))
+	hActualValue := (*reflect.StringHeader)(unsafe.Pointer(&actualValue))
+	assert.NotEqual(t, hInputValue.Data, hActualValue.Data)
 }
 
 func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
