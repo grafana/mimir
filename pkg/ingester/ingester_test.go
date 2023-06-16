@@ -1579,6 +1579,20 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origEnabled := i.cfg.utilizationLimitsEnabled
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.cfg.utilizationLimitsEnabled = origEnabled
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.cfg.utilizationLimitsEnabled = true
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		_, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
+		assert.EqualError(t, err, tooBusyError.Error())
+	})
 }
 
 func Test_Ingester_LabelValues(t *testing.T) {
@@ -1626,6 +1640,20 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expectedValues, res.LabelValues)
 	}
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origEnabled := i.cfg.utilizationLimitsEnabled
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.cfg.utilizationLimitsEnabled = origEnabled
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.cfg.utilizationLimitsEnabled = true
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		_, err := i.LabelValues(ctx, &client.LabelValuesRequest{})
+		assert.EqualError(t, err, tooBusyError.Error())
+	})
 }
 
 func Test_Ingester_Query(t *testing.T) {
@@ -1762,7 +1790,7 @@ func Test_Ingester_Query(t *testing.T) {
 	}
 }
 
-func TestIngester_LabelNamesCardinality(t *testing.T) {
+func TestIngester_LabelNamesAndValues(t *testing.T) {
 	series := []series{
 		{labels.FromStrings(labels.MetricName, "metric_0", "status", "500"), 1, 100000},
 		{labels.FromStrings(labels.MetricName, "metric_0", "status", "200"), 1, 110000},
@@ -1809,6 +1837,20 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 			assert.ElementsMatch(t, extractItemsWithSortedValues(s.SentResponses), tc.expected)
 		})
 	}
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origEnabled := i.cfg.utilizationLimitsEnabled
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.cfg.utilizationLimitsEnabled = origEnabled
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.cfg.utilizationLimitsEnabled = true
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		err := i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{}, nil)
+		assert.EqualError(t, err, tooBusyError.Error())
+	})
 }
 
 func TestIngester_LabelValuesCardinality(t *testing.T) {
@@ -1910,6 +1952,20 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			require.ElementsMatch(t, s.SentResponses[0].Items, tc.expectedItems)
 		})
 	}
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origEnabled := i.cfg.utilizationLimitsEnabled
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.cfg.utilizationLimitsEnabled = origEnabled
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.cfg.utilizationLimitsEnabled = true
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		err := i.LabelValuesCardinality(&client.LabelValuesCardinalityRequest{}, nil)
+		assert.EqualError(t, err, tooBusyError.Error())
+	})
 }
 
 type series struct {
@@ -2424,6 +2480,20 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 			assert.ElementsMatch(t, testData.expected, res.Metric)
 		})
 	}
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origEnabled := i.cfg.utilizationLimitsEnabled
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.cfg.utilizationLimitsEnabled = origEnabled
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.cfg.utilizationLimitsEnabled = true
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		_, err := i.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{})
+		assert.EqualError(t, err, tooBusyError.Error())
+	})
 }
 
 func Test_Ingester_MetricsForLabelMatchers_Deduplication(t *testing.T) {
@@ -2804,6 +2874,20 @@ func TestIngester_QueryStream(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origEnabled := i.cfg.utilizationLimitsEnabled
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.cfg.utilizationLimitsEnabled = origEnabled
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.cfg.utilizationLimitsEnabled = true
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		err = i.QueryStream(&client.QueryRequest{}, nil)
+		assert.EqualError(t, err, tooBusyError.Error())
+	})
 }
 
 func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
@@ -3228,6 +3312,36 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 
 	require.Equal(t, len(expectedSeries), seriesReceivedCount, "expected to receive chunks for all series")
 	require.Equal(t, expectedSeriesPerChunksMessage, actualSeriesPerChunksMessage)
+}
+
+func TestIngester_QueryExemplars(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	ctx := user.InjectOrgID(context.Background(), userID)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+	})
+
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origEnabled := i.cfg.utilizationLimitsEnabled
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.cfg.utilizationLimitsEnabled = origEnabled
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.cfg.utilizationLimitsEnabled = true
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		_, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{})
+		assert.EqualError(t, err, tooBusyError.Error())
+	})
 }
 
 func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
@@ -4475,6 +4589,20 @@ func Test_Ingester_UserStats(t *testing.T) {
 	// Active series are considered according to the wall time during the push, not the sample timestamp.
 	// Therefore all three series are still active at this point.
 	assert.Equal(t, uint64(3), res.NumSeries)
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origEnabled := i.cfg.utilizationLimitsEnabled
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.cfg.utilizationLimitsEnabled = origEnabled
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.cfg.utilizationLimitsEnabled = true
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		_, err := i.UserStats(ctx, &client.UserStatsRequest{})
+		assert.EqualError(t, err, tooBusyError.Error())
+	})
 }
 
 func Test_Ingester_AllUserStats(t *testing.T) {
@@ -7194,4 +7322,14 @@ func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 			require.Equal(t, testData.expectedTSDBWALReplayConcurrency, tsdbWALReplayConcurrency)
 		})
 	}
+}
+
+type fakeUtilizationBasedLimiter struct {
+	services.BasicService
+
+	limitingReason string
+}
+
+func (l *fakeUtilizationBasedLimiter) LimitingReason() string {
+	return l.limitingReason
 }

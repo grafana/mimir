@@ -283,7 +283,7 @@ type Ingester struct {
 	minOutOfOrderTimeWindowSecondsStat *expvar.Int
 	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
 
-	utilizationBasedLimiter *limiter.UtilizationBasedLimiter
+	utilizationBasedLimiter utilizationBasedLimiter
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -3058,6 +3058,11 @@ func (i *Ingester) checkReadOverloaded() error {
 		return nil
 	}
 
-	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
-	return httpgrpc.Errorf(http.StatusServiceUnavailable, "the ingester is currently too busy to process queries, try again later")
+	return tooBusyError
+}
+
+type utilizationBasedLimiter interface {
+	services.Service
+
+	LimitingReason() string
 }
