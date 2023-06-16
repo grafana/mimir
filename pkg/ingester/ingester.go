@@ -61,6 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/debug"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -967,6 +968,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+
+				if !debug.ValidatePromLabels(copiedLabels) {
+					level.Error(i.logger).Log("msg", "invalid label set", "labels", copiedLabels)
+				}
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
