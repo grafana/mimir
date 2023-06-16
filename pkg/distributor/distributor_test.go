@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -2034,7 +2035,18 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			// Assert on metric metadata
 			metadata, err := ds[0].MetricsMetadata(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, 10, len(metadata))
+
+			expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
+			for _, m := range req.Metadata {
+				expectedMetadata = append(expectedMetadata, scrape.MetricMetadata{
+					Metric: m.MetricFamilyName,
+					Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
+					Help:   m.Help,
+					Unit:   m.Unit,
+				})
+			}
+
+			assert.ElementsMatch(t, metadata, expectedMetadata)
 		})
 	}
 }
