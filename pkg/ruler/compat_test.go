@@ -409,7 +409,7 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 
 			// setup
 			cfg := defaultRulerConfig(t)
-			options := applyPrepareOptions()
+			options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
 			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
 			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()

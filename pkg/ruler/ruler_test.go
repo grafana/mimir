@@ -12,7 +12,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -37,11 +36,13 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/dskit/tenant"
@@ -138,8 +139,9 @@ type prepareOptions struct {
 	start            bool
 }
 
-func applyPrepareOptions(opts ...prepareOption) prepareOptions {
-	defaultLogger := log.NewLogfmtLogger(os.Stdout)
+func applyPrepareOptions(t *testing.T, instanceID string, opts ...prepareOption) prepareOptions {
+	defaultLogger := testutil.NewLogger(t)
+	defaultLogger = log.With(defaultLogger, "instance", instanceID)
 	defaultLogger = level.NewFilter(defaultLogger, level.AllowInfo())
 
 	applied := prepareOptions{
@@ -197,7 +199,7 @@ func withPrometheusRegisterer(reg prometheus.Registerer) prepareOption {
 }
 
 func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ...prepareOption) *Ruler {
-	options := applyPrepareOptions(opts...)
+	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 	manager := prepareRulerManager(t, cfg, opts...)
 
 	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
@@ -221,7 +223,7 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ..
 }
 
 func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *DefaultMultiTenantManager {
-	options := applyPrepareOptions(opts...)
+	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 
 	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return storage.NoopQuerier(), nil
@@ -1211,14 +1213,22 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	}
 
 	// We expect rule groups to have been sharded between the rulers.
-	actualRuleGroupsCount := 0
-	for _, ruler := range rulers {
-		actualRuleGroups, err := ruler.getLocalRules(userID, AnyRule)
-		require.NoError(t, err)
-		require.NotEmpty(t, actualRuleGroups)
-		actualRuleGroupsCount += len(actualRuleGroups)
-	}
-	assert.Equal(t, numRuleGroups, actualRuleGroupsCount)
+	test.Poll(t, time.Second, []int{numRuleGroups, len(rulers)}, func() interface{} {
+		var actualRuleGroupsCount int
+		var actualRulersWithRuleGroups int
+
+		for _, ruler := range rulers {
+			actualRuleGroups, err := ruler.getLocalRules(userID, AnyRule)
+			require.NoError(t, err)
+			actualRuleGroupsCount += len(actualRuleGroups)
+
+			if len(actualRuleGroups) > 0 {
+				actualRulersWithRuleGroups++
+			}
+		}
+
+		return []int{actualRuleGroupsCount, actualRulersWithRuleGroups}
+	})
 
 	// Change the tenant's ruler shard size to 1, so that only 1 ruler will load all the rule groups after the next sync.
 	tenantLimits[userID].RulerTenantShardSize = 1
@@ -1242,16 +1252,18 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	}
 
 	// We expect rule groups to have been loaded only from 1 ruler (not important which one).
-	var actualRuleGroupsCountPerRuler []int
-	for _, ruler := range rulers {
-		actualRuleGroups, err := ruler.getLocalRules(userID, AnyRule)
-		require.NoError(t, err)
+	test.Poll(t, time.Second, []int{0, numRuleGroups}, func() interface{} {
+		var actualRuleGroupsCountPerRuler []int
 
-		if len(actualRuleGroups) > 0 {
+		for _, ruler := range rulers {
+			actualRuleGroups, err := ruler.getLocalRules(userID, AnyRule)
+			require.NoError(t, err)
 			actualRuleGroupsCountPerRuler = append(actualRuleGroupsCountPerRuler, len(actualRuleGroups))
 		}
-	}
-	assert.Equal(t, []int{numRuleGroups}, actualRuleGroupsCountPerRuler)
+
+		slices.Sort(actualRuleGroupsCountPerRuler)
+		return actualRuleGroupsCountPerRuler
+	})
 
 	// Post-condition check: there should have been no other rules syncing other than the initial one
 	// and the one driven by the API.
