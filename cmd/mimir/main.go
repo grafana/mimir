@@ -29,6 +29,15 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/usage"
 	"github.com/grafana/mimir/pkg/util/version"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	opentelemetrytrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 )
 
 // configHash exposes information about the loaded config
@@ -186,6 +195,33 @@ func main() {
 		} else {
 			defer trace.Close()
 		}
+
+		// set up tracing
+		jaegerEndpoint := "http://localhost:14268/api/traces"
+		jaegerExporter, err := jaeger.New(
+			jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(jaegerEndpoint)),
+		)
+		if err != nil {
+			level.Error(util_log.Logger).Log("msg", "Couldn't initialize exporter", "err", err.Error())
+		}
+		// Create stdout exporter to be able to retrieve the collected spans.
+		_, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
+		if err != nil {
+			level.Error(util_log.Logger).Log("msg", "Couldn't initialize exporter", "err", err.Error())
+		}
+
+		tp := opentelemetrytrace.NewTracerProvider(
+			opentelemetrytrace.WithSampler(opentelemetrytrace.AlwaysSample()),
+			opentelemetrytrace.WithBatcher(jaegerExporter),
+			opentelemetrytrace.WithResource(resource.NewSchemaless(attribute.KeyValue{
+				// Key: attribute.Key("service.name"),
+				Key:   semconv.ServiceNameKey,
+				Value: attribute.StringValue("rest-server"),
+			})),
+		)
+		otel.SetTracerProvider(tp)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+
 	}
 
 	// Initialise seed for randomness usage.

@@ -14,12 +14,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/cache"
@@ -575,10 +575,9 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 			// get correct aggregation of statistics for partial queries.
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
 			if recordSpan {
-				var span opentracing.Span
-				span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
+				_, span := otel.Tracer("query middleware").Start(childCtx, "doRequests")
 				req.LogToSpan(span)
-				defer span.Finish()
+				defer span.End()
 			}
 
 			resp, err := downstream.Do(childCtx, req)

@@ -13,9 +13,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/weaveworks/common/user"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -239,10 +239,9 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	if err != nil {
 		return nil, err
 	}
+	span := trace.SpanFromContext(ctx)
+	request.LogToSpan(span)
 
-	if span := opentracing.SpanFromContext(ctx); span != nil {
-		request.LogToSpan(span)
-	}
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())

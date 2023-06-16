@@ -14,13 +14,12 @@ import (
 	"net/http"
 	"unsafe"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -93,13 +92,12 @@ func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 }
 
 // LogToSpan logs the current `PrometheusRangeQueryRequest` parameters to the specified span.
-func (q *PrometheusRangeQueryRequest) LogToSpan(sp opentracing.Span) {
-	sp.LogFields(
-		otlog.String("query", q.GetQuery()),
-		otlog.String("start", timestamp.Time(q.GetStart()).String()),
-		otlog.String("end", timestamp.Time(q.GetEnd()).String()),
-		otlog.Int64("step (ms)", q.GetStep()),
-	)
+func (q *PrometheusRangeQueryRequest) LogToSpan(sp trace.Span) {
+
+	sp.SetAttributes(attribute.String("query", q.GetQuery()))
+	sp.SetAttributes(attribute.String("start", timestamp.Time(q.GetStart()).String()))
+	sp.SetAttributes(attribute.String("end", timestamp.Time(q.GetEnd()).String()))
+	sp.SetAttributes(attribute.Int64("step (ms)", q.GetStep()))
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {
@@ -156,11 +154,9 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {
-	sp.LogFields(
-		otlog.String("query", r.GetQuery()),
-		otlog.String("time", timestamp.Time(r.GetTime()).String()),
-	)
+func (r *PrometheusInstantQueryRequest) LogToSpan(sp trace.Span) {
+	sp.SetAttributes(attribute.String("query", r.GetQuery()))
+	sp.SetAttributes(attribute.String("time", timestamp.Time(r.GetTime()).String()))
 }
 
 func (d *PrometheusData) UnmarshalJSON(b []byte) error {
