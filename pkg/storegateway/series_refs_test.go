@@ -1357,6 +1357,13 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		if hasher == nil {
 			hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
 		}
+		var strategy seriesIteratorStrategy
+		if tc.skipChunks {
+			strategy |= noChunks
+		}
+		if tc.streamingSeries {
+			strategy |= overlapMintMaxt
+		}
 		loadingIterator := newLoadingSeriesChunkRefsSetIterator(
 			context.Background(),
 			postingsIterator,
@@ -1366,8 +1373,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			block.meta,
 			tc.shard,
 			hasher,
-			tc.skipChunks,
-			tc.streamingSeries,
+			strategy,
 			tc.minT,
 			tc.maxT,
 			"t1",
@@ -1709,6 +1715,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				maxT = testCase.maxT
 			}
 
+			var strategy seriesIteratorStrategy
+			if testCase.skipChunks {
+				strategy |= noChunks
+			}
 			iterator, _, _, err := openBlockSeriesChunkRefsSetsIterator(
 				ctx,
 				testCase.batchSize,
@@ -1719,7 +1729,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				[]*labels.Matcher{testCase.matcher},
 				nil,
 				cachedSeriesHasher{hashCache},
-				testCase.skipChunks, false,
+				strategy,
 				minT,
 				maxT,
 				2,
@@ -1821,8 +1831,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					testCase.matchers,
 					nil,
 					cachedSeriesHasher{hashCache},
-					true, // skip chunks since we are testing labels filtering
-					false,
+					noChunks, // skip chunks since we are testing labels filtering
 					block.meta.MinTime,
 					block.meta.MaxTime,
 					2,
@@ -1887,8 +1896,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							testCase.matchers,
 							nil,
 							cachedSeriesHasher{hashCache},
-							false, // we don't skip chunks, so we can measure impact in loading chunk refs too
-							false,
+							defaultStrategy, // we don't skip chunks, so we can measure impact in loading chunk refs too
 							block.meta.MinTime,
 							block.meta.MaxTime,
 							2,
@@ -2437,7 +2445,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						true, false,
+						noChunks,
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						1,
@@ -2469,7 +2477,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						true, false,
+						noChunks,
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						1,

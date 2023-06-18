@@ -38,7 +38,7 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "j", "foo")},
 		nil,
 		nil,
-		false, false,
+		defaultStrategy,
 		block.meta.MinTime,
 		block.meta.MaxTime,
 		2,
