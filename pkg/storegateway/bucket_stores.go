@@ -66,6 +66,9 @@ type BucketStores struct {
 	// Gate used to limit query concurrency across all tenants.
 	queryGate gate.Gate
 
+	// Gate used to limit concurrency on loading index-headers across all tenants.
+	readerGate gate.Gate
+
 	// Keeps a bucket store for each tenant.
 	storesMu sync.RWMutex
 	stores   map[string]*BucketStore
