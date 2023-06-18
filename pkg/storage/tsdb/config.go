@@ -335,19 +335,18 @@ func (cfg *TSDBConfig) IsBlocksShippingEnabled() bool {
 
 // BucketStoreConfig holds the config information for Bucket Stores used by the querier and store-gateway.
 type BucketStoreConfig struct {
-	SyncDir                           string              `yaml:"sync_dir"`
-	SyncInterval                      time.Duration       `yaml:"sync_interval" category:"advanced"`
-	MaxConcurrent                     int                 `yaml:"max_concurrent" category:"advanced"`
-	TenantSyncConcurrency             int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
-	BlockSyncConcurrency              int                 `yaml:"block_sync_concurrency" category:"advanced"`
-	IndexHeaderLazyLoadingConcurrency int                 `yaml:"index_header_lazy_loading_concurrency" category:"advanced"`
-	MetaSyncConcurrency               int                 `yaml:"meta_sync_concurrency" category:"advanced"`
-	IndexCache                        IndexCacheConfig    `yaml:"index_cache"`
-	ChunksCache                       ChunksCacheConfig   `yaml:"chunks_cache"`
-	MetadataCache                     MetadataCacheConfig `yaml:"metadata_cache"`
-	IgnoreDeletionMarksDelay          time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
-	BucketIndex                       BucketIndexConfig   `yaml:"bucket_index"`
-	IgnoreBlocksWithin                time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
+	SyncDir                  string              `yaml:"sync_dir"`
+	SyncInterval             time.Duration       `yaml:"sync_interval" category:"advanced"`
+	MaxConcurrent            int                 `yaml:"max_concurrent" category:"advanced"`
+	TenantSyncConcurrency    int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
+	BlockSyncConcurrency     int                 `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency      int                 `yaml:"meta_sync_concurrency" category:"advanced"`
+	IndexCache               IndexCacheConfig    `yaml:"index_cache"`
+	ChunksCache              ChunksCacheConfig   `yaml:"chunks_cache"`
+	MetadataCache            MetadataCacheConfig `yaml:"metadata_cache"`
+	IgnoreDeletionMarksDelay time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
+	BucketIndex              BucketIndexConfig   `yaml:"bucket_index"`
+	IgnoreBlocksWithin       time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
 	// Chunk pool.
 	DeprecatedMaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes" category:"deprecated"`             // Deprecated. TODO: Remove in Mimir 2.11.
@@ -360,6 +359,9 @@ type BucketStoreConfig struct {
 	// Controls whether index-header lazy loading is enabled.
 	IndexHeaderLazyLoadingEnabled     bool          `yaml:"index_header_lazy_loading_enabled" category:"advanced"`
 	IndexHeaderLazyLoadingIdleTimeout time.Duration `yaml:"index_header_lazy_loading_idle_timeout" category:"advanced"`
+
+	// Maximum index-headers loaded into store-gateway concurrently
+	IndexHeaderLazyLoadingConcurrency int `yaml:"index_header_lazy_loading_concurrency" category:"advanced"`
 
 	// Controls the partitioner, used to aggregate multiple GET object API requests.
 	PartitionerMaxGapBytes uint64 `yaml:"partitioner_max_gap_bytes" category:"advanced"`
@@ -413,7 +415,6 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 100, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 10, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 20, "Maximum number of concurrent blocks synching per tenant.")
-	f.IntVar(&cfg.IndexHeaderLazyLoadingConcurrency, "blocks-storage.bucket-store.index-header-lazy-loading-concurrency", 20, "Maximum number of concurrent index headers being loaded in per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from object storage per tenant.")
 	f.DurationVar(&cfg.IgnoreDeletionMarksDelay, "blocks-storage.bucket-store.ignore-deletion-marks-delay", time.Hour*1, "Duration after which the blocks marked for deletion will be filtered out while fetching blocks. "+
 		"The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet.")
@@ -421,6 +422,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
 	f.BoolVar(&cfg.IndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", true, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.IndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", 60*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
+	f.IntVar(&cfg.IndexHeaderLazyLoadingConcurrency, "blocks-storage.bucket-store.index-header-lazy-loading-concurrency", 20, "Maximum number of concurrent index headers being loaded in per tenant.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.IntVar(&cfg.ChunkRangesPerSeries, "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series", 1, "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled.")
