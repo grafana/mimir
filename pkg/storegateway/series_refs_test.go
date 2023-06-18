@@ -1083,8 +1083,8 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			iterator := newLimitingSeriesChunkRefsSetIterator(
 				newSliceSeriesChunkRefsSetIterator(testCase.upstreamErr, testCase.sets...),
-				&mockLimiter{limit: testCase.chunksLimit},
-				&mockLimiter{limit: testCase.seriesLimit},
+				&staticLimiter{limit: testCase.chunksLimit},
+				&staticLimiter{limit: testCase.seriesLimit},
 			)
 
 			sets := readAllSeriesChunkRefsSet(iterator)
@@ -1874,6 +1874,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 					hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
 
 					b.ResetTimer()
+					b.ReportAllocs()
 
 					for i := 0; i < b.N; i++ {
 						iterator, _, _, err := openBlockSeriesChunkRefsSetsIterator(
@@ -2604,12 +2605,12 @@ func (s *sliceSeriesChunkRefsSetIterator) Err() error {
 	return nil
 }
 
-type mockLimiter struct {
+type staticLimiter struct {
 	limit   int
 	current atomic.Uint64
 }
 
-func (l *mockLimiter) Reserve(num uint64) error {
+func (l *staticLimiter) Reserve(num uint64) error {
 	if l.current.Add(num) > uint64(l.limit) {
 		return errors.New("test limit exceeded")
 	}

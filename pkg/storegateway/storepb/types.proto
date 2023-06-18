@@ -38,21 +38,21 @@ message Series {
 }
 
 message StreamingSeries {
-  repeated cortexpb.LabelPair labels      = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb.LabelPair labels  = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
 }
 
-message StreamSeriesBatch {
+message StreamingSeriesBatch {
   repeated StreamingSeries series = 1;
   bool is_end_of_series_stream = 2;
 }
 
-message StreamSeriesChunks {
+message StreamingChunks {
   uint64 series_index = 1; // Index into list of all series previously sent with SeriesResponse messages by this storegateway during this query response.
   repeated AggrChunk chunks = 2 [(gogoproto.nullable) = false];
 }
 
-message StreamSeriesChunksBatch {
-  repeated StreamSeriesChunks series = 1;
+message StreamingChunksBatch {
+  repeated StreamingChunks series = 1;
 }
 
 

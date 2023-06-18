@@ -39,7 +39,7 @@ func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
 	}
 }
 
-func NewStreamSeriesResponse(series *StreamSeriesBatch) *SeriesResponse {
+func NewStreamingSeriesResponse(series *StreamingSeriesBatch) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_StreamingSeries{
 			StreamingSeries: series,
@@ -47,10 +47,10 @@ func NewStreamSeriesResponse(series *StreamSeriesBatch) *SeriesResponse {
 	}
 }
 
-func NewStreamSeriesChunksResponse(series *StreamSeriesChunksBatch) *SeriesResponse {
+func NewStreamingChunksResponse(series *StreamingChunksBatch) *SeriesResponse {
 	return &SeriesResponse{
-		Result: &SeriesResponse_StreamingSeriesChunks{
-			StreamingSeriesChunks: series,
+		Result: &SeriesResponse_StreamingChunks{
+			StreamingChunks: series,
 		},
 	}
 }

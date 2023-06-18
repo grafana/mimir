@@ -185,7 +185,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 				return
 			}
 
-			copiedSeries := &storepb.StreamSeriesBatch{}
+			copiedSeries := &storepb.StreamingSeriesBatch{}
 			if err = copiedSeries.Unmarshal(recvSeriesData); err != nil {
 				err = errors.Wrap(err, "unmarshal received series")
 				return
@@ -209,7 +209,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 				return
 			}
 
-			chksBatch := res.GetStreamingSeriesChunks()
+			chksBatch := res.GetStreamingChunks()
 			for _, chks := range chksBatch.Series {
 				idx++
 				if chksBatch == nil {
@@ -230,7 +230,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 					return
 				}
 
-				copiedChunks := &storepb.StreamSeriesChunks{}
+				copiedChunks := &storepb.StreamingChunks{}
 				if err = copiedChunks.Unmarshal(data); err != nil {
 					err = errors.Wrap(err, "unmarshal received series")
 					return

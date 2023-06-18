@@ -438,7 +438,7 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 		ts = ts.Add(step)
 
 		if cnt%samplesPerChunk == 0 {
-			// Simulate nextSeriesIndex chunk, restart timestamp.
+			// Simulate next chunk, restart timestamp.
 			chunkStartTs = chunkStartTs.Add(chunkOffset)
 			ts = chunkStartTs
 		}

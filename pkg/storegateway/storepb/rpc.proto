@@ -80,7 +80,7 @@ message SeriesRequest {
   // Thanos shard_info.
   reserved 13;
 
-  // Why 100? TBD, it is just copied from ingesters and need to see if we still need 100 here.
+  // It is 100 so that we have an option to bring back compatibility with Thanos' storage API.
   uint64 streaming_chunks_batch_size = 100;
 }
 
@@ -109,9 +109,12 @@ message SeriesResponse {
     /// related to the processing the series response on store-gateways did available to the querier and query-frontends.
     Stats stats = 4;
 
-    StreamSeriesBatch streaming_series = 5;
+    /// streaming_series is a list of series labels sent as part of a streaming Series call.
+    StreamingSeriesBatch streaming_series = 5;
 
-    StreamSeriesChunksBatch streaming_series_chunks = 6;
+    /// streaming_chunks is a batch of list of chunks sent as part of a streaming Series request.
+    /// They are associated with series labels sent as streaming_series earlier in the same Series request.
+    StreamingChunksBatch streaming_chunks = 6;
   }
 }
 

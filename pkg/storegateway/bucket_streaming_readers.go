@@ -28,8 +28,8 @@ type SeriesChunksStreamReader struct {
 	stats               *stats.Stats
 	log                 log.Logger
 
-	seriesChunksChan chan *storepb.StreamSeriesChunksBatch
-	chunksBatch      []*storepb.StreamSeriesChunks
+	seriesChunksChan chan *storepb.StreamingChunksBatch
+	chunksBatch      []*storepb.StreamingChunks
 	errorChan        chan error
 }
 
@@ -57,7 +57,7 @@ func (s *SeriesChunksStreamReader) Close() {
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
 // To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's storegatewaypb.StoreGateway_SeriesClient.
 func (s *SeriesChunksStreamReader) StartBuffering() {
-	s.seriesChunksChan = make(chan *storepb.StreamSeriesChunksBatch, 2)
+	s.seriesChunksChan = make(chan *storepb.StreamingChunksBatch, 1)
 
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
@@ -89,7 +89,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				return
 			}
 
-			c := msg.GetStreamingSeriesChunks()
+			c := msg.GetStreamingChunks()
 			if c == nil {
 				s.errorChan <- fmt.Errorf("expected to receive StreamingSeriesChunks, but got something else")
 				return

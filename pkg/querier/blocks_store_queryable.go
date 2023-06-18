@@ -264,8 +264,8 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		reg,
 	)
 
-	streamingBufferSize := querierCfg.StreamingChunksPerIngesterSeriesBufferSize
-	if !querierCfg.PreferStreamingChunks {
+	streamingBufferSize := querierCfg.StreamingChunksPerIngesterSeriesBufferSizeStoregateway
+	if !querierCfg.PreferStreamingChunksStoregateway {
 		streamingBufferSize = 0
 	}
 
@@ -698,6 +698,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
 		streamReaders []*storegateway.SeriesChunksStreamReader
+		streams       []storegatewaypb.StoreGateway_SeriesClient
 	)
 
 	// Concurrently fetch series from all clients.
@@ -720,6 +721,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 			stream, err := c.Series(reqCtx, req)
 			if err == nil {
+				streams = append(streams, stream)
 				err = gCtx.Err()
 			}
 			if err != nil {
@@ -862,8 +864,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 	// Wait until all client requests complete.
 	if err := g.Wait(); err != nil {
-		for _, sr := range streamReaders {
-			sr.Close()
+		for _, stream := range streams {
+			if err := stream.CloseSend(); err != nil {
+				level.Warn(q.logger).Log("msg", "closing storegateway client stream failed", "err", err)
+			}
 		}
 		return nil, nil, nil, err
 	}
@@ -1071,6 +1075,10 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 		return nil, errors.Wrapf(err, "failed to marshal series request hints")
 	}
 
+	if skipChunks {
+		// We don't do the streaming call if we are not requesting the chunks.
+		streamingBatchSize = 0
+	}
 	return &storepb.SeriesRequest{
 		MinTime:                  minT,
 		MaxTime:                  maxT,

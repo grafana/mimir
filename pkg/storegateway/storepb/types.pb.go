@@ -189,22 +189,22 @@ func (m *StreamingSeries) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_StreamingSeries proto.InternalMessageInfo
 
-type StreamSeriesBatch struct {
+type StreamingSeriesBatch struct {
 	Series              []*StreamingSeries `protobuf:"bytes,1,rep,name=series,proto3" json:"series,omitempty"`
 	IsEndOfSeriesStream bool               `protobuf:"varint,2,opt,name=is_end_of_series_stream,json=isEndOfSeriesStream,proto3" json:"is_end_of_series_stream,omitempty"`
 }
 
-func (m *StreamSeriesBatch) Reset()      { *m = StreamSeriesBatch{} }
-func (*StreamSeriesBatch) ProtoMessage() {}
-func (*StreamSeriesBatch) Descriptor() ([]byte, []int) {
+func (m *StreamingSeriesBatch) Reset()      { *m = StreamingSeriesBatch{} }
+func (*StreamingSeriesBatch) ProtoMessage() {}
+func (*StreamingSeriesBatch) Descriptor() ([]byte, []int) {
 	return fileDescriptor_d938547f84707355, []int{3}
 }
-func (m *StreamSeriesBatch) XXX_Unmarshal(b []byte) error {
+func (m *StreamingSeriesBatch) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *StreamSeriesBatch) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *StreamingSeriesBatch) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_StreamSeriesBatch.Marshal(b, m, deterministic)
+		return xxx_messageInfo_StreamingSeriesBatch.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -214,34 +214,34 @@ func (m *StreamSeriesBatch) XXX_Marshal(b []byte, deterministic bool) ([]byte, e
 		return b[:n], nil
 	}
 }
-func (m *StreamSeriesBatch) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_StreamSeriesBatch.Merge(m, src)
+func (m *StreamingSeriesBatch) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StreamingSeriesBatch.Merge(m, src)
 }
-func (m *StreamSeriesBatch) XXX_Size() int {
+func (m *StreamingSeriesBatch) XXX_Size() int {
 	return m.Size()
 }
-func (m *StreamSeriesBatch) XXX_DiscardUnknown() {
-	xxx_messageInfo_StreamSeriesBatch.DiscardUnknown(m)
+func (m *StreamingSeriesBatch) XXX_DiscardUnknown() {
+	xxx_messageInfo_StreamingSeriesBatch.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_StreamSeriesBatch proto.InternalMessageInfo
+var xxx_messageInfo_StreamingSeriesBatch proto.InternalMessageInfo
 
-type StreamSeriesChunks struct {
+type StreamingChunks struct {
 	SeriesIndex uint64      `protobuf:"varint,1,opt,name=series_index,json=seriesIndex,proto3" json:"series_index,omitempty"`
 	Chunks      []AggrChunk `protobuf:"bytes,2,rep,name=chunks,proto3" json:"chunks"`
 }
 
-func (m *StreamSeriesChunks) Reset()      { *m = StreamSeriesChunks{} }
-func (*StreamSeriesChunks) ProtoMessage() {}
-func (*StreamSeriesChunks) Descriptor() ([]byte, []int) {
+func (m *StreamingChunks) Reset()      { *m = StreamingChunks{} }
+func (*StreamingChunks) ProtoMessage() {}
+func (*StreamingChunks) Descriptor() ([]byte, []int) {
 	return fileDescriptor_d938547f84707355, []int{4}
 }
-func (m *StreamSeriesChunks) XXX_Unmarshal(b []byte) error {
+func (m *StreamingChunks) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *StreamSeriesChunks) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *StreamingChunks) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_StreamSeriesChunks.Marshal(b, m, deterministic)
+		return xxx_messageInfo_StreamingChunks.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -251,33 +251,33 @@ func (m *StreamSeriesChunks) XXX_Marshal(b []byte, deterministic bool) ([]byte, 
 		return b[:n], nil
 	}
 }
-func (m *StreamSeriesChunks) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_StreamSeriesChunks.Merge(m, src)
+func (m *StreamingChunks) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StreamingChunks.Merge(m, src)
 }
-func (m *StreamSeriesChunks) XXX_Size() int {
+func (m *StreamingChunks) XXX_Size() int {
 	return m.Size()
 }
-func (m *StreamSeriesChunks) XXX_DiscardUnknown() {
-	xxx_messageInfo_StreamSeriesChunks.DiscardUnknown(m)
+func (m *StreamingChunks) XXX_DiscardUnknown() {
+	xxx_messageInfo_StreamingChunks.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_StreamSeriesChunks proto.InternalMessageInfo
+var xxx_messageInfo_StreamingChunks proto.InternalMessageInfo
 
-type StreamSeriesChunksBatch struct {
-	Series []*StreamSeriesChunks `protobuf:"bytes,1,rep,name=series,proto3" json:"series,omitempty"`
+type StreamingChunksBatch struct {
+	Series []*StreamingChunks `protobuf:"bytes,1,rep,name=series,proto3" json:"series,omitempty"`
 }
 
-func (m *StreamSeriesChunksBatch) Reset()      { *m = StreamSeriesChunksBatch{} }
-func (*StreamSeriesChunksBatch) ProtoMessage() {}
-func (*StreamSeriesChunksBatch) Descriptor() ([]byte, []int) {
+func (m *StreamingChunksBatch) Reset()      { *m = StreamingChunksBatch{} }
+func (*StreamingChunksBatch) ProtoMessage() {}
+func (*StreamingChunksBatch) Descriptor() ([]byte, []int) {
 	return fileDescriptor_d938547f84707355, []int{5}
 }
-func (m *StreamSeriesChunksBatch) XXX_Unmarshal(b []byte) error {
+func (m *StreamingChunksBatch) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *StreamSeriesChunksBatch) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *StreamingChunksBatch) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_StreamSeriesChunksBatch.Marshal(b, m, deterministic)
+		return xxx_messageInfo_StreamingChunksBatch.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -287,17 +287,17 @@ func (m *StreamSeriesChunksBatch) XXX_Marshal(b []byte, deterministic bool) ([]b
 		return b[:n], nil
 	}
 }
-func (m *StreamSeriesChunksBatch) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_StreamSeriesChunksBatch.Merge(m, src)
+func (m *StreamingChunksBatch) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StreamingChunksBatch.Merge(m, src)
 }
-func (m *StreamSeriesChunksBatch) XXX_Size() int {
+func (m *StreamingChunksBatch) XXX_Size() int {
 	return m.Size()
 }
-func (m *StreamSeriesChunksBatch) XXX_DiscardUnknown() {
-	xxx_messageInfo_StreamSeriesChunksBatch.DiscardUnknown(m)
+func (m *StreamingChunksBatch) XXX_DiscardUnknown() {
+	xxx_messageInfo_StreamingChunksBatch.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_StreamSeriesChunksBatch proto.InternalMessageInfo
+var xxx_messageInfo_StreamingChunksBatch proto.InternalMessageInfo
 
 type AggrChunk struct {
 	MinTime int64  `protobuf:"varint,1,opt,name=min_time,json=minTime,proto3" json:"min_time,omitempty"`
@@ -382,9 +382,9 @@ func init() {
 	proto.RegisterType((*Chunk)(nil), "thanos.Chunk")
 	proto.RegisterType((*Series)(nil), "thanos.Series")
 	proto.RegisterType((*StreamingSeries)(nil), "thanos.StreamingSeries")
-	proto.RegisterType((*StreamSeriesBatch)(nil), "thanos.StreamSeriesBatch")
-	proto.RegisterType((*StreamSeriesChunks)(nil), "thanos.StreamSeriesChunks")
-	proto.RegisterType((*StreamSeriesChunksBatch)(nil), "thanos.StreamSeriesChunksBatch")
+	proto.RegisterType((*StreamingSeriesBatch)(nil), "thanos.StreamingSeriesBatch")
+	proto.RegisterType((*StreamingChunks)(nil), "thanos.StreamingChunks")
+	proto.RegisterType((*StreamingChunksBatch)(nil), "thanos.StreamingChunksBatch")
 	proto.RegisterType((*AggrChunk)(nil), "thanos.AggrChunk")
 	proto.RegisterType((*LabelMatcher)(nil), "thanos.LabelMatcher")
 }
@@ -392,50 +392,50 @@ func init() {
 func init() { proto.RegisterFile("types.proto", fileDescriptor_d938547f84707355) }
 
 var fileDescriptor_d938547f84707355 = []byte{
-	// 684 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x54, 0x4f, 0x6f, 0x12, 0x41,
-	0x14, 0xdf, 0x81, 0x05, 0x96, 0xa1, 0xb5, 0xdb, 0x69, 0x63, 0x69, 0x0f, 0x53, 0xdc, 0x13, 0x31,
-	0xe9, 0xa2, 0xd8, 0x8b, 0x89, 0x97, 0x62, 0x30, 0x95, 0x58, 0xdb, 0x4e, 0x6b, 0x62, 0x8c, 0x09,
-	0x19, 0x60, 0x58, 0x26, 0x65, 0xff, 0x64, 0x77, 0x50, 0xf0, 0xd4, 0x8f, 0xe0, 0x57, 0xf0, 0xe6,
-	0x17, 0x31, 0xe9, 0xcd, 0x1e, 0x1b, 0x0f, 0x8d, 0xd0, 0x8b, 0xc7, 0x7e, 0x04, 0xb3, 0x33, 0x8b,
-	0x42, 0x7b, 0xa9, 0x17, 0x4f, 0xcc, 0x7b, 0xbf, 0xdf, 0x7b, 0xbf, 0xdf, 0x1b, 0xe6, 0x2d, 0x2c,
-	0x88, 0x51, 0xc0, 0x22, 0x3b, 0x08, 0x7d, 0xe1, 0xa3, 0xac, 0xe8, 0x51, 0xcf, 0x8f, 0x36, 0xb6,
-	0x1c, 0x2e, 0x7a, 0x83, 0x96, 0xdd, 0xf6, 0xdd, 0x8a, 0xe3, 0x3b, 0x7e, 0x45, 0xc2, 0xad, 0x41,
-	0x57, 0x46, 0x32, 0x90, 0x27, 0x55, 0xb6, 0xf1, 0x68, 0x96, 0x1e, 0xd2, 0x2e, 0xf5, 0x68, 0xc5,
-	0xe5, 0x2e, 0x0f, 0x2b, 0xc1, 0x89, 0xa3, 0x4e, 0x41, 0x4b, 0xfd, 0xaa, 0x0a, 0xeb, 0x3b, 0x80,
-	0x99, 0xe7, 0xbd, 0x81, 0x77, 0x82, 0x1e, 0x42, 0x3d, 0x76, 0x50, 0x04, 0x25, 0x50, 0xbe, 0x57,
-	0xbd, 0x6f, 0x2b, 0x07, 0xb6, 0x04, 0xed, 0xba, 0xd7, 0xf6, 0x3b, 0xdc, 0x73, 0x88, 0xe4, 0xa0,
-	0x03, 0xa8, 0x77, 0xa8, 0xa0, 0xc5, 0x54, 0x09, 0x94, 0x17, 0x6a, 0xcf, 0xce, 0x2e, 0x37, 0xb5,
-	0x1f, 0x97, 0x9b, 0xdb, 0x77, 0x51, 0xb7, 0xdf, 0x78, 0x11, 0xed, 0xb2, 0xda, 0x48, 0xb0, 0xa3,
-	0x3e, 0x6f, 0x33, 0x22, 0x3b, 0x59, 0xbb, 0xd0, 0x98, 0x6a, 0xa0, 0x45, 0x98, 0x97, 0xaa, 0xcd,
-	0xb7, 0xfb, 0xc4, 0xd4, 0xd0, 0x0a, 0x5c, 0x52, 0xe1, 0x2e, 0x8f, 0x84, 0xef, 0x84, 0xd4, 0x35,
-	0x01, 0x2a, 0xc2, 0x55, 0x95, 0x7c, 0xd1, 0xf7, 0xa9, 0xf8, 0x8b, 0xa4, 0xac, 0x2f, 0x00, 0x66,
-	0x8f, 0x58, 0xc8, 0x59, 0x84, 0xba, 0x30, 0xdb, 0xa7, 0x2d, 0xd6, 0x8f, 0x8a, 0xa0, 0x94, 0x2e,
-	0x17, 0xaa, 0x2b, 0x76, 0xdb, 0x0f, 0x05, 0x1b, 0x06, 0x2d, 0xfb, 0x55, 0x9c, 0x3f, 0xa0, 0x3c,
-	0xac, 0x3d, 0x4d, 0xdc, 0x3f, 0xbe, 0x93, 0x7b, 0x59, 0xb7, 0xd3, 0xa1, 0x81, 0x60, 0x21, 0x49,
-	0xba, 0xa3, 0x0a, 0xcc, 0xb6, 0x63, 0x33, 0x51, 0x31, 0x25, 0x75, 0x96, 0xa7, 0x97, 0xb7, 0xe3,
-	0x38, 0xa1, 0xb4, 0x59, 0xd3, 0x63, 0x15, 0x92, 0xd0, 0xac, 0x11, 0x5c, 0x3a, 0x12, 0x21, 0xa3,
-	0x2e, 0xf7, 0x9c, 0xff, 0xeb, 0xd5, 0xfa, 0x04, 0x97, 0x95, 0xb4, 0xd2, 0xad, 0x51, 0xd1, 0xee,
-	0xc5, 0x03, 0x44, 0x32, 0x4c, 0xc4, 0xd7, 0xa6, 0x03, 0xdc, 0x70, 0x49, 0x12, 0x1a, 0xda, 0x86,
-	0x6b, 0x3c, 0x6a, 0x32, 0xaf, 0xd3, 0xf4, 0xbb, 0x4d, 0x95, 0x6b, 0x46, 0x92, 0x2b, 0xdf, 0x84,
-	0x41, 0x56, 0x78, 0x54, 0xf7, 0x3a, 0xfb, 0x5d, 0x55, 0xa7, 0xda, 0x58, 0x3d, 0x88, 0x66, 0xb5,
-	0xe5, 0xcd, 0x44, 0xe8, 0x01, 0x5c, 0x48, 0x3a, 0x70, 0xaf, 0xc3, 0x86, 0xf2, 0x01, 0xea, 0xa4,
-	0xa0, 0x72, 0x2f, 0xe3, 0xd4, 0xbf, 0x5f, 0xf0, 0x1e, 0x5c, 0xbb, 0xad, 0xa4, 0x66, 0xad, 0xde,
-	0x98, 0x75, 0x63, 0x7e, 0xd6, 0xd9, 0x82, 0xe9, 0xb8, 0xd6, 0x29, 0x80, 0xf9, 0x3f, 0x52, 0x68,
-	0x1d, 0x1a, 0x2e, 0xf7, 0x9a, 0x82, 0xbb, 0x6a, 0x5b, 0xd2, 0x24, 0xe7, 0x72, 0xef, 0x98, 0xbb,
-	0x4c, 0x42, 0x74, 0xa8, 0xa0, 0x54, 0x02, 0xd1, 0xa1, 0x84, 0x36, 0x61, 0x3a, 0xa4, 0x1f, 0x8b,
-	0xe9, 0x12, 0x28, 0x17, 0xaa, 0x8b, 0x73, 0xeb, 0x45, 0x62, 0xa4, 0xa1, 0x1b, 0xba, 0x99, 0x69,
-	0xe8, 0x46, 0xc6, 0xcc, 0x36, 0x74, 0x23, 0x6b, 0xe6, 0x1a, 0xba, 0x91, 0x33, 0x8d, 0x86, 0x6e,
-	0x18, 0x66, 0xde, 0xfa, 0x06, 0xe0, 0x82, 0xfc, 0x43, 0xf7, 0xe2, 0x29, 0x58, 0x88, 0xb6, 0xe6,
-	0xf6, 0x75, 0x7d, 0xda, 0x70, 0x96, 0x63, 0x1f, 0x8f, 0x02, 0x96, 0xac, 0x2c, 0x82, 0xba, 0x47,
-	0x13, 0x57, 0x79, 0x22, 0xcf, 0x68, 0x15, 0x66, 0x3e, 0xd0, 0xfe, 0x80, 0x49, 0x53, 0x79, 0xa2,
-	0x02, 0xeb, 0x3d, 0xd4, 0xe3, 0xba, 0x78, 0xef, 0x66, 0x9b, 0x35, 0xeb, 0x87, 0xa6, 0x86, 0x56,
-	0xa1, 0x39, 0x97, 0x7c, 0x5d, 0x3f, 0x34, 0xc1, 0x2d, 0x2a, 0xa9, 0x9b, 0xa9, 0xdb, 0x54, 0x52,
-	0x37, 0xd3, 0xb5, 0x9d, 0xb3, 0x31, 0xd6, 0xce, 0xc7, 0x58, 0xbb, 0x18, 0x63, 0xed, 0x7a, 0x8c,
-	0xc1, 0xe9, 0x04, 0x83, 0xaf, 0x13, 0x0c, 0xce, 0x26, 0x18, 0x9c, 0x4f, 0x30, 0xf8, 0x39, 0xc1,
-	0xe0, 0xd7, 0x04, 0x6b, 0xd7, 0x13, 0x0c, 0x3e, 0x5f, 0x61, 0xed, 0xfc, 0x0a, 0x6b, 0x17, 0x57,
-	0x58, 0x7b, 0x97, 0x8b, 0x84, 0x1f, 0xb2, 0xa0, 0xd5, 0xca, 0xca, 0x4f, 0xd7, 0x93, 0xdf, 0x01,
-	0x00, 0x00, 0xff, 0xff, 0xf2, 0x10, 0x58, 0x47, 0x32, 0x05, 0x00, 0x00,
+	// 677 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x54, 0xbd, 0x6e, 0x13, 0x4d,
+	0x14, 0xdd, 0xb1, 0xd7, 0xf6, 0x7a, 0x9c, 0x7c, 0xd9, 0x6f, 0x62, 0x11, 0x27, 0xc5, 0xc4, 0x6c,
+	0x65, 0x21, 0x65, 0x0d, 0x21, 0x0d, 0x12, 0x4d, 0x8c, 0x0c, 0xc1, 0x02, 0x92, 0x4c, 0x82, 0x84,
+	0x10, 0x92, 0x35, 0xb6, 0xc7, 0xeb, 0x51, 0xbc, 0x3f, 0xda, 0x1d, 0x83, 0x5d, 0x20, 0xe5, 0x11,
+	0x78, 0x05, 0x3a, 0x5e, 0x04, 0x29, 0x1d, 0x29, 0x23, 0x8a, 0x08, 0x6f, 0x1a, 0xca, 0x3c, 0x02,
+	0xda, 0x99, 0x35, 0x38, 0x49, 0x13, 0x1a, 0x2a, 0xcf, 0xbd, 0xe7, 0xdc, 0x7b, 0xce, 0x1d, 0xcf,
+	0x5d, 0x58, 0x12, 0x93, 0x80, 0x45, 0x76, 0x10, 0xfa, 0xc2, 0x47, 0x79, 0x31, 0xa0, 0x9e, 0x1f,
+	0xad, 0x6d, 0x38, 0x5c, 0x0c, 0x46, 0x1d, 0xbb, 0xeb, 0xbb, 0x75, 0xc7, 0x77, 0xfc, 0xba, 0x84,
+	0x3b, 0xa3, 0xbe, 0x8c, 0x64, 0x20, 0x4f, 0xaa, 0x6c, 0xed, 0xfe, 0x3c, 0x3d, 0xa4, 0x7d, 0xea,
+	0xd1, 0xba, 0xcb, 0x5d, 0x1e, 0xd6, 0x83, 0x23, 0x47, 0x9d, 0x82, 0x8e, 0xfa, 0x55, 0x15, 0xd6,
+	0x37, 0x00, 0x73, 0x4f, 0x06, 0x23, 0xef, 0x08, 0xdd, 0x83, 0x7a, 0xe2, 0xa0, 0x02, 0xaa, 0xa0,
+	0xf6, 0xdf, 0xe6, 0x1d, 0x5b, 0x39, 0xb0, 0x25, 0x68, 0x37, 0xbd, 0xae, 0xdf, 0xe3, 0x9e, 0x43,
+	0x24, 0x07, 0xed, 0x41, 0xbd, 0x47, 0x05, 0xad, 0x64, 0xaa, 0xa0, 0xb6, 0xd0, 0x78, 0x7c, 0x72,
+	0xbe, 0xae, 0x7d, 0x3f, 0x5f, 0xdf, 0xba, 0x8d, 0xba, 0xfd, 0xda, 0x8b, 0x68, 0x9f, 0x35, 0x26,
+	0x82, 0x1d, 0x0c, 0x79, 0x97, 0x11, 0xd9, 0xc9, 0xda, 0x81, 0xc6, 0x4c, 0x03, 0x2d, 0xc2, 0xa2,
+	0x54, 0x6d, 0xbf, 0xd9, 0x25, 0xa6, 0x86, 0x96, 0xe1, 0x92, 0x0a, 0x77, 0x78, 0x24, 0x7c, 0x27,
+	0xa4, 0xae, 0x09, 0x50, 0x05, 0x96, 0x55, 0xf2, 0xe9, 0xd0, 0xa7, 0xe2, 0x0f, 0x92, 0xb1, 0x3e,
+	0x03, 0x98, 0x3f, 0x60, 0x21, 0x67, 0x11, 0xea, 0xc3, 0xfc, 0x90, 0x76, 0xd8, 0x30, 0xaa, 0x80,
+	0x6a, 0xb6, 0x56, 0xda, 0x5c, 0xb6, 0xbb, 0x7e, 0x28, 0xd8, 0x38, 0xe8, 0xd8, 0x2f, 0x92, 0xfc,
+	0x1e, 0xe5, 0x61, 0xe3, 0x51, 0xea, 0xfe, 0xc1, 0xad, 0xdc, 0xcb, 0xba, 0xed, 0x1e, 0x0d, 0x04,
+	0x0b, 0x49, 0xda, 0x1d, 0xd5, 0x61, 0xbe, 0x9b, 0x98, 0x89, 0x2a, 0x19, 0xa9, 0xf3, 0xff, 0xec,
+	0xf2, 0xb6, 0x1d, 0x27, 0x94, 0x36, 0x1b, 0x7a, 0xa2, 0x42, 0x52, 0x9a, 0x35, 0x81, 0x4b, 0x07,
+	0x22, 0x64, 0xd4, 0xe5, 0x9e, 0xf3, 0x6f, 0xbd, 0x5a, 0x1f, 0x61, 0xf9, 0x9a, 0x74, 0x83, 0x8a,
+	0xee, 0x20, 0x99, 0x21, 0x92, 0x61, 0xaa, 0xbf, 0x32, 0x9b, 0xe1, 0x1a, 0x9b, 0xa4, 0x34, 0xb4,
+	0x05, 0x57, 0x78, 0xd4, 0x66, 0x5e, 0xaf, 0xed, 0xf7, 0xdb, 0x2a, 0xd7, 0x8e, 0x24, 0x57, 0x3e,
+	0x0b, 0x83, 0x2c, 0xf3, 0xa8, 0xe9, 0xf5, 0x76, 0xfb, 0xaa, 0x4e, 0xb5, 0xb1, 0xd8, 0xdc, 0xe4,
+	0xf2, 0x66, 0x22, 0x74, 0x17, 0x2e, 0xa4, 0xe5, 0xdc, 0xeb, 0xb1, 0xb1, 0x7c, 0x80, 0x3a, 0x29,
+	0xa9, 0xdc, 0xf3, 0x24, 0xf5, 0xf7, 0x17, 0xfc, 0x6c, 0x6e, 0x4a, 0x25, 0x73, 0xdb, 0x29, 0x15,
+	0x7b, 0x36, 0xa5, 0x75, 0x0c, 0x60, 0xf1, 0xb7, 0x08, 0x5a, 0x85, 0x86, 0xcb, 0xbd, 0xb6, 0xe0,
+	0xae, 0xda, 0x93, 0x2c, 0x29, 0xb8, 0xdc, 0x3b, 0xe4, 0x2e, 0x93, 0x10, 0x1d, 0x2b, 0x28, 0x93,
+	0x42, 0x74, 0x2c, 0xa1, 0x75, 0x98, 0x0d, 0xe9, 0x87, 0x4a, 0xb6, 0x0a, 0x6a, 0xa5, 0xcd, 0xc5,
+	0x2b, 0x8b, 0x45, 0x12, 0xa4, 0xa5, 0x1b, 0xba, 0x99, 0x6b, 0xe9, 0x46, 0xce, 0xcc, 0xb7, 0x74,
+	0x23, 0x6f, 0x16, 0x5a, 0xba, 0x51, 0x30, 0x8d, 0x96, 0x6e, 0x18, 0x66, 0xd1, 0xfa, 0x0a, 0xe0,
+	0x82, 0xfc, 0x2b, 0x5f, 0x26, 0x23, 0xb0, 0x10, 0x6d, 0x5c, 0xd9, 0xd4, 0xd5, 0x59, 0xc3, 0x79,
+	0x8e, 0x7d, 0x38, 0x09, 0x58, 0xba, 0xac, 0x08, 0xea, 0x1e, 0x4d, 0x5d, 0x15, 0x89, 0x3c, 0xa3,
+	0x32, 0xcc, 0xbd, 0xa7, 0xc3, 0x11, 0x93, 0xa6, 0x8a, 0x44, 0x05, 0xd6, 0x3b, 0xa8, 0x27, 0x75,
+	0xc9, 0xc6, 0xcd, 0x37, 0x6b, 0x37, 0xf7, 0x4d, 0x0d, 0x95, 0xa1, 0x79, 0x25, 0xf9, 0xaa, 0xb9,
+	0x6f, 0x82, 0x1b, 0x54, 0xd2, 0x34, 0x33, 0x37, 0xa9, 0xa4, 0x69, 0x66, 0x1b, 0xdb, 0x27, 0x53,
+	0xac, 0x9d, 0x4e, 0xb1, 0x76, 0x36, 0xc5, 0xda, 0xe5, 0x14, 0x83, 0xe3, 0x18, 0x83, 0x2f, 0x31,
+	0x06, 0x27, 0x31, 0x06, 0xa7, 0x31, 0x06, 0x3f, 0x62, 0x0c, 0x7e, 0xc6, 0x58, 0xbb, 0x8c, 0x31,
+	0xf8, 0x74, 0x81, 0xb5, 0xd3, 0x0b, 0xac, 0x9d, 0x5d, 0x60, 0xed, 0x6d, 0x21, 0x12, 0x7e, 0xc8,
+	0x82, 0x4e, 0x27, 0x2f, 0x3f, 0x5a, 0x0f, 0x7f, 0x05, 0x00, 0x00, 0xff, 0xff, 0x81, 0xc9, 0x56,
+	0x35, 0x2c, 0x05, 0x00, 0x00,
 }
 
 func (x Chunk_Encoding) String() string {
@@ -545,14 +545,14 @@ func (this *StreamingSeries) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *StreamSeriesBatch) Equal(that interface{}) bool {
+func (this *StreamingSeriesBatch) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*StreamSeriesBatch)
+	that1, ok := that.(*StreamingSeriesBatch)
 	if !ok {
-		that2, ok := that.(StreamSeriesBatch)
+		that2, ok := that.(StreamingSeriesBatch)
 		if ok {
 			that1 = &that2
 		} else {
@@ -577,14 +577,14 @@ func (this *StreamSeriesBatch) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *StreamSeriesChunks) Equal(that interface{}) bool {
+func (this *StreamingChunks) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*StreamSeriesChunks)
+	that1, ok := that.(*StreamingChunks)
 	if !ok {
-		that2, ok := that.(StreamSeriesChunks)
+		that2, ok := that.(StreamingChunks)
 		if ok {
 			that1 = &that2
 		} else {
@@ -609,14 +609,14 @@ func (this *StreamSeriesChunks) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *StreamSeriesChunksBatch) Equal(that interface{}) bool {
+func (this *StreamingChunksBatch) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*StreamSeriesChunksBatch)
+	that1, ok := that.(*StreamingChunksBatch)
 	if !ok {
-		that2, ok := that.(StreamSeriesChunksBatch)
+		that2, ok := that.(StreamingChunksBatch)
 		if ok {
 			that1 = &that2
 		} else {
@@ -736,12 +736,12 @@ func (this *StreamingSeries) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *StreamSeriesBatch) GoString() string {
+func (this *StreamingSeriesBatch) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 6)
-	s = append(s, "&storepb.StreamSeriesBatch{")
+	s = append(s, "&storepb.StreamingSeriesBatch{")
 	if this.Series != nil {
 		s = append(s, "Series: "+fmt.Sprintf("%#v", this.Series)+",\n")
 	}
@@ -749,12 +749,12 @@ func (this *StreamSeriesBatch) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *StreamSeriesChunks) GoString() string {
+func (this *StreamingChunks) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 6)
-	s = append(s, "&storepb.StreamSeriesChunks{")
+	s = append(s, "&storepb.StreamingChunks{")
 	s = append(s, "SeriesIndex: "+fmt.Sprintf("%#v", this.SeriesIndex)+",\n")
 	if this.Chunks != nil {
 		vs := make([]*AggrChunk, len(this.Chunks))
@@ -766,12 +766,12 @@ func (this *StreamSeriesChunks) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *StreamSeriesChunksBatch) GoString() string {
+func (this *StreamingChunksBatch) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 5)
-	s = append(s, "&storepb.StreamSeriesChunksBatch{")
+	s = append(s, "&storepb.StreamingChunksBatch{")
 	if this.Series != nil {
 		s = append(s, "Series: "+fmt.Sprintf("%#v", this.Series)+",\n")
 	}
@@ -938,7 +938,7 @@ func (m *StreamingSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *StreamSeriesBatch) Marshal() (dAtA []byte, err error) {
+func (m *StreamingSeriesBatch) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -948,12 +948,12 @@ func (m *StreamSeriesBatch) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *StreamSeriesBatch) MarshalTo(dAtA []byte) (int, error) {
+func (m *StreamingSeriesBatch) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *StreamSeriesBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *StreamingSeriesBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -985,7 +985,7 @@ func (m *StreamSeriesBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *StreamSeriesChunks) Marshal() (dAtA []byte, err error) {
+func (m *StreamingChunks) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -995,12 +995,12 @@ func (m *StreamSeriesChunks) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *StreamSeriesChunks) MarshalTo(dAtA []byte) (int, error) {
+func (m *StreamingChunks) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *StreamSeriesChunks) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *StreamingChunks) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -1027,7 +1027,7 @@ func (m *StreamSeriesChunks) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *StreamSeriesChunksBatch) Marshal() (dAtA []byte, err error) {
+func (m *StreamingChunksBatch) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -1037,12 +1037,12 @@ func (m *StreamSeriesChunksBatch) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *StreamSeriesChunksBatch) MarshalTo(dAtA []byte) (int, error) {
+func (m *StreamingChunksBatch) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *StreamSeriesChunksBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *StreamingChunksBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -1212,7 +1212,7 @@ func (m *StreamingSeries) Size() (n int) {
 	return n
 }
 
-func (m *StreamSeriesBatch) Size() (n int) {
+func (m *StreamingSeriesBatch) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1230,7 +1230,7 @@ func (m *StreamSeriesBatch) Size() (n int) {
 	return n
 }
 
-func (m *StreamSeriesChunks) Size() (n int) {
+func (m *StreamingChunks) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1248,7 +1248,7 @@ func (m *StreamSeriesChunks) Size() (n int) {
 	return n
 }
 
-func (m *StreamSeriesChunksBatch) Size() (n int) {
+func (m *StreamingChunksBatch) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1345,7 +1345,7 @@ func (this *StreamingSeries) String() string {
 	}, "")
 	return s
 }
-func (this *StreamSeriesBatch) String() string {
+func (this *StreamingSeriesBatch) String() string {
 	if this == nil {
 		return "nil"
 	}
@@ -1354,14 +1354,14 @@ func (this *StreamSeriesBatch) String() string {
 		repeatedStringForSeries += strings.Replace(f.String(), "StreamingSeries", "StreamingSeries", 1) + ","
 	}
 	repeatedStringForSeries += "}"
-	s := strings.Join([]string{`&StreamSeriesBatch{`,
+	s := strings.Join([]string{`&StreamingSeriesBatch{`,
 		`Series:` + repeatedStringForSeries + `,`,
 		`IsEndOfSeriesStream:` + fmt.Sprintf("%v", this.IsEndOfSeriesStream) + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *StreamSeriesChunks) String() string {
+func (this *StreamingChunks) String() string {
 	if this == nil {
 		return "nil"
 	}
@@ -1370,23 +1370,23 @@ func (this *StreamSeriesChunks) String() string {
 		repeatedStringForChunks += strings.Replace(strings.Replace(f.String(), "AggrChunk", "AggrChunk", 1), `&`, ``, 1) + ","
 	}
 	repeatedStringForChunks += "}"
-	s := strings.Join([]string{`&StreamSeriesChunks{`,
+	s := strings.Join([]string{`&StreamingChunks{`,
 		`SeriesIndex:` + fmt.Sprintf("%v", this.SeriesIndex) + `,`,
 		`Chunks:` + repeatedStringForChunks + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *StreamSeriesChunksBatch) String() string {
+func (this *StreamingChunksBatch) String() string {
 	if this == nil {
 		return "nil"
 	}
-	repeatedStringForSeries := "[]*StreamSeriesChunks{"
+	repeatedStringForSeries := "[]*StreamingChunks{"
 	for _, f := range this.Series {
-		repeatedStringForSeries += strings.Replace(f.String(), "StreamSeriesChunks", "StreamSeriesChunks", 1) + ","
+		repeatedStringForSeries += strings.Replace(f.String(), "StreamingChunks", "StreamingChunks", 1) + ","
 	}
 	repeatedStringForSeries += "}"
-	s := strings.Join([]string{`&StreamSeriesChunksBatch{`,
+	s := strings.Join([]string{`&StreamingChunksBatch{`,
 		`Series:` + repeatedStringForSeries + `,`,
 		`}`,
 	}, "")
@@ -1737,7 +1737,7 @@ func (m *StreamingSeries) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *StreamSeriesBatch) Unmarshal(dAtA []byte) error {
+func (m *StreamingSeriesBatch) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1760,10 +1760,10 @@ func (m *StreamSeriesBatch) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: StreamSeriesBatch: wiretype end group for non-group")
+			return fmt.Errorf("proto: StreamingSeriesBatch: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StreamSeriesBatch: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: StreamingSeriesBatch: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1844,7 +1844,7 @@ func (m *StreamSeriesBatch) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *StreamSeriesChunks) Unmarshal(dAtA []byte) error {
+func (m *StreamingChunks) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1867,10 +1867,10 @@ func (m *StreamSeriesChunks) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: StreamSeriesChunks: wiretype end group for non-group")
+			return fmt.Errorf("proto: StreamingChunks: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StreamSeriesChunks: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: StreamingChunks: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1950,7 +1950,7 @@ func (m *StreamSeriesChunks) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *StreamSeriesChunksBatch) Unmarshal(dAtA []byte) error {
+func (m *StreamingChunksBatch) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1973,10 +1973,10 @@ func (m *StreamSeriesChunksBatch) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: StreamSeriesChunksBatch: wiretype end group for non-group")
+			return fmt.Errorf("proto: StreamingChunksBatch: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StreamSeriesChunksBatch: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: StreamingChunksBatch: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -2008,7 +2008,7 @@ func (m *StreamSeriesChunksBatch) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Series = append(m.Series, &StreamSeriesChunks{})
+			m.Series = append(m.Series, &StreamingChunks{})
 			if err := m.Series[len(m.Series)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
