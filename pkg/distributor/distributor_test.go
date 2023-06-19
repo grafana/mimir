@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -45,6 +46,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -1707,7 +1709,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 				func(_ interface{}) (interface{}, bool, error) {
 					d := &ring.Desc{}
-					d.AddIngester("ingester-1", "127.0.0.1", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
+					d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now())
 					return d, true, nil
 				},
 			)
@@ -2033,7 +2035,18 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			// Assert on metric metadata
 			metadata, err := ds[0].MetricsMetadata(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, 10, len(metadata))
+
+			expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
+			for _, m := range req.Metadata {
+				expectedMetadata = append(expectedMetadata, scrape.MetricMetadata{
+					Metric: m.MetricFamilyName,
+					Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
+					Help:   m.Help,
+					Unit:   m.Unit,
+				})
+			}
+
+			assert.ElementsMatch(t, metadata, expectedMetadata)
 		})
 	}
 }
@@ -2092,6 +2105,68 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 			} else {
 				require.EqualError(t, err, testData.expectedError)
 			}
+		})
+	}
+}
+
+func TestDistributor_LabelValuesForLabelName(t *testing.T) {
+	fixtures := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.FromStrings(labels.MetricName, "label_0", "status", "200"), 1, 100_000},
+		{labels.FromStrings(labels.MetricName, "label_1", "status", "500", "reason", "broken"), 1, 110_000},
+		{labels.FromStrings(labels.MetricName, "label_1"), 2, 200_000},
+	}
+	tests := map[string]struct {
+		from, to            model.Time
+		expectedLabelValues []string
+		matchers            []*labels.Matcher
+	}{
+		"all time selected, no matchers": {
+			from:                0,
+			to:                  300_000,
+			expectedLabelValues: []string{"label_0", "label_1"},
+		},
+		"subset of time selected": {
+			from:                150_000,
+			to:                  300_000,
+			expectedLabelValues: []string{"label_1"},
+		},
+		"matchers provided": {
+			from:                0,
+			to:                  300_000,
+			expectedLabelValues: []string{"label_1"},
+			matchers:            []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "reason", "broken")},
+		},
+	}
+
+	for testName, testCase := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+
+			// Create distributor
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:      12,
+				happyIngesters:    12,
+				numDistributors:   1,
+				replicationFactor: 3,
+			})
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
+			})
+
+			// Push fixtures
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
+			}
+
+			response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.matchers...)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, response, testCase.expectedLabelValues)
 		})
 	}
 }
@@ -2180,7 +2255,7 @@ func TestDistributor_LabelValuesCardinality_ExpectedAllIngestersResponsesToBeCom
 	ctx, ds := prepareWithZoneAwarenessAndZoneDelay(t, createSeries(10000))
 
 	names := []model.LabelName{labels.MetricName}
-	response, err := ds[0].labelValuesCardinality(ctx, names, []*labels.Matcher{})
+	response, err := ds[0].labelValuesCardinality(ctx, names, []*labels.Matcher{}, cardinality.InMemoryMethod)
 	require.NoError(t, err)
 	require.Len(t, response.Items, 1)
 	// labelValuesCardinality must wait for all responses from all ingesters
@@ -2286,7 +2361,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 					LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
 				}},
 			},
-			expectedIngesters:        numIngesters,
+			expectedIngesters:        numIngesters - 1,
 			happyIngesters:           numIngesters,
 			expectedSeriesCountTotal: 100,
 			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
@@ -2301,7 +2376,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 					LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
 				}},
 			},
-			expectedIngesters:        numIngesters,
+			expectedIngesters:        numIngesters - 1,
 			happyIngesters:           numIngesters - 1,
 			expectedSeriesCountTotal: 100,
 			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
@@ -2353,7 +2428,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			// the final ingester may not have received series yet.
 			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
 			test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
-				seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers)
+				seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, cardinality.InMemoryMethod)
 				require.NoError(t, err)
 				assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
 				// Make sure the resultant label names are sorted
@@ -2363,8 +2438,8 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 				return cardinalityMap
 			})
 
-			// Make sure all the ingesters have been queried
-			assert.Equal(t, testData.expectedIngesters, countMockIngestersCalls(ingesters, "LabelValuesCardinality"))
+			// Make sure enough ingesters were queried
+			assert.GreaterOrEqual(t, countMockIngestersCalls(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
 		})
 	}
 }
@@ -2421,7 +2496,7 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			_, _, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, []*labels.Matcher{})
+			_, _, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, []*labels.Matcher{}, cardinality.InMemoryMethod)
 			if testData.expectedHTTPGrpcError == nil {
 				require.NoError(t, err)
 			} else {
@@ -2448,7 +2523,7 @@ func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
 		// Set the first ingester as unhappy
 		ingesters[0].happy = false
 
-		_, _, err := ds[0].LabelValuesCardinality(ctx, []model.LabelName{labels.MetricName}, []*labels.Matcher{})
+		_, _, err := ds[0].LabelValuesCardinality(ctx, []model.LabelName{labels.MetricName}, []*labels.Matcher{}, cardinality.InMemoryMethod)
 		require.Error(t, err)
 	})
 }
@@ -3542,6 +3617,53 @@ func (i *mockIngester) MetricsForLabelMatchers(_ context.Context, req *client.Me
 		}
 	}
 	return &response, nil
+}
+
+func (i *mockIngester) LabelValues(_ context.Context, req *client.LabelValuesRequest, _ ...grpc.CallOption) (*client.LabelValuesResponse, error) {
+	i.Lock()
+	defer i.Unlock()
+
+	i.trackCall("LabelValues")
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	labelName, from, to, matchers, err := client.FromLabelValuesRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	response := []string{}
+	for _, ts := range i.timeseries {
+		if !match(ts.Labels, matchers) {
+			continue
+		}
+
+		sampleInTimeRange := false
+
+		for _, s := range ts.Samples {
+			if s.TimestampMs >= from && s.TimestampMs < to {
+				sampleInTimeRange = true
+				break
+			}
+		}
+
+		if !sampleInTimeRange {
+			continue
+		}
+
+		for _, lbl := range ts.Labels {
+			if lbl.Name == labelName {
+				response = append(response, lbl.Value)
+			}
+		}
+
+	}
+
+	slices.Sort(response)
+
+	return &client.LabelValuesResponse{LabelValues: response}, nil
 }
 
 func (i *mockIngester) LabelNames(_ context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {

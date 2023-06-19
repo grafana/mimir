@@ -4,4 +4,4 @@ route:
 
 receivers:
   # In this example we're not going to send any notification out of Alertmanager.
-  - name: 'empty-receiver'
+  - name: "empty-receiver"

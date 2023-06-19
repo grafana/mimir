@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r241-e6ff06c
+  tag: r242-987d851
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -384,8 +384,7 @@ mimir:
       querier:
         remote_read:
           query_address: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
-
-        graphite_fallback: http://{{ template "mimir.fullname" . }}-graphite-web.{{ .Release.Namespace}}.svc:{{ include "mimir.serverHttpListenPort" .  }}
+        proxy_bad_requests: false
 
         schemas:
           default_storage_schemas_file: /etc/graphite-proxy/storage-schemas.conf
@@ -617,7 +616,7 @@ alertmanager:
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
-    # -- Auxiliary values for migration, see https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/
+    # -- Auxiliary values for migration, see https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/
     migration:
       # -- Indicate if migration is ongoing for multi zone alertmanager
       enabled: false
@@ -885,7 +884,7 @@ ingester:
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
-    # -- Auxiliary values for migration, see https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/
+    # -- Auxiliary values for migration, see https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/
     migration:
       # -- Indicate if migration is ongoing for multi zone ingester
       enabled: false
@@ -1444,7 +1443,7 @@ store_gateway:
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
-    # -- Auxiliary values for migration, see https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/
+    # -- Auxiliary values for migration, see https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/
     migration:
       # -- Indicate if migration is ongoing for multi zone store-gateway
       enabled: false
@@ -1965,7 +1964,7 @@ minio:
   configPathmc: "/tmp/minio/mc/"
 
 # -- DEPRECATED: use the 'gateway' section instead. For a migration guide refer to
-# https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/
+# https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/
 #
 # Configuration for nginx gateway.
 # Can only be enabled when 'enterprise.enabled' is false.
@@ -2787,7 +2786,7 @@ metaMonitoring:
       # * If you are using the enterprise authentication type (mimir.structuredConfig.auth.type=enterprise, which is also the default when enterprise.enabled=true),
       #   then you also need to provide a Secret with the authentication token for the tenant.
       #   The token should be to an access policy with metrics:read scope.
-      #   To set up the Secret, refer to https://grafana.com/docs/mimir/latest/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-via-the-helm-chart
+      #   To set up the Secret, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/
       #   Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
       #
       # remote:
@@ -2895,7 +2894,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r241-b5b22601
+    tag: r242-71d3fd0a
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3236,62 +3235,6 @@ graphite:
     extraVolumes: []
     extraVolumeMounts: []
 
-  web:
-    replicas: 1
-
-    image:
-      repository: docker.io/raintank/graphite-mt
-      tag: 8-7ebde4c60-v2
-      pullPolicy: IfNotPresent
-
-    service:
-      annotations: {}
-      labels: {}
-
-    # -- Resources for graphite-web pods
-    resources:
-      requests:
-        cpu: 100m
-        memory: 512Mi
-    # -- The name of the PriorityClass for graphite-web pods
-    priorityClassName: null
-    # -- Labels for graphite-web pods
-    podLabels: {}
-    # -- Annotations for graphite-web pods
-    podAnnotations: {}
-    # -- Node selector for graphite-web pods
-    nodeSelector: {}
-    # -- Affinity for graphite-web pods
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-                - key: app.kubernetes.io/component
-                  operator: In
-                  values:
-                    - graphite-web
-            topologyKey: 'kubernetes.io/hostname'
-
-    strategy:
-      type: RollingUpdate
-    # -- Grace period to allow the graphite-web to shutdown before it is killed
-    terminationGracePeriodSeconds: 30
-    # -- Tolerations for graphite-web pods
-    tolerations: []
-    # -- Pod Disruption Budget
-    podDisruptionBudget: {}
-
-    # -- SecurityContext override for graphite web pods
-    securityContext: {}
-
-    containerSecurityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop: [ALL]
-
-
 # Graphite's aggregation cache. If you want to know more about it please check
 # https://grafana.com/docs/enterprise-metrics/latest/graphite/graphite_querier/#aggregation-cache
 gr-aggr-cache:
@@ -3421,7 +3364,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r241-e6ff06c
+    tag: r242-987d851
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3434,14 +3377,14 @@ smoke_test:
 
 # -- Settings for mimir-continuous-test.
 # This continuously writes and reads metrics from Mimir.
-# https://grafana.com/docs/mimir/latest/operators-guide/tools/mimir-continuous-test/
+# https://grafana.com/docs/mimir/latest/manage/tools/mimir-continuous-test/
 continuous_test:
   enabled: false
   # -- Number of replicas to start of continuous test
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r241-e6ff06c
+    tag: r242-987d851
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

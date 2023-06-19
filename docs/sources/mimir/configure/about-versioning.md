@@ -87,6 +87,9 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
+  - CPU/memory utilization based read request limiting:
+    - `-ingester.read-path-cpu-utilization-limit`
+    - `-ingester.read-path-memory-utilization-limit"`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`, `-querier.streaming-chunks-per-ingester-buffer-size`)
@@ -97,6 +100,7 @@ The following features are currently experimental:
   - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
+  - Cardinality query result caching (`-query-frontend.results-cache-ttl-for-cardinality-query`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -119,7 +123,7 @@ The following features are currently experimental:
 ## Deprecated features
 
 Deprecated features are usable up until the release that indicates their removal.
-For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters/index.md#parameter-lifecycle" >}}).
+For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters#parameter-lifecycle" >}}).
 
 The following features are currently deprecated and will be **removed in Mimir 2.10**:
 

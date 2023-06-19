@@ -1,10 +1,10 @@
 ---
-title: "Grafana Mimir references"
-menuTitle: "References"
-description: "Learn about Grafana Mimir via reference material."
-weight: 200
+description: Learn about Grafana Mimir via reference material.
 keywords:
-  -
+  - null
+menuTitle: References
+title: Grafana Mimir references
+weight: 200
 ---
 
 # Grafana Mimir references

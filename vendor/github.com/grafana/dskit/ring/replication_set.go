@@ -91,6 +91,8 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 
 // DoUntilQuorum runs function f in parallel for all replicas in r.
 //
+// # Result selection
+//
 // If r.MaxUnavailableZones is greater than zero:
 //   - DoUntilQuorum returns an error if calls to f for instances in more than r.MaxUnavailableZones zones return errors
 //   - Otherwise, DoUntilQuorum returns all results from all replicas in the first zones for which f succeeds
@@ -102,6 +104,8 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 //   - Otherwise, DoUntilQuorum returns all results from the first len(r.Instances) - r.MaxErrors instances
 //     (eg. if there are 6 replicas and r.MaxErrors is 2, DoUntilQuorum will return the results from the first 4
 //     successful calls to f, even if all 6 calls to f succeed).
+//
+// # Request minimisation
 //
 // If minimizeRequests is false, DoUntilQuorum will call f for each instance in r.
 //
@@ -117,21 +121,44 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 // Regardless of the value of minimizeRequests, if one of the termination conditions above is satisfied or ctx is
 // cancelled before f is called for an instance, f may not be called for that instance at all.
 //
+// # Cleanup
+//
 // Any results from successful calls to f that are not returned by DoUntilQuorum will be passed to cleanupFunc,
 // including when DoUntilQuorum returns an error or only returns a subset of successful results. cleanupFunc may
 // be called both before and after DoUntilQuorum returns.
 //
 // A call to f is considered successful if it returns a nil error.
 //
-// DoUntilQuorum cancels the context.Context passed to each invocation of f if the result of that invocation of
-// f will not be returned. If the result of that invocation of f will be returned, the context.Context passed
-// to that invocation of f will not be cancelled by DoUntilQuorum, but the context.Context is a child of ctx
-// passed to DoUntilQuorum and so will be cancelled if ctx is cancelled.
+// # Contexts
 //
-// Important: to ensure that no context.Context is leaked, you must ensure that ctx is cancelled after DoUntilQuorum
-// returns. (Until ctx is cancelled, ctx will retain a reference to each uncancelled child context.Context for each
-// returned invocation of f.)
+// The context.Context passed to an invocation of f may be cancelled at any time if the result of that invocation of
+// f will not be used.
+//
+// DoUntilQuorum cancels the context.Context passed to each invocation of f before DoUntilQuorum returns.
 func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequests bool, f func(context.Context, *InstanceDesc) (T, error), cleanupFunc func(T)) ([]T, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	wrappedF := func(ctx context.Context, desc *InstanceDesc, _ context.CancelFunc) (T, error) {
+		return f(ctx, desc)
+	}
+
+	return DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, r, minimizeRequests, wrappedF, cleanupFunc)
+}
+
+// DoUntilQuorumWithoutSuccessfulContextCancellation behaves the same as DoUntilQuorum, except it does not cancel
+// the context.Context passed to invocations of f whose results are returned.
+//
+// For example, this is useful in situations where DoUntilQuorumWithoutSuccessfulContextCancellation is used
+// to establish a set of streams that will be used after DoUntilQuorumWithoutSuccessfulContextCancellation returns.
+//
+// It is the caller's responsibility to ensure that either of the following are eventually true:
+//   - ctx is cancelled, or
+//   - the corresponding context.CancelFunc is called for all invocations of f whose results are returned by
+//     DoUntilQuorumWithoutSuccessfulContextCancellation
+//
+// Failing to do this may result in a memory leak.
+func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, r ReplicationSet, minimizeRequests bool, f func(context.Context, *InstanceDesc, context.CancelFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
 	resultsChan := make(chan instanceResult[T], len(r.Instances))
 	resultsRemaining := len(r.Instances)
 
@@ -166,7 +193,7 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequest
 
 	for i := range r.Instances {
 		instance := &r.Instances[i]
-		ctx := contextTracker.contextFor(instance)
+		ctx, ctxCancel := contextTracker.contextFor(instance)
 
 		go func(desc *InstanceDesc) {
 			if err := resultTracker.awaitStart(ctx, desc); err != nil {
@@ -179,7 +206,7 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, minimizeRequest
 				return
 			}
 
-			result, err := f(ctx, desc)
+			result, err := f(ctx, desc, ctxCancel)
 			resultsChan <- instanceResult[T]{
 				result:   result,
 				err:      err,

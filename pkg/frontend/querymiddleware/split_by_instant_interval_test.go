@@ -323,16 +323,15 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					query:                `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket{group_1="0"}[3m])))`,
 					expectedSplitQueries: 3,
 				},
-				// // Native Histograms
-				// // TODO(histograms): enable when https://github.com/prometheus/prometheus/issues/12250 is resolved
-				// "sum(rate) for native histogram": {
-				// 	query:                `sum(rate(metric_native_histogram[3m]))`,
-				// 	expectedSplitQueries: 3,
-				// },
-				// "sum(rate) grouping 'by' for native histogram": {
-				// 	query:                `sum by(group_1) (rate(metric_native_histogram[3m]))`,
-				// 	expectedSplitQueries: 3,
-				// },
+				// Native Histograms
+				"sum(rate) for native histogram": {
+					query:                `sum(rate(metric_native_histogram[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"sum(rate) grouping 'by' for native histogram": {
+					query:                `sum by(group_1) (rate(metric_native_histogram[3m]))`,
+					expectedSplitQueries: 3,
+				},
 				// Subqueries
 				"subquery sum_over_time": {
 					query:                   `sum_over_time(metric_counter[1h:5m])`,

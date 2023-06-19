@@ -15,6 +15,10 @@ mimir {
     alertmanager_enabled: true,
     alertmanager_storage_bucket_name: 'alerts-bucket',
 
+    autoscaling_alertmanager_enabled: true,
+    autoscaling_alertmanager_min_replicas: 3,
+    autoscaling_alertmanager_max_replicas: 30,
+
     autoscaling_querier_enabled: true,
     autoscaling_querier_min_replicas: 3,
     autoscaling_querier_max_replicas: 30,

@@ -49,8 +49,11 @@ type replicationSetResultTracker interface {
 }
 
 type replicationSetContextTracker interface {
-	// Returns a context.Context for instance.
-	contextFor(instance *InstanceDesc) context.Context
+	// Returns a context.Context and context.CancelFunc for instance.
+	// The context.CancelFunc will only cancel the context for this instance (ie. if this tracker
+	// is zone-aware, calling the context.CancelFunc should not cancel contexts for other instances
+	// in the same zone).
+	contextFor(instance *InstanceDesc) (context.Context, context.CancelFunc)
 
 	// Cancels the context for instance previously obtained with contextFor.
 	// This method may cancel the context for other instances if those other instances are part of
@@ -186,10 +189,10 @@ func newDefaultContextTracker(ctx context.Context, instances []InstanceDesc) *de
 	}
 }
 
-func (t *defaultContextTracker) contextFor(instance *InstanceDesc) context.Context {
+func (t *defaultContextTracker) contextFor(instance *InstanceDesc) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(t.ctx)
 	t.cancelFuncs[instance] = cancel
-	return ctx
+	return ctx, cancel
 }
 
 func (t *defaultContextTracker) cancelContextFor(instance *InstanceDesc) {
@@ -352,41 +355,47 @@ func (t *zoneAwareResultTracker) awaitStart(ctx context.Context, instance *Insta
 }
 
 type zoneAwareContextTracker struct {
-	contexts    map[string]context.Context
-	cancelFuncs map[string]context.CancelFunc
+	contexts    map[*InstanceDesc]context.Context
+	cancelFuncs map[*InstanceDesc]context.CancelFunc
 }
 
 func newZoneAwareContextTracker(ctx context.Context, instances []InstanceDesc) *zoneAwareContextTracker {
 	t := &zoneAwareContextTracker{
-		contexts:    map[string]context.Context{},
-		cancelFuncs: map[string]context.CancelFunc{},
+		contexts:    make(map[*InstanceDesc]context.Context, len(instances)),
+		cancelFuncs: make(map[*InstanceDesc]context.CancelFunc, len(instances)),
 	}
 
-	for _, instance := range instances {
-		if _, ok := t.contexts[instance.Zone]; !ok {
-			zoneCtx, cancel := context.WithCancel(ctx)
-			t.contexts[instance.Zone] = zoneCtx
-			t.cancelFuncs[instance.Zone] = cancel
-		}
+	for i := range instances {
+		instance := &instances[i]
+		ctx, cancel := context.WithCancel(ctx)
+		t.contexts[instance] = ctx
+		t.cancelFuncs[instance] = cancel
 	}
 
 	return t
 }
 
-func (t *zoneAwareContextTracker) contextFor(instance *InstanceDesc) context.Context {
-	return t.contexts[instance.Zone]
+func (t *zoneAwareContextTracker) contextFor(instance *InstanceDesc) (context.Context, context.CancelFunc) {
+	return t.contexts[instance], t.cancelFuncs[instance]
 }
 
 func (t *zoneAwareContextTracker) cancelContextFor(instance *InstanceDesc) {
-	if cancel, ok := t.cancelFuncs[instance.Zone]; ok {
-		cancel()
-		delete(t.cancelFuncs, instance.Zone)
+	// Why not create a per-zone parent context to make this easier?
+	// If we create a per-zone parent context, we'd need to have some way to cancel the per-zone context when the last of the individual
+	// contexts in a zone are cancelled using the context.CancelFunc returned from contextFor.
+	for i, cancel := range t.cancelFuncs {
+		if i.Zone == instance.Zone {
+			cancel()
+			delete(t.contexts, i)
+			delete(t.cancelFuncs, i)
+		}
 	}
 }
 
 func (t *zoneAwareContextTracker) cancelAllContexts() {
-	for zone, cancel := range t.cancelFuncs {
+	for instance, cancel := range t.cancelFuncs {
 		cancel()
-		delete(t.cancelFuncs, zone)
+		delete(t.contexts, instance)
+		delete(t.cancelFuncs, instance)
 	}
 }

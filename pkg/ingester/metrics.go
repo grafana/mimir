@@ -64,6 +64,9 @@ type ingesterMetrics struct {
 
 	// Shutdown marker for ingester scale down
 	shutdownMarker prometheus.Gauge
+
+	// Count number of requests rejected due to utilization based limiting.
+	utilizationLimitedRequests *prometheus.CounterVec
 }
 
 func newIngesterMetrics(
@@ -164,6 +167,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_memory_metadata_removed_total",
 			Help: "The total number of metadata that were removed per user.",
 		}, []string{"user"}),
+		utilizationLimitedRequests: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_utilization_limited_read_requests_total",
+			Help: "Total number of times read requests have been rejected due to utilization based limiting.",
+		}, []string{"reason"}),
 
 		maxUsersGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        instanceLimits,

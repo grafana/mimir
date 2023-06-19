@@ -67,7 +67,7 @@
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary Mimir clusters.
     // Whenever you do any change here, please reflect it in the doc at:
-    // docs/sources/mimir/operators-guide/monitoring-grafana-mimir/requirements.md
+    // docs/sources/mimir/manage/monitoring-grafana-mimir/requirements.md
     job_names: {
       ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
       distributor: ['distributor', 'cortex', 'mimir', 'mimir-write.*'],

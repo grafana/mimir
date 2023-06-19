@@ -27,9 +27,11 @@ import (
 )
 
 const (
-	day                    = 24 * time.Hour
-	queryRangePathSuffix   = "/query_range"
-	instantQueryPathSuffix = "/query"
+	day                              = 24 * time.Hour
+	queryRangePathSuffix             = "/query_range"
+	instantQueryPathSuffix           = "/query"
+	cardinalityLabelNamesPathSuffix  = "/cardinality/label_names"
+	cardinalityLabelValuesPathSuffix = "/cardinality/label_values"
 )
 
 // Config for query_range middleware chain.
@@ -205,7 +207,6 @@ func newQueryTripperware(
 
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-
 		shouldCache := func(r Request) bool {
 			return !r.GetOptions().CacheDisabled
 		}
@@ -286,12 +287,21 @@ func newQueryTripperware(
 		instant := defaultInstantQueryParamsRoundTripper(
 			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
 		)
+
+		// Inject the cardinality query cache roundtripper only if the query results cache is enabled.
+		cardinality := next
+		if cfg.CacheResults {
+			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, next, log, registerer)
+		}
+
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
 			case isRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)
 			case isInstantQuery(r.URL.Path):
 				return instant.RoundTrip(r)
+			case isCardinalityQuery(r.URL.Path):
+				return cardinality.RoundTrip(r)
 			default:
 				return next.RoundTrip(r)
 			}
@@ -339,6 +349,10 @@ func isRangeQuery(path string) bool {
 
 func isInstantQuery(path string) bool {
 	return strings.HasSuffix(path, instantQueryPathSuffix)
+}
+
+func isCardinalityQuery(path string) bool {
+	return strings.HasSuffix(path, cardinalityLabelNamesPathSuffix) || strings.HasSuffix(path, cardinalityLabelValuesPathSuffix)
 }
 
 func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTripper {

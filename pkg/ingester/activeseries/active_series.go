@@ -20,8 +20,10 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
-	mu                 sync.RWMutex
-	stripes            [numStripes]seriesStripe
+	stripes [numStripes]seriesStripe
+
+	// matchersMutex protects matchers and lastMatchersUpdate.
+	matchersMutex      sync.RWMutex
 	matchers           *Matchers
 	lastMatchersUpdate time.Time
 
@@ -63,14 +65,14 @@ func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
 }
 
 func (c *ActiveSeries) CurrentMatcherNames() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.matchersMutex.RLock()
+	defer c.matchersMutex.RUnlock()
 	return c.matchers.MatcherNames()
 }
 
 func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.matchersMutex.Lock()
+	defer c.matchersMutex.Unlock()
 
 	for i := 0; i < numStripes; i++ {
 		c.stripes[i].reinitialize(asm)
@@ -80,8 +82,8 @@ func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
 }
 
 func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.matchersMutex.RLock()
+	defer c.matchersMutex.RUnlock()
 	return c.matchers.Config()
 }
 
@@ -92,6 +94,18 @@ func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.T
 	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref)
 }
 
+// Purge purges expired entries and returns true if enough time has passed since
+// last reload. This should be called periodically to avoid unbounded memory
+// growth.
+func (c *ActiveSeries) Purge(now time.Time) bool {
+	c.matchersMutex.Lock()
+	defer c.matchersMutex.Unlock()
+	purgeTime := now.Add(-c.timeout)
+	c.purge(purgeTime)
+
+	return !c.lastMatchersUpdate.After(purgeTime)
+}
+
 // purge removes expired entries from the cache.
 func (c *ActiveSeries) purge(keepUntil time.Time) {
 	for s := 0; s < numStripes; s++ {
@@ -99,19 +113,28 @@ func (c *ActiveSeries) purge(keepUntil time.Time) {
 	}
 }
 
-// Active returns the total number of active series, as well as a slice of active series matching each one of the
-// custom trackers provided (in the same order as custom trackers are defined).
-// The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
-// This should be called periodically to avoid unbounded memory growth.
-func (c *ActiveSeries) Active(now time.Time) (int, []int, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	purgeTime := now.Add(-c.timeout)
-	c.purge(purgeTime)
+func (c *ActiveSeries) ContainsRef(ref uint64) bool {
+	stripeID := ref % numStripes
+	return c.stripes[stripeID].containsRef(ref)
+}
 
-	if c.lastMatchersUpdate.After(purgeTime) {
-		return 0, nil, false
+// Active returns the total number of active series. This method does not purge
+// expired entries, so Purge should be called periodically.
+func (c *ActiveSeries) Active() int {
+	total := 0
+	for s := 0; s < numStripes; s++ {
+		total += c.stripes[s].getTotal()
 	}
+	return total
+}
+
+// ActiveWithMatchers returns the total number of active series, as well as a
+// slice of active series matching each one of the custom trackers provided (in
+// the same order as custom trackers are defined). This method does not purge
+// expired entries, so Purge should be called periodically.
+func (c *ActiveSeries) ActiveWithMatchers() (int, []int) {
+	c.matchersMutex.RLock()
+	defer c.matchersMutex.RUnlock()
 
 	total := 0
 	totalMatching := resizeAndClear(len(c.matchers.MatcherNames()), nil)
@@ -119,7 +142,22 @@ func (c *ActiveSeries) Active(now time.Time) (int, []int, bool) {
 		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
 	}
 
-	return total, totalMatching, true
+	return total, totalMatching
+}
+
+func (s *seriesStripe) containsRef(ref uint64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	_, ok := s.refs[ref]
+	return ok
+}
+
+// getTotal will return the total active series in the stripe
+func (s *seriesStripe) getTotal() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.active
 }
 
 // getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided

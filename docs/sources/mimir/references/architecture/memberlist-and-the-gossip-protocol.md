@@ -1,9 +1,11 @@
 ---
 aliases:
   - ../../operators-guide/architecture/memberlist-and-the-gossip-protocol/
-title: "Grafana Mimir memberlist and gossip protocol"
-menuTitle: "Memberlist and gossip protocol"
-description: "Memberlist manages Grafana Mimir cluster membership and node detection failure."
+description:
+  Memberlist manages Grafana Mimir cluster membership and node detection
+  failure.
+menuTitle: Memberlist and gossip protocol
+title: Grafana Mimir memberlist and gossip protocol
 weight: 80
 ---
 
@@ -18,7 +20,7 @@ When using a memberlist-based KV store, each instance maintains a copy of the ha
 Each Mimir instance updates a hash ring locally and uses memberlist to propagate the changes to other instances.
 Updates generated locally and updates received from other instances are merged together to form the current state of the ring on the instance.
 
-To configure memberlist, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings.md" >}}).
+To configure memberlist, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings" >}}).
 
 ## How memberlist propagates hash ring changes
 

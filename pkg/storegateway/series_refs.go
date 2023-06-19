@@ -1016,7 +1016,7 @@ func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet,
 	for sIdx, series := range set.series {
 		// An empty label set means the series had no chunks in this block, so we skip it.
 		// No chunk ranges means the series doesn't have a single chunk range in the requested range.
-		if len(series.lset) == 0 || (!s.strategy.isNoChunks() && len(series.chunksRanges) == 0) {
+		if series.lset.IsEmpty() || (!s.strategy.isNoChunks() && len(series.chunksRanges) == 0) {
 			continue
 		}
 		if !shardOwned(s.shard, s.seriesHasher, postings[sIdx], series.lset, stats) {

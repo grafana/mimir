@@ -1,15 +1,17 @@
 ---
 aliases:
   - ../operators-guide/reference-http-api/
-title: "Grafana Mimir HTTP API"
-menuTitle: "HTTP API"
-description: "Use the HTTP API to write and query time-series data, and to operate a Grafana Mimir cluster."
-weight: 120
+description:
+  Use the HTTP API to write and query time-series data, and to operate
+  a Grafana Mimir cluster.
 keywords:
   - Mimir API
   - Mimir endpoints
   - Mimir communication
   - Mimir querying
+menuTitle: HTTP API
+title: Grafana Mimir HTTP API
+weight: 120
 ---
 
 # Grafana Mimir HTTP API
@@ -20,7 +22,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 
 - **Microservices mode**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
-- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../../references/architecture/deployment-modes/index.md" >}}) for the grouping of components.
+- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../architecture/deployment-modes" >}}) for the grouping of components.
 
 ## Endpoints
 
@@ -113,7 +115,7 @@ If you disable multi-tenancy, Grafana Mimir doesn't require any request to inclu
 
 Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` flag or its respective YAML configuration option.
 
-For more information about authentication and authorization, refer to [Authentication and Authorization]({{< relref "../../operators-guide/secure/authentication-and-authorization.md" >}}).
+For more information about authentication and authorization, refer to [Authentication and Authorization]({{< relref "../../manage/secure/authentication-and-authorization" >}}).
 
 ## All services
 
@@ -173,7 +175,7 @@ This endpoint displays empty configuration flags, it exists only to be compatibl
 GET /runtime_config
 ```
 
-This endpoint displays the [runtime configuration]({{< relref "../../configure/about-runtime-configuration.md" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
+This endpoint displays the [runtime configuration]({{< relref "../../configure/about-runtime-configuration" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
 The endpoint is only available if Grafana Mimir is configured with the `-runtime-config.file` option.
 
 #### Different modes
@@ -283,7 +285,7 @@ The endpoint is only available if Grafana Mimir is configured with the `-runtime
 
 ## Distributor
 
-The following endpoints relate to the [distributor]({{< relref "../../references/architecture/components/distributor.md" >}}).
+The following endpoints relate to the [distributor]({{< relref "../architecture/components/distributor" >}}).
 
 ### Remote write
 
@@ -349,7 +351,7 @@ This endpoint displays a web page with the current status of the HA tracker, inc
 
 ## Ingester
 
-The following endpoints relate to the [ingester]({{< relref "../../references/architecture/components/ingester.md" >}}).
+The following endpoints relate to the [ingester]({{< relref "../architecture/components/ingester" >}}).
 
 ### Flush chunks / blocks
 
@@ -425,7 +427,7 @@ This endpoint displays a web page with the ingesters hash ring status, including
 
 ## Querier / Query-frontend
 
-The following endpoints are exposed both by the [querier]({{< relref "../../references/architecture/components/querier.md" >}}) and [query-frontend]({{< relref "../../references/architecture/components/query-frontend/index.md" >}}).
+The following endpoints are exposed both by the [querier]({{< relref "../architecture/components/querier" >}}) and [query-frontend]({{< relref "../architecture/components/query-frontend" >}}).
 
 ### Instant query
 
@@ -523,19 +525,22 @@ Requires [authentication](#authentication).
 GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_names
 ```
 
-Returns realtime label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
+Returns label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
 It counts distinct label values per label name.
 
 As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
 cutting between the calls.
 
 The items in the field `cardinality` are sorted by `label_values_count` in DESC order and by `label_name` in ASC order.
-
 The count of items is limited by `limit` request param.
 
 This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+#### Caching
+
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than `0`.
 
 #### Request params
 
@@ -563,25 +568,40 @@ Requires [authentication](#authentication).
 GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_values
 ```
 
-Returns realtime label values cardinality associated to request param `label_names[]` across all ingesters, for the authenticated tenant, in `JSON` format.
+Returns label values cardinality associated to request param `label_names[]` across all ingesters, for the authenticated tenant, in `JSON` format.
 It returns the series count per label value associated to request param `label_names[]`.
 
-As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
-cutting between the calls.
-
-The items in the field `labels` are sorted by `series_count` in DESC order and by `label_name` in ASC order.
+The items in the field `labels` are sorted by `series_count` in descending order and by `label_name` in ascending order.
 The items in the field `cardinality` are sorted by `series_count` in DESC order and by `label_value` in ASC order.
+The count of `cardinality` items is limited by request parameter `limit`.
 
-The count of `cardinality` items is limited by request param `limit`.
-
-This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
+This endpoint is disabled by default; you can enable it via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML configuration option).
 
 Requires [authentication](#authentication).
+
+#### Count series by `inmemory` or `active`
+
+Two methods of counting are available: `inmemory` and `active`. To choose one, use the `count_method` parameter.
+
+The `inmemory` method counts the number of series in currently opened TSDBs in Mimir's ingesters.
+Two subsequent calls might return completely different results if an ingester cut a block between calls.
+This method of counting is most useful for understanding ingester memory usage.
+
+The `active` method also counts series in currently opened TSDBs in Mimir's ingesters, but filters out series that have not received a sample within a configurable duration of time.
+To configure this duration, use the `-ingester.active-series-metrics-idle-timeout` parameter.
+This method of counting is most useful for understanding what label values are represented in the samples ingested by Mimir in the last `-ingester.active-series-metrics-idle-timeout`.
+Two subsequent calls will likely return similar results, because this window of time is not related to the block cutting on ingesters.
+Values will change only as a result of changes in the data ingested by Mimir.
+
+#### Caching
+
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than `0`.
 
 #### Request params
 
 - **label_names[]** - _required_ - specifies labels for which cardinality must be provided.
 - **selector** - _optional_ - specifies PromQL selector that will be used to filter series that must be analyzed.
+- **count_method** - _optional_ - specifies which series counting method will be used. (default="inmemory", available options=["inmemory", "active"])
 - **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0, max=500).
 
 #### Response schema
@@ -693,7 +713,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../operators-guide/tools/mimirtool.md#list-rules" >}}).
+> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
 
 **Example response**
 
@@ -788,7 +808,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../operators-guide/tools/mimirtool.md#get-rule-group" >}}) .
+> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
 
 ### Set rule group
 
@@ -804,7 +824,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../operators-guide/tools/mimirtool.md#load-rule-group" >}}) .
+> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -832,7 +852,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../operators-guide/tools/mimirtool.md#delete-rule-group" >}}).
+> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
 
 ### Delete namespace
 
@@ -920,7 +940,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../operators-guide/tools/mimirtool.md#get-alertmanager-configuration" >}}).
+> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
 
 ### Set Alertmanager configuration
 
@@ -936,7 +956,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../operators-guide/tools/mimirtool.md#load-alertmanager-configuration" >}}).
+> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -976,7 +996,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../operators-guide/tools/mimirtool.md#delete-alertmanager-configuration" >}}).
+> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
 
 ## Store-gateway
 

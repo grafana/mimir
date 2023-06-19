@@ -24,7 +24,7 @@ For information about how to deploy Grafana Mimir, refer to [Deploy Grafana Mimi
 
 ## Getting started
 
-If you’re new to Grafana Mimir, read the [Getting started guide](https://grafana.com/docs/mimir/latest/get-started/).
+If you’re new to Grafana Mimir, read the [Get started guide](https://grafana.com/docs/mimir/latest/get-started/).
 
 Before deploying Grafana Mimir in a production environment, read:
 
@@ -37,7 +37,7 @@ Before deploying Grafana Mimir in a production environment, read:
 Refer to the following links to access Grafana Mimir documentation:
 
 - [Latest release](https://grafana.com/docs/mimir/latest/)
-- [Upcoming release](https://grafana.com/docs/mimir/next/), at the tip of the main branch
+- [Upcoming release](https://grafana.com/docs/mimir/next/), at the tip of the `main` branch
 
 ## Contributing
 

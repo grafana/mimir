@@ -420,7 +420,7 @@ func TestPreallocTimeseries_SetLabels(t *testing.T) {
 		},
 		marshalledData: []byte{1, 2, 3},
 	}
-	p.SetLabels(labels.FromStrings("__name__", "hello", "lbl", "world"))
+	p.SetLabels(FromLabelsToLabelAdapters(labels.FromStrings("__name__", "hello", "lbl", "world")))
 
 	require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}, p.Labels)
 	require.Nil(t, p.marshalledData)
