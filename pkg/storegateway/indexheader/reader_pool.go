@@ -99,25 +99,19 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		checkFreq := p.lazyReaderIdleTimeout / 10
 
 		go func() {
-			for {
-				select {
-				case <-p.close:
-					return
-				case <-time.After(checkFreq):
-					p.closeIdleReaders()
-				}
-			}
-		}()
+			tickerLazyLoad := time.NewTicker(time.Minute)
+			defer tickerLazyLoad.Stop()
 
-		go func() {
-			ticker := time.NewTicker(time.Minute)
-			defer ticker.Stop()
-			
+			tickerIdleReader := time.NewTicker(checkFreq)
+			defer tickerIdleReader.Stop()
+
 			for {
 				select {
 				case <-p.close:
 					return
-				case <-ticker.C:
+				case <-tickerIdleReader.C:
+					p.closeIdleReaders()
+				case <-tickerLazyLoad.C:
 					// We copy the state of blocks that are being lazy loaded from LazyBinaryReaders using lock.
 					p.lazyReadersMx.Lock()
 					p.lazyLoadedTracker.copyLazyLoadedState(p.lazyReaders)
