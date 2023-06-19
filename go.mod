@@ -39,8 +39,9 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/weaveworks/common v0.0.0-20230511094633-334485600903
-	go.opentelemetry.io/otel/exporters/jaeger v1.15.1
-	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.15.1
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.41.0
+	go.opentelemetry.io/otel/exporters/jaeger v1.15.0
+	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.15.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/goleak v1.2.1
 	golang.org/x/crypto v0.9.0
@@ -71,9 +72,10 @@ require (
 	github.com/thanos-io/objstore v0.0.0-20230201072718-11ffbc490204
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.0.0-rcv0012
-	go.opentelemetry.io/otel v1.15.1
-	go.opentelemetry.io/otel/sdk v1.15.1
-	go.opentelemetry.io/otel/trace v1.15.1
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.41.0
+	go.opentelemetry.io/otel v1.15.0
+	go.opentelemetry.io/otel/sdk v1.15.0
+	go.opentelemetry.io/otel/trace v1.15.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	google.golang.org/api v0.128.0
@@ -230,8 +232,7 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/collector/featuregate v0.73.0 // indirect
 	go.opentelemetry.io/collector/semconv v0.73.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0 // indirect
-	go.opentelemetry.io/otel/metric v0.37.0 // indirect
+	go.opentelemetry.io/otel/metric v0.38.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/oauth2 v0.8.0 // indirect
@@ -253,7 +254,7 @@ require (
 
 // Using a fork of Prometheus with Mimir-specific changes.
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230524115841-8d6690e86aa7
-
+replace github.com/grafana/dskit => ../dskit
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
 // - https://github.com/hashicorp/memberlist/pull/260

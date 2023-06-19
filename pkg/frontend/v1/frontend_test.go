@@ -27,11 +27,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/config"
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
@@ -78,10 +80,10 @@ func TestFrontendPropagateTrace(t *testing.T) {
 	observedTraceID := make(chan string, 2)
 
 	handler := middleware.Tracer{}.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sp := opentracing.SpanFromContext(r.Context())
-		defer sp.Finish()
+		sp := trace.SpanFromContext(r.Context())
+		defer sp.End()
 
-		traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
+		traceID := fmt.Sprintf("%v", sp.SpanContext().TraceID())
 		observedTraceID <- traceID
 
 		_, err = w.Write([]byte(responseBody))
@@ -89,18 +91,20 @@ func TestFrontendPropagateTrace(t *testing.T) {
 	}))
 
 	test := func(addr string, _ *Frontend) {
-		sp, ctx := opentracing.StartSpanFromContext(context.Background(), "client")
-		defer sp.Finish()
-		traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
+		ctx, sp := otel.Tracer("frontend_test").Start(context.Background(), "client")
+		defer sp.End()
+		traceID := fmt.Sprintf("%v", sp.SpanContext().TraceID())
 
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/%s", addr, query), nil)
 		require.NoError(t, err)
+
+		// Propagate the trace through the request headers.
+		propagator := otel.GetTextMapPropagator()
+		propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
+
 		req = req.WithContext(ctx)
 		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(ctx, "1"), req)
 		require.NoError(t, err)
-
-		req, tr := nethttp.TraceRequest(opentracing.GlobalTracer(), req)
-		defer tr.Finish()
 
 		client := http.Client{
 			Transport: &nethttp.Transport{},

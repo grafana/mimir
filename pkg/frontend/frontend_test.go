@@ -22,20 +22,18 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/grafana/mimir/pkg/frontend/transport"
+	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
+	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
+	grpctrace "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"google.golang.org/grpc"
-
-	"github.com/grafana/mimir/pkg/frontend/transport"
-	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
-	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
-	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 )
 
 const (
@@ -78,7 +76,7 @@ func TestFrontend_RequestHostHeaderWhenDownstreamURLIsConfigured(t *testing.T) {
 		require.NoError(t, err)
 
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: &otelhttp.NewTransport{},
 		}
 		resp, err := client.Do(req)
 		require.NoError(t, err)
@@ -138,7 +136,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 		assert.NoError(t, err)
 
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: otelhttp.NewTransport(),
 		}
 
 		resp, err := client.Do(req)
@@ -196,7 +194,7 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 		assert.NoError(t, err)
 
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: &otelhttp.Transport{},
 		}
 
 		resp, err := client.Do(req)
@@ -242,7 +240,8 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())),
+		// here we set a noop tracer
+		grpc.StreamServerInterceptor(grpctrace.StreamServerInterceptor(otel.SetTracerProvider(trace.NewNoopTracerProvider()))),
 	)
 	defer grpcServer.GracefulStop()
 

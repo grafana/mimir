@@ -12,17 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build dragonfly || freebsd || netbsd || openbsd || solaris
-// +build dragonfly freebsd netbsd openbsd solaris
+package otelgrpc // import "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 
-package resource // import "go.opentelemetry.io/otel/sdk/resource"
+// Version is the current release version of the gRPC instrumentation.
+func Version() string {
+	return "0.41.0"
+	// This string is updated by the pre_release.sh script during release
+}
 
-import (
-	"errors"
-	"strings"
-)
-
-var platformHostIDReader hostIDReader = &hostIDReaderBSD{
-	execCommand: execCommand,
-	readFile:    readFile,
+// SemVersion is the semantic version to be supplied to tracer/meter creation.
+func SemVersion() string {
+	return "semver:" + Version()
 }

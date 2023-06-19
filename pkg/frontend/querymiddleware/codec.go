@@ -373,6 +373,7 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 		log.Error(err)
 		return nil, err
 	}
+
 	log.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
 		otlog.Int("status_code", r.StatusCode),
 		otlog.Int("bytes", len(buf)))

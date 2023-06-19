@@ -20,7 +20,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -31,6 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -1550,7 +1550,7 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	if span := opentracing.SpanFromContext(r.Context()); span != nil {
+	if span := trace.SpanFromContext(r.Context()); span != nil {
 		request.LogToSpan(span)
 	}
 

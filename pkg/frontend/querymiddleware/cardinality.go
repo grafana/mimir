@@ -64,6 +64,8 @@ func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, re
 // Do injects a cardinality estimate into the query hints (if available) and
 // caches the actual cardinality observed for this query.
 func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Response, error) {
+	// here we need to change in dskit, instead of returning spanlogger, return spanlogger interface
+	// could be used by both opentracing and opentelemetry
 	spanLog := spanlogger.FromContext(ctx, c.logger)
 
 	tenants, err := tenant.TenantIDs(ctx)
