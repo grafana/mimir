@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
@@ -52,12 +53,12 @@ var (
 		},
 	}
 
-	clearDataMetric = prometheus.NewCounterVec(prometheus.CounterOpts{
+	clearDataMetric = promauto.With(prometheus.DefaultRegisterer).NewCounterVec(prometheus.CounterOpts{
 		Name: "mimir_timeseries_unmarshal_data_cleared_total",
 		Help: "Reason for clearing cached unmarshal data",
 	}, []string{"reason"})
 
-	marshalReused = prometheus.NewCounter(prometheus.CounterOpts{
+	marshalReused = promauto.With(prometheus.DefaultRegisterer).NewCounter(prometheus.CounterOpts{
 		Name: "mimir_timeseries_unmarshal_data_reused_total",
 		Help: "Number of reuses of unmarshal data",
 	})
