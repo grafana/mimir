@@ -713,9 +713,8 @@ func (s *BucketStore) sendStreamingSeriesLabelsHintsStats(
 	// TODO: can we send this in parallel while we start fetching the chunks below?
 	for seriesSet.Next() {
 		var lset labels.Labels
-		// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
-		// because the subsequent call to seriesSet.Next() may release it.
-		// TODO: check if it is safe to hold the lset.
+		// Although subsequent call to seriesSet.Next() may release the memory of this series object,
+		// it is safe to hold onto the labels because it is not released.
 		lset, _ = seriesSet.At()
 
 		// We are re-using the slice for every batch this way.
@@ -1901,7 +1900,7 @@ func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]ch
 	ref := int64(d.Uvarint64())
 
 	isNoChunks := strategy.isNoChunks()
-	isNoChunkOverlapMintMaxt := strategy.isNoChunks() && strategy.isOverlapMintMaxt()
+	isNoChunkOverlapMintMaxt := strategy.isNoChunksAndOverlapMintMaxt()
 	for i := 0; i < k; i++ {
 		if i > 0 {
 			mint += int64(d.Uvarint64())

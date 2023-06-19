@@ -806,9 +806,9 @@ const (
 	// To change the default behavior, use the flags below this.
 	defaultStrategy seriesIteratorStrategy = 0
 
-	// noChunks when used by itself fetches only series labels for series in the entire block.
+	// noChunks flag when used by itself fetches only series labels for series in the entire block.
 	noChunks seriesIteratorStrategy = 0b00000001
-	// overlapMintMaxt is used to be used together with noChunks. With this, only the series whose
+	// overlapMintMaxt flag is used to be used together with noChunks. With this, only the series whose
 	// chunks overlap with mint->maxt are selected.
 	overlapMintMaxt seriesIteratorStrategy = 0b00000010
 )
@@ -821,11 +821,11 @@ func (s seriesIteratorStrategy) isOverlapMintMaxt() bool {
 	return s&overlapMintMaxt != 0
 }
 
-func (s seriesIteratorStrategy) isNoChunksEntireBlock() bool {
+func (s seriesIteratorStrategy) isNoChunksOnEntireBlock() bool {
 	return s.isNoChunks() && !s.isOverlapMintMaxt()
 }
 
-func (s seriesIteratorStrategy) isNoChunksOverlapMintMaxt() bool {
+func (s seriesIteratorStrategy) isNoChunksAndOverlapMintMaxt() bool {
 	return s.isNoChunks() && s.isOverlapMintMaxt()
 }
 
@@ -845,7 +845,7 @@ func newLoadingSeriesChunkRefsSetIterator(
 	chunkRangesPerSeries int,
 	logger log.Logger,
 ) *loadingSeriesChunkRefsSetIterator {
-	if strategy.isNoChunksEntireBlock() {
+	if strategy.isNoChunksOnEntireBlock() {
 		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
 	}
 

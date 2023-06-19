@@ -1664,12 +1664,34 @@
         },
         {
           "kind": "field",
+          "name": "prefer_streaming_chunks_storegateway",
+          "required": false,
+          "desc": "Request storegateway stream chunks. Storegateway will only respond with a stream of chunks if the target storegateway supports this, and this preference will be ignored by storegateway that do not support this.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.prefer-streaming-chunks-storegateway",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "streaming_chunks_per_ingester_series_buffer_size",
           "required": false,
           "desc": "Number of series to buffer per ingester when streaming chunks from ingesters.",
           "fieldValue": null,
           "fieldDefaultValue": 256,
           "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "streaming_chunks_per_ingester_series_buffer_size_storegateway",
+          "required": false,
+          "desc": "Number of series to buffer per storegateway when streaming chunks from storegateway.",
+          "fieldValue": null,
+          "fieldDefaultValue": 256,
+          "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size-storegateway",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
