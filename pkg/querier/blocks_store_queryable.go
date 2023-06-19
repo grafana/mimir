@@ -734,7 +734,9 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 			stream, err := c.Series(reqCtx, req)
 			if err == nil {
+				mtx.Lock()
 				streams = append(streams, stream)
+				mtx.Unlock()
 				err = gCtx.Err()
 			}
 			if err != nil {
