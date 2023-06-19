@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -570,7 +571,7 @@ type BucketCompactorMetrics struct {
 	groupCompactions             prometheus.Counter
 	blocksMarkedForDeletion      prometheus.Counter
 	blocksMarkedForNoCompact     prometheus.Counter
-	blocksMaxTimeDelta           prometheus.Histogram
+	blocksMaxTimeDelta           *prometheus.HistogramVec
 }
 
 // NewBucketCompactorMetrics makes a new BucketCompactorMetrics.
@@ -598,11 +599,11 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Help:        "Total number of blocks that were marked for no-compaction.",
 			ConstLabels: prometheus.Labels{"reason": block.OutOfOrderChunksNoCompactReason},
 		}),
-		blocksMaxTimeDelta: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		blocksMaxTimeDelta: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_compactor_block_max_time_delta_seconds",
 			Help:    "Difference between now and the max time of a block being compacted in seconds.",
 			Buckets: prometheus.LinearBuckets(86400, 43200, 8), // 1 to 5 days, in 12 hour intervals
-		}),
+		}, []string{"out_of_order_compaction"}),
 	}
 }
 
@@ -797,9 +798,12 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		// Record the difference between now and the max time for a block being compacted. This
 		// is used to detect compactors not being able to keep up with the rate of blocks being
 		// created. The idea is that most blocks should be for within 24h or 48h.
-		now := time.Now()
-		for _, delta := range c.blockMaxTimeDeltas(now, jobs) {
-			c.metrics.blocksMaxTimeDelta.Observe(delta)
+		{
+			now := time.Now()
+			maxDeltas, ooo := c.blockMaxTimeDeltas(now, jobs)
+			for _, delta := range maxDeltas {
+				c.metrics.blocksMaxTimeDelta.WithLabelValues(strconv.FormatBool(ooo)).Observe(delta)
+			}
 		}
 
 		// Skip jobs for which the wait period hasn't been honored yet.
@@ -862,16 +866,21 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 
 // blockMaxTimeDeltas returns a slice of the difference between now and the MaxTime of each
 // block that will be compacted as part of the provided jobs, in seconds.
-func (c *BucketCompactor) blockMaxTimeDeltas(now time.Time, jobs []*Job) []float64 {
+// It also returns bool indicating if any of the block was compacted from out-of-order data.
+func (c *BucketCompactor) blockMaxTimeDeltas(now time.Time, jobs []*Job) ([]float64, bool) {
 	var out []float64
+	var hasOutOfOrderBlocks bool
 
 	for _, j := range jobs {
 		for _, m := range j.Metas() {
 			out = append(out, now.Sub(time.UnixMilli(m.MaxTime)).Seconds())
+			if m.Compaction.FromOutOfOrder() {
+				hasOutOfOrderBlocks = true
+			}
 		}
 	}
 
-	return out
+	return out, hasOutOfOrderBlocks
 }
 
 func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
