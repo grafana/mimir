@@ -61,7 +61,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
-	github.com/hashicorp/vault/api v1.9.0
+	github.com/hashicorp/vault/api v1.9.2
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.73.0
@@ -93,7 +93,6 @@ require (
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 )
 
 require (
@@ -139,6 +138,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.0 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
