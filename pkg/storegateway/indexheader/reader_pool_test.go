@@ -132,7 +132,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 
 	lazyLoadedTracker := HeadersLazyLoadedTracker{
 		// Path stores where lazy loaded blocks will be tracked in per-tenant-files
-		Path: filepath.Join(tmpDir, "lazy-loaded.proto"),
+		Path: filepath.Join(tmpDir, "lazy-loaded.pb"),
 		State: storepb.HeadersLazyLoadedTrackerState{
 			UserId: "anonymous",
 		},
