@@ -13,6 +13,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
@@ -50,6 +51,16 @@ var (
 			return &val
 		},
 	}
+
+	clearDataMetric = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "mimir_timeseries_unmarshal_data_cleared_total",
+		Help: "Reason for clearing cached unmarshal data",
+	}, []string{"reason"})
+
+	marshalReused = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "mimir_timeseries_unmarshal_data_reused_total",
+		Help: "Number of reuses of unmarshal data",
+	})
 )
 
 // PreallocWriteRequest is a WriteRequest which preallocs slices on Unmarshal.
@@ -65,7 +76,7 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 
 func (p *WriteRequest) ClearTimeseriesUnmarshalData() {
 	for idx := range p.Timeseries {
-		p.Timeseries[idx].clearUnmarshalData()
+		p.Timeseries[idx].clearUnmarshalData("write_request_clear")
 	}
 }
 
@@ -90,7 +101,7 @@ func (p *PreallocTimeseries) RemoveLabel(labelName string) {
 		pair := p.Labels[i]
 		if pair.Name == labelName {
 			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
-			p.clearUnmarshalData()
+			p.clearUnmarshalData("remove_label")
 			return
 		}
 	}
@@ -101,7 +112,7 @@ func (p *PreallocTimeseries) SetLabels(lbls []LabelAdapter) {
 
 	// We can't reuse raw unmarshalled data for the timeseries after setting new labels.
 	// (Maybe we could, if labels are exactly the same, but it's expensive to check.)
-	p.clearUnmarshalData()
+	p.clearUnmarshalData("set_labels")
 }
 
 // RemoveEmptyLabelValues remove labels with value=="" from this timeseries, updating the slice in-place.
@@ -114,7 +125,7 @@ func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
 		}
 	}
 	if modified {
-		p.clearUnmarshalData()
+		p.clearUnmarshalData("remove_empty_labels")
 	}
 }
 
@@ -139,12 +150,12 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 	sort.Slice(p.Labels, func(i, j int) bool {
 		return p.Labels[i].Name < p.Labels[j].Name
 	})
-	p.clearUnmarshalData()
+	p.clearUnmarshalData("unsorted_labels")
 }
 
 func (p *PreallocTimeseries) ClearExemplars() {
 	ClearExemplars(p.TimeSeries)
-	p.clearUnmarshalData()
+	p.clearUnmarshalData("clear_exemplars")
 }
 
 // DeleteExemplarByMovingLast deletes the exemplar by moving the last one on top and shortening the slice
@@ -154,11 +165,14 @@ func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
 		p.Exemplars[ix] = p.Exemplars[last]
 	}
 	p.Exemplars = p.Exemplars[:last]
-	p.clearUnmarshalData()
+	p.clearUnmarshalData("delete_exemplar")
 }
 
 // clearUnmarshalData removes cached unmarshalled version of the message.
-func (p *PreallocTimeseries) clearUnmarshalData() {
+func (p *PreallocTimeseries) clearUnmarshalData(reason string) {
+	if p.marshalledData != nil {
+		clearDataMetric.WithLabelValues(reason).Inc()
+	}
 	p.marshalledData = nil
 }
 
@@ -182,6 +196,7 @@ func (p *PreallocTimeseries) Size() int {
 
 func (p *PreallocTimeseries) Marshal() ([]byte, error) {
 	if p.marshalledData != nil {
+		marshalReused.Inc()
 		return p.marshalledData, nil
 	}
 	return p.TimeSeries.Marshal()
@@ -189,6 +204,7 @@ func (p *PreallocTimeseries) Marshal() ([]byte, error) {
 
 func (p *PreallocTimeseries) MarshalTo(buf []byte) (int, error) {
 	if p.marshalledData != nil && len(buf) >= len(p.marshalledData) {
+		marshalReused.Inc()
 		copy(buf, p.marshalledData)
 		return len(p.marshalledData), nil
 	}
@@ -197,6 +213,7 @@ func (p *PreallocTimeseries) MarshalTo(buf []byte) (int, error) {
 
 func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
 	if p.marshalledData != nil && len(buf) >= len(p.marshalledData) {
+		marshalReused.Inc()
 		copy(buf, p.marshalledData)
 		return len(p.marshalledData), nil
 	}
