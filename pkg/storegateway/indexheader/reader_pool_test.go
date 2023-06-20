@@ -159,7 +159,8 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	time.Sleep(idleTimeout * 2)
 	pool.closeIdleReaders()
 
-	// lazyLoaded tracker will remove the track from persistent file
+	// LoadedBlocks will update the LazyLoadedBlocks map with the removal of
+	// idle blocks.
 	state.LazyLoadedBlocks = pool.LoadedBlocks()
 	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.pb"))
 	require.NoError(t, err)
