@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -386,8 +385,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	sp, ctx := tracing.StartSpan(c.ctx, "load_chunks")
 	defer sp.Finish()
 	defer func() {
-		spanLogger := spanlogger.FromContext(ctx, c.logger)
-		level.Debug(spanLogger).Log("msg", "loaded chunks", "num_series", c.At().len(), "err", c.Err())
+		sp.LogKV("msg", "loaded chunks", "num_series", c.At().len(), "err", c.Err())
 	}()
 
 	nextUnloaded := c.from.At()
