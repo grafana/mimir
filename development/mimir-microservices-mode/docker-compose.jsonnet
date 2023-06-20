@@ -270,7 +270,7 @@ std.manifestYamlDoc({
       image: 'memcached:1.6.19-alpine',
       ports: [
         '11211:11211',
-      ]
+      ],
     },
   },
 
