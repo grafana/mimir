@@ -914,7 +914,7 @@ func (s *BucketStore) sendHintsAndStats(srv storepb.Store_SeriesServer, resHints
 	var anyHints *types.Any
 	var err error
 	if anyHints, err = types.MarshalAny(resHints); err != nil {
-		return status.Error(codes.Unknown, errors.Wrap(err, "marshal series response hints").Error())
+		return status.Error(codes.Internal, errors.Wrap(err, "marshal series response hints").Error())
 	}
 
 	if err := srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {

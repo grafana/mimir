@@ -880,7 +880,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	nextPostings := s.postingsSetIterator.At()
 
 	var cachedSeriesID cachedSeriesForPostingsID
-	if s.strategy.isNoChunks() {
+	if s.strategy.isNoChunksOnEntireBlock() {
 		var err error
 		// Calculate the cache ID before we filter out anything from the postings,
 		// so that the key doesn't depend on the series hash cache or any other filtering we do on the postings list.
