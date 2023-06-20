@@ -218,6 +218,7 @@ std.manifestYamlDoc({
     hostname: options.name,
     // Only publish HTTP and debug port, but not gRPC one.
     ports: ['%d:%d' % [options.httpPort, options.httpPort]] +
+           ['%d:%d' % [options.memberlistBindPort, options.memberlistBindPort]] +
            if $._config.debug then [
              '%d:%d' % [options.debugPort, options.debugPort],
            ] else [],
@@ -267,6 +268,9 @@ std.manifestYamlDoc({
   memcached:: {
     memcached: {
       image: 'memcached:1.6.19-alpine',
+      ports: [
+        '11211:11211',
+      ]
     },
   },
 
