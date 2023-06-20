@@ -7,7 +7,6 @@ package indexheader
 
 import (
 	"context"
-	"hash/crc32"
 	"os"
 	"sync"
 	"time"
@@ -36,8 +35,6 @@ func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 	}
 }
 
-var castagnoli = crc32.MakeTable(crc32.Castagnoli)
-
 // ReaderPool is used to istantiate new index-header readers and keep track of them.
 // When the lazy reader is enabled, the pool keeps track of all instantiated readers
 // and automatically close them once the idle timeout is reached. A closed lazy reader
@@ -54,8 +51,6 @@ type ReaderPool struct {
 	// Keep track of all readers managed by the pool.
 	lazyReadersMx sync.Mutex
 	lazyReaders   map[*LazyBinaryReader]struct{}
-
-	headersLazyLoaded HeadersLazyLoaded
 }
 
 type HeadersLazyLoaded struct {
