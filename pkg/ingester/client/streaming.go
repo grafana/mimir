@@ -9,10 +9,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // StreamingSeries represents a single series used in evaluation of a query where the chunks for the series
@@ -159,6 +159,9 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error
 			select {
 			case err, haveError := <-s.errorChan:
 				if haveError {
+					if _, ok := err.(validation.LimitError); ok {
+						return nil, err
+					}
 					return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
 				}
 			default:

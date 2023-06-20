@@ -782,15 +782,15 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					// Add series fingerprint to query limiter; will return error if we are over the limit
 					limitErr := queryLimiter.AddSeries(s.Labels)
 					if limitErr != nil {
-						return validation.LimitError(limitErr.Error())
+						return limitErr
 					}
 
 					chunksCount, chunksSize := countChunksAndBytes(s)
 					if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksSize); chunkBytesLimitErr != nil {
-						return validation.LimitError(chunkBytesLimitErr.Error())
+						return chunkBytesLimitErr
 					}
 					if chunkLimitErr := queryLimiter.AddChunks(chunksCount); chunkLimitErr != nil {
-						return validation.LimitError(chunkLimitErr.Error())
+						return chunkLimitErr
 					}
 				}
 
