@@ -829,15 +829,22 @@ func newLoadingSeriesChunkRefsSetIterator(
 }
 
 func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
-	sp, ctx := tracing.StartSpan(s.ctx, "loadingSeriesChunkRefsSetIterator.Next")
-	defer sp.Finish()
-
 	if s.err != nil {
 		return false
 	}
 	if !s.postingsSetIterator.Next() {
 		return false
 	}
+
+	// Start the span after the underlying iterator has been advanced, so that the span
+	// doesn't include the timing of the underlying iterator.
+	sp, ctx := tracing.StartSpan(s.ctx, "load_series_and_chunk_refs")
+	defer sp.Finish()
+	defer func() {
+		spanLogger := spanlogger.FromContext(ctx, s.logger)
+		level.Debug(spanLogger).Log("msg", "loaded series and chunk refs", "block_id", s.blockID.String(), "series_count", s.At().len(), "err", s.Err())
+	}()
+
 	nextPostings := s.postingsSetIterator.At()
 
 	var cachedSeriesID cachedSeriesForPostingsID
