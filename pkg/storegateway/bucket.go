@@ -643,7 +643,9 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 
 		iterationBegin = time.Now()
-		err = s.sendStreamingSeriesLabelsHintsStats(req, srv, stats, seriesSet, resHints)
+		tracing.DoWithSpan(ctx, "bucket_store_streaming_series_merge_all", func(ctx context.Context, _ tracing.Span) {
+			err = s.sendStreamingSeriesLabelsHintsStats(req, srv, stats, seriesSet, resHints)
+		})
 		if err != nil {
 			return err
 		}
@@ -651,22 +653,19 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		req.SkipChunks = false
 	}
 
-	// TODO: if streaming is enabled, we don't need to fetch the labels again; we just need to fetch the chunk references.
-	// But we need labels to merge the series from blocks. Find other way of caching the resultant series refs (maybe final ordered
-	// list of series IDs and block IDs).
 	seriesSet, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
 	if err != nil {
 		return err
 	}
 
 	// Merge the sub-results from each selected block.
-	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
+	spanName := "bucket_store_merge_all"
+	if req.StreamingChunksBatchSize > 0 {
+		spanName = "bucket_store_streaming_chunks_merge_all"
+	}
+	tracing.DoWithSpan(ctx, spanName, func(ctx context.Context, _ tracing.Span) {
 		err = s.sendSeriesChunks(req, srv, seriesSet, stats, iterationBegin)
-		if err != nil {
-			return
-		}
 	})
-
 	if err != nil {
 		return
 	}
@@ -702,7 +701,6 @@ func (s *BucketStore) sendStreamingSeriesLabelsHintsStats(
 		stats.streamingSeriesSendResponseDuration += sendDuration
 	})
 
-	// TODO: should we pool the seriesBuffer/seriesBatch?
 	seriesBuffer := make([]*storepb.StreamingSeries, req.StreamingChunksBatchSize)
 	for i := range seriesBuffer {
 		seriesBuffer[i] = &storepb.StreamingSeries{}
@@ -720,8 +718,6 @@ func (s *BucketStore) sendStreamingSeriesLabelsHintsStats(
 		// We are re-using the slice for every batch this way.
 		seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
 		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
-
-		// TODO: Add relevant trace spans and timers.
 
 		if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
 			msg := &grpc.PreparedMsg{}

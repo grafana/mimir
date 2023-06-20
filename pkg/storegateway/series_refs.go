@@ -754,7 +754,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, nil, nil, errors.New("set size must be a positive number")
 	}
 
-	// TODO: cache the filtered postings instead later.
 	if len(ps) == 0 {
 		var err error
 		ps, pendingMatchers, err = indexr.ExpandedPostings(ctx, matchers, stats)
