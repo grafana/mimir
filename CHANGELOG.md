@@ -29,6 +29,7 @@
 * [ENHANCEMENT] Querier: improve error message when streaming chunks from ingesters to queriers and a query limit is reached. #5245
 * [ENHANCEMENT] Use new data structure for labels, to reduce memory consumption. #3555
 * [ENHANCEMENT] Update alpine base image to 3.18.2. #5276
+* [ENHANCEMENT] Ingester: add experimental support for creating tokens by using ring.SpreadMinimizingTokenGenerator. This can be enabled with `-ingester.ring.token-generation-strategy: spread-min-tokens` and `-ingester.ring.spread-minimizing-zones: <all available zones>`.
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 
 ### Mixin

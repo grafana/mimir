@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"time"
 
@@ -18,7 +19,10 @@ import (
 const (
 	// sharedOptionWithRingClient is a message appended to all config options that should be also
 	// set on the components running the ingester ring client.
-	sharedOptionWithRingClient = " This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."
+	sharedOptionWithRingClient      = " This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."
+	tokenGenerationStrategyFlag     = "token-generation-strategy"
+	randomTokenGeneration           = "random-tokens"
+	spreadMinimizingTokenGeneration = "spread-min-tokens"
 )
 
 type RingConfig struct {
@@ -47,6 +51,9 @@ type RingConfig struct {
 	ObservePeriod    time.Duration `yaml:"observe_period" category:"advanced"`
 	MinReadyDuration time.Duration `yaml:"min_ready_duration" category:"advanced"`
 	FinalSleep       time.Duration `yaml:"final_sleep" category:"advanced"`
+
+	TokenGeneratorStrategy string                 `yaml:"token_generator_strategy" category:"experimental"`
+	SpreadMinimizingZones  flagext.StringSliceCSV `yaml:"spread_minimizing_zones" category:"experimental"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
@@ -94,6 +101,10 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	flagext.DeprecatedFlag(f, prefix+"join-after", "Deprecated: this setting was used to set a period of time to wait before joining the hash ring. Mimir now behaves as this setting is always set to 0s.", logger)
 	f.DurationVar(&cfg.MinReadyDuration, prefix+"min-ready-duration", 15*time.Second, "Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates.")
 	f.DurationVar(&cfg.FinalSleep, prefix+"final-sleep", 0, "Duration to sleep for before exiting, to ensure metrics are scraped.")
+
+	// TokenGenerator
+	f.StringVar(&cfg.TokenGeneratorStrategy, prefix+tokenGenerationStrategyFlag, randomTokenGeneration, "Specifies the strategy used for generating tokens for ingesters. Possible values are \""+randomTokenGeneration+"\" (default) and \""+spreadMinimizingTokenGeneration+"\"")
+	f.Var(&cfg.SpreadMinimizingZones, prefix+"spread-minimizing-zones", "Comma-separated list of zones in which SpreadMinimizingTokenGenerator is used for token generation. This configuration is used only when "+tokenGenerationStrategyFlag+" is set to \""+spreadMinimizingTokenGeneration+"\"")
 }
 
 // ToRingConfig returns a ring.Config based on the ingester
@@ -115,7 +126,7 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 
 // ToLifecyclerConfig returns a ring.LifecyclerConfig based on the ingester
 // ring config.
-func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
+func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) ring.LifecyclerConfig {
 	// Configure lifecycler
 	lc := ring.LifecyclerConfig{}
 	flagext.DefaultValues(&lc)
@@ -138,6 +149,30 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.ID = cfg.InstanceID
 	lc.ListenPort = cfg.ListenPort
 	lc.EnableInet6 = cfg.EnableIPv6
+	lc.RingTokenGenerator = cfg.customTokenGenerator(logger)
 
 	return lc
+}
+
+// customTokenGenerator returns a token generator, which is an implementation of ring.TokenGenerator,
+// according to this RingConfig's configuration. If "spread-min-tokens" token generation strategy is set,
+// customTokenGenerator tries to build and return an instance of ring.SpreadMinimizingTokenGenerator.
+// If it was impossible, if "random-tokens" or any other unsupported token generation strategy is set,
+// an instance of ring.RandomTokenGenerator is returned.
+func (cfg *RingConfig) customTokenGenerator(logger log.Logger) ring.TokenGenerator {
+	switch cfg.TokenGeneratorStrategy {
+	case spreadMinimizingTokenGeneration:
+		tokenGenerator, err := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, logger)
+		if err != nil {
+			level.Warn(logger).Log("msg", "It was impossible to generate an instance of SpreadMinimizingTokenGenerator. RandomTokenGenerator will be used instead.", "err", err)
+			return ring.NewRandomTokenGenerator()
+		}
+		return tokenGenerator
+	case randomTokenGeneration:
+		return ring.NewRandomTokenGenerator()
+	default:
+		warn := fmt.Sprintf("Unsupported token generation strategy (\"%s\") has been chosen for %s. RandomTokenGenerator will be used instead.", cfg.TokenGeneratorStrategy, tokenGenerationStrategyFlag)
+		level.Warn(logger).Log("msg", warn)
+		return ring.NewRandomTokenGenerator()
+	}
 }

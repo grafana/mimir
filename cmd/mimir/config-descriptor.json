@@ -2528,6 +2528,28 @@
               "fieldFlag": "ingester.ring.final-sleep",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "token_generator_strategy",
+              "required": false,
+              "desc": "Specifies the strategy used for generating tokens for ingesters. Possible values are \"random-tokens\" (default) and \"spread-min-tokens\"",
+              "fieldValue": null,
+              "fieldDefaultValue": "random-tokens",
+              "fieldFlag": "ingester.ring.token-generation-strategy",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "spread_minimizing_zones",
+              "required": false,
+              "desc": "Comma-separated list of zones in which SpreadMinimizingTokenGenerator is used for token generation. This configuration is used only when token-generation-strategy is set to \"spread-min-tokens\"",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingester.ring.spread-minimizing-zones",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

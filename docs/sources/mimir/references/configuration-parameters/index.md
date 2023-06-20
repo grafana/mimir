@@ -906,6 +906,19 @@ ring:
   # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
 
+  # (experimental) Specifies the strategy used for generating tokens for
+  # ingesters. Possible values are "random-tokens" (default) and
+  # "spread-min-tokens"
+  # CLI flag: -ingester.ring.token-generation-strategy
+  [token_generator_strategy: <string> | default = "random-tokens"]
+
+  # (experimental) Comma-separated list of zones in which
+  # SpreadMinimizingTokenGenerator is used for token generation. This
+  # configuration is used only when token-generation-strategy is set to
+  # "spread-min-tokens"
+  # CLI flag: -ingester.ring.spread-minimizing-zones
+  [spread_minimizing_zones: <string> | default = ""]
+
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.
 # CLI flag: -ingester.metadata-retain-period

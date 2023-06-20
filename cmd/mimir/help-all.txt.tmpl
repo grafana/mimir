@@ -1339,8 +1339,12 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ingester.ring.replication-factor int
     	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 3)
+  -ingester.ring.spread-minimizing-zones comma-separated-list-of-strings
+    	[experimental] Comma-separated list of zones in which SpreadMinimizingTokenGenerator is used for token generation. This configuration is used only when token-generation-strategy is set to "spread-min-tokens"
   -ingester.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -ingester.ring.token-generation-strategy string
+    	[experimental] Specifies the strategy used for generating tokens for ingesters. Possible values are "random-tokens" (default) and "spread-min-tokens" (default "random-tokens")
   -ingester.ring.tokens-file-path string
     	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.
   -ingester.ring.unregister-on-shutdown
