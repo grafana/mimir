@@ -57,6 +57,10 @@ type BasicLifecyclerConfig struct {
 	// If true lifecycler doesn't unregister instance from the ring when it's stopping. Default value is false,
 	// which means unregistering.
 	KeepInstanceInTheRingOnShutdown bool
+
+	// If set, specifies the TokenGenerator implementation that will be used for generating tokens.
+	// Default value is nil, which means that RandomTokenGenerator is used.
+	RingTokenGenerator TokenGenerator
 }
 
 // BasicLifecycler is a basic ring lifecycler which allows to hook custom
@@ -93,7 +97,11 @@ type BasicLifecycler struct {
 
 // NewBasicLifecycler makes a new BasicLifecycler.
 func NewBasicLifecycler(cfg BasicLifecyclerConfig, ringName, ringKey string, store kv.Client, delegate BasicLifecyclerDelegate, logger log.Logger, reg prometheus.Registerer) (*BasicLifecycler, error) {
-	tokenGenerator := NewRandomTokenGenerator()
+	tokenGenerator := cfg.RingTokenGenerator
+	if tokenGenerator == nil {
+		tokenGenerator = NewRandomTokenGenerator()
+	}
+
 	l := &BasicLifecycler{
 		cfg:                             cfg,
 		ringName:                        ringName,
