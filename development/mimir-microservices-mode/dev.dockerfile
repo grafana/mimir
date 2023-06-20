@@ -1,4 +1,3 @@
-
 ARG BUILD_IMAGE # Use ./compose-up.sh to build this image.
 FROM $BUILD_IMAGE
 ENV CGO_ENABLED=0

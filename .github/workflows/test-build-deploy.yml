@@ -34,8 +34,9 @@ jobs:
     container: 
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - name: Run Git Config
+        run: git config --global --add safe.directory '*'
       - name: Get Go Version
         id: go-version
         run: |
@@ -45,8 +46,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
-    needs:
-      - prepare
+    needs: prepare
     container:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
