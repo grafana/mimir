@@ -93,10 +93,16 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
 
+	// Concurrency limiting gates initializations
+	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
+
 	// The number of concurrent queries against the tenants BucketStores are limited.
-	queryGateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
 	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
-	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
+	queryGate = gate.NewInstrumented(gateReg, cfg.BucketStore.MaxConcurrent, queryGate)
+
+	// The number of concurrent index header loads from storegateway are limited.
+	readerGate := gate.NewBlocking(cfg.BucketStore.IndexHeaderLazyLoadingConcurrency)
+	readerGate = gate.NewInstrumented(gateReg, cfg.BucketStore.IndexHeaderLazyLoadingConcurrency, readerGate)
 
 	u := &BucketStores{
 		logger:             logger,
@@ -108,6 +114,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
+		readerGate:         readerGate,
 		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
 		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncBackoffConfig: backoff.Config{

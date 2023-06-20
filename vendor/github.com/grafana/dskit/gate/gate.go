@@ -109,15 +109,15 @@ func NewReader(reg prometheus.Registerer, maxConcurrent int, gate Gate) Gate {
 	g := &readerGate{
 		gate: gate,
 		max: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "gate_loads_concurrent_max",
+			Name: "gate_lazy_loads_concurrent_max",
 			Help: "Number of maximum concurrent loads allowed.",
 		}),
 		inflight: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "gate_loads_in_flight",
+			Name: "gate_lazy_loads_in_flight",
 			Help: "Number of loads that are currently in flight.",
 		}),
 		duration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "gate_duration_seconds",
+			Name:    "gate_lazy_load_duration_seconds",
 			Help:    "How many seconds it took for loads to wait at the gate.",
 			Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
 		}),
