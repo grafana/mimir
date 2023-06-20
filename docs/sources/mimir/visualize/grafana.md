@@ -11,7 +11,7 @@ keywords:
 
 # Visualize metric data
 
-[Grafana](/grafana/download/) has built-in support for Prometheus.
+[Grafana](/grafana/download/) has built-in support for Mimir through the Prometheus data source type.
 
 1. Log in to your Grafana instance.
    If this is your first time running Grafana,
