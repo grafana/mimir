@@ -55,44 +55,26 @@ type ReaderPool struct {
 	lazyReadersMx sync.Mutex
 	lazyReaders   map[*LazyBinaryReader]struct{}
 
-	lazyLoadedTracker HeadersLazyLoadedTracker
+	headersLazyLoaded HeadersLazyLoaded
 }
 
-// HeadersLazyLoadedTracker persists the list of lazy loaded blocks.
-type HeadersLazyLoadedTracker struct {
-	State storepb.HeadersLazyLoadedTrackerState
-	Path  string
+type HeadersLazyLoaded struct {
+	Path   string
+	UserID string
 }
 
-// copyLazyLoadedState copies the list of lazy loaded block to map tracked by State.
-func (h *HeadersLazyLoadedTracker) copyLazyLoadedState(lazyReaders map[*LazyBinaryReader]struct{}) {
-	h.State.LazyLoadedBlocks = make(map[string]int64)
-	for r := range lazyReaders {
-		if r.reader != nil {
-			h.State.LazyLoadedBlocks[r.blockID] = r.usedAt.Load() / int64(time.Millisecond)
-		}
-	}
-}
-
-func (h *HeadersLazyLoadedTracker) persist() error {
-	data, err := h.State.Marshal()
+func (p *ReaderPool) persist(state storepb.HeadersLazyLoadedTrackerState, path string) error {
+	data, err := state.Marshal()
 	if err != nil {
 		return err
 	}
 
-	// Set the checksum based on the marshaled data without checksum.
-	h.State.Checksum = crc32.Checksum(data, castagnoli)
-	data, err = h.State.Marshal()
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(h.Path, data, 0600)
+	return os.WriteFile(path, data, 0600)
 }
 
 // NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers and blockIds writers if enabled.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedTracker HeadersLazyLoadedTracker) *ReaderPool {
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics, lazyLoadedTracker)
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, headersLazyLoaded HeadersLazyLoaded) *ReaderPool {
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -112,13 +94,13 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 				case <-tickerIdleReader.C:
 					p.closeIdleReaders()
 				case <-tickerLazyLoad.C:
-					// We copy the state of blocks that are being lazy loaded from LazyBinaryReaders using lock.
-					p.lazyReadersMx.Lock()
-					p.lazyLoadedTracker.copyLazyLoadedState(p.lazyReaders)
-					p.lazyReadersMx.Unlock()
+					state := storepb.HeadersLazyLoadedTrackerState{
+						LazyLoadedBlocks: p.LoadedBlocks(),
+						UserId:           headersLazyLoaded.UserID,
+					}
 
 					// Then we persist the state to files so that we are not holding lock for too long.
-					if err := p.lazyLoadedTracker.persist(); err != nil {
+					if err := p.persist(state, headersLazyLoaded.Path); err != nil {
 						level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
 					}
 				}
@@ -130,7 +112,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedTracker HeadersLazyLoadedTracker) *ReaderPool {
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics) *ReaderPool {
 	return &ReaderPool{
 		logger:                logger,
 		metrics:               metrics,
@@ -138,7 +120,6 @@ func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		lazyReaderIdleTimeout: lazyReaderIdleTimeout,
 		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
 		close:                 make(chan struct{}),
-		lazyLoadedTracker:     lazyLoadedTracker,
 	}
 }
 
@@ -220,4 +201,17 @@ func (p *ReaderPool) onLazyReaderClosed(r *LazyBinaryReader) {
 	// but because the consumer closed it. By contract, a reader closed by the consumer can't
 	// be used anymore, so we can automatically remove it from the pool.
 	delete(p.lazyReaders, r)
+}
+
+// LoadedBlocks returns the map of lazy-loaded block IDs and the last time they were used in milliseconds.
+func (p *ReaderPool) LoadedBlocks() map[string]int64 {
+	p.lazyReadersMx.Lock()
+	defer p.lazyReadersMx.Unlock()
+
+	blocks := make(map[string]int64, len(p.lazyReaders))
+	for r := range p.lazyReaders {
+		blocks[r.blockID] = r.usedAt.Load() / int64(time.Millisecond)
+	}
+
+	return blocks
 }

@@ -63,7 +63,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, NewReaderPoolMetrics(nil), HeadersLazyLoadedTracker{})
+			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, NewReaderPoolMetrics(nil), HeadersLazyLoaded{})
 			defer pool.Close()
 
 			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
@@ -86,7 +86,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
-	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, metrics, HeadersLazyLoadedTracker{})
+	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, metrics)
 	defer pool.Close()
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
@@ -130,16 +130,9 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 	defer func() { require.NoError(t, bkt.Close()) }()
 
-	lazyLoadedTracker := HeadersLazyLoadedTracker{
-		// Path stores where lazy loaded blocks will be tracked in per-tenant-files
-		Path: filepath.Join(tmpDir, "lazy-loaded.pb"),
-		State: storepb.HeadersLazyLoadedTrackerState{
-			UserId: "anonymous",
-		},
-	}
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
-	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, metrics, lazyLoadedTracker)
+	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, metrics)
 	defer pool.Close()
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
@@ -153,21 +146,24 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
-	// lazyLoaded tracker will track the lazyLoadedBlocks into persistent file
-	pool.lazyLoadedTracker.copyLazyLoadedState(pool.lazyReaders)
-	err = pool.lazyLoadedTracker.persist()
+	state := storepb.HeadersLazyLoadedTrackerState{
+		LazyLoadedBlocks: pool.LoadedBlocks(),
+		UserId:           "anonymous",
+	}
+
+	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.pb"))
 	require.NoError(t, err)
-	require.Greater(t, pool.lazyLoadedTracker.State.LazyLoadedBlocks[blockID.String()], 0, "lazyLoadedBlocks state must be set")
+	require.Greater(t, state.LazyLoadedBlocks[blockID.String()], 0, "lazyLoadedBlocks state must be set")
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
 	pool.closeIdleReaders()
 
 	// lazyLoaded tracker will remove the track from persistent file
-	pool.lazyLoadedTracker.copyLazyLoadedState(pool.lazyReaders)
-	err = pool.lazyLoadedTracker.persist()
+	state.LazyLoadedBlocks = pool.LoadedBlocks()
+	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.pb"))
 	require.NoError(t, err)
-	require.NotContains(t, pool.lazyLoadedTracker.State.LazyLoadedBlocks, blockID.String(), "lazyLoadedBlocks state must be unset")
+	require.NotContains(t, state.LazyLoadedBlocks, blockID.String(), "lazyLoadedBlocks state must be unset")
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
