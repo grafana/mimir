@@ -54,6 +54,10 @@ type LifecyclerConfig struct {
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
+
+	// If set, specifies the TokenGenerator implementation that will be used for generating tokens.
+	// Default value is nil, which means that RandomTokenGenerator is used.
+	RingTokenGenerator TokenGenerator `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -170,7 +174,11 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		flushTransferer = NewNoopFlushTransferer()
 	}
 
-	tokenGenerator := NewRandomTokenGenerator()
+	tokenGenerator := cfg.RingTokenGenerator
+	if tokenGenerator == nil {
+		tokenGenerator = NewRandomTokenGenerator()
+	}
+
 	l := &Lifecycler{
 		cfg:                   cfg,
 		flushTransferer:       flushTransferer,
