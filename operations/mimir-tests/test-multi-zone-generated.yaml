@@ -1350,10 +1350,10 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.0
         env:
         - name: A
           value: all-ingesters
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
