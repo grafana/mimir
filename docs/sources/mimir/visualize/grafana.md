@@ -1,14 +1,12 @@
 ---
-aliases:
-  -
 description: Visualize your metric data with Grafana
+title: Visualize metric data
 menuTitle: Visualize data
+weight: 100
 keywords:
   - visualize
   - grafana
   - dashboards
-title: Visualize metric data
-weight: 100
 ---
 
 # Visualize metric data
