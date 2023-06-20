@@ -34,4 +34,4 @@ keywords:
 
 * Read more about Grafana's [Explore](http://docs.grafana.org/features/explore) feature.
 
-* Read about Grafana’s built-in support for the [Prometheus data source](https://grafana.com/docs/grafana/latest/datasources/prometheus/).
+* Read about Grafana’s built-in support for the [Prometheus data source](/docs/grafana/latest/datasources/prometheus/).
