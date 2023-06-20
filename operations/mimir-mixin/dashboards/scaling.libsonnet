@@ -27,11 +27,11 @@ local filename = 'mimir-scaling.json';
               Applies to all jobs.
             - **memory_usage**: There are not enough replicas based on the memory
               usage vs the resource requests.  Applies to all jobs.
-            - **active_series_limits**: There are not enough replicas to hold 60% of the
+            - **active_series_limits**: There are not enough replicas to hold %d%% of the
               sum of all the per tenant series limits.
-            - **sample_rate_limits**: There are not enough replicas to handle 60% of the
+            - **sample_rate_limits**: There are not enough replicas to handle %d%% of the
               sum of all the per tenant rate limits.
-          |||,
+          ||| % [$._config.limit_utilisation_target*100, $._config.limit_utilisation_target*100],
           mode: 'markdown',
         },
       })
