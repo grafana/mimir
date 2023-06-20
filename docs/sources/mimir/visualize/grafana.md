@@ -13,6 +13,8 @@ keywords:
 
 [Grafana](/grafana/download/) has built-in support for Mimir through the Prometheus data source type.
 
+## Before you begin
+
 1. Log in to your Grafana instance.
    If this is your first time running Grafana,
    the username and password are both `admin`.
@@ -25,6 +27,8 @@ keywords:
 
    - When running with docker-compose or Kubernetes,
      the address is likely `http://prometheus:9090`.
+
+## Steps
 
 1. To see metrics, select **Explore**.
 1. Select a metric, apply (optional) label filters, and select **Run query**.
