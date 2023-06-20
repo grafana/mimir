@@ -153,7 +153,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 
 	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.pb"))
 	require.NoError(t, err)
-	require.Greater(t, state.LazyLoadedBlocks[blockID.String()], 0, "lazyLoadedBlocks state must be set")
+	require.Greater(t, state.LazyLoadedBlocks[blockID.String()], int64(0), "lazyLoadedBlocks state must be set")
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
