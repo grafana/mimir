@@ -2020,9 +2020,9 @@ type storeGatewayClientMock struct {
 	mockedLabelValuesErr      error
 }
 
-func (m *storeGatewayClientMock) Series(context.Context, *storepb.SeriesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
+func (m *storeGatewayClientMock) Series(ctx context.Context, _ *storepb.SeriesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
 	seriesClient := &storeGatewaySeriesClientMock{
-		ClientStream:    grpcClientStreamMock{}, // Required to not panic.
+		ClientStream:    grpcClientStreamMock{ctx: ctx}, // Required to not panic.
 		mockedResponses: m.mockedSeriesResponses,
 	}
 
@@ -2060,12 +2060,14 @@ func (m *storeGatewaySeriesClientMock) Recv() (*storepb.SeriesResponse, error) {
 	return res, nil
 }
 
-type grpcClientStreamMock struct{}
+type grpcClientStreamMock struct {
+	ctx context.Context
+}
 
 func (grpcClientStreamMock) Header() (metadata.MD, error) { return nil, nil }
 func (grpcClientStreamMock) Trailer() metadata.MD         { return nil }
 func (grpcClientStreamMock) CloseSend() error             { return nil }
-func (grpcClientStreamMock) Context() context.Context     { return context.Background() }
+func (m grpcClientStreamMock) Context() context.Context   { return m.ctx }
 func (grpcClientStreamMock) SendMsg(interface{}) error    { return nil }
 func (grpcClientStreamMock) RecvMsg(interface{}) error    { return nil }
 
@@ -2091,6 +2093,9 @@ func (m *cancelerStoreGatewayClientMock) Series(ctx context.Context, _ *storepb.
 		series := &cancelerStoreGatewaySeriesClientMock{
 			ctx:    ctx,
 			cancel: m.cancel,
+			storeGatewaySeriesClientMock: storeGatewaySeriesClientMock{
+				ClientStream: grpcClientStreamMock{ctx: ctx},
+			},
 		}
 		return series, nil
 	}
