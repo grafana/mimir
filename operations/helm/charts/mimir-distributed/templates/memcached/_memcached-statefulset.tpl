@@ -84,8 +84,7 @@ spec:
               name: client
           args:
             - -m {{ .allocatedMemory }}
-            - -o
-            - modern
+            - --extended=modern,track_sizes
             - -I {{ .maxItemMemory }}m
             - -c 16384
             - -v

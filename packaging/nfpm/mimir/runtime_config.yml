@@ -4,7 +4,7 @@
 # parameters, which is periodically reloaded while Mimir is running. It allows
 # you to change a subset of Grafana Mimir’s configuration without having to
 # restart the Grafana Mimir component or instance.
-# https://grafana.com/docs/mimir/latest/operators-guide/configure/about-runtime-configuration/
+# https://grafana.com/docs/mimir/latest/configure/about-runtime-configuration/
 
 # overrides:
 #   tenant1:

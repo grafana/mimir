@@ -1534,8 +1534,10 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		{labels.FromStrings(labels.MetricName, "test_3", "status", "500"), 2, 200000},
 	}
 
+	registry := prometheus.NewRegistry()
+
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -1579,6 +1581,18 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		_, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
+		require.EqualError(t, err, tooBusyError.Error())
+		verifyUtilizationLimitedRequestsMetric(t, registry)
+	})
 }
 
 func Test_Ingester_LabelValues(t *testing.T) {
@@ -1599,8 +1613,10 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		"unknown":  {},
 	}
 
+	registry := prometheus.NewRegistry()
+
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -1626,6 +1642,18 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expectedValues, res.LabelValues)
 	}
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		_, err := i.LabelValues(ctx, &client.LabelValuesRequest{})
+		require.EqualError(t, err, tooBusyError.Error())
+		verifyUtilizationLimitedRequestsMetric(t, registry)
+	})
 }
 
 func Test_Ingester_Query(t *testing.T) {
@@ -1762,7 +1790,7 @@ func Test_Ingester_Query(t *testing.T) {
 	}
 }
 
-func TestIngester_LabelNamesCardinality(t *testing.T) {
+func TestIngester_LabelNamesAndValues(t *testing.T) {
 	series := []series{
 		{labels.FromStrings(labels.MetricName, "metric_0", "status", "500"), 1, 100000},
 		{labels.FromStrings(labels.MetricName, "metric_0", "status", "200"), 1, 110000},
@@ -1791,8 +1819,10 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 		},
 	}
 
+	registry := prometheus.NewRegistry()
+
 	// Create ingester
-	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
 
 	ctx := pushSeriesToIngester(t, series, i)
 
@@ -1809,6 +1839,18 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 			assert.ElementsMatch(t, extractItemsWithSortedValues(s.SentResponses), tc.expected)
 		})
 	}
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		err := i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{}, nil)
+		require.EqualError(t, err, tooBusyError.Error())
+		verifyUtilizationLimitedRequestsMetric(t, registry)
+	})
 }
 
 func TestIngester_LabelValuesCardinality(t *testing.T) {
@@ -1887,8 +1929,10 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		},
 	}
 
+	registry := prometheus.NewRegistry()
+
 	// Create ingester
-	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
 
 	ctx := pushSeriesToIngester(t, series, i)
 	// Run tests
@@ -1910,6 +1954,18 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			require.ElementsMatch(t, s.SentResponses[0].Items, tc.expectedItems)
 		})
 	}
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		err := i.LabelValuesCardinality(&client.LabelValuesCardinalityRequest{}, nil)
+		require.EqualError(t, err, tooBusyError.Error())
+		verifyUtilizationLimitedRequestsMetric(t, registry)
+	})
 }
 
 type series struct {
@@ -2388,8 +2444,10 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 		},
 	}
 
+	registry := prometheus.NewRegistry()
+
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -2424,6 +2482,18 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 			assert.ElementsMatch(t, testData.expected, res.Metric)
 		})
 	}
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		_, err := i.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{})
+		require.EqualError(t, err, tooBusyError.Error())
+		verifyUtilizationLimitedRequestsMetric(t, registry)
+	})
 }
 
 func Test_Ingester_MetricsForLabelMatchers_Deduplication(t *testing.T) {
@@ -2545,7 +2615,9 @@ func TestIngester_QueryStream(t *testing.T) {
 		return streamType
 	}
 
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	registry := prometheus.NewRegistry()
+
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -2804,6 +2876,18 @@ func TestIngester_QueryStream(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		err = i.QueryStream(&client.QueryRequest{}, nil)
+		require.EqualError(t, err, tooBusyError.Error())
+		verifyUtilizationLimitedRequestsMetric(t, registry)
+	})
 }
 
 func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
@@ -3228,6 +3312,35 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 
 	require.Equal(t, len(expectedSeries), seriesReceivedCount, "expected to receive chunks for all series")
 	require.Equal(t, expectedSeriesPerChunksMessage, actualSeriesPerChunksMessage)
+}
+
+func TestIngester_QueryExemplars(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	ctx := user.InjectOrgID(context.Background(), userID)
+	registry := prometheus.NewRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+	})
+
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		_, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{})
+		require.EqualError(t, err, tooBusyError.Error())
+		verifyUtilizationLimitedRequestsMetric(t, registry)
+	})
 }
 
 func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
@@ -4435,8 +4548,10 @@ func Test_Ingester_UserStats(t *testing.T) {
 		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
 	}
 
+	registry := prometheus.NewRegistry()
+
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -4475,6 +4590,18 @@ func Test_Ingester_UserStats(t *testing.T) {
 	// Active series are considered according to the wall time during the push, not the sample timestamp.
 	// Therefore all three series are still active at this point.
 	assert.Equal(t, uint64(3), res.NumSeries)
+
+	t.Run("limited due to resource utilization", func(t *testing.T) {
+		origLimiter := i.utilizationBasedLimiter
+		t.Cleanup(func() {
+			i.utilizationBasedLimiter = origLimiter
+		})
+		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+		_, err := i.UserStats(ctx, &client.UserStatsRequest{})
+		require.EqualError(t, err, tooBusyError.Error())
+		verifyUtilizationLimitedRequestsMetric(t, registry)
+	})
 }
 
 func Test_Ingester_AllUserStats(t *testing.T) {
@@ -7194,4 +7321,26 @@ func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 			require.Equal(t, testData.expectedTSDBWALReplayConcurrency, tsdbWALReplayConcurrency)
 		})
 	}
+}
+
+type fakeUtilizationBasedLimiter struct {
+	services.BasicService
+
+	limitingReason string
+}
+
+func (l *fakeUtilizationBasedLimiter) LimitingReason() string {
+	return l.limitingReason
+}
+
+func verifyUtilizationLimitedRequestsMetric(t *testing.T, reg *prometheus.Registry) {
+	t.Helper()
+
+	const expMetrics = `
+				# HELP cortex_ingester_utilization_limited_read_requests_total Total number of times read requests have been rejected due to utilization based limiting.
+				# TYPE cortex_ingester_utilization_limited_read_requests_total counter
+				cortex_ingester_utilization_limited_read_requests_total{reason="cpu"} 1
+				`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expMetrics),
+		"cortex_ingester_utilization_limited_read_requests_total"))
 }

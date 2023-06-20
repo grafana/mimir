@@ -11,7 +11,7 @@ weight: 60
 
 # Configure Grafana Mimir hash rings
 
-[Hash rings]({{< relref "../references/architecture/hash-ring/index.md" >}}) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
+[Hash rings]({{< relref "../references/architecture/hash-ring" >}}) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
 
 Each of the following Grafana Mimir components builds an independent hash ring.
 The CLI flags used to configure the hash ring of each component have the following prefixes:
@@ -26,12 +26,12 @@ The CLI flags used to configure the hash ring of each component have the followi
 - (Optional) Overrides-exporters: `-overrides-exporter.ring.*`
 
 The rest of the documentation refers to these prefixes as `<prefix>`.
-You can configure each parameter either via the CLI flag or its respective YAML [config option]({{< relref "../references/configuration-parameters/index.md" >}}).
+You can configure each parameter either via the CLI flag or its respective YAML [config option]({{< relref "../references/configuration-parameters" >}}).
 
 ## Configuring the key-value store
 
 Hash ring data structures need to be shared between Grafana Mimir instances.
-To propagate changes to the hash ring, Grafana Mimir uses a [key-value store]({{< relref "../references/architecture/key-value-store.md" >}}).
+To propagate changes to the hash ring, Grafana Mimir uses a [key-value store]({{< relref "../references/architecture/key-value-store" >}}).
 The key-value store is required and can be configured independently for the hash rings of different components.
 
 Grafana Mimir supports the following key-value (KV) store backends for hash rings:
@@ -66,9 +66,9 @@ The default port is `7946`.
 > **Note**: The `memberlist` backend is configured globally and can't be customized on a per-component basis. Because `memberlist` is configured globally, the `memberlist` backend differs from other supported backends, such as Consul or etcd.
 
 Grafana Mimir supports TLS for memberlist connections between its components.
-For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../operators-guide/secure/securing-communications-with-tls.md" >}}).
+For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../manage/secure/securing-communications-with-tls" >}}).
 
-To see all supported configuration parameters, refer to [memberlist]({{< relref "../references/configuration-parameters/index.md#memberlist" >}}).
+To see all supported configuration parameters, refer to [memberlist]({{< relref "../references/configuration-parameters#memberlist" >}}).
 
 #### Configuring the memberlist address and port
 
@@ -128,7 +128,7 @@ To use [Consul](https://www.consul.io) as a backend KV store, set the following 
 - `<prefix>.consul.hostname`: Consul hostname and port separated by colon. For example, `consul:8500`.
 - `<prefix>.consul.acl-token`: [ACL token](https://www.consul.io/docs/security/acl/acl-system) used to authenticate to Consul. If Consul authentication is disabled, you can leave the token empty.
 
-To see all supported configuration parameters, refer [consul]({{< relref "../references/configuration-parameters/index.md#consul" >}}).
+To see all supported configuration parameters, refer [consul]({{< relref "../references/configuration-parameters#consul" >}}).
 
 ### Etcd
 
@@ -139,9 +139,9 @@ To use [etcd](https://etcd.io) as a backend KV store, set the following paramete
 - `<prefix>.etcd.password`: Password used to authenticate to etcd. If etcd authentication is disabled, you can leave the password empty.
 
 Grafana Mimir supports TLS between its components and etcd.
-For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../operators-guide/secure/securing-communications-with-tls.md" >}}).
+For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../manage/secure/securing-communications-with-tls" >}}).
 
-To see all supported configuration parameters, refer to [etcd]({{< relref "../references/configuration-parameters/index.md#etcd" >}}).
+To see all supported configuration parameters, refer to [etcd]({{< relref "../references/configuration-parameters#etcd" >}}).
 
 ### Multi
 

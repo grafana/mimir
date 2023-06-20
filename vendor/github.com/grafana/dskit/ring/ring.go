@@ -522,24 +522,24 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 }
 
 // CountTokens returns the number tokens within the range for each instance.
-func (r *Desc) CountTokens() map[string]uint32 {
+func (r *Desc) CountTokens() map[string]int {
 	var (
-		owned               = make(map[string]uint32, len(r.Ingesters))
+		owned               = make(map[string]int, len(r.Ingesters))
 		ringTokens          = r.GetTokens()
 		ringInstanceByToken = r.getTokensInfo()
 	)
 
 	for i, token := range ringTokens {
-		var diff uint32
+		var prevToken uint32
 
 		// Compute how many tokens are within the range.
 		if i == 0 {
-			lastToken := ringTokens[len(ringTokens)-1]
-			diff = token + (math.MaxUint32 - lastToken)
+			prevToken = ringTokens[len(ringTokens)-1]
 		} else {
-			diff = token - ringTokens[i-1]
+			prevToken = ringTokens[i-1]
 		}
 
+		diff := getTokenDistance(prevToken, token)
 		info := ringInstanceByToken[token]
 		owned[info.InstanceID] = owned[info.InstanceID] + diff
 	}

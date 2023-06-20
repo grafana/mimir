@@ -1,7 +1,7 @@
 ---
-title: "Migrate from Thanos to Mimir using Thanos sidecar"
-menuTitle: "Migrate from Thanos using Thanos sidecar"
-description: "Learn how to migrate from Thanos to Mimir using Thanos sidecar."
+description: Learn how to migrate from Thanos to Mimir using Thanos sidecar.
+menuTitle: Migrate from Thanos using Thanos sidecar
+title: Migrate from Thanos to Mimir using Thanos sidecar
 weight: 15
 ---
 

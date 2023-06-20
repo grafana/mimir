@@ -616,7 +616,7 @@ alertmanager:
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
-    # -- Auxiliary values for migration, see https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/
+    # -- Auxiliary values for migration, see https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/
     migration:
       # -- Indicate if migration is ongoing for multi zone alertmanager
       enabled: false
@@ -884,7 +884,7 @@ ingester:
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
-    # -- Auxiliary values for migration, see https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/
+    # -- Auxiliary values for migration, see https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/
     migration:
       # -- Indicate if migration is ongoing for multi zone ingester
       enabled: false
@@ -1443,7 +1443,7 @@ store_gateway:
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
-    # -- Auxiliary values for migration, see https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/
+    # -- Auxiliary values for migration, see https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/
     migration:
       # -- Indicate if migration is ongoing for multi zone store-gateway
       enabled: false
@@ -1964,7 +1964,7 @@ minio:
   configPathmc: "/tmp/minio/mc/"
 
 # -- DEPRECATED: use the 'gateway' section instead. For a migration guide refer to
-# https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/
+# https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/
 #
 # Configuration for nginx gateway.
 # Can only be enabled when 'enterprise.enabled' is false.
@@ -2786,7 +2786,7 @@ metaMonitoring:
       # * If you are using the enterprise authentication type (mimir.structuredConfig.auth.type=enterprise, which is also the default when enterprise.enabled=true),
       #   then you also need to provide a Secret with the authentication token for the tenant.
       #   The token should be to an access policy with metrics:read scope.
-      #   To set up the Secret, refer to https://grafana.com/docs/mimir/latest/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-via-the-helm-chart
+      #   To set up the Secret, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/
       #   Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
       #
       # remote:
@@ -3377,7 +3377,7 @@ smoke_test:
 
 # -- Settings for mimir-continuous-test.
 # This continuously writes and reads metrics from Mimir.
-# https://grafana.com/docs/mimir/latest/operators-guide/tools/mimir-continuous-test/
+# https://grafana.com/docs/mimir/latest/manage/tools/mimir-continuous-test/
 continuous_test:
   enabled: false
   # -- Number of replicas to start of continuous test

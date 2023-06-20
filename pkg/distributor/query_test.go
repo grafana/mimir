@@ -363,11 +363,11 @@ func TestMergeExemplars(t *testing.T) {
 		t.Run(fmt.Sprint("test", i), func(t *testing.T) {
 			rA := &ingester_client.ExemplarQueryResponse{Timeseries: c.seriesA}
 			rB := &ingester_client.ExemplarQueryResponse{Timeseries: c.seriesB}
-			e := mergeExemplarQueryResponses([]interface{}{rA, rB})
+			e := mergeExemplarQueryResponses([]*ingester_client.ExemplarQueryResponse{rA, rB})
 			require.Equal(t, c.expected, e.Timeseries)
 			if !c.nonReversible {
 				// Check the other way round too
-				e = mergeExemplarQueryResponses([]interface{}{rB, rA})
+				e = mergeExemplarQueryResponses([]*ingester_client.ExemplarQueryResponse{rB, rA})
 				require.Equal(t, c.expected, e.Timeseries)
 			}
 		})
@@ -401,7 +401,7 @@ func BenchmarkMergeExemplars(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		// Merge input with itself three times
-		mergeExemplarQueryResponses([]interface{}{input, input, input})
+		mergeExemplarQueryResponses([]*ingester_client.ExemplarQueryResponse{input, input, input})
 	}
 }
 

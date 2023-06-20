@@ -9,10 +9,10 @@ datasources:
     version: 1
     editable: true
     jsonData:
-      httpHeaderName1: 'X-Scope-OrgID'
-      alertmanagerUid: 'alertmanager'
+      httpHeaderName1: "X-Scope-OrgID"
+      alertmanagerUid: "alertmanager"
     secureJsonData:
-      httpHeaderValue1: 'demo'
+      httpHeaderValue1: "demo"
     isDefault: true
   - name: Mimir Alertmanager
     uid: alertmanager
@@ -23,7 +23,7 @@ datasources:
     version: 1
     editable: true
     jsonData:
-      httpHeaderName1: 'X-Scope-OrgID'
-      implementation: 'cortex'
+      httpHeaderName1: "X-Scope-OrgID"
+      implementation: "cortex"
     secureJsonData:
-      httpHeaderValue1: 'demo'
+      httpHeaderValue1: "demo"
