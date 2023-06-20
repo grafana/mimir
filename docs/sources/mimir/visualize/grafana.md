@@ -2,7 +2,7 @@
 description: Visualize your metric data with Grafana
 title: Visualize metric data
 menuTitle: Visualize data
-weight: 100
+weight: 45
 keywords:
   - visualize
   - grafana
@@ -18,7 +18,7 @@ keywords:
    the username and password are both `admin`.
 1. From within Grafana, go to `Connections` > `Add new connection`.
 1. Search for Prometheus, and select **Create a Prometheus data source**.
-1. The HTTP Prometheus server URL field is the address of your Prometheus server:
+1. In the **HTTP** > **Prometheus server URL** field, point to the proxy in front of Mimir (such as Nginx or the GEM gateway) rather than to one component of Mimir.
 
    - When running locally or with Docker using port mapping,
      the address is likely `http://localhost:9090`.
@@ -33,5 +33,4 @@ keywords:
 ## See also
 
 - Read more about Grafana's [Explore](http://docs.grafana.org/features/explore) feature.
-
 - Read about Grafana’s built-in support for the [Prometheus data source](/docs/grafana/latest/datasources/prometheus/).
