@@ -109,7 +109,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		checkFreq := p.lazyReaderIdleTimeout / 10
 
 		go func() {
-			tickerLazyLoad := time.NewTicker(10 * time.Second)
+			tickerLazyLoad := time.NewTicker(time.Minute)
 			defer tickerLazyLoad.Stop()
 
 			tickerIdleReader := time.NewTicker(checkFreq)
