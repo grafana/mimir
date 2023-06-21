@@ -1593,10 +1593,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.minimize-ingester-requests
     	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.
-  -querier.prefer-streaming-chunks
+  -querier.prefer-streaming-chunks-from-ingesters
     	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.
-  -querier.prefer-streaming-chunks-store-gateway
-    	[experimental] Request storegateway stream chunks. Storegateway will only respond with a stream of chunks if the target storegateway supports this, and this preference will be ignored by storegateway that do not support this.
+  -querier.prefer-streaming-chunks-from-store-gateways
+    	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
   -querier.query-ingesters-within duration
     	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h)
   -querier.query-store-after duration
@@ -1624,7 +1624,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.streaming-chunks-per-ingester-buffer-size uint
     	[experimental] Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
   -querier.streaming-chunks-per-store-gateway-buffer-size uint
-    	[experimental] Number of series to buffer per storegateway when streaming chunks from storegateway. (default 256)
+    	[experimental] Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-queries-with-step

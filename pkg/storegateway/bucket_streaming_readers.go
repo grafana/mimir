@@ -31,7 +31,6 @@ type SeriesChunksStreamReader struct {
 	seriesChunksChan chan *storepb.StreamingChunksBatch
 	chunksBatch      []*storepb.StreamingChunks
 	errorChan        chan error
-	closeCalled      chan struct{}
 }
 
 func NewSeriesChunksStreamReader(client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *SeriesChunksStreamReader {
@@ -41,19 +40,12 @@ func NewSeriesChunksStreamReader(client storegatewaypb.StoreGateway_SeriesClient
 		queryLimiter:        queryLimiter,
 		stats:               stats,
 		log:                 log,
-		closeCalled:         make(chan struct{}),
 	}
 }
 
 // Close cleans up all resources associated with this SeriesChunksStreamReader.
 // This method should only be called if StartBuffering is not called.
 func (s *SeriesChunksStreamReader) Close() {
-	select {
-	case <-s.closeCalled:
-		return
-	default:
-	}
-	close(s.closeCalled)
 	if err := s.client.CloseSend(); err != nil {
 		level.Warn(s.log).Log("msg", "closing storegateway client stream failed", "err", err)
 	}
@@ -137,8 +129,6 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				// This only works correctly if the context is cancelled when the query request is complete or cancelled,
 				// which is true at the time of writing.
 				s.errorChan <- s.client.Context().Err()
-				return
-			case <-s.closeCalled:
 				return
 			case s.seriesChunksChan <- c:
 				// Batch enqueued successfully, nothing else to do for this batch.

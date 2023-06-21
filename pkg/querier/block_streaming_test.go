@@ -166,20 +166,16 @@ func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 				require.Equal(t, c.expResult[idx].lbls, s.Labels())
 				it = s.Iterator(it)
 				if c.errorChunkStreamer {
-					require.Error(t, it.Err())
-					idx++
-					// If chunk streamer errors out, we still go through every
-					// series but we don't get any samples. So we continue here
-					// and check all the series.
-					continue
+					require.EqualError(t, it.Err(), "mocked error")
+				} else {
+					var actSamples []testSample
+					for it.Next() != chunkenc.ValNone {
+						ts, val := it.At()
+						actSamples = append(actSamples, testSample{t: ts, v: val})
+					}
+					require.Equal(t, c.expResult[idx].values, actSamples)
+					require.NoError(t, it.Err())
 				}
-				var actSamples []testSample
-				for it.Next() != chunkenc.ValNone {
-					ts, val := it.At()
-					actSamples = append(actSamples, testSample{t: ts, v: val})
-				}
-				require.Equal(t, c.expResult[idx].values, actSamples)
-				require.NoError(t, it.Err())
 				idx++
 			}
 			require.NoError(t, ss.Err())

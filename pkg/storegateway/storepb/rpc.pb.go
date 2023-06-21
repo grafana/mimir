@@ -40,6 +40,16 @@ type SeriesRequest struct {
 	// The content of this field and whether it's supported depends on the
 	// implementation of a specific store.
 	Hints *types.Any `protobuf:"bytes,9,opt,name=hints,proto3" json:"hints,omitempty"`
+	// If streaming_chunks_batch_size=0, the response must only contain one 'series' at a time
+	// with the series labels and chunks data sent together.
+	// If streaming_chunks_batch_size > 0
+	// - The store may choose to send the streaming_series/streaming_chunks OR behave as
+	//   if streaming_chunks_batch_size=0 if it does not support streaming series.
+	// - The store must not send a mix of 'series' and streaming_series/streaming_chunks for a single request.
+	// - If the store chooses to send streaming series, all the streaming_series must be sent before
+	//   sending any streaming_chunks, with the last streaming_series response containing is_end_of_series_stream=true.
+	//   The order of series in both streaming_series/streaming_chunks must match and the size of the batch must not
+	//   cross streaming_chunks_batch_size, although it can be lower than that.
 	// It is 100 so that we have an option to bring back compatibility with Thanos' storage API.
 	StreamingChunksBatchSize uint64 `protobuf:"varint,100,opt,name=streaming_chunks_batch_size,json=streamingChunksBatchSize,proto3" json:"streaming_chunks_batch_size,omitempty"`
 }

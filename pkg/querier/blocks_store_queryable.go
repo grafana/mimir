@@ -265,7 +265,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	)
 
 	streamingBufferSize := querierCfg.StreamingChunksPerStoregatewaySeriesBufferSize
-	if !querierCfg.PreferStreamingChunksStoregateway {
+	if !querierCfg.PreferStreamingChunksFromStoregateways {
 		streamingBufferSize = 0
 	}
 
@@ -444,7 +444,7 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
 		resSeriesSets     = []storage.SeriesSet(nil)
 		resWarnings       = storage.Warnings(nil)
-		streamClosers     []func()
+		streamStarters    []func()
 	)
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -453,28 +453,26 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 	}
 
 	queryFunc := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		seriesSets, queriedBlocks, warnings, streamCloser, err := q.fetchSeriesFromStores(spanCtx, sp, clients, minT, maxT, convertedMatchers)
+		seriesSets, queriedBlocks, warnings, startStreamingChunks, err := q.fetchSeriesFromStores(spanCtx, sp, clients, minT, maxT, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
 
 		resSeriesSets = append(resSeriesSets, seriesSets...)
 		resWarnings = append(resWarnings, warnings...)
-		if streamCloser != nil {
-			streamClosers = append(streamClosers, streamCloser)
-		}
+		streamStarters = append(streamStarters, startStreamingChunks)
 
 		return queriedBlocks, nil
 	}
 
 	err = q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, shard, queryFunc)
 	if err != nil {
-		// If this was a streaming call, we should close the stream readers so that goroutines are not
-		// stuck waiting for chunks.
-		for _, sc := range streamClosers {
-			sc()
-		}
 		return storage.ErrSeriesSet(err)
+	}
+
+	// If this was a streaming call, start fetching streaming chunks here.
+	for _, ss := range streamStarters {
+		ss()
 	}
 
 	if len(resSeriesSets) == 0 {
@@ -592,7 +590,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 
 		level.Debug(logger).Log("msg", "consistency check failed", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(missingBlocks), " "))
 
-		// The nextSeriesIndex attempt should just query the missing blocks.
+		// The next attempt should just query the missing blocks.
 		remainingBlocks = missingBlocks
 	}
 
@@ -699,7 +697,7 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // In case of a successful run, fetchSeriesFromStores returns a streamCloser function if it was a streaming
 // call for series+chunks. If you are ending the execution of the query later without iterating through all the series
 // and consuming the chunks, the streamCloser MUST be called to avoid leaking goroutines and gRPC connections.
-func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ storage.Warnings, streamCloser func(), _ error) {
+func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ storage.Warnings, startStreamingChunks func(), _ error) {
 	var (
 		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, q.userID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
@@ -887,19 +885,13 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		return nil, nil, nil, nil, err
 	}
 
-	for _, sr := range streamReaders {
-		sr.StartBuffering()
-	}
-
-	if len(streams) > 0 {
-		streamCloser = func() {
-			for _, sr := range streamReaders {
-				sr.Close()
-			}
+	startStreamingChunks = func() {
+		for _, sr := range streamReaders {
+			sr.StartBuffering()
 		}
 	}
 
-	return seriesSets, queriedBlocks, warnings, streamCloser, nil
+	return seriesSets, queriedBlocks, warnings, startStreamingChunks, nil
 }
 
 func shouldStopQueryFunc(err error) bool {

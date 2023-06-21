@@ -860,20 +860,17 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					if testData.expectedErr != nil {
 						if streaming && set.Err() == nil {
 							// In case of streaming, the error can happen during iteration.
-							foundErr := false
+							var err error
 							for set.Next() {
 								it := set.At().Iterator(nil)
 								for it.Next() != chunkenc.ValNone { // nolint
 								}
-								err := it.Err()
+								err = it.Err()
 								if err != nil {
-									assert.ErrorContains(t, err, testData.expectedErr.Error())
-									assert.ErrorIs(t, err, testData.expectedErr)
-									foundErr = true
 									break
 								}
 							}
-							assert.True(t, foundErr)
+							assert.ErrorIs(t, err, testData.expectedErr)
 						} else {
 							assert.ErrorContains(t, set.Err(), testData.expectedErr.Error())
 							assert.IsType(t, set.Err(), testData.expectedErr)
