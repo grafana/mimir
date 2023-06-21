@@ -8,11 +8,13 @@ package indexheader
 import (
 	"context"
 	"os"
+	"path"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -58,13 +60,37 @@ type HeadersLazyLoaded struct {
 	UserID string
 }
 
-func (p *ReaderPool) persist(state storepb.HeadersLazyLoadedTrackerState, path string) error {
+func (p *ReaderPool) persist(state storepb.HeadersLazyLoadedTrackerState, finalPath string) error {
+	// Create temporary path for fsync
+	tmpPath, err := os.CreateTemp("", "lazy-loaded")
+	defer os.Remove(tmpPath.Name())
+
 	data, err := state.Marshal()
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0600)
+	merr := multierror.New()
+	_, err = tmpPath.Write(data)
+	merr.Add(err)
+	merr.Add(tmpPath.Sync())
+	merr.Add(tmpPath.Close())
+
+	if err := merr.Err(); err != nil {
+		return err
+	}
+
+	// fsync the directory too
+	dir, err := os.OpenFile(path.Dir(tmpPath.Name()), os.O_RDONLY, 0777)
+	if err != nil {
+		return err
+	}
+
+	merr.Add(dir.Sync())
+	merr.Add(dir.Close())
+
+	// move the written file to the actual path
+	return os.Rename(tmpPath.Name(), finalPath)
 }
 
 // NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers and blockIds writers if enabled.
