@@ -580,6 +580,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
 		"request matchers", storepb.PromMatchersToString(matchers...),
 		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
+		"streaming chunks batch size", req.StreamingChunksBatchSize,
 	)
 
 	var (
@@ -642,13 +643,20 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return err
 		}
 
-		iterationBegin = time.Now()
-		tracing.DoWithSpan(ctx, "bucket_store_streaming_series_merge_all", func(ctx context.Context, _ tracing.Span) {
-			err = s.sendStreamingSeriesLabelsHintsStats(req, srv, stats, seriesSet, resHints)
-		})
+		numSeries, err := s.sendStreamingSeriesLabelsHintsStats(req, srv, stats, seriesSet, resHints)
 		if err != nil {
 			return err
 		}
+		level.Debug(spanLogger).Log(
+			"msg", "sent streaming series",
+			"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
+			"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
+			"request matchers", storepb.PromMatchersToString(matchers...),
+			"request shard selector", maybeNilShard(shardSelector).LabelValue(),
+			"streaming chunks batch size", req.StreamingChunksBatchSize,
+			"num_series", numSeries,
+			"duration", time.Since(iterationBegin),
+		)
 
 		req.SkipChunks = false
 	}
@@ -658,17 +666,26 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		return err
 	}
 
-	// Merge the sub-results from each selected block.
-	spanName := "bucket_store_merge_all"
-	if req.StreamingChunksBatchSize > 0 {
-		spanName = "bucket_store_streaming_chunks_merge_all"
-	}
-	tracing.DoWithSpan(ctx, spanName, func(ctx context.Context, _ tracing.Span) {
-		err = s.sendSeriesChunks(req, srv, seriesSet, stats, iterationBegin)
-	})
+	start := time.Now()
+	numSeries, numChunks, err := s.sendSeriesChunks(req, srv, seriesSet, stats)
 	if err != nil {
 		return
 	}
+	debugMessage := "sent series"
+	if req.StreamingChunksBatchSize > 0 {
+		debugMessage = "sent streaming chunks"
+	}
+	level.Debug(spanLogger).Log(
+		"msg", debugMessage,
+		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
+		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
+		"request matchers", storepb.PromMatchersToString(matchers...),
+		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
+		"streaming chunks batch size", req.StreamingChunksBatchSize,
+		"num_series", numSeries,
+		"num_chunks", numChunks,
+		"duration", time.Since(start),
+	)
 
 	if req.StreamingChunksBatchSize == 0 || req.SkipChunks {
 		// Hints and stats were not sent before, so send it now.
@@ -687,18 +704,22 @@ func (s *BucketStore) sendStreamingSeriesLabelsHintsStats(
 	stats *safeQueryStats,
 	seriesSet storepb.SeriesSet,
 	resHints *hintspb.SeriesResponseHints,
-) error {
+) (numSeries int, err error) {
 	var (
 		encodeDuration = time.Duration(0)
 		sendDuration   = time.Duration(0)
+		iterationBegin = time.Now()
 	)
-	// Once the iteration is done we will update the stats.
 	defer stats.update(func(stats *queryStats) {
 		// The time spent iterating over the series set is the
 		// actual time spent fetching series and chunks, encoding and sending them to the client.
 		// We split the timings to have a better view over how time is spent.
+		// We do not update streamingSeriesFetchSeriesAndChunksDuration here because it will be updated when sending
+		// streaming chunks, that includes the series and chunks fetch duration for sending the streaming series.
 		stats.streamingSeriesEncodeResponseDuration += encodeDuration
 		stats.streamingSeriesSendResponseDuration += sendDuration
+		stats.streamingSeriesOtherDuration += time.Duration(util_math.Max(0, int64(time.Since(iterationBegin)-
+			stats.streamingSeriesFetchSeriesAndChunksDuration-encodeDuration-sendDuration)))
 	})
 
 	seriesBuffer := make([]*storepb.StreamingSeries, req.StreamingChunksBatchSize)
@@ -710,9 +731,10 @@ func (s *BucketStore) sendStreamingSeriesLabelsHintsStats(
 	}
 	// TODO: can we send this in parallel while we start fetching the chunks below?
 	for seriesSet.Next() {
+		numSeries++
 		var lset labels.Labels
 		// Although subsequent call to seriesSet.Next() may release the memory of this series object,
-		// it is safe to hold onto the labels because it is not released.
+		// it is safe to hold onto the labels because they are not released.
 		lset, _ = seriesSet.At()
 
 		// We are re-using the slice for every batch this way.
@@ -720,54 +742,27 @@ func (s *BucketStore) sendStreamingSeriesLabelsHintsStats(
 		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
 
 		if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
-			msg := &grpc.PreparedMsg{}
-
-			encodeBegin := time.Now()
-			if err := msg.Encode(srv, storepb.NewStreamingSeriesResponse(seriesBatch)); err != nil {
-				return status.Error(codes.Internal, errors.Wrap(err, "encode streaming series response").Error())
+			err := s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)
+			if err != nil {
+				return 0, err
 			}
-			encodeDuration += time.Since(encodeBegin)
-
-			sendBegin := time.Now()
-			if err := srv.SendMsg(msg); err != nil {
-				return status.Error(codes.Unknown, errors.Wrap(err, "send streaming series response").Error())
-			}
-			sendDuration += time.Since(sendBegin)
-
 			seriesBatch.Series = seriesBatch.Series[:0]
 		}
 	}
 	if seriesSet.Err() != nil {
-		return errors.Wrap(seriesSet.Err(), "expand series set")
+		return 0, errors.Wrap(seriesSet.Err(), "expand series set")
 	}
 
 	// We need to send hints and stats before sending the chunks.
 	// Also, these need to be sent before we send IsEndOfSeriesStream=true.
 	if err := s.sendHintsAndStats(srv, resHints, stats); err != nil {
-		return err
+		return 0, err
 	}
 
 	// Send any remaining series and signal that there are no more series.
-	msg := &grpc.PreparedMsg{}
 	seriesBatch.IsEndOfSeriesStream = true
-
-	encodeBegin := time.Now()
-	if err := msg.Encode(srv, storepb.NewStreamingSeriesResponse(seriesBatch)); err != nil {
-		return status.Error(codes.Internal, errors.Wrap(err, "encode streaming series response").Error())
-	}
-	encodeDuration += time.Since(encodeBegin)
-
-	sendBegin := time.Now()
-	if err := srv.SendMsg(msg); err != nil {
-		return status.Error(codes.Unknown, errors.Wrap(err, "send streaming series response").Error())
-	}
-	sendDuration += time.Since(sendBegin)
-
-	if seriesSet.Err() != nil {
-		return errors.Wrap(seriesSet.Err(), "expand series set")
-	}
-
-	return nil
+	err = s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)
+	return numSeries, err
 }
 
 func (s *BucketStore) sendSeriesChunks(
@@ -775,21 +770,14 @@ func (s *BucketStore) sendSeriesChunks(
 	srv storepb.Store_SeriesServer,
 	seriesSet storepb.SeriesSet,
 	stats *safeQueryStats,
-	iterationBegin time.Time,
-) (err error) {
+) (seriesCount, chunksCount int, err error) {
 	var (
 		encodeDuration  = time.Duration(0)
 		sendDuration    = time.Duration(0)
-		seriesCount     int
-		chunksCount     int
+		iterationBegin  = time.Now()
 		streamingChunks = req.StreamingChunksBatchSize > 0
 	)
 
-	if iterationBegin.Equal(time.Time{}) {
-		iterationBegin = time.Now()
-	}
-
-	// Once the iteration is done we will update the stats.
 	defer stats.update(func(stats *queryStats) {
 		stats.mergedSeriesCount += seriesCount
 		stats.mergedChunksCount += chunksCount
@@ -819,20 +807,20 @@ func (s *BucketStore) sendSeriesChunks(
 	}
 	for seriesSet.Next() {
 		// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
-		// because the subsequent call to seriesSet.Next() may release it.
+		// because the subsequent call to seriesSet.Next() may release it. But it is safe to hold
+		// onto lset because the labels are not released.
 		lset, chks := seriesSet.At()
 		seriesCount++
 		var response *storepb.SeriesResponse
 		if streamingChunks {
-			// We only need to stream chunks here because the series labels have already
-			// been sent above.
+			// We only need to stream chunks here because the series labels have already been sent.
 			chunksBatch.Series = chunksBatch.Series[:len(chunksBatch.Series)+1]
-			last := chunksBatch.Series[len(chunksBatch.Series)-1]
-			last.Chunks = append(last.Chunks[:0], chks...)
-			last.SeriesIndex = uint64(seriesCount - 1)
+			lastSeries := chunksBatch.Series[len(chunksBatch.Series)-1]
+			lastSeries.Chunks = append(lastSeries.Chunks[:0], chks...)
+			lastSeries.SeriesIndex = uint64(seriesCount - 1)
 			// Copy the chunk bytes to avoid race.
-			for i := range last.Chunks {
-				raw := last.Chunks[i].Raw
+			for i := range lastSeries.Chunks {
+				raw := lastSeries.Chunks[i].Raw
 				if raw == nil {
 					continue
 				}
@@ -840,10 +828,10 @@ func (s *BucketStore) sendSeriesChunks(
 					Type: raw.Type,
 					Data: append(make([]byte, 0, len(raw.Data)), raw.Data...),
 				}
-				last.Chunks[i].Raw = &newChk
+				lastSeries.Chunks[i].Raw = &newChk
 			}
 
-			batchSizeBytes += last.Size()
+			batchSizeBytes += lastSeries.Size()
 			// We are not strictly required to be under targetQueryStreamBatchMessageSize.
 			// The aim is to not hit gRPC and TCP limits, hence some overage is ok.
 			if (batchSizeBytes > 0 && batchSizeBytes > targetQueryStreamBatchMessageSize) || len(chunksBatch.Series) >= int(req.StreamingChunksBatchSize) {
@@ -865,9 +853,9 @@ func (s *BucketStore) sendSeriesChunks(
 		}
 
 		if response != nil {
-			err := s.sendChunks(srv, response, &encodeDuration, &sendDuration)
+			err := s.sendMessage("series", srv, response, &encodeDuration, &sendDuration)
 			if err != nil {
-				return err
+				return 0, 0, err
 			}
 
 			if streamingChunks {
@@ -877,29 +865,32 @@ func (s *BucketStore) sendSeriesChunks(
 		}
 	}
 	if seriesSet.Err() != nil {
-		return errors.Wrap(seriesSet.Err(), "expand series set")
+		return 0, 0, errors.Wrap(seriesSet.Err(), "expand series set")
 	}
 
 	if streamingChunks && len(chunksBatch.Series) > 0 {
 		// Still some chunks left to send.
-		return s.sendChunks(srv, storepb.NewStreamingChunksResponse(chunksBatch), &encodeDuration, &sendDuration)
+		err := s.sendMessage("series", srv, storepb.NewStreamingChunksResponse(chunksBatch), &encodeDuration, &sendDuration)
+		if err != nil {
+			return 0, 0, err
+		}
 	}
 
-	return nil
+	return seriesCount, chunksCount, nil
 }
 
-func (s *BucketStore) sendChunks(srv storepb.Store_SeriesServer, chunks *storepb.SeriesResponse, encodeDuration, sendDuration *time.Duration) error {
+func (s *BucketStore) sendMessage(typ string, srv storepb.Store_SeriesServer, msg interface{}, encodeDuration, sendDuration *time.Duration) error {
 	// We encode it ourselves into a PreparedMsg in order to measure the time it takes.
 	encodeBegin := time.Now()
-	msg := &grpc.PreparedMsg{}
-	if err := msg.Encode(srv, chunks); err != nil {
-		return status.Error(codes.Internal, errors.Wrap(err, "encode series response").Error())
+	pmsg := &grpc.PreparedMsg{}
+	if err := pmsg.Encode(srv, msg); err != nil {
+		return status.Error(codes.Internal, errors.Wrapf(err, "encode %s response", typ).Error())
 	}
 	*encodeDuration += time.Since(encodeBegin)
 
 	sendBegin := time.Now()
-	if err := srv.SendMsg(msg); err != nil {
-		return status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
+	if err := srv.SendMsg(pmsg); err != nil {
+		return status.Error(codes.Unknown, errors.Wrapf(err, "send %s response", typ).Error())
 	}
 	*sendDuration += time.Since(sendBegin)
 
