@@ -63,6 +63,9 @@ type HeadersLazyLoaded struct {
 func (p *ReaderPool) persist(state storepb.HeadersLazyLoadedTrackerState, finalPath string) error {
 	// Create temporary path for fsync
 	tmpPath, err := os.CreateTemp("", "lazy-loaded")
+	if err != nil {
+		return err
+	}
 	defer os.Remove(tmpPath.Name())
 
 	data, err := state.Marshal()
