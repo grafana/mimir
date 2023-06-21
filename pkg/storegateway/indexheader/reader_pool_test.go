@@ -167,8 +167,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
 	ctx := context.Background()
 
-	tmpDir, err := os.MkdirTemp("", "test-indexheader")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
