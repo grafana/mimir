@@ -61,7 +61,7 @@ type HeadersLazyLoaded struct {
 
 type HeadersLazyLoadedTrackerState struct {
 	LazyLoadedBlocks map[string]int64 `json:"lazy_loaded_blocks"`
-	UserId           string           `json:"user_id""`
+	UserID           string           `json:"user_id""`
 }
 
 func (p *ReaderPool) persist(state HeadersLazyLoadedTrackerState, finalPath string) error {
@@ -124,7 +124,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 				case <-tickerLazyLoad.C:
 					state := HeadersLazyLoadedTrackerState{
 						LazyLoadedBlocks: p.LoadedBlocks(),
-						UserId:           headersLazyLoaded.UserID,
+						UserID:           headersLazyLoaded.UserID,
 					}
 
 					// Then we persist the state to files so that we are not holding lock for too long.

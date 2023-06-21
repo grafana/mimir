@@ -145,7 +145,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 
 	state := HeadersLazyLoadedTrackerState{
 		LazyLoadedBlocks: pool.LoadedBlocks(),
-		UserId:           "anonymous",
+		UserID:           "anonymous",
 	}
 
 	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.json"))
