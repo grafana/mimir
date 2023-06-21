@@ -68,7 +68,7 @@ const (
 	labelEncode = "encode"
 	labelDecode = "decode"
 
-	lazyLoadedFile = "lazy-loaded.pb"
+	lazyLoadedFile = "lazy-loaded.json"
 )
 
 type BucketStoreStats struct {

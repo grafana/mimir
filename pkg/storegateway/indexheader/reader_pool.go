@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path"
 	"sync"
@@ -19,8 +20,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
@@ -60,7 +59,12 @@ type HeadersLazyLoaded struct {
 	UserID string
 }
 
-func (p *ReaderPool) persist(state storepb.HeadersLazyLoadedTrackerState, finalPath string) error {
+type HeadersLazyLoadedTrackerState struct {
+	LazyLoadedBlocks map[string]int64 `json:"lazy_loaded_blocks"`
+	UserId           string           `json:"user_id""`
+}
+
+func (p *ReaderPool) persist(state HeadersLazyLoadedTrackerState, finalPath string) error {
 	// Create temporary path for fsync
 	tmpPath, err := os.CreateTemp("", "lazy-loaded")
 	if err != nil {
@@ -68,7 +72,7 @@ func (p *ReaderPool) persist(state storepb.HeadersLazyLoadedTrackerState, finalP
 	}
 	defer os.Remove(tmpPath.Name())
 
-	data, err := state.Marshal()
+	data, err := json.MarshalIndent(state, "", "")
 	if err != nil {
 		return err
 	}
@@ -105,7 +109,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		checkFreq := p.lazyReaderIdleTimeout / 10
 
 		go func() {
-			tickerLazyLoad := time.NewTicker(time.Minute)
+			tickerLazyLoad := time.NewTicker(10 * time.Second)
 			defer tickerLazyLoad.Stop()
 
 			tickerIdleReader := time.NewTicker(checkFreq)
@@ -118,7 +122,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 				case <-tickerIdleReader.C:
 					p.closeIdleReaders()
 				case <-tickerLazyLoad.C:
-					state := storepb.HeadersLazyLoadedTrackerState{
+					state := HeadersLazyLoadedTrackerState{
 						LazyLoadedBlocks: p.LoadedBlocks(),
 						UserId:           headersLazyLoaded.UserID,
 					}

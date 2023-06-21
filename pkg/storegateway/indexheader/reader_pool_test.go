@@ -21,7 +21,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 func TestReaderPool_NewBinaryReader(t *testing.T) {
@@ -146,12 +145,12 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
-	state := storepb.HeadersLazyLoadedTrackerState{
+	state := HeadersLazyLoadedTrackerState{
 		LazyLoadedBlocks: pool.LoadedBlocks(),
 		UserId:           "anonymous",
 	}
 
-	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.pb"))
+	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.json"))
 	require.NoError(t, err)
 	require.Greater(t, state.LazyLoadedBlocks[blockID.String()], int64(0), "lazyLoadedBlocks state must be set")
 
@@ -162,7 +161,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	// LoadedBlocks will update the LazyLoadedBlocks map with the removal of
 	// idle blocks.
 	state.LazyLoadedBlocks = pool.LoadedBlocks()
-	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.pb"))
+	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.json"))
 	require.NoError(t, err)
 	require.NotContains(t, state.LazyLoadedBlocks, blockID.String(), "lazyLoadedBlocks state must be unset")
 }
