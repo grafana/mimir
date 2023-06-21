@@ -868,80 +868,101 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	const blockRangePeriod = 5 * time.Second
 
-	for _, streamingEnabled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
-			s, err := e2e.NewScenario(networkName)
-			require.NoError(t, err)
-			defer s.Close()
+	testCases := map[string]struct {
+		flags         map[string]string
+		expectedError string
+	}{
+		"max series per query": {
+			flags: map[string]string{
+				"-querier.max-fetched-series-per-query": "3",
+			},
+			expectedError: "the query exceeded the maximum number of series",
+		},
+		"max chunks per query": {
+			flags: map[string]string{
+				"-querier.max-fetched-chunks-per-query": "3",
+			},
+			expectedError: "the query exceeded the maximum number of chunks",
+		},
+	}
 
-			// Configure the blocks storage to frequently compact TSDB head
-			// and ship blocks to the storage.
-			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-				"-blocks-storage.tsdb.block-ranges-period":   blockRangePeriod.String(),
-				"-blocks-storage.tsdb.ship-interval":         "1s",
-				"-blocks-storage.bucket-store.sync-interval": "1s",
-				"-blocks-storage.tsdb.retention-period":      ((blockRangePeriod * 2) - 1).String(),
-				"-querier.max-fetched-series-per-query":      "3",
-				"-querier.prefer-streaming-chunks":           strconv.FormatBool(streamingEnabled),
-			})
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for _, streamingEnabled := range []bool{true, false} {
+				t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
+					s, err := e2e.NewScenario(networkName)
+					require.NoError(t, err)
+					defer s.Close()
 
-			// Start dependencies.
-			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			memcached := e2ecache.NewMemcached()
-			require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
+					// Configure the blocks storage to frequently compact TSDB head
+					// and ship blocks to the storage.
+					flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), testCase.flags, map[string]string{
+						"-blocks-storage.tsdb.block-ranges-period":   blockRangePeriod.String(),
+						"-blocks-storage.tsdb.ship-interval":         "1s",
+						"-blocks-storage.bucket-store.sync-interval": "1s",
+						"-blocks-storage.tsdb.retention-period":      ((blockRangePeriod * 2) - 1).String(),
+						"-querier.prefer-streaming-chunks":           strconv.FormatBool(streamingEnabled),
+					})
 
-			// Add the memcached address to the flags.
-			flags["-blocks-storage.bucket-store.index-cache.memcached.addresses"] = "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort)
+					// Start dependencies.
+					consul := e2edb.NewConsul()
+					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+					memcached := e2ecache.NewMemcached()
+					require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
-			// Start Mimir components.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-			storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.StartAndWaitReady(distributor, ingester, storeGateway))
+					// Add the memcached address to the flags.
+					flags["-blocks-storage.bucket-store.index-cache.memcached.addresses"] = "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort)
 
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.StartAndWaitReady(querier))
+					// Start Mimir components.
+					distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+					ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+					storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags)
+					require.NoError(t, s.StartAndWaitReady(distributor, ingester, storeGateway))
 
-			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "user-1")
-			require.NoError(t, err)
+					querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+					require.NoError(t, s.StartAndWaitReady(querier))
 
-			// Push some series to Mimir.
-			series1Name := "series_1"
-			series2Name := "series_2"
-			series3Name := "series_3"
-			series4Name := "series_4"
-			series1Timestamp := time.Now()
-			series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-			series3Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-			series4Timestamp := series1Timestamp.Add(blockRangePeriod * 3)
+					c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "user-1")
+					require.NoError(t, err)
 
-			series1, _, _ := generateFloatSeries(series1Name, series1Timestamp, prompb.Label{Name: series1Name, Value: series1Name})
-			series2, _, _ := generateHistogramSeries(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
-			series3, _, _ := generateFloatSeries(series3Name, series3Timestamp, prompb.Label{Name: series3Name, Value: series3Name})
-			series4, _, _ := generateHistogramSeries(series4Name, series4Timestamp, prompb.Label{Name: series4Name, Value: series4Name})
+					// Push some series to Mimir.
+					series1Name := "series_1"
+					series2Name := "series_2"
+					series3Name := "series_3"
+					series4Name := "series_4"
+					series1Timestamp := time.Now()
+					series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
+					series3Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
+					series4Timestamp := series1Timestamp.Add(blockRangePeriod * 3)
 
-			res, err := c.Push(series1)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
-			res, err = c.Push(series2)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
+					series1, _, _ := generateFloatSeries(series1Name, series1Timestamp, prompb.Label{Name: series1Name, Value: series1Name})
+					series2, _, _ := generateHistogramSeries(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
+					series3, _, _ := generateFloatSeries(series3Name, series3Timestamp, prompb.Label{Name: series3Name, Value: series3Name})
+					series4, _, _ := generateHistogramSeries(series4Name, series4Timestamp, prompb.Label{Name: series4Name, Value: series4Name})
 
-			result, err := c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series2Timestamp.Add(1*time.Hour), blockRangePeriod)
-			require.NoError(t, err)
-			require.Equal(t, model.ValMatrix, result.Type())
+					res, err := c.Push(series1)
+					require.NoError(t, err)
+					require.Equal(t, 200, res.StatusCode)
+					res, err = c.Push(series2)
+					require.NoError(t, err)
+					require.Equal(t, 200, res.StatusCode)
 
-			res, err = c.Push(series3)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
-			res, err = c.Push(series4)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
+					result, err := c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series2Timestamp.Add(1*time.Hour), blockRangePeriod)
+					require.NoError(t, err)
+					require.Equal(t, model.ValMatrix, result.Type())
 
-			_, err = c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series4Timestamp.Add(1*time.Hour), blockRangePeriod)
-			require.Error(t, err)
-			assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
+					res, err = c.Push(series3)
+					require.NoError(t, err)
+					require.Equal(t, 200, res.StatusCode)
+					res, err = c.Push(series4)
+					require.NoError(t, err)
+					require.Equal(t, 200, res.StatusCode)
+
+					_, err = c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series4Timestamp.Add(1*time.Hour), blockRangePeriod)
+					require.Error(t, err)
+					assert.ErrorContains(t, err, testCase.expectedError)
+				})
+			}
 		})
 	}
 }
