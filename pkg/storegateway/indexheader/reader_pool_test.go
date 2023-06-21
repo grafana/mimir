@@ -126,7 +126,6 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	const idleTimeout = time.Second
 	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
