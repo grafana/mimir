@@ -192,11 +192,11 @@ func newSeriesSetWithChunks(
 	refsIteratorBatchSize int,
 	stats *safeQueryStats,
 	minT, maxT int64,
-) storepb.SeriesSet {
+) seriesChunksSetIterator {
 	var iterator seriesChunksSetIterator
 	iterator = newLoadingSeriesChunksSetIterator(ctx, logger, userID, cache, chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
 	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
-	return newSeriesChunksSeriesSet(iterator)
+	return iterator
 }
 
 // Next advances to the next item. Once the underlying seriesChunksSet has been fully consumed

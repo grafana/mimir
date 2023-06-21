@@ -1077,22 +1077,22 @@ store_gateway_client:
 # (experimental) Request ingesters stream chunks. Ingesters will only respond
 # with a stream of chunks if the target ingester supports this, and this
 # preference will be ignored by ingesters that do not support this.
-# CLI flag: -querier.prefer-streaming-chunks
-[prefer_streaming_chunks: <boolean> | default = false]
+# CLI flag: -querier.prefer-streaming-chunks-from-ingesters
+[prefer_streaming_chunks_from_ingesters: <boolean> | default = false]
 
-# (experimental) Request storegateway stream chunks. Storegateway will only
-# respond with a stream of chunks if the target storegateway supports this, and
-# this preference will be ignored by storegateway that do not support this.
-# CLI flag: -querier.prefer-streaming-chunks-store-gateway
-[prefer_streaming_chunks_store_gateway: <boolean> | default = false]
+# (experimental) Request store-gateways stream chunks. Store-gateways will only
+# respond with a stream of chunks if the target store-gateway supports this, and
+# this preference will be ignored by store-gateways that do not support this.
+# CLI flag: -querier.prefer-streaming-chunks-from-store-gateways
+[prefer_streaming_chunks_from_store_gateways: <boolean> | default = false]
 
 # (experimental) Number of series to buffer per ingester when streaming chunks
 # from ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
 [streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
 
-# (experimental) Number of series to buffer per storegateway when streaming
-# chunks from storegateway.
+# (experimental) Number of series to buffer per store-gateway when streaming
+# chunks from store-gateways.
 # CLI flag: -querier.streaming-chunks-per-store-gateway-buffer-size
 [streaming_chunks_per_store_gateway_series_buffer_size: <int> | default = 256]
 
