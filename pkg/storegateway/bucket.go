@@ -117,6 +117,9 @@ type BucketStore struct {
 	// Query gate which limits the maximum amount of concurrent queries.
 	queryGate gate.Gate
 
+	// Gate used to limit concurrency on loading index-headers across all tenants.
+	readerGate gate.Gate
+
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
 	// seriesLimiterFactory creates a new limiter used to limit the number of touched series by each Series() call,
@@ -202,6 +205,13 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	}
 }
 
+// WithReaderGate sets a readerGate to use instead of a noopGate.
+func WithReaderGate(readerGate gate.Gate) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.readerGate = readerGate
+	}
+}
+
 func WithFineGrainedChunksCaching(enabled bool) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.fineGrainedChunksCachingEnabled = enabled
@@ -241,6 +251,7 @@ func NewBucketStore(
 		blockSet:                    newBucketBlockSet(),
 		blockSyncConcurrency:        blockSyncConcurrency,
 		queryGate:                   gate.NewNoop(),
+		readerGate:                  gate.NewNoop(),
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioners:                partitioners,

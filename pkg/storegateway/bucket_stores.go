@@ -93,16 +93,15 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
 
-	// Concurrency limiting gates initializations
-	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
-
 	// The number of concurrent queries against the tenants BucketStores are limited.
+	queryGateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
 	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
-	queryGate = gate.NewInstrumented(gateReg, cfg.BucketStore.MaxConcurrent, queryGate)
+	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
 
 	// The number of concurrent index header loads from storegateway are limited.
+	readerGateReg := prometheus.WrapRegistererWithPrefix("cortex_store_gateway_", reg)
 	readerGate := gate.NewBlocking(cfg.BucketStore.IndexHeaderLazyLoadingConcurrency)
-	readerGate = gate.NewInstrumented(gateReg, cfg.BucketStore.IndexHeaderLazyLoadingConcurrency, readerGate)
+	readerGate = gate.NewInstrumented(readerGateReg, cfg.BucketStore.IndexHeaderLazyLoadingConcurrency, readerGate)
 
 	u := &BucketStores{
 		logger:             logger,
@@ -468,6 +467,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithIndexCache(u.indexCache),
 		WithChunksCache(u.chunksCache),
 		WithQueryGate(u.queryGate),
+		WithReaderGate(u.readerGate),
 		WithFineGrainedChunksCaching(u.cfg.BucketStore.ChunksCache.FineGrainedChunksCachingEnabled),
 	}
 
