@@ -15,12 +15,12 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/objstore/tracing"
 
 	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -380,13 +380,15 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		return false
 	}
 
-	// Start the span after the underlying iterator has been advanced, so that the span
-	// doesn't include the timing of the underlying iterator.
-	sp, ctx := tracing.StartSpan(c.ctx, "load_chunks")
-	defer sp.Finish()
-	defer func() {
-		sp.LogKV("msg", "loaded chunks", "num_series", c.At().len(), "err", c.Err())
-	}()
+	defer func(startTime time.Time) {
+		spanLog := spanlogger.FromContext(c.ctx, c.logger)
+		level.Debug(spanLog).Log(
+			"msg", "loaded chunks",
+			"series_count", c.At().len(),
+			"err", c.Err(),
+			"duration", time.Since(startTime),
+		)
+	}(time.Now())
 
 	nextUnloaded := c.from.At()
 
@@ -413,7 +415,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 
 	var cachedRanges map[chunkscache.Range][]byte
 	if c.cache != nil {
-		cachedRanges = c.cache.FetchMultiChunks(ctx, c.userID, toCacheKeys(nextUnloaded.series), chunksPool)
+		cachedRanges = c.cache.FetchMultiChunks(c.ctx, c.userID, toCacheKeys(nextUnloaded.series), chunksPool)
 		c.recordCachedChunks(cachedRanges)
 	}
 	c.chunkReaders.reset()

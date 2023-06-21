@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -836,13 +835,16 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		return false
 	}
 
-	// Start the span after the underlying iterator has been advanced, so that the span
-	// doesn't include the timing of the underlying iterator.
-	sp, ctx := tracing.StartSpan(s.ctx, "load_series_and_chunk_refs")
-	defer sp.Finish()
-	defer func() {
-		sp.LogKV("msg", "loaded series and chunk refs", "block_id", s.blockID.String(), "series_count", s.At().len(), "err", s.Err())
-	}()
+	defer func(startTime time.Time) {
+		spanLog := spanlogger.FromContext(s.ctx, s.logger)
+		level.Debug(spanLog).Log(
+			"msg", "loaded series and chunk refs",
+			"block_id", s.blockID.String(),
+			"series_count", s.At().len(),
+			"err", s.Err(),
+			"duration", time.Since(startTime),
+		)
+	}(time.Now())
 
 	nextPostings := s.postingsSetIterator.At()
 
@@ -857,7 +859,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
 		} else {
-			if cachedSet, isCached := fetchCachedSeriesForPostings(ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
+			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
 				s.currentSet = cachedSet
 				return true
 			}
@@ -876,7 +878,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		nextPostings = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHasher, loadStats)
 	}
 
-	symbolizedSet, err := s.symbolizedSet(ctx, nextPostings, loadStats)
+	symbolizedSet, err := s.symbolizedSet(s.ctx, nextPostings, loadStats)
 	if err != nil {
 		s.err = err
 		return false
@@ -898,7 +900,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	s.currentSet = nextSet
 	if s.skipChunks && cachedSeriesID.isSet() {
-		storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
+		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
 	}
 	return true
 }
