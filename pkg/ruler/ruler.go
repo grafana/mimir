@@ -909,7 +909,7 @@ func filterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 }
 
 // GetRules retrieves the running rules from this ruler and all running rulers in the ring.
-func (r *Ruler) GetRules(ctx context.Context, rulesTypeFilter RulesRequest_RuleType) ([]*GroupStateDesc, error) {
+func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDesc, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("no user id found in context")
@@ -939,7 +939,7 @@ func (r *Ruler) GetRules(ctx context.Context, rulesTypeFilter RulesRequest_RuleT
 			return err
 		}
 
-		newGrps, err := rulerClient.Rules(ctx, &RulesRequest{Filter: rulesTypeFilter})
+		newGrps, err := rulerClient.Rules(ctx, &req)
 		if err != nil {
 			return errors.Wrapf(err, "unable to retrieve rules from ruler %s", rulerAddr)
 		}
@@ -967,7 +967,7 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	groupDescs, err := r.getLocalRules(userID, in.GetFilter())
+	groupDescs, err := r.getLocalRules(userID, *in)
 	if err != nil {
 		return nil, err
 	}
@@ -975,7 +975,27 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 	return &RulesResponse{Groups: groupDescs}, nil
 }
 
-func (r *Ruler) getLocalRules(userID string, ruleTypeFilter RulesRequest_RuleType) ([]*GroupStateDesc, error) {
+type StringFilterSet map[string]struct{}
+
+func makeStringFilterSet(values []string) StringFilterSet {
+	set := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		set[v] = struct{}{}
+	}
+	return set
+}
+
+// IsFiltered returns whether to filter the value or not.
+// If the set is empty, then nothing is filtered.
+func (fs StringFilterSet) IsFiltered(val string) bool {
+	if len(fs) == 0 {
+		return false
+	}
+	_, ok := fs[val]
+	return !ok
+}
+
+func (r *Ruler) getLocalRules(userID string, req RulesRequest) ([]*GroupStateDesc, error) {
 	groups := r.manager.GetRules(userID)
 
 	groupDescs := make([]*GroupStateDesc, 0, len(groups))
@@ -984,7 +1004,7 @@ func (r *Ruler) getLocalRules(userID string, ruleTypeFilter RulesRequest_RuleTyp
 	getRecordingRules := true
 	getAlertingRules := true
 
-	switch ruleTypeFilter {
+	switch req.Filter {
 	case AlertingRule:
 		getRecordingRules = false
 	case RecordingRule:
@@ -992,16 +1012,27 @@ func (r *Ruler) getLocalRules(userID string, ruleTypeFilter RulesRequest_RuleTyp
 	case AnyRule:
 
 	default:
-		return nil, fmt.Errorf("unexpected rule filter %s", ruleTypeFilter)
+		return nil, fmt.Errorf("unexpected rule filter %s", req.Filter)
 	}
 
+	fileSet := makeStringFilterSet(req.File)
+	groupSet := makeStringFilterSet(req.RuleGroup)
+	ruleSet := makeStringFilterSet(req.RuleName)
+
 	for _, group := range groups {
+		if groupSet.IsFiltered(group.Name()) {
+			continue
+		}
+
 		interval := group.Interval()
 
 		// The mapped filename is url path escaped encoded to make handling `/` characters easier
 		decodedNamespace, err := url.PathUnescape(strings.TrimPrefix(group.File(), prefix))
 		if err != nil {
 			return nil, errors.Wrap(err, "unable to decode rule filename")
+		}
+		if fileSet.IsFiltered(decodedNamespace) {
+			continue
 		}
 
 		groupDesc := &GroupStateDesc{
@@ -1017,6 +1048,10 @@ func (r *Ruler) getLocalRules(userID string, ruleTypeFilter RulesRequest_RuleTyp
 			EvaluationDuration:  group.GetEvaluationTime(),
 		}
 		for _, r := range group.Rules() {
+			if ruleSet.IsFiltered(r.Name()) {
+				continue
+			}
+
 			lastError := ""
 			if r.LastError() != nil {
 				lastError = r.LastError().Error()
@@ -1080,7 +1115,11 @@ func (r *Ruler) getLocalRules(userID string, ruleTypeFilter RulesRequest_RuleTyp
 			}
 			groupDesc.ActiveRules = append(groupDesc.ActiveRules, ruleDesc)
 		}
-		groupDescs = append(groupDescs, groupDesc)
+
+		// Prometheus does not return a rule group if it has no rules after filtering.
+		if len(groupDesc.ActiveRules) > 0 {
+			groupDescs = append(groupDescs, groupDesc)
+		}
 	}
 	return groupDescs, nil
 }
