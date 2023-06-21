@@ -22,6 +22,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/dskit/gate"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
@@ -70,10 +71,11 @@ func NewLazyBinaryReaderMetrics(reg prometheus.Registerer) *LazyBinaryReaderMetr
 // LazyBinaryReader wraps BinaryReader and loads (mmap or streaming read) the index-header only upon
 // the first Reader function is called.
 type LazyBinaryReader struct {
-	logger   log.Logger
-	filepath string
-	metrics  *LazyBinaryReaderMetrics
-	onClosed func(*LazyBinaryReader)
+	logger     log.Logger
+	filepath   string
+	metrics    *LazyBinaryReaderMetrics
+	onClosed   func(*LazyBinaryReader)
+	readerGate gate.Gate
 
 	readerMx      sync.RWMutex
 	reader        Reader
@@ -97,6 +99,7 @@ func NewLazyBinaryReader(
 	id ulid.ULID,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
+	readerGate gate.Gate,
 ) (*LazyBinaryReader, error) {
 	path := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 
@@ -123,6 +126,7 @@ func NewLazyBinaryReader(
 		usedAt:        atomic.NewInt64(time.Now().UnixNano()),
 		onClosed:      onClosed,
 		readerFactory: readerFactory,
+		readerGate:    readerGate,
 	}, nil
 }
 
