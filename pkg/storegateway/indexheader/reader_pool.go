@@ -61,7 +61,7 @@ type HeadersLazyLoaded struct {
 
 type HeadersLazyLoadedTrackerState struct {
 	LazyLoadedBlocks map[string]int64 `json:"lazy_loaded_blocks"`
-	UserID           string           `json:"user_id""`
+	UserID           string           `json:"user_id"`
 }
 
 func (p *ReaderPool) persist(state HeadersLazyLoadedTrackerState, finalPath string) error {
