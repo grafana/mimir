@@ -759,5 +759,5 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#%s', alertGroups),
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups),
 }

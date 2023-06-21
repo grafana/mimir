@@ -28,10 +28,25 @@ jobs:
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
 
+  goversion:
+    runs-on: ubuntu-latest
+    needs: prepare
+    container: 
+      image: ${{ needs.prepare.outputs.build_image }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Git Config
+        run: git config --global --add safe.directory '*'
+      - name: Get Go Version
+        id: go-version
+        run: |
+          echo "version=$(make BUILD_IN_CONTAINER=false print-go-version)" >> "$GITHUB_OUTPUT"
+    outputs:
+      version: ${{ steps.go-version.outputs.version }}
+
   lint:
     runs-on: ubuntu-latest
-    needs:
-      - prepare
+    needs: prepare
     container:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
@@ -302,7 +317,7 @@ jobs:
           path: ./images.tar
 
   integration:
-    needs: build
+    needs: [goversion, build]
     runs-on: ubuntu-latest
     strategy:
       # Do not abort other groups when one fails.
@@ -315,7 +330,7 @@ jobs:
       - name: Upgrade golang
         uses: actions/setup-go@v4
         with:
-          go-version: 1.20.5
+          go-version: ${{ needs.goversion.outputs.version }}
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
         uses: actions/checkout@v3
