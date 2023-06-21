@@ -977,7 +977,7 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 
 type StringFilterSet map[string]struct{}
 
-func MakeStringFilterSet(values []string) StringFilterSet {
+func makeStringFilterSet(values []string) StringFilterSet {
 	set := make(map[string]struct{}, len(values))
 	for _, v := range values {
 		set[v] = struct{}{}
@@ -1015,9 +1015,9 @@ func (r *Ruler) getLocalRules(userID string, req RulesRequest) ([]*GroupStateDes
 		return nil, fmt.Errorf("unexpected rule filter %s", req.Filter)
 	}
 
-	fileSet := MakeStringFilterSet(req.File)
-	groupSet := MakeStringFilterSet(req.RuleGroup)
-	ruleSet := MakeStringFilterSet(req.RuleName)
+	fileSet := makeStringFilterSet(req.File)
+	groupSet := makeStringFilterSet(req.RuleGroup)
+	ruleSet := makeStringFilterSet(req.RuleName)
 
 	for _, group := range groups {
 		if groupSet.IsFiltered(group.Name()) {
