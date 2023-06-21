@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../manage/mimir-runbooks/
 title: "Grafana Mimir runbooks"
 menuTitle: "Runbooks"
 description: "Grafana Mimir runbooks."
