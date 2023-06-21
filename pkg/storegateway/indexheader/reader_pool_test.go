@@ -37,7 +37,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 		},
 		"lazy reader and close on idle timeout are both enabled": {
 			lazyReaderEnabled:     true,
-			lazyReaderIdleTimeout: 2 * time.Minute,
+			lazyReaderIdleTimeout: time.Minute,
 		},
 	}
 
