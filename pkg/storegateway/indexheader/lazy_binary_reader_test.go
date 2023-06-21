@@ -23,6 +23,7 @@ import (
 
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	"github.com/grafana/dskit/gate"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -294,6 +295,6 @@ func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, i
 		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	}
 
-	reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
+	reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 	test(t, reader, err)
 }

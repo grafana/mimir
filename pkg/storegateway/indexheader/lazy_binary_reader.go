@@ -76,6 +76,7 @@ type LazyBinaryReader struct {
 	metrics    *LazyBinaryReaderMetrics
 	onClosed   func(*LazyBinaryReader)
 	readerGate gate.Gate
+	ctx        context.Context
 
 	readerMx      sync.RWMutex
 	reader        Reader
@@ -127,6 +128,7 @@ func NewLazyBinaryReader(
 		onClosed:      onClosed,
 		readerFactory: readerFactory,
 		readerGate:    readerGate,
+		ctx:           ctx,
 	}, nil
 }
 
@@ -228,6 +230,17 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 	}
 	if r.readerErr != nil {
 		return r.readerErr
+	}
+
+	if r.readerGate != nil {
+
+		err := r.readerGate.Start(r.ctx)
+
+		if err != nil {
+			return errors.Wrapf(err, "failed to wait for turn")
+		}
+
+		defer r.readerGate.Done()
 	}
 
 	// Take the write lock to ensure we'll try to load it only once. Take again
