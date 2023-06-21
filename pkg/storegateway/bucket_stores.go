@@ -93,13 +93,15 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
 
+	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
+
 	// The number of concurrent queries against the tenants BucketStores are limited.
-	queryGateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
+	queryGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "query"}, gateReg) // TODO (heather): change to keep custom label, filter with label
 	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
 
 	// The number of concurrent index header loads from storegateway are limited.
-	readerGateReg := prometheus.WrapRegistererWithPrefix("cortex_store_gateway_", reg)
+	readerGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
 	readerGate := gate.NewBlocking(cfg.BucketStore.IndexHeaderLazyLoadingConcurrency)
 	readerGate = gate.NewInstrumented(readerGateReg, cfg.BucketStore.IndexHeaderLazyLoadingConcurrency, readerGate)
 
