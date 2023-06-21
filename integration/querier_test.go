@@ -171,7 +171,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 				"-query-frontend.query-stats-enabled":                          "true",
 				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
 				"-querier.prefer-streaming-chunks":                             strconv.FormatBool(streamingEnabled),
-				"-querier.prefer-streaming-chunks-storegateway":                strconv.FormatBool(streamingEnabled),
+				"-querier.prefer-streaming-chunks-store-gateway":               strconv.FormatBool(streamingEnabled),
 			})
 
 			// Start store-gateways.
@@ -908,13 +908,13 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 			// Configure the blocks storage to frequently compact TSDB head
 			// and ship blocks to the storage.
 			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-				"-blocks-storage.tsdb.block-ranges-period":      blockRangePeriod.String(),
-				"-blocks-storage.tsdb.ship-interval":            "1s",
-				"-blocks-storage.bucket-store.sync-interval":    "1s",
-				"-blocks-storage.tsdb.retention-period":         ((blockRangePeriod * 2) - 1).String(),
-				"-querier.max-fetched-series-per-query":         "3",
-				"-querier.prefer-streaming-chunks":              strconv.FormatBool(streamingEnabled),
-				"-querier.prefer-streaming-chunks-storegateway": strconv.FormatBool(streamingEnabled),
+				"-blocks-storage.tsdb.block-ranges-period":       blockRangePeriod.String(),
+				"-blocks-storage.tsdb.ship-interval":             "1s",
+				"-blocks-storage.bucket-store.sync-interval":     "1s",
+				"-blocks-storage.tsdb.retention-period":          ((blockRangePeriod * 2) - 1).String(),
+				"-querier.max-fetched-series-per-query":          "3",
+				"-querier.prefer-streaming-chunks":               strconv.FormatBool(streamingEnabled),
+				"-querier.prefer-streaming-chunks-store-gateway": strconv.FormatBool(streamingEnabled),
 			})
 
 			// Start dependencies.

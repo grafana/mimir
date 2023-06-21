@@ -1083,8 +1083,8 @@ store_gateway_client:
 # (experimental) Request storegateway stream chunks. Storegateway will only
 # respond with a stream of chunks if the target storegateway supports this, and
 # this preference will be ignored by storegateway that do not support this.
-# CLI flag: -querier.prefer-streaming-chunks-storegateway
-[prefer_streaming_chunks_storegateway: <boolean> | default = false]
+# CLI flag: -querier.prefer-streaming-chunks-store-gateway
+[prefer_streaming_chunks_store_gateway: <boolean> | default = false]
 
 # (experimental) Number of series to buffer per ingester when streaming chunks
 # from ingesters.
@@ -1093,8 +1093,8 @@ store_gateway_client:
 
 # (experimental) Number of series to buffer per storegateway when streaming
 # chunks from storegateway.
-# CLI flag: -querier.streaming-chunks-per-ingester-buffer-size-storegateway
-[streaming_chunks_per_ingester_series_buffer_size_storegateway: <int> | default = 256]
+# CLI flag: -querier.streaming-chunks-per-store-gateway-buffer-size
+[streaming_chunks_per_store_gateway_series_buffer_size: <int> | default = 256]
 
 # (experimental) If true, when querying ingesters, only the minimum required
 # ingesters required to reach quorum will be queried initially, with other

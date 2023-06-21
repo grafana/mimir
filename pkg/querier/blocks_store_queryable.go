@@ -264,7 +264,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		reg,
 	)
 
-	streamingBufferSize := querierCfg.StreamingChunksPerIngesterSeriesBufferSizeStoregateway
+	streamingBufferSize := querierCfg.StreamingChunksPerStoregatewaySeriesBufferSize
 	if !querierCfg.PreferStreamingChunksStoregateway {
 		streamingBufferSize = 0
 	}
