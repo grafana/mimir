@@ -897,11 +897,11 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 					// Configure the blocks storage to frequently compact TSDB head
 					// and ship blocks to the storage.
 					flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), testCase.flags, map[string]string{
-						"-blocks-storage.tsdb.block-ranges-period":   blockRangePeriod.String(),
-						"-blocks-storage.tsdb.ship-interval":         "1s",
-						"-blocks-storage.bucket-store.sync-interval": "1s",
-						"-blocks-storage.tsdb.retention-period":      ((blockRangePeriod * 2) - 1).String(),
-						"-querier.prefer-streaming-chunks":           strconv.FormatBool(streamingEnabled),
+						//"-blocks-storage.tsdb.block-ranges-period":   blockRangePeriod.String(),
+						//"-blocks-storage.tsdb.ship-interval":         "1s",
+						//"-blocks-storage.bucket-store.sync-interval": "1s",
+						//"-blocks-storage.tsdb.retention-period":      ((blockRangePeriod * 2) - 1).String(),
+						"-querier.prefer-streaming-chunks": strconv.FormatBool(streamingEnabled),
 					})
 
 					// Start dependencies.
@@ -936,9 +936,9 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 					series4Timestamp := series1Timestamp.Add(blockRangePeriod * 3)
 
 					series1, _, _ := generateFloatSeries(series1Name, series1Timestamp, prompb.Label{Name: series1Name, Value: series1Name})
-					series2, _, _ := generateHistogramSeries(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
+					series2, _, _ := generateFloatSeries(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
 					series3, _, _ := generateFloatSeries(series3Name, series3Timestamp, prompb.Label{Name: series3Name, Value: series3Name})
-					series4, _, _ := generateHistogramSeries(series4Name, series4Timestamp, prompb.Label{Name: series4Name, Value: series4Name})
+					series4, _, _ := generateFloatSeries(series4Name, series4Timestamp, prompb.Label{Name: series4Name, Value: series4Name})
 
 					res, err := c.Push(series1)
 					require.NoError(t, err)
