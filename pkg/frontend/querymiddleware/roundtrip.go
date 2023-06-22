@@ -42,7 +42,7 @@ type Config struct {
 	CacheResults           bool   `yaml:"cache_results"`
 	MaxRetries             int    `yaml:"max_retries" category:"advanced"`
 	ShardedQueries         bool   `yaml:"parallelize_shardable_queries"`
-	CacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced"`
+	CacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // TODO: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0
 	TargetSeriesPerShard   uint64 `yaml:"query_sharding_target_series_per_shard"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
@@ -59,7 +59,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-queries-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
-	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	cfg.ResultsCacheConfig.RegisterFlags(f)

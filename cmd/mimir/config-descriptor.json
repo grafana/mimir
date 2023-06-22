@@ -3216,6 +3216,17 @@
         },
         {
           "kind": "field",
+          "name": "cache_unaligned_requests",
+          "required": false,
+          "desc": "Cache requests that are not step-aligned.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.cache-unaligned-requests",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "max_query_expression_size_bytes",
           "required": false,
           "desc": "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.",
@@ -4839,17 +4850,6 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.parallelize-shardable-queries",
           "fieldType": "boolean"
-        },
-        {
-          "kind": "field",
-          "name": "cache_unaligned_requests",
-          "required": false,
-          "desc": "Cache requests that are not step-aligned.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.cache-unaligned-requests",
-          "fieldType": "boolean",
-          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
