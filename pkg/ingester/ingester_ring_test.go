@@ -10,6 +10,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
@@ -91,16 +92,18 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	tokenGenerator, err := ring.NewSpreadMinimizingTokenGenerator(expected.ID, expected.Zone, cfg.SpreadMinimizingZones, logger)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	expected.RingTokenGenerator = tokenGenerator
 
 	assert.Equal(t, expected, cfg.ToLifecyclerConfig(logger))
 }
 
 func TestRingConfig_CustomTokenGenerator(t *testing.T) {
-	instanceID := "instance-10"
-	instanceZone := "zone-a"
-	wrongZone := "zone-d"
+	const (
+		instanceID   = "instance-10"
+		instanceZone = "zone-a"
+		wrongZone    = "zone-d"
+	)
 	spreadMinimizingZones := []string{"zone-a", "zone-b", "zone-c"}
 
 	tests := map[string]struct {
@@ -109,27 +112,27 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 		spreadMinimizingZones   []string
 		expectedResultStrategy  string
 	}{
-		"spread-min-tokens and correct zones give a SpreadMinimizingTokenGenerator": {
+		"spread-minimizing and correct zones give a SpreadMinimizingTokenGenerator": {
 			zone:                    instanceZone,
 			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
 			spreadMinimizingZones:   spreadMinimizingZones,
 			expectedResultStrategy:  spreadMinimizingTokenGeneration,
 		},
-		"spread-min-tokens and a wrong zone give a RandomTokenGenerator": {
+		"spread-minimizing and a wrong zone give a RandomTokenGenerator": {
 			zone:                    wrongZone,
 			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
 			spreadMinimizingZones:   spreadMinimizingZones,
 			expectedResultStrategy:  randomTokenGeneration,
 		},
-		"random-tokens gives a RandomTokenGenerator": {
+		"random gives a RandomTokenGenerator": {
 			zone:                    instanceZone,
 			tokenGenerationStrategy: randomTokenGeneration,
 			expectedResultStrategy:  randomTokenGeneration,
 		},
-		"unknown token generation strategy gives a RandomTokenGenerator": {
+		"unknown token generation strategy gives nil": {
 			zone:                    instanceZone,
 			tokenGenerationStrategy: "bla-bla-tokens",
-			expectedResultStrategy:  randomTokenGeneration,
+			expectedResultStrategy:  "nil",
 		},
 	}
 
@@ -149,7 +152,7 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 			assert.True(t, ok)
 			assert.NotNil(t, tokenGenerator)
 		} else {
-			assert.Fail(t, "This case is not supported")
+			assert.Nil(t, lifecyclerConfig.RingTokenGenerator)
 		}
 	}
 }

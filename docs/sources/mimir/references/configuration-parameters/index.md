@@ -907,15 +907,15 @@ ring:
   [final_sleep: <duration> | default = 0s]
 
   # (experimental) Specifies the strategy used for generating tokens for
-  # ingesters. Possible values are "random-tokens" (default) and
-  # "spread-min-tokens"
+  # ingesters. Supported values are: random,spread-minimizing.
   # CLI flag: -ingester.ring.token-generation-strategy
-  [token_generator_strategy: <string> | default = "random-tokens"]
+  [token_generator_strategy: <string> | default = "random"]
 
-  # (experimental) Comma-separated list of zones in which
-  # SpreadMinimizingTokenGenerator is used for token generation. This
-  # configuration is used only when token-generation-strategy is set to
-  # "spread-min-tokens"
+  # (experimental) Comma-separated list of zones in which spread minimizing
+  # strategy is used for token generation. This value must include all zones in
+  # which ingesters are deployed, and must not change over time. This
+  # configuration is used only when "token-generation-strategy" is set to
+  # "spread-minimizing".
   # CLI flag: -ingester.ring.spread-minimizing-zones
   [spread_minimizing_zones: <string> | default = ""]
 

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -21,8 +22,8 @@ const (
 	// set on the components running the ingester ring client.
 	sharedOptionWithRingClient      = " This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."
 	tokenGenerationStrategyFlag     = "token-generation-strategy"
-	randomTokenGeneration           = "random-tokens"
-	spreadMinimizingTokenGeneration = "spread-min-tokens"
+	randomTokenGeneration           = "random"
+	spreadMinimizingTokenGeneration = "spread-minimizing"
 )
 
 type RingConfig struct {
@@ -60,6 +61,13 @@ type RingConfig struct {
 
 	// Used only for testing.
 	JoinAfter time.Duration `yaml:"-"`
+}
+
+func (cfg *RingConfig) Validate() error {
+	if cfg.TokenGeneratorStrategy != randomTokenGeneration && cfg.TokenGeneratorStrategy != spreadMinimizingTokenGeneration {
+		return fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", cfg.TokenGeneratorStrategy, tokenGenerationStrategyFlag)
+	}
+	return nil
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -103,8 +111,8 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.FinalSleep, prefix+"final-sleep", 0, "Duration to sleep for before exiting, to ensure metrics are scraped.")
 
 	// TokenGenerator
-	f.StringVar(&cfg.TokenGeneratorStrategy, prefix+tokenGenerationStrategyFlag, randomTokenGeneration, "Specifies the strategy used for generating tokens for ingesters. Possible values are \""+randomTokenGeneration+"\" (default) and \""+spreadMinimizingTokenGeneration+"\"")
-	f.Var(&cfg.SpreadMinimizingZones, prefix+"spread-minimizing-zones", "Comma-separated list of zones in which SpreadMinimizingTokenGenerator is used for token generation. This configuration is used only when "+tokenGenerationStrategyFlag+" is set to \""+spreadMinimizingTokenGeneration+"\"")
+	f.StringVar(&cfg.TokenGeneratorStrategy, prefix+tokenGenerationStrategyFlag, randomTokenGeneration, fmt.Sprintf("Specifies the strategy used for generating tokens for ingesters. Supported values are: %s.", strings.Join([]string{randomTokenGeneration, spreadMinimizingTokenGeneration}, ",")))
+	f.Var(&cfg.SpreadMinimizingZones, prefix+"spread-minimizing-zones", fmt.Sprintf("Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when %q is set to %q.", tokenGenerationStrategyFlag, spreadMinimizingTokenGeneration))
 }
 
 // ToRingConfig returns a ring.Config based on the ingester
@@ -155,24 +163,22 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) ring.LifecyclerConf
 }
 
 // customTokenGenerator returns a token generator, which is an implementation of ring.TokenGenerator,
-// according to this RingConfig's configuration. If "spread-min-tokens" token generation strategy is set,
-// customTokenGenerator tries to build and return an instance of ring.SpreadMinimizingTokenGenerator.
-// If it was impossible, if "random-tokens" or any other unsupported token generation strategy is set,
-// an instance of ring.RandomTokenGenerator is returned.
+// according to this RingConfig's configuration. If "spread-minimizing" token generation strategy is
+// set, customTokenGenerator tries to build and return an instance of ring.SpreadMinimizingTokenGenerator.
+// If it was impossible, or if "random" token generation strategy is set, customTokenGenerator returns
+// an instance of ring.RandomTokenGenerator. Otherwise, nil is returned.
 func (cfg *RingConfig) customTokenGenerator(logger log.Logger) ring.TokenGenerator {
 	switch cfg.TokenGeneratorStrategy {
 	case spreadMinimizingTokenGeneration:
 		tokenGenerator, err := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, logger)
 		if err != nil {
-			level.Warn(logger).Log("msg", "It was impossible to generate an instance of SpreadMinimizingTokenGenerator. RandomTokenGenerator will be used instead.", "err", err)
+			level.Warn(logger).Log("msg", "it was impossible to generate an instance of SpreadMinimizingTokenGenerator. RandomTokenGenerator will be used instead", "err", err)
 			return ring.NewRandomTokenGenerator()
 		}
 		return tokenGenerator
 	case randomTokenGeneration:
 		return ring.NewRandomTokenGenerator()
 	default:
-		warn := fmt.Sprintf("Unsupported token generation strategy (\"%s\") has been chosen for %s. RandomTokenGenerator will be used instead.", cfg.TokenGeneratorStrategy, tokenGenerationStrategyFlag)
-		level.Warn(logger).Log("msg", warn)
-		return ring.NewRandomTokenGenerator()
+		return nil
 	}
 }
