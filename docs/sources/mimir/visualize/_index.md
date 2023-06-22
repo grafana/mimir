@@ -1,7 +1,7 @@
 ---
 description: Visualize your metric data with Grafana
 title: Visualize metric data
-menuTitle: Visualize data
+menuTitle: Visualize
 weight: 45
 keywords:
   - visualize
