@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -329,29 +330,30 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 		return binaryReader, err
 	}
 
-	var lazyReaders [5]*LazyBinaryReader                                                 // 5 lazy readers
+	var lazyReaders [20]*LazyBinaryReader                                                // 20 lazy readers
 	readerGate := gate.NewInstrumented(prometheus.NewRegistry(), 3, gate.NewBlocking(3)) // maxConcurrency = 3
 
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 20; i++ {
 		lazyReaders[i], err = NewLazyBinaryReader(ctx, factory, logger, bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, readerGate)
 		require.NoError(t, err)
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(20)
 
-	// Attempt to concurrently load 5 index-headers.
-	for i := 0; i < 5; i++ {
+	// Attempt to concurrently load 20 index-headers.
+	for i := 0; i < 20; i++ {
 		index := i
 		go func() {
 			_, err := lazyReaders[index].IndexVersion()
-			inflight--
 			require.NoError(t, err)
+			fmt.Println(inflight)
+			inflight--
 			require.LessOrEqual(t, inflight, 3)
 			wg.Done()
 		}()
 	}
 
 	wg.Wait()
-	require.Equal(t, 5, total)
+	require.Equal(t, 20, total)
 }
