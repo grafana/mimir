@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -297,4 +298,60 @@ func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, i
 
 	reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 	test(t, reader, err)
+}
+
+// Tests if LazyBinaryReader blocks concurrent loads such that it doesn't pass the configured maximum
+func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
+	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+
+	// Create block.
+	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("a", "3"),
+	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	require.NoError(t, err)
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+
+	logger := log.NewNopLogger()
+	var total int
+	var inflight int
+	factory := func() (Reader, error) {
+		time.Sleep(3 * time.Second)
+		binaryReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+		inflight++
+		total++
+		return binaryReader, err
+	}
+
+	var lazyReaders [5]*LazyBinaryReader                                                 // 5 lazy readers
+	readerGate := gate.NewInstrumented(prometheus.NewRegistry(), 3, gate.NewBlocking(3)) // maxConcurrency = 3
+
+	for i := 0; i < 5; i++ {
+		lazyReaders[i], err = NewLazyBinaryReader(ctx, factory, logger, bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, readerGate)
+		require.NoError(t, err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(5)
+
+	// Attempt to concurrently load 5 index-headers.
+	for i := 0; i < 5; i++ {
+		index := i
+		go func() {
+			_, err := lazyReaders[index].IndexVersion()
+			inflight--
+			require.NoError(t, err)
+			require.LessOrEqual(t, inflight, 3)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+	require.Equal(t, 5, total)
 }
