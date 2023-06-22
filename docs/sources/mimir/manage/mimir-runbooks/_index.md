@@ -1,5 +1,6 @@
 ---
 aliases:
+  # Do not remove this alias before the new location is released to "latest" documentation and mixins are updated.
   - ../operators-guide/mimir-runbooks/
 description: Grafana Mimir runbooks.
 keywords:

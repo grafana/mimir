@@ -539,7 +539,7 @@ func (r *Desc) CountTokens() map[string]int {
 			prevToken = ringTokens[i-1]
 		}
 
-		diff := getTokenDistance(prevToken, token)
+		diff := tokenDistance(prevToken, token)
 		info := ringInstanceByToken[token]
 		owned[info.InstanceID] = owned[info.InstanceID] + diff
 	}

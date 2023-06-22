@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
@@ -31,7 +30,7 @@ import (
 // method implies that only a single sample and optionally exemplar can be set for each series.
 //
 // For histograms use NewWriteRequest and Add* functions to build write request with Floats and Histograms
-func ToWriteRequest(lbls []labels.Labels, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
+func ToWriteRequest(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
 	return NewWriteRequest(metadata, source).AddFloatSeries(lbls, samples, exemplars)
 }
 
@@ -47,10 +46,10 @@ func NewWriteRequest(metadata []*MetricMetadata, source WriteRequest_SourceEnum)
 // AddFloatSeries converts matched slices of Labels, Samples, Exemplars into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func (req *WriteRequest) AddFloatSeries(lbls []labels.Labels, samples []Sample, exemplars []*Exemplar) *WriteRequest {
+func (req *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range samples {
 		ts := TimeseriesFromPool()
-		ts.Labels = append(ts.Labels, FromLabelsToLabelAdapters(lbls[i])...)
+		ts.Labels = append(ts.Labels, lbls[i]...)
 		ts.Samples = append(ts.Samples, s)
 
 		if exemplars != nil {
@@ -69,10 +68,10 @@ func (req *WriteRequest) AddFloatSeries(lbls []labels.Labels, samples []Sample, 
 // AddHistogramSeries converts matched slices of Labels, Histograms, Exemplars into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func (req *WriteRequest) AddHistogramSeries(lbls []labels.Labels, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
+func (req *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range histograms {
 		ts := TimeseriesFromPool()
-		ts.Labels = append(ts.Labels, FromLabelsToLabelAdapters(lbls[i])...)
+		ts.Labels = append(ts.Labels, lbls[i]...)
 		ts.Histograms = append(ts.Histograms, s)
 
 		if exemplars != nil {
