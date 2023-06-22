@@ -587,8 +587,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		ctx              = srv.Context()
 		stats            = newSafeQueryStats()
 		reqBlockMatchers []*labels.Matcher
-		chunksLimiter    = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
-		seriesLimiter    = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 	)
 	defer s.recordSeriesCallResult(stats)
 
@@ -637,6 +635,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 		reusePostings = make([][]storage.SeriesRef, len(blocks))
 		reusePendingMatchers = make([][]*labels.Matcher, len(blocks))
+		chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+		seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
 		seriesSet, _, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, nil, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
 		if err != nil {
@@ -661,6 +661,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		req.SkipChunks = false
 	}
 
+	chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 	seriesSet, seriesChunkIt, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
 	if err != nil {
 		return err
@@ -961,7 +963,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
-	reusePostings [][]storage.SeriesRef, // Used if not empty.
+	reusePostings [][]storage.SeriesRef,      // Used if not empty.
 	reusePendingMatchers [][]*labels.Matcher, // Used if not empty.
 ) (storepb.SeriesSet, seriesChunksSetIterator, *hintspb.SeriesResponseHints, error) {
 	var (

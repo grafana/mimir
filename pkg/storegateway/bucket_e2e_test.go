@@ -619,8 +619,8 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 }
 
 func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
-	// The query will fetch 2 series from 6 blocks, so we do expect to hit a total of 12 chunks.
-	expectedChunks := uint64(2 * 6)
+	// The query will fetch 4 series from 3 blocks each, so we do expect to hit a total of 12 chunks.
+	expectedChunks := uint64(4 * 3)
 
 	cases := map[string]struct {
 		maxChunksLimit uint64
@@ -630,6 +630,10 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 	}{
 		"should succeed if the max chunks limit is not exceeded": {
 			maxChunksLimit: expectedChunks,
+		},
+		"should succeed if the max series limit is not exceeded": {
+			// The streaming case should not count the series twice.
+			maxSeriesLimit: 4,
 		},
 		"should fail if the max chunks limit is exceeded - 422": {
 			maxChunksLimit: expectedChunks - 1,
@@ -646,36 +650,41 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 
 	for testName, testData := range cases {
 		t.Run(testName, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			bkt := objstore.NewInMemBucket()
+			for _, streamingBatchSize := range []int{0, 1, 5} {
+				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+					ctx, cancel := context.WithCancel(context.Background())
+					defer cancel()
+					bkt := objstore.NewInMemBucket()
 
-			prepConfig := defaultPrepareStoreConfig(t)
-			prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
-			prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
+					prepConfig := defaultPrepareStoreConfig(t)
+					prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
+					prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
 
-			s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
-			assert.NoError(t, s.store.SyncBlocks(ctx))
+					s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
+					assert.NoError(t, s.store.SyncBlocks(ctx))
 
-			req := &storepb.SeriesRequest{
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
-				},
-				MinTime: timestamp.FromTime(minTime),
-				MaxTime: timestamp.FromTime(maxTime),
-			}
+					req := &storepb.SeriesRequest{
+						Matchers: []storepb.LabelMatcher{
+							{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
+						},
+						MinTime:                  timestamp.FromTime(minTime),
+						MaxTime:                  timestamp.FromTime(maxTime),
+						StreamingChunksBatchSize: uint64(streamingBatchSize),
+					}
 
-			srv := newBucketStoreTestServer(t, s.store)
-			_, _, _, err := srv.Series(context.Background(), req)
+					srv := newBucketStoreTestServer(t, s.store)
+					_, _, _, err := srv.Series(context.Background(), req)
 
-			if testData.expectedErr == "" {
-				assert.NoError(t, err)
-			} else {
-				assert.Error(t, err)
-				assert.True(t, strings.Contains(err.Error(), testData.expectedErr))
-				status, ok := status.FromError(err)
-				assert.Equal(t, true, ok)
-				assert.Equal(t, testData.expectedCode, status.Code())
+					if testData.expectedErr == "" {
+						assert.NoError(t, err)
+					} else {
+						assert.Error(t, err)
+						assert.True(t, strings.Contains(err.Error(), testData.expectedErr))
+						status, ok := status.FromError(err)
+						assert.Equal(t, true, ok)
+						assert.Equal(t, testData.expectedCode, status.Code())
+					}
+				})
 			}
 		})
 	}
