@@ -20,13 +20,16 @@ keywords:
    the username and password are both `admin`.
 1. From within Grafana, go to `Connections` > `Add new connection`.
 1. Search for Prometheus, and select **Create a Prometheus data source**.
-1. In the **HTTP** > **Prometheus server URL** field, point to the proxy in front of Mimir (such as Nginx or the GEM gateway) rather than to one component of Mimir.
+1. In the **HTTP** > **Prometheus server URL** field, enter a server URL:
 
-   - When running locally or with Docker using port mapping,
-     the address is likely `http://localhost:9090`.
+   - If you deployed Mimir via the `mimir-distributed` Helm chart,
+     the default URL is is `http://mimir-nginx.<MIMIR-NAMESPACE>.svc/prometheus`.
 
-   - When running with docker-compose or Kubernetes,
-     the address is likely `http://prometheus:9090`.
+   - If you deployed Mimir via Jsonnet and Tanka,
+     use `http://localhost:<MIMIR-PORT>`.
+
+   - If you are running microservices, point to the proxy in front of Mimir
+     (such as Nginx or the GEM gateway) rather than to one component of Mimir.
 
 ## Steps
 
