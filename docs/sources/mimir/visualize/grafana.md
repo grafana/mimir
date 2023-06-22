@@ -35,6 +35,7 @@ keywords:
 ## Steps
 
 1. To view metrics in Grafana, select **Explore**.
+1. From the top-left, select the newly created data source.
 1. Select a metric, apply (optional) label filters, and select **Run query**.
 1. Learn more about PromQL and querying by reading [Querying Prometheus](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 
