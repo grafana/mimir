@@ -23,7 +23,8 @@ keywords:
 1. In the **HTTP** > **Prometheus server URL** field, enter a server URL:
 
    - If you deployed Mimir via the `mimir-distributed` Helm chart,
-     the default URL is is `http://mimir-nginx.<MIMIR-NAMESPACE>.svc/prometheus`.
+     the default URL inside the cluster is `http://<HELM-RELEASE>-nginx.<MIMIR-NAMESPACE>.svc/prometheus`,
+     and `http://<INGRESS-HOST>/prometheus` from outside, provided that you set up an ingress.
 
    - If you deployed Mimir via Jsonnet and Tanka,
      use `http://localhost:<MIMIR-PORT>`.
