@@ -906,41 +906,46 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 }
 
 func TestBucketStore_ValueTypes_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	for _, streamingBatchSize := range []int{0, 1, 5} {
+		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+			foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 
-		s := newSuite()
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
 
-		mint, maxt := s.store.TimeRange()
-		assert.Equal(t, s.minTime, mint)
-		assert.Equal(t, s.maxTime, maxt)
+				s := newSuite()
 
-		req := &storepb.SeriesRequest{
-			MinTime: mint,
-			MaxTime: maxt,
-			Matchers: []storepb.LabelMatcher{
-				{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
-			},
-			SkipChunks: false,
-		}
+				mint, maxt := s.store.TimeRange()
+				assert.Equal(t, s.minTime, mint)
+				assert.Equal(t, s.maxTime, maxt)
 
-		srv := newBucketStoreTestServer(t, s.store)
-		seriesSet, _, _, err := srv.Series(ctx, req)
-		require.NoError(t, err)
+				req := &storepb.SeriesRequest{
+					MinTime: mint,
+					MaxTime: maxt,
+					Matchers: []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
+					},
+					StreamingChunksBatchSize: uint64(streamingBatchSize),
+				}
 
-		counts := map[storepb.Chunk_Encoding]int{}
-		for _, series := range seriesSet {
-			for _, chunk := range series.Chunks {
-				counts[chunk.Raw.Type]++
-			}
-		}
-		for _, chunkType := range []storepb.Chunk_Encoding{storepb.Chunk_XOR, storepb.Chunk_Histogram, storepb.Chunk_FloatHistogram} {
-			count, ok := counts[chunkType]
-			assert.True(t, ok, fmt.Sprintf("value type %s is not present", storepb.Chunk_Encoding_name[int32(chunkType)]))
-			assert.NotEmpty(t, count)
-		}
-	})
+				srv := newBucketStoreTestServer(t, s.store)
+				seriesSet, _, _, err := srv.Series(ctx, req)
+				require.NoError(t, err)
+
+				counts := map[storepb.Chunk_Encoding]int{}
+				for _, series := range seriesSet {
+					for _, chunk := range series.Chunks {
+						counts[chunk.Raw.Type]++
+					}
+				}
+				for _, chunkType := range []storepb.Chunk_Encoding{storepb.Chunk_XOR, storepb.Chunk_Histogram, storepb.Chunk_FloatHistogram} {
+					count, ok := counts[chunkType]
+					assert.True(t, ok, fmt.Sprintf("value type %s is not present", storepb.Chunk_Encoding_name[int32(chunkType)]))
+					assert.NotEmpty(t, count)
+				}
+			})
+		})
+	}
 }
 
 func emptyToNil(values []string) []string {

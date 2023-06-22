@@ -1565,7 +1565,8 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 		Hints: marshalledHints,
 	}
 
-	runRequest := func(t *testing.T, store *BucketStore) {
+	runRequest := func(t *testing.T, store *BucketStore, streamBatchSize int) {
+		req.StreamingChunksBatchSize = uint64(streamBatchSize)
 		srv := newBucketStoreTestServer(t, store)
 		seriesSet, warnings, _, err := srv.Series(context.Background(), req)
 		require.NoError(t, err)
@@ -1582,57 +1583,61 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	// Run the test with different batch sizes.
 	for _, batchSize := range []int{len(expectedSeries) / 100, len(expectedSeries) * 2} {
 		t.Run(fmt.Sprintf("batch size: %d", batchSize), func(t *testing.T) {
-			// Reset the memory pool tracker.
-			seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
+			for _, streamBatchSize := range []int{0, 10} {
+				t.Run(fmt.Sprintf("streamBatchSize:%d", streamBatchSize), func(t *testing.T) {
+					// Reset the memory pool tracker.
+					seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-			metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
-			assert.NoError(t, err)
+					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
+					assert.NoError(t, err)
 
-			// Create the bucket store.
-			store, err := NewBucketStore(
-				"test-user",
-				instrumentedBucket,
-				metaFetcher,
-				tmpDir,
-				batchSize,
-				1,
-				selectAllStrategy{},
-				newStaticChunksLimiterFactory(0),
-				newStaticSeriesLimiterFactory(0),
-				newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-				1,
-				mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-				indexheader.Config{},
-				false, // Lazy index-header loading disabled.
-				0,
-				hashcache.NewSeriesHashCache(1024*1024),
-				NewBucketStoreMetrics(nil),
-				WithLogger(logger),
-			)
-			require.NoError(t, err)
-			require.NoError(t, store.SyncBlocks(ctx))
+					// Create the bucket store.
+					store, err := NewBucketStore(
+						"test-user",
+						instrumentedBucket,
+						metaFetcher,
+						tmpDir,
+						batchSize,
+						1,
+						selectAllStrategy{},
+						newStaticChunksLimiterFactory(0),
+						newStaticSeriesLimiterFactory(0),
+						newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+						1,
+						mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+						indexheader.Config{},
+						false, // Lazy index-header loading disabled.
+						0,
+						hashcache.NewSeriesHashCache(1024*1024),
+						NewBucketStoreMetrics(nil),
+						WithLogger(logger),
+					)
+					require.NoError(t, err)
+					require.NoError(t, store.SyncBlocks(ctx))
 
-			// Run workers.
-			wg := sync.WaitGroup{}
-			wg.Add(numWorkers)
+					// Run workers.
+					wg := sync.WaitGroup{}
+					wg.Add(numWorkers)
 
-			for c := 0; c < numWorkers; c++ {
-				go func() {
-					defer wg.Done()
+					for c := 0; c < numWorkers; c++ {
+						go func() {
+							defer wg.Done()
 
-					for r := 0; r < numRequestsPerWorker; r++ {
-						runRequest(t, store)
+							for r := 0; r < numRequestsPerWorker; r++ {
+								runRequest(t, store, streamBatchSize)
+							}
+						}()
 					}
-				}()
+
+					// Wait until all workers have done.
+					wg.Wait()
+
+					// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
+					// pool have put back.
+					assert.Greater(t, seriesChunkRefsSetPool.(*pool.TrackedPool).Gets.Load(), int64(0))
+					assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*pool.TrackedPool).Balance.Load())
+				})
 			}
-
-			// Wait until all workers have done.
-			wg.Wait()
-
-			// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
-			// pool have put back.
-			assert.Greater(t, seriesChunkRefsSetPool.(*pool.TrackedPool).Gets.Load(), int64(0))
-			assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*pool.TrackedPool).Balance.Load())
 		})
 	}
 }
@@ -1998,6 +2003,13 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	s, ok := status.FromError(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.Canceled, s.Code())
+
+	req.StreamingChunksBatchSize = 10
+	_, _, _, err = srv.Series(ctx, req)
+	assert.Error(t, err)
+	s, ok = status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Canceled, s.Code())
 }
 
 func TestBucketStore_Series_InvalidRequest(t *testing.T) {
@@ -2189,28 +2201,33 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &storepb.SeriesRequest{
-				MinTime: testData.reqMinTime,
-				MaxTime: testData.reqMaxTime,
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "test"},
-				},
+			for _, streamingBatchSize := range []int{0, 1, 5} {
+				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+					req := &storepb.SeriesRequest{
+						MinTime: testData.reqMinTime,
+						MaxTime: testData.reqMaxTime,
+						Matchers: []storepb.LabelMatcher{
+							{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "test"},
+						},
+						StreamingChunksBatchSize: uint64(streamingBatchSize),
+					}
+
+					seriesSet, _, _, err := srv.Series(context.Background(), req)
+					assert.NoError(t, err)
+					assert.True(t, len(seriesSet) == 1)
+
+					// Count the number of samples in the returned chunks.
+					numSamples := 0
+					for _, rawChunk := range seriesSet[0].Chunks {
+						decodedChunk, err := chunkenc.FromData(encoding, rawChunk.Raw.Data)
+						assert.NoError(t, err)
+
+						numSamples += decodedChunk.NumSamples()
+					}
+
+					assert.True(t, testData.expectedSamples == numSamples, "expected: %d, actual: %d", testData.expectedSamples, numSamples)
+				})
 			}
-
-			seriesSet, _, _, err := srv.Series(context.Background(), req)
-			assert.NoError(t, err)
-			assert.True(t, len(seriesSet) == 1)
-
-			// Count the number of samples in the returned chunks.
-			numSamples := 0
-			for _, rawChunk := range seriesSet[0].Chunks {
-				decodedChunk, err := chunkenc.FromData(encoding, rawChunk.Raw.Data)
-				assert.NoError(t, err)
-
-				numSamples += decodedChunk.NumSamples()
-			}
-
-			assert.True(t, testData.expectedSamples == numSamples, "expected: %d, actual: %d", testData.expectedSamples, numSamples)
 		})
 	}
 }
@@ -2312,21 +2329,26 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 					assert.NoError(t, err)
 					assert.NoError(t, store.SyncBlocks(ctx))
 
-					req := &storepb.SeriesRequest{
-						MinTime:  minTime,
-						MaxTime:  maxTime,
-						Matchers: testData.reqMatchers,
-					}
-
 					srv := newBucketStoreTestServer(t, store)
-					seriesSet, _, _, err := srv.Series(ctx, req)
+					for _, streamingBatchSize := range []int{0, 1, 5} {
+						t.Run(fmt.Sprintf("streamingBatchSize: %d", streamingBatchSize), func(t *testing.T) {
+							req := &storepb.SeriesRequest{
+								MinTime:                  minTime,
+								MaxTime:                  maxTime,
+								Matchers:                 testData.reqMatchers,
+								StreamingChunksBatchSize: uint64(streamingBatchSize),
+							}
 
-					if testData.expectedErr != "" {
-						require.Error(t, err)
-						assert.ErrorContains(t, err, testData.expectedErr)
-					} else {
-						require.NoError(t, err)
-						assert.Len(t, seriesSet, testData.expectedSeries)
+							seriesSet, _, _, err := srv.Series(ctx, req)
+
+							if testData.expectedErr != "" {
+								require.Error(t, err)
+								assert.ErrorContains(t, err, testData.expectedErr)
+							} else {
+								require.NoError(t, err)
+								assert.Len(t, seriesSet, testData.expectedSeries)
+							}
+						})
 					}
 				})
 			}
@@ -2801,41 +2823,51 @@ func runTestServerSeries(t test.TB, store *BucketStore, cases ...*seriesCase) {
 		t.Run(c.Name, func(t test.TB) {
 			srv := newBucketStoreTestServer(t, store)
 
-			t.ResetTimer()
-			for i := 0; i < t.N(); i++ {
-				seriesSet, warnings, hints, err := srv.Series(context.Background(), c.Req)
-				require.NoError(t, err)
-				require.Equal(t, len(c.ExpectedWarnings), len(warnings), "%v", warnings)
-				require.Equal(t, len(c.ExpectedSeries), len(seriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
-
-				if !t.IsBenchmark() {
-					if len(c.ExpectedSeries) == 1 {
-						// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
-						sort.Slice(seriesSet[0].Chunks, func(i, j int) bool {
-							return seriesSet[0].Chunks[i].MinTime < seriesSet[0].Chunks[j].MinTime
-						})
-					}
-
-					// Huge responses can produce unreadable diffs - make it more human readable.
-					if len(c.ExpectedSeries) > 4 {
-						for j := range c.ExpectedSeries {
-							assert.Equal(t, c.ExpectedSeries[j].Labels, seriesSet[j].Labels, "%v series chunks mismatch", j)
-
-							// Check chunks when it is not a skip chunk query
-							if !c.Req.SkipChunks {
-								if len(c.ExpectedSeries[j].Chunks) > 20 {
-									assert.Equal(t, len(c.ExpectedSeries[j].Chunks), len(seriesSet[j].Chunks), "%v series chunks number mismatch", j)
-								}
-								assert.Equal(t, c.ExpectedSeries[j].Chunks, seriesSet[j].Chunks, "%v series chunks mismatch", j)
-							}
-						}
-					} else {
-						assert.Equal(t, c.ExpectedSeries, seriesSet)
-					}
-
-					assert.Equal(t, c.ExpectedHints, hints)
-				}
+			streamingBatchSizes := []int{0}
+			if !t.IsBenchmark() {
+				streamingBatchSizes = []int{0, 1, 5}
 			}
+			for _, streamingBatchSize := range streamingBatchSizes {
+				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t test.TB) {
+					c.Req.StreamingChunksBatchSize = uint64(streamingBatchSize)
+					t.ResetTimer()
+					for i := 0; i < t.N(); i++ {
+						seriesSet, warnings, hints, err := srv.Series(context.Background(), c.Req)
+						require.NoError(t, err)
+						require.Equal(t, len(c.ExpectedWarnings), len(warnings), "%v", warnings)
+						require.Equal(t, len(c.ExpectedSeries), len(seriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
+
+						if !t.IsBenchmark() {
+							if len(c.ExpectedSeries) == 1 {
+								// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
+								sort.Slice(seriesSet[0].Chunks, func(i, j int) bool {
+									return seriesSet[0].Chunks[i].MinTime < seriesSet[0].Chunks[j].MinTime
+								})
+							}
+
+							// Huge responses can produce unreadable diffs - make it more human readable.
+							if len(c.ExpectedSeries) > 4 {
+								for j := range c.ExpectedSeries {
+									assert.Equal(t, c.ExpectedSeries[j].Labels, seriesSet[j].Labels, "%v series chunks mismatch", j)
+
+									// Check chunks when it is not a skip chunk query
+									if !c.Req.SkipChunks {
+										if len(c.ExpectedSeries[j].Chunks) > 20 {
+											assert.Equal(t, len(c.ExpectedSeries[j].Chunks), len(seriesSet[j].Chunks), "%v series chunks number mismatch", j)
+										}
+										assert.Equal(t, c.ExpectedSeries[j].Chunks, seriesSet[j].Chunks, "%v series chunks mismatch", j)
+									}
+								}
+							} else {
+								assert.Equal(t, c.ExpectedSeries, seriesSet)
+							}
+
+							assert.Equal(t, c.ExpectedHints, hints)
+						}
+					}
+				})
+			}
+
 		})
 	}
 }
