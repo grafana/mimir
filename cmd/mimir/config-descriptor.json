@@ -2531,7 +2531,7 @@
             },
             {
               "kind": "field",
-              "name": "token_generator_strategy",
+              "name": "token_generation_strategy",
               "required": false,
               "desc": "Specifies the strategy used for generating tokens for ingesters. Supported values are: random,spread-minimizing.",
               "fieldValue": null,

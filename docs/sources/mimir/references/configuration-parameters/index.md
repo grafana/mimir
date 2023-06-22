@@ -909,7 +909,7 @@ ring:
   # (experimental) Specifies the strategy used for generating tokens for
   # ingesters. Supported values are: random,spread-minimizing.
   # CLI flag: -ingester.ring.token-generation-strategy
-  [token_generator_strategy: <string> | default = "random"]
+  [token_generation_strategy: <string> | default = "random"]
 
   # (experimental) Comma-separated list of zones in which spread minimizing
   # strategy is used for token generation. This value must include all zones in
