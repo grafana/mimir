@@ -26,9 +26,6 @@ keywords:
      the default URL inside the Kubernetes cluster is `http://<HELM-RELEASE>-nginx.<MIMIR-NAMESPACE>.svc/prometheus`,
      and `http://<INGRESS-HOST>/prometheus` from the outside, provided that you set up an ingress.
 
-   - If you deployed Mimir via Jsonnet and Tanka,
-     use `http://localhost:<MIMIR-PORT>`.
-
    - If you are running microservices, point to the proxy in front of Mimir
      (such as Nginx or the GEM gateway) rather than to one component of Mimir.
 
