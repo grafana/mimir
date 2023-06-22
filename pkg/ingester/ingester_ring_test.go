@@ -57,7 +57,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	cfg.MinReadyDuration = 3 * time.Minute
 	cfg.FinalSleep = 2 * time.Minute
 	cfg.ListenPort = 10
-	cfg.TokenGeneratorStrategy = spreadMinimizingTokenGeneration
+	cfg.TokenGenerationStrategy = spreadMinimizingTokenGeneration
 	cfg.SpreadMinimizingZones = []string{"zone-a", "zone-b", "zone-c"}
 
 	// The lifecycler config should be generated based upon the ingester ring config
@@ -111,6 +111,7 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 		tokenGenerationStrategy string
 		spreadMinimizingZones   []string
 		expectedResultStrategy  string
+		expectedError           bool
 	}{
 		"spread-minimizing and correct zones give a SpreadMinimizingTokenGenerator": {
 			zone:                    instanceZone,
@@ -122,7 +123,7 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 			zone:                    wrongZone,
 			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
 			spreadMinimizingZones:   spreadMinimizingZones,
-			expectedResultStrategy:  randomTokenGeneration,
+			expectedError:           true,
 		},
 		"random gives a RandomTokenGenerator": {
 			zone:                    instanceZone,
@@ -132,7 +133,7 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 		"unknown token generation strategy gives nil": {
 			zone:                    instanceZone,
 			tokenGenerationStrategy: "bla-bla-tokens",
-			expectedResultStrategy:  "nil",
+			expectedError:           true,
 		},
 	}
 
@@ -140,8 +141,14 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 		cfg := RingConfig{}
 		cfg.InstanceID = instanceID
 		cfg.InstanceZone = testData.zone
-		cfg.TokenGeneratorStrategy = testData.tokenGenerationStrategy
+		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
 		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
+		err := cfg.Validate()
+		if testData.expectedError {
+			require.Error(t, err)
+			continue
+		}
+		require.NoError(t, err)
 		lifecyclerConfig := cfg.ToLifecyclerConfig(log.NewNopLogger())
 		if testData.expectedResultStrategy == randomTokenGeneration {
 			tokenGenerator, ok := lifecyclerConfig.RingTokenGenerator.(*ring.RandomTokenGenerator)
