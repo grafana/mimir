@@ -196,10 +196,11 @@ func (cfg *Config) syncQueuePollFrequency() time.Duration {
 }
 
 type rulerMetrics struct {
-	listRules       prometheus.Histogram
-	loadRuleGroups  prometheus.Histogram
-	ringCheckErrors prometheus.Counter
-	rulerSync       *prometheus.CounterVec
+	listRules         prometheus.Histogram
+	loadRuleGroups    prometheus.Histogram
+	ringCheckErrors   prometheus.Counter
+	rulerSync         *prometheus.CounterVec
+	rulerSyncDuration prometheus.Histogram
 }
 
 func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
@@ -222,6 +223,11 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 			Name: "cortex_ruler_sync_rules_total",
 			Help: "Total number of times the ruler sync operation triggered.",
 		}, []string{"reason"}),
+		rulerSyncDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ruler_sync_rules_duration_seconds",
+			Help:    "Time spent syncing all rule groups owned by this ruler instance. This metric tracks the timing of both full and partial sync, and includes the time spent loading rule groups from the storage.",
+			Buckets: []float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600},
+		}),
 	}
 
 	// Init metrics.
@@ -535,12 +541,16 @@ func (r *Ruler) run(ctx context.Context) error {
 // We expect this function is only called from Ruler.run().
 func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyncReason, cacheLookupEnabled bool) {
 	var (
-		configs map[string]rulespb.RuleGroupList
-		err     error
+		configs   map[string]rulespb.RuleGroupList
+		err       error
+		startTime = time.Now()
 	)
 
-	level.Debug(r.logger).Log("msg", "syncing rules", "reason", reason)
+	level.Info(r.logger).Log("msg", "syncing rules", "reason", reason)
 	r.metrics.rulerSync.WithLabelValues(string(reason)).Inc()
+	defer func() {
+		r.metrics.rulerSyncDuration.Observe(time.Since(startTime).Seconds())
+	}()
 
 	// List rule groups to sync.
 	if len(userIDs) > 0 {
