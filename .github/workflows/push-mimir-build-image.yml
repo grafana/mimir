@@ -3,10 +3,11 @@ name: Build and Push mimir-build-image
 # configure trigger by pull request or manually
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # types: [opened]
     paths:
       - mimir-build-image/Dockerfile  
-
+  issue_comment:
+    types: [created]
 
 jobs: 
   prepare_variables:
@@ -22,13 +23,19 @@ jobs:
       - name: Get Variables
         id: variables
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-          # if [[ ${{ github.event_name }} == 'pull_request' && ${{ github.event.pull_request.user.login }} == 'dependabot[bot]' ]]; then
+          # The case when workflow is triggered by pull request
+          if [[ ${{ github.event_name }} == 'pull_request' && ${{ github.event.pull_request.user.login }} == 'dependabot[bot]' ]]; then
             echo "triggered=true" >> $GITHUB_OUTPUT
             echo "pull_request_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
             echo "pull_request_url=${{ github.event.pull_request.html_url }}" >> $GITHUB_OUTPUT
             echo "login=${{ github.event.pull_request.user.login }}" >> $GITHUB_OUTPUT
-          else 
+          # The case when workflow is triggered by comment on pull request and it matches the trigger
+          elif [[ ${{ github.event_name }} == 'issue_comment' && ${{ steps.trigger.outputs.triggered }} == 'true' ]]; then
+            echo "triggered=true" >> $GITHUB_OUTPUT
+            echo "pull_request_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+            # echo "pull_request_url=${{ github.event.issue.html_url }}" >> $GITHUB_OUTPUT
+            echo "login=${{ github.event.issue.author }}" >> $GITHUB_OUTPUT
+          else
             echo "triggered=false" >> $GITHUB_OUTPUT
           fi
     outputs:
