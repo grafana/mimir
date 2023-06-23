@@ -55,17 +55,20 @@ type ReaderPool struct {
 	lazyReaders   map[*LazyBinaryReader]struct{}
 }
 
-type HeadersLazyLoaded struct {
+// LazyLoadedHeadersSnapshotConfig stores information needed to track lazy loaded index headers.
+type LazyLoadedHeadersSnapshotConfig struct {
 	Path   string
 	UserID string
 }
 
-type HeadersLazyLoadedTrackerState struct {
-	LazyLoadedBlocks map[string]int64 `json:"lazy_loaded_blocks"`
-	UserID           string           `json:"user_id"`
+type lazyLoadedHeadersSnapshot struct {
+	// HeaderLastUsedTime is map of index header ulid.ULID to timestamp in millisecond.
+	HeaderLastUsedTime map[ulid.ULID]int64 `json:"header_last_used_time"`
+	UserID             string              `json:"user_id"`
 }
 
-func (p *ReaderPool) persist(state HeadersLazyLoadedTrackerState, finalPath string) error {
+// persist creates a file to store lazy loaded index header in atomic way.
+func (l lazyLoadedHeadersSnapshot) persist(finalPath string) error {
 	// Create temporary path for fsync
 	tmpPath, err := os.CreateTemp("", "lazy-loaded")
 	if err != nil {
@@ -73,7 +76,7 @@ func (p *ReaderPool) persist(state HeadersLazyLoadedTrackerState, finalPath stri
 	}
 	defer os.Remove(tmpPath.Name())
 
-	data, err := json.MarshalIndent(state, "", "")
+	data, err := json.Marshal(l)
 	if err != nil {
 		return err
 	}
@@ -96,13 +99,16 @@ func (p *ReaderPool) persist(state HeadersLazyLoadedTrackerState, finalPath stri
 
 	merr.Add(dir.Sync())
 	merr.Add(dir.Close())
+	if err := merr.Err(); err != nil {
+		return err
+	}
 
 	// move the written file to the actual path
 	return os.Rename(tmpPath.Name(), finalPath)
 }
 
 // NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers and blockIds writers if enabled.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, headersLazyLoaded HeadersLazyLoaded) *ReaderPool {
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, headersLazyLoaded LazyLoadedHeadersSnapshotConfig) *ReaderPool {
 	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics)
 
 	// Start a goroutine to close idle readers (only if required).
@@ -123,13 +129,12 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 				case <-tickerIdleReader.C:
 					p.closeIdleReaders()
 				case <-tickerLazyLoad.C:
-					state := HeadersLazyLoadedTrackerState{
-						LazyLoadedBlocks: p.LoadedBlocks(),
-						UserID:           headersLazyLoaded.UserID,
+					snapshot := lazyLoadedHeadersSnapshot{
+						HeaderLastUsedTime: p.LoadedBlocks(),
+						UserID:             headersLazyLoaded.UserID,
 					}
 
-					// Then we persist the state to files so that we are not holding lock for too long.
-					if err := p.persist(state, headersLazyLoaded.Path); err != nil {
+					if err := snapshot.persist(headersLazyLoaded.Path); err != nil {
 						level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
 					}
 				}
@@ -233,11 +238,11 @@ func (p *ReaderPool) onLazyReaderClosed(r *LazyBinaryReader) {
 }
 
 // LoadedBlocks returns the map of lazy-loaded block IDs and the last time they were used in milliseconds.
-func (p *ReaderPool) LoadedBlocks() map[string]int64 {
+func (p *ReaderPool) LoadedBlocks() map[ulid.ULID]int64 {
 	p.lazyReadersMx.Lock()
 	defer p.lazyReadersMx.Unlock()
 
-	blocks := make(map[string]int64, len(p.lazyReaders))
+	blocks := make(map[ulid.ULID]int64, len(p.lazyReaders))
 	for r := range p.lazyReaders {
 		if r.reader != nil {
 			blocks[r.blockID] = r.usedAt.Load() / int64(time.Millisecond)

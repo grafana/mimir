@@ -62,7 +62,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, NewReaderPoolMetrics(nil), HeadersLazyLoaded{})
+			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, NewReaderPoolMetrics(nil), LazyLoadedHeadersSnapshotConfig{})
 			defer pool.Close()
 
 			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
@@ -143,25 +143,25 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
-	state := HeadersLazyLoadedTrackerState{
-		LazyLoadedBlocks: pool.LoadedBlocks(),
-		UserID:           "anonymous",
+	snapshot := lazyLoadedHeadersSnapshot{
+		HeaderLastUsedTime: pool.LoadedBlocks(),
+		UserID:             "anonymous",
 	}
 
-	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.json"))
+	err = snapshot.persist(filepath.Join(tmpDir, "lazy-loaded.json"))
 	require.NoError(t, err)
-	require.Greater(t, state.LazyLoadedBlocks[blockID.String()], int64(0), "lazyLoadedBlocks state must be set")
+	require.Greater(t, snapshot.HeaderLastUsedTime[blockID], int64(0), "lazyLoadedBlocks snapshot must be set")
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
 	pool.closeIdleReaders()
 
-	// LoadedBlocks will update the LazyLoadedBlocks map with the removal of
+	// LoadedBlocks will update the HeaderLastUsedTime map with the removal of
 	// idle blocks.
-	state.LazyLoadedBlocks = pool.LoadedBlocks()
-	err = pool.persist(state, filepath.Join(tmpDir, "lazy-loaded.json"))
+	snapshot.HeaderLastUsedTime = pool.LoadedBlocks()
+	err = snapshot.persist(filepath.Join(tmpDir, "lazy-loaded.json"))
 	require.NoError(t, err)
-	require.NotContains(t, state.LazyLoadedBlocks, blockID.String(), "lazyLoadedBlocks state must be unset")
+	require.NotContains(t, snapshot.HeaderLastUsedTime, blockID.String(), "lazyLoadedBlocks snapshot must be unset")
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
