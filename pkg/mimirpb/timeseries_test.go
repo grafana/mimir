@@ -433,13 +433,12 @@ func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
 	for _, lbCount := range bcs {
 		b.Run(fmt.Sprintf("num_labels=%d", lbCount), func(b *testing.B) {
 			// Generate unordered labels set.
-			lbs := make([]labels.Label, 0, lbCount)
+			unorderedLabels := make([]LabelAdapter, 0, lbCount)
 			for i := 0; i < lbCount; i++ {
 				lbName := fmt.Sprintf("lbl_%d", lbCount-i)
 				lbValue := fmt.Sprintf("val_%d", lbCount-i)
-				lbs = append(lbs, labels.Label{Name: lbName, Value: lbValue})
+				unorderedLabels = append(unorderedLabels, LabelAdapter{Name: lbName, Value: lbValue})
 			}
-			unorderedLabels := FromLabelsToLabelAdapters(lbs)
 
 			p := PreallocTimeseries{
 				TimeSeries: &TimeSeries{},
