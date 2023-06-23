@@ -720,6 +720,33 @@
       else {}
     ),
 
+  ruler_storage_caching_config::
+    (
+      if $._config.cache_metadata_enabled then
+        if $._config.cache_metadata_backend == 'memcached' then (
+          {
+            'ruler-storage.cache.backend': 'memcached',
+            'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
+            'ruler-storage.cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
+            'ruler-storage.cache.memcached.max-async-concurrency': 50,
+          } + if $._config.memcached_metadata_mtls_enabled then {
+            'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11212' % $._config,
+            'ruler-storage.cache.memcached.connect-timeout': '1s',
+            'ruler-storage.cache.memcached.tls-enabled': true,
+            'ruler-storage.cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+            'ruler-storage.cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+            'ruler-storage.cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+            'ruler-storage.cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+          } else {}
+        ) else if $._config.cache_metadata_backend == 'redis' then {
+          'ruler-storage.cache.backend': 'redis',
+          'ruler-storage.cache.redis.endpoint': '%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:6379' % $._config,
+          'ruler-storage.cache.redis.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
+          'ruler-storage.cache.redis.max-async-concurrency': 50,
+        } else {}
+      else {}
+    ),
+
   bucket_index_config:: if $._config.bucket_index_enabled then {
     // Bucket index is updated by compactor on each cleanup cycle.
     'blocks-storage.bucket-store.sync-interval': $._config.compactor_cleanup_interval,
