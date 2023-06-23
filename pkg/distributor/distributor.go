@@ -1225,10 +1225,7 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: address=%s body=%s", ingester.Addr, resp.Body)
 	}
-	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("failed pushing to ingester: address=%s", ingester.Addr))
-	}
-	return nil
+	return errors.Wrapf(err, "failed pushing to ingester: address=%s", ingester.Addr)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
