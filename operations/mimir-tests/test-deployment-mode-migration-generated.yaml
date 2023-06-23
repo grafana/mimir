@@ -1544,7 +1544,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: ingester
   name: ingester-zone-a
@@ -1662,7 +1662,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: ingester
   name: ingester-zone-b
@@ -1780,7 +1780,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: ingester
   name: ingester-zone-c
@@ -3044,7 +3044,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: store-gateway
   name: store-gateway-zone-a
@@ -3179,7 +3179,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: store-gateway
   name: store-gateway-zone-b
@@ -3314,7 +3314,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: store-gateway
   name: store-gateway-zone-c
