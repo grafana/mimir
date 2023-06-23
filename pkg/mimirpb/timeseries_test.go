@@ -441,15 +441,15 @@ func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
 				unorderedLabels = append(unorderedLabels, LabelAdapter{Name: lbName, Value: lbValue})
 			}
 
-			b.Run("unordered", benchmarkSortLabelsIfNeeded(b, unorderedLabels))
+			b.Run("unordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 
 			slices.SortFunc(unorderedLabels, func(a, b LabelAdapter) bool { return a.Name < b.Name })
-			b.Run("ordered", benchmarkSortLabelsIfNeeded(b, unorderedLabels))
+			b.Run("ordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 		})
 	}
 }
 
-func benchmarkSortLabelsIfNeeded(b *testing.B, inputLabels []LabelAdapter) func(b *testing.B) {
+func benchmarkSortLabelsIfNeeded(inputLabels []LabelAdapter) func(b *testing.B) {
 	return func(b *testing.B) {
 		// Copy unordered labels set for each benchmark iteration.
 		benchmarkUnorderedLabels := make([][]LabelAdapter, b.N)
