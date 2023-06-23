@@ -100,7 +100,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones."+sharedOptionWithRingClient)
 	f.Var(&cfg.ExcludedZones, prefix+"excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring."+sharedOptionWithRingClient)
 
-	f.StringVar(&cfg.TokensFilePath, prefix+tokensFilePathFlag, "", fmt.Sprintf("File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup. Must be empty if %q is %q.", tokenGenerationStrategyFlag, spreadMinimizingTokenGeneration))
+	f.StringVar(&cfg.TokensFilePath, prefix+tokensFilePathFlag, "", fmt.Sprintf("File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup. Must be empty if %q is %q.", prefix+tokenGenerationStrategyFlag, spreadMinimizingTokenGeneration))
 	f.IntVar(&cfg.NumTokens, prefix+"num-tokens", 128, "Number of tokens for each ingester.")
 
 	// Instance flags
