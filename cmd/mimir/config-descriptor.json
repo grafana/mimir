@@ -2533,7 +2533,7 @@
               "kind": "field",
               "name": "token_generation_strategy",
               "required": false,
-              "desc": "Specifies the strategy used for generating tokens for ingesters. Supported values are: random,spread-minimizing.",
+              "desc": "Specifies the strategy used for generating tokens for ingesters. Supported values are: random,spread-minimizing. If spread-minimizing is selected, tokens-file-path must be empty.",
               "fieldValue": null,
               "fieldDefaultValue": "random",
               "fieldFlag": "ingester.ring.token-generation-strategy",

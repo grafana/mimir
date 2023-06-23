@@ -907,7 +907,8 @@ ring:
   [final_sleep: <duration> | default = 0s]
 
   # (experimental) Specifies the strategy used for generating tokens for
-  # ingesters. Supported values are: random,spread-minimizing.
+  # ingesters. Supported values are: random,spread-minimizing. If
+  # spread-minimizing is selected, tokens-file-path must be empty.
   # CLI flag: -ingester.ring.token-generation-strategy
   [token_generation_strategy: <string> | default = "random"]
 

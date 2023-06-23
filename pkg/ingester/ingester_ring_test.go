@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,16 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	instanceID   = "instance-10"
+	instanceZone = "zone-a"
+	wrongZone    = "zone-d"
+)
+
+var (
+	spreadMinimizingZones = []string{"zone-a", "zone-b", "zone-c"}
 )
 
 func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
@@ -98,42 +109,50 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	assert.Equal(t, expected, cfg.ToLifecyclerConfig(logger))
 }
 
-func TestRingConfig_CustomTokenGenerator(t *testing.T) {
-	const (
-		instanceID   = "instance-10"
-		instanceZone = "zone-a"
-		wrongZone    = "zone-d"
-	)
-	spreadMinimizingZones := []string{"zone-a", "zone-b", "zone-c"}
-
+func TestRingConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
 		zone                    string
 		tokenGenerationStrategy string
 		spreadMinimizingZones   []string
-		expectedResultStrategy  string
-		expectedError           bool
+		expectedError           error
+		tokensFilePath          string
 	}{
-		"spread-minimizing and correct zones give a SpreadMinimizingTokenGenerator": {
+		"spread-minimizing and correct zones pass validation": {
 			zone:                    instanceZone,
 			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
 			spreadMinimizingZones:   spreadMinimizingZones,
-			expectedResultStrategy:  spreadMinimizingTokenGeneration,
 		},
-		"spread-minimizing and a wrong zone give a RandomTokenGenerator": {
+		"spread-minimizing and no spread-minimizing-zones zone don't pass validation": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			expectedError:           fmt.Errorf("number of zones 0 is not correct: it must be greater than 0 and less or equal than 8"),
+		},
+		"spread-minimizing and a wrong zone don't pass validation": {
 			zone:                    wrongZone,
 			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
 			spreadMinimizingZones:   spreadMinimizingZones,
-			expectedError:           true,
+			expectedError:           fmt.Errorf("zone %s is not valid", wrongZone),
 		},
-		"random gives a RandomTokenGenerator": {
+		"spread-minimizing and tokens-file-path set don't pass validation": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			spreadMinimizingZones:   spreadMinimizingZones,
+			tokensFilePath:          "/path/tokens",
+			expectedError:           fmt.Errorf("bad configuration: %q token generation strategy requires \"tokens-file-path\" to be empty", spreadMinimizingTokenGeneration),
+		},
+		"random passes validation": {
 			zone:                    instanceZone,
 			tokenGenerationStrategy: randomTokenGeneration,
-			expectedResultStrategy:  randomTokenGeneration,
 		},
-		"unknown token generation strategy gives nil": {
+		"random and tokens-file-path set pass validation": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: randomTokenGeneration,
+			tokensFilePath:          "/path/tokens",
+		},
+		"unknown token generation doesn't pass validation": {
 			zone:                    instanceZone,
 			tokenGenerationStrategy: "bla-bla-tokens",
-			expectedError:           true,
+			expectedError:           fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", "bla-bla-tokens", tokenGenerationStrategyFlag),
 		},
 	}
 
@@ -143,12 +162,43 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 		cfg.InstanceZone = testData.zone
 		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
 		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
+		cfg.TokensFilePath = testData.tokensFilePath
 		err := cfg.Validate()
-		if testData.expectedError {
+		if testData.expectedError == nil {
+			require.NoError(t, err)
+		} else {
 			require.Error(t, err)
-			continue
+			require.Equal(t, testData.expectedError, err)
 		}
-		require.NoError(t, err)
+	}
+}
+
+func TestRingConfig_CustomTokenGenerator(t *testing.T) {
+	tests := map[string]struct {
+		zone                    string
+		tokenGenerationStrategy string
+		spreadMinimizingZones   []string
+		expectedResultStrategy  string
+	}{
+		"spread-minimizing and correct zones give a SpreadMinimizingTokenGenerator": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			spreadMinimizingZones:   spreadMinimizingZones,
+			expectedResultStrategy:  spreadMinimizingTokenGeneration,
+		},
+		"random gives a RandomTokenGenerator": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: randomTokenGeneration,
+			expectedResultStrategy:  randomTokenGeneration,
+		},
+	}
+
+	for _, testData := range tests {
+		cfg := RingConfig{}
+		cfg.InstanceID = instanceID
+		cfg.InstanceZone = testData.zone
+		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
+		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
 		lifecyclerConfig := cfg.ToLifecyclerConfig(log.NewNopLogger())
 		if testData.expectedResultStrategy == randomTokenGeneration {
 			tokenGenerator, ok := lifecyclerConfig.RingTokenGenerator.(*ring.RandomTokenGenerator)

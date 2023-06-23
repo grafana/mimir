@@ -69,6 +69,9 @@ func (cfg *RingConfig) Validate() error {
 	}
 
 	if cfg.TokenGenerationStrategy == spreadMinimizingTokenGeneration {
+		if cfg.TokensFilePath != "" {
+			return fmt.Errorf("bad configuration: %q token generation strategy requires \"tokens-file-path\" to be empty", spreadMinimizingTokenGeneration)
+		}
 		_, err := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, nil)
 		return err
 	}
@@ -117,7 +120,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.FinalSleep, prefix+"final-sleep", 0, "Duration to sleep for before exiting, to ensure metrics are scraped.")
 
 	// TokenGenerator
-	f.StringVar(&cfg.TokenGenerationStrategy, prefix+tokenGenerationStrategyFlag, randomTokenGeneration, fmt.Sprintf("Specifies the strategy used for generating tokens for ingesters. Supported values are: %s.", strings.Join([]string{randomTokenGeneration, spreadMinimizingTokenGeneration}, ",")))
+	f.StringVar(&cfg.TokenGenerationStrategy, prefix+tokenGenerationStrategyFlag, randomTokenGeneration, fmt.Sprintf("Specifies the strategy used for generating tokens for ingesters. Supported values are: %s. If %s is selected, tokens-file-path must be empty.", strings.Join([]string{randomTokenGeneration, spreadMinimizingTokenGeneration}, ","), spreadMinimizingTokenGeneration))
 	f.Var(&cfg.SpreadMinimizingZones, prefix+"spread-minimizing-zones", fmt.Sprintf("Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when %q is set to %q.", tokenGenerationStrategyFlag, spreadMinimizingTokenGeneration))
 }
 
