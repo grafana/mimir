@@ -428,7 +428,7 @@ func TestPreallocTimeseries_SetLabels(t *testing.T) {
 }
 
 func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
-	bcs := []int{10, 100, 1_000, 10_000, 100_000, 1_000_000}
+	bcs := []int{10, 40, 100}
 
 	for _, lbCount := range bcs {
 		b.Run(fmt.Sprintf("num_labels=%d", lbCount), func(b *testing.B) {
