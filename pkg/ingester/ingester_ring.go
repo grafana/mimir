@@ -21,6 +21,7 @@ const (
 	// sharedOptionWithRingClient is a message appended to all config options that should be also
 	// set on the components running the ingester ring client.
 	sharedOptionWithRingClient      = " This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."
+	tokensFilePathFlag              = "tokens-file-path"
 	tokenGenerationStrategyFlag     = "token-generation-strategy"
 	randomTokenGeneration           = "random"
 	spreadMinimizingTokenGeneration = "spread-minimizing"
@@ -69,6 +70,9 @@ func (cfg *RingConfig) Validate() error {
 	}
 
 	if cfg.TokenGenerationStrategy == spreadMinimizingTokenGeneration {
+		if cfg.TokensFilePath != "" {
+			return fmt.Errorf("%q token generation strategy requires %q to be empty", spreadMinimizingTokenGeneration, tokensFilePathFlag)
+		}
 		_, err := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, nil)
 		return err
 	}
@@ -96,7 +100,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones."+sharedOptionWithRingClient)
 	f.Var(&cfg.ExcludedZones, prefix+"excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring."+sharedOptionWithRingClient)
 
-	f.StringVar(&cfg.TokensFilePath, prefix+"tokens-file-path", "", "File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.")
+	f.StringVar(&cfg.TokensFilePath, prefix+tokensFilePathFlag, "", fmt.Sprintf("File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup. Must be empty if -%s is set to %q.", prefix+tokenGenerationStrategyFlag, spreadMinimizingTokenGeneration))
 	f.IntVar(&cfg.NumTokens, prefix+"num-tokens", 128, "Number of tokens for each ingester.")
 
 	// Instance flags
