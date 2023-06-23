@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -113,7 +114,7 @@ func TestDistributor_Push(t *testing.T) {
 		mtime.NowReset()
 	})
 
-	expErrFail := httpgrpc.Errorf(http.StatusInternalServerError, "failed pushing to ingester: Fail")
+	expErrFail := httpgrpc.Errorf(http.StatusInternalServerError, "failed pushing to ingester: address=X body=Fail")
 
 	type samplesIn struct {
 		num              int
@@ -278,7 +279,7 @@ func TestDistributor_Push(t *testing.T) {
 			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
 			timeOut:        true,
 			expectedError: httpgrpc.Errorf(http.StatusInternalServerError,
-				"exceeded configured distributor remote timeout: failed pushing to ingester: context deadline exceeded"),
+				"exceeded configured distributor remote timeout: failed pushing to ingester: address=X: context deadline exceeded"),
 			metricNames: []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -309,7 +310,13 @@ func TestDistributor_Push(t *testing.T) {
 				assert.Equal(t, emptyResponse, response)
 			} else {
 				assert.Nil(t, response)
-				assert.EqualError(t, err, tc.expectedError.Error())
+				assert.Error(t, err)
+
+				// Replace address with X, to avoid flaky tests
+				m := regexp.MustCompile("address=[0-9]+")
+				sanitizedError := m.ReplaceAllString(err.Error(), "address=X")
+
+				assert.Equal(t, sanitizedError, tc.expectedError.Error())
 
 				// Assert that downstream gRPC statuses are passed back upstream
 				_, ok := httpgrpc.HTTPResponseFromError(err)
