@@ -44,7 +44,7 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 }
 
-func TestQueryLimiter_AddSeriers_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
+func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 	const (
 		metricName = "test_metric"
 	)
