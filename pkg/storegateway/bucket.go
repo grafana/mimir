@@ -118,7 +118,7 @@ type BucketStore struct {
 	queryGate gate.Gate
 
 	// Gate used to limit concurrency on loading index-headers across all tenants.
-	readerGate gate.Gate
+	lazyLoadingGate gate.Gate
 
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
@@ -205,10 +205,10 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	}
 }
 
-// WithReaderGate sets a readerGate to use instead of a gate.NewNoop().
-func WithReaderGate(readerGate gate.Gate) BucketStoreOption {
+// WithLazyLoadingGate sets a lazyLoadingGate to use instead of a gate.NewNoop().
+func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
-		s.readerGate = readerGate
+		s.lazyLoadingGate = lazyLoadingGate
 	}
 }
 
@@ -251,7 +251,7 @@ func NewBucketStore(
 		blockSet:                    newBucketBlockSet(),
 		blockSyncConcurrency:        blockSyncConcurrency,
 		queryGate:                   gate.NewNoop(),
-		readerGate:                  gate.NewNoop(),
+		lazyLoadingGate:             gate.NewNoop(),
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioners:                partitioners,
@@ -270,7 +270,7 @@ func NewBucketStore(
 	}
 
 	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, s.readerGate, metrics.indexHeaderReaderMetrics)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")

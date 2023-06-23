@@ -67,7 +67,7 @@ type BucketStores struct {
 	queryGate gate.Gate
 
 	// Gate used to limit concurrency on loading index-headers across all tenants.
-	readerGate gate.Gate
+	lazyLoadingGate gate.Gate
 
 	// Keeps a bucket store for each tenant.
 	storesMu sync.RWMutex
@@ -101,12 +101,12 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
 
 	// The number of concurrent index header loads from storegateway are limited.
-	readerGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
-	readerGate := gate.NewNoop()
+	lazyLoadingGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
+	lazyLoadingGate := gate.NewNoop()
 	lazyLoadingMax := cfg.BucketStore.IndexHeaderLazyLoadingConcurrency
 	if lazyLoadingMax != 0 {
-		readerGate := gate.NewBlocking(cfg.BucketStore.IndexHeaderLazyLoadingConcurrency)
-		readerGate = gate.NewInstrumented(readerGateReg, cfg.BucketStore.IndexHeaderLazyLoadingConcurrency, readerGate)
+		lazyLoadingGate := gate.NewBlocking(cfg.BucketStore.IndexHeaderLazyLoadingConcurrency)
+		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeaderLazyLoadingConcurrency, lazyLoadingGate)
 	}
 
 	u := &BucketStores{
@@ -119,7 +119,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
-		readerGate:         readerGate,
+		lazyLoadingGate:    lazyLoadingGate,
 		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
 		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncBackoffConfig: backoff.Config{
@@ -473,7 +473,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithIndexCache(u.indexCache),
 		WithChunksCache(u.chunksCache),
 		WithQueryGate(u.queryGate),
-		WithReaderGate(u.readerGate),
+		WithLazyLoadingGate(u.lazyLoadingGate),
 		WithFineGrainedChunksCaching(u.cfg.BucketStore.ChunksCache.FineGrainedChunksCachingEnabled),
 	}
 

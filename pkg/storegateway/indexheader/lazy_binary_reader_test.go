@@ -336,10 +336,10 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 	)
 
 	var lazyReaders [numLazyReader]*LazyBinaryReader
-	readerGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
+	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
 
 	for i := 0; i < numLazyReader; i++ {
-		lazyReaders[i], err = NewLazyBinaryReader(ctx, factory, logger, bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, readerGate)
+		lazyReaders[i], err = NewLazyBinaryReader(ctx, factory, logger, bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 		require.NoError(t, err)
 	}
 

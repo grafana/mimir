@@ -71,12 +71,12 @@ func NewLazyBinaryReaderMetrics(reg prometheus.Registerer) *LazyBinaryReaderMetr
 // LazyBinaryReader wraps BinaryReader and loads (mmap or streaming read) the index-header only upon
 // the first Reader function is called.
 type LazyBinaryReader struct {
-	logger     log.Logger
-	filepath   string
-	metrics    *LazyBinaryReaderMetrics
-	onClosed   func(*LazyBinaryReader)
-	readerGate gate.Gate
-	ctx        context.Context
+	logger          log.Logger
+	filepath        string
+	metrics         *LazyBinaryReaderMetrics
+	onClosed        func(*LazyBinaryReader)
+	lazyLoadingGate gate.Gate
+	ctx             context.Context
 
 	readerMx      sync.RWMutex
 	reader        Reader
@@ -100,7 +100,7 @@ func NewLazyBinaryReader(
 	id ulid.ULID,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
-	readerGate gate.Gate,
+	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
 	path := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 
@@ -121,14 +121,14 @@ func NewLazyBinaryReader(
 	}
 
 	return &LazyBinaryReader{
-		logger:        logger,
-		filepath:      path,
-		metrics:       metrics,
-		usedAt:        atomic.NewInt64(time.Now().UnixNano()),
-		onClosed:      onClosed,
-		readerFactory: readerFactory,
-		readerGate:    readerGate,
-		ctx:           ctx,
+		logger:          logger,
+		filepath:        path,
+		metrics:         metrics,
+		usedAt:          atomic.NewInt64(time.Now().UnixNano()),
+		onClosed:        onClosed,
+		readerFactory:   readerFactory,
+		lazyLoadingGate: lazyLoadingGate,
+		ctx:             ctx,
 	}, nil
 }
 
@@ -232,12 +232,12 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 		return r.readerErr
 	}
 
-	// readerGate implementation: blocks load if too many are happening at once.
-	err := r.readerGate.Start(r.ctx)
+	// lazyLoadingGate implementation: blocks load if too many are happening at once.
+	err := r.lazyLoadingGate.Start(r.ctx)
 	if err != nil {
 		return errors.Wrapf(err, "failed to wait for turn")
 	}
-	defer r.readerGate.Done()
+	defer r.lazyLoadingGate.Done()
 
 	// Take the write lock to ensure we'll try to load it only once. Take again
 	// the read lock once done.
