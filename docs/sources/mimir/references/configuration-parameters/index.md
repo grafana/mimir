@@ -850,7 +850,7 @@ ring:
 
   # File path where tokens are stored. If empty, tokens are not stored at
   # shutdown and restored at startup. Must be empty if
-  # "ingester.ring.token-generation-strategy" is "spread-minimizing".
+  # -ingester.ring.token-generation-strategy is set to "spread-minimizing".
   # CLI flag: -ingester.ring.tokens-file-path
   [tokens_file_path: <string> | default = ""]
 
