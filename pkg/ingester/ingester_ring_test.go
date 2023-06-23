@@ -138,7 +138,7 @@ func TestRingConfig_Validate(t *testing.T) {
 			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
 			spreadMinimizingZones:   spreadMinimizingZones,
 			tokensFilePath:          "/path/tokens",
-			expectedError:           fmt.Errorf("bad configuration: %q token generation strategy requires \"tokens-file-path\" to be empty", spreadMinimizingTokenGeneration),
+			expectedError:           fmt.Errorf("%q token generation strategy requires %q to be empty", spreadMinimizingTokenGeneration, tokensFilePathFlag),
 		},
 		"random passes validation": {
 			zone:                    instanceZone,

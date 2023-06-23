@@ -849,7 +849,8 @@ ring:
   [excluded_zones: <string> | default = ""]
 
   # File path where tokens are stored. If empty, tokens are not stored at
-  # shutdown and restored at startup.
+  # shutdown and restored at startup. Must be empty if
+  # "token-generation-strategy" is "spread-minimizing".
   # CLI flag: -ingester.ring.tokens-file-path
   [tokens_file_path: <string> | default = ""]
 
@@ -907,8 +908,7 @@ ring:
   [final_sleep: <duration> | default = 0s]
 
   # (experimental) Specifies the strategy used for generating tokens for
-  # ingesters. Supported values are: random,spread-minimizing. If
-  # spread-minimizing is selected, tokens-file-path must be empty.
+  # ingesters. Supported values are: random,spread-minimizing.
   # CLI flag: -ingester.ring.token-generation-strategy
   [token_generation_strategy: <string> | default = "random"]
 
