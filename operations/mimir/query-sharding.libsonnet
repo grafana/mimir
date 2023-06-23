@@ -5,6 +5,14 @@
     // Raise the msg size for the GRPC messages query-frontend <-> querier by this factor when query sharding is enabled
     query_sharding_msg_size_factor: 4,
 
+    // The expectation is that if sharding is enabled, we would run more but smaller
+    // queries on the queriers. However this can't be extended too far because several
+    // queries (including instant queries) can't be sharded. Therefore, we must strike a balance
+    // which allows us to process more sharded queries in parallel when requested, but not overload
+    // queriers during normal queries.
+    querier_max_concurrency: if !$._config.query_sharding_enabled then super.querier_max_concurrency else 16,
+    ruler_querier_max_concurrency: if !$._config.query_sharding_enabled then super.ruler_querier_max_concurrency else 16,
+
     overrides+: if $._config.query_sharding_enabled then {
       // Target 6M active series.
       big_user+:: {
@@ -78,13 +86,6 @@
   },
 
   querier_args+:: if !$._config.query_sharding_enabled then {} else {
-    // The expectation is that if sharding is enabled, we would run more but smaller
-    // queries on the queriers. However this can't be extended too far because several
-    // queries (including instant queries) can't be sharded. Therefore, we must strike a balance
-    // which allows us to process more sharded queries in parallel when requested, but not overload
-    // queriers during normal queries.
-    'querier.max-concurrent': 16,
-
     // Raise the msg size for the GRPC messages query-frontend <-> querier by a factor when query sharding is enabled
     'querier.frontend-client.grpc-max-send-msg-size': super['querier.frontend-client.grpc-max-send-msg-size'] * $._config.query_sharding_msg_size_factor,
   },

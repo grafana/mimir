@@ -243,7 +243,7 @@
     self.newQuerierScaledObject(
       name='querier',
       query_scheduler_container='query-scheduler',
-      querier_max_concurrent=$.querier_args['querier.max-concurrent'],
+      querier_max_concurrent=$._config.querier_max_concurrency,
       min_replicas=$._config.autoscaling_querier_min_replicas,
       max_replicas=$._config.autoscaling_querier_max_replicas,
     ),

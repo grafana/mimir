@@ -16,7 +16,7 @@
     self.newQuerierScaledObject(
       name='mimir-read',
       query_scheduler_container='mimir-backend',
-      querier_max_concurrent=$.querier_args['querier.max-concurrent'],
+      querier_max_concurrent=$._config.querier_max_concurrency,
       min_replicas=$._config.autoscaling_mimir_read_min_replicas,
       max_replicas=$._config.autoscaling_mimir_read_max_replicas,
     ),

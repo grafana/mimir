@@ -37,13 +37,13 @@
     querier_topology_spread_max_skew: 1,
     ruler_topology_spread_max_skew: 1,
 
+    // Controls how many concurrent queries are run in the querier.
+    querier_max_concurrency: 8,
+    ruler_querier_max_concurrency: $._config.querier_max_concurrency,
+
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
-
-    querier: {
-      concurrency: 8,
-    },
 
     // storage_backend will be used for all components that use block storage.
     // Each component can override this by specific CLI flags.
