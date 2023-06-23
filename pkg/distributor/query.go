@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*ingester_client.ExemplarQueryResponse, error) {
@@ -191,27 +192,39 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
-	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cleanup context.CancelFunc) (ingesterQueryResult, error) {
-		client, err := d.ingesterPool.GetClientFor(ing.Addr)
-		if err != nil {
-			return ingesterQueryResult{}, err
+	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cleanupContext context.CancelFunc) (ingesterQueryResult, error) {
+		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
+		cleanup := func() {
+			log.Span.Finish()
+			cleanupContext()
 		}
 
-		stream, err := client.(ingester_client.IngesterClient).QueryStream(ctx, req)
-		if err != nil {
-			return ingesterQueryResult{}, err
-		}
-
+		var stream ingester_client.Ingester_QueryStreamClient
 		closeStream := true
 		defer func() {
 			if closeStream {
-				if err := stream.CloseSend(); err != nil {
-					level.Warn(d.log).Log("msg", "closing ingester client stream failed", "err", err)
+				if stream != nil {
+					if err := stream.CloseSend(); err != nil {
+						level.Warn(log).Log("msg", "closing ingester client stream failed", "err", err)
+					}
 				}
 
 				cleanup()
 			}
 		}()
+
+		log.Span.SetTag("ingester_address", ing.Addr)
+		log.Span.SetTag("ingester_zone", ing.Zone)
+
+		client, err := d.ingesterPool.GetClientFor(ing.Addr)
+		if err != nil {
+			return ingesterQueryResult{}, err
+		}
+
+		stream, err = client.(ingester_client.IngesterClient).QueryStream(ctx, req)
+		if err != nil {
+			return ingesterQueryResult{}, err
+		}
 
 		result := ingesterQueryResult{}
 
