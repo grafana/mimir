@@ -75,6 +75,15 @@ func TestQueryLimiter_AddChunkBytes(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestQueryLimiter_AddChunks(t *testing.T) {
+	var limiter = NewQueryLimiter(0, 0, 100)
+
+	err := limiter.AddChunks(100)
+	require.NoError(t, err)
+	err = limiter.AddChunks(1)
+	require.Error(t, err)
+}
+
 func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	const (
 		metricName = "test_metric"
@@ -94,5 +103,4 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 		err := limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(s))
 		assert.NoError(b, err)
 	}
-
 }
