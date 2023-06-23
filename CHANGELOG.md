@@ -31,6 +31,7 @@
 * [ENHANCEMENT] Use new data structure for labels, to reduce memory consumption. #3555
 * [ENHANCEMENT] Update alpine base image to 3.18.2. #5276
 * [ENHANCEMENT] Ruler: add `cortex_ruler_sync_rules_duration_seconds` metric, tracking the time spent syncing all rule groups owned by the ruler instance. #5311
+* [ENHANCEMENT] Querier: add `cortex_queries_exceeded_limits_total` metric that counts the number of queries rejected due to hitting a limit (eg. max series per query or max chunks per query). #5316
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 
 ### Mixin
