@@ -7,7 +7,6 @@ package indexheader
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -22,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 
 	"github.com/thanos-io/objstore/providers/filesystem"
 
@@ -320,40 +320,44 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	logger := log.NewNopLogger()
-	var total int
-	var inflight int
+	total := atomic.NewUint32(0)
+	inflight := atomic.NewInt32(0)
 	factory := func() (Reader, error) {
 		time.Sleep(3 * time.Second)
 		binaryReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
-		inflight++
-		total++
+		inflight.Add(1)
+		total.Add(1)
 		return binaryReader, err
 	}
 
-	var lazyReaders [20]*LazyBinaryReader                                                // 20 lazy readers
-	readerGate := gate.NewInstrumented(prometheus.NewRegistry(), 3, gate.NewBlocking(3)) // maxConcurrency = 3
+	const (
+		numLazyReader          = 20 // 20 lazy readers
+		maxLazyLoadConcurrency = 3  // maxConcurrency = 3
+	)
 
-	for i := 0; i < 20; i++ {
+	var lazyReaders [numLazyReader]*LazyBinaryReader
+	readerGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
+
+	for i := 0; i < numLazyReader; i++ {
 		lazyReaders[i], err = NewLazyBinaryReader(ctx, factory, logger, bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, readerGate)
 		require.NoError(t, err)
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(20)
+	wg.Add(numLazyReader)
 
 	// Attempt to concurrently load 20 index-headers.
-	for i := 0; i < 20; i++ {
+	for i := 0; i < numLazyReader; i++ {
 		index := i
 		go func() {
 			_, err := lazyReaders[index].IndexVersion()
 			require.NoError(t, err)
-			fmt.Println(inflight)
-			inflight--
-			require.LessOrEqual(t, inflight, 3)
+			inflight.Add(-1)
+			require.LessOrEqual(t, inflight.Load(), int32(maxLazyLoadConcurrency))
 			wg.Done()
 		}()
 	}
 
 	wg.Wait()
-	require.Equal(t, 20, total)
+	require.Equal(t, total.Load(), uint32(numLazyReader))
 }

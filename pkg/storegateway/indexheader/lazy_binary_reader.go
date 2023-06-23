@@ -232,16 +232,12 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 		return r.readerErr
 	}
 
-	if r.readerGate != nil {
-
-		err := r.readerGate.Start(r.ctx)
-
-		if err != nil {
-			return errors.Wrapf(err, "failed to wait for turn")
-		}
-
-		defer r.readerGate.Done()
+	// readerGate implementation: blocks load if too many are happening at once.
+	err := r.readerGate.Start(r.ctx)
+	if err != nil {
+		return errors.Wrapf(err, "failed to wait for turn")
 	}
+	defer r.readerGate.Done()
 
 	// Take the write lock to ensure we'll try to load it only once. Take again
 	// the read lock once done.
