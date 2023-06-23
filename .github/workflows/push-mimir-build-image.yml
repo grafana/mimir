@@ -8,13 +8,46 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:  
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - name: Get build image from Makefile
+        id: build_image_step
+        run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+    outputs:
+      build_image: ${{ steps.build_image_step.outputs.build_image }}
+
+  goversion:
+    runs-on: ubuntu-latest
+    needs: prepare
+    container: 
+      image: ${{ needs.prepare.outputs.build_image }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Git Config
+        run: git config --global --add safe.directory '*'
+      - name: Get Go Version
+        id: go-version
+        run: |
+          echo "version=$(make BUILD_IN_CONTAINER=false print-go-version)" >> "$GITHUB_OUTPUT"
+    outputs:
+      version: ${{ steps.go-version.outputs.version }}
+
   build_and_push:
+    needs: goversion
     runs-on: ubuntu-latest
     # If the PR is raised by dependabot, then build the image
     # if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+
+      - name: Checkout Pull Request Branch
+        run: gh pr checkout ${{ github.event.pull_request.number }}
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v2
@@ -40,7 +73,8 @@ jobs:
           current_hash=$(md5sum ${{ steps.prepare.outputs.path }} | awk '{print $1}')
           echo "the file path is ${{ steps.prepare.outputs.path }}"
           echo "build tag is $current_hash"
-          echo "tag=$current_hash" >> $GITHUB_OUTPUT
+          tag="${{ github.event.pull_request.number }}-${{ needs.goversion.outputs.version }}-$current_hash"
+          echo "tag=$tag" >> $GITHUB_OUTPUT
 
       - name: Check Should Build Image
         id: check_build
@@ -88,13 +122,10 @@ jobs:
             echo "${{ github.event.pull_request.head.ref }}"
             echo "Build Image Version is not up to date"
             sed -i "s/$main_version/${{ steps.compute_hash.outputs.tag }}/g" Makefile
-            git config user.name "Your Bot Name"
-            git config user.email "your-bot-email@example.com"
-            git config pull.rebase false
+            git config --global user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
+            git config --global user.name "${{ github.event.pull_request.user.login }}"
             git add Makefile
             git commit -m "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
-            git fetch origin
-            git pull origin ${{ github.head_ref }}
             git push
           fi 
         env:
