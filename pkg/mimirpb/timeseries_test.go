@@ -13,7 +13,6 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -421,9 +420,10 @@ func TestPreallocTimeseries_SetLabels(t *testing.T) {
 		},
 		marshalledData: []byte{1, 2, 3},
 	}
-	p.SetLabels(FromLabelsToLabelAdapters(labels.FromStrings("__name__", "hello", "lbl", "world")))
+	expected := []LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}
+	p.SetLabels(expected)
 
-	require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}, p.Labels)
+	require.Equal(t, expected, p.Labels)
 	require.Nil(t, p.marshalledData)
 }
 
