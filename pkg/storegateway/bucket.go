@@ -198,14 +198,14 @@ func WithChunksCache(cache chunkscache.Cache) BucketStoreOption {
 	}
 }
 
-// WithQueryGate sets a queryGate to use instead of a noopGate.
+// WithQueryGate sets a queryGate to use instead of a gate.NewNoop().
 func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.queryGate = queryGate
 	}
 }
 
-// WithReaderGate sets a readerGate to use instead of a noopGate.
+// WithReaderGate sets a readerGate to use instead of a gate.NewNoop().
 func WithReaderGate(readerGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.readerGate = readerGate
