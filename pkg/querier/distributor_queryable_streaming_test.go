@@ -48,7 +48,7 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 			chunkIteratorFunc: chunkIteratorFunc,
 			mint:              1000,
 			maxt:              6000,
-			queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
+			queryMetrics:      stats.NewQueryMetrics(reg),
 			queryStats:        queryStats,
 		},
 	}
@@ -86,7 +86,7 @@ func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
 			chunkIteratorFunc: nil,
 			mint:              1000,
 			maxt:              6000,
-			queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
+			queryMetrics:      stats.NewQueryMetrics(reg),
 			queryStats:        queryStats,
 		},
 	}

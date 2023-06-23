@@ -10,8 +10,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// QueryChunkMetrics collects metrics on the number of chunks used while serving queries.
-type QueryChunkMetrics struct {
+// QueryMetrics collects metrics on the number of chunks used while serving queries.
+type QueryMetrics struct {
 	// The number of chunks received from ingesters that were exact duplicates of chunks received from other ingesters
 	// responding to the same query.
 	IngesterChunksDeduplicated prometheus.Counter
@@ -21,8 +21,8 @@ type QueryChunkMetrics struct {
 	IngesterChunksTotal prometheus.Counter
 }
 
-func NewQueryChunkMetrics(reg prometheus.Registerer) *QueryChunkMetrics {
-	return &QueryChunkMetrics{
+func NewQueryMetrics(reg prometheus.Registerer) *QueryMetrics {
+	return &QueryMetrics{
 		IngesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_query_ingester_chunks_deduped_total",

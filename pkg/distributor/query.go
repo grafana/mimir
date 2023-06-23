@@ -307,8 +307,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	deduplicatedChunks := 0
 	totalChunks := 0
 	defer func() {
-		d.QueryChunkMetrics.IngesterChunksDeduplicated.Add(float64(deduplicatedChunks))
-		d.QueryChunkMetrics.IngesterChunksTotal.Add(float64(totalChunks))
+		d.QueryMetrics.IngesterChunksDeduplicated.Add(float64(deduplicatedChunks))
+		d.QueryMetrics.IngesterChunksTotal.Add(float64(totalChunks))
 	}()
 
 	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
