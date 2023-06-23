@@ -1129,6 +1129,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
@@ -1205,6 +1206,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
@@ -1281,6 +1283,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
@@ -1357,6 +1360,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
