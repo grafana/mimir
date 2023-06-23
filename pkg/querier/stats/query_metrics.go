@@ -19,6 +19,9 @@ type QueryMetrics struct {
 	// The total number of chunks received from ingesters that were used to evaluate queries, including any chunks
 	// discarded due to deduplication.
 	IngesterChunksTotal prometheus.Counter
+
+	// The total number of queries that failed because they exceeded a limit.
+	QueriesExceededLimits *prometheus.CounterVec
 }
 
 func NewQueryMetrics(reg prometheus.Registerer) *QueryMetrics {
@@ -33,5 +36,10 @@ func NewQueryMetrics(reg prometheus.Registerer) *QueryMetrics {
 			Name:      "distributor_query_ingester_chunks_total",
 			Help:      "Number of chunks received from ingesters at query time, including any chunks discarded as duplicates.",
 		}),
+		QueriesExceededLimits: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "queries_exceeded_limits_total",
+			Help:      "Number of queries that failed because they exceeded a limit.",
+		}, []string{"limit"}),
 	}
 }
