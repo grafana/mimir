@@ -3,23 +3,15 @@ name: Build and Push mimir-build-image
 # configure trigger by pull request or manually
 on:
   pull_request:
+    # types: [opened]
     paths:
       - mimir-build-image/Dockerfile
-  workflow_dispatch:
-    inputs:
-      force_push:
-        description: 'Force push image to Docker Hub even the tag exist'
-        type: choice
-        required: true
-        options:
-          - true
-          - false
-        default: false
+  pull_request_review:
+    types: [submitted]
 
-jobs:
+jobs:  
   build_and_push:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -45,22 +37,73 @@ jobs:
       - name: Compute Image Tag
         id: compute_hash
         run: |
-          current_hash=$(sha256sum ${{ steps.prepare.outputs.path }} | awk '{print $1}')
+          current_hash=$(md5sum ${{ steps.prepare.outputs.path }} | awk '{print $1}')
           echo "the file path is ${{ steps.prepare.outputs.path }}"
+          echo "build tag is $current_hash"
           echo "tag=$current_hash" >> $GITHUB_OUTPUT
 
-      - name: Check Docker Image
-        id: check_image
+      - name: Check Should Build Image
+        id: check_build
         run: |
-          echo "Checking if image exists"
+          echo "Checking if image should be built"
           response=$(curl --silent --head -lL https://hub.docker.com/v2/repositories/${{ steps.prepare.outputs.image }}/tags/${{ steps.compute_hash.outputs.tag }})
           if [[ ! ($response == *"200 OK"*) ]]; then
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "${{ steps.compute_hash.outputs.tag }} doesn't exists"
+            echo "build=true" >> $GITHUB_OUTPUT
           else
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "${{ steps.compute_hash.outputs.tag }} already exists"
+            echo "build=false" >> $GITHUB_OUTPUT
           fi
 
+      # - name: Add Comment to the PR
+      #   id: notification
+      #   run: | 
+      #     if [[${{ steps.check_build.outputs.build == 'true' }}]]; then
+      #       gh pr comment $PR_URL --body "**This PR triggers the build of the mimir-build-image**
+      #       image would be auto built and pushed to docker hub, a commit would be added to PR with new image version."
+      #     else
+      #       echo "This PR will not trigger a build of the mimir-build-image"
+      #       gh pr comment $PR_URL --body "**This PR can not trigger a build of the mimir-build-image**
+      #       Only PR raised by dependabot or PR approved by cortex-team can trigger a build of the mimir-build-image. Ask cortex-team to approve this PR."
+      #     fi
+      #   env:
+      #     PR_URL: ${{github.event.pull_request.html_url}}
+      #     GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+# github.event.review.state == 'approved'
       - name: Build and Push Docker Image
-        if: steps.check_image.outputs.exists == 'false' || ${{ github.event.inputs.force_push }} == 'true'
+        if: steps.check_image.outputs.exists == 'false'
         run: |
+          echo "Building and Pushing Docker Image"
           make push-multiarch-build-image IMAGE_TAG=${{ steps.compute_hash.outputs.tag }}
+      
+      - name: Add commit to PR in order to update Build Image version
+        run: |
+          echo "Get current Build Image Version"
+          main_version=$(echo $(make print-build-image) | cut -d ':' -f 2)
+          echo "Current Build Image Version is $main_version"
+          echo "Built Image Version is $TAG"
+          if [ "$main_version" = "$TAG" ]; then
+            echo "Build Image Version is already up to date"
+          else
+            echo "Build Image Version is not up to date"
+            echo "Update Build Image Version"
+            sed -i "s/$main_version/${{ steps.compute_hash.outputs.tag }}/g" Makefile
+            # git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            # git config --global user.name "github-actions[bot]"
+            # git add Makefile
+            # git commit -m "Update Build Image Version to ${{ steps.compute_hash.outputs.tag }}"
+            # git push origin ${{ github.event.pull_request.head.ref }}
+          fi 
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          TAG: ${{ steps.compute_hash.outputs.tag }}
+      
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.event.pull_request.head.ref }}
+          title: "Update Build Image Version to ${{ steps.compute_hash.outputs.tag }}"
+          body: "This pull request updates the Build Image Version"
+          base: ${{ github.event.pull_request.base.ref }}
