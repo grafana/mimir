@@ -320,20 +320,26 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	logger := log.NewNopLogger()
-	total := atomic.NewUint32(0)
-	inflight := atomic.NewInt32(0)
-	factory := func() (Reader, error) {
-		time.Sleep(3 * time.Second)
-		binaryReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
-		inflight.Add(1)
-		total.Add(1)
-		return binaryReader, err
-	}
 
 	const (
 		numLazyReader          = 20 // 20 lazy readers
 		maxLazyLoadConcurrency = 3  // maxConcurrency = 3
 	)
+
+	total := atomic.NewUint32(0)
+	inflight := atomic.NewUint32(0)
+
+	factory := func() (Reader, error) {
+		inflight.Inc()
+		require.LessOrEqual(t, inflight.Load(), uint32(maxLazyLoadConcurrency))
+		total.Inc()
+
+		time.Sleep(3 * time.Second)
+
+		inflight.Dec()
+
+		return nil, errors.New("oh no!")
+	}
 
 	var lazyReaders [numLazyReader]*LazyBinaryReader
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
@@ -350,10 +356,8 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 	for i := 0; i < numLazyReader; i++ {
 		index := i
 		go func() {
-			_, err := lazyReaders[index].IndexVersion()
+			lazyReaders[index].IndexVersion()
 			require.NoError(t, err)
-			inflight.Add(-1)
-			require.LessOrEqual(t, inflight.Load(), int32(maxLazyLoadConcurrency))
 			wg.Done()
 		}()
 	}
