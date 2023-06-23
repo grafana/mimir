@@ -536,6 +536,7 @@ spec:
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage=50
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
@@ -631,6 +632,7 @@ spec:
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.min-idle-connections-headroom-percentage=50
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -765,6 +767,7 @@ spec:
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage=50
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
@@ -857,6 +860,7 @@ spec:
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage=50
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
@@ -952,6 +956,7 @@ spec:
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.min-idle-connections-headroom-percentage=50
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1603,6 +1608,7 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.chunks-cache.memcached.min-idle-connections-headroom-percentage=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=450ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local:11211
@@ -1610,6 +1616,7 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.min-idle-connections-headroom-percentage=50
         - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
         - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
@@ -1618,6 +1625,7 @@ spec:
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage=50
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket

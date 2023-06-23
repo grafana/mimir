@@ -578,6 +578,7 @@
           'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
           'query-frontend.results-cache.memcached.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
           'query-frontend.results-cache.memcached.timeout': '500ms',
+          'query-frontend.results-cache.memcached.min-idle-connections-headroom-percentage': 50,
         } + if $._config.memcached_frontend_mtls_enabled then {
           'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.cluster.local:11212' % $._config,
           'query-frontend.results-cache.memcached.connect-timeout': '1s',
@@ -650,6 +651,7 @@
             'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
             'blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.cache_index_queries_max_item_size_mb * 1024 * 1024,
             'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': 50,
+            'blocks-storage.bucket-store.index-cache.memcached.min-idle-connections-headroom-percentage': 50,
           } + if $._config.memcached_index_queries_mtls_enabled then {
             'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.cluster.local:11212' % $._config,
             'blocks-storage.bucket-store.index-cache.memcached.connect-timeout': '1s',
@@ -675,6 +677,7 @@
             'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.cache_chunks_max_item_size_mb * 1024 * 1024,
             'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': 50,
             'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '450ms',
+            'blocks-storage.bucket-store.chunks-cache.memcached.min-idle-connections-headroom-percentage': 50,
           } + if $._config.memcached_chunks_mtls_enabled then {
             'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+%(cache_chunks_backend)s.%(namespace)s.svc.cluster.local:11212' % $._config,
             'blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout': '1s',
@@ -702,6 +705,7 @@
             'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
             'blocks-storage.bucket-store.metadata-cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
             'blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency': 50,
+            'blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage': 50,
           } + if $._config.memcached_metadata_mtls_enabled then {
             'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11212' % $._config,
             'blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout': '1s',
@@ -729,6 +733,7 @@
             'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
             'ruler-storage.cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
             'ruler-storage.cache.memcached.max-async-concurrency': 50,
+            'ruler-storage.cache.memcached.min-idle-connections-headroom-percentage': 50,
           } + if $._config.memcached_metadata_mtls_enabled then {
             'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11212' % $._config,
             'ruler-storage.cache.memcached.connect-timeout': '1s',
