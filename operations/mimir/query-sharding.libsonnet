@@ -10,8 +10,9 @@
     // queries (including instant queries) can't be sharded. Therefore, we must strike a balance
     // which allows us to process more sharded queries in parallel when requested, but not overload
     // queriers during normal queries.
+    //
+    // NOTE: we're intentionally not overriding ruler_querier_max_concurrency because it inherits querier_max_concurrency by default
     querier_max_concurrency: if !$._config.query_sharding_enabled then super.querier_max_concurrency else 16,
-    ruler_querier_max_concurrency: if !$._config.query_sharding_enabled then super.ruler_querier_max_concurrency else 16,
 
     overrides+: if $._config.query_sharding_enabled then {
       // Target 6M active series.
