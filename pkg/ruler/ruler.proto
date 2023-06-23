@@ -34,6 +34,9 @@ message RulesRequest {
     RecordingRule = 2;
   }
   RuleType filter = 1;
+  repeated string rule_name = 2;
+  repeated string rule_group = 3;
+  repeated string file = 4;
 }
 
 message RulesResponse {

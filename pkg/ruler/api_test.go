@@ -9,9 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -193,9 +195,57 @@ func TestRuler_PrometheusRules(t *testing.T) {
 		interval = time.Minute
 	)
 
+	groupName := func(group int) string {
+		return fmt.Sprintf(")(_+?/|group%d+/?", group)
+	}
+
+	namespaceName := func(ns int) string {
+		return fmt.Sprintf(")(_+?/|namespace%d+/?", ns)
+	}
+
+	makeFilterTestRules := func() rulespb.RuleGroupList {
+		result := rulespb.RuleGroupList{}
+		for ns := 1; ns <= 3; ns++ {
+			for group := 1; group <= 3; group++ {
+				g := &rulespb.RuleGroupDesc{
+					Name:      groupName(group),
+					Namespace: namespaceName(ns),
+					User:      userID,
+					Rules: []*rulespb.RuleDesc{
+						createRecordingRule("NonUniqueNamedRule", "up"),
+						createAlertingRule(fmt.Sprintf("UniqueNamedRuleN%dG%d", ns, group), "up < 1"),
+					},
+					Interval: interval,
+				}
+				result = append(result, g)
+			}
+		}
+		return result
+	}
+
+	filterTestExpectedRule := func(name string) *recordingRule {
+		return &recordingRule{
+			Name:   name,
+			Query:  "up",
+			Health: "unknown",
+			Type:   "recording",
+		}
+	}
+	filterTestExpectedAlert := func(name string) *alertingRule {
+		return &alertingRule{
+			Name:   name,
+			Query:  "up < 1",
+			State:  "inactive",
+			Health: "unknown",
+			Type:   "alerting",
+			Alerts: []*Alert{},
+		}
+	}
+
 	testCases := map[string]struct {
 		configuredRules    rulespb.RuleGroupList
 		limits             RulesLimits
+		expectedConfigured int
 		expectedStatusCode int
 		expectedErrorType  v1.ErrorType
 		expectedRules      []*RuleGroup
@@ -211,7 +261,8 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval:  interval,
 				},
 			},
-			limits: validation.MockDefaultOverrides(),
+			limits:             validation.MockDefaultOverrides(),
+			expectedConfigured: 1,
 			expectedRules: []*RuleGroup{
 				{
 					Name: "group1",
@@ -246,6 +297,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval:  interval,
 				},
 			},
+			expectedConfigured: 1,
 			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits[userID] = validation.MockDefaultLimits()
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = true
@@ -277,6 +329,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval:  interval,
 				},
 			},
+			expectedConfigured: 1,
 			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits[userID] = validation.MockDefaultLimits()
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
@@ -310,6 +363,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval:  interval,
 				},
 			},
+			expectedConfigured: 0,
 			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits[userID] = validation.MockDefaultLimits()
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
@@ -327,7 +381,8 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval:  interval,
 				},
 			},
-			limits: validation.MockDefaultOverrides(),
+			expectedConfigured: 1,
+			limits:             validation.MockDefaultOverrides(),
 			expectedRules: []*RuleGroup{
 				{
 					Name: ")(_+?/|group1+/?",
@@ -363,7 +418,8 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval:      interval,
 				},
 			},
-			limits: validation.MockDefaultOverrides(),
+			expectedConfigured: 1,
+			limits:             validation.MockDefaultOverrides(),
 			expectedRules: []*RuleGroup{
 				{
 					Name:          "group1",
@@ -404,7 +460,8 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval: interval,
 				},
 			},
-			limits: validation.MockDefaultOverrides(),
+			expectedConfigured: 1,
+			limits:             validation.MockDefaultOverrides(),
 			expectedRules: []*RuleGroup{
 				{
 					Name: "group1",
@@ -435,8 +492,9 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval:  interval,
 				},
 			},
-			queryParams: "?type=alert",
-			limits:      validation.MockDefaultOverrides(),
+			expectedConfigured: 1,
+			queryParams:        "?type=alert",
+			limits:             validation.MockDefaultOverrides(),
 			expectedRules: []*RuleGroup{
 				{
 					Name: "group1",
@@ -465,8 +523,9 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval:  interval,
 				},
 			},
-			queryParams: "?type=record",
-			limits:      validation.MockDefaultOverrides(),
+			expectedConfigured: 1,
+			queryParams:        "?type=record",
+			limits:             validation.MockDefaultOverrides(),
 			expectedRules: []*RuleGroup{
 				{
 					Name: "group1",
@@ -485,11 +544,300 @@ func TestRuler_PrometheusRules(t *testing.T) {
 		},
 		"Invalid type param": {
 			configuredRules:    rulespb.RuleGroupList{},
+			expectedConfigured: 0,
 			queryParams:        "?type=foo",
 			limits:             validation.MockDefaultOverrides(),
 			expectedStatusCode: http.StatusBadRequest,
 			expectedErrorType:  v1.ErrBadData,
 			expectedRules:      []*RuleGroup{},
+		},
+		"when filtering by an unknown namespace then the API returns nothing": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams:        "?file=unknown",
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules:      []*RuleGroup{},
+		},
+		"when filtering by a single known namespace then the API returns only rules from that namespace": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams:        "?" + url.Values{"file": []string{namespaceName(1)}}.Encode(),
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(1),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN1G1"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(2),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN1G2"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(3),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN1G3"),
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"when filtering by a multiple known namespaces then the API returns rules from both namespaces": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams:        "?" + url.Values{"file": []string{namespaceName(1), namespaceName(2)}}.Encode(),
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(1),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN1G1"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(2),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN1G2"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(3),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN1G3"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(1),
+					File: namespaceName(2),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN2G1"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(2),
+					File: namespaceName(2),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN2G2"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(3),
+					File: namespaceName(2),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN2G3"),
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"when filtering by an unknown group then the API returns nothing": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams:        "?rule_group=unknown",
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules:      []*RuleGroup{},
+		},
+		"when filtering by a known group then the API returns only rules from that group": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams:        "?" + url.Values{"rule_group": []string{groupName(2)}}.Encode(),
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(2),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN1G2"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(2),
+					File: namespaceName(2),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN2G2"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(2),
+					File: namespaceName(3),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN3G2"),
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"when filtering by multiple known groups then the API returns rules from both groups": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams:        "?" + url.Values{"rule_group": []string{groupName(2), groupName(3)}}.Encode(),
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(2),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN1G2"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(3),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN1G3"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(2),
+					File: namespaceName(2),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN2G2"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(3),
+					File: namespaceName(2),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN2G3"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(2),
+					File: namespaceName(3),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN3G2"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(3),
+					File: namespaceName(3),
+					Rules: []rule{
+						filterTestExpectedRule("NonUniqueNamedRule"),
+						filterTestExpectedAlert("UniqueNamedRuleN3G3"),
+					},
+					Interval: 60,
+				},
+			},
+		},
+
+		"when filtering by an unknown rule name then the API returns all empty groups": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams:        "?rule_name=unknown",
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules:      []*RuleGroup{},
+		},
+		"when filtering by a known rule name then the API returns only rules with that name": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams:        "?" + url.Values{"rule_name": []string{"UniqueNamedRuleN1G2"}}.Encode(),
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(2),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedAlert("UniqueNamedRuleN1G2"),
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"when filtering by multiple known rule names then the API returns both rules": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams:        "?" + url.Values{"rule_name": []string{"UniqueNamedRuleN1G2", "UniqueNamedRuleN2G3"}}.Encode(),
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(2),
+					File: namespaceName(1),
+					Rules: []rule{
+						filterTestExpectedAlert("UniqueNamedRuleN1G2"),
+					},
+					Interval: 60,
+				},
+				{
+					Name: groupName(3),
+					File: namespaceName(2),
+					Rules: []rule{
+						filterTestExpectedAlert("UniqueNamedRuleN2G3"),
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"when filtering by a known namespace and group then the API returns only rules from that namespace and group": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams: "?" + url.Values{
+				"file":       []string{namespaceName(3)},
+				"rule_group": []string{groupName(2)},
+			}.Encode(),
+			limits: validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(2),
+					File: namespaceName(3),
+					Rules: []rule{
+						&recordingRule{
+							Name:   "NonUniqueNamedRule",
+							Query:  "up",
+							Health: "unknown",
+							Type:   "recording",
+						},
+						&alertingRule{
+							Name:   "UniqueNamedRuleN3G2",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
+						},
+					},
+					Interval: 60,
+				},
+			},
 		},
 	}
 
@@ -511,7 +859,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 
 			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
 			// has been synched.
-			test.Poll(t, 5*time.Second, len(tc.expectedRules), func() interface{} {
+			test.Poll(t, 5*time.Second, tc.expectedConfigured, func() interface{} {
 				ctx := user.InjectOrgID(context.Background(), userID)
 				rls, _ := r.Rules(ctx, &RulesRequest{})
 				return len(rls.Groups)
@@ -827,7 +1175,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 	// Pre-condition check: the tenant should have 2 rule groups.
 	test.Poll(t, time.Second, 2, func() interface{} {
-		actualRuleGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID), AnyRule)
+		actualRuleGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
 		return len(actualRuleGroups)
 	})
@@ -845,7 +1193,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 	// Ensure the rule group has been deleted.
 	test.Poll(t, time.Second, 1, func() interface{} {
-		actualRuleGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID), AnyRule)
+		actualRuleGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
 		return len(actualRuleGroups)
 	})

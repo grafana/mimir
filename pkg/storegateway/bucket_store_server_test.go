@@ -101,7 +101,10 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 	)
 
 	// Create a gRPC connection to the server.
-	conn, err = grpc.Dial(s.serverListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err = grpc.Dial(s.serverListener.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024*1024*1024)),
+	)
 	if err != nil {
 		return
 	}
