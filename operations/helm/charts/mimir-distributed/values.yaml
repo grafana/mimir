@@ -2681,6 +2681,9 @@ metaMonitoring:
     # -- ServiceMonitor relabel configs to apply to samples before scraping
     # https://github.com/prometheus-operator/prometheus-operator/blob/master/Documentation/api.md#relabelconfig
     relabelings: []
+    # -- ServiceMonitor metric relabel configs to apply to samples before ingestion
+    # https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#endpoint
+    metricRelabelings: []
     # -- ServiceMonitor will use http by default, but you can pick https as well
     scheme: http
     # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
