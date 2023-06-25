@@ -145,18 +145,18 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 }
 
 func assertNoLimitMetricsEmitted(t *testing.T, c prometheus.Collector) {
-	require.NoError(t, testutil.CollectAndCompare(c, bytes.NewBufferString(""), "cortex_queries_exceeded_limits_total"))
+	require.NoError(t, testutil.CollectAndCompare(c, bytes.NewBufferString(""), "cortex_querier_queries_exceeded_limits_total"))
 }
 
 func assertLimitMetricValue(t *testing.T, c prometheus.Collector, limitName string, expectedValue int) {
 	expected := fmt.Sprintf(`
-		# HELP cortex_queries_exceeded_limits_total Number of queries that failed because they exceeded a limit.
-		# TYPE cortex_queries_exceeded_limits_total counter
-		cortex_queries_exceeded_limits_total{limit="%v"} %v
+		# HELP cortex_querier_queries_exceeded_limits_total Number of queries that failed because they exceeded a limit.
+		# TYPE cortex_querier_queries_exceeded_limits_total counter
+		cortex_querier_queries_exceeded_limits_total{limit="%v"} %v
 		`,
 		limitName,
 		expectedValue,
 	)
 
-	require.NoError(t, testutil.CollectAndCompare(c, bytes.NewBufferString(expected), "cortex_queries_exceeded_limits_total"))
+	require.NoError(t, testutil.CollectAndCompare(c, bytes.NewBufferString(expected), "cortex_querier_queries_exceeded_limits_total"))
 }

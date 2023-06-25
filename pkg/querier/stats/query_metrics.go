@@ -38,7 +38,7 @@ func NewQueryMetrics(reg prometheus.Registerer) *QueryMetrics {
 		}),
 		QueriesExceededLimits: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
-			Name:      "queries_exceeded_limits_total",
+			Name:      "querier_queries_exceeded_limits_total",
 			Help:      "Number of queries that failed because they exceeded a limit.",
 		}, []string{"limit"}),
 	}
