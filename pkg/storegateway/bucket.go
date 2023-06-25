@@ -567,15 +567,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		return status.Error(codes.InvalidArgument, errors.Wrap(err, "parse query sharding label").Error())
 	}
 
-	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
-	level.Debug(spanLogger).Log(
-		"msg", "BucketStore.Series",
-		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
-		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
-		"request matchers", storepb.PromMatchersToString(matchers...),
-		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
-	)
-
 	var (
 		ctx              = srv.Context()
 		stats            = newSafeQueryStats()
@@ -597,7 +588,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 	}
 
-	span, ctx := tracing.StartSpan(ctx, "bucket_store_preload_all")
+	logSeriesRequestToSpan(srv.Context(), s.logger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector)
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
@@ -607,8 +598,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	for _, r := range chunkReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
 	}
-
-	span.Finish()
 
 	var readers *bucketChunkReaders
 	if !req.SkipChunks {
@@ -711,6 +700,18 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	}
 
 	return err
+}
+
+func logSeriesRequestToSpan(ctx context.Context, l log.Logger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector) {
+	spanLogger := spanlogger.FromContext(ctx, l)
+	level.Debug(spanLogger).Log(
+		"msg", "BucketStore.Series",
+		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
+		"request max time", time.UnixMilli(maxT).UTC().Format(time.RFC3339Nano),
+		"request matchers", storepb.PromMatchersToString(matchers...),
+		"request block matchers", storepb.PromMatchersToString(blockMatchers...),
+		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
+	)
 }
 
 func chunksSize(chks []storepb.AggrChunk) (size int) {
@@ -921,6 +922,10 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
+	// ignore the span context so that we can use the context for cancellation
+	span, _ := tracing.StartSpan(ctx, "bucket_store_open_blocks_for_reading")
+	defer span.Finish()
+
 	s.blocksMx.RLock()
 	defer s.blocksMx.RUnlock()
 

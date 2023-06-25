@@ -522,26 +522,31 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 }
 
 // CountTokens returns the number tokens within the range for each instance.
+// In case of zone-awareness, this method takes into account only tokens of
+// the same zone. More precisely, for each instance only the distance between
+// its tokens and tokens of the instances from the same zone will be considered.
 func (r *Desc) CountTokens() map[string]int {
 	var (
 		owned               = make(map[string]int, len(r.Ingesters))
-		ringTokens          = r.GetTokens()
+		ringTokensByZone    = r.getTokensByZone()
 		ringInstanceByToken = r.getTokensInfo()
 	)
 
-	for i, token := range ringTokens {
-		var prevToken uint32
+	for _, ringTokens := range ringTokensByZone {
+		for i, token := range ringTokens {
+			var prevToken uint32
 
-		// Compute how many tokens are within the range.
-		if i == 0 {
-			prevToken = ringTokens[len(ringTokens)-1]
-		} else {
-			prevToken = ringTokens[i-1]
+			// Compute how many tokens are within the range.
+			if i == 0 {
+				prevToken = ringTokens[len(ringTokens)-1]
+			} else {
+				prevToken = ringTokens[i-1]
+			}
+
+			diff := tokenDistance(prevToken, token)
+			info := ringInstanceByToken[token]
+			owned[info.InstanceID] = owned[info.InstanceID] + diff
 		}
-
-		diff := tokenDistance(prevToken, token)
-		info := ringInstanceByToken[token]
-		owned[info.InstanceID] = owned[info.InstanceID] + diff
 	}
 
 	// Set to 0 the number of owned tokens by instances which don't have tokens yet.

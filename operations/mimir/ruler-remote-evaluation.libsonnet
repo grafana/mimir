@@ -30,7 +30,9 @@
 
   ruler_querier_args+::
     $.querier_args +
-    $.querierUseQuerySchedulerArgs(rulerQuerySchedulerName),
+    $.querierUseQuerySchedulerArgs(rulerQuerySchedulerName) + {
+      'querier.max-concurrent': $._config.ruler_querier_max_concurrency,
+    },
 
   ruler_querier_env_map:: $.querier_env_map,
 

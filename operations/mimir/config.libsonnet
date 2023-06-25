@@ -37,13 +37,13 @@
     querier_topology_spread_max_skew: 1,
     ruler_topology_spread_max_skew: 1,
 
+    // Controls how many concurrent queries are run in the querier.
+    querier_max_concurrency: 8,
+    ruler_querier_max_concurrency: $._config.querier_max_concurrency,
+
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
-
-    querier: {
-      concurrency: 8,
-    },
 
     // storage_backend will be used for all components that use block storage.
     // Each component can override this by specific CLI flags.
@@ -716,6 +716,33 @@
           'blocks-storage.bucket-store.metadata-cache.redis.endpoint': '%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:6379' % $._config,
           'blocks-storage.bucket-store.metadata-cache.redis.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
           'blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency': 50,
+        } else {}
+      else {}
+    ),
+
+  ruler_storage_caching_config::
+    (
+      if $._config.cache_metadata_enabled then
+        if $._config.cache_metadata_backend == 'memcached' then (
+          {
+            'ruler-storage.cache.backend': 'memcached',
+            'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
+            'ruler-storage.cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
+            'ruler-storage.cache.memcached.max-async-concurrency': 50,
+          } + if $._config.memcached_metadata_mtls_enabled then {
+            'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11212' % $._config,
+            'ruler-storage.cache.memcached.connect-timeout': '1s',
+            'ruler-storage.cache.memcached.tls-enabled': true,
+            'ruler-storage.cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+            'ruler-storage.cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+            'ruler-storage.cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+            'ruler-storage.cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+          } else {}
+        ) else if $._config.cache_metadata_backend == 'redis' then {
+          'ruler-storage.cache.backend': 'redis',
+          'ruler-storage.cache.redis.endpoint': '%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:6379' % $._config,
+          'ruler-storage.cache.redis.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
+          'ruler-storage.cache.redis.max-async-concurrency': 50,
         } else {}
       else {}
     ),
