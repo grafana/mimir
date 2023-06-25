@@ -192,11 +192,11 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
-	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cleanupContext context.CancelFunc) (ingesterQueryResult, error) {
+	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelFunc) (ingesterQueryResult, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
 		cleanup := func() {
 			log.Span.Finish()
-			cleanupContext()
+			cancelContext()
 		}
 
 		var stream ingester_client.Ingester_QueryStreamClient
