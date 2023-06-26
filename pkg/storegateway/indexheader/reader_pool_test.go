@@ -156,10 +156,10 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFile)
 	persistedData, err := os.ReadFile(persistedFile)
 	require.NoError(t, err)
-	expectedSnapshot := &lazyLoadedHeadersSnapshot{}
-	err = json.Unmarshal(persistedData, expectedSnapshot)
+	snapshotReadFromDisk := &lazyLoadedHeadersSnapshot{}
+	err = json.Unmarshal(persistedData, snapshotReadFromDisk)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(expectedSnapshot.HeaderLastUsedTime), "should have one lazyLoaded index header")
+	require.Equal(t, 1, len(snapshotReadFromDisk.HeaderLastUsedTime), "should have one lazyLoaded index header")
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
@@ -174,10 +174,10 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 
 	persistedData, err = os.ReadFile(persistedFile)
 	require.NoError(t, err)
-	expectedSnapshot = &lazyLoadedHeadersSnapshot{}
-	err = json.Unmarshal(persistedData, expectedSnapshot)
+	snapshotReadFromDisk = &lazyLoadedHeadersSnapshot{}
+	err = json.Unmarshal(persistedData, snapshotReadFromDisk)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(expectedSnapshot.HeaderLastUsedTime), "should have none of lazyLoaded index header")
+	require.Equal(t, 0, len(snapshotReadFromDisk.HeaderLastUsedTime), "should have none of lazyLoaded index header")
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {

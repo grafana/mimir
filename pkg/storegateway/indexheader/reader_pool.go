@@ -115,7 +115,7 @@ func (l lazyLoadedHeadersSnapshot) persist(dir string) error {
 }
 
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, headersLazyLoaded LazyLoadedHeadersSnapshotConfig) *ReaderPool {
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
 	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics)
 
 	// Start a goroutine to close idle readers (only if required).
@@ -138,10 +138,10 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 				case <-tickerLazyLoad.C:
 					snapshot := lazyLoadedHeadersSnapshot{
 						HeaderLastUsedTime: p.LoadedBlocks(),
-						UserID:             headersLazyLoaded.UserID,
+						UserID:             lazyLoadedSnapshotConfig.UserID,
 					}
 
-					if err := snapshot.persist(headersLazyLoaded.Path); err != nil {
+					if err := snapshot.persist(lazyLoadedSnapshotConfig.Path); err != nil {
 						level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
 					}
 				}
