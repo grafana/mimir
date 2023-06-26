@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +24,8 @@ import (
 
 	"github.com/thanos-io/objstore"
 )
+
+var lazyLoadedHeadersListFile = "lazy-loaded.json"
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
 type ReaderPoolMetrics struct {
@@ -68,13 +72,15 @@ type lazyLoadedHeadersSnapshot struct {
 }
 
 // persist creates a file to store lazy loaded index header in atomic way.
-func (l lazyLoadedHeadersSnapshot) persist(finalPath string) error {
-	// Create temporary path for fsync
-	tmpPath, err := os.CreateTemp("", "lazy-loaded")
+func (l lazyLoadedHeadersSnapshot) persist(persistPath string) error {
+	// Create temporary path for fsync.
+	// We don't use temporary folder because the process might not have access to the temporary folder.
+	tmpPath := filepath.Join(persistPath, strings.Join([]string{"tmp", lazyLoadedHeadersListFile}, "-"))
+	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmpPath.Name())
+	defer os.Remove(tmpFile.Name())
 
 	data, err := json.Marshal(l)
 	if err != nil {
@@ -82,17 +88,17 @@ func (l lazyLoadedHeadersSnapshot) persist(finalPath string) error {
 	}
 
 	merr := multierror.New()
-	_, err = tmpPath.Write(data)
+	_, err = tmpFile.Write(data)
 	merr.Add(err)
-	merr.Add(tmpPath.Sync())
-	merr.Add(tmpPath.Close())
+	merr.Add(tmpFile.Sync())
+	merr.Add(tmpFile.Close())
 
 	if err := merr.Err(); err != nil {
 		return err
 	}
 
 	// fsync the directory too
-	dir, err := os.OpenFile(path.Dir(tmpPath.Name()), os.O_RDONLY, 0777)
+	dir, err := os.OpenFile(path.Dir(tmpFile.Name()), os.O_RDONLY, 0777)
 	if err != nil {
 		return err
 	}
@@ -104,7 +110,8 @@ func (l lazyLoadedHeadersSnapshot) persist(finalPath string) error {
 	}
 
 	// move the written file to the actual path
-	return os.Rename(tmpPath.Name(), finalPath)
+	finalPath := filepath.Join(persistPath, lazyLoadedHeadersListFile)
+	return os.Rename(tmpFile.Name(), finalPath)
 }
 
 // NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers and blockIds writers if enabled.

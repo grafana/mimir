@@ -67,8 +67,6 @@ const (
 	// Labels for metrics.
 	labelEncode = "encode"
 	labelDecode = "decode"
-
-	lazyLoadedHeadersListFile = "lazy-loaded.json"
 )
 
 type BucketStoreStats struct {
@@ -261,7 +259,7 @@ func NewBucketStore(
 
 	lazyLoaded := indexheader.LazyLoadedHeadersSnapshotConfig{
 		// Path stores where lazy loaded blocks will be tracked in per-tenant-files
-		Path:   filepath.Join(dir, lazyLoadedHeadersListFile),
+		Path:   dir,
 		UserID: userID,
 	}
 	// Depend on the options
