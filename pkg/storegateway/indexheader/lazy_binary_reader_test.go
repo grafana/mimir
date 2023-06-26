@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/gate"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,7 +26,6 @@ import (
 
 	"github.com/thanos-io/objstore/providers/filesystem"
 
-	"github.com/grafana/dskit/gate"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -338,7 +338,7 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 
 		inflight.Dec()
 
-		return nil, errors.New("oh no!")
+		return nil, errors.New("oh no")
 	}
 
 	var lazyReaders [numLazyReader]*LazyBinaryReader
@@ -356,8 +356,8 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 	for i := 0; i < numLazyReader; i++ {
 		index := i
 		go func() {
-			lazyReaders[index].IndexVersion()
-			require.NoError(t, err)
+			_, err := lazyReaders[index].IndexVersion()
+			require.Error(t, err)
 			wg.Done()
 		}()
 	}

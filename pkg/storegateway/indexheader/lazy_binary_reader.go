@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/gate"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,7 +23,6 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/dskit/gate"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
