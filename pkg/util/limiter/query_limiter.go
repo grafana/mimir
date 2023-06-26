@@ -96,9 +96,12 @@ func (ql *QueryLimiter) AddSeries(seriesLabels []mimirpb.LabelAdapter) error {
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
 
+	uniqueSeriesBefore := len(ql.uniqueSeries)
 	ql.uniqueSeries[fingerprint] = struct{}{}
-	if len(ql.uniqueSeries) > ql.maxSeriesPerQuery {
-		if len(ql.uniqueSeries) == ql.maxSeriesPerQuery+1 {
+	uniqueSeriesAfter := len(ql.uniqueSeries)
+
+	if uniqueSeriesAfter > ql.maxSeriesPerQuery {
+		if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
 			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
 			ql.queryMetrics.QueriesExceededLimits.WithLabelValues("max-fetched-series-per-query").Inc()
 		}

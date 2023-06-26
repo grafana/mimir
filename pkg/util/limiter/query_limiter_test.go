@@ -80,6 +80,11 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 	require.Error(t, err)
 	assertLimitMetricValue(t, reg, "max-fetched-series-per-query", 1)
 
+	// Add the same series again and ensure that we don't increment the failed queries metric again.
+	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series2))
+	require.Error(t, err)
+	assertLimitMetricValue(t, reg, "max-fetched-series-per-query", 1)
+
 	// Add another series and ensure that we don't increment the failed queries metric again.
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series3))
 	require.Error(t, err)
