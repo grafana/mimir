@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -17,12 +16,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/util/fsync"
 )
 
 var lazyLoadedHeadersListFile = "lazy-loaded.json"
@@ -71,11 +71,11 @@ type lazyLoadedHeadersSnapshot struct {
 	UserID             string              `json:"user_id"`
 }
 
-// persist atomically writes this snapshot to dir.
-func (l lazyLoadedHeadersSnapshot) persist(dir string) error {
+// persist creates a file to store lazy loaded index header in atomic way.
+func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 	// Create temporary path for fsync.
 	// We don't use temporary folder because the process might not have access to the temporary folder.
-	tmpPath := filepath.Join(persistPath, strings.Join([]string{"tmp", lazyLoadedHeadersListFile}, "-"))
+	tmpPath := filepath.Join(persistDir, strings.Join([]string{"tmp", lazyLoadedHeadersListFile}, "-"))
 	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
 		return err
@@ -87,30 +87,14 @@ func (l lazyLoadedHeadersSnapshot) persist(dir string) error {
 		return err
 	}
 
-	merr := multierror.New()
-	_, err = tmpFile.Write(data)
-	merr.Add(err)
-	merr.Add(tmpFile.Sync())
-	merr.Add(tmpFile.Close())
-
-	if err := merr.Err(); err != nil {
+	if err := fsync.CreateFile(tmpFile, func(f *os.File) (int, error) {
+		return f.Write(data)
+	}); err != nil {
 		return err
 	}
-
-	// fsync the directory too
-	dir, err := os.OpenFile(path.Dir(tmpFile.Name()), os.O_RDONLY, 0777)
-	if err != nil {
-		return err
-	}
-
-	merr.Add(dir.Sync())
-	merr.Add(dir.Close())
-	if err := merr.Err(); err != nil {
-		return err
-	}
-
+	
 	// move the written file to the actual path
-	finalPath := filepath.Join(persistPath, lazyLoadedHeadersListFile)
+	finalPath := filepath.Join(persistDir, lazyLoadedHeadersListFile)
 	return os.Rename(tmpFile.Name(), finalPath)
 }
 
