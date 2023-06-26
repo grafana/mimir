@@ -1659,6 +1659,17 @@ memcachedExporter:
       drop: [ALL]
     allowPrivilegeEscalation: false
 
+  # -- Extra args to add to the exporter container.
+  # Example:
+  # extraArgs:
+  #   memcached.tls.enable: true
+  #   memcached.tls.cert-file: /certs/cert.crt
+  #   memcached.tls.key-file: /certs/cert.key
+  #   memcached.tls.ca-file: /certs/ca.crt
+  #   memcached.tls.insecure-skip-verify: false
+  #   memcached.tls.server-name: memcached
+  extraArgs: {}
+
 chunks-cache:
   # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
@@ -1712,11 +1723,35 @@ chunks-cache:
   statefulStrategy:
     type: RollingUpdate
 
+  # -- Override default CLI args for chunks-cache memcached container.
+  # Example:
+  # args:
+  #   o: modern,track_sizes
+  #   I: 1m
+  #   U: 11211
+  args: {}
+
   # -- Additional CLI args for chunks-cache
   extraArgs: {}
 
   # -- Additional containers to be added to the chunks-cache pod.
   extraContainers: []
+
+  # -- Additional volumes to be added to the chunks-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumes:
+  # - name: extra-volume
+  #   secret:
+  #    secretName: extra-volume-secret
+  extraVolumes: []
+
+  # -- Additional volume mounts to be added to the chunks-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumeMounts:
+  # - name: extra-volume
+  #   mountPath: /etc/extra-volume
+  #   readOnly: true
+  extraVolumeMounts: []
 
   # -- Resource requests and limits for the chunks-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -1780,11 +1815,35 @@ index-cache:
   statefulStrategy:
     type: RollingUpdate
 
+  # -- Override default CLI args for index-cache memcached container.
+  # Example:
+  # args:
+  #   o: modern,track_sizes
+  #   I: 1m
+  #   U: 11211
+  args: {}
+
   # -- Additional CLI args for index-cache
   extraArgs: {}
 
   # -- Additional containers to be added to the index-cache pod.
   extraContainers: []
+
+  # -- Additional volumes to be added to the index-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumes:
+  # - name: extra-volume
+  #   secret:
+  #    secretName: extra-volume-secret
+  extraVolumes: []
+
+  # -- Additional volume mounts to be added to the index-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumeMounts:
+  # - name: extra-volume
+  #   mountPath: /etc/extra-volume
+  #   readOnly: true
+  extraVolumeMounts: []
 
   # -- Resource requests and limits for the index-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -1848,11 +1907,35 @@ metadata-cache:
   statefulStrategy:
     type: RollingUpdate
 
+  # -- Override default CLI args for metadata-cache memcached container.
+  # Example:
+  # args:
+  #   o: modern,track_sizes
+  #   I: 1m
+  #   U: 11211
+  args: {}
+
   # -- Additional CLI args for metadata-cache
   extraArgs: {}
 
   # -- Additional containers to be added to the metadata-cache pod.
   extraContainers: []
+
+  # -- Additional volumes to be added to the metadata-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumes:
+  # - name: extra-volume
+  #   secret:
+  #    secretName: extra-volume-secret
+  extraVolumes: []
+
+  # -- Additional volume mounts to be added to the metadata-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumeMounts:
+  # - name: extra-volume
+  #   mountPath: /etc/extra-volume
+  #   readOnly: true
+  extraVolumeMounts: []
 
   # -- Resource requests and limits for the metadata-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -1916,11 +1999,35 @@ results-cache:
   statefulStrategy:
     type: RollingUpdate
 
+  # -- Override default CLI args for results-cache memcached container.
+  # Example:
+  # args:
+  #   o: modern,track_sizes
+  #   I: 1m
+  #   U: 11211
+  args: {}
+
   # -- Additional CLI args for results-cache
   extraArgs: {}
 
   # -- Additional containers to be added to the results-cache pod.
   extraContainers: []
+
+  # -- Additional volumes to be added to the results-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumes:
+  # - name: extra-volume
+  #   secret:
+  #    secretName: extra-volume-secret
+  extraVolumes: []
+
+  # -- Additional volume mounts to be added to the results-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumeMounts:
+  # - name: extra-volume
+  #   mountPath: /etc/extra-volume
+  #   readOnly: true
+  extraVolumeMounts: []
 
   # -- Resource requests and limits for the results-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
