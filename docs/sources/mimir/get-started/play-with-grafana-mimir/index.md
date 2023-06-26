@@ -1,4 +1,7 @@
 ---
+aliases:
+  - ../tutorials/play-with-grafana-mimir/
+  - ../tutorials/
 associated_technologies:
   - mimir
 author:
