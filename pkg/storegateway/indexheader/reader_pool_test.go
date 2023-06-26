@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/thanos-io/objstore/providers/filesystem"
 
@@ -124,6 +126,24 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 }
 
+func TestReaderPool_LoadedBlock(t *testing.T) {
+	usedAt := time.Now()
+	id, err := ulid.New(ulid.Now(), rand.Reader)
+	require.NoError(t, err)
+
+	lb := LazyBinaryReader{
+		blockID: id,
+		usedAt:  atomic.NewInt64(usedAt.UnixNano()),
+		// we just set to make reader != nil
+		reader: &StreamBinaryReader{},
+	}
+	rp := ReaderPool{
+		lazyReaderEnabled: true,
+		lazyReaders:       map[*LazyBinaryReader]struct{}{&lb: {}},
+	}
+	require.Equal(t, map[ulid.ULID]int64{id: usedAt.UnixMilli()}, rp.LoadedBlocks())
+}
+
 func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	const idleTimeout = time.Second
 	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
@@ -144,17 +164,13 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
-	loadedBlocks := pool.LoadedBlocks()
-	require.Equal(t, map[ulid.ULID]int64{blockID: loadedBlocks[blockID]}, loadedBlocks)
-
 	snapshot := lazyLoadedHeadersSnapshot{
-		HeaderLastUsedTime: loadedBlocks,
+		HeaderLastUsedTime: pool.LoadedBlocks(),
 		UserID:             "anonymous",
 	}
 
 	err = snapshot.persist(tmpDir)
 	require.NoError(t, err)
-	require.Greater(t, snapshot.HeaderLastUsedTime[blockID], int64(0), "lazyLoadedBlocks snapshot must be set")
 
 	persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFile)
 	persistedData, err := os.ReadFile(persistedFile)
@@ -171,19 +187,16 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	time.Sleep(idleTimeout * 2)
 	pool.closeIdleReaders()
 
-	loadedBlocks = pool.LoadedBlocks()
-	require.Equal(t, map[ulid.ULID]int64{}, loadedBlocks)
 	// LoadedBlocks will update the HeaderLastUsedTime map with the removal of
 	// idle blocks.
 	snapshot.HeaderLastUsedTime = pool.LoadedBlocks()
 	err = snapshot.persist(tmpDir)
 	require.NoError(t, err)
-	require.NotContains(t, snapshot.HeaderLastUsedTime, blockID.String(), "lazyLoadedBlocks snapshot must be unset")
 
 	persistedData, err = os.ReadFile(persistedFile)
 	require.NoError(t, err)
 
-	require.Equal(t, `{"header_last_used_time":{},"user_id":"anonymous"}`, string(persistedData))
+	require.Equal(t, `{"header_last_used_time":{},"user_id":"anonymous"}`, string(persistedData), "header_last_used_time should be cleared")
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
