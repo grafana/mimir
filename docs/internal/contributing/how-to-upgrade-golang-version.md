@@ -1,12 +1,9 @@
 To upgrade the Golang version:
 
-1. Upgrade build image version
-   - Upgrade Golang version in `mimir-build-image/Dockerfile`
-   - Build new image `make mimir-build-image/.uptodate`
-   - Publish the new image to `grafana/mimir-build-image` (requires a maintainer)
-2. Upgrade integration tests version
-   - Update the Golang version installed in the `integration` job in `.github/workflows/*`
-3. Upgrade the reference to the latest build image called `LATEST_BUILD_IMAGE_TAG` in `Makefile`
+Upgrade the build image version:
+
+1. Upgrade the Golang version in `mimir-build-image/Dockerfile`.
+2. Change the Pull Request to "ready to review" and wait for mimir-build-image to be updated. Refer to the [documentation](https://github.com/grafana/mimir/blob/main/docs/internal/how-to-update-the-build-image.md) for more information.
 
 If the minimum supported Golang version should be upgraded as well:
 

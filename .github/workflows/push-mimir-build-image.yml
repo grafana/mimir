@@ -3,58 +3,20 @@ name: Build and Push mimir-build-image
 # configure trigger by pull request or manually
 on:
   pull_request:
-    # types: [opened]
+    types: [opened, synchronize, ready_for_review]
     paths:
       - mimir-build-image/Dockerfile  
-  issue_comment:
-    types: [created]
 
 jobs: 
-  prepare_variables:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: khan/pull-request-comment-trigger@v1.1.0
-        id: trigger
-        with:
-          trigger: '@mimir-build-image'
-          reaction: rocket
-        env:
-          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
-      - name: Get Variables
-        id: variables
-        run: |
-          # The case when workflow is triggered by pull request
-          if [[ ${{ github.event_name }} == 'pull_request' && ${{ github.event.pull_request.user.login }} == 'dependabot[bot]' ]]; then
-            echo "triggered=true" >> $GITHUB_OUTPUT
-            echo "pull_request_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-            echo "pull_request_url=${{ github.event.pull_request.html_url }}" >> $GITHUB_OUTPUT
-            echo "login=${{ github.event.pull_request.user.login }}" >> $GITHUB_OUTPUT
-          # The case when workflow is triggered by comment on pull request and it matches the trigger
-          elif [[ ${{ github.event_name }} == 'issue_comment' && ${{ steps.trigger.outputs.triggered }} == 'true' ]]; then
-            echo "triggered=true" >> $GITHUB_OUTPUT
-            echo "pull_request_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
-            # echo "pull_request_url=${{ github.event.issue.html_url }}" >> $GITHUB_OUTPUT
-            echo "login=${{ github.event.issue.author }}" >> $GITHUB_OUTPUT
-          else
-            echo "triggered=false" >> $GITHUB_OUTPUT
-          fi
-    outputs:
-      triggered: ${{ steps.variables.outputs.triggered }}
-      pull_request_number: ${{ steps.variables.outputs.pull_request_number }}
-      pull_request_url: ${{ steps.variables.outputs.pull_request_url }}
-      login: ${{ steps.variables.outputs.login }}
-
   build_and_push:
     runs-on: ubuntu-latest
-    needs: prepare_variables
-    if: needs.prepare_variables.outputs.triggered == 'true'
     # If the PR is raised by dependabot, then build the image
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
       - name: Checkout Pull Request Branch
-        run: gh pr checkout ${{ needs.prepare_variables.outputs.pull_request_number }}
+        run: gh pr checkout ${{ github.event.pull_request.number }}
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
@@ -82,20 +44,20 @@ jobs:
           current_hash=$(md5sum ${{ steps.prepare.outputs.path }} | awk '{print $1}')
           echo "the file path is ${{ steps.prepare.outputs.path }}"
           echo "build tag is $current_hash"
-          tag="${{ needs.prepare_variables.outputs.pull_request_number }}_$current_hash"
+          tag="${{ github.event.pull_request.number }}_$current_hash"
           echo "tag=$tag" >> $GITHUB_OUTPUT
 
       - name: Check Should Build Image
         id: check_build
         run: |
           echo "Checking if image should be built"
-          response=$(curl --silent --head -lL https://hub.docker.com/v2/repositories/${{ steps.prepare.outputs.image }}/tags/${{ steps.compute_hash.outputs.tag }})
-          if [[ ! ($response == *"200 OK"*) ]]; then
-            echo "${{ steps.compute_hash.outputs.tag }} doesn't exists"
-            echo "build=true" >> $GITHUB_OUTPUT
-          else
-            echo "${{ steps.compute_hash.outputs.tag }} already exists"
+          image="docker.io/${{ steps.prepare.outputs.image }}:${{ steps.compute_hash.outputs.tag }}"
+          if skopeo inspect --raw "docker://$image" >/dev/null 2>&1; then
             echo "build=false" >> $GITHUB_OUTPUT
+            echo "Tag exists"
+          else
+            echo "Tag does not exist"
+            echo "build=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Add Comment to the PR
@@ -106,11 +68,11 @@ jobs:
             image would be auto built and pushed to docker hub, a commit would be added to PR with new image version."
           else
             echo "This PR will not trigger a build of the mimir-build-image"
-            gh pr comment $PR_URL --body "**This PR can not trigger a build of the mimir-build-image**
-            Only PR raised by dependabot can trigger a build of the mimir-build-image."
+            gh pr comment $PR_URL --body "**This PR would not trigger the build of the mimir-build-image**
+            the tag is already exist."
           fi
         env:
-          PR_URL: ${{ needs.prepare_variables.outputs.pull_request_url }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
       - name: Build and Push Docker Image
