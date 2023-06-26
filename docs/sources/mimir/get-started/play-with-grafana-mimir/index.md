@@ -3,8 +3,7 @@ associated_technologies:
   - mimir
 author:
   - marco
-description:
-  This tutorial helps you learn about Grafana Mimir, which provides distributed,
+description: Learn about Grafana Mimir, which provides distributed,
   horizontally scalable, and highly available long term storage for Prometheus.
 keywords:
   - mimir tutorial
@@ -20,7 +19,7 @@ keywords:
   - Prometheus read write
 menuTitle: Play with Grafana Mimir
 title: Play with Grafana Mimir
-weight: 1
+weight: 10
 ---
 
 # Play with Grafana Mimir
