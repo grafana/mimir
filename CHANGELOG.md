@@ -32,6 +32,7 @@
 * [ENHANCEMENT] Update alpine base image to 3.18.2. #5276
 * [ENHANCEMENT] Ruler: add `cortex_ruler_sync_rules_duration_seconds` metric, tracking the time spent syncing all rule groups owned by the ruler instance. #5311
 * [ENHANCEMENT] Ingester and querier: improve level of detail in traces emitted for queries that hit ingesters. #5315
+* [ENHANCEMENT] Querier: add experimental `-querier.query-only-active-ingesters` option to only initiate query requests to ingesters in the `ACTIVE` state in the ring. #5342
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 
 ### Mixin
