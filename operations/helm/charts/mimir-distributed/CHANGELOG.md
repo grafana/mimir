@@ -33,6 +33,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Ruler: configure the ruler storage cache when the metadata cache is enabled. #5326 #5334
 * [ENHANCEMENT] Helm: support metricRelabelings in the monitoring serviceMonitor resources. #5340
 * [ENHANCEMENT] Service Account: allow adding labels to the service account. #5355
+* [ENHANCEMENT] Memcached: enable providing additional extended options (`-o/--extend`) via `<cache-section>.extraExtendedOptions`. #5353
+* [ENHANCEMENT] Memcached exporter: enable adding additional CLI arguments via `memcachedExporter.extraArgs`. #5353
+* [ENHANCEMENT] Memcached: allow mounting additional volumes to the memcached and exporter containers via `<cache-section>.extraVolumes` and `<cache-section>.extraVolumeMounts`. #5353
 
 ## 4.5.0
 
