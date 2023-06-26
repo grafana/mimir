@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -148,9 +149,17 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 		UserID:             "anonymous",
 	}
 
-	err = snapshot.persist(filepath.Join(tmpDir, "lazy-loaded.json"))
+	persistPath := filepath.Join(tmpDir, "lazy-loaded.json")
+	err = snapshot.persist(persistPath)
 	require.NoError(t, err)
 	require.Greater(t, snapshot.HeaderLastUsedTime[blockID], int64(0), "lazyLoadedBlocks snapshot must be set")
+
+	persistedData, err := os.ReadFile(persistPath)
+	require.NoError(t, err)
+	expectedSnapshot := &lazyLoadedHeadersSnapshot{}
+	err = json.Unmarshal(persistedData, expectedSnapshot)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(expectedSnapshot.HeaderLastUsedTime), "should have one lazyLoaded index header")
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
@@ -159,9 +168,16 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	// LoadedBlocks will update the HeaderLastUsedTime map with the removal of
 	// idle blocks.
 	snapshot.HeaderLastUsedTime = pool.LoadedBlocks()
-	err = snapshot.persist(filepath.Join(tmpDir, "lazy-loaded.json"))
+	err = snapshot.persist(persistPath)
 	require.NoError(t, err)
 	require.NotContains(t, snapshot.HeaderLastUsedTime, blockID.String(), "lazyLoadedBlocks snapshot must be unset")
+
+	persistedData, err = os.ReadFile(persistPath)
+	require.NoError(t, err)
+	expectedSnapshot = &lazyLoadedHeadersSnapshot{}
+	err = json.Unmarshal(persistedData, expectedSnapshot)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(expectedSnapshot.HeaderLastUsedTime), "should have none of lazyLoaded index header")
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
