@@ -114,7 +114,7 @@ func (l lazyLoadedHeadersSnapshot) persist(persistPath string) error {
 	return os.Rename(tmpFile.Name(), finalPath)
 }
 
-// NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers and blockIds writers if enabled.
+// NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
 func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, headersLazyLoaded LazyLoadedHeadersSnapshotConfig) *ReaderPool {
 	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics)
 
