@@ -28,6 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Changed max unavailable ingesters and store-gateways in a zone to 50. #5327
 * [ENHANCEMENT] Ruler: configure the ruler storage cache when the metadata cache is enabled. #5326
 
 ## 4.5.0

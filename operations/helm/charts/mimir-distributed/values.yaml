@@ -887,7 +887,7 @@ ingester:
     # -- Enable zone-aware replication for ingester
     enabled: true
     # -- Maximum number of ingesters that can be unavailable per zone during rollout
-    maxUnavailable: 25
+    maxUnavailable: 50
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
@@ -1446,7 +1446,7 @@ store_gateway:
     # -- Enable zone-aware replication for store-gateway
     enabled: true
     # -- Maximum number of store-gateways that can be unavailable per zone during rollout
-    maxUnavailable: 10
+    maxUnavailable: 50
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
