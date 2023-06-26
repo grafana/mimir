@@ -15243,7 +15243,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 6,
+                      "span": 4,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -15319,7 +15319,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 6,
+                      "span": 4,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -15383,6 +15383,82 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "fill": 1,
+                      "id": 34,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 4,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "sum by(stage) (rate(cortex_bucket_stores_gate_duration_seconds_sum{\"gate\": \"index_header\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n/\nsum by(stage) (rate(cortex_bucket_stores_gate_duration_seconds_count{\"gate\": \"index_header\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "average load latency",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Average index-header load latency",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
                    }
                 ],
                 "repeat": null,
@@ -15403,7 +15479,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 34,
+                      "id": 35,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -15479,7 +15555,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 35,
+                      "id": 36,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -15555,7 +15631,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 36,
+                      "id": 37,
                       "legend": {
                          "avg": false,
                          "current": false,

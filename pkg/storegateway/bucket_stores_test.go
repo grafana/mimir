@@ -113,14 +113,12 @@ func TestBucketStores_InitialSync(t *testing.T) {
 			# TYPE cortex_bucket_store_block_load_failures_total counter
 			cortex_bucket_store_block_load_failures_total 0
 
-			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries/loads allowed.
+			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
-			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 0
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
 
-			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries/loads that are currently in flight.
+			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
-			cortex_bucket_stores_gate_queries_in_flight{gate="index_header"} 0
 			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
@@ -248,14 +246,12 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 			# TYPE cortex_bucket_store_block_load_failures_total counter
 			cortex_bucket_store_block_load_failures_total 0
 
-			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries/loads allowed.
+			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
-			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 0
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
 
-			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries/loads that are currently in flight.
+			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
-			cortex_bucket_stores_gate_queries_in_flight{gate="index_header"} 0
 			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
