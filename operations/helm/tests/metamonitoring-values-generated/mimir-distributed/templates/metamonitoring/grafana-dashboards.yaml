@@ -15427,7 +15427,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Average index-header load latency",
+                      "title": "Index-header lazy load gate latency",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
