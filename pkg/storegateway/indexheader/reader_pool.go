@@ -87,7 +87,7 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 		return err
 	}
 
-	if err := fsync.CreateFile(tmpFile, func(f *os.File) (int, error) {
+	if err := fsync.Run(tmpFile, func(f *os.File) (int, error) {
 		return f.Write(data)
 	}); err != nil {
 		return err

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateFile(t *testing.T) {
+func TestRun(t *testing.T) {
 	fileCreator := func() *os.File {
 		file, err := os.CreateTemp("", "")
 		require.NoError(t, err)
@@ -26,7 +26,7 @@ func TestCreateFile(t *testing.T) {
 		assertFileContent func(fileName string)
 	}{
 		{
-			name: "test create with WriteString",
+			name: "test fsync.Run with WriteString",
 			args: args{
 				file: fileCreator(),
 				writeFunc: func(f *os.File) (int, error) {
@@ -41,7 +41,7 @@ func TestCreateFile(t *testing.T) {
 			},
 		},
 		{
-			name: "test create with Write",
+			name: "test fsync.Run with Write",
 			args: args{
 				file: fileCreator(),
 				writeFunc: func(f *os.File) (int, error) {
@@ -58,8 +58,8 @@ func TestCreateFile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := CreateFile(tt.args.file, tt.args.writeFunc); (err != nil) != tt.wantErr {
-				t.Errorf("CreateFile() error = %v, wantErr %v", err, tt.wantErr)
+			if err := Run(tt.args.file, tt.args.writeFunc); (err != nil) != tt.wantErr {
+				t.Errorf("Run() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			tt.assertFileContent(tt.args.file.Name())
 		})

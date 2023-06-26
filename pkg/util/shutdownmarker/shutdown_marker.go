@@ -23,7 +23,7 @@ func Create(p string) error {
 		return err
 	}
 
-	return fsync.CreateFile(file, func(f *os.File) (int, error) {
+	return fsync.Run(file, func(f *os.File) (int, error) {
 		return f.WriteString(time.Now().UTC().Format(time.RFC3339))
 	})
 }
