@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [ENHANCEMENT] Ruler: configure the ruler storage cache when the metadata cache is enabled. #5326
+* [ENHANCEMENT] Service Account: allow to add labels. #5355
 
 ## 4.5.0
 
