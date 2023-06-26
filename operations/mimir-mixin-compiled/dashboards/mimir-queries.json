@@ -2840,7 +2840,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(stage) (rate(cortex_bucket_stores_gate_duration_seconds_sum{\"gate\": \"index_header\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n/\nsum by(stage) (rate(cortex_bucket_stores_gate_duration_seconds_count{\"gate\": \"index_header\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "expr": "sum by(stage) (rate(cortex_bucket_stores_gate_duration_seconds_sum{gate=\"index_header\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n/\nsum by(stage) (rate(cortex_bucket_stores_gate_duration_seconds_count{gate=\"index_header\", cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "average load latency",
