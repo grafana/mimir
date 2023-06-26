@@ -13,6 +13,7 @@
     $._config.rulerLimitsConfig +
     $._config.queryBlocksStorageConfig +
     $.blocks_metadata_caching_config +
+    $.ruler_storage_caching_config +
     $.bucket_index_config
     {
       target: 'ruler',

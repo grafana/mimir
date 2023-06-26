@@ -340,8 +340,9 @@ mimir:
       enable_api: true
       rule_path: /data
 
-    {{- if .Values.minio.enabled }}
+    {{- if or (.Values.minio.enabled) (index .Values "metadata-cache" "enabled") }}
     ruler_storage:
+      {{- if .Values.minio.enabled }}
       backend: s3
       s3:
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
@@ -349,6 +350,7 @@ mimir:
         access_key_id: {{ .Values.minio.rootUser }}
         secret_access_key: {{ .Values.minio.rootPassword }}
         insecure: true
+      {{- end }}
       {{- if index .Values "metadata-cache" "enabled" }}
       cache:
         backend: memcached
