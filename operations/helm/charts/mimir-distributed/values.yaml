@@ -415,7 +415,10 @@ runtimeConfig: {}
 # RBAC configuration
 rbac:
   create: true
-  # For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
+  # -- If true, PodSecurityPolicy will be rendered by the chart on Kuberentes 1.24.
+  # By default the PodSecurityPolicy is not rendered on version 1.24.
+  forcePSPOnKubernetes124: false
+  # -- For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
   type: psp
   # -- podSecurityContext is the default pod security context for Mimir, GEM, gateway, and cache components.
   # When installing on OpenShift, override podSecurityContext settings with
