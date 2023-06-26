@@ -4,7 +4,7 @@ aliases:
 description: Learn about the Grafana Mimir architecture.
 menuTitle: Grafana Mimir architecture
 title: Grafana Mimir architecture
-weight: 10
+weight: 5
 ---
 
 # Grafana Mimir architecture
