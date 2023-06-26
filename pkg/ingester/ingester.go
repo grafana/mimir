@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -145,9 +146,7 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period" category:"advanced"`
 
-	ActiveSeriesMetricsEnabled      bool          `yaml:"active_series_metrics_enabled" category:"advanced"`
-	ActiveSeriesMetricsUpdatePeriod time.Duration `yaml:"active_series_metrics_update_period" category:"advanced"`
-	ActiveSeriesMetricsIdleTimeout  time.Duration `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
+	ActiveSeriesMetrics mimir_tsdb.ActiveSeriesMetricsConfig `yaml:",inline"`
 
 	TSDBConfigUpdatePeriod time.Duration `yaml:"tsdb_config_update_period" category:"experimental"`
 
@@ -168,21 +167,14 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.IngesterRing.RegisterFlags(f, logger)
+	cfg.DefaultLimits.RegisterFlags(f)
+	cfg.ActiveSeriesMetrics.RegisterFlags(f)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
-
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
-	f.BoolVar(&cfg.ActiveSeriesMetricsEnabled, "ingester.active-series-metrics-enabled", true, "Enable tracking of active series and export them as metrics.")
-	f.DurationVar(&cfg.ActiveSeriesMetricsUpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
-	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
-
 	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", true, "Stream chunks from ingesters to queriers.")
 	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "ingester.tsdb-config-update-period", 15*time.Second, "Period with which to update the per-tenant TSDB configuration.")
-
-	cfg.DefaultLimits.RegisterFlags(f)
-
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
-
 	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting")
 	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting")
 }
@@ -329,7 +321,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		return nil, err
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
-	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 	i.activeGroups = activeGroupsCleanupService
 
 	if registerer != nil {
@@ -497,8 +489,8 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	defer tsdbUpdateTicker.Stop()
 
 	var activeSeriesTickerChan <-chan time.Time
-	if i.cfg.ActiveSeriesMetricsEnabled {
-		t := time.NewTicker(i.cfg.ActiveSeriesMetricsUpdatePeriod)
+	if i.cfg.ActiveSeriesMetrics.Enabled {
+		t := time.NewTicker(i.cfg.ActiveSeriesMetrics.UpdatePeriod)
 		activeSeriesTickerChan = t.C
 		defer t.Stop()
 	}
@@ -743,10 +735,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		return nil, wrapWithUser(err, userID)
 	}
 
-	if err := db.acquireAppendLock(); err != nil {
+	lockState, err := db.acquireAppendLock(req.MinTimestamp())
+	if err != nil {
 		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(err, userID).Error())
 	}
-	defer db.releaseAppendLock()
+	defer db.releaseAppendLock(lockState)
 
 	// Note that we don't .Finish() the span in this method on purpose
 	spanlog := spanlogger.FromContext(ctx, i.logger)
@@ -772,7 +765,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	level.Debug(spanlog).Log("event", "got appender for timeseries", "series", len(req.Timeseries))
 
 	var activeSeries *activeseries.ActiveSeries
-	if i.cfg.ActiveSeriesMetricsEnabled {
+	if i.cfg.ActiveSeriesMetrics.Enabled {
 		activeSeries = db.activeSeries
 	}
 
@@ -2018,7 +2011,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetricsIdleTimeout),
+		activeSeries:        activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -2375,11 +2368,11 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 
 		// Run the shipper's Sync() to upload unshipped blocks. Make sure the TSDB state is active, in order to
 		// avoid any race condition with closing idle TSDBs.
-		if ok, s := userDB.casState(active, activeShipping); !ok {
+		if ok, s := userDB.changeState(active, activeShipping); !ok {
 			level.Info(i.logger).Log("msg", "shipper skipped because the TSDB is not active", "user", userID, "state", s.String())
 			return nil
 		}
-		defer userDB.casState(activeShipping, active)
+		defer userDB.changeState(activeShipping, active)
 
 		uploaded, err := userDB.shipper.Sync(ctx)
 		if err != nil {
@@ -2415,7 +2408,11 @@ func (i *Ingester) compactionLoop(ctx context.Context) error {
 	for ctx.Err() == nil {
 		select {
 		case <-ticker.C:
-			i.compactBlocks(ctx, false, nil)
+			// The forcedCompactionMaxTime has no meaning because force=false.
+			i.compactBlocks(ctx, false, 0, nil)
+
+			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
+			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
 
 			// Run it at a regular (configured) interval after the first compaction.
 			if !tickerRunOnce {
@@ -2424,7 +2421,8 @@ func (i *Ingester) compactionLoop(ctx context.Context) error {
 			}
 
 		case req := <-i.forceCompactTrigger:
-			i.compactBlocks(ctx, true, req.users)
+			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
+			i.compactBlocks(ctx, true, math.MaxInt64, req.users)
 			close(req.callback) // Notify back.
 
 		case <-ctx.Done():
@@ -2435,7 +2433,7 @@ func (i *Ingester) compactionLoop(ctx context.Context) error {
 }
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
-func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.AllowedTenants) {
+func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
 	// Don't compact TSDB blocks while JOINING as there may be ongoing blocks transfers.
 	// Compaction loop is not running in LEAVING state, so if we get here in LEAVING state, we're flushing blocks.
 	if i.lifecycler != nil {
@@ -2469,12 +2467,14 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 		switch {
 		case force:
 			reason = "forced"
-			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds())
+			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
 
 		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
 			reason = "idle"
 			level.Info(i.logger).Log("msg", "TSDB is idle, forcing compaction", "user", userID)
-			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds())
+
+			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
+			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), math.MaxInt64)
 
 		default:
 			reason = "regular"
@@ -2490,6 +2490,60 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 
 		return nil
 	})
+}
+
+// compactBlocksToReduceInMemorySeries checks whether the per-tenant TSDB Head should be compacted into a block
+// in order to reduce the in-memory series.
+func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now time.Time) {
+	// Skip if disabled.
+	if i.cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries <= 0 || !i.cfg.ActiveSeriesMetrics.Enabled {
+		return
+	}
+
+	// No need to prematurely compact TSDB heads if the number of in-memory series is below a critical threshold.
+	numInitialMemorySeries := i.seriesCount.Load()
+	if numInitialMemorySeries < i.cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries {
+		return
+	}
+
+	level.Info(i.logger).Log("msg", "the number of in-memory series is higher than the configured forced compaction threshold", "in_memory_series", numInitialMemorySeries, "forced_compaction_threshold", i.cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries)
+
+	var (
+		usersToCompact          []string
+		forcedCompactionMaxTime = now.Add(-i.cfg.ActiveSeriesMetrics.IdleTimeout).UnixMilli()
+	)
+
+	// Find a list of tenants that could help to significantly drop the number of in-memory series
+	// if we would forcely compact their TSDB head.
+	for _, userID := range i.getTSDBUsers() {
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
+		}
+
+		// Purge the active series so that the next call to Active() will return the up-to-date count.
+		db.activeSeries.Purge(now)
+
+		// Estimate the number of series that would be dropped from the TSDB Head if we would
+		// compact the head up until "now - active series idle timeout".
+		estimatedSeriesReduction := db.Head().NumSeries() - uint64(db.activeSeries.Active())
+
+		// Skip if the estimated series reduction is too low (there would be no big benefit).
+		if float64(estimatedSeriesReduction)/float64(numInitialMemorySeries)*100 < i.cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage {
+			continue
+		}
+
+		usersToCompact = append(usersToCompact, userID)
+	}
+
+	if len(usersToCompact) == 0 {
+		level.Info(i.logger).Log("msg", "no viable per-tenant TSDB found to force compact in order to reduce in-memory series")
+		return
+	}
+
+	level.Info(i.logger).Log("msg", "forcing TSDB head compaction to reduce the number of in-memory series", "users", strings.Join(usersToCompact, " "))
+	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowedTenants(usersToCompact, nil))
+	level.Info(i.logger).Log("msg", "forced TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", numInitialMemorySeries, "after_in_memory_series", i.seriesCount.Load())
 }
 
 func (i *Ingester) closeAndDeleteIdleUserTSDBs(ctx context.Context) error {
@@ -2518,15 +2572,15 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	}
 
 	// This disables pushes and force-compactions. Not allowed to close while shipping is in progress.
-	if ok, _ := userDB.casState(active, closing); !ok {
+	if ok, _ := userDB.changeState(active, closing); !ok {
 		return tsdbNotActive
 	}
 
 	// If TSDB is fully closed, we will set state to 'closed', which will prevent this defered closing -> active transition.
-	defer userDB.casState(closing, active)
+	defer userDB.changeState(closing, active)
 
 	// Make sure we don't ignore any possible inflight pushes.
-	userDB.pushesInFlight.Wait()
+	userDB.inFlightAppends.Wait()
 
 	// Verify again, things may have changed during the checks and pushes.
 	tenantDeleted := false
@@ -2552,7 +2606,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	level.Info(i.logger).Log("msg", "closed idle TSDB", "user", userID)
 
 	// This will prevent going back to "active" state in deferred statement.
-	userDB.casState(closing, closed)
+	userDB.changeState(closing, closed)
 
 	// Only remove user from TSDBState when everything is cleaned up
 	// This will prevent concurrency problems when cortex are trying to open new TSDB - Ie: New request for a given tenant
@@ -2607,7 +2661,8 @@ func (i *Ingester) Flush() {
 
 	ctx := context.Background()
 
-	i.compactBlocks(ctx, true, nil)
+	// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
+	i.compactBlocks(ctx, true, math.MaxInt64, nil)
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		i.shipBlocks(ctx, nil)
 	}

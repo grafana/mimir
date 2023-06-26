@@ -1,0 +1,573 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package ingester
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
+	"github.com/oklog/ulid"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/user"
+	"golang.org/x/exp/slices"
+
+	"github.com/grafana/mimir/pkg/ingester/client"
+	util_math "github.com/grafana/mimir/pkg/util/math"
+)
+
+func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNowMinusActiveSeriesMetricsIdleTimeout(t *testing.T) {
+	var (
+		ctx          = context.Background()
+		ctxWithUser  = user.InjectOrgID(ctx, userID)
+		metricName   = "metric_1"
+		metricLabels = labels.FromStrings(labels.MetricName, metricName)
+		metricModel  = map[model.LabelName]model.LabelValue{model.MetricNameLabel: model.LabelValue(metricName)}
+		now          = time.Now()
+		sampleTimes  []time.Time
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
+	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries = 1
+	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+	})
+
+	// Wait until it's ACTIVE.
+	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
+		return ingester.lifecycler.GetState()
+	})
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+
+	t.Run("push a series and force TSDB head compaction", func(t *testing.T) {
+		// Push a series with a sample.
+		sampleTime := now
+		sampleTimes = append(sampleTimes, sampleTime)
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 1.0, sampleTime.UnixMilli()}}))
+
+		// Advance time and then check if TSDB head compaction should be forced.
+		// We expect no block to be created because there's no sample before "now - active series idle timeout".
+		now = now.Add(10 * time.Minute)
+		ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+		require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
+
+		// Further advance time and then check if TSDB head compaction should be forced.
+		// The previously written sample is expected to be compacted.
+		now = now.Add(11 * time.Minute)
+		ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+
+		require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
+		newBlockID := listBlocksInDir(t, userBlocksDir)[0]
+
+		assert.Equal(t, model.Matrix{
+			{
+				Metric: metricModel,
+				Values: []model.SamplePair{{Timestamp: model.Time(sampleTime.UnixMilli()), Value: 1.0}},
+			},
+		}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, newBlockID.String()), metricName))
+
+		// We expect the series to be dropped from TSDB Head because there's was no sample more recent than
+		// "now - active series idle timeout".
+		db := ingester.getTSDB(userID)
+		require.NotNil(t, db)
+		assert.Equal(t, uint64(0), db.Head().NumSeries())
+	})
+
+	t.Run("push again the same series and force TSDB head compaction", func(t *testing.T) {
+		// Advance time and push another sample to the same series.
+		sampleTime := now
+		sampleTimes = append(sampleTimes, sampleTime)
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 2.0, sampleTime.UnixMilli()}}))
+
+		// Advance time and force the TSDB head compaction and then check the compacted block.
+		now = now.Add(20 * time.Minute)
+		ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+
+		require.Len(t, listBlocksInDir(t, userBlocksDir), 2)
+		newBlockID := listBlocksInDir(t, userBlocksDir)[1]
+
+		assert.Equal(t, model.Matrix{
+			{
+				Metric: metricModel,
+				Values: []model.SamplePair{{Timestamp: model.Time(sampleTime.UnixMilli()), Value: 2.0}},
+			},
+		}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, newBlockID.String()), metricName))
+
+		// We expect the series to be dropped from TSDB Head because there's was no sample more recent than
+		// "now - active series idle timeout".
+		db := ingester.getTSDB(userID)
+		require.NotNil(t, db)
+		assert.Equal(t, uint64(0), db.Head().NumSeries())
+	})
+
+	t.Run("push again the same series and trigger the normal TSDB head compaction", func(t *testing.T) {
+		// Push a sample with the timestamp BEFORE the next TSDB block range boundary.
+		firstSampleTime := now
+		sampleTimes = append(sampleTimes, firstSampleTime)
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 3.0, firstSampleTime.UnixMilli()}}))
+
+		// Push a sample with the timestamp AFTER the next TSDB block range boundary.
+		now = now.Add(4 * time.Hour)
+		secondSampleTime := now
+		sampleTimes = append(sampleTimes, secondSampleTime)
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 4.0, secondSampleTime.UnixMilli()}}))
+
+		// Trigger a normal TSDB head compaction.
+		ingester.compactBlocks(ctx, false, 0, nil)
+
+		require.Len(t, listBlocksInDir(t, userBlocksDir), 3)
+		newBlockID := listBlocksInDir(t, userBlocksDir)[2]
+
+		assert.Equal(t, model.Matrix{
+			{
+				Metric: metricModel,
+				Values: []model.SamplePair{{Timestamp: model.Time(firstSampleTime.UnixMilli()), Value: 3.0}},
+			},
+		}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, newBlockID.String()), metricName))
+
+		// We expect the series to NOT be dropped from TSDB Head because there's a sample which is still in the Head.
+		db := ingester.getTSDB(userID)
+		require.NotNil(t, db)
+		assert.Equal(t, uint64(1), db.Head().NumSeries())
+	})
+
+	t.Run("querying ingester should return all samples", func(t *testing.T) {
+		req := &client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName},
+			},
+		}
+
+		s := stream{ctx: ctxWithUser}
+		err = ingester.QueryStream(req, &s)
+		require.NoError(t, err)
+
+		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, model.Matrix{{
+			Metric: metricModel,
+			Values: []model.SamplePair{
+				{Timestamp: model.Time(sampleTimes[0].UnixMilli()), Value: 1.0},
+				{Timestamp: model.Time(sampleTimes[1].UnixMilli()), Value: 2.0},
+				{Timestamp: model.Time(sampleTimes[2].UnixMilli()), Value: 3.0},
+				{Timestamp: model.Time(sampleTimes[3].UnixMilli()), Value: 4.0},
+			},
+		}}, res)
+	})
+}
+
+func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonoringBlockRangePeriod(t *testing.T) {
+	var (
+		ctx          = context.Background()
+		ctxWithUser  = user.InjectOrgID(ctx, userID)
+		metricName   = "metric_1"
+		metricLabels = labels.FromStrings(labels.MetricName, metricName)
+		metricModel  = map[model.LabelName]model.LabelValue{model.MetricNameLabel: model.LabelValue(metricName)}
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = 0                         // Consider all series as inactive, so that the forced compaction will always run.
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
+	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries = 1
+	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+	})
+
+	// Wait until it's ACTIVE.
+	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
+		return ingester.lifecycler.GetState()
+	})
+
+	// Push samples spanning across multiple block ranges.
+	startTime, err := time.Parse(time.RFC3339, "2023-06-24T00:00:00Z")
+	require.NoError(t, err)
+
+	now := startTime
+	for i := 0; i < 5; i++ {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, float64(i), now.UnixMilli()}}))
+		now = now.Add(time.Hour)
+	}
+
+	// Force TSDB Head compaction.
+	ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+
+	// Check compacted blocks.
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	blockIDs := listBlocksInDir(t, userBlocksDir)
+	require.Len(t, blockIDs, 3)
+
+	assert.Equal(t, model.Matrix{
+		{
+			Metric: metricModel,
+			Values: []model.SamplePair{
+				{Timestamp: model.Time(startTime.UnixMilli()), Value: 0},
+				{Timestamp: model.Time(startTime.Add(time.Hour).UnixMilli()), Value: 1},
+			},
+		},
+	}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[0].String()), metricName))
+
+	assert.Equal(t, model.Matrix{
+		{
+			Metric: metricModel,
+			Values: []model.SamplePair{
+				{Timestamp: model.Time(startTime.Add(2 * time.Hour).UnixMilli()), Value: 2},
+				{Timestamp: model.Time(startTime.Add(3 * time.Hour).UnixMilli()), Value: 3},
+			},
+		},
+	}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[1].String()), metricName))
+
+	assert.Equal(t, model.Matrix{
+		{
+			Metric: metricModel,
+			Values: []model.SamplePair{
+				{Timestamp: model.Time(startTime.Add(4 * time.Hour).UnixMilli()), Value: 4},
+			},
+		},
+	}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[2].String()), metricName))
+}
+
+func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamplesOlderThanActiveSeriesIdleTimeoutAfterForcedCompaction(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
+	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries = 1
+	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+	})
+
+	// Wait until it's ACTIVE.
+	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
+		return ingester.lifecycler.GetState()
+	})
+
+	// Push some samples.
+	startTime, err := time.Parse(time.RFC3339, "2023-06-24T00:00:00Z")
+	require.NoError(t, err)
+
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_1"), 1.0, startTime.UnixMilli()}}))
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_1"), 2.0, startTime.Add(20 * time.Minute).UnixMilli()}}))
+
+	// Force TSDB Head compaction.
+	ingester.compactBlocksToReduceInMemorySeries(ctx, startTime.Add(30*time.Minute))
+
+	// Check compacted blocks.
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
+	assert.Equal(t, model.Matrix{
+		{
+			Metric: map[model.LabelName]model.LabelValue{model.MetricNameLabel: "metric_1"},
+			Values: []model.SamplePair{
+				{Timestamp: model.Time(startTime.UnixMilli()), Value: 1.0},
+			},
+		},
+	}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, listBlocksInDir(t, userBlocksDir)[0].String()), "metric_1"))
+
+	// Should allow to push samples after "now - active series idle timeout", but not before that.
+	assert.ErrorContains(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_2"), 1.0, startTime.UnixMilli()}}), "the sample has been rejected because its timestamp is too old")
+	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_2"), 2.0, startTime.Add(20 * time.Minute).UnixMilli()}}))
+	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_1"), 3.0, startTime.Add(30 * time.Minute).UnixMilli()}}))
+}
+
+func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) {
+	const (
+		numRuns             = 10
+		numSeries           = 100
+		numSamplesPerSeries = 1000
+		numWriters          = 10
+		numReaders          = 10
+	)
+
+	for r := 0; r < numRuns; r++ {
+		t.Run(fmt.Sprintf("Run %d", r), func(t *testing.T) {
+			var (
+				ctx         = context.Background()
+				ctxWithUser = user.InjectOrgID(ctx, userID)
+				wg          = sync.WaitGroup{}
+				startTime   = time.Now()
+				readerReq   = &client.QueryRequest{
+					StartTimestampMs: math.MinInt64,
+					EndTimestampMs:   math.MaxInt64,
+					Matchers: []*client.LabelMatcher{
+						{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: "series_.*"},
+					},
+				}
+			)
+
+			cfg := defaultIngesterTestConfig(t)
+			cfg.ActiveSeriesMetrics.Enabled = true
+			cfg.ActiveSeriesMetrics.IdleTimeout = 0                         // Consider all series as inactive so that the forced compaction is always triggered.
+			cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
+			cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries = 1
+			cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+
+			ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+			})
+
+			// Wait until it's ACTIVE.
+			test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
+				return ingester.lifecycler.GetState()
+			})
+
+			// Keep track of the last timestamp written by each writer.
+			writerTimesMx := sync.Mutex{}
+			writerTimes := make([]int64, numWriters)
+
+			// Start writers.
+			wg.Add(numWriters)
+			for i := 0; i < numWriters; i++ {
+				go func(writerID int) {
+					defer wg.Done()
+
+					// Decide the series written by this writer.
+					fromSeriesID := writerID * (numSeries / numWriters)
+					toSeriesID := fromSeriesID + (numSeries / numWriters) - 1
+
+					for sampleIdx := 0; sampleIdx < numSamplesPerSeries; sampleIdx++ {
+						timestamp := startTime.Add(time.Duration(sampleIdx) * time.Millisecond).UnixMilli()
+
+						// Prepare the series to write.
+						seriesToWrite := make([]series, 0, toSeriesID-fromSeriesID+1)
+						for seriesIdx := fromSeriesID; seriesIdx <= toSeriesID; seriesIdx++ {
+							seriesToWrite = append(seriesToWrite, series{
+								lbls:      labels.FromStrings(labels.MetricName, fmt.Sprintf("series_%05d", seriesIdx)),
+								value:     float64(sampleIdx),
+								timestamp: timestamp,
+							})
+						}
+
+						require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, seriesToWrite))
+
+						// Keep track of the last timestamp written.
+						writerTimesMx.Lock()
+						writerTimes[writerID] = timestamp
+						writerTimesMx.Unlock()
+					}
+				}(i)
+			}
+
+			// Start readers (each reader reads all series).
+			wg.Add(numReaders)
+			for i := 0; i < numReaders; i++ {
+				go func() {
+					defer wg.Done()
+
+					s := stream{ctx: ctxWithUser}
+					err := ingester.QueryStream(readerReq, &s)
+					require.NoError(t, err)
+
+					res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+					require.NoError(t, err)
+
+					// We expect a response consistent with the samples written.
+					for entryIdx, entry := range res {
+						for sampleIdx, sample := range entry.Values {
+							expectedTime := model.Time(startTime.Add(time.Duration(sampleIdx) * time.Millisecond).UnixMilli())
+							expectedValue := model.SampleValue(sampleIdx)
+
+							require.Equalf(t, expectedTime, sample.Timestamp, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+							require.Equalf(t, expectedValue, sample.Value, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+						}
+					}
+				}()
+			}
+
+			// Start a goroutine continuously forcing the TSDB head compaction.
+			stopForcedCompaction := make(chan struct{})
+			go func() {
+				for {
+					select {
+					case <-stopForcedCompaction:
+						return
+					case <-time.After(100 * time.Millisecond):
+						lowestWriterTime := int64(math.MaxInt64)
+
+						// Find the lowest sample written. We compact up until that timestamp.
+						writerTimesMx.Lock()
+						for _, ts := range writerTimes {
+							lowestWriterTime = util_math.Min(lowestWriterTime, ts)
+						}
+						writerTimesMx.Unlock()
+
+						// Ensure all writers have written at least 1 batch of samples.
+						if lowestWriterTime == 0 {
+							continue
+						}
+
+						ingester.compactBlocksToReduceInMemorySeries(ctx, time.UnixMilli(lowestWriterTime))
+					}
+				}
+			}()
+
+			// Wait until all readers and writers have done.
+			wg.Wait()
+
+			// Since all readers and writers have done, we can now stop forcing the TSDB head compaction too.
+			close(stopForcedCompaction)
+
+			// Ensure at least 1 forced compaction has been done.
+			blocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+			assert.Greater(t, len(listBlocksInDir(t, blocksDir)), 0)
+
+			// Query again all series. We expect to read back all written series and samples.
+			s := stream{ctx: ctxWithUser}
+			err = ingester.QueryStream(readerReq, &s)
+			require.NoError(t, err)
+
+			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			require.NoError(t, err)
+
+			slices.SortFunc(res, func(a, b *model.SampleStream) bool {
+				return a.Metric.Before(b.Metric)
+			})
+
+			for entryIdx, entry := range res {
+				expectedMetric := model.Metric{model.MetricNameLabel: model.LabelValue(fmt.Sprintf("series_%05d", entryIdx))}
+				require.Equalf(t, expectedMetric, entry.Metric, "response entry: %d", entryIdx)
+				require.Lenf(t, entry.Values, numSamplesPerSeries, "response entry: %d", entryIdx)
+
+				for sampleIdx, sample := range entry.Values {
+					expectedTime := model.Time(startTime.Add(time.Duration(sampleIdx) * time.Millisecond).UnixMilli())
+					expectedValue := model.SampleValue(sampleIdx)
+
+					require.Equalf(t, expectedTime, sample.Timestamp, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+					require.Equalf(t, expectedValue, sample.Value, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+				}
+			}
+		})
+	}
+}
+
+func listBlocksInDir(t *testing.T, dir string) (ids []ulid.ULID) {
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		blockID, err := ulid.Parse(entry.Name())
+		if err != nil {
+			continue
+		}
+
+		ids = append(ids, blockID)
+	}
+
+	// Ensure the block IDs are sorted.
+	slices.SortFunc(ids, func(a, b ulid.ULID) bool {
+		return a.Compare(b) < 0
+	})
+
+	return ids
+}
+
+func readMetricSamplesFromBlockDir(t *testing.T, blockDir string, metricName string) (results model.Matrix) {
+	block, err := tsdb.OpenBlock(log.NewNopLogger(), blockDir, nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, block.Close())
+	}()
+
+	return readMetricSamplesFromBlock(t, block, metricName)
+}
+
+func readMetricSamplesFromBlock(t *testing.T, block *tsdb.Block, metricName string) (matrix model.Matrix) {
+	indexReader, err := block.Index()
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, indexReader.Close())
+	}()
+
+	chunksReader, err := block.Chunks()
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, chunksReader.Close())
+	}()
+
+	postings, err := indexReader.Postings(labels.MetricName, metricName)
+	require.NoError(t, err)
+
+	for postings.Next() {
+		builder := labels.NewScratchBuilder(0)
+		var chks []chunks.Meta
+		require.NoError(t, indexReader.Series(postings.At(), &builder, &chks))
+
+		// Build the series labels.
+		result := &model.SampleStream{Metric: map[model.LabelName]model.LabelValue{}}
+		builder.Labels().Range(func(l labels.Label) {
+			result.Metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+		})
+
+		// Read samples from chunks.
+		for idx, chk := range chks {
+			chks[idx].Chunk, err = chunksReader.Chunk(chk)
+			require.NoError(t, err)
+
+			it := chks[idx].Chunk.Iterator(nil)
+			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+				switch typ {
+				case chunkenc.ValFloat:
+					ts, v := it.At()
+					result.Values = append(result.Values, model.SamplePair{
+						Timestamp: model.Time(ts),
+						Value:     model.SampleValue(v),
+					})
+				}
+			}
+			require.NoError(t, it.Err())
+		}
+
+		matrix = append(matrix, result)
+	}
+	require.NoError(t, postings.Err())
+
+	return matrix
+}

@@ -3565,6 +3565,24 @@ tsdb:
   # compacted blocks, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-force
   [block_postings_for_matchers_cache_force: <boolean> | default = false]
+
+  # (experimental) When the number of in-memory series in the ingester is equal
+  # or greater than this setting, the ingester tries to force the TSDB Head
+  # compaction. The forced compaction removes from the memory all samples and
+  # inactive series up until -ingester.active-series-metrics-idle-timeout time
+  # ago. After a forced compaction, the ingester will not accept any sample with
+  # timestamp older than -ingester.active-series-metrics-idle-timeout time ago
+  # (unless out of order ingestion is enabled). The ingester checks every
+  # -blocks-storage.tsdb.head-compaction-interval whether a force compaction is
+  # required. 0 to disable.
+  # CLI flag: -blocks-storage.tsdb.forced-head-compaction-min-in-memory-series
+  [forced_head_compaction_min_in_memory_series: <int> | default = 0]
+
+  # (experimental) When the forced compaction is enabled, the ingester forces
+  # the compaction only in per-tenant TSDBs where the estimated series reduction
+  # is at least the configured percentage (0-100).
+  # CLI flag: -blocks-storage.tsdb.forced-head-compaction-min-estimated-series-reduction-percentage
+  [forced_head_compaction_min_estimated_series_reduction_percentage: <float> | default = 10]
 ```
 
 ### compactor

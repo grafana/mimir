@@ -733,6 +733,10 @@ Usage of ./cmd/mimir/mimir:
     	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
   -blocks-storage.tsdb.flush-blocks-on-shutdown
     	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
+  -blocks-storage.tsdb.forced-head-compaction-min-estimated-series-reduction-percentage float
+    	[experimental] When the forced compaction is enabled, the ingester forces the compaction only in per-tenant TSDBs where the estimated series reduction is at least the configured percentage (0-100). (default 10)
+  -blocks-storage.tsdb.forced-head-compaction-min-in-memory-series int
+    	[experimental] When the number of in-memory series in the ingester is equal or greater than this setting, the ingester tries to force the TSDB Head compaction. The forced compaction removes from the memory all samples and inactive series up until -ingester.active-series-metrics-idle-timeout time ago. After a forced compaction, the ingester will not accept any sample with timestamp older than -ingester.active-series-metrics-idle-timeout time ago (unless out of order ingestion is enabled). The ingester checks every -blocks-storage.tsdb.head-compaction-interval whether a force compaction is required. 0 to disable.
   -blocks-storage.tsdb.head-chunks-end-time-variance float
     	[experimental] How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
   -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes int

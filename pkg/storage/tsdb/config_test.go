@@ -21,117 +21,130 @@ func TestConfig_Validate(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		setup       func(*BlocksStorageConfig)
+		setup       func(*BlocksStorageConfig, *ActiveSeriesMetricsConfig)
 		expectedErr error
 	}{
 		"should pass on S3 backend": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.Bucket.Backend = "s3"
 			},
 			expectedErr: nil,
 		},
 		"should pass on GCS backend": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.Bucket.Backend = "gcs"
 			},
 			expectedErr: nil,
 		},
 		"should fail on unknown storage backend": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.Bucket.Backend = "unknown"
 			},
 			expectedErr: bucket.ErrUnsupportedStorageBackend,
 		},
 		"should fail on invalid ship concurrency": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.ShipConcurrency = 0
 			},
 			expectedErr: errInvalidShipConcurrency,
 		},
 		"should pass on invalid ship concurrency but shipping is disabled": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.ShipConcurrency = 0
 				cfg.TSDB.ShipInterval = 0
 			},
 			expectedErr: nil,
 		},
 		"should fail on invalid opening concurrency": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup = 0
 			},
 			expectedErr: errInvalidOpeningConcurrency,
 		},
 		"should fail on invalid compaction interval": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.HeadCompactionInterval = 0
 			},
 			expectedErr: errInvalidCompactionInterval,
 		},
 		"should fail on too high compaction interval": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.HeadCompactionInterval = 20 * time.Minute
 			},
 			expectedErr: errInvalidCompactionInterval,
 		},
 		"should fail on invalid compaction concurrency": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.HeadCompactionConcurrency = 0
 			},
 			expectedErr: errInvalidCompactionConcurrency,
 		},
 		"should pass on valid compaction concurrency": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.HeadCompactionConcurrency = 10
 			},
 			expectedErr: nil,
 		},
 		"should fail on negative stripe size": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.StripeSize = -2
 			},
 			expectedErr: errInvalidStripeSize,
 		},
 		"should fail on stripe size 0": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.StripeSize = 0
 			},
 			expectedErr: errInvalidStripeSize,
 		},
 		"should fail on stripe size 1": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.StripeSize = 1
 			},
 			expectedErr: errInvalidStripeSize,
 		},
 		"should pass on valid stripe size": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.StripeSize = 1 << 14
 			},
 			expectedErr: nil,
 		},
 		"should fail on empty block ranges": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.BlockRanges = nil
 			},
 			expectedErr: errEmptyBlockranges,
 		},
 		"should fail on invalid TSDB WAL segment size": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.WALSegmentSizeBytes = 0
 			},
 			expectedErr: errInvalidWALSegmentSizeBytes,
 		},
 		"should fail on invalid store-gateway streaming batch size": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.BucketStore.StreamingBatchSize = 0
 			},
 			expectedErr: errInvalidStreamingBatchSize,
 		},
 		"should fail on invalid index-header lazy loading max concurrency": {
-			setup: func(cfg *BlocksStorageConfig) {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.BucketStore.IndexHeaderLazyLoadingConcurrency = -1
 			},
 			expectedErr: errInvalidIndexHeaderLazyLoadingConcurrency,
+		},
+		"should fail if forced compaction is enabled but active series tracker is not": {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
+				cfg.TSDB.ForcedHeadCompactionMinInMemorySeries = 1_000_000
+				activeSeriesCfg.Enabled = false
+			},
+			expectedErr: errForcedCompactionRequiresActiveSeries,
+		},
+		"should fail on invalid forced compaction min series reduction percentage": {
+			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
+				cfg.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage = 101
+			},
+			expectedErr: errInvalidForcedHeadCompactionMinSeriesReduction,
 		},
 	}
 
@@ -139,11 +152,14 @@ func TestConfig_Validate(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			cfg := &BlocksStorageConfig{}
-			flagext.DefaultValues(cfg)
-			testData.setup(cfg)
+			storageCfg := &BlocksStorageConfig{}
+			activeSeriesCfg := &ActiveSeriesMetricsConfig{}
 
-			actualErr := cfg.Validate(log.NewNopLogger())
+			flagext.DefaultValues(storageCfg)
+			flagext.DefaultValues(activeSeriesCfg)
+			testData.setup(storageCfg, activeSeriesCfg)
+
+			actualErr := storageCfg.Validate(*activeSeriesCfg, log.NewNopLogger())
 			assert.Equal(t, testData.expectedErr, actualErr)
 		})
 	}

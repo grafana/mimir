@@ -26,6 +26,9 @@ ingester:
       consul:
         host: consul:8500
     replication_factor: 1
+  active_series_metrics_enabled: true
+  active_series_metrics_update_period: 1m
+  active_series_metrics_idle_timeout: 2m
 
 # These memberlist options will be only used if memberlist is activated via CLI option.
 memberlist:
@@ -41,6 +44,8 @@ blocks_storage:
     ship_interval: 1m
     block_ranges_period: [ 2h ]
     retention_period: 3h
+    forced_head_compaction_min_in_memory_series: 10000
+    forced_head_compaction_min_estimated_series_reduction_percentage: 10
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier

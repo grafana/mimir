@@ -890,7 +890,7 @@ func TestIngester_Push(t *testing.T) {
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.ReplicationFactor = 1
-			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
+			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
@@ -1103,7 +1103,7 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(t)
-	cfg.ActiveSeriesMetricsIdleTimeout = 100 * time.Millisecond
+	cfg.ActiveSeriesMetrics.IdleTimeout = 100 * time.Millisecond
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
 	currentTime := time.Now()
@@ -1144,7 +1144,7 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 
 	// Update active series the after the idle timeout (in the future).
 	// This will remove inactive series.
-	currentTime = currentTime.Add(cfg.ActiveSeriesMetricsIdleTimeout + 1*time.Second)
+	currentTime = currentTime.Add(cfg.ActiveSeriesMetrics.IdleTimeout + 1*time.Second)
 	i.updateActiveSeries(currentTime)
 
 	// Check tracked Prometheus metrics
@@ -1820,7 +1820,8 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 	// Create ingester
 	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
 
-	ctx := pushSeriesToIngester(t, series, i)
+	ctx := user.InjectOrgID(context.Background(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
 
 	// Run tests
 	for _, tc := range tests {
@@ -1930,7 +1931,9 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 	// Create ingester
 	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
 
-	ctx := pushSeriesToIngester(t, series, i)
+	ctx := user.InjectOrgID(context.Background(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
 	// Run tests
 	for tName, tc := range tests {
 		t.Run(tName, func(t *testing.T) {
@@ -1970,14 +1973,15 @@ type series struct {
 	timestamp int64
 }
 
-func pushSeriesToIngester(t testing.TB, series []series, i *Ingester) context.Context {
-	ctx := user.InjectOrgID(context.Background(), "test")
+func pushSeriesToIngester(ctx context.Context, t testing.TB, i *Ingester, series []series) error {
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
 		_, err := i.Push(ctx, req)
-		require.NoError(t, err)
+		if err != nil {
+			return err
+		}
 	}
-	return ctx
+	return nil
 }
 
 func extractItemsWithSortedValues(responses []client.LabelNamesAndValuesResponse) []*client.LabelValues {
@@ -3927,7 +3931,7 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 
 	pushSingleSampleWithMetadata(t, i)
 	require.Equal(t, int64(1), i.seriesCount.Load())
-	i.compactBlocks(context.Background(), true, nil)
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
 	require.Equal(t, int64(0), i.seriesCount.Load())
 	i.shipBlocks(context.Background(), nil)
 
@@ -3944,7 +3948,7 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 	// After writing tenant deletion mark,
 	pushSingleSampleWithMetadata(t, i)
 	require.Equal(t, int64(1), i.seriesCount.Load())
-	i.compactBlocks(context.Background(), true, nil)
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
 	require.Equal(t, int64(0), i.seriesCount.Load())
 	i.shipBlocks(context.Background(), nil)
 
@@ -4115,7 +4119,7 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 	require.NotNil(t, db)
 
 	// Run compaction and shipping.
-	i.compactBlocks(context.Background(), true, nil)
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
 	i.shipBlocks(context.Background(), nil)
 
 	// Make sure we can close completely empty TSDB without problems.
@@ -4688,7 +4692,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 
 	pushSingleSampleWithMetadata(t, i)
 
-	i.compactBlocks(context.Background(), false, nil)
+	i.compactBlocks(context.Background(), false, 0, nil)
 	verifyCompactedHead(t, i, false)
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
 		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
@@ -4707,7 +4711,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 	// wait one second (plus maximum jitter) -- TSDB is now idle.
 	time.Sleep(time.Duration(float64(cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout) * (1 + compactionIdleTimeoutJitter)))
 
-	i.compactBlocks(context.Background(), false, nil)
+	i.compactBlocks(context.Background(), false, 0, nil)
 	verifyCompactedHead(t, i, true)
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
 		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
@@ -5261,17 +5265,17 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	// We mock a flushing by setting the boolean.
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	ok, _ := db.casState(active, forceCompacting)
+	ok, _ := db.changeState(active, forceCompacting, func() { db.forcedCompactionMaxTime.Store(math.MaxInt64) })
 	require.True(t, ok)
 
 	// Ingestion should fail with a 503.
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = i.Push(ctx, req)
-	require.Equal(t, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(errors.New("forced compaction in progress"), userID).Error()), err)
+	require.Equal(t, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(errTSDBForcedCompaction, userID).Error()), err)
 
 	// Ingestion is successful after a flush.
-	ok, _ = db.casState(forceCompacting, active)
+	ok, _ = db.changeState(forceCompacting, active)
 	require.True(t, ok)
 	pushSingleSampleWithMetadata(t, i)
 }
@@ -5300,7 +5304,8 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 
 	// This mocks a request in flight.
 	db := i.getTSDB(userID)
-	require.NoError(t, db.acquireAppendLock())
+	lockState, err := db.acquireAppendLock(0)
+	require.NoError(t, err)
 
 	// Flush handler only triggers compactions, but doesn't wait for them to finish. We cannot use ?wait=true here,
 	// because it would deadlock -- flush will wait for appendLock to be released.
@@ -5315,7 +5320,7 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 	`), "cortex_ingester_tsdb_compactions_total"))
 
 	// No requests in flight after this.
-	db.releaseAppendLock()
+	db.releaseAppendLock(lockState)
 
 	// Let's wait until all head series have been flushed.
 	test.Poll(t, 5*time.Second, uint64(0), func() interface{} {
@@ -6311,7 +6316,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 				// Adding time to make the first batch of pushes idle.
 				// We update them in the exact moment in time where append time of the first push is already considered idle,
 				// while the second append happens after the purge timestamp.
-				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
 
 				expectedMetrics = `
@@ -6328,7 +6333,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Update active series again in a further future where no series are active anymore.
-				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(""), metricNames...))
 			},
@@ -6356,7 +6361,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
+			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
 
 			limits := defaultLimitsTestConfig()
 			limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
@@ -6483,7 +6488,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
 				// Adding idleTimeout to expose the metrics but not purge the pushes.
-				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -6553,7 +6558,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
 				// Adding idleTimeout to expose the metrics but not purge the pushes.
-				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -6617,7 +6622,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				currentTime = time.Now()
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				// Adding idleTimeout to expose the metrics but not purge the pushes.
-				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -6687,7 +6692,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.ActiveSeriesMetricsEnabled = true
+			cfg.ActiveSeriesMetrics.Enabled = true
 
 			limits := defaultLimitsTestConfig()
 			limits.ActiveSeriesCustomTrackersConfig = testData.activeSeriesConfig
@@ -6972,13 +6977,13 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 
 	// wait one second (plus maximum jitter) -- TSDB is now idle.
 	time.Sleep(time.Duration(float64(cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout) * (1 + compactionIdleTimeoutJitter)))
-	i.compactBlocks(context.Background(), false, nil) // Should be compacted because the TSDB is idle.
+	i.compactBlocks(context.Background(), false, 0, nil) // Should be compacted because the TSDB is idle.
 	verifyCompactedHead(t, i, true)
 
 	pushSamples(110, 110)
 	pushSamples(101, 109)
 	verifySamples(90, 110)
-	i.compactBlocks(context.Background(), true, nil) // Should be compacted because it's forced.
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil) // Should be compacted because it's forced.
 	verifyCompactedHead(t, i, true)
 }
 
@@ -7043,7 +7048,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 			pushSamples(90, 99)
 
 			// Compact and upload the blocks
-			i.compactBlocks(ctx, true, nil)
+			i.compactBlocks(ctx, true, math.MaxInt64, nil)
 			i.shipBlocks(ctx, nil)
 
 			// Now check that an OOO block was uploaded and labeled correctly
