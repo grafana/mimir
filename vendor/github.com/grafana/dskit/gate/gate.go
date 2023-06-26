@@ -57,16 +57,16 @@ func NewInstrumented(reg prometheus.Registerer, maxConcurrent int, gate Gate) Ga
 	g := &instrumentedGate{
 		gate: gate,
 		max: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "gate_concurrent_max",
-			Help: "Number of maximum concurrent queries/loads allowed.",
+			Name: "gate_queries_concurrent_max",
+			Help: "Number of maximum concurrent queries allowed.",
 		}),
 		inflight: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "gate_in_flight",
-			Help: "Number of queries/loads that are currently in flight.",
+			Name: "gate_queries_in_flight",
+			Help: "Number of queries that are currently in flight.",
 		}),
 		duration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "gate_duration_seconds",
-			Help:    "How many seconds it took for queries/loads to wait at the gate.",
+			Help:    "How many seconds it took for queries to wait at the gate.",
 			Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
 		}),
 	}
