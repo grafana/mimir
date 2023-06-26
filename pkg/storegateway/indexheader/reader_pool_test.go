@@ -149,12 +149,12 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 		UserID:             "anonymous",
 	}
 
-	persistPath := filepath.Join(tmpDir, "lazy-loaded.json")
-	err = snapshot.persist(persistPath)
+	err = snapshot.persist(tmpDir)
 	require.NoError(t, err)
 	require.Greater(t, snapshot.HeaderLastUsedTime[blockID], int64(0), "lazyLoadedBlocks snapshot must be set")
 
-	persistedData, err := os.ReadFile(persistPath)
+	persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFile)
+	persistedData, err := os.ReadFile(persistedFile)
 	require.NoError(t, err)
 	expectedSnapshot := &lazyLoadedHeadersSnapshot{}
 	err = json.Unmarshal(persistedData, expectedSnapshot)
@@ -168,11 +168,11 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	// LoadedBlocks will update the HeaderLastUsedTime map with the removal of
 	// idle blocks.
 	snapshot.HeaderLastUsedTime = pool.LoadedBlocks()
-	err = snapshot.persist(persistPath)
+	err = snapshot.persist(tmpDir)
 	require.NoError(t, err)
 	require.NotContains(t, snapshot.HeaderLastUsedTime, blockID.String(), "lazyLoadedBlocks snapshot must be unset")
 
-	persistedData, err = os.ReadFile(persistPath)
+	persistedData, err = os.ReadFile(persistedFile)
 	require.NoError(t, err)
 	expectedSnapshot = &lazyLoadedHeadersSnapshot{}
 	err = json.Unmarshal(persistedData, expectedSnapshot)
