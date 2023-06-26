@@ -71,7 +71,7 @@ type lazyLoadedHeadersSnapshot struct {
 	UserID             string              `json:"user_id"`
 }
 
-// persist creates a file to store lazy loaded index header in atomic way.
+// persist atomically writes this snapshot to persistDir.
 func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 	// Create temporary path for fsync.
 	// We don't use temporary folder because the process might not have access to the temporary folder.
