@@ -349,6 +349,13 @@ mimir:
         access_key_id: {{ .Values.minio.rootUser }}
         secret_access_key: {{ .Values.minio.rootPassword }}
         insecure: true
+      {{- if index .Values "metadata-cache" "enabled" }}
+      cache:
+        backend: memcached
+        memcached:
+          addresses: {{ include "mimir.metadataCacheAddress" . }}
+          max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
+      {{- end }}
     {{- end }}
 
     runtime_config:
