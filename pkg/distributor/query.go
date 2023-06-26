@@ -29,6 +29,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+var (
+	// readActive is a ring.Operation that only selects instances marked as ring.ACTIVE, and
+	// extends the replica set in the same cases ring.Write would.
+	readActive = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, ring.Write.ShouldExtendReplicaSetOnState)
+)
+
 func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*ingester_client.ExemplarQueryResponse, error) {
 	var result *ingester_client.ExemplarQueryResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryExemplars", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
@@ -104,11 +110,17 @@ func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, er
 	shardSize := d.limits.IngestionTenantShardSize(userID)
 	lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
 
-	if shardSize > 0 && lookbackPeriod > 0 {
-		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(ring.Read)
+	op := ring.Read
+
+	if d.cfg.QueryOnlyActiveIngesters {
+		op = readActive
 	}
 
-	return d.ingestersRing.GetReplicationSetForOperation(ring.Read)
+	if shardSize > 0 && lookbackPeriod > 0 {
+		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(op)
+	}
+
+	return d.ingestersRing.GetReplicationSetForOperation(op)
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.

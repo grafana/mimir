@@ -54,6 +54,7 @@ type Config struct {
 	PreferStreamingChunks                      bool   `yaml:"prefer_streaming_chunks" category:"experimental"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64 `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"experimental"`
 	MinimizeIngesterRequests                   bool   `yaml:"minimize_ingester_requests" category:"experimental"`
+	QueryOnlyActiveIngesters                   bool   `yaml:"query_only_active_ingesters" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -84,6 +85,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
 	f.BoolVar(&cfg.PreferStreamingChunks, "querier.prefer-streaming-chunks", false, "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.")
 	f.BoolVar(&cfg.MinimizeIngesterRequests, "querier.minimize-ingester-requests", false, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
+	f.BoolVar(&cfg.QueryOnlyActiveIngesters, "querier.query-only-active-ingesters", false, "If true, when querying ingesters, only ingesters in the ACTIVE state in the ring will be queried.")
 
 	// Why 256 series / ingester?
 	// Based on our testing, 256 series / ingester was a good balance between memory consumption and the CPU overhead of managing a batch of series.

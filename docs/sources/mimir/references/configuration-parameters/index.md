@@ -1107,6 +1107,11 @@ store_gateway_client:
 # CLI flag: -querier.minimize-ingester-requests
 [minimize_ingester_requests: <boolean> | default = false]
 
+# (experimental) If true, when querying ingesters, only ingesters in the ACTIVE
+# state in the ring will be queried.
+# CLI flag: -querier.query-only-active-ingesters
+[query_only_active_ingesters: <boolean> | default = false]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
 # CLI flag: -querier.max-concurrent
