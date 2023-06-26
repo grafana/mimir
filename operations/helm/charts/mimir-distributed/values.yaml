@@ -340,8 +340,8 @@ mimir:
       enable_api: true
       rule_path: /data
 
-    {{- if .Values.minio.enabled }}
     ruler_storage:
+      {{- if .Values.minio.enabled }}
       backend: s3
       s3:
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
@@ -349,6 +349,7 @@ mimir:
         access_key_id: {{ .Values.minio.rootUser }}
         secret_access_key: {{ .Values.minio.rootPassword }}
         insecure: true
+      {{- end }}
       {{- if index .Values "metadata-cache" "enabled" }}
       cache:
         backend: memcached
@@ -356,7 +357,6 @@ mimir:
           addresses: {{ include "mimir.metadataCacheAddress" . }}
           max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
       {{- end }}
-    {{- end }}
 
     runtime_config:
       file: /var/{{ include "mimir.name" . }}/runtime.yaml
