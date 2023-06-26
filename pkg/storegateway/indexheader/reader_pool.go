@@ -71,8 +71,8 @@ type lazyLoadedHeadersSnapshot struct {
 	UserID             string              `json:"user_id"`
 }
 
-// persist creates a file to store lazy loaded index header in atomic way.
-func (l lazyLoadedHeadersSnapshot) persist(persistPath string) error {
+// persist atomically writes this snapshot to dir.
+func (l lazyLoadedHeadersSnapshot) persist(dir string) error {
 	// Create temporary path for fsync.
 	// We don't use temporary folder because the process might not have access to the temporary folder.
 	tmpPath := filepath.Join(persistPath, strings.Join([]string{"tmp", lazyLoadedHeadersListFile}, "-"))
