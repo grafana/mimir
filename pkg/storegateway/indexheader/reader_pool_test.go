@@ -7,7 +7,7 @@ package indexheader
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -144,8 +144,11 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
+	loadedBlocks := pool.LoadedBlocks()
+	require.Equal(t, map[ulid.ULID]int64{blockID: loadedBlocks[blockID]}, loadedBlocks)
+
 	snapshot := lazyLoadedHeadersSnapshot{
-		HeaderLastUsedTime: pool.LoadedBlocks(),
+		HeaderLastUsedTime: loadedBlocks,
 		UserID:             "anonymous",
 	}
 
@@ -156,15 +159,20 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFile)
 	persistedData, err := os.ReadFile(persistedFile)
 	require.NoError(t, err)
-	snapshotReadFromDisk := &lazyLoadedHeadersSnapshot{}
-	err = json.Unmarshal(persistedData, snapshotReadFromDisk)
-	require.NoError(t, err)
-	require.Equal(t, 1, len(snapshotReadFromDisk.HeaderLastUsedTime), "should have one lazyLoaded index header")
+
+	var expected string
+	// we know that there is only one lazyReader, hence just use formatter to set the ULID and timestamp.
+	for r := range pool.lazyReaders {
+		expected = fmt.Sprintf(`{"header_last_used_time":{"%s":%d},"user_id":"anonymous"}`, r.blockID, r.usedAt.Load()/int64(time.Millisecond))
+	}
+	require.Equal(t, expected, string(persistedData))
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
 	pool.closeIdleReaders()
 
+	loadedBlocks = pool.LoadedBlocks()
+	require.Equal(t, map[ulid.ULID]int64{}, loadedBlocks)
 	// LoadedBlocks will update the HeaderLastUsedTime map with the removal of
 	// idle blocks.
 	snapshot.HeaderLastUsedTime = pool.LoadedBlocks()
@@ -174,10 +182,8 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 
 	persistedData, err = os.ReadFile(persistedFile)
 	require.NoError(t, err)
-	snapshotReadFromDisk = &lazyLoadedHeadersSnapshot{}
-	err = json.Unmarshal(persistedData, snapshotReadFromDisk)
-	require.NoError(t, err)
-	require.Equal(t, 0, len(snapshotReadFromDisk.HeaderLastUsedTime), "should have none of lazyLoaded index header")
+
+	require.Equal(t, `{"header_last_used_time":{},"user_id":"anonymous"}`, string(persistedData))
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
