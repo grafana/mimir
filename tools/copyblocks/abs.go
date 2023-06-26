@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -19,21 +20,49 @@ import (
 )
 
 type azureConfig struct {
-	sourceAccountName      string
-	sourceAccountKey       string
-	destinationAccountName string
-	destinationAccountKey  string
-	copyStatusBackoff      backoff.Config
+	source            azureClientConfig
+	destination       azureClientConfig
+	copyStatusBackoff backoff.Config
 }
 
 func (c *azureConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.sourceAccountName, "azure-source-account-name", "", "Account name for the azure source bucket.")
-	f.StringVar(&c.sourceAccountKey, "azure-source-account-key", "", "Account key for the azure source bucket.")
-	f.StringVar(&c.destinationAccountName, "azure-destination-account-name", "", "Account name for the azure destination bucket.")
-	f.StringVar(&c.destinationAccountKey, "azure-destination-account-key", "", "Account key for the azure destination bucket.")
+	c.source.RegisterFlags("azure-source-", f)
+	c.destination.RegisterFlags("azure-destination-", f)
 	f.DurationVar(&c.copyStatusBackoff.MinBackoff, "azure-copy-status-backoff-min-duration", 15*time.Second, "The minimum amount of time to back off per copy operation.")
 	f.DurationVar(&c.copyStatusBackoff.MaxBackoff, "azure-copy-status-backoff-max-duration", 20*time.Second, "The maximum amount of time to back off per copy operation.")
 	f.IntVar(&c.copyStatusBackoff.MaxRetries, "azure-copy-status-backoff-max-retries", 40, "The maximum number of retries while checking the copy status.")
+}
+
+func (c *azureConfig) validate(source, destination string) error {
+	if source == serviceABS {
+		if err := c.source.validate("azure-source-"); err != nil {
+			return err
+		}
+	}
+	if destination == serviceABS {
+		return c.destination.validate("azure-destination-")
+	}
+	return nil
+}
+
+type azureClientConfig struct {
+	accountName string
+	accountKey  string
+}
+
+func (c *azureClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
+	f.StringVar(&c.accountName, prefix+"account-name", "", "Account name for the azure bucket.")
+	f.StringVar(&c.accountKey, prefix+"account-key", "", "Account key for the azure bucket.")
+}
+
+func (c *azureClientConfig) validate(prefix string) error {
+	if c.accountName == "" {
+		return fmt.Errorf("the azure bucket's account name (%s) is required", prefix+"account-name")
+	}
+	if c.accountKey == "" {
+		return fmt.Errorf("the azure bucket's account key (%s) is required", prefix+"account-key")
+	}
+	return nil
 }
 
 type azureBucket struct {
@@ -43,7 +72,7 @@ type azureBucket struct {
 	copyStatusBackoffConfig backoff.Config
 }
 
-func newAzureBucketClient(containerURL string, accountName string, sharedKey string, copyStatusBackoffConfig backoff.Config) (bucket, error) {
+func newAzureBucketClient(cfg azureClientConfig, containerURL string, backoffCfg backoff.Config) (bucket, error) {
 	urlParts, err := blob.ParseURL(containerURL)
 	if err != nil {
 		return nil, err
@@ -56,7 +85,7 @@ func newAzureBucketClient(containerURL string, accountName string, sharedKey str
 	if !found {
 		return nil, errors.New("malformed or unexpected azure bucket URL")
 	}
-	keyCred, err := azblob.NewSharedKeyCredential(accountName, sharedKey)
+	keyCred, err := azblob.NewSharedKeyCredential(cfg.accountName, cfg.accountKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get azure shared key credential")
 	}
@@ -72,7 +101,7 @@ func newAzureBucketClient(containerURL string, accountName string, sharedKey str
 		Client:                  *client,
 		containerClient:         *containerClient,
 		containerName:           containerName,
-		copyStatusBackoffConfig: copyStatusBackoffConfig,
+		copyStatusBackoffConfig: backoffCfg,
 	}, nil
 }
 
@@ -85,8 +114,13 @@ func (bkt *azureBucket) Get(ctx context.Context, objectName string) (io.ReadClos
 	return response.Body, nil
 }
 
-func (bkt *azureBucket) Copy(ctx context.Context, objectName string, dstBucket bucket) error {
+func (bkt *azureBucket) ServerSideCopy(ctx context.Context, objectName string, dstBucket bucket) error {
 	sourceClient := bkt.containerClient.NewBlobClient(objectName)
+	d, ok := dstBucket.(*azureBucket)
+	if !ok {
+		return errors.New("destination bucket wasn't a blob storage bucket")
+	}
+	dstClient := d.containerClient.NewBlobClient(objectName)
 
 	start := time.Now()
 	expiry := start.Add(10 * time.Minute)
@@ -95,12 +129,6 @@ func (bkt *azureBucket) Copy(ctx context.Context, objectName string, dstBucket b
 	if err != nil {
 		return err
 	}
-	d, ok := dstBucket.(*azureBucket)
-	if !ok {
-		return errors.New("destination bucket wasn't a blob storage bucket")
-	}
-
-	dstClient := d.containerClient.NewBlobClient(objectName)
 
 	var copyStatus *blob.CopyStatusType
 	var copyStatusDescription *string
@@ -165,6 +193,23 @@ func checkCopyStatus(ctx context.Context, client *blob.Client) (*blob.CopyStatus
 	return response.CopyStatus, response.CopyStatusDescription, nil
 }
 
+func (bkt *azureBucket) ClientSideCopy(ctx context.Context, objectName string, dstBucket bucket) error {
+	sourceClient := bkt.containerClient.NewBlobClient(objectName)
+	response, err := sourceClient.DownloadStream(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed while getting source object from azure")
+	}
+	if response.ContentLength == nil {
+		return errors.New("source object from azure did not contain a content length")
+	}
+	body := response.DownloadResponse.Body
+	if err := dstBucket.Upload(ctx, objectName, body, *response.ContentLength); err != nil {
+		_ = body.Close()
+		return errors.New("failed uploading source object from azure to destination")
+	}
+	return errors.Wrap(body.Close(), "failed closing azure source object reader")
+}
+
 func (bkt *azureBucket) ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error) {
 	if prefix != "" && !strings.HasSuffix(prefix, delim) {
 		prefix = prefix + delim
@@ -209,8 +254,8 @@ func (bkt *azureBucket) ListPrefix(ctx context.Context, prefix string, recursive
 	return list, nil
 }
 
-func (bkt *azureBucket) UploadMarkerFile(ctx context.Context, objectName string) error {
-	_, err := bkt.UploadBuffer(ctx, bkt.containerName, objectName, []byte{}, nil)
+func (bkt *azureBucket) Upload(ctx context.Context, objectName string, reader io.Reader, _ int64) error {
+	_, err := bkt.UploadStream(ctx, bkt.containerName, objectName, reader, nil)
 	return err
 }
 

@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -36,36 +37,45 @@ import (
 const (
 	serviceGCS = "gcs" // Google Cloud Storage
 	serviceABS = "abs" // Azure Blob Storage
+	serviceS3  = "s3"  // Amazon Simple Storage Service
 	delim      = "/"   // Used by Mimir to delimit tenants and blocks, and objects within blocks.
 )
 
 type bucket interface {
 	Get(ctx context.Context, objectName string) (io.ReadCloser, error)
-	Copy(ctx context.Context, objectName string, dstBucket bucket) error
+	ServerSideCopy(ctx context.Context, objectName string, dstBucket bucket) error
+	ClientSideCopy(ctx context.Context, objectName string, dstBucket bucket) error
 	ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error)
-	UploadMarkerFile(ctx context.Context, objectName string) error
+	Upload(ctx context.Context, objectName string, reader io.Reader, contentLength int64) error
 	Name() string
 }
 
+type CopyFunc func(context.Context, string) error
+
 type config struct {
-	service           string
-	sourceBucket      string
-	destBucket        string
-	minBlockDuration  time.Duration
-	minTime           flagext.Time
-	maxTime           flagext.Time
-	tenantConcurrency int
-	blocksConcurrency int
-	copyPeriod        time.Duration
-	enabledUsers      flagext.StringSliceCSV
-	disabledUsers     flagext.StringSliceCSV
-	dryRun            bool
-	httpListen        string
-	azureConfig       azureConfig
+	sourceService      string
+	destinationService string
+	sourceBucket       string
+	destBucket         string
+	minBlockDuration   time.Duration
+	minTime            flagext.Time
+	maxTime            flagext.Time
+	tenantConcurrency  int
+	blocksConcurrency  int
+	copyPeriod         time.Duration
+	enabledUsers       flagext.StringSliceCSV
+	disabledUsers      flagext.StringSliceCSV
+	dryRun             bool
+	clientSideCopy     bool
+	httpListen         string
+	azureConfig        azureConfig
+	s3Config           s3Config
 }
 
 func (c *config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.service, "service", "", fmt.Sprintf("Service that both the buckets are on. Acceptable values: %s or %s.", serviceGCS, serviceABS))
+	acceptedServices := fmt.Sprintf(" Accepted values: %s, %s or %s.", serviceABS, serviceGCS, serviceS3)
+	f.StringVar(&c.sourceService, "source-service", "", "Service that the source buckets is on."+acceptedServices)
+	f.StringVar(&c.destinationService, "destination-service", "", "Service that the destination bucket is on."+acceptedServices)
 	f.StringVar(&c.sourceBucket, "source-bucket", "", "Source bucket with blocks.")
 	f.StringVar(&c.destBucket, "destination-bucket", "", "Destination bucket with blocks.")
 	f.DurationVar(&c.minBlockDuration, "min-block-duration", 0, "If non-zero, ignore blocks that cover block range smaller than this.")
@@ -76,9 +86,11 @@ func (c *config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&c.copyPeriod, "copy-period", 0, "How often to repeat the copy. If set to 0, copy is done once, and the program stops. Otherwise, the program keeps running and copying blocks until it is terminated.")
 	f.Var(&c.enabledUsers, "enabled-users", "If not empty, only blocks for these users are copied.")
 	f.Var(&c.disabledUsers, "disabled-users", "If not empty, blocks for these users are not copied.")
-	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform copy; only log what would happen.")
+	f.BoolVar(&c.clientSideCopy, "client-side-copy", false, "Use client side copying. This option is only respected if copying between two buckets of the same service, otherwise it is assumed to be true.")
+	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
 	c.azureConfig.RegisterFlags(f)
+	c.s3Config.RegisterFlags(f)
 }
 
 type metrics struct {
@@ -157,54 +169,54 @@ func main() {
 }
 
 func initializeBuckets(ctx context.Context, cfg config) (sourceBucket bucket, destBucket bucket, err error) {
+	if cfg.sourceService == "" || cfg.destinationService == "" {
+		return nil, nil, errors.New("--source-service or --destination-service is missing")
+	}
 	if cfg.sourceBucket == "" || cfg.destBucket == "" {
 		return nil, nil, errors.New("--source-bucket or --destination-bucket is missing")
 	}
 	if cfg.sourceBucket == cfg.destBucket {
 		return nil, nil, errors.New("--source-bucket and --destination-bucket can not be the same")
 	}
+	if err := cfg.azureConfig.validate(cfg.sourceService, cfg.destinationService); err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.s3Config.validate(cfg.sourceService, cfg.destinationService); err != nil {
+		return nil, nil, err
+	}
 
-	switch strings.ToLower(cfg.service) {
+	sourceBucket, err = initializeBucket(ctx, cfg, cfg.sourceService, cfg.sourceBucket, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	destBucket, err = initializeBucket(ctx, cfg, cfg.destinationService, cfg.destBucket, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sourceBucket, destBucket, nil
+}
+
+func initializeBucket(ctx context.Context, cfg config, service, bucket string, isSource bool) (bucket, error) {
+	switch strings.ToLower(service) {
+	case serviceABS:
+		if isSource {
+			return newAzureBucketClient(cfg.azureConfig.source, bucket, cfg.azureConfig.copyStatusBackoff)
+		}
+		return newAzureBucketClient(cfg.azureConfig.destination, bucket, cfg.azureConfig.copyStatusBackoff)
 	case serviceGCS:
 		client, err := storage.NewClient(ctx)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to create client")
+			return nil, errors.Wrapf(err, "failed to create GCS storage client")
 		}
-		sourceBucket = newGCSBucket(client, cfg.sourceBucket)
-		destBucket = newGCSBucket(client, cfg.destBucket)
-	case serviceABS:
-		azureConfig := cfg.azureConfig
-		if azureConfig.sourceAccountKey == "" || azureConfig.sourceAccountName == "" {
-			return nil, nil, errors.New("the azure source bucket's account name (--azure-source-account-name) and account key (--azure-source-account-key) are required")
+		return newGCSBucket(client, bucket), nil
+	case serviceS3:
+		if isSource {
+			return newS3Client(cfg.s3Config.source, bucket)
 		}
-		if azureConfig.destinationAccountKey == "" || azureConfig.destinationAccountName == "" {
-			return nil, nil, errors.New("the azure destination bucket's account name (--azure-destination-account-name) and account key (--azure-destination-account-key) are required")
-		}
-
-		var err error
-		sourceBucket, err = newAzureBucketClient(
-			cfg.sourceBucket,
-			azureConfig.sourceAccountName,
-			azureConfig.sourceAccountKey,
-			azureConfig.copyStatusBackoff,
-		)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to create source azure bucket client")
-		}
-		destBucket, err = newAzureBucketClient(
-			cfg.destBucket,
-			azureConfig.destinationAccountName,
-			azureConfig.destinationAccountKey,
-			azureConfig.copyStatusBackoff,
-		)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to create destination azure bucket client")
-		}
+		return newS3Client(cfg.s3Config.destination, bucket)
 	default:
-		return nil, nil, errors.Errorf("invalid service: %v", cfg.service)
+		return nil, errors.Errorf("invalid service: %v", service)
 	}
-
-	return sourceBucket, destBucket, nil
 }
 
 func runCopy(ctx context.Context, cfg config, logger log.Logger, m *metrics) bool {
@@ -224,6 +236,17 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 	sourceBucket, destBucket, err := initializeBuckets(ctx, cfg)
 	if err != nil {
 		return err
+	}
+
+	var copyFunc CopyFunc
+	if cfg.clientSideCopy || cfg.sourceService != cfg.destinationService {
+		copyFunc = func(ctx context.Context, objectName string) error {
+			return sourceBucket.ClientSideCopy(ctx, objectName, destBucket)
+		}
+	} else {
+		copyFunc = func(ctx context.Context, objectName string) error {
+			return sourceBucket.ServerSideCopy(ctx, objectName, destBucket)
+		}
 	}
 
 	tenants, err := listTenants(ctx, sourceBucket)
@@ -329,7 +352,7 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 
 			level.Info(logger).Log("msg", "copying block")
 
-			err = copySingleBlock(ctx, tenantID, blockID, markers[blockID], sourceBucket, destBucket)
+			err = copySingleBlock(ctx, tenantID, blockID, markers[blockID], sourceBucket, copyFunc)
 			if err != nil {
 				m.blocksCopyFailed.Inc()
 				level.Error(logger).Log("msg", "failed to copy block", "err", err)
@@ -366,7 +389,7 @@ func isAllowedUser(enabled map[string]struct{}, disabled map[string]struct{}, te
 }
 
 // This method copies files within single TSDB block to a destination bucket.
-func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, markers blockMarkers, srcBkt, destBkt bucket) error {
+func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, markers blockMarkers, srcBkt bucket, copyFunc CopyFunc) error {
 	paths, err := srcBkt.ListPrefix(ctx, tenantID+delim+blockID.String(), true)
 	if err != nil {
 		return errors.Wrapf(err, "copySingleBlock: failed to list block files for %v/%v", tenantID, blockID.String())
@@ -394,7 +417,7 @@ func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, ma
 	}
 
 	for _, fullPath := range paths {
-		err := srcBkt.Copy(ctx, fullPath, destBkt)
+		err := copyFunc(ctx, fullPath)
 		if err != nil {
 			return errors.Wrapf(err, "copySingleBlock: failed to copy %v", fullPath)
 		}
@@ -404,7 +427,8 @@ func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, ma
 }
 
 func uploadCopiedMarkerFile(ctx context.Context, bkt bucket, tenantID string, blockID ulid.ULID, targetBucketName string) error {
-	err := bkt.UploadMarkerFile(ctx, tenantID+delim+CopiedToBucketMarkFilename(blockID, targetBucketName))
+	objectName := tenantID + delim + CopiedToBucketMarkFilename(blockID, targetBucketName)
+	err := bkt.Upload(ctx, objectName, bytes.NewReader([]byte{}), 0)
 	return errors.Wrap(err, "uploadCopiedMarkerFile")
 }
 

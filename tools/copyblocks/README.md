@@ -1,7 +1,8 @@
 # Copyblocks
 
-This program can copy Mimir blocks server-side between two buckets on the same object storage service provider.
-The currently supported services are Google Cloud Storage (GCS) and Azure Blob Storage (ABS).
+This program can copy Mimir blocks between two buckets. By default the copy will be performed server-side if both buckets are on the same object storage service provider. If the buckets are on different object storage providers, or if `--client-side-copy` is passed, then the copy will be performed client side.
+
+The currently supported services are Amazon Simple Storage Service (S3 and S3-compatible), Azure Blob Storage (ABS), and Google Cloud Storage (GCS).
 
 ## Features
 
@@ -16,24 +17,67 @@ The currently supported services are Google Cloud Storage (GCS) and Azure Blob S
 
 ```bash
 ./copyblocks \
-  --service gcs \
+  --source-service gcs \
+  --destination-service gcs \
   --copy-period 24h \
+  --min-block-duration 23h \
   --source-bucket <source bucket name> \
-  --destination-bucket <destination bucket name> \
-  --min-block-duration 23h
+  --destination-bucket <destination bucket name>
 ```
 
 ### Example for Azure Blob Storage
 
 ```bash
 ./copyblocks \
-  --service abs \
+  --source-service abs \
+  --destination-service abs \
   --copy-period 24h \
+  --min-block-duration 23h \
   --source-bucket https://<source account name>.blob.core.windows.net/<source bucket name> \
   --azure-source-account-name <source account name> \
   --azure-source-account-key <source account key> \
   --destination-bucket https://<destination account name>.blob.core.windows.net/<destination bucket name> \
   --azure-destination-account-name <destination account name> \
-  --azure-destination-account-key <destination account key> \
-  --min-block-duration 23h
+  --azure-destination-account-key <destination account key>
+```
+
+### Example for Amazon Simple Storage Service
+
+The destination credentials are used to intiate the server-side copy which may require setting up additional permissions for the copy to have access the source bucket. Consider passing `--client-side-copy` if you would rather avoid that.
+
+```bash
+./copyblocks \
+  --source-service s3 \
+  --destination-service s3 \
+  --copy-period 24h \
+  --min-block-duration 23h \
+  --source-bucket <source bucket name> \
+  --s3-source-access-key <source access key> \
+  --s3-source-secret-key <source secret key> \
+  --s3-source-endpoint <source endpoint> \
+  --destination-bucket <destination bucket name> \
+  --s3-destination-access-key <destination access key> \
+  --s3-destination-secret-key <destination secret key> \
+  --s3-destination-endpoint <destination endpoint>
+```
+
+### Example for copying between different providers
+
+Combine the relavant source and destination configuration options using the above examples as a guide.
+
+For instance, to copy from S3 to ABS:
+
+```bash
+./copyblocks \
+  --source-service s3 \
+  --destination-service abs \
+  --copy-period 24h \
+  --min-block-duration 23h \
+  --source-bucket <source bucket name> \
+  --s3-source-access-key <source access key> \
+  --s3-source-secret-key <source secret key> \
+  --s3-source-endpoint <source endpoint> \
+  --destination-bucket https://<destination account name>.blob.core.windows.net/<destination bucket name> \
+  --azure-destination-account-name <destination account name> \
+  --azure-destination-account-key <destination account key>
 ```
