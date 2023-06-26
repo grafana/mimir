@@ -5520,17 +5520,6 @@
             },
             {
               "kind": "field",
-              "name": "index_header_lazy_loading_concurrency",
-              "required": false,
-              "desc": "Maximum number of concurrent index headers being loaded in per tenant.",
-              "fieldValue": null,
-              "fieldDefaultValue": 20,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-concurrency",
-              "fieldType": "int",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "meta_sync_concurrency",
               "required": false,
               "desc": "Number of Go routines to use when syncing block meta files from object storage per tenant.",
@@ -7395,6 +7384,17 @@
               "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "index_header_lazy_loading_concurrency",
+              "required": false,
+              "desc": "Maximum number of concurrent index header loads across all tenants. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-concurrency",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
