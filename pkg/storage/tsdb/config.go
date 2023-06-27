@@ -114,7 +114,7 @@ var (
 	errInvalidStripeSize                        = errors.New("invalid TSDB stripe size")
 	errInvalidStreamingBatchSize                = errors.New("invalid store-gateway streaming batch size")
 	errEmptyBlockranges                         = errors.New("empty block ranges for TSDB")
-	errInvalidIndexHeaderLazyLoadingConcurrency = errors.New("invalid index-header lazy loading max concurrency; must be positive")
+	errInvalidIndexHeaderLazyLoadingConcurrency = errors.New("invalid index-header lazy loading max concurrency; must be non-negative")
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.

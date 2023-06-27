@@ -340,7 +340,7 @@ local filename = 'mimir-queries.json';
         $.panelDescription(
           'Index-header lazy load gate latency',
           |||
-            The average time spent waiting for a turn to load an index header. This time is not included in "Index-header lazy load duration."
+            Time spent waiting for a turn to load an index header. This time is not included in "Index-header lazy load duration."
           |||
         )
       )
