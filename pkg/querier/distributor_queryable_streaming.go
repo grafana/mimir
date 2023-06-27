@@ -3,6 +3,8 @@
 package querier
 
 import (
+	"fmt"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -27,6 +29,8 @@ type streamingChunkSeries struct {
 	labels  labels.Labels
 	sources []client.StreamingSeriesSource
 	context *streamingChunkSeriesContext
+
+	alreadyCreated bool
 }
 
 func (s *streamingChunkSeries) Labels() labels.Labels {
@@ -34,6 +38,12 @@ func (s *streamingChunkSeries) Labels() labels.Labels {
 }
 
 func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	if s.alreadyCreated {
+		return series.NewErrIterator(fmt.Errorf("can't create iterator multiple times for the one streaming series (%v)", s.labels.String()))
+	}
+
+	s.alreadyCreated = true
+
 	var uniqueChunks []client.Chunk
 	totalChunks := 0
 
