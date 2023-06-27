@@ -77,15 +77,15 @@ for FILEPATH in $TESTS; do
 
   helm template "${ARGS[@]}" 1>/dev/null &
   pid=$!
-  pids+=($pid)
-  echo "Launched helm template PID $pid 'helm template ${ARGS[@]}'"
+  pids+=("$pid")
+  echo "Launched helm template PID $pid 'helm template ${ARGS[*]}'"
 done
 
 # Wait for all child processes to finish. We turn off `set -e` because we want to check the exit code of each child process
 # and print a message if it's non-zero. set -e will otherwise cause the script to exit immediately if any child process has exited with non-zero exit code.
 set +e
 for p in "${pids[@]}"; do
-    wait $p
+    wait "$p"
     exit_code=$?
     if [ $exit_code -ne 0 ]; then
         echo "helm template PID $p exited with non-zero exit code $exit_code. Aborting."
