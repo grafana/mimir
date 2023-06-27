@@ -41,6 +41,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -alertmanager-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -alertmanager-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -alertmanager-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -alertmanager-storage.s3.max-idle-connections int
@@ -655,6 +657,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -blocks-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -blocks-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -blocks-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -blocks-storage.s3.max-idle-connections int
@@ -805,6 +809,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -common.storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -common.storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -common.storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -common.storage.s3.max-idle-connections int
@@ -1348,7 +1354,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.token-generation-strategy string
     	[experimental] Specifies the strategy used for generating tokens for ingesters. Supported values are: random,spread-minimizing. (default "random")
   -ingester.ring.tokens-file-path string
-    	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.
+    	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup. Must be empty if -ingester.ring.token-generation-strategy is set to "spread-minimizing".
   -ingester.ring.unregister-on-shutdown
     	Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming. (default true)
   -ingester.ring.zone-awareness-enabled
@@ -2069,6 +2075,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -ruler-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -ruler-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -ruler-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -ruler-storage.s3.max-idle-connections int

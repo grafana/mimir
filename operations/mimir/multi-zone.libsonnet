@@ -18,13 +18,13 @@
     multi_zone_ingester_replication_write_path_enabled: true,
     multi_zone_ingester_replication_read_path_enabled: true,
     multi_zone_ingester_replicas: 0,
-    multi_zone_ingester_max_unavailable: 25,
+    multi_zone_ingester_max_unavailable: 50,
 
     multi_zone_store_gateway_enabled: false,
     multi_zone_store_gateway_read_path_enabled: $._config.multi_zone_store_gateway_enabled,
     multi_zone_store_gateway_migration_enabled: false,
     multi_zone_store_gateway_replicas: 0,
-    multi_zone_store_gateway_max_unavailable: 10,
+    multi_zone_store_gateway_max_unavailable: 50,
 
     // We can update the queryBlocksStorageConfig only once the migration is over. During the migration
     // we don't want to apply these changes to single-zone store-gateways too.

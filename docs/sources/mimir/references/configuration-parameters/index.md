@@ -849,7 +849,8 @@ ring:
   [excluded_zones: <string> | default = ""]
 
   # File path where tokens are stored. If empty, tokens are not stored at
-  # shutdown and restored at startup.
+  # shutdown and restored at startup. Must be empty if
+  # -ingester.ring.token-generation-strategy is set to "spread-minimizing".
   # CLI flag: -ingester.ring.tokens-file-path
   [tokens_file_path: <string> | default = ""]
 
@@ -4200,6 +4201,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # Supported values are: v4, v2.
 # CLI flag: -<prefix>.s3.signature-version
 [signature_version: <string> | default = "v4"]
+
+# (advanced) Use a specific version of the S3 list object API. Supported values
+# are v1 or v2. Default is unset.
+# CLI flag: -<prefix>.s3.list-objects-version
+[list_objects_version: <string> | default = ""]
 
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:

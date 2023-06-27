@@ -62,6 +62,14 @@ patches:
       - op: remove
         path: /config/blocks_storage/tsdb/wal_replay_concurrency
 
+  # Do not check the ruler storage settings on any component different than ruler (it's irrelevant).
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/ruler_storage
+
   - target:
       kind: MimirConfig
       name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|store-gateway|query-scheduler'
