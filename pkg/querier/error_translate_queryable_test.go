@@ -104,6 +104,12 @@ func TestApiStatusCodes(t *testing.T) {
 			expectedString: "test string",
 			expectedCode:   422,
 		},
+
+		{
+			err:            httpgrpc.Errorf(http.StatusServiceUnavailable, "test"),
+			expectedString: "timeout",
+			expectedCode:   http.StatusServiceUnavailable,
+		},
 	} {
 		for k, q := range map[string]storage.SampleAndChunkQueryable{
 			"error from queryable": errorTestQueryable{err: tc.err},
