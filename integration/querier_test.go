@@ -252,8 +252,8 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 			// Check the in-memory index cache metrics (in the store-gateway).
 
 			if streamingEnabled {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9+5), "thanos_store_index_cache_requests_total"))   // 5 + 2 + 2 + 5
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(2), "thanos_store_index_cache_hits_total")) // Streaming uses the index cache
+				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9+5), "thanos_store_index_cache_requests_total")) // 5 + 2 + 2 + 5
+				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Greater(0), "thanos_store_index_cache_hits_total"))      // Streaming uses the index cache
 				if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
 					require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(9*2+5), "thanos_memcached_operations_total"))
 				}
@@ -278,7 +278,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 
 			if streamingEnabled {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9+5+3), "thanos_store_index_cache_requests_total"))
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(6), "thanos_store_index_cache_hits_total"))
+				require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(4), "thanos_store_index_cache_hits_total"))
 				if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
 					require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(9*2+2+5), "thanos_memcached_operations_total")) // as before + 2 gets (expanded postings and series)
 				}

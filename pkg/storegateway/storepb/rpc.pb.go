@@ -50,7 +50,7 @@ type SeriesRequest struct {
 	//   sending any streaming_chunks, with the last streaming_series response containing is_end_of_series_stream=true.
 	//   The order of series in both streaming_series/streaming_chunks must match and the size of the batch must not
 	//   cross streaming_chunks_batch_size, although it can be lower than that.
-	// It is 100 so that we have an option to bring back compatibility with Thanos' storage API.
+	// The proto field ID is 100 so that we have an option to bring back compatibility with Thanos' storage API.
 	StreamingChunksBatchSize uint64 `protobuf:"varint,100,opt,name=streaming_chunks_batch_size,json=streamingChunksBatchSize,proto3" json:"streaming_chunks_batch_size,omitempty"`
 }
 
