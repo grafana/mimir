@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
 	"golang.org/x/time/rate"
 
@@ -27,10 +28,11 @@ const (
 )
 
 type WriteReadSeriesTestConfig struct {
-	NumSeries      int
-	MaxQueryAge    time.Duration
-	WithFloats     bool
-	WithHistograms bool
+	NumSeries            int
+	MaxQueryAge          time.Duration
+	WithFloats           bool
+	WithHistograms       bool
+	WithRandomHistograms bool
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
@@ -38,6 +40,7 @@ func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-series-test.max-query-age", 7*24*time.Hour, "How back in the past metrics can be queried at most.")
 	f.BoolVar(&cfg.WithFloats, "tests.write-read-series-test.float-samples-enabled", true, "Set to true to use float samples")
 	f.BoolVar(&cfg.WithHistograms, "tests.write-read-series-test.histogram-samples-enabled", false, "Set to true to use native histogram samples")
+	f.BoolVar(&cfg.WithRandomHistograms, "tests.write-read-series-test.random-histograms-enabled", false, "Set to true to use native histogram samples with randomly increasing bucket counts")
 }
 
 type WriteReadSeriesTest struct {
@@ -47,8 +50,11 @@ type WriteReadSeriesTest struct {
 	logger  log.Logger
 	metrics *TestMetrics
 
-	floatMetric MetricHistory
-	histMetrics []MetricHistory
+	floatMetric      MetricHistory
+	histMetrics      []MetricHistory
+	randomHistMetric MetricHistory
+
+	mutatingHist *histogram.FloatHistogram
 }
 
 type MetricHistory struct {
@@ -61,12 +67,13 @@ func NewWriteReadSeriesTest(cfg WriteReadSeriesTestConfig, client MimirClient, l
 	const name = "write-read-series"
 
 	return &WriteReadSeriesTest{
-		name:        name,
-		cfg:         cfg,
-		client:      client,
-		logger:      log.With(logger, "test", name),
-		metrics:     NewTestMetrics(name, reg),
-		histMetrics: make([]MetricHistory, len(histogramProfiles)),
+		name:         name,
+		cfg:          cfg,
+		client:       client,
+		logger:       log.With(logger, "test", name),
+		metrics:      NewTestMetrics(name, reg),
+		histMetrics:  make([]MetricHistory, len(histogramProfiles)),
+		mutatingHist: genInitialRandomHistogram(),
 	}
 }
 
@@ -78,8 +85,8 @@ func (t *WriteReadSeriesTest) Name() string {
 // Init implements Test.
 func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 	level.Info(t.logger).Log("msg", "Finding previously written samples time range to recover writes and reads from previous run")
-	if !t.cfg.WithFloats && !t.cfg.WithHistograms {
-		return errors.New("should test either floats or histograms or both, currently testing nothing")
+	if !t.cfg.WithFloats && !t.cfg.WithHistograms && !t.cfg.WithRandomHistograms {
+		return errors.New("should test something, currently testing nothing")
 	}
 	if t.cfg.WithFloats {
 		err := t.recoverPast(ctx, now, floatMetricName, querySumFloat, generateSineWaveValue, nil, &t.floatMetric)
@@ -136,7 +143,29 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 		}
 	}
 
+	if t.cfg.WithRandomHistograms {
+		t.OnlyWriteSamples(ctx, now, writeLimiter, errs, randomHistMetricName, randomHistTypeLabel, randomHistGenMutatingSeries, &t.randomHistMetric)
+	}
+
 	return errs.Err()
+}
+
+func (t *WriteReadSeriesTest) OnlyWriteSamples(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, generateMutatingSeries generateMutatingSeriesFunc, records *MetricHistory) {
+	// Write series for each expected timestamp until now.
+	for timestamp := t.nextWriteTimestamp(now, records); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now, records) {
+		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
+			// Context has been canceled, so we should interrupt.
+			errs.Add(err)
+			return
+		}
+
+		var series []prompb.TimeSeries
+		series, t.mutatingHist = generateMutatingSeries(metricName, timestamp, t.mutatingHist, t.cfg.NumSeries)
+		if err := t.writeSamples(ctx, typeLabel, timestamp, series, records); err != nil {
+			errs.Add(err)
+			break
+		}
+	}
 }
 
 func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, querySum querySumFunc, generateSeries generateSeriesFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) {

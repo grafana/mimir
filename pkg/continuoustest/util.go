@@ -21,12 +21,15 @@ const (
 	maxComparisonDeltaFloat     = 0.001
 	maxComparisonDeltaHistogram = 0.01
 
-	floatMetricName = "mimir_continuous_test_sine_wave"
-	floatTypeLabel  = "float"
+	floatMetricName      = "mimir_continuous_test_sine_wave"
+	floatTypeLabel       = "float"
+	randomHistMetricName = "mimir_continuous_test_random_histogram"
+	randomHistTypeLabel  = "histogram"
 )
 
 type generateHistogramFunc func(t time.Time) prompb.Histogram
 type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
+type generateMutatingSeriesFunc func(name string, t time.Time, h *histogram.FloatHistogram, numSeries int) ([]prompb.TimeSeries, *histogram.FloatHistogram)
 type generateValueFunc func(t time.Time) float64
 type generateSampleHistogramFunc func(t time.Time, numSeries int) *model.SampleHistogram
 
@@ -85,6 +88,28 @@ var (
 				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, true), numSeries, true))
 			},
 		},
+	}
+	randomHistGenMutatingSeries = func(name string, t time.Time, h *histogram.FloatHistogram, numSeries int) ([]prompb.TimeSeries, *histogram.FloatHistogram) {
+		out := make([]prompb.TimeSeries, 0, numSeries)
+
+		ts := t.UnixMilli()
+		newHist := mutateRandomHistogram(h)
+		convertedHist := remote.FloatHistogramToHistogramProto(ts, newHist)
+
+		for i := 0; i < numSeries; i++ {
+			out = append(out, prompb.TimeSeries{
+				Labels: []prompb.Label{{
+					Name:  "__name__",
+					Value: name,
+				}, {
+					Name:  "series_id",
+					Value: strconv.Itoa(i),
+				}},
+				Histograms: []prompb.Histogram{convertedHist},
+			})
+		}
+
+		return out, newHist
 	}
 )
 
@@ -163,6 +188,26 @@ func generateNegIntHistogram(value int64) *histogram.Histogram {
 		},
 		NegativeBuckets: []int64{value, 0, 0, 0},
 	}
+}
+
+func genInitialRandomHistogram() *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		Sum:           0,
+		Count:         0,
+		ZeroThreshold: 0.001,
+		Schema:        2,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 8},
+		},
+		PositiveBuckets: []float64{0, 0, 0, 0, 0, 0, 0, 0},
+	}
+}
+
+func mutateRandomHistogram(h *histogram.FloatHistogram) *histogram.FloatHistogram {
+	newHisto := h.Copy()
+	newHisto.Count++
+	newHisto.PositiveBuckets[rand.Intn(len(newHisto.PositiveBuckets))]++
+	return newHisto
 }
 
 func generatePosFloatHistogram(value float64) *histogram.FloatHistogram {
