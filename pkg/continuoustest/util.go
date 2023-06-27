@@ -223,7 +223,7 @@ func genHistogramFromArr(arr []int64) *histogram.Histogram {
 func mutateRandomArray(arr []int64, n int) []int64 {
 	newArr := make([]int64, len(arr))
 	for i, x := range arr {
-		newArr[i] = x + rand.Int63n(int64(n))
+		newArr[i] = x + rand.Int63n(int64(n+1))
 	}
 	return newArr
 }
