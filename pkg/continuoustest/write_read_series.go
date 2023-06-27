@@ -22,8 +22,7 @@ import (
 )
 
 const (
-	writeInterval = 20 * time.Second
-	writeMaxAge   = 50 * time.Minute
+	writeMaxAge = 50 * time.Minute
 )
 
 type WriteReadSeriesTestConfig struct {
@@ -34,6 +33,7 @@ type WriteReadSeriesTestConfig struct {
 	WithRandomHistograms bool
 	NumBuckets           int
 	MaxIncrease          int
+	WriteInterval        time.Duration
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
@@ -44,6 +44,7 @@ func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.WithRandomHistograms, "tests.write-read-series-test.random-histograms-enabled", false, "Set to true to use native histogram samples with randomly increasing bucket counts")
 	f.IntVar(&cfg.NumBuckets, "tests.write-read-series-test.num-buckets", 10, "Fixed number of buckets used for the random histograms metric.")
 	f.IntVar(&cfg.MaxIncrease, "tests.write-read-series-test.max-increase", 10, "Maximum increase in each bucket count for the random histograms metric.")
+	f.DurationVar(&cfg.WriteInterval, "tests.write-read-series-test.write-interval", 20*time.Second, "Timestamps are aligned to this interval.")
 }
 
 type WriteReadSeriesTest struct {
@@ -309,13 +310,13 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time, records *MetricH
 func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool, typeLabel, metricSumQuery string, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) error {
 	// We align start, end and step to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
-	start = maxTime(records.queryMinTime, alignTimestampToInterval(start, writeInterval))
-	end = minTime(records.queryMaxTime, alignTimestampToInterval(end, writeInterval))
+	start = maxTime(records.queryMinTime, alignTimestampToInterval(start, t.cfg.WriteInterval))
+	end = minTime(records.queryMaxTime, alignTimestampToInterval(end, t.cfg.WriteInterval))
 	if end.Before(start) {
 		return nil
 	}
 
-	step := getQueryStep(start, end, writeInterval)
+	step := getQueryStep(start, end, t.cfg.WriteInterval)
 
 	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.runRangeQueryAndVerifyResult")
 	defer sp.Finish()
@@ -344,7 +345,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool, typeLabel, metricSumQuery string, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) error {
 	// We align the query timestamp to write interval in order to avoid any false positives
 	// when checking results correctness. The min/max query time is always aligned.
-	ts = maxTime(records.queryMinTime, alignTimestampToInterval(ts, writeInterval))
+	ts = maxTime(records.queryMinTime, alignTimestampToInterval(ts, t.cfg.WriteInterval))
 	if records.queryMaxTime.Before(ts) {
 		return nil
 	}
@@ -395,22 +396,22 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 
 func (t *WriteReadSeriesTest) nextWriteTimestamp(now time.Time, records *MetricHistory) time.Time {
 	if records.lastWrittenTimestamp.IsZero() {
-		return alignTimestampToInterval(now, writeInterval)
+		return alignTimestampToInterval(now, t.cfg.WriteInterval)
 	}
 
-	return records.lastWrittenTimestamp.Add(writeInterval)
+	return records.lastWrittenTimestamp.Add(t.cfg.WriteInterval)
 }
 
 func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc) (from, to time.Time) {
-	end := alignTimestampToInterval(now, writeInterval)
-	step := writeInterval
+	end := alignTimestampToInterval(now, t.cfg.WriteInterval)
+	step := t.cfg.WriteInterval
 
 	var samples []model.SamplePair
 	var histograms []model.SampleHistogramPair
 	query := querySum(metricName)
 
 	for {
-		start := alignTimestampToInterval(maxTime(now.Add(-t.cfg.MaxQueryAge), end.Add(-24*time.Hour).Add(step)), writeInterval)
+		start := alignTimestampToInterval(maxTime(now.Add(-t.cfg.MaxQueryAge), end.Add(-24*time.Hour).Add(step)), t.cfg.WriteInterval)
 		if !start.Before(end) {
 			// We've hit the max query age, so we'll keep the last computed valid time range (if any).
 			return
