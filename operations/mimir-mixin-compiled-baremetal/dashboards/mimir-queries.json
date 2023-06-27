@@ -2814,7 +2814,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Index-header lazy load gate latency\nThe average time spent waiting for a turn to load an index header. This time is not included in \"Index-header lazy load duration.\"\n\n",
+                  "description": "### Index-header lazy load gate latency\nTime spent waiting for a turn to load an index header. This time is not included in \"Index-header lazy load duration.\"\n\n",
                   "fill": 1,
                   "id": 34,
                   "legend": {
