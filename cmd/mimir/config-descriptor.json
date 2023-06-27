@@ -7389,7 +7389,7 @@
               "kind": "field",
               "name": "index_header_lazy_loading_concurrency",
               "required": false,
-              "desc": "Maximum number of concurrent index header loads across all tenants. 0 to disable.",
+              "desc": "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-concurrency",

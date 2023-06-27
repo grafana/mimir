@@ -3350,7 +3350,7 @@ bucket_store:
   [index_header_lazy_loading_idle_timeout: <duration> | default = 1h]
 
   # (experimental) Maximum number of concurrent index header loads across all
-  # tenants. 0 to disable.
+  # tenants. If set to 0, concurrency is unlimited.
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-concurrency
   [index_header_lazy_loading_concurrency: <int> | default = 0]
 

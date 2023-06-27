@@ -492,7 +492,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.redis.write-timeout duration
     	Client write timeout. (default 3s)
   -blocks-storage.bucket-store.index-header-lazy-loading-concurrency int
-    	[experimental] Maximum number of concurrent index header loads across all tenants. 0 to disable.
+    	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
