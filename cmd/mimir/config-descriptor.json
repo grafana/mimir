@@ -4982,6 +4982,17 @@
             },
             {
               "kind": "field",
+              "name": "list_objects_version",
+              "required": false,
+              "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.s3.list-objects-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "storage_class",
               "required": false,
               "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW",
@@ -10435,6 +10446,17 @@
             },
             {
               "kind": "field",
+              "name": "list_objects_version",
+              "required": false,
+              "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.s3.list-objects-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "storage_class",
               "required": false,
               "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW",
@@ -12385,6 +12407,17 @@
               "fieldValue": null,
               "fieldDefaultValue": "v4",
               "fieldFlag": "alertmanager-storage.s3.signature-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "list_objects_version",
+              "required": false,
+              "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.s3.list-objects-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -14608,6 +14641,17 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "v4",
                   "fieldFlag": "common.storage.s3.signature-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "list_objects_version",
+                  "required": false,
+                  "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.s3.list-objects-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
                 },

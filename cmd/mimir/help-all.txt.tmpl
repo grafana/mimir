@@ -41,6 +41,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -alertmanager-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -alertmanager-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -alertmanager-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -alertmanager-storage.s3.max-idle-connections int
@@ -653,6 +655,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -blocks-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -blocks-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -blocks-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -blocks-storage.s3.max-idle-connections int
@@ -803,6 +807,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -common.storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -common.storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -common.storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -common.storage.s3.max-idle-connections int
@@ -2067,6 +2073,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -ruler-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -ruler-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -ruler-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -ruler-storage.s3.max-idle-connections int
