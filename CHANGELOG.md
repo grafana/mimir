@@ -33,7 +33,7 @@
 * [ENHANCEMENT] Use new data structure for labels, to reduce memory consumption. #3555
 * [ENHANCEMENT] Update alpine base image to 3.18.2. #5276
 * [ENHANCEMENT] Ruler: add `cortex_ruler_sync_rules_duration_seconds` metric, tracking the time spent syncing all rule groups owned by the ruler instance. #5311
-* [ENHANCEMENT] Store-gateway: add experimental `index_header_lazy_loading_concurrency` config option to limit the number of concurrent index-headers loads when lazy loading. #5313
+* [ENHANCEMENT] Store-gateway: add experimental `blocks-storage.bucket-store.index-header-lazy-loading-concurrency` config option to limit the number of concurrent index-headers loads when lazy loading. #5313
 * [ENHANCEMENT] Ingester and querier: improve level of detail in traces emitted for queries that hit ingesters. #5315
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 
