@@ -1409,40 +1409,49 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				ExpectedSeries: series[:seriesCut],
 			})
 		}
-		runTestServerSeries(t, st, bCases...)
 
+		streamingBatchSizes := []int{0}
 		if !t.IsBenchmark() {
-			if !skipChunk {
-				assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
-				assert.Zero(t, chunksSlicePool.(*pool.TrackedPool).Balance.Load())
+			streamingBatchSizes = []int{0, 1, 5}
+		}
+		for _, streamingBatchSize := range streamingBatchSizes {
+			t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t test.TB) {
+				runTestServerSeries(t, st, streamingBatchSize, bCases...)
 
-				assert.Greater(t, int(seriesChunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
-				assert.Greater(t, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
-			}
+				if !t.IsBenchmark() {
+					if !skipChunk {
+						assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
+						assert.Zero(t, chunksSlicePool.(*pool.TrackedPool).Balance.Load())
 
-			for _, b := range st.blocks {
-				// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
-				assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
-			}
+						assert.Greater(t, int(seriesChunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
+						assert.Greater(t, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
+					}
 
-			// Check exposed metrics.
-			assertHistograms := map[string]bool{
-				"cortex_bucket_store_series_request_stage_duration_seconds":         true,
-				"cortex_bucket_store_series_batch_preloading_load_duration_seconds": st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
-				"cortex_bucket_store_series_batch_preloading_wait_duration_seconds": st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
-				"cortex_bucket_store_series_refs_fetch_duration_seconds":            true,
-			}
+					for _, b := range st.blocks {
+						// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
+						assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
+					}
 
-			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
-			require.NoError(t, err)
+					// Check exposed metrics.
+					assertHistograms := map[string]bool{
+						"cortex_bucket_store_series_request_stage_duration_seconds":         true,
+						"cortex_bucket_store_series_batch_preloading_load_duration_seconds": st.maxSeriesPerBatch < totalSeries || streamingBatchSize > 0, // Tracked only when a request is split in multiple batches.
+						"cortex_bucket_store_series_batch_preloading_wait_duration_seconds": st.maxSeriesPerBatch < totalSeries || streamingBatchSize > 0, // Tracked only when a request is split in multiple batches.
+						"cortex_bucket_store_series_refs_fetch_duration_seconds":            true,
+					}
 
-			for metricName, expected := range assertHistograms {
-				if count := metrics.SumHistograms(metricName).Count(); expected {
-					assert.Greater(t, count, uint64(0), "metric name: %s", metricName)
-				} else {
-					assert.Equal(t, uint64(0), count, "metric name: %s", metricName)
+					metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+					require.NoError(t, err)
+
+					for metricName, expected := range assertHistograms {
+						if count := metrics.SumHistograms(metricName).Count(); expected {
+							assert.Greater(t, count, uint64(0), "metric name: %s", metricName)
+						} else {
+							assert.Equal(t, uint64(0), count, "metric name: %s", metricName)
+						}
+					}
 				}
-			}
+			})
 		}
 	}
 
@@ -1556,17 +1565,16 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	marshalledHints, err := types.MarshalAny(hints)
 	require.NoError(t, err)
 
-	req := &storepb.SeriesRequest{
-		MinTime: math.MinInt64,
-		MaxTime: math.MaxInt64,
-		Matchers: []storepb.LabelMatcher{
-			{Type: storepb.LabelMatcher_EQ, Name: labels.MetricName, Value: "test_metric"},
-		},
-		Hints: marshalledHints,
-	}
-
 	runRequest := func(t *testing.T, store *BucketStore, streamBatchSize int) {
-		req.StreamingChunksBatchSize = uint64(streamBatchSize)
+		req := &storepb.SeriesRequest{
+			MinTime: math.MinInt64,
+			MaxTime: math.MaxInt64,
+			Matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_EQ, Name: labels.MetricName, Value: "test_metric"},
+			},
+			Hints:                    marshalledHints,
+			StreamingChunksBatchSize: uint64(streamBatchSize),
+		}
 		srv := newBucketStoreTestServer(t, store)
 		seriesSet, warnings, _, err := srv.Series(context.Background(), req)
 		require.NoError(t, err)
@@ -1884,7 +1892,11 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 
 	tb, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
 	tb.Cleanup(cleanup)
-	runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
+	for _, streamingBatchSize := range []int{0, 1, 5} {
+		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+			runTestServerSeries(tb, store, streamingBatchSize, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
+		})
+	}
 }
 
 func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
@@ -2818,56 +2830,47 @@ type seriesCase struct {
 }
 
 // runTestServerSeries runs tests against given cases.
-func runTestServerSeries(t test.TB, store *BucketStore, cases ...*seriesCase) {
+func runTestServerSeries(t test.TB, store *BucketStore, streamingBatchSize int, cases ...*seriesCase) {
 	for _, c := range cases {
 		t.Run(c.Name, func(t test.TB) {
 			srv := newBucketStoreTestServer(t, store)
 
-			streamingBatchSizes := []int{0}
-			if !t.IsBenchmark() {
-				streamingBatchSizes = []int{0, 1, 5}
-			}
-			for _, streamingBatchSize := range streamingBatchSizes {
-				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t test.TB) {
-					c.Req.StreamingChunksBatchSize = uint64(streamingBatchSize)
-					t.ResetTimer()
-					for i := 0; i < t.N(); i++ {
-						seriesSet, warnings, hints, err := srv.Series(context.Background(), c.Req)
-						require.NoError(t, err)
-						require.Equal(t, len(c.ExpectedWarnings), len(warnings), "%v", warnings)
-						require.Equal(t, len(c.ExpectedSeries), len(seriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
+			c.Req.StreamingChunksBatchSize = uint64(streamingBatchSize)
+			t.ResetTimer()
+			for i := 0; i < t.N(); i++ {
+				seriesSet, warnings, hints, err := srv.Series(context.Background(), c.Req)
+				require.NoError(t, err)
+				require.Equal(t, len(c.ExpectedWarnings), len(warnings), "%v", warnings)
+				require.Equal(t, len(c.ExpectedSeries), len(seriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
 
-						if !t.IsBenchmark() {
-							if len(c.ExpectedSeries) == 1 {
-								// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
-								sort.Slice(seriesSet[0].Chunks, func(i, j int) bool {
-									return seriesSet[0].Chunks[i].MinTime < seriesSet[0].Chunks[j].MinTime
-								})
-							}
-
-							// Huge responses can produce unreadable diffs - make it more human readable.
-							if len(c.ExpectedSeries) > 4 {
-								for j := range c.ExpectedSeries {
-									assert.Equal(t, c.ExpectedSeries[j].Labels, seriesSet[j].Labels, "%v series chunks mismatch", j)
-
-									// Check chunks when it is not a skip chunk query
-									if !c.Req.SkipChunks {
-										if len(c.ExpectedSeries[j].Chunks) > 20 {
-											assert.Equal(t, len(c.ExpectedSeries[j].Chunks), len(seriesSet[j].Chunks), "%v series chunks number mismatch", j)
-										}
-										assert.Equal(t, c.ExpectedSeries[j].Chunks, seriesSet[j].Chunks, "%v series chunks mismatch", j)
-									}
-								}
-							} else {
-								assert.Equal(t, c.ExpectedSeries, seriesSet)
-							}
-
-							assert.Equal(t, c.ExpectedHints, hints)
-						}
+				if !t.IsBenchmark() {
+					if len(c.ExpectedSeries) == 1 {
+						// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
+						sort.Slice(seriesSet[0].Chunks, func(i, j int) bool {
+							return seriesSet[0].Chunks[i].MinTime < seriesSet[0].Chunks[j].MinTime
+						})
 					}
-				})
-			}
 
+					// Huge responses can produce unreadable diffs - make it more human readable.
+					if len(c.ExpectedSeries) > 4 {
+						for j := range c.ExpectedSeries {
+							assert.Equal(t, c.ExpectedSeries[j].Labels, seriesSet[j].Labels, "%v series chunks mismatch", j)
+
+							// Check chunks when it is not a skip chunk query
+							if !c.Req.SkipChunks {
+								if len(c.ExpectedSeries[j].Chunks) > 20 {
+									assert.Equal(t, len(c.ExpectedSeries[j].Chunks), len(seriesSet[j].Chunks), "%v series chunks number mismatch", j)
+								}
+								assert.Equal(t, c.ExpectedSeries[j].Chunks, seriesSet[j].Chunks, "%v series chunks mismatch", j)
+							}
+						}
+					} else {
+						assert.Equal(t, c.ExpectedSeries, seriesSet)
+					}
+
+					assert.Equal(t, c.ExpectedHints, hints)
+				}
+			}
 		})
 	}
 }
