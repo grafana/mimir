@@ -13,7 +13,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
 	"golang.org/x/time/rate"
 
@@ -33,6 +32,8 @@ type WriteReadSeriesTestConfig struct {
 	WithFloats           bool
 	WithHistograms       bool
 	WithRandomHistograms bool
+	NumBuckets           int
+	MaxIncrease          int
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
@@ -41,6 +42,8 @@ func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.WithFloats, "tests.write-read-series-test.float-samples-enabled", true, "Set to true to use float samples")
 	f.BoolVar(&cfg.WithHistograms, "tests.write-read-series-test.histogram-samples-enabled", false, "Set to true to use native histogram samples")
 	f.BoolVar(&cfg.WithRandomHistograms, "tests.write-read-series-test.random-histograms-enabled", false, "Set to true to use native histogram samples with randomly increasing bucket counts")
+	f.IntVar(&cfg.NumBuckets, "tests.write-read-series-test.num-buckets", 10, "Fixed number of buckets used for the random histograms metric.")
+	f.IntVar(&cfg.MaxIncrease, "tests.write-read-series-test.max-increase", 10, "Maximum increase in each bucket count for the random histograms metric.")
 }
 
 type WriteReadSeriesTest struct {
@@ -54,7 +57,7 @@ type WriteReadSeriesTest struct {
 	histMetrics      []MetricHistory
 	randomHistMetric MetricHistory
 
-	mutatingHist *histogram.FloatHistogram
+	mutatingArr []int64
 }
 
 type MetricHistory struct {
@@ -67,13 +70,13 @@ func NewWriteReadSeriesTest(cfg WriteReadSeriesTestConfig, client MimirClient, l
 	const name = "write-read-series"
 
 	return &WriteReadSeriesTest{
-		name:         name,
-		cfg:          cfg,
-		client:       client,
-		logger:       log.With(logger, "test", name),
-		metrics:      NewTestMetrics(name, reg),
-		histMetrics:  make([]MetricHistory, len(histogramProfiles)),
-		mutatingHist: genInitialRandomHistogram(),
+		name:        name,
+		cfg:         cfg,
+		client:      client,
+		logger:      log.With(logger, "test", name),
+		metrics:     NewTestMetrics(name, reg),
+		histMetrics: make([]MetricHistory, len(histogramProfiles)),
+		mutatingArr: genInitialCountArr(cfg.NumBuckets),
 	}
 }
 
@@ -160,7 +163,7 @@ func (t *WriteReadSeriesTest) OnlyWriteSamples(ctx context.Context, now time.Tim
 		}
 
 		var series []prompb.TimeSeries
-		series, t.mutatingHist = generateMutatingSeries(metricName, timestamp, t.mutatingHist, t.cfg.NumSeries)
+		series, t.mutatingArr = generateMutatingSeries(metricName, timestamp, t.mutatingArr, t.cfg.NumSeries, t.cfg.MaxIncrease)
 		if err := t.writeSamples(ctx, typeLabel, timestamp, series, records); err != nil {
 			errs.Add(err)
 			break
