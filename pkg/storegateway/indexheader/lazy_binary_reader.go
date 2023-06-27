@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/gate"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -70,10 +71,12 @@ func NewLazyBinaryReaderMetrics(reg prometheus.Registerer) *LazyBinaryReaderMetr
 // LazyBinaryReader wraps BinaryReader and loads (mmap or streaming read) the index-header only upon
 // the first Reader function is called.
 type LazyBinaryReader struct {
-	logger   log.Logger
-	filepath string
-	metrics  *LazyBinaryReaderMetrics
-	onClosed func(*LazyBinaryReader)
+	logger          log.Logger
+	filepath        string
+	metrics         *LazyBinaryReaderMetrics
+	onClosed        func(*LazyBinaryReader)
+	lazyLoadingGate gate.Gate
+	ctx             context.Context
 
 	readerMx      sync.RWMutex
 	reader        Reader
@@ -97,6 +100,7 @@ func NewLazyBinaryReader(
 	id ulid.ULID,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
+	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
 	path := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 
@@ -117,12 +121,14 @@ func NewLazyBinaryReader(
 	}
 
 	return &LazyBinaryReader{
-		logger:        logger,
-		filepath:      path,
-		metrics:       metrics,
-		usedAt:        atomic.NewInt64(time.Now().UnixNano()),
-		onClosed:      onClosed,
-		readerFactory: readerFactory,
+		logger:          logger,
+		filepath:        path,
+		metrics:         metrics,
+		usedAt:          atomic.NewInt64(time.Now().UnixNano()),
+		onClosed:        onClosed,
+		readerFactory:   readerFactory,
+		lazyLoadingGate: lazyLoadingGate,
+		ctx:             ctx,
 	}, nil
 }
 
@@ -225,6 +231,13 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 	if r.readerErr != nil {
 		return r.readerErr
 	}
+
+	// lazyLoadingGate implementation: blocks load if too many are happening at once.
+	err := r.lazyLoadingGate.Start(r.ctx)
+	if err != nil {
+		return errors.Wrapf(err, "failed to wait for turn")
+	}
+	defer r.lazyLoadingGate.Done()
 
 	// Take the write lock to ensure we'll try to load it only once. Take again
 	// the read lock once done.

@@ -3350,6 +3350,11 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout
   [index_header_lazy_loading_idle_timeout: <duration> | default = 1h]
 
+  # (experimental) Maximum number of concurrent index header loads across all
+  # tenants. If set to 0, concurrency is unlimited.
+  # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-concurrency
+  [index_header_lazy_loading_concurrency: <int> | default = 0]
+
   # (advanced) Max size - in bytes - of a gap for which the partitioner
   # aggregates together two bucket GET object requests.
   # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes
