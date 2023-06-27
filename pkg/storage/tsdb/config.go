@@ -105,15 +105,16 @@ const (
 
 // Validation errors
 var (
-	errInvalidShipConcurrency       = errors.New("invalid TSDB ship concurrency")
-	errInvalidOpeningConcurrency    = errors.New("invalid TSDB opening concurrency")
-	errInvalidCompactionInterval    = errors.New("invalid TSDB compaction interval")
-	errInvalidCompactionConcurrency = errors.New("invalid TSDB compaction concurrency")
-	errInvalidWALSegmentSizeBytes   = errors.New("invalid TSDB WAL segment size bytes")
-	errInvalidWALReplayConcurrency  = errors.New("invalid TSDB WAL replay concurrency")
-	errInvalidStripeSize            = errors.New("invalid TSDB stripe size")
-	errInvalidStreamingBatchSize    = errors.New("invalid store-gateway streaming batch size")
-	errEmptyBlockranges             = errors.New("empty block ranges for TSDB")
+	errInvalidShipConcurrency                   = errors.New("invalid TSDB ship concurrency")
+	errInvalidOpeningConcurrency                = errors.New("invalid TSDB opening concurrency")
+	errInvalidCompactionInterval                = errors.New("invalid TSDB compaction interval")
+	errInvalidCompactionConcurrency             = errors.New("invalid TSDB compaction concurrency")
+	errInvalidWALSegmentSizeBytes               = errors.New("invalid TSDB WAL segment size bytes")
+	errInvalidWALReplayConcurrency              = errors.New("invalid TSDB WAL replay concurrency")
+	errInvalidStripeSize                        = errors.New("invalid TSDB stripe size")
+	errInvalidStreamingBatchSize                = errors.New("invalid store-gateway streaming batch size")
+	errEmptyBlockranges                         = errors.New("empty block ranges for TSDB")
+	errInvalidIndexHeaderLazyLoadingConcurrency = errors.New("invalid index-header lazy loading max concurrency; must be positive")
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
@@ -422,7 +423,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
 	f.BoolVar(&cfg.IndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", true, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.IndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", 60*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
-	f.IntVar(&cfg.IndexHeaderLazyLoadingConcurrency, "blocks-storage.bucket-store.index-header-lazy-loading-concurrency", 0, "Maximum number of concurrent index header loads across all tenants. 0 to disable.")
+	f.IntVar(&cfg.IndexHeaderLazyLoadingConcurrency, "blocks-storage.bucket-store.index-header-lazy-loading-concurrency", 0, "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.IntVar(&cfg.ChunkRangesPerSeries, "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series", 1, "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled.")
@@ -461,6 +462,9 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	}
 	if cfg.SeriesSelectionStrategyName == WorstCasePostingsStrategy && cfg.SelectionStrategies.WorstCaseSeriesPreference <= 0 {
 		return errors.New("invalid worst-case series preference; must be positive")
+	}
+	if cfg.IndexHeaderLazyLoadingConcurrency < 0 {
+		return errInvalidIndexHeaderLazyLoadingConcurrency
 	}
 	return nil
 }

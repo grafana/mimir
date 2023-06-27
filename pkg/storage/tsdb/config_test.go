@@ -127,6 +127,12 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errInvalidStreamingBatchSize,
 		},
+		"should fail on invalid index-header lazy loading max concurrency": {
+			setup: func(cfg *BlocksStorageConfig) {
+				cfg.BucketStore.IndexHeaderLazyLoadingConcurrency = -1
+			},
+			expectedErr: errInvalidIndexHeaderLazyLoadingConcurrency,
+		},
 	}
 
 	for testName, testData := range tests {

@@ -336,13 +336,12 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.panel('Index-header lazy load gate latency') +
-        $.queryPanel(
+        $.latencyPanel('cortex_bucket_stores_gate_duration_seconds{gate="index_header"}', '{%s}' % $.jobMatcher($._config.job_names.store_gateway)) +
+        $.panelDescription(
+          'Index-header lazy load gate latency',
           |||
-            sum by(stage) (rate(cortex_bucket_stores_gate_duration_seconds_sum{gate="index_header", %s}[$__rate_interval]))
-            /
-            sum by(stage) (rate(cortex_bucket_stores_gate_duration_seconds_count{gate="index_header", %s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-          'average load latency'
+            The average time spent waiting for a turn to load an index header. This time is not included in "Index-header lazy load duration."
+          |||
         )
       )
     )
