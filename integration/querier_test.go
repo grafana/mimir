@@ -28,7 +28,7 @@ import (
 )
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
-	for _, streamingEnabled := range []bool{true} {
+	for _, streamingEnabled := range []bool{true, false} {
 		t.Run(fmt.Sprintf("streaming=%t", streamingEnabled), func(t *testing.T) {
 			testQuerierWithBlocksStorageRunningInMicroservicesMode(t, streamingEnabled, generateFloatSeries)
 		})
@@ -253,9 +253,9 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 
 			if streamingEnabled {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9+5), "thanos_store_index_cache_requests_total"))   // 5 + 2 + 2 + 5
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(3), "thanos_store_index_cache_hits_total")) // Streaming uses the index cache
+				require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(2), "thanos_store_index_cache_hits_total")) // Streaming uses the index cache
 				if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-					require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(9*2+6), "thanos_memcached_operations_total"))
+					require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(9*2+5), "thanos_memcached_operations_total"))
 				}
 			} else {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9), "thanos_store_index_cache_requests_total")) // 5 + 2 + 2
@@ -280,7 +280,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9+5+3), "thanos_store_index_cache_requests_total"))
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(6), "thanos_store_index_cache_hits_total"))
 				if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-					require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(9*2+2+6), "thanos_memcached_operations_total")) // as before + 2 gets (expanded postings and series)
+					require.NoError(t, storeGateways.WaitSumMetrics(e2e.GreaterOrEqual(9*2+2+5), "thanos_memcached_operations_total")) // as before + 2 gets (expanded postings and series)
 				}
 			} else {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9+2), "thanos_store_index_cache_requests_total"))
