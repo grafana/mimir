@@ -196,7 +196,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	persistedData, err = os.ReadFile(persistedFile)
 	require.NoError(t, err)
 
-	require.Equal(t, `{"header_last_used_time":{},"user_id":"anonymous"}`, string(persistedData), "header_last_used_time should be cleared")
+	require.JSONEq(t, `{"header_last_used_time":{},"user_id":"anonymous"}`, string(persistedData), "header_last_used_time should be cleared")
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
