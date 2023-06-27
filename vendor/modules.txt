@@ -465,8 +465,8 @@ github.com/golang/protobuf/ptypes/timestamp
 # github.com/golang/snappy v0.0.4
 ## explicit
 github.com/golang/snappy
-# github.com/google/btree v1.0.1
-## explicit; go 1.12
+# github.com/google/btree v1.1.2
+## explicit; go 1.18
 github.com/google/btree
 # github.com/google/gnostic v0.6.9
 ## explicit; go 1.12
@@ -523,6 +523,34 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
+# github.com/grafana/alerting v0.0.0-20230620220430-e1c15917004e
+## explicit; go 1.18
+github.com/grafana/alerting/images
+github.com/grafana/alerting/logging
+github.com/grafana/alerting/models
+github.com/grafana/alerting/notify
+github.com/grafana/alerting/receivers
+github.com/grafana/alerting/receivers/alertmanager
+github.com/grafana/alerting/receivers/dinding
+github.com/grafana/alerting/receivers/discord
+github.com/grafana/alerting/receivers/email
+github.com/grafana/alerting/receivers/googlechat
+github.com/grafana/alerting/receivers/kafka
+github.com/grafana/alerting/receivers/line
+github.com/grafana/alerting/receivers/opsgenie
+github.com/grafana/alerting/receivers/pagerduty
+github.com/grafana/alerting/receivers/pushover
+github.com/grafana/alerting/receivers/sensugo
+github.com/grafana/alerting/receivers/slack
+github.com/grafana/alerting/receivers/teams
+github.com/grafana/alerting/receivers/telegram
+github.com/grafana/alerting/receivers/testing
+github.com/grafana/alerting/receivers/threema
+github.com/grafana/alerting/receivers/victorops
+github.com/grafana/alerting/receivers/webex
+github.com/grafana/alerting/receivers/webhook
+github.com/grafana/alerting/receivers/wecom
+github.com/grafana/alerting/templates
 # github.com/grafana/dskit v0.0.0-20230516002259-a1723267ecd1
 ## explicit; go 1.18
 github.com/grafana/dskit/backoff
@@ -943,8 +971,8 @@ github.com/spf13/pflag
 # github.com/stretchr/objx v0.5.0
 ## explicit; go 1.12
 github.com/stretchr/objx
-# github.com/stretchr/testify v1.8.2
-## explicit; go 1.13
+# github.com/stretchr/testify v1.8.4
+## explicit; go 1.20
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
@@ -1175,10 +1203,11 @@ golang.org/x/oauth2/google/internal/externalaccount
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
-# golang.org/x/sync v0.1.0
+# golang.org/x/sync v0.2.0
 ## explicit
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
+golang.org/x/sync/singleflight
 # golang.org/x/sys v0.7.0
 ## explicit; go 1.17
 golang.org/x/sys/cpu
