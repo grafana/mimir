@@ -301,7 +301,8 @@ func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, i
 	test(t, reader, err)
 }
 
-// Tests if LazyBinaryReader blocks concurrent loads such that it doesn't pass the configured maximum
+// TestLazyBinaryReader_ShouldBlockMaxConcurrency tests if LazyBinaryReader blocks
+// concurrent loads such that it doesn't pass the configured maximum.
 func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 	ctx := context.Background()
 
@@ -322,23 +323,27 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	const (
-		numLazyReader          = 20 // 20 lazy readers
-		maxLazyLoadConcurrency = 3  // maxConcurrency = 3
+		numLazyReader          = 20
+		maxLazyLoadConcurrency = 3
 	)
 
-	total := atomic.NewUint32(0)
-	inflight := atomic.NewUint32(0)
+	var (
+		totalLoaded = atomic.NewUint32(0)
+		inflight    = atomic.NewUint32(0)
+	)
+
+	errOhNo := errors.New("oh no")
 
 	factory := func() (Reader, error) {
-		inflight.Inc()
-		require.LessOrEqual(t, inflight.Load(), uint32(maxLazyLoadConcurrency))
-		total.Inc()
+		testInflight := inflight.Inc()
+		require.LessOrEqual(t, testInflight, uint32(maxLazyLoadConcurrency))
+		totalLoaded.Inc()
 
 		time.Sleep(3 * time.Second)
 
 		inflight.Dec()
 
-		return nil, errors.New("oh no")
+		return nil, errOhNo
 	}
 
 	var lazyReaders [numLazyReader]*LazyBinaryReader
@@ -357,11 +362,11 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 		index := i
 		go func() {
 			_, err := lazyReaders[index].IndexVersion()
-			require.Error(t, err)
+			require.ErrorIs(t, err, errOhNo)
 			wg.Done()
 		}()
 	}
 
 	wg.Wait()
-	require.Equal(t, total.Load(), uint32(numLazyReader))
+	require.Equal(t, totalLoaded.Load(), uint32(numLazyReader))
 }
