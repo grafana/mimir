@@ -28,6 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Helm: support metricRelabelings in the monitoring serviceMonitor resources. #5340
 * [CHANGE] Changed max unavailable ingesters and store-gateways in a zone to 50. #5327
 * [ENHANCEMENT] Ruler: configure the ruler storage cache when the metadata cache is enabled. #5326 #5334
 
