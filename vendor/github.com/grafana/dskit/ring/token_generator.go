@@ -7,9 +7,10 @@ import (
 )
 
 type TokenGenerator interface {
-	// GenerateTokens generates unique tokensCount tokens, none of which clash
-	// with the given takenTokens. Generated tokens are sorted.
-	GenerateTokens(tokensCount int, takenTokens []uint32) Tokens
+	// GenerateTokens generates at most requestedTokensCount unique tokens, none of which clashes with
+	// the given allTakenTokens, representing the set of all tokens currently present in the ring.
+	// Generated tokens are sorted.
+	GenerateTokens(requestedTokensCount int, allTakenTokens []uint32) Tokens
 }
 
 type RandomTokenGenerator struct{}
@@ -18,22 +19,23 @@ func NewRandomTokenGenerator() *RandomTokenGenerator {
 	return &RandomTokenGenerator{}
 }
 
-// GenerateTokens generates unique tokensCount random tokens, none of which clash
-// with takenTokens. Generated tokens are sorted.
-func (t *RandomTokenGenerator) GenerateTokens(tokensCount int, takenTokens []uint32) Tokens {
-	if tokensCount <= 0 {
+// GenerateTokens generates at most requestedTokensCount unique random tokens, none of which clashes with
+// the given allTakenTokens, representing the set of all tokens currently present in the ring.
+// Generated tokens are sorted.
+func (t *RandomTokenGenerator) GenerateTokens(requestedTokensCount int, allTakenTokens []uint32) Tokens {
+	if requestedTokensCount <= 0 {
 		return []uint32{}
 	}
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	used := make(map[uint32]bool, len(takenTokens))
-	for _, v := range takenTokens {
+	used := make(map[uint32]bool, len(allTakenTokens))
+	for _, v := range allTakenTokens {
 		used[v] = true
 	}
 
-	tokens := make([]uint32, 0, tokensCount)
-	for i := 0; i < tokensCount; {
+	tokens := make([]uint32, 0, requestedTokensCount)
+	for i := 0; i < requestedTokensCount; {
 		candidate := r.Uint32()
 		if used[candidate] {
 			continue

@@ -94,7 +94,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels []mimirpb.LabelAdapter) error {
 	ql.uniqueSeries[fingerprint] = struct{}{}
 	if len(ql.uniqueSeries) > ql.maxSeriesPerQuery {
 		// Format error with max limit
-		return fmt.Errorf(MaxSeriesHitMsgFormat, ql.maxSeriesPerQuery)
+		return validation.LimitError(fmt.Sprintf(MaxSeriesHitMsgFormat, ql.maxSeriesPerQuery))
 	}
 	return nil
 }
@@ -112,7 +112,7 @@ func (ql *QueryLimiter) AddChunkBytes(chunkSizeInBytes int) error {
 		return nil
 	}
 	if ql.chunkBytesCount.Add(int64(chunkSizeInBytes)) > int64(ql.maxChunkBytesPerQuery) {
-		return fmt.Errorf(MaxChunkBytesHitMsgFormat, ql.maxChunkBytesPerQuery)
+		return validation.LimitError(fmt.Sprintf(MaxChunkBytesHitMsgFormat, ql.maxChunkBytesPerQuery))
 	}
 	return nil
 }
@@ -123,7 +123,7 @@ func (ql *QueryLimiter) AddChunks(count int) error {
 	}
 
 	if ql.chunkCount.Add(int64(count)) > int64(ql.maxChunksPerQuery) {
-		return fmt.Errorf(MaxChunksPerQueryLimitMsgFormat, ql.maxChunksPerQuery)
+		return validation.LimitError(fmt.Sprintf(MaxChunksPerQueryLimitMsgFormat, ql.maxChunksPerQuery))
 	}
 	return nil
 }

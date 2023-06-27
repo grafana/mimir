@@ -9,8 +9,8 @@ keywords:
   - Grafana metrics
 cascade:
   # Used to generate relative URL paths to related documentation
-  mimir_docs_version: "v2.8.x"
-  gem_docs_version: "v2.8.x"
+  mimir_docs_version: "v2.9.x"
+  gem_docs_version: "v2.9.x"
 ---
 
 # Grafana mimir-distributed Helm chart documentation

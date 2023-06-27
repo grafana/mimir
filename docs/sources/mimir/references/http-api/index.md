@@ -678,12 +678,14 @@ List all tenant rules. This endpoint is not part of ruler-API and is always avai
 ### List Prometheus rules
 
 ```
-GET <prometheus-http-prefix>/api/v1/rules?type={alert|record}
+GET <prometheus-http-prefix>/api/v1/rules?type={alert|record}&file={}&rule_group={}&rule_name={}
 ```
 
 Prometheus-compatible rules endpoint to list alerting and recording rules that are currently loaded.
 
 The `type` parameter is optional. If set, only the specified type of rule is returned.
+
+The `file`, `rule_group` and `rule_name` parameters are optional, and can accept multiple values. If set, the response content is filtered accordingly.
 
 For more information, refer to Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules).
 

@@ -42,7 +42,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 	}{
 		"empty series": {
 			series:         &storepb.Series{},
-			expectedMetric: labels.Labels(nil),
+			expectedMetric: labels.EmptyLabels(),
 			expectedErr:    "no chunks",
 		},
 		"should return float series on success": {
@@ -120,7 +120,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			series := newBlockQuerierSeries(mimirpb.FromLabelAdaptersToLabels(testData.series.Labels), testData.series.Chunks)
 
-			assert.Equal(t, testData.expectedMetric, series.Labels())
+			assert.True(t, labels.Equal(testData.expectedMetric, series.Labels()))
 
 			sampleIx := int64(0)
 

@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -1519,17 +1520,17 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 	}
 }
 
-func mkLabels(n int, extra ...string) labels.Labels {
-	builder := labels.NewScratchBuilder(n + len(extra)/2)
-	builder.Add(model.MetricNameLabel, "foo")
+func mkLabels(n int, extra ...string) []mimirpb.LabelAdapter {
+	ret := make([]mimirpb.LabelAdapter, 1+n+len(extra)/2)
+	ret[0] = mimirpb.LabelAdapter{Name: model.MetricNameLabel, Value: "foo"}
 	for i := 0; i < n; i++ {
-		builder.Add(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+		ret[i+1] = mimirpb.LabelAdapter{Name: fmt.Sprintf("name_%d", i), Value: fmt.Sprintf("value_%d", i)}
 	}
 	for i := 0; i < len(extra); i += 2 {
-		builder.Add(extra[i], extra[i+1])
+		ret[i+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
 	}
-	builder.Sort()
-	return builder.Labels()
+	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) bool { return a.Name < b.Name })
+	return ret
 }
 
 func BenchmarkDistributor_Push(b *testing.B) {
@@ -1540,13 +1541,13 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 	tests := map[string]struct {
 		prepareConfig func(limits *validation.Limits)
-		prepareSeries func() ([]labels.Labels, []mimirpb.Sample)
+		prepareSeries func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample)
 		expectedErr   string
 	}{
 		"all samples successfully pushed": {
 			prepareConfig: func(limits *validation.Limits) {},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
@@ -1566,8 +1567,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				limits.IngestionRate = 1
 				limits.IngestionBurstSize = 1
 			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
@@ -1586,8 +1587,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxLabelNamesPerSeries = 30
 			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
@@ -1606,8 +1607,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxLabelNameLength = 1024
 			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
@@ -1627,8 +1628,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxLabelValueLength = 1024
 			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
@@ -1648,8 +1649,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.CreationGracePeriod = model.Duration(time.Minute)
 			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
@@ -1676,17 +1677,12 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					},
 				}
 			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					metrics[i] = lbls.Labels()
+					metrics[i] = mkLabels(10)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2034,7 +2030,18 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			// Assert on metric metadata
 			metadata, err := ds[0].MetricsMetadata(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, 10, len(metadata))
+
+			expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
+			for _, m := range req.Metadata {
+				expectedMetadata = append(expectedMetadata, scrape.MetricMetadata{
+					Metric: m.MetricFamilyName,
+					Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
+					Help:   m.Help,
+					Unit:   m.Unit,
+				})
+			}
+
+			assert.ElementsMatch(t, metadata, expectedMetadata)
 		})
 	}
 }
@@ -2093,6 +2100,68 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 			} else {
 				require.EqualError(t, err, testData.expectedError)
 			}
+		})
+	}
+}
+
+func TestDistributor_LabelValuesForLabelName(t *testing.T) {
+	fixtures := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.FromStrings(labels.MetricName, "label_0", "status", "200"), 1, 100_000},
+		{labels.FromStrings(labels.MetricName, "label_1", "status", "500", "reason", "broken"), 1, 110_000},
+		{labels.FromStrings(labels.MetricName, "label_1"), 2, 200_000},
+	}
+	tests := map[string]struct {
+		from, to            model.Time
+		expectedLabelValues []string
+		matchers            []*labels.Matcher
+	}{
+		"all time selected, no matchers": {
+			from:                0,
+			to:                  300_000,
+			expectedLabelValues: []string{"label_0", "label_1"},
+		},
+		"subset of time selected": {
+			from:                150_000,
+			to:                  300_000,
+			expectedLabelValues: []string{"label_1"},
+		},
+		"matchers provided": {
+			from:                0,
+			to:                  300_000,
+			expectedLabelValues: []string{"label_1"},
+			matchers:            []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "reason", "broken")},
+		},
+	}
+
+	for testName, testCase := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+
+			// Create distributor
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:      12,
+				happyIngesters:    12,
+				numDistributors:   1,
+				replicationFactor: 3,
+			})
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
+			})
+
+			// Push fixtures
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
+			}
+
+			response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.matchers...)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, response, testCase.expectedLabelValues)
 		})
 	}
 }
@@ -2824,7 +2893,7 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 		},
 	}
 
-	return mimirpb.ToWriteRequest([]labels.Labels{lbls}, samples, nil, nil, mimirpb.API)
+	return mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, samples, nil, nil, mimirpb.API)
 }
 
 type prepConfig struct {
@@ -3545,6 +3614,53 @@ func (i *mockIngester) MetricsForLabelMatchers(_ context.Context, req *client.Me
 	return &response, nil
 }
 
+func (i *mockIngester) LabelValues(_ context.Context, req *client.LabelValuesRequest, _ ...grpc.CallOption) (*client.LabelValuesResponse, error) {
+	i.Lock()
+	defer i.Unlock()
+
+	i.trackCall("LabelValues")
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	labelName, from, to, matchers, err := client.FromLabelValuesRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	response := []string{}
+	for _, ts := range i.timeseries {
+		if !match(ts.Labels, matchers) {
+			continue
+		}
+
+		sampleInTimeRange := false
+
+		for _, s := range ts.Samples {
+			if s.TimestampMs >= from && s.TimestampMs < to {
+				sampleInTimeRange = true
+				break
+			}
+		}
+
+		if !sampleInTimeRange {
+			continue
+		}
+
+		for _, lbl := range ts.Labels {
+			if lbl.Name == labelName {
+				response = append(response, lbl.Value)
+			}
+		}
+
+	}
+
+	slices.Sort(response)
+
+	return &client.LabelValuesResponse{LabelValues: response}, nil
+}
+
 func (i *mockIngester) LabelNames(_ context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {
 	i.Lock()
 	defer i.Unlock()
@@ -3795,7 +3911,7 @@ func TestDistributorValidation(t *testing.T) {
 
 	for i, tc := range []struct {
 		metadata           []*mimirpb.MetricMetadata
-		labels             []labels.Labels
+		labels             [][]mimirpb.LabelAdapter
 		samples            []mimirpb.Sample
 		exemplars          []*mimirpb.Exemplar
 		expectedStatusCode int32
@@ -3804,7 +3920,7 @@ func TestDistributorValidation(t *testing.T) {
 		// Test validation passes.
 		{
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			labels:   []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
+			labels:   [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -3818,11 +3934,11 @@ func TestDistributorValidation(t *testing.T) {
 
 		// Test validation passes when labels are unsorted.
 		{
-			labels: []labels.Labels{mimirpb.FromLabelAdaptersToLabels(
-				[]mimirpb.LabelAdapter{
+			labels: [][]mimirpb.LabelAdapter{
+				{
 					{Name: "foo", Value: "bar"},
 					{Name: labels.MetricName, Value: "testmetric"},
-				})},
+				}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -3831,7 +3947,7 @@ func TestDistributorValidation(t *testing.T) {
 
 		// Test validation fails for samples from the future.
 		{
-			labels: []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
+			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(future),
 				Value:       4,
@@ -3842,7 +3958,7 @@ func TestDistributorValidation(t *testing.T) {
 
 		// Test maximum labels names per series.
 		{
-			labels: []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar", "foo2", "bar2")},
+			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       2,
@@ -3852,9 +3968,9 @@ func TestDistributorValidation(t *testing.T) {
 		},
 		// Test multiple validation fails return the first one.
 		{
-			labels: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar", "foo2", "bar2"),
-				labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar"),
+			labels: [][]mimirpb.LabelAdapter{
+				{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}},
+				{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}},
 			},
 			samples: []mimirpb.Sample{
 				{TimestampMs: int64(now), Value: 2},
@@ -3866,7 +3982,7 @@ func TestDistributorValidation(t *testing.T) {
 		// Test metadata validation fails
 		{
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			labels:   []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
+			labels:   [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -3877,7 +3993,7 @@ func TestDistributorValidation(t *testing.T) {
 		// Test empty exemplar labels fails.
 		{
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			labels:   []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
+			labels:   [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -4309,11 +4425,11 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		req := mimirpb.NewWriteRequest(nil, mimirpb.API)
 		for sampleIdx := 0; sampleIdx < 20; sampleIdx++ {
-			lbs := mimirpb.FromLabelAdaptersToLabels(uniqueMetricsGen(sampleIdx))
+			lbs := uniqueMetricsGen(sampleIdx)
 			if sampleIdx%2 == 0 {
-				req.AddHistogramSeries([]labels.Labels{lbs}, []mimirpb.Histogram{validHistogram}, nil)
+				req.AddHistogramSeries([][]mimirpb.LabelAdapter{lbs}, []mimirpb.Histogram{validHistogram}, nil)
 			} else {
-				req.AddHistogramSeries([]labels.Labels{lbs}, []mimirpb.Histogram{invalidHistogram}, nil)
+				req.AddHistogramSeries([][]mimirpb.LabelAdapter{lbs}, []mimirpb.Histogram{invalidHistogram}, nil)
 			}
 		}
 

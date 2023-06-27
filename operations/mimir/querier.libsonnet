@@ -17,9 +17,7 @@
       target: 'querier',
 
       'server.http-listen-port': $._config.server_http_port,
-
-      // Limit query concurrency to prevent multi large queries causing an OOM.
-      'querier.max-concurrent': $._config.querier.concurrency,
+      'querier.max-concurrent': $._config.querier_max_concurrency,
 
       'querier.frontend-address': if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
         'query-frontend-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,

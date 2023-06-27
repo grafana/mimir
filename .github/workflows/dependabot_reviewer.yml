@@ -16,7 +16,7 @@ jobs:
     
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Dependabot metadata
         id: metadata
@@ -47,10 +47,10 @@ jobs:
 
           if [[ "$all_in_allowlist" == "true" ]]; then
             reasons=$(IFS=','; echo "${reason_array[*]}")
-            echo "reasons=$reasons" >> $GITHUB_ENV
-            echo "allInAllowlist=true" >> $GITHUB_ENV
+            echo "reasons=$reasons" >> $GITHUB_OUTPUT
+            echo "allInAllowlist=true" >> $GITHUB_OUTPUT
           else
-            echo "allInAllowlist=false" >> $GITHUB_ENV
+            echo "allInAllowlist=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Approve and auto-merge

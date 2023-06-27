@@ -49,9 +49,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/shutdownmarker"
-
 	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -60,12 +57,15 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
+	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -160,6 +160,9 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
+
+	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
+	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -179,6 +182,25 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DefaultLimits.RegisterFlags(f)
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
+
+	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting")
+	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting")
+}
+
+func (cfg *Config) Validate() error {
+	utilizationLimitsEnabled := cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0
+	if !utilizationLimitsEnabled {
+		return nil
+	}
+
+	if cfg.ReadPathCPUUtilizationLimit <= 0 {
+		return fmt.Errorf("read path CPU utilization limit must be greater than 0")
+	}
+	if cfg.ReadPathMemoryUtilizationLimit <= 0 {
+		return fmt.Errorf("read path memory utilization limit must be greater than 0")
+	}
+
+	return cfg.IngesterRing.Validate()
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -259,6 +281,8 @@ type Ingester struct {
 	tenantsWithOutOfOrderEnabledStat   *expvar.Int
 	minOutOfOrderTimeWindowSecondsStat *expvar.Int
 	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
+
+	utilizationBasedLimiter utilizationBasedLimiter
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -315,7 +339,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		}, i.getOldestUnshippedBlockMetric)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(logger), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	if err != nil {
 		return nil, err
 	}
@@ -403,6 +427,12 @@ func (i *Ingester) starting(ctx context.Context) error {
 		}
 		closeIdleService := services.NewTimerService(interval, nil, i.closeAndDeleteIdleUserTSDBs, nil)
 		servs = append(servs, closeIdleService)
+	}
+
+	if i.cfg.ReadPathCPUUtilizationLimit > 0 && i.cfg.ReadPathMemoryUtilizationLimit > 0 {
+		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(i.cfg.ReadPathCPUUtilizationLimit,
+			i.cfg.ReadPathMemoryUtilizationLimit, log.WithPrefix(i.logger, "context", "read path"))
+		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
@@ -900,6 +930,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	// fetch once per push request to avoid processing half the request differently
 	nativeHistogramsIngestionEnabled := i.limits.NativeHistogramsIngestionEnabled(userID)
 
+	var builder labels.ScratchBuilder
+	var nonCopiedLabels labels.Labels
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -947,7 +979,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 		}
 
-		nonCopiedLabels := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
+		// MUST BE COPIED before being retained.
+		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
 		hash := nonCopiedLabels.Hash()
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
@@ -967,7 +1000,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
-				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
@@ -1009,7 +1042,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
-					copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 					// Retain the reference in case there are multiple samples for the series.
 					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
@@ -1071,6 +1104,9 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
@@ -1125,6 +1161,9 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
 
 	labelName, startTimestampMs, endTimestampMs, matchers, err := client.FromLabelValuesRequest(req)
 	if err != nil {
@@ -1159,6 +1198,9 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
 	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
 
@@ -1196,6 +1238,9 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 // MetricsForLabelMatchers implements IngesterServer.
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (*client.MetricsForLabelMatchersResponse, error) {
 	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
 
@@ -1265,6 +1310,9 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1313,6 +1361,10 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return err
+	}
+
 	userID, err := tenant.TenantID(server.Context())
 	if err != nil {
 		return err
@@ -1341,6 +1393,10 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return err
+	}
+
 	userID, err := tenant.TenantID(srv.Context())
 	if err != nil {
 		return err
@@ -1417,6 +1473,9 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return err
+	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")
 	defer spanlog.Finish()
@@ -1468,7 +1527,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	if streamType == QueryStreamChunks {
 		if req.StreamingChunksBatchSize > 0 {
 			level.Debug(spanlog).Log("msg", "using executeStreamingQuery")
-			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize)
+			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
 		} else {
 			level.Debug(spanlog).Log("msg", "using executeChunksQuery")
 			numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
@@ -1667,7 +1726,7 @@ func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, t
 	return numSeries, numSamples, nil
 }
 
-func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64) (numSeries, numSamples int, _ error) {
+func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
@@ -1682,17 +1741,21 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 	// The querier must remain open until we've finished streaming chunks.
 	defer q.Close()
 
-	allSeries, seriesCount, err := i.sendStreamingQuerySeries(q, from, through, matchers, shard, stream)
+	allSeries, numSeries, err := i.sendStreamingQuerySeries(q, from, through, matchers, shard, stream)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	numSamples, err = i.sendStreamingQueryChunks(allSeries, stream, batchSize)
+	level.Debug(spanlog).Log("msg", "finished sending series", "series", numSeries)
+
+	numSamples, numChunks, numBatches, err := i.sendStreamingQueryChunks(allSeries, stream, batchSize)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	return seriesCount, numSamples, nil
+	level.Debug(spanlog).Log("msg", "finished sending chunks", "chunks", numChunks, "batches", numBatches)
+
+	return numSeries, numSamples, nil
 }
 
 // chunkSeriesNode is used a build a linked list of slices of series.
@@ -1798,12 +1861,14 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 	return allSeriesList, seriesCount, nil
 }
 
-func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream client.Ingester_QueryStreamServer, batchSize uint64) (int, error) {
+func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream client.Ingester_QueryStreamServer, batchSize uint64) (int, int, int, error) {
 	var (
 		it             chunks.Iterator
 		seriesIdx      = -1
 		currNode       = allSeries
 		numSamples     = 0
+		numChunks      = 0
+		numBatches     = 0
 		seriesInBatch  = make([]client.QueryStreamSeriesChunks, 0, batchSize)
 		batchSizeBytes = 0
 	)
@@ -1823,18 +1888,19 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 				// It is not guaranteed that chunk returned by iterator is populated.
 				// For now just return error. We could also try to figure out how to read the chunk.
 				if meta.Chunk == nil {
-					return 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
+					return 0, 0, 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
 				}
 
 				ch, err := client.ChunkFromMeta(meta)
 				if err != nil {
-					return 0, err
+					return 0, 0, 0, err
 				}
 
 				seriesChunks.Chunks = append(seriesChunks.Chunks, ch)
 				numSamples += meta.Chunk.NumSamples()
 			}
 
+			numChunks += len(seriesChunks.Chunks)
 			msgSize := seriesChunks.Size()
 
 			if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= int(batchSize) {
@@ -1843,11 +1909,12 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 					StreamingSeriesChunks: seriesInBatch,
 				})
 				if err != nil {
-					return 0, err
+					return 0, 0, 0, err
 				}
 
 				seriesInBatch = seriesInBatch[:0]
 				batchSizeBytes = 0
+				numBatches++
 			}
 
 			seriesInBatch = append(seriesInBatch, seriesChunks)
@@ -1865,11 +1932,12 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 			StreamingSeriesChunks: seriesInBatch,
 		})
 		if err != nil {
-			return 0, err
+			return 0, 0, 0, err
 		}
+		numBatches++
 	}
 
-	return numSamples, nil
+	return numSamples, numChunks, numBatches, nil
 }
 
 func (i *Ingester) getTSDB(userID string) *userTSDB {
@@ -2896,7 +2964,7 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 	}
 }
 
-// MetricsMetadata returns all the metric metadata of a user.
+// MetricsMetadata returns all the metrics metadata of a user.
 func (i *Ingester) MetricsMetadata(ctx context.Context, _ *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
@@ -2988,4 +3056,25 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorHandling:      promhttp.HTTPErrorOnError,
 		Timeout:            10 * time.Second,
 	}).ServeHTTP(w, r)
+}
+
+// checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.
+func (i *Ingester) checkReadOverloaded() error {
+	if i.utilizationBasedLimiter == nil {
+		return nil
+	}
+
+	reason := i.utilizationBasedLimiter.LimitingReason()
+	if reason == "" {
+		return nil
+	}
+
+	i.metrics.utilizationLimitedRequests.WithLabelValues(reason).Inc()
+	return tooBusyError
+}
+
+type utilizationBasedLimiter interface {
+	services.Service
+
+	LimitingReason() string
 }

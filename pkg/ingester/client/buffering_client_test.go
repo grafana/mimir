@@ -181,7 +181,7 @@ func TestWriteRequestBufferingClient_PushConcurrent(t *testing.T) {
 
 			for i := 0; i < requestsPerGoroutine; i++ {
 				for _, ts := range req.Timeseries {
-					ser := mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels).String()
+					ser := mimirpb.FromLabelAdaptersToLabels(ts.Labels).String()
 					sentSamples[ser] = append(sentSamples[ser], ts.Samples...)
 				}
 
@@ -206,10 +206,10 @@ func TestWriteRequestBufferingClient_PushConcurrent(t *testing.T) {
 }
 
 func createRequest(metricName string, seriesPerRequest int) *mimirpb.WriteRequest {
-	metrics := make([]labels.Labels, 0, seriesPerRequest)
+	metrics := make([][]mimirpb.LabelAdapter, 0, seriesPerRequest)
 	samples := make([]mimirpb.Sample, 0, seriesPerRequest)
 	for i := 0; i < seriesPerRequest; i++ {
-		metrics = append(metrics, labels.FromStrings(labels.MetricName, metricName, "cardinality", strconv.Itoa(i)))
+		metrics = append(metrics, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
 		samples = append(samples, mimirpb.Sample{Value: float64(i), TimestampMs: time.Now().UnixMilli()})
 	}
 
@@ -241,7 +241,7 @@ func (ms *mockServer) Push(_ context.Context, r *mimirpb.WriteRequest) (*mimirpb
 		}
 
 		for _, ts := range r.Timeseries {
-			ser := mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels).String()
+			ser := mimirpb.FromLabelAdaptersToLabels(ts.Labels).String()
 			ms.samplesPerSeries[ser] = append(ms.samplesPerSeries[ser], ts.Samples...)
 		}
 	}

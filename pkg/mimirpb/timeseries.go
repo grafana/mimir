@@ -8,10 +8,11 @@ package mimirpb
 import (
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"sync"
 	"unsafe"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -96,8 +97,8 @@ func (p *PreallocTimeseries) RemoveLabel(labelName string) {
 	}
 }
 
-func (p *PreallocTimeseries) SetLabels(lbls labels.Labels) {
-	p.Labels = FromLabelsToLabelAdapters(lbls)
+func (p *PreallocTimeseries) SetLabels(lbls []LabelAdapter) {
+	p.Labels = lbls
 
 	// We can't reuse raw unmarshalled data for the timeseries after setting new labels.
 	// (Maybe we could, if labels are exactly the same, but it's expensive to check.)
@@ -136,8 +137,8 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 		return
 	}
 
-	sort.Slice(p.Labels, func(i, j int) bool {
-		return p.Labels[i].Name < p.Labels[j].Name
+	slices.SortFunc(p.Labels, func(a, b LabelAdapter) bool {
+		return a.Name < b.Name
 	})
 	p.clearUnmarshalData()
 }
