@@ -9,7 +9,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 )
 
-// CreateFile a file in the filePath, write the data into the file and then execute
+// CreateFile creates a file in the filePath, write the data into the file and then execute
 // fsync operation to make sure the file and its content are stored atomically.
 func CreateFile(filePath, data string) error {
 	// Write the file, fsync it, then fsync the containing directory in order to guarantee
