@@ -22,7 +22,7 @@ import (
 
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/util/fsync"
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
 var lazyLoadedHeadersListFile = "lazy-loaded.json"
@@ -76,26 +76,20 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 	// Create temporary path for fsync.
 	// We don't use temporary folder because the process might not have access to the temporary folder.
 	tmpPath := filepath.Join(persistDir, strings.Join([]string{"tmp", lazyLoadedHeadersListFile}, "-"))
-	tmpFile, err := os.Create(tmpPath)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmpFile.Name())
 
 	data, err := json.Marshal(l)
 	if err != nil {
 		return err
 	}
 
-	if err := fsync.Run(tmpFile, func(f *os.File) (int, error) {
-		return f.Write(data)
-	}); err != nil {
+	if err := atomicfs.CreateFile(tmpPath, string(data)); err != nil {
 		return err
 	}
+	defer os.Remove(tmpPath)
 
 	// move the written file to the actual path
 	finalPath := filepath.Join(persistDir, lazyLoadedHeadersListFile)
-	return os.Rename(tmpFile.Name(), finalPath)
+	return os.Rename(tmpPath, finalPath)
 }
 
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.

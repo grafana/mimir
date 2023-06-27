@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package fsync
+package atomicfs
 
 import (
 	"os"
@@ -9,9 +9,9 @@ import (
 	"github.com/grafana/dskit/multierror"
 )
 
-// Run execute writeFunc to write data into passed file and then execute
+// CreateFile execute writeFunc to write data into passed file and then execute
 // fsync operation to make sure the file and its content are stored atomically.
-func Run(file *os.File, writeFunc func(f *os.File) (int, error)) error {
+func CreateFile(filePath, data string) error {
 	// Write the file, fsync it, then fsync the containing directory in order to guarantee
 	// it is persisted to disk. From https://man7.org/linux/man-pages/man2/fsync.2.html
 	//
@@ -19,9 +19,13 @@ func Run(file *os.File, writeFunc func(f *os.File) (int, error)) error {
 	// > directory containing the file has also reached disk.  For that an
 	// > explicit fsync() on a file descriptor for the directory is also
 	// > needed.
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
 
 	merr := multierror.New()
-	_, err := writeFunc(file)
+	_, err = file.WriteString(data)
 	merr.Add(err)
 	merr.Add(file.Sync())
 	merr.Add(file.Close())

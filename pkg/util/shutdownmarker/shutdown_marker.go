@@ -9,7 +9,7 @@ import (
 
 	"github.com/grafana/dskit/multierror"
 
-	"github.com/grafana/mimir/pkg/util/fsync"
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
 const shutdownMarkerFilename = "shutdown-requested.txt"
@@ -18,14 +18,7 @@ const shutdownMarkerFilename = "shutdown-requested.txt"
 // going to be scaled down in the future. The presence of this file means that a component
 // should perform some operations specified by the component itself before being shutdown.
 func Create(p string) error {
-	file, err := os.Create(p)
-	if err != nil {
-		return err
-	}
-
-	return fsync.Run(file, func(f *os.File) (int, error) {
-		return f.WriteString(time.Now().UTC().Format(time.RFC3339))
-	})
+	return atomicfs.CreateFile(p, time.Now().UTC().Format(time.RFC3339))
 }
 
 // Remove removes the shutdown marker file on the given path if it exists.
