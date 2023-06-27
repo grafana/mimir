@@ -1359,7 +1359,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		}
 		var strategy seriesIteratorStrategy
 		if tc.skipChunks {
-			strategy |= noChunks
+			strategy |= noChunkRefs
 		}
 		if tc.streamingSeries {
 			strategy |= overlapMintMaxt
@@ -1717,7 +1717,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 
 			var strategy seriesIteratorStrategy
 			if testCase.skipChunks {
-				strategy |= noChunks
+				strategy |= noChunkRefs
 			}
 			iterator, _, _, err := openBlockSeriesChunkRefsSetsIterator(
 				ctx,
@@ -1831,7 +1831,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					testCase.matchers,
 					nil,
 					cachedSeriesHasher{hashCache},
-					noChunks, // skip chunks since we are testing labels filtering
+					noChunkRefs, // skip chunks since we are testing labels filtering
 					block.meta.MinTime,
 					block.meta.MaxTime,
 					2,
@@ -2445,7 +2445,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						noChunks,
+						noChunkRefs,
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						1,
@@ -2477,7 +2477,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						noChunks,
+						noChunkRefs,
 						b.meta.MinTime,
 						b.meta.MaxTime,
 						1,

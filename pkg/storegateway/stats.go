@@ -174,3 +174,11 @@ func (s *safeQueryStats) export() *queryStats {
 	copied := *s.unsafeStats
 	return &copied
 }
+
+// seriesAndChunksCount the value of mergedSeriesCount and mergedChunksCount fields.
+func (s *safeQueryStats) seriesAndChunksCount() (seriesCount, chunksCount int) {
+	s.unsafeStatsMx.Lock()
+	defer s.unsafeStatsMx.Unlock()
+
+	return s.unsafeStats.mergedSeriesCount, s.unsafeStats.mergedChunksCount
+}

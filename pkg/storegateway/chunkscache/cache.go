@@ -145,3 +145,48 @@ func (c *ChunksCache) StoreChunks(userID string, ranges map[Range][]byte) {
 	}
 	c.cache.StoreAsync(rangesWithTenant, defaultTTL)
 }
+
+// NewMockedCacheClient must be used only for testing.
+func NewMockedCacheClient(mockedGetMultiErr error) cache.Cache {
+	return &mockedCacheClient{
+		cache:             map[string][]byte{},
+		mockedGetMultiErr: mockedGetMultiErr,
+	}
+}
+
+type mockedCacheClient struct {
+	cache             map[string][]byte
+	mockedGetMultiErr error
+}
+
+func (c *mockedCacheClient) Fetch(_ context.Context, keys []string, _ ...cache.Option) map[string][]byte {
+	if c.mockedGetMultiErr != nil {
+		return nil
+	}
+
+	hits := map[string][]byte{}
+
+	for _, key := range keys {
+		if value, ok := c.cache[key]; ok {
+			hits[key] = value
+		}
+	}
+
+	return hits
+}
+
+func (c *mockedCacheClient) StoreAsync(data map[string][]byte, _ time.Duration) {
+	for key, value := range data {
+		c.cache[key] = value
+	}
+}
+
+func (c *mockedCacheClient) Delete(_ context.Context, key string) error {
+	delete(c.cache, key)
+
+	return nil
+}
+
+func (c *mockedCacheClient) Name() string {
+	return "mockedCacheClient"
+}

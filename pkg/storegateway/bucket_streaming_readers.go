@@ -40,6 +40,9 @@ func NewSeriesChunksStreamReader(client storegatewaypb.StoreGateway_SeriesClient
 		queryLimiter:        queryLimiter,
 		stats:               stats,
 		log:                 log,
+		seriesChunksChan:    make(chan *storepb.StreamingChunksBatch, 1),
+		// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
+		errorChan: make(chan error, 1),
 	}
 }
 
@@ -57,10 +60,6 @@ func (s *SeriesChunksStreamReader) Close() {
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
 // To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's storegatewaypb.StoreGateway_SeriesClient.
 func (s *SeriesChunksStreamReader) StartBuffering() {
-	s.seriesChunksChan = make(chan *storepb.StreamingChunksBatch, 1)
-
-	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
-	s.errorChan = make(chan error, 1)
 	ctxDone := s.client.Context().Done()
 
 	go func() {

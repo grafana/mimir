@@ -4,16 +4,13 @@ package chunkscache
 
 import (
 	"context"
-	"testing"
-	"time"
-
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/cache"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestDskitChunksCache_FetchMultiChunks(t *testing.T) {
@@ -81,7 +78,7 @@ func TestDskitChunksCache_FetchMultiChunks(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cacheClient := newMockedCacheClient(testData.mockedErr)
+			cacheClient := NewMockedCacheClient(testData.mockedErr)
 			c, err := NewChunksCache(log.NewNopLogger(), cacheClient, nil)
 			assert.NoError(t, err)
 
@@ -126,48 +123,4 @@ type mockedChunks struct {
 	userID string
 	r      Range
 	value  []byte
-}
-
-type mockedCacheClient struct {
-	cache             map[string][]byte
-	mockedGetMultiErr error
-}
-
-func newMockedCacheClient(mockedGetMultiErr error) *mockedCacheClient {
-	return &mockedCacheClient{
-		cache:             map[string][]byte{},
-		mockedGetMultiErr: mockedGetMultiErr,
-	}
-}
-
-func (c *mockedCacheClient) Fetch(_ context.Context, keys []string, _ ...cache.Option) map[string][]byte {
-	if c.mockedGetMultiErr != nil {
-		return nil
-	}
-
-	hits := map[string][]byte{}
-
-	for _, key := range keys {
-		if value, ok := c.cache[key]; ok {
-			hits[key] = value
-		}
-	}
-
-	return hits
-}
-
-func (c *mockedCacheClient) StoreAsync(data map[string][]byte, _ time.Duration) {
-	for key, value := range data {
-		c.cache[key] = value
-	}
-}
-
-func (c *mockedCacheClient) Delete(_ context.Context, key string) error {
-	delete(c.cache, key)
-
-	return nil
-}
-
-func (c *mockedCacheClient) Name() string {
-	return "mockedCacheClient"
 }

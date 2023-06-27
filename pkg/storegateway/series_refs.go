@@ -804,27 +804,27 @@ const (
 	// To change the default behavior, use the flags below this.
 	defaultStrategy seriesIteratorStrategy = 0
 
-	// noChunks flag when used by itself fetches only series labels for series in the entire block.
-	noChunks seriesIteratorStrategy = 0b00000001
-	// overlapMintMaxt flag is used to be used together with noChunks. With this, only the series whose
-	// chunks overlap with mint->maxt are selected.
+	// noChunkRefs flag when used by itself fetches only series labels for series in the entire block.
+	noChunkRefs seriesIteratorStrategy = 0b00000001
+	// overlapMintMaxt flag is used together with noChunkRefs. With this, only the series whose
+	// chunks overlap with [mint, maxt] are selected.
 	overlapMintMaxt seriesIteratorStrategy = 0b00000010
 )
 
-func (s seriesIteratorStrategy) isNoChunks() bool {
-	return s&noChunks != 0
+func (s seriesIteratorStrategy) isNoChunkRefs() bool {
+	return s&noChunkRefs != 0
 }
 
 func (s seriesIteratorStrategy) isOverlapMintMaxt() bool {
 	return s&overlapMintMaxt != 0
 }
 
-func (s seriesIteratorStrategy) isNoChunksOnEntireBlock() bool {
-	return s.isNoChunks() && !s.isOverlapMintMaxt()
+func (s seriesIteratorStrategy) isNoChunkRefsOnEntireBlock() bool {
+	return s.isNoChunkRefs() && !s.isOverlapMintMaxt()
 }
 
-func (s seriesIteratorStrategy) isNoChunksAndOverlapMintMaxt() bool {
-	return s.isNoChunks() && s.isOverlapMintMaxt()
+func (s seriesIteratorStrategy) isNoChunkRefsAndOverlapMintMaxt() bool {
+	return s.isNoChunkRefs() && s.isOverlapMintMaxt()
 }
 
 func newLoadingSeriesChunkRefsSetIterator(
@@ -843,7 +843,7 @@ func newLoadingSeriesChunkRefsSetIterator(
 	chunkRangesPerSeries int,
 	logger log.Logger,
 ) *loadingSeriesChunkRefsSetIterator {
-	if strategy.isNoChunksOnEntireBlock() {
+	if strategy.isNoChunkRefsOnEntireBlock() {
 		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
 	}
 
@@ -887,7 +887,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	nextPostings := s.postingsSetIterator.At()
 
 	var cachedSeriesID cachedSeriesForPostingsID
-	if s.strategy.isNoChunksOnEntireBlock() {
+	if s.strategy.isNoChunkRefsOnEntireBlock() {
 		var err error
 		// Calculate the cache ID before we filter out anything from the postings,
 		// so that the key doesn't depend on the series hash cache or any other filtering we do on the postings list.
@@ -937,7 +937,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	s.currentSet = nextSet
-	if s.strategy.isNoChunks() && cachedSeriesID.isSet() {
+	if cachedSeriesID.isSet() {
 		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
 	}
 	return true
@@ -965,7 +965,7 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 		if err != nil {
 			return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "read series")
 		}
-		if !s.strategy.isNoChunks() {
+		if !s.strategy.isNoChunkRefs() {
 			clampLastChunkLength(symbolizedSet.series, metas)
 			series.chunksRanges = metasToRanges(partitionChunks(metas, s.chunkRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
 		}
@@ -1023,7 +1023,7 @@ func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet,
 	for sIdx, series := range set.series {
 		// An empty label set means the series had no chunks in this block, so we skip it.
 		// No chunk ranges means the series doesn't have a single chunk range in the requested range.
-		if series.lset.IsEmpty() || (!s.strategy.isNoChunks() && len(series.chunksRanges) == 0) {
+		if series.lset.IsEmpty() || (!s.strategy.isNoChunkRefs() && len(series.chunksRanges) == 0) {
 			continue
 		}
 		if !shardOwned(s.shard, s.seriesHasher, postings[sIdx], series.lset, stats) {

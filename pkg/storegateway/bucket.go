@@ -624,13 +624,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	var (
 		reusePostings        [][]storage.SeriesRef
 		reusePendingMatchers [][]*labels.Matcher
-		iterationBegin       time.Time
 	)
 	if req.StreamingChunksBatchSize > 0 {
 		// The streaming feature is enabled where we stream the series labels first, followed
 		// by the chunks later. Send only the labels here.
 		req.SkipChunks = true
-
+		seriesLoadStart := time.Now()
 		reusePostings = make([][]storage.SeriesRef, len(blocks))
 		reusePendingMatchers = make([][]*labels.Matcher, len(blocks))
 		chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
@@ -653,12 +652,14 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			"request shard selector", maybeNilShard(shardSelector).LabelValue(),
 			"streaming chunks batch size", req.StreamingChunksBatchSize,
 			"num_series", numSeries,
-			"duration", time.Since(iterationBegin),
+			"duration", time.Since(seriesLoadStart),
 		)
 
 		req.SkipChunks = false
 	}
 
+	// We create the limiter twice in the case of streaming so that we don't double count the series
+	// and hit the limit prematurely.
 	chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 	seriesSet, seriesChunkIt, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
@@ -666,16 +667,16 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		return err
 	}
 
-	var numSeries, numChunks int
 	start := time.Now()
 	if req.StreamingChunksBatchSize > 0 {
-		numSeries, numChunks, err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats)
+		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats)
 	} else {
-		numSeries, numChunks, err = s.sendSeriesChunks(req, srv, seriesSet, stats)
+		err = s.sendSeriesChunks(req, srv, seriesSet, stats)
 	}
 	if err != nil {
 		return
 	}
+	numSeries, numChunks := stats.seriesAndChunksCount()
 	debugMessage := "sent series"
 	if req.StreamingChunksBatchSize > 0 {
 		debugMessage = "sent streaming chunks"
@@ -775,11 +776,12 @@ func (s *BucketStore) sendStreamingChunks(
 	srv storepb.Store_SeriesServer,
 	it seriesChunksSetIterator,
 	stats *safeQueryStats,
-) (seriesCount, chunksCount int, err error) {
+) error {
 	var (
-		encodeDuration = time.Duration(0)
-		sendDuration   = time.Duration(0)
-		iterationBegin = time.Now()
+		encodeDuration           time.Duration
+		sendDuration             time.Duration
+		seriesCount, chunksCount int
+		iterationBegin           = time.Now()
 	)
 
 	defer stats.update(func(stats *queryStats) {
@@ -823,7 +825,7 @@ func (s *BucketStore) sendStreamingChunks(
 			if batchSizeBytes > targetQueryStreamBatchMessageSize || len(chunksBatch.Series) >= int(req.StreamingChunksBatchSize) {
 				err := s.sendMessage("streaming chunks", srv, storepb.NewStreamingChunksResponse(chunksBatch), &encodeDuration, &sendDuration)
 				if err != nil {
-					return 0, 0, err
+					return err
 				}
 				chunksBatch.Series = chunksBatch.Series[:0]
 				batchSizeBytes = 0
@@ -834,7 +836,7 @@ func (s *BucketStore) sendStreamingChunks(
 			// Still some chunks left to send before we release the batch.
 			err := s.sendMessage("streaming chunks", srv, storepb.NewStreamingChunksResponse(chunksBatch), &encodeDuration, &sendDuration)
 			if err != nil {
-				return 0, 0, err
+				return err
 			}
 			chunksBatch.Series = chunksBatch.Series[:0]
 			batchSizeBytes = 0
@@ -844,10 +846,10 @@ func (s *BucketStore) sendStreamingChunks(
 	}
 
 	if it.Err() != nil {
-		return 0, 0, it.Err()
+		return it.Err()
 	}
 
-	return seriesCount, chunksCount, it.Err()
+	return it.Err()
 }
 
 func (s *BucketStore) sendSeriesChunks(
@@ -855,11 +857,12 @@ func (s *BucketStore) sendSeriesChunks(
 	srv storepb.Store_SeriesServer,
 	seriesSet storepb.SeriesSet,
 	stats *safeQueryStats,
-) (seriesCount, chunksCount int, err error) {
+) error {
 	var (
-		encodeDuration = time.Duration(0)
-		sendDuration   = time.Duration(0)
-		iterationBegin = time.Now()
+		encodeDuration           time.Duration
+		sendDuration             time.Duration
+		seriesCount, chunksCount int
+		iterationBegin           = time.Now()
 	)
 
 	defer stats.update(func(stats *queryStats) {
@@ -887,23 +890,20 @@ func (s *BucketStore) sendSeriesChunks(
 		}
 		if !req.SkipChunks {
 			series.Chunks = chks
-		}
-
-		if !req.SkipChunks {
 			chunksCount += len(chks)
 			s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chks)))
 		}
 
 		err := s.sendMessage("series", srv, storepb.NewSeriesResponse(&series), &encodeDuration, &sendDuration)
 		if err != nil {
-			return 0, 0, err
+			return err
 		}
 	}
 	if seriesSet.Err() != nil {
-		return 0, 0, errors.Wrap(seriesSet.Err(), "expand series set")
+		return errors.Wrap(seriesSet.Err(), "expand series set")
 	}
 
-	return seriesCount, chunksCount, nil
+	return nil
 }
 
 func (s *BucketStore) sendMessage(typ string, srv storepb.Store_SeriesServer, msg interface{}, encodeDuration, sendDuration *time.Duration) error {
@@ -985,7 +985,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	)
 	var strategy seriesIteratorStrategy
 	if req.SkipChunks {
-		strategy |= noChunks
+		strategy |= noChunkRefs
 	}
 	if req.StreamingChunksBatchSize > 0 {
 		strategy |= overlapMintMaxt
@@ -1328,7 +1328,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 		matchers,
 		nil,
 		cachedSeriesHasher{nil},
-		noChunks,
+		noChunkRefs,
 		minTime, maxTime,
 		1, // we skip chunks, so this doesn't make any difference
 		stats,
@@ -1548,7 +1548,7 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 		b.meta,
 		nil,
 		nil,
-		noChunks,
+		noChunkRefs,
 		b.meta.MinTime,
 		b.meta.MaxTime,
 		b.userID,
@@ -1931,8 +1931,8 @@ func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]ch
 	// Similar for first ref.
 	ref := int64(d.Uvarint64())
 
-	isNoChunks := strategy.isNoChunks()
-	isNoChunkOverlapMintMaxt := strategy.isNoChunksAndOverlapMintMaxt()
+	isNoChunks := strategy.isNoChunkRefs()
+	isNoChunkOverlapMintMaxt := strategy.isNoChunkRefsAndOverlapMintMaxt()
 	for i := 0; i < k; i++ {
 		if i > 0 {
 			mint += int64(d.Uvarint64())

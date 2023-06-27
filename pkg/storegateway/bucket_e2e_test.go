@@ -509,13 +509,28 @@ func TestBucketStore_e2e(t *testing.T) {
 			return
 		}
 
-		t.Run("with small index cache", func(t *testing.T) {
+		if ok := t.Run("with small index cache", func(t *testing.T) {
 			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 				MaxItemSize: 50,
 				MaxSize:     100,
 			})
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache2)
+			testBucketStore_e2e(t, ctx, s)
+		}); !ok {
+			return
+		}
+
+		t.Run("with large, sufficient index cache, and chunks cache", func(t *testing.T) {
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
+				MaxItemSize: 1e5,
+				MaxSize:     2e5,
+			})
+			assert.NoError(t, err)
+			chunksCache, err := chunkscache.NewChunksCache(s.logger, chunkscache.NewMockedCacheClient(nil), nil)
+			assert.NoError(t, err)
+			s.cache.SwapIndexCacheWith(indexCache)
+			s.cache.SwapChunksCacheWith(chunksCache)
 			testBucketStore_e2e(t, ctx, s)
 		})
 	})
@@ -539,6 +554,7 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 					Matchers: []storepb.LabelMatcher{
 						{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
 					},
+					// A block spans 120 mins. So 121 grabs the second to last block.
 					MinTime: maxt - 121*int64(time.Minute/time.Millisecond),
 					MaxTime: maxt,
 				},
@@ -572,14 +588,29 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 			return
 		}
 
-		t.Run("with small index cache", func(t *testing.T) {
+		if ok := t.Run("with small index cache", func(t *testing.T) {
 			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 				MaxItemSize: 50,
 				MaxSize:     100,
 			})
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache2)
-			testBucketStore_e2e(t, ctx, s, additionalCases...)
+			testBucketStore_e2e(t, ctx, s)
+		}); !ok {
+			return
+		}
+
+		t.Run("with large, sufficient index cache, and chunks cache", func(t *testing.T) {
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
+				MaxItemSize: 1e5,
+				MaxSize:     2e5,
+			})
+			assert.NoError(t, err)
+			chunksCache, err := chunkscache.NewChunksCache(s.logger, chunkscache.NewMockedCacheClient(nil), nil)
+			assert.NoError(t, err)
+			s.cache.SwapIndexCacheWith(indexCache)
+			s.cache.SwapChunksCacheWith(chunksCache)
+			testBucketStore_e2e(t, ctx, s)
 		})
 	})
 }
