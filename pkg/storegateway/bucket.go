@@ -624,18 +624,20 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	var (
 		reusePostings        [][]storage.SeriesRef
 		reusePendingMatchers [][]*labels.Matcher
+		resHints             = &hintspb.SeriesResponseHints{}
 	)
+	for _, b := range blocks {
+		resHints.AddQueriedBlock(b.meta.ULID)
+	}
 	if req.StreamingChunksBatchSize > 0 {
-		// The streaming feature is enabled where we stream the series labels first, followed
-		// by the chunks later. Send only the labels here.
-		req.SkipChunks = true
-		seriesLoadStart := time.Now()
-		reusePostings = make([][]storage.SeriesRef, len(blocks))
-		reusePendingMatchers = make([][]*labels.Matcher, len(blocks))
-		chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
-		seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+		var (
+			seriesSet       storepb.SeriesSet
+			seriesLoadStart = time.Now()
+			chunksLimiter   = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+			seriesLimiter   = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+		)
 
-		seriesSet, _, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, nil, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
+		seriesSet, reusePostings, reusePendingMatchers, err = s.streamingSeriesForBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 		if err != nil {
 			return err
 		}
@@ -654,28 +656,33 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			"num_series", numSeries,
 			"duration", time.Since(seriesLoadStart),
 		)
-
-		req.SkipChunks = false
 	}
 
 	// We create the limiter twice in the case of streaming so that we don't double count the series
 	// and hit the limit prematurely.
 	chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
-	seriesSet, seriesChunkIt, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
-	if err != nil {
-		return err
-	}
 
 	start := time.Now()
 	if req.StreamingChunksBatchSize > 0 {
+		var seriesChunkIt seriesChunksSetIterator
+		seriesChunkIt, err = s.streamingChunksSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
+		if err != nil {
+			return err
+		}
 		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats)
 	} else {
+		var seriesSet storepb.SeriesSet
+		seriesSet, err = s.nonStreamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers)
+		if err != nil {
+			return err
+		}
 		err = s.sendSeriesChunks(req, srv, seriesSet, stats)
 	}
 	if err != nil {
 		return
 	}
+
 	numSeries, numChunks := stats.seriesAndChunksCount()
 	debugMessage := "sent series"
 	if req.StreamingChunksBatchSize > 0 {
@@ -962,7 +969,8 @@ func chunksSize(chks []storepb.AggrChunk) (size int) {
 	return size
 }
 
-func (s *BucketStore) streamingSeriesSetForBlocks(
+// nonStreamingSeriesSetForBlocks is used when the streaming feature is not enabled.
+func (s *BucketStore) nonStreamingSeriesSetForBlocks(
 	ctx context.Context,
 	req *storepb.SeriesRequest,
 	blocks []*bucketBlock,
@@ -975,27 +983,111 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	stats *safeQueryStats,
 	reusePostings [][]storage.SeriesRef, // Used if not empty.
 	reusePendingMatchers [][]*labels.Matcher, // Used if not empty.
-) (storepb.SeriesSet, seriesChunksSetIterator, *hintspb.SeriesResponseHints, error) {
-	var (
-		resHints = &hintspb.SeriesResponseHints{}
-		mtx      = sync.Mutex{}
-		batches  = make([]seriesChunkRefsSetIterator, 0, len(blocks))
-		g, _     = errgroup.WithContext(ctx)
-		begin    = time.Now()
-	)
+) (storepb.SeriesSet, error) {
 	var strategy seriesIteratorStrategy
 	if req.SkipChunks {
-		strategy |= noChunkRefs
+		strategy = noChunkRefs
 	}
-	if req.StreamingChunksBatchSize > 0 {
-		strategy |= overlapMintMaxt
+	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers, strategy)
+	if err != nil {
+		return nil, err
 	}
+
+	var set storepb.SeriesSet
+	if !req.SkipChunks {
+		var cache chunkscache.Cache
+		if s.fineGrainedChunksCachingEnabled {
+			cache = s.chunksCache
+		}
+		ss := newSeriesSetWithChunks(ctx, s.logger, s.userID, cache, *chunkReaders, it, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+		set = newSeriesChunksSeriesSet(ss)
+	} else {
+		set = newSeriesSetWithoutChunks(ctx, it, stats)
+	}
+	return set, nil
+}
+
+// streamingSeriesForBlocks is used when streaming feature is enabled.
+// It returns a series set that only contains the series labels without any chunks information.
+// The returned postings (series ref) and matches should be re-used when getting chunks to save on computation.
+func (s *BucketStore) streamingSeriesForBlocks(
+	ctx context.Context,
+	req *storepb.SeriesRequest,
+	blocks []*bucketBlock,
+	indexReaders map[ulid.ULID]*bucketIndexReader,
+	shardSelector *sharding.ShardSelector,
+	matchers []*labels.Matcher,
+	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
+	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
+	stats *safeQueryStats,
+) (storepb.SeriesSet, [][]storage.SeriesRef, [][]*labels.Matcher, error) {
+	var (
+		reusePostings        = make([][]storage.SeriesRef, len(blocks))
+		reusePendingMatchers = make([][]*labels.Matcher, len(blocks))
+		strategy             = noChunkRefs | overlapMintMaxt
+	)
+	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers, strategy)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return newSeriesSetWithoutChunks(ctx, it, stats), reusePostings, reusePendingMatchers, nil
+}
+
+// streamingChunksSetForBlocks is used when streaming feature is enabled.
+// It returns an iterator to go over the chunks for the series returned in the streamingSeriesForBlocks call.
+// It is recommended to pass the reusePostings and reusePendingMatches returned by the streamingSeriesForBlocks call.
+func (s *BucketStore) streamingChunksSetForBlocks(
+	ctx context.Context,
+	req *storepb.SeriesRequest,
+	blocks []*bucketBlock,
+	indexReaders map[ulid.ULID]*bucketIndexReader,
+	chunkReaders *bucketChunkReaders,
+	shardSelector *sharding.ShardSelector,
+	matchers []*labels.Matcher,
+	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
+	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
+	stats *safeQueryStats,
+	reusePostings [][]storage.SeriesRef, // Should come from streamingSeriesForBlocks.
+	reusePendingMatchers [][]*labels.Matcher, // Should come from streamingSeriesForBlocks.
+) (seriesChunksSetIterator, error) {
+	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, reusePostings, reusePendingMatchers, defaultStrategy)
+	if err != nil {
+		return nil, err
+	}
+
+	var cache chunkscache.Cache
+	if s.fineGrainedChunksCachingEnabled {
+		cache = s.chunksCache
+	}
+	scsi := newSeriesSetWithChunks(ctx, s.logger, s.userID, cache, *chunkReaders, it, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+	return scsi, nil
+}
+
+func (s *BucketStore) getSeriesIteratorFromBlocks(
+	ctx context.Context,
+	req *storepb.SeriesRequest,
+	blocks []*bucketBlock,
+	indexReaders map[ulid.ULID]*bucketIndexReader,
+	shardSelector *sharding.ShardSelector,
+	matchers []*labels.Matcher,
+	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
+	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
+	stats *safeQueryStats,
+	reusePostings [][]storage.SeriesRef, // Used if not empty.
+	reusePendingMatchers [][]*labels.Matcher, // Used if not empty.
+	strategy seriesIteratorStrategy,
+) (seriesChunkRefsSetIterator, error) {
+	var (
+		mtx     = sync.Mutex{}
+		batches = make([]seriesChunkRefsSetIterator, 0, len(blocks))
+		g, _    = errgroup.WithContext(ctx)
+		begin   = time.Now()
+	)
 	for i, b := range blocks {
 		b := b
 		i := i
 
 		// Keep track of queried blocks.
-		resHints.AddQueriedBlock(b.meta.ULID)
 		indexr := indexReaders[b.meta.ULID]
 
 		// If query sharding is enabled we have to get the block-specific series hash cache
@@ -1047,7 +1139,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 
 	err := g.Wait()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	stats.update(func(stats *queryStats) {
@@ -1061,19 +1153,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	// counted once towards the limit.
 	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
 
-	var set storepb.SeriesSet
-	var scsi seriesChunksSetIterator
-	if !req.SkipChunks {
-		var cache chunkscache.Cache
-		if s.fineGrainedChunksCachingEnabled {
-			cache = s.chunksCache
-		}
-		scsi = newSeriesSetWithChunks(ctx, s.logger, s.userID, cache, *chunkReaders, mergedIterator, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
-		set = newSeriesChunksSeriesSet(scsi)
-	} else {
-		set = newSeriesSetWithoutChunks(ctx, mergedIterator, stats)
-	}
-	return set, scsi, resHints, nil
+	return mergedIterator, nil
 }
 
 func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
