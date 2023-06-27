@@ -56,6 +56,9 @@ mkdir -p "$OUTPUT_PATH"
 TESTS=$(find "${CHART_PATH}/ci" -name '*values.yaml')
 CHART_NAME=$(basename "${CHART_PATH}")
 
+# Array to store child process IDs
+pids=()
+
 for FILEPATH in $TESTS; do
   # Extract the filename (without extension).
   TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
@@ -72,12 +75,26 @@ for FILEPATH in $TESTS; do
     ARGS+=("--set-string" "kubeVersionOverride=${DEFAULT_KUBE_VERSION}")
   fi
 
-  set -x
-  helm template "${ARGS[@]}" &
-  set +x
+  helm template "${ARGS[@]}" 1>/dev/null &
+  pid=$!
+  pids+=($pid)
+  echo "Launched helm template PID $pid 'helm template ${ARGS[@]}'"
 done
 
-wait
+# Wait for all child processes to finish. We turn off `set -e` because we want to check the exit code of each child process
+# and print a message if it's non-zero. set -e will otherwise cause the script to exit immediately if any child process has exited with non-zero exit code.
+set +e
+for p in "${pids[@]}"; do
+    wait $p
+    exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo "helm template PID $p exited with non-zero exit code $exit_code. Aborting."
+        exit $exit_code
+    fi
+done
+set -e
+
+echo "Removing mutable config checksum, helm chart, application, image tag version for clarity"
 
 for FILEPATH in $TESTS; do
   # Extract the filename (without extension).
@@ -85,7 +102,6 @@ for FILEPATH in $TESTS; do
   INTERMEDIATE_OUTPUT_DIR="${INTERMEDIATE_PATH}/${TEST_NAME}-generated"
   OUTPUT_DIR="${OUTPUT_PATH}/${TEST_NAME}-generated"
 
-  echo "Removing mutable config checksum, helm chart, application, image tag version for clarity"
   cp -r "${INTERMEDIATE_OUTPUT_DIR}" "${OUTPUT_DIR}"
   rm "${OUTPUT_DIR}/${CHART_NAME}/templates/values-for-rego-tests.yaml"
   find "${OUTPUT_DIR}/${CHART_NAME}/templates" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/(alertmanager-fallback-)?config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"grafana\/(mimir|mimir-continuous-test|enterprise-metrics)):/d"
