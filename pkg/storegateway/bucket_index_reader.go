@@ -85,7 +85,7 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 	)
 	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
 	defer func() {
-		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded)
+		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded, "block_id", r.block.meta.ULID.String())
 		if returnErr != nil {
 			span.LogFields(otlog.Error(returnErr))
 		}
@@ -604,9 +604,17 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 }
 
 // preloadSeries expects the provided ids to be sorted.
-func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
-	span, ctx := tracing.StartSpan(ctx, "preloadSeries()")
-	defer span.Finish()
+func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (loadedSeries *bucketIndexLoadedSeries, err error) {
+	defer func(startTime time.Time) {
+		spanLog := spanlogger.FromContext(ctx, r.block.logger)
+		level.Debug(spanLog).Log(
+			"msg", "fetched series and chunk refs from object store",
+			"block_id", r.block.meta.ULID.String(),
+			"series_count", len(loadedSeries.series),
+			"err", err,
+			"duration", time.Since(startTime),
+		)
+	}(time.Now())
 
 	timer := prometheus.NewTimer(r.block.metrics.seriesFetchDuration)
 	defer timer.ObserveDuration()

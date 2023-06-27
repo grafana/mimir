@@ -200,7 +200,7 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("read path memory utilization limit must be greater than 0")
 	}
 
-	return nil
+	return cfg.IngesterRing.Validate()
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -339,7 +339,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		}, i.getOldestUnshippedBlockMetric)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(logger), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	if err != nil {
 		return nil, err
 	}
@@ -1527,7 +1527,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	if streamType == QueryStreamChunks {
 		if req.StreamingChunksBatchSize > 0 {
 			level.Debug(spanlog).Log("msg", "using executeStreamingQuery")
-			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize)
+			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
 		} else {
 			level.Debug(spanlog).Log("msg", "using executeChunksQuery")
 			numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
@@ -1726,7 +1726,7 @@ func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, t
 	return numSeries, numSamples, nil
 }
 
-func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64) (numSeries, numSamples int, _ error) {
+func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
@@ -1741,17 +1741,21 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 	// The querier must remain open until we've finished streaming chunks.
 	defer q.Close()
 
-	allSeries, seriesCount, err := i.sendStreamingQuerySeries(q, from, through, matchers, shard, stream)
+	allSeries, numSeries, err := i.sendStreamingQuerySeries(q, from, through, matchers, shard, stream)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	numSamples, err = i.sendStreamingQueryChunks(allSeries, stream, batchSize)
+	level.Debug(spanlog).Log("msg", "finished sending series", "series", numSeries)
+
+	numSamples, numChunks, numBatches, err := i.sendStreamingQueryChunks(allSeries, stream, batchSize)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	return seriesCount, numSamples, nil
+	level.Debug(spanlog).Log("msg", "finished sending chunks", "chunks", numChunks, "batches", numBatches)
+
+	return numSeries, numSamples, nil
 }
 
 // chunkSeriesNode is used a build a linked list of slices of series.
@@ -1857,12 +1861,14 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 	return allSeriesList, seriesCount, nil
 }
 
-func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream client.Ingester_QueryStreamServer, batchSize uint64) (int, error) {
+func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream client.Ingester_QueryStreamServer, batchSize uint64) (int, int, int, error) {
 	var (
 		it             chunks.Iterator
 		seriesIdx      = -1
 		currNode       = allSeries
 		numSamples     = 0
+		numChunks      = 0
+		numBatches     = 0
 		seriesInBatch  = make([]client.QueryStreamSeriesChunks, 0, batchSize)
 		batchSizeBytes = 0
 	)
@@ -1882,18 +1888,19 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 				// It is not guaranteed that chunk returned by iterator is populated.
 				// For now just return error. We could also try to figure out how to read the chunk.
 				if meta.Chunk == nil {
-					return 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
+					return 0, 0, 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
 				}
 
 				ch, err := client.ChunkFromMeta(meta)
 				if err != nil {
-					return 0, err
+					return 0, 0, 0, err
 				}
 
 				seriesChunks.Chunks = append(seriesChunks.Chunks, ch)
 				numSamples += meta.Chunk.NumSamples()
 			}
 
+			numChunks += len(seriesChunks.Chunks)
 			msgSize := seriesChunks.Size()
 
 			if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= int(batchSize) {
@@ -1902,11 +1909,12 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 					StreamingSeriesChunks: seriesInBatch,
 				})
 				if err != nil {
-					return 0, err
+					return 0, 0, 0, err
 				}
 
 				seriesInBatch = seriesInBatch[:0]
 				batchSizeBytes = 0
+				numBatches++
 			}
 
 			seriesInBatch = append(seriesInBatch, seriesChunks)
@@ -1924,11 +1932,12 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 			StreamingSeriesChunks: seriesInBatch,
 		})
 		if err != nil {
-			return 0, err
+			return 0, 0, 0, err
 		}
+		numBatches++
 	}
 
-	return numSamples, nil
+	return numSamples, numChunks, numBatches, nil
 }
 
 func (i *Ingester) getTSDB(userID string) *userTSDB {

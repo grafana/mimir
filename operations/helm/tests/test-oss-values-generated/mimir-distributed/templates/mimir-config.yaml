@@ -114,6 +114,11 @@ data:
       rule_path: /data
     ruler_storage:
       backend: s3
+      cache:
+        backend: memcached
+        memcached:
+          addresses: dns+test-oss-values-mimir-metadata-cache.citestns.svc:11211
+          max_item_size: 1048576
       s3:
         access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-ruler

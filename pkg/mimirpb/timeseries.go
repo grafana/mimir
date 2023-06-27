@@ -8,10 +8,11 @@ package mimirpb
 import (
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"sync"
 	"unsafe"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -136,8 +137,8 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 		return
 	}
 
-	sort.Slice(p.Labels, func(i, j int) bool {
-		return p.Labels[i].Name < p.Labels[j].Name
+	slices.SortFunc(p.Labels, func(a, b LabelAdapter) bool {
+		return a.Name < b.Name
 	})
 	p.clearUnmarshalData()
 }

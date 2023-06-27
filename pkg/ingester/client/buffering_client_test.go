@@ -206,10 +206,10 @@ func TestWriteRequestBufferingClient_PushConcurrent(t *testing.T) {
 }
 
 func createRequest(metricName string, seriesPerRequest int) *mimirpb.WriteRequest {
-	metrics := make([]labels.Labels, 0, seriesPerRequest)
+	metrics := make([][]mimirpb.LabelAdapter, 0, seriesPerRequest)
 	samples := make([]mimirpb.Sample, 0, seriesPerRequest)
 	for i := 0; i < seriesPerRequest; i++ {
-		metrics = append(metrics, labels.FromStrings(labels.MetricName, metricName, "cardinality", strconv.Itoa(i)))
+		metrics = append(metrics, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
 		samples = append(samples, mimirpb.Sample{Value: float64(i), TimestampMs: time.Now().UnixMilli()})
 	}
 

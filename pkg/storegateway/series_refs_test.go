@@ -1735,7 +1735,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				2,
 				newSafeQueryStats(),
 				nil, nil,
-				nil,
+				log.NewNopLogger(),
 			)
 			require.NoError(t, err)
 
@@ -1837,7 +1837,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					2,
 					newSafeQueryStats(),
 					nil, nil,
-					nil,
+					log.NewNopLogger(),
 				)
 				require.NoError(t, err)
 				allSets := readAllSeriesChunkRefsSet(iterator)
@@ -1902,7 +1902,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							2,
 							newSafeQueryStats(),
 							nil, nil,
-							nil,
+							log.NewNopLogger(),
 						)
 						require.NoError(b, err)
 

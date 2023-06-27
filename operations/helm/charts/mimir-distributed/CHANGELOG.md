@@ -28,6 +28,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Changed max unavailable ingesters and store-gateways in a zone to 50. #5327
+* [ENHANCEMENT] Ruler: configure the ruler storage cache when the metadata cache is enabled. #5326 #5334
+
 ## 4.5.0
 
 * [CHANGE] Query-frontend: enable cardinality estimation via `frontend.query_sharding_target_series_per_shard` in the Mimir configuration for query sharding by default if `results-cache.enabled` is true. #5128

@@ -849,7 +849,8 @@ ring:
   [excluded_zones: <string> | default = ""]
 
   # File path where tokens are stored. If empty, tokens are not stored at
-  # shutdown and restored at startup.
+  # shutdown and restored at startup. Must be empty if
+  # -ingester.ring.token-generation-strategy is set to "spread-minimizing".
   # CLI flag: -ingester.ring.tokens-file-path
   [tokens_file_path: <string> | default = ""]
 
@@ -905,6 +906,19 @@ ring:
   # scraped.
   # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
+
+  # (experimental) Specifies the strategy used for generating tokens for
+  # ingesters. Supported values are: random,spread-minimizing.
+  # CLI flag: -ingester.ring.token-generation-strategy
+  [token_generation_strategy: <string> | default = "random"]
+
+  # (experimental) Comma-separated list of zones in which spread minimizing
+  # strategy is used for token generation. This value must include all zones in
+  # which ingesters are deployed, and must not change over time. This
+  # configuration is used only when "token-generation-strategy" is set to
+  # "spread-minimizing".
+  # CLI flag: -ingester.ring.spread-minimizing-zones
+  [spread_minimizing_zones: <string> | default = ""]
 
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.

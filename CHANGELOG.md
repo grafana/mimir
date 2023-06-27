@@ -14,6 +14,7 @@
   * `-ingester.read-path-cpu-utilization-limit`
   * `-ingester.read-path-memory-utilization-limit`
 * [FEATURE] Ruler: Support filtering results from rule status endpoint by `file`, `rule_group` and `rule_name`. #5291
+* [FEATURE] Ingester: add experimental support for creating tokens by using spread minimizing strategy. This can be enabled with `-ingester.ring.token-generation-strategy: spread-minimizing` and `-ingester.ring.spread-minimizing-zones: <all available zones>`. In that case `-ingester.ring.tokens-file-path` must be empty. #5308 #5324
 * [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. For now this feature can be disabled by setting `-timeseries-unmarshal-caching-optimization-enabled=false`. #5137
 * [ENHANCEMENT] Add advanced CLI flags to control gRPC client behaviour: #5161
@@ -29,6 +30,8 @@
 * [ENHANCEMENT] Querier: improve error message when streaming chunks from ingesters to queriers and a query limit is reached. #5245
 * [ENHANCEMENT] Use new data structure for labels, to reduce memory consumption. #3555
 * [ENHANCEMENT] Update alpine base image to 3.18.2. #5276
+* [ENHANCEMENT] Ruler: add `cortex_ruler_sync_rules_duration_seconds` metric, tracking the time spent syncing all rule groups owned by the ruler instance. #5311
+* [ENHANCEMENT] Ingester and querier: improve level of detail in traces emitted for queries that hit ingesters. #5315
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 
 ### Mixin
@@ -41,9 +44,12 @@
 
 ### Jsonnet
 
+* [CHANGE] Removed `_config.querier.concurrency` configuration option and replaced it with `_config.querier_max_concurrency` and `_config.ruler_querier_max_concurrency` to allow to easily fine tune it for different querier deployments. #5322
+* [CHANGE] Change `_config.multi_zone_ingester_max_unavailable` to 50. #5327
 * [FEATURE] Alertmanager: Add horizontal pod autoscaler config, that can be enabled using `autoscaling_alertmanager_enabled: true`. #5194 #5249
 * [ENHANCEMENT] Enable the `track_sizes` feature for Memcached pods to help determine cache efficiency. #5209
 * [ENHANCEMENT] Add per-container map for environment variables. #5181
+* [ENHANCEMENT] Ruler: configure the ruler storage cache when the metadata cache is enabled. #5326 #5334
 
 ### Mimirtool
 

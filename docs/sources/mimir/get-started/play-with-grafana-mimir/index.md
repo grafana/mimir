@@ -1,10 +1,12 @@
 ---
+aliases:
+  - ../tutorials/play-with-grafana-mimir/
+  - ../tutorials/
 associated_technologies:
   - mimir
 author:
   - marco
-description:
-  This tutorial helps you learn about Grafana Mimir, which provides distributed,
+description: Learn about Grafana Mimir, which provides distributed,
   horizontally scalable, and highly available long term storage for Prometheus.
 keywords:
   - mimir tutorial
@@ -18,12 +20,12 @@ keywords:
   - metrics datastore
   - observability
   - Prometheus read write
-menuTitle: Play with Grafana Mimir
-title: Play with Grafana Mimir
-weight: 1
+menuTitle: Play with Mimir
+title: Play with Mimir
+weight: 10
 ---
 
-# Play with Grafana Mimir
+# Play with Mimir
 
 Grafana Mimir is a distributed, horizontally scalable, and highly available long term storage for [Prometheus](https://prometheus.io).
 

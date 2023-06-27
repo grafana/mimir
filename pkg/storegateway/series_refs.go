@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -867,15 +866,24 @@ func newLoadingSeriesChunkRefsSetIterator(
 }
 
 func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
-	sp, ctx := tracing.StartSpan(s.ctx, "loadingSeriesChunkRefsSetIterator.Next")
-	defer sp.Finish()
-
 	if s.err != nil {
 		return false
 	}
 	if !s.postingsSetIterator.Next() {
 		return false
 	}
+
+	defer func(startTime time.Time) {
+		spanLog := spanlogger.FromContext(s.ctx, s.logger)
+		level.Debug(spanLog).Log(
+			"msg", "loaded series and chunk refs",
+			"block_id", s.blockID.String(),
+			"series_count", s.At().len(),
+			"err", s.Err(),
+			"duration", time.Since(startTime),
+		)
+	}(time.Now())
+
 	nextPostings := s.postingsSetIterator.At()
 
 	var cachedSeriesID cachedSeriesForPostingsID
@@ -889,7 +897,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
 		} else {
-			if cachedSet, isCached := fetchCachedSeriesForPostings(ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
+			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
 				s.currentSet = cachedSet
 				return true
 			}
@@ -908,7 +916,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		nextPostings = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHasher, loadStats)
 	}
 
-	symbolizedSet, err := s.symbolizedSet(ctx, nextPostings, loadStats)
+	symbolizedSet, err := s.symbolizedSet(s.ctx, nextPostings, loadStats)
 	if err != nil {
 		s.err = err
 		return false
@@ -930,7 +938,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	s.currentSet = nextSet
 	if s.strategy.isNoChunks() && cachedSeriesID.isSet() {
-		storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
+		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
 	}
 	return true
 }
