@@ -1435,8 +1435,8 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 					// Check exposed metrics.
 					assertHistograms := map[string]bool{
 						"cortex_bucket_store_series_request_stage_duration_seconds":         true,
-						"cortex_bucket_store_series_batch_preloading_load_duration_seconds": st.maxSeriesPerBatch < totalSeries || streamingBatchSize > 0, // Tracked only when a request is split in multiple batches.
-						"cortex_bucket_store_series_batch_preloading_wait_duration_seconds": st.maxSeriesPerBatch < totalSeries || streamingBatchSize > 0, // Tracked only when a request is split in multiple batches.
+						"cortex_bucket_store_series_batch_preloading_load_duration_seconds": st.maxSeriesPerBatch < totalSeries || (!skipChunk && streamingBatchSize > 0), // Tracked only when a request is split in multiple batches.
+						"cortex_bucket_store_series_batch_preloading_wait_duration_seconds": st.maxSeriesPerBatch < totalSeries || (!skipChunk && streamingBatchSize > 0), // Tracked only when a request is split in multiple batches.
 						"cortex_bucket_store_series_refs_fetch_duration_seconds":            true,
 					}
 
