@@ -181,7 +181,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	for r := range pool.lazyReaders {
 		expected = fmt.Sprintf(`{"header_last_used_time":{"%s":%d},"user_id":"anonymous"}`, r.blockID, r.usedAt.Load()/int64(time.Millisecond))
 	}
-	require.Equal(t, expected, string(persistedData))
+	require.JSONEq(t, expected, string(persistedData))
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
