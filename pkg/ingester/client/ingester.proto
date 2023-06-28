@@ -153,6 +153,7 @@ message QueryStreamResponse {
 
 message QueryStreamSeries {
   repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  int64 chunks_count = 2;
 }
 
 message QueryStreamSeriesChunks {

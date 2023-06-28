@@ -670,6 +670,7 @@ func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalC
 					iterators: iterators,
 				}
 			},
+			ChunkCount: 0, // TODO: compute expected number of chunks
 		}
 	}
 }
@@ -801,6 +802,12 @@ func NewConcatenatingChunkSeriesMerger() VerticalChunkSeriesMergeFunc {
 		if len(series) == 0 {
 			return nil
 		}
+
+		chunksCount := 0
+		for _, series := range series {
+			chunksCount += series.ChunksCount()
+		}
+
 		return &ChunkSeriesEntry{
 			Lset: series[0].Labels(),
 			ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
@@ -812,6 +819,7 @@ func NewConcatenatingChunkSeriesMerger() VerticalChunkSeriesMergeFunc {
 					iterators: iterators,
 				}
 			},
+			ChunkCount: chunksCount,
 		}
 	}
 }

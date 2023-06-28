@@ -132,11 +132,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				}
 			}
 
-			if err := s.queryLimiter.AddChunks(chunkCount); err != nil {
-				onError(err)
-				return
-			}
-
+			// The chunk count limit is enforced earlier, while we're reading series labels, so we don't need to do that here.
 			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
 				onError(err)
 				return

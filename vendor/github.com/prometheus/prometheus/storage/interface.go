@@ -435,6 +435,9 @@ type ChunkIterable interface {
 	// Iterator returns an iterator that iterates over potentially overlapping
 	// chunks of the series, sorted by min time.
 	Iterator(chunks.Iterator) chunks.Iterator
+
+	// ChunksCount returns the number of chunks available from this iterable.
+	ChunksCount() int
 }
 
 type Warnings []error
