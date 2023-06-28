@@ -15,7 +15,7 @@ import (
 type streamingChunkSeriesContext struct {
 	chunkIteratorFunc chunkIteratorFunc
 	mint, maxt        int64
-	queryChunkMetrics *stats.QueryChunkMetrics
+	queryMetrics      *stats.QueryMetrics
 	queryStats        *stats.Stats
 }
 
@@ -48,8 +48,8 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		uniqueChunks = client.AccumulateChunks(uniqueChunks, c)
 	}
 
-	s.context.queryChunkMetrics.IngesterChunksTotal.Add(float64(totalChunks))
-	s.context.queryChunkMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(uniqueChunks)))
+	s.context.queryMetrics.IngesterChunksTotal.Add(float64(totalChunks))
+	s.context.queryMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(uniqueChunks)))
 
 	s.context.queryStats.AddFetchedChunks(uint64(len(uniqueChunks)))
 
