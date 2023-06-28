@@ -478,11 +478,18 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedRequest(t *testing.T) {
 	cacheBackend := cache.NewInstrumentedMockCache()
 
+	limits := mockLimits{
+		maxCacheFreshness:                    10 * time.Minute,
+		resultsCacheTTL:                      resultsCacheTTL,
+		resultsCacheOutOfOrderWindowTTL:      resultsCacheLowerTTL,
+		resultsCacheForUnalignedQueryEnabled: true,
+	}
+
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
 		24*time.Hour,
-		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+		limits,
 		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
