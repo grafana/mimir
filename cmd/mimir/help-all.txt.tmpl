@@ -1575,6 +1575,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.id string
     	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
+  -querier.ingester-query-hedging-delay duration
+    	[experimental] Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier-minimize-ingester-requests is not enabled. (default 3s)
   -querier.iterators
     	[deprecated] Use iterators to execute query, as opposed to fully materialising the series in memory.
   -querier.label-names-and-values-results-max-size-bytes int

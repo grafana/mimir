@@ -1107,6 +1107,13 @@ store_gateway_client:
 # CLI flag: -querier.minimize-ingester-requests
 [minimize_ingester_requests: <boolean> | default = false]
 
+# (experimental) Delay before initiating requests to further ingesters when
+# request minimization is enabled and the initially selected set of ingesters
+# have not all responded. Ignored if -querier-minimize-ingester-requests is not
+# enabled.
+# CLI flag: -querier.ingester-query-hedging-delay
+[ingester_query_hedging_delay: <duration> | default = 3s]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
 # CLI flag: -querier.max-concurrent
