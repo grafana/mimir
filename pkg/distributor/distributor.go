@@ -1244,7 +1244,8 @@ func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSe
 		// Nothing to do.
 	}
 
-	return ring.DoUntilQuorum(ctx, replicationSet, d.cfg.MinimizeIngesterRequests, wrappedF, cleanup)
+	cfg := ring.DoUntilQuorumConfig{MinimizeRequests: d.cfg.MinimizeIngesterRequests}
+	return ring.DoUntilQuorum(ctx, replicationSet, cfg, wrappedF, cleanup)
 }
 
 // LabelValuesForLabelName returns all of the label values that are associated with a given label name.
@@ -1451,7 +1452,8 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, d.cfg.MinimizeIngesterRequests, func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
+	cfg := ring.DoUntilQuorumConfig{MinimizeRequests: d.cfg.MinimizeIngesterRequests}
+	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, cfg, func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
 		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
 		if err != nil {
 			return struct{}{}, err
@@ -1742,7 +1744,8 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 	req := &ingester_client.UserStatsRequest{
 		CountMethod: ingesterCountMethod,
 	}
-	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.cfg.MinimizeIngesterRequests, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
+	cfg := ring.DoUntilQuorumConfig{MinimizeRequests: d.cfg.MinimizeIngesterRequests}
+	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, cfg, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
 		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
 		if err != nil {
 			return zonedUserStatsResponse{}, err
