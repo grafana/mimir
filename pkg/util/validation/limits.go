@@ -837,8 +837,8 @@ func (o *Overrides) ResultsCacheTTLForCardinalityQuery(user string) time.Duratio
 	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForCardinalityQuery)
 }
 
-func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(user string) bool {
-	return o.getOverridesForUser(user).ResultsCacheForUnalignedQueryEnabled
+func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).ResultsCacheForUnalignedQueryEnabled
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

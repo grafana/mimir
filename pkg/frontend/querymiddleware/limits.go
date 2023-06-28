@@ -90,7 +90,7 @@ type Limits interface {
 	ResultsCacheTTLForCardinalityQuery(userID string) time.Duration
 
 	// ResultsCacheForUnalignedQueryEnabled returns whether to cache results for queries that are not step-aligned
-	ResultsCacheForUnalignedQueryEnabled(user string) bool
+	ResultsCacheForUnalignedQueryEnabled(userID string) bool
 }
 
 type limitsMiddleware struct {

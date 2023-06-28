@@ -170,7 +170,6 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		true,
 		false, // Cache disabled.
 		24*time.Hour,
-		false,
 		mockLimits{},
 		codec,
 		nil,
@@ -242,7 +241,6 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		true,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
 		cacheBackend,
@@ -375,7 +373,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		true,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
 		newTestPrometheusCodec(),
 		cacheBackend,
@@ -485,7 +482,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		true,
 		true,
 		24*time.Hour,
-		true, // caching of step-unaligned requests is enabled in this test.
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
 		cacheBackend,
@@ -647,7 +643,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				false, // No interval splitting.
 				true,
 				24*time.Hour,
-				false,
 				mockLimits{maxCacheFreshness: maxCacheFreshness, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
 				cacheBackend,
@@ -856,7 +851,6 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 					testData.splitEnabled,
 					testData.cacheEnabled,
 					24*time.Hour,
-					testData.cacheUnaligned,
 					mockLimits{
 						maxCacheFreshness:   testData.maxCacheFreshness,
 						maxQueryParallelism: testData.maxQueryParallelism,
@@ -1139,7 +1133,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				false, // No splitting.
 				true,
 				24*time.Hour,
-				false,
 				mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
 				cacheBackend,
@@ -1185,7 +1178,6 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		false,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{
 			resultsCacheTTL:                 1 * time.Hour,
 			resultsCacheOutOfOrderWindowTTL: 10 * time.Minute,
@@ -1271,7 +1263,6 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 		false,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{},
 		newTestPrometheusCodec(),
 		cache.NewMockCache(),
