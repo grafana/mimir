@@ -219,7 +219,6 @@ func newQueryTripperware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
-			cfg.CacheUnalignedRequests,
 			limits,
 			codec,
 			c,

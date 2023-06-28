@@ -837,6 +837,10 @@ func (o *Overrides) ResultsCacheTTLForCardinalityQuery(user string) time.Duratio
 	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForCardinalityQuery)
 }
 
+func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(user string) bool {
+	return o.getOverridesForUser(user).ResultsCacheForUnalignedQueryEnabled
+}
+
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
 	if o.tenantLimits != nil {
 		l := o.tenantLimits.ByUserID(userID)
@@ -845,6 +849,16 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 		}
 	}
 	return o.defaultLimits
+}
+
+// AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants
+func AllTrueBooleansPerTenant(tenantIDs []string, f func(string) bool) bool {
+	for _, tenantID := range tenantIDs {
+		if !f(tenantID) {
+			return false
+		}
+	}
+	return true
 }
 
 // SmallestPositiveIntPerTenant is returning the minimal positive value of the
