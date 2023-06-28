@@ -36,6 +36,7 @@
 * [ENHANCEMENT] Ingester and querier: improve level of detail in traces emitted for queries that hit ingesters. #5315
 * [ENHANCEMENT] Querier: add `cortex_queries_rejected_total` metric that counts the number of queries rejected due to hitting a limit (eg. max series per query or max chunks per query). #5316
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
+* [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 
 ### Mixin
 
