@@ -42,13 +42,13 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series2))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
-	assertNoLimitMetricsEmitted(t, reg)
+	assertNoRejectedQueriesMetric(t, reg)
 
 	// Re-add previous series to make sure it's not double counted
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series1))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
-	assertNoLimitMetricsEmitted(t, reg)
+	assertNoRejectedQueriesMetric(t, reg)
 }
 
 func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
@@ -74,21 +74,21 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 	)
 	err := limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series1))
 	require.NoError(t, err)
-	assertNoLimitMetricsEmitted(t, reg)
+	assertNoRejectedQueriesMetric(t, reg)
 
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series2))
 	require.Error(t, err)
-	assertLimitMetricValue(t, reg, "max-fetched-series-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, "max-fetched-series-per-query", 1)
 
 	// Add the same series again and ensure that we don't increment the failed queries metric again.
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series2))
 	require.Error(t, err)
-	assertLimitMetricValue(t, reg, "max-fetched-series-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, "max-fetched-series-per-query", 1)
 
 	// Add another series and ensure that we don't increment the failed queries metric again.
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series3))
 	require.Error(t, err)
-	assertLimitMetricValue(t, reg, "max-fetched-series-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, "max-fetched-series-per-query", 1)
 }
 
 func TestQueryLimiter_AddChunkBytes(t *testing.T) {
@@ -97,16 +97,16 @@ func TestQueryLimiter_AddChunkBytes(t *testing.T) {
 
 	err := limiter.AddChunkBytes(100)
 	require.NoError(t, err)
-	assertNoLimitMetricsEmitted(t, reg)
+	assertNoRejectedQueriesMetric(t, reg)
 
 	err = limiter.AddChunkBytes(1)
 	require.Error(t, err)
-	assertLimitMetricValue(t, reg, "max-fetched-chunk-bytes-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, "max-fetched-chunk-bytes-per-query", 1)
 
 	// Add more bytes and ensure that we don't increment the failed queries metric again.
 	err = limiter.AddChunkBytes(2)
 	require.Error(t, err)
-	assertLimitMetricValue(t, reg, "max-fetched-chunk-bytes-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, "max-fetched-chunk-bytes-per-query", 1)
 }
 
 func TestQueryLimiter_AddChunks(t *testing.T) {
@@ -115,16 +115,16 @@ func TestQueryLimiter_AddChunks(t *testing.T) {
 
 	err := limiter.AddChunks(100)
 	require.NoError(t, err)
-	assertNoLimitMetricsEmitted(t, reg)
+	assertNoRejectedQueriesMetric(t, reg)
 
 	err = limiter.AddChunks(1)
 	require.Error(t, err)
-	assertLimitMetricValue(t, reg, "max-fetched-chunks-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, "max-fetched-chunks-per-query", 1)
 
 	// Add more chunks and ensure that we don't increment the failed queries metric again.
 	err = limiter.AddChunks(2)
 	require.Error(t, err)
-	assertLimitMetricValue(t, reg, "max-fetched-chunks-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, "max-fetched-chunks-per-query", 1)
 }
 
 func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
@@ -149,19 +149,19 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	}
 }
 
-func assertNoLimitMetricsEmitted(t *testing.T, c prometheus.Collector) {
-	require.NoError(t, testutil.CollectAndCompare(c, bytes.NewBufferString(""), "cortex_querier_queries_exceeded_limits_total"))
+func assertNoRejectedQueriesMetric(t *testing.T, c prometheus.Collector) {
+	require.NoError(t, testutil.CollectAndCompare(c, bytes.NewBufferString(""), "cortex_querier_queries_rejected_total"))
 }
 
-func assertLimitMetricValue(t *testing.T, c prometheus.Collector, limitName string, expectedValue int) {
+func assertRejectedQueriesMetricValue(t *testing.T, c prometheus.Collector, reason string, expectedValue int) {
 	expected := fmt.Sprintf(`
-		# HELP cortex_querier_queries_exceeded_limits_total Number of queries that failed because they exceeded a limit.
-		# TYPE cortex_querier_queries_exceeded_limits_total counter
-		cortex_querier_queries_exceeded_limits_total{limit="%v"} %v
+		# HELP cortex_querier_queries_rejected_total Number of queries that were rejected, for example because they exceeded a limit.
+		# TYPE cortex_querier_queries_rejected_total counter
+		cortex_querier_queries_rejected_total{reason="%v"} %v
 		`,
-		limitName,
+		reason,
 		expectedValue,
 	)
 
-	require.NoError(t, testutil.CollectAndCompare(c, bytes.NewBufferString(expected), "cortex_querier_queries_exceeded_limits_total"))
+	require.NoError(t, testutil.CollectAndCompare(c, bytes.NewBufferString(expected), "cortex_querier_queries_rejected_total"))
 }

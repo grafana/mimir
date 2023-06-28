@@ -103,7 +103,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels []mimirpb.LabelAdapter) error {
 	if uniqueSeriesAfter > ql.maxSeriesPerQuery {
 		if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
 			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
-			ql.queryMetrics.QueriesExceededLimits.WithLabelValues("max-fetched-series-per-query").Inc()
+			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues("max-fetched-series-per-query").Inc()
 		}
 
 		return validation.LimitError(fmt.Sprintf(MaxSeriesHitMsgFormat, ql.maxSeriesPerQuery))
@@ -129,7 +129,7 @@ func (ql *QueryLimiter) AddChunkBytes(chunkSizeInBytes int) error {
 	if totalBytes > int64(ql.maxChunkBytesPerQuery) {
 		if totalBytes-int64(chunkSizeInBytes) <= int64(ql.maxChunkBytesPerQuery) {
 			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
-			ql.queryMetrics.QueriesExceededLimits.WithLabelValues("max-fetched-chunk-bytes-per-query").Inc()
+			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues("max-fetched-chunk-bytes-per-query").Inc()
 		}
 
 		return validation.LimitError(fmt.Sprintf(MaxChunkBytesHitMsgFormat, ql.maxChunkBytesPerQuery))
@@ -147,7 +147,7 @@ func (ql *QueryLimiter) AddChunks(count int) error {
 	if totalChunks > int64(ql.maxChunksPerQuery) {
 		if totalChunks-int64(count) <= int64(ql.maxChunksPerQuery) {
 			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
-			ql.queryMetrics.QueriesExceededLimits.WithLabelValues("max-fetched-chunks-per-query").Inc()
+			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues("max-fetched-chunks-per-query").Inc()
 		}
 
 		return validation.LimitError(fmt.Sprintf(MaxChunksPerQueryLimitMsgFormat, ql.maxChunksPerQuery))
