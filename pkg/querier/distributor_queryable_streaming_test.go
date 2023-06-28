@@ -23,7 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var streamingChunkSeriesTestIteratorFunc = func(_ chunkenc.Iterator, chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
+func streamingChunkSeriesTestIteratorFunc(_ chunkenc.Iterator, chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
 	return streamingChunkSeriesTestIterator{
 		chunks:  chunks,
 		from:    from,
