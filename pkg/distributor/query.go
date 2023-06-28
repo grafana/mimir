@@ -30,9 +30,9 @@ import (
 )
 
 var (
-	// readActive is a ring.Operation that only selects instances marked as ring.ACTIVE, and
-	// extends the replica set in the same cases ring.Write would.
-	readActive = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, ring.Write.ShouldExtendReplicaSetOnState)
+	// readNoExtend is a ring.Operation that only selects instances marked as ring.ACTIVE.
+	// This should mirror the operation used when choosing ingesters to write series to (ring.WriteNoExtend).
+	readNoExtend = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 )
 
 func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*ingester_client.ExemplarQueryResponse, error) {
@@ -110,17 +110,11 @@ func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, er
 	shardSize := d.limits.IngestionTenantShardSize(userID)
 	lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
 
-	op := ring.Read
-
-	if d.cfg.QueryOnlyActiveIngesters {
-		op = readActive
-	}
-
 	if shardSize > 0 && lookbackPeriod > 0 {
-		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(op)
+		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(readNoExtend)
 	}
 
-	return d.ingestersRing.GetReplicationSetForOperation(op)
+	return d.ingestersRing.GetReplicationSetForOperation(readNoExtend)
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.

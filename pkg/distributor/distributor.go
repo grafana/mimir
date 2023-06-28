@@ -167,7 +167,6 @@ type Config struct {
 	PreferStreamingChunks                      bool          `yaml:"-"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
-	QueryOnlyActiveIngesters                   bool          `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`

@@ -1686,17 +1686,6 @@
         },
         {
           "kind": "field",
-          "name": "query_only_active_ingesters",
-          "required": false,
-          "desc": "If true, when querying ingesters, only ingesters in the ACTIVE state in the ring will be queried.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "querier.query-only-active-ingesters",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
