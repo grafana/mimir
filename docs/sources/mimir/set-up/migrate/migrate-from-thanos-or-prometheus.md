@@ -1,6 +1,7 @@
 ---
 aliases:
   - migrating-from-thanos-or-prometheus/
+  - ../../migrate/migrate-from-thanos-or-prometheus/
 description: Learn how to migrate from Thanos or Prometheus to Grafana Mimir.
 menuTitle: Migrate from Thanos or Prometheus
 title: Migrate from Thanos or Prometheus to Grafana Mimir
@@ -19,13 +20,13 @@ Each project stores blocks in different places and uses slightly different block
 
 ## Configuring remote write to Grafana Mimir
 
-For configuration of remote write to Grafana Mimir, refer to [Configuring Prometheus remote write]({{< relref "../manage/secure/authentication-and-authorization#configuring-prometheus-remote-write" >}}).
+For configuration of remote write to Grafana Mimir, refer to [Configuring Prometheus remote write]({{< relref "../../manage/secure/authentication-and-authorization#configuring-prometheus-remote-write" >}}).
 
 ## Uploading historic TSDB blocks to Grafana Mimir
 
 Grafana Mimir supports uploading of historic TSDB blocks, notably from Prometheus.
 In order to enable this functionality, either for all tenants or a specific one, refer to
-[Configure TSDB block upload]({{< relref "../configure/configure-tsdb-block-upload" >}}).
+[Configure TSDB block upload]({{< relref "../../configure/configure-tsdb-block-upload" >}}).
 
 Prometheus stores TSDB blocks in the path specified in the `--storage.tsdb.path` flag.
 
