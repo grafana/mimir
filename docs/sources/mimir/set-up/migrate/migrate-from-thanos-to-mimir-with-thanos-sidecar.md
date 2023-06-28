@@ -1,4 +1,6 @@
 ---
+aliases:
+  - ../../migrate/migrate-from-thanos-to-mimir-with-thanos-sidecar/
 description: Learn how to migrate from Thanos to Mimir using Thanos sidecar.
 menuTitle: Migrate from Thanos using Thanos sidecar
 title: Migrate from Thanos to Mimir using Thanos sidecar

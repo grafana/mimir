@@ -1,6 +1,7 @@
 ---
 aliases:
   - migrating-from-thanos-or-prometheus/
+  - ../../migrate/migrate-from-thanos-or-prometheus/
 description: Learn how to migrate from Thanos or Prometheus to Grafana Mimir.
 menuTitle: Migrate from Thanos or Prometheus
 title: Migrate from Thanos or Prometheus to Grafana Mimir
