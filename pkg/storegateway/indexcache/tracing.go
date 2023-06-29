@@ -39,6 +39,7 @@ func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID strin
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log(
 		"msg", "IndexCache.FetchMultiPostings",
+		"block id", blockID,
 		"requested keys", len(keys),
 		"cache hits", hits.Remaining(),
 		"cache misses", len(keys)-hits.Remaining(),
@@ -60,6 +61,7 @@ func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log("msg", "IndexCache.FetchMultiSeriesForRefs",
 		"requested series", len(ids),
+		"block id", blockID,
 		"cache hits", len(hits),
 		"cache misses", len(misses),
 		"time elapsed", time.Since(t0),
@@ -81,6 +83,7 @@ func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, userID st
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log(
 		"msg", "IndexCache.FetchExpandedPostings",
+		"block id", blockID,
 		"requested key", key,
 		"postings selection strategy", postingsSelectionStrategy,
 		"found", found,
@@ -103,6 +106,7 @@ func (t *TracingIndexCache) FetchSeriesForPostings(ctx context.Context, userID s
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log(
 		"msg", "IndexCache.FetchSeriesForPostings",
+		"block id", blockID,
 		"shard", shardKey(shard),
 		"found", found,
 		"time_elapsed", time.Since(t0),
@@ -125,6 +129,7 @@ func (t *TracingIndexCache) FetchLabelNames(ctx context.Context, userID string, 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log(
 		"msg", "IndexCache.FetchLabelNames",
+		"block id", blockID,
 		"requested key", matchersKey,
 		"found", found,
 		"time elapsed", time.Since(t0),
@@ -146,6 +151,7 @@ func (t *TracingIndexCache) FetchLabelValues(ctx context.Context, userID string,
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log(
 		"msg", "IndexCache.FetchLabelValues",
+		"block id", blockID,
 		"label name", labelName,
 		"requested key", matchersKey,
 		"found", found,
