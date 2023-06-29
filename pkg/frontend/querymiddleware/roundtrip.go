@@ -36,14 +36,14 @@ const (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	AlignQueriesWithStep   bool          `yaml:"align_queries_with_step"`
-	ResultsCacheConfig     `yaml:"results_cache"`
-	CacheResults           bool   `yaml:"cache_results"`
-	MaxRetries             int    `yaml:"max_retries" category:"advanced"`
-	ShardedQueries         bool   `yaml:"parallelize_shardable_queries"`
-	CacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // TODO: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0
-	TargetSeriesPerShard   uint64 `yaml:"query_sharding_target_series_per_shard"`
+	SplitQueriesByInterval           time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
+	AlignQueriesWithStep             bool          `yaml:"align_queries_with_step"`
+	ResultsCacheConfig               `yaml:"results_cache"`
+	CacheResults                     bool   `yaml:"cache_results"`
+	MaxRetries                       int    `yaml:"max_retries" category:"advanced"`
+	ShardedQueries                   bool   `yaml:"parallelize_shardable_queries"`
+	DeprecatedCacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // TODO: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0
+	TargetSeriesPerShard             uint64 `yaml:"query_sharding_target_series_per_shard"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.

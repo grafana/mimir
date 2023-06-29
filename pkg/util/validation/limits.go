@@ -26,31 +26,30 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag                   = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag                 = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag                     = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag                   = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag                    = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag                = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag                    = "querier.max-fetched-series-per-query"
-	maxLabelNamesPerSeriesFlag               = "validation.max-label-names-per-series"
-	maxLabelNameLengthFlag                   = "validation.max-length-label-name"
-	maxLabelValueLengthFlag                  = "validation.max-length-label-value"
-	maxMetadataLengthFlag                    = "validation.max-metadata-length"
-	maxNativeHistogramBucketsFlag            = "validation.max-native-histogram-buckets"
-	creationGracePeriodFlag                  = "validation.create-grace-period"
-	maxPartialQueryLengthFlag                = "querier.max-partial-query-length"
-	maxTotalQueryLengthFlag                  = "query-frontend.max-total-query-length"
-	maxQueryExpressionSizeBytesFlag          = "query-frontend.max-query-expression-size-bytes"
-	requestRateFlag                          = "distributor.request-rate-limit"
-	requestBurstSizeFlag                     = "distributor.request-burst-size"
-	ingestionRateFlag                        = "distributor.ingestion-rate-limit"
-	ingestionBurstSizeFlag                   = "distributor.ingestion-burst-size"
-	HATrackerMaxClustersFlag                 = "distributor.ha-tracker.max-clusters"
-	resultsCacheTTLFlag                      = "query-frontend.results-cache-ttl"
-	resultsCacheTTLForOutOfOrderWindowFlag   = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
-	resultsCacheForUnalignedQueryEnabledFlag = "query-frontend.cache-unaligned-requests"
-	QueryIngestersWithinFlag                 = "querier.query-ingesters-within"
+	MaxSeriesPerMetricFlag                 = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag               = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag                   = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag                 = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag                  = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag              = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag                  = "querier.max-fetched-series-per-query"
+	maxLabelNamesPerSeriesFlag             = "validation.max-label-names-per-series"
+	maxLabelNameLengthFlag                 = "validation.max-length-label-name"
+	maxLabelValueLengthFlag                = "validation.max-length-label-value"
+	maxMetadataLengthFlag                  = "validation.max-metadata-length"
+	maxNativeHistogramBucketsFlag          = "validation.max-native-histogram-buckets"
+	creationGracePeriodFlag                = "validation.create-grace-period"
+	maxPartialQueryLengthFlag              = "querier.max-partial-query-length"
+	maxTotalQueryLengthFlag                = "query-frontend.max-total-query-length"
+	maxQueryExpressionSizeBytesFlag        = "query-frontend.max-query-expression-size-bytes"
+	requestRateFlag                        = "distributor.request-rate-limit"
+	requestBurstSizeFlag                   = "distributor.request-burst-size"
+	ingestionRateFlag                      = "distributor.ingestion-rate-limit"
+	ingestionBurstSizeFlag                 = "distributor.ingestion-burst-size"
+	HATrackerMaxClustersFlag               = "distributor.ha-tracker.max-clusters"
+	resultsCacheTTLFlag                    = "query-frontend.results-cache-ttl"
+	resultsCacheTTLForOutOfOrderWindowFlag = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
+	QueryIngestersWithinFlag               = "querier.query-ingesters-within"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -263,7 +262,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
 	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
 	f.Var(&l.ResultsCacheTTLForCardinalityQuery, "query-frontend.results-cache-ttl-for-cardinality-query", "Time to live duration for cached cardinality query results. The value 0 disables the cache.")
-	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, resultsCacheForUnalignedQueryEnabledFlag, false, "Cache requests that are not step-aligned.")
+	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.IntVar(&l.MaxQueryExpressionSizeBytes, maxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
 
 	// Store-gateway.
