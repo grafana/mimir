@@ -1686,12 +1686,12 @@
         },
         {
           "kind": "field",
-          "name": "ingester_query_hedging_delay",
+          "name": "minimize_ingester_requests_hedging_delay",
           "required": false,
-          "desc": "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier-minimize-ingester-requests is not enabled.",
+          "desc": "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled.",
           "fieldValue": null,
           "fieldDefaultValue": 3000000000,
-          "fieldFlag": "querier.ingester-query-hedging-delay",
+          "fieldFlag": "querier.minimize-ingester-requests-hedging-delay",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },
