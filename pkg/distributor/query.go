@@ -29,6 +29,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+var (
+	// readNoExtend is a ring.Operation that only selects instances marked as ring.ACTIVE.
+	// This should mirror the operation used when choosing ingesters to write series to (ring.WriteNoExtend).
+	readNoExtend = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+)
+
 func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*ingester_client.ExemplarQueryResponse, error) {
 	var result *ingester_client.ExemplarQueryResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryExemplars", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
@@ -105,10 +111,10 @@ func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, er
 	lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
 
 	if shardSize > 0 && lookbackPeriod > 0 {
-		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(ring.Read)
+		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(readNoExtend)
 	}
 
-	return d.ingestersRing.GetReplicationSetForOperation(ring.Read)
+	return d.ingestersRing.GetReplicationSetForOperation(readNoExtend)
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
