@@ -1,16 +1,19 @@
 name: Build and Push mimir-build-image
 
-# configure trigger by pull request or manually
+# configure trigger by pull request
 on:
   pull_request:
     types: [opened, synchronize]
     paths:
       - mimir-build-image/Dockerfile  
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs: 
   build_and_push:
     runs-on: ubuntu-latest
-    # If the PR is raised by dependabot, then build the image
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
