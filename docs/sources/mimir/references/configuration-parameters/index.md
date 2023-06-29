@@ -2076,8 +2076,8 @@ The `flusher` block configures the WAL flusher target, used to manually run one-
 The `ingester_client` block configures how the distributors connect to the ingesters.
 
 ```yaml
-# Configures the gRPC client used to communicate between distributors and
-# ingesters.
+# Configures the gRPC client used to communicate with ingesters from
+# distributors and queriers.
 # The CLI flags prefix for this block configuration is: ingester.client
 [grpc_client_config: <grpc_client>]
 ```

@@ -37,6 +37,7 @@
 * [ENHANCEMENT] Ingester and querier: improve level of detail in traces emitted for queries that hit ingesters. #5315
 * [ENHANCEMENT] Querier: add `cortex_queries_rejected_total` metric that counts the number of queries rejected due to hitting a limit (eg. max series per query or max chunks per query). #5316
 * [ENHANCEMENT] Querier: add experimental `-querier.minimize-ingester-requests-hedging-delay` option to initiate requests to further ingesters when request minimisation is enabled and not all initial requests have completed. #5368
+* [ENHANCEMENT] Clarify docs for `-ingester.client.*` flags to make it clear that these are used by both queriers and distributors. #5375
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 
 ### Mixin
