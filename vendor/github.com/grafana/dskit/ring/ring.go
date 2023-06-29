@@ -151,7 +151,7 @@ type instanceInfo struct {
 	Zone       string
 }
 
-// Ring holds the information about the members of the consistent hash ring.
+// Ring is a Service that maintains an in-memory copy of a ring and watches for changes.
 type Ring struct {
 	services.Service
 

@@ -51,9 +51,10 @@ type Config struct {
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferStreamingChunks                      bool   `yaml:"prefer_streaming_chunks" category:"experimental"`
-	StreamingChunksPerIngesterSeriesBufferSize uint64 `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"experimental"`
-	MinimizeIngesterRequests                   bool   `yaml:"minimize_ingester_requests" category:"experimental"`
+	PreferStreamingChunks                      bool          `yaml:"prefer_streaming_chunks" category:"experimental"`
+	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"experimental"`
+	MinimizeIngesterRequests                   bool          `yaml:"minimize_ingester_requests" category:"experimental"`
+	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -83,7 +84,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
 	f.BoolVar(&cfg.PreferStreamingChunks, "querier.prefer-streaming-chunks", false, "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.")
-	f.BoolVar(&cfg.MinimizeIngesterRequests, "querier.minimize-ingester-requests", false, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
+
+	const minimiseIngesterRequestsFlagName = "querier.minimize-ingester-requests"
+	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlagName, false, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
+	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlagName+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlagName+" is not enabled.")
 
 	// Why 256 series / ingester?
 	// Based on our testing, 256 series / ingester was a good balance between memory consumption and the CPU overhead of managing a batch of series.

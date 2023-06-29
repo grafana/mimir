@@ -84,6 +84,8 @@ type Distributor struct {
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
 
+	queryQuorumConfig ring.DoUntilQuorumConfig
+
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
 	distributorsLifecycler *ring.BasicLifecycler
@@ -167,6 +169,7 @@ type Config struct {
 	PreferStreamingChunks                      bool          `yaml:"-"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
+	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
@@ -236,6 +239,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
+		queryQuorumConfig:     ring.DoUntilQuorumConfig{MinimizeRequests: cfg.MinimizeIngesterRequests, HedgingDelay: cfg.MinimiseIngesterRequestsHedgingDelay},
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 		QueryMetrics:          stats.NewQueryMetrics(reg),
@@ -1244,7 +1248,7 @@ func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSe
 		// Nothing to do.
 	}
 
-	return ring.DoUntilQuorum(ctx, replicationSet, d.cfg.MinimizeIngesterRequests, wrappedF, cleanup)
+	return ring.DoUntilQuorum(ctx, replicationSet, d.queryQuorumConfig, wrappedF, cleanup)
 }
 
 // LabelValuesForLabelName returns all of the label values that are associated with a given label name.
@@ -1451,7 +1455,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, d.cfg.MinimizeIngesterRequests, func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
+	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, d.queryQuorumConfig, func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
 		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
 		if err != nil {
 			return struct{}{}, err
@@ -1742,7 +1746,7 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 	req := &ingester_client.UserStatsRequest{
 		CountMethod: ingesterCountMethod,
 	}
-	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.cfg.MinimizeIngesterRequests, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
+	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.queryQuorumConfig, func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
 		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
 		if err != nil {
 			return zonedUserStatsResponse{}, err
