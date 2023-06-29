@@ -316,6 +316,12 @@ lint: check-makefiles
 		"sort.{Strings,Ints}=golang.org/x/exp/slices.Sort" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# Don't use generic ring.Read operation.
+	# ring.Read usually isn't the right choice, and we prefer that each component define its operations explicitly.
+	faillint -paths \
+		"github.com/grafana/dskit/ring.{Read}" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
