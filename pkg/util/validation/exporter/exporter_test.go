@@ -34,7 +34,7 @@ func TestOverridesExporter_noConfig(t *testing.T) {
 
 	// The defaults should exist though
 	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
-	assert.Equal(t, 10, count)
+	assert.Equal(t, 14, count)
 }
 
 func TestOverridesExporter_emptyConfig(t *testing.T) {
@@ -47,36 +47,45 @@ func TestOverridesExporter_emptyConfig(t *testing.T) {
 
 	// The defaults should exist though
 	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
-	assert.Equal(t, 10, count)
+	assert.Equal(t, 14, count)
 }
 
 func TestOverridesExporter_withConfig(t *testing.T) {
 	tenantLimits := map[string]*validation.Limits{
 		"tenant-a": {
-			IngestionRate:                10,
-			IngestionBurstSize:           11,
-			MaxGlobalSeriesPerUser:       12,
-			MaxGlobalSeriesPerMetric:     13,
-			MaxGlobalExemplarsPerUser:    14,
-			MaxChunksPerQuery:            15,
-			MaxFetchedSeriesPerQuery:     16,
-			MaxFetchedChunkBytesPerQuery: 17,
-			RulerMaxRulesPerRuleGroup:    19,
-			RulerMaxRuleGroupsPerTenant:  20,
+			IngestionRate:                       10,
+			IngestionBurstSize:                  11,
+			RequestRate:                         10,
+			RequestBurstSize:                    11,
+			MaxGlobalSeriesPerUser:              12,
+			MaxGlobalSeriesPerMetric:            13,
+			MaxGlobalExemplarsPerUser:           14,
+			MaxGlobalMetricsWithMetadataPerUser: 12,
+			MaxGlobalMetadataPerMetric:          13,
+			MaxChunksPerQuery:                   15,
+			MaxFetchedSeriesPerQuery:            16,
+			MaxFetchedChunkBytesPerQuery:        17,
+			RulerMaxRulesPerRuleGroup:           19,
+			RulerMaxRuleGroupsPerTenant:         20,
+			
 		},
 	}
 
 	exporter, err := NewOverridesExporter(Config{}, &validation.Limits{
-		IngestionRate:                22,
-		IngestionBurstSize:           23,
-		MaxGlobalSeriesPerUser:       24,
-		MaxGlobalSeriesPerMetric:     25,
-		MaxGlobalExemplarsPerUser:    26,
-		MaxChunksPerQuery:            27,
-		MaxFetchedSeriesPerQuery:     28,
-		MaxFetchedChunkBytesPerQuery: 29,
-		RulerMaxRulesPerRuleGroup:    31,
-		RulerMaxRuleGroupsPerTenant:  32,
+		IngestionRate:                       22,
+		IngestionBurstSize:                  23,
+		RequestRate:                         22,
+		RequestBurstSize:                    23,
+		MaxGlobalSeriesPerUser:              24,
+		MaxGlobalSeriesPerMetric:            25,
+		MaxGlobalExemplarsPerUser:           26,
+		MaxGlobalMetricsWithMetadataPerUser: 24,
+		MaxGlobalMetadataPerMetric:          25,
+		MaxChunksPerQuery:                   27,
+		MaxFetchedSeriesPerQuery:            28,
+		MaxFetchedChunkBytesPerQuery:        29,
+		RulerMaxRulesPerRuleGroup:           31,
+		RulerMaxRuleGroupsPerTenant:         32,
 	}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	limitsMetrics := `
@@ -84,9 +93,13 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 # TYPE cortex_limits_overrides gauge
 cortex_limits_overrides{limit_name="ingestion_rate",user="tenant-a"} 10
 cortex_limits_overrides{limit_name="ingestion_burst_size",user="tenant-a"} 11
+cortex_limits_overrides{limit_name="request_rate",user="tenant-a"} 10
+cortex_limits_overrides{limit_name="request_burst_size",user="tenant-a"} 11
 cortex_limits_overrides{limit_name="max_global_series_per_user",user="tenant-a"} 12
 cortex_limits_overrides{limit_name="max_global_series_per_metric",user="tenant-a"} 13
 cortex_limits_overrides{limit_name="max_global_exemplars_per_user",user="tenant-a"} 14
+cortex_limits_overrides{limit_name="max_global_metadata_per_user",user="tenant-a"} 12
+cortex_limits_overrides{limit_name="max_global_metadata_per_metric",user="tenant-a"} 13
 cortex_limits_overrides{limit_name="max_fetched_chunks_per_query",user="tenant-a"} 15
 cortex_limits_overrides{limit_name="max_fetched_series_per_query",user="tenant-a"} 16
 cortex_limits_overrides{limit_name="max_fetched_chunk_bytes_per_query",user="tenant-a"} 17
@@ -103,9 +116,13 @@ cortex_limits_overrides{limit_name="ruler_max_rule_groups_per_tenant",user="tena
 # TYPE cortex_limits_defaults gauge
 cortex_limits_defaults{limit_name="ingestion_rate"} 22
 cortex_limits_defaults{limit_name="ingestion_burst_size"} 23
+cortex_limits_defaults{limit_name="request_rate"} 22
+cortex_limits_defaults{limit_name="request_burst_size"} 23
 cortex_limits_defaults{limit_name="max_global_series_per_user"} 24
 cortex_limits_defaults{limit_name="max_global_series_per_metric"} 25
 cortex_limits_defaults{limit_name="max_global_exemplars_per_user"} 26
+cortex_limits_defaults{limit_name="max_global_metadata_per_user"} 24
+cortex_limits_defaults{limit_name="max_global_metadata_per_metric"} 25
 cortex_limits_defaults{limit_name="max_fetched_chunks_per_query"} 27
 cortex_limits_defaults{limit_name="max_fetched_series_per_query"} 28
 cortex_limits_defaults{limit_name="max_fetched_chunk_bytes_per_query"} 29
