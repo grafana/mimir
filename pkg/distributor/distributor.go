@@ -126,7 +126,7 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
-	QueryChunkMetrics                *stats.QueryChunkMetrics
+	QueryMetrics                     *stats.QueryMetrics
 
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
 	discardedSamplesRateLimited       *prometheus.CounterVec
@@ -242,7 +242,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		queryQuorumConfig:     ring.DoUntilQuorumConfig{MinimizeRequests: cfg.MinimizeIngesterRequests, HedgingDelay: cfg.MinimiseIngesterRequestsHedgingDelay},
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
-		QueryChunkMetrics:     stats.NewQueryChunkMetrics(reg),
+		QueryMetrics:          stats.NewQueryMetrics(reg),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",

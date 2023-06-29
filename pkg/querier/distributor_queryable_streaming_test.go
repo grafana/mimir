@@ -48,7 +48,7 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 			chunkIteratorFunc: chunkIteratorFunc,
 			mint:              1000,
 			maxt:              6000,
-			queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
+			queryMetrics:      stats.NewQueryMetrics(reg),
 			queryStats:        queryStats,
 		},
 	}
@@ -86,7 +86,7 @@ func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
 			chunkIteratorFunc: nil,
 			mint:              1000,
 			maxt:              6000,
-			queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
+			queryMetrics:      stats.NewQueryMetrics(reg),
 			queryStats:        queryStats,
 		},
 	}
@@ -123,7 +123,7 @@ func createTestStreamReader(batches ...[]client.QueryStreamSeriesChunks) *client
 
 	cleanup := func() {}
 
-	reader := client.NewSeriesChunksStreamReader(mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0), cleanup, log.NewNopLogger())
+	reader := client.NewSeriesChunksStreamReader(mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	return reader
