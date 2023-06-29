@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,12 +23,28 @@ import (
 
 // Config holds the configuration for an overrides-exporter
 type Config struct {
-	Ring RingConfig `yaml:"ring"`
+	Ring           RingConfig             `yaml:"ring"`
+	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics"`
 }
 
 // RegisterFlags configs this instance to the given FlagSet
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Ring.RegisterFlags(f, logger)
+
+	// Keep existing default metrics
+	c.EnabledMetrics = []string{
+		"ingestion_rate",
+		"ingestion_burst_size",
+		"max_global_series_per_user",
+		"max_global_series_per_metric",
+		"max_global_exemplars_per_user",
+		"max_fetched_chunks_per_query",
+		"max_fetched_series_per_query",
+		"max_fetched_chunk_bytes_per_query",
+		"ruler_max_rules_per_rule_group",
+	}
+
+	f.Var(&c.EnabledMetrics, "overrides-exporter.enabled-metrics", "Comma-separated list of metrics to include in the exporter.")
 }
 
 // Validate validates the configuration for an overrides-exporter.
@@ -48,6 +65,8 @@ type OverridesExporter struct {
 	// OverridesExporter can optionally use a ring to uniquely shard tenants to
 	// instances and avoid export of duplicate metrics.
 	ring *overridesExporterRing
+
+	enabledMetrics []string
 }
 
 // NewOverridesExporter creates an OverridesExporter that reads updates to per-tenant
@@ -74,7 +93,8 @@ func NewOverridesExporter(
 			[]string{"limit_name"},
 			nil,
 		),
-		logger: log,
+		logger:         log,
+		enabledMetrics: config.EnabledMetrics,
 	}
 
 	if config.Ring.Enabled {
@@ -102,30 +122,66 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	// Write path limits
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, oe.defaultLimits.IngestionRate, "ingestion_rate")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.IngestionBurstSize), "ingestion_burst_size")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalSeriesPerUser), "max_global_series_per_user")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalSeriesPerMetric), "max_global_series_per_metric")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalExemplarsPerUser), "max_global_exemplars_per_user")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalMetricsWithMetadataPerUser), "max_global_metadata_per_user")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalMetadataPerMetric), "max_global_metadata_per_metric")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, oe.defaultLimits.RequestRate, "request_rate")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.RequestBurstSize), "request_burst_size")
+	if util.StringsContain(oe.enabledMetrics, "ingestion_rate") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, oe.defaultLimits.IngestionRate, "ingestion_rate")
+	}
+	if util.StringsContain(oe.enabledMetrics, "ingestion_burst_size") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.IngestionBurstSize), "ingestion_burst_size")
+	}
+	if util.StringsContain(oe.enabledMetrics, "max_global_series_per_user") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalSeriesPerUser), "max_global_series_per_user")
+	}
+	if util.StringsContain(oe.enabledMetrics, "max_global_series_per_metric") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalSeriesPerMetric), "max_global_series_per_metric")
+	}
+	if util.StringsContain(oe.enabledMetrics, "max_global_exemplars_per_user") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalExemplarsPerUser), "max_global_exemplars_per_user")
+	}
+	if util.StringsContain(oe.enabledMetrics, "max_global_metadata_per_user") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalMetricsWithMetadataPerUser), "max_global_metadata_per_user")
+	}
+	if util.StringsContain(oe.enabledMetrics, "max_global_metadata_per_metric") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalMetadataPerMetric), "max_global_metadata_per_metric")
+	}
+	if util.StringsContain(oe.enabledMetrics, "request_rate") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, oe.defaultLimits.RequestRate, "request_rate")
+	}
+	if util.StringsContain(oe.enabledMetrics, "request_burst_size") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.RequestBurstSize), "request_burst_size")
+	}
 
 	// Read path limits
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxChunksPerQuery), "max_fetched_chunks_per_query")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxFetchedSeriesPerQuery), "max_fetched_series_per_query")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxFetchedChunkBytesPerQuery), "max_fetched_chunk_bytes_per_query")
+	if util.StringsContain(oe.enabledMetrics, "max_fetched_chunks_per_query") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxChunksPerQuery), "max_fetched_chunks_per_query")
+	}
+	if util.StringsContain(oe.enabledMetrics, "max_fetched_series_per_query") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxFetchedSeriesPerQuery), "max_fetched_series_per_query")
+	}
+	if util.StringsContain(oe.enabledMetrics, "max_fetched_chunk_bytes_per_query") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxFetchedChunkBytesPerQuery), "max_fetched_chunk_bytes_per_query")
+	}
 
 	// Ruler limits
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.RulerMaxRulesPerRuleGroup), "ruler_max_rules_per_rule_group")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.RulerMaxRuleGroupsPerTenant), "ruler_max_rule_groups_per_tenant")
+	if util.StringsContain(oe.enabledMetrics, "ruler_max_rules_per_rule_group") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.RulerMaxRulesPerRuleGroup), "ruler_max_rules_per_rule_group")
+	}
+	if util.StringsContain(oe.enabledMetrics, "ruler_max_rule_groups_per_tenant") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.RulerMaxRuleGroupsPerTenant), "ruler_max_rule_groups_per_tenant")
+	}
 
 	// Alertmanager limits
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, oe.defaultLimits.NotificationRateLimit, "alertmanager_notification_rate_limit")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.AlertmanagerMaxDispatcherAggregationGroups), "alertmanager_max_dispatcher_aggregation_groups")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.AlertmanagerMaxAlertsCount), "alertmanager_max_alerts_count")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.AlertmanagerMaxAlertsSizeBytes), "alertmanager_max_alerts_size_bytes")
+	if util.StringsContain(oe.enabledMetrics, "alertmanager_notification_rate_limit") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, oe.defaultLimits.NotificationRateLimit, "alertmanager_notification_rate_limit")
+	}
+	if util.StringsContain(oe.enabledMetrics, "alertmanager_max_dispatcher_aggregation_groups") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.AlertmanagerMaxDispatcherAggregationGroups), "alertmanager_max_dispatcher_aggregation_groups")
+	}
+	if util.StringsContain(oe.enabledMetrics, "alertmanager_max_alerts_count") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.AlertmanagerMaxAlertsCount), "alertmanager_max_alerts_count")
+	}
+	if util.StringsContain(oe.enabledMetrics, "alertmanager_max_alerts_size_bytes") {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.AlertmanagerMaxAlertsSizeBytes), "alertmanager_max_alerts_size_bytes")
+	}
 
 	// Do not export per-tenant limits if they've not been configured at all.
 	if oe.tenantLimits == nil {
@@ -135,30 +191,66 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
 		// Write path limits
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, limits.IngestionRate, "ingestion_rate", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.IngestionBurstSize), "ingestion_burst_size", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxGlobalSeriesPerUser), "max_global_series_per_user", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxGlobalSeriesPerMetric), "max_global_series_per_metric", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxGlobalExemplarsPerUser), "max_global_exemplars_per_user", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxGlobalMetricsWithMetadataPerUser), "max_global_metadata_per_user", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxGlobalMetadataPerMetric), "max_global_metadata_per_metric", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, limits.RequestRate, "request_rate", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.RequestBurstSize), "request_burst_size", tenant)
+		if util.StringsContain(oe.enabledMetrics, "ingestion_rate") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, limits.IngestionRate, "ingestion_rate", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "ingestion_burst_size") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.IngestionBurstSize), "ingestion_burst_size", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "max_global_series_per_user") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxGlobalSeriesPerUser), "max_global_series_per_user", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "max_global_series_per_metric") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxGlobalSeriesPerMetric), "max_global_series_per_metric", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "max_global_exemplars_per_user") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxGlobalExemplarsPerUser), "max_global_exemplars_per_user", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "max_global_metadata_per_user") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxGlobalMetricsWithMetadataPerUser), "max_global_metadata_per_user", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "max_global_metadata_per_metric") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxGlobalMetadataPerMetric), "max_global_metadata_per_metric", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "request_rate") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, limits.RequestRate, "request_rate", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "request_burst_size") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.RequestBurstSize), "request_burst_size", tenant)
+		}
 
 		// Read path limits
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxChunksPerQuery), "max_fetched_chunks_per_query", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxFetchedSeriesPerQuery), "max_fetched_series_per_query", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxFetchedChunkBytesPerQuery), "max_fetched_chunk_bytes_per_query", tenant)
+		if util.StringsContain(oe.enabledMetrics, "max_fetched_chunks_per_query") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxChunksPerQuery), "max_fetched_chunks_per_query", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "max_fetched_series_per_query") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxFetchedSeriesPerQuery), "max_fetched_series_per_query", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "max_fetched_chunk_bytes_per_query") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.MaxFetchedChunkBytesPerQuery), "max_fetched_chunk_bytes_per_query", tenant)
+		}
 
 		// Ruler limits
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.RulerMaxRulesPerRuleGroup), "ruler_max_rules_per_rule_group", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.RulerMaxRuleGroupsPerTenant), "ruler_max_rule_groups_per_tenant", tenant)
+		if util.StringsContain(oe.enabledMetrics, "ruler_max_rules_per_rule_group") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.RulerMaxRulesPerRuleGroup), "ruler_max_rules_per_rule_group", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "ruler_max_rule_groups_per_tenant") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.RulerMaxRuleGroupsPerTenant), "ruler_max_rule_groups_per_tenant", tenant)
+		}
 
 		// Alertmanager limits
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, limits.NotificationRateLimit, "alertmanager_notification_rate_limit", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.AlertmanagerMaxDispatcherAggregationGroups), "alertmanager_max_dispatcher_aggregation_groups", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.AlertmanagerMaxAlertsCount), "alertmanager_max_alerts_count", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.AlertmanagerMaxAlertsSizeBytes), "alertmanager_max_alerts_size_bytes", tenant)
+		if util.StringsContain(oe.enabledMetrics, "alertmanager_notification_rate_limit") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, limits.NotificationRateLimit, "alertmanager_notification_rate_limit", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "alertmanager_max_dispatcher_aggregation_groups") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.AlertmanagerMaxDispatcherAggregationGroups), "alertmanager_max_dispatcher_aggregation_groups", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "alertmanager_max_alerts_count") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.AlertmanagerMaxAlertsCount), "alertmanager_max_alerts_count", tenant)
+		}
+		if util.StringsContain(oe.enabledMetrics, "alertmanager_max_alerts_size_bytes") {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, float64(limits.AlertmanagerMaxAlertsSizeBytes), "alertmanager_max_alerts_size_bytes", tenant)
+		}
 	}
 }
 

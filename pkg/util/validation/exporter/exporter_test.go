@@ -34,7 +34,7 @@ func TestOverridesExporter_noConfig(t *testing.T) {
 
 	// The defaults should exist though
 	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
-	assert.Equal(t, 18, count)
+	assert.Equal(t, 10, count)
 }
 
 func TestOverridesExporter_emptyConfig(t *testing.T) {
@@ -47,26 +47,82 @@ func TestOverridesExporter_emptyConfig(t *testing.T) {
 
 	// The defaults should exist though
 	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
-	assert.Equal(t, 18, count)
+	assert.Equal(t, 10, count)
 }
 
 func TestOverridesExporter_withConfig(t *testing.T) {
 	tenantLimits := map[string]*validation.Limits{
 		"tenant-a": {
-			IngestionRate:                              10,
-			IngestionBurstSize:                         11,
+			IngestionRate:                10,
+			IngestionBurstSize:           11,
+			MaxGlobalSeriesPerUser:       12,
+			MaxGlobalSeriesPerMetric:     13,
+			MaxGlobalExemplarsPerUser:    14,
+			MaxChunksPerQuery:            15,
+			MaxFetchedSeriesPerQuery:     16,
+			MaxFetchedChunkBytesPerQuery: 17,
+			RulerMaxRulesPerRuleGroup:    19,
+			RulerMaxRuleGroupsPerTenant:  20,
+		},
+	}
+
+	exporter, err := NewOverridesExporter(Config{}, &validation.Limits{
+		IngestionRate:                22,
+		IngestionBurstSize:           23,
+		MaxGlobalSeriesPerUser:       24,
+		MaxGlobalSeriesPerMetric:     25,
+		MaxGlobalExemplarsPerUser:    26,
+		MaxChunksPerQuery:            27,
+		MaxFetchedSeriesPerQuery:     28,
+		MaxFetchedChunkBytesPerQuery: 29,
+		RulerMaxRulesPerRuleGroup:    31,
+		RulerMaxRuleGroupsPerTenant:  32,
+	}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	limitsMetrics := `
+# HELP cortex_limits_overrides Resource limit overrides applied to tenants
+# TYPE cortex_limits_overrides gauge
+cortex_limits_overrides{limit_name="ingestion_rate",user="tenant-a"} 10
+cortex_limits_overrides{limit_name="ingestion_burst_size",user="tenant-a"} 11
+cortex_limits_overrides{limit_name="max_global_series_per_user",user="tenant-a"} 12
+cortex_limits_overrides{limit_name="max_global_series_per_metric",user="tenant-a"} 13
+cortex_limits_overrides{limit_name="max_global_exemplars_per_user",user="tenant-a"} 14
+cortex_limits_overrides{limit_name="max_fetched_chunks_per_query",user="tenant-a"} 15
+cortex_limits_overrides{limit_name="max_fetched_series_per_query",user="tenant-a"} 16
+cortex_limits_overrides{limit_name="max_fetched_chunk_bytes_per_query",user="tenant-a"} 17
+cortex_limits_overrides{limit_name="ruler_max_rules_per_rule_group",user="tenant-a"} 19
+cortex_limits_overrides{limit_name="ruler_max_rule_groups_per_tenant",user="tenant-a"} 20
+`
+
+	// Make sure each override matches the values from the supplied `Limit`
+	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_overrides")
+	assert.NoError(t, err)
+
+	limitsMetrics = `
+# HELP cortex_limits_defaults Resource limit defaults for tenants without overrides
+# TYPE cortex_limits_defaults gauge
+cortex_limits_defaults{limit_name="ingestion_rate"} 22
+cortex_limits_defaults{limit_name="ingestion_burst_size"} 23
+cortex_limits_defaults{limit_name="max_global_series_per_user"} 24
+cortex_limits_defaults{limit_name="max_global_series_per_metric"} 25
+cortex_limits_defaults{limit_name="max_global_exemplars_per_user"} 26
+cortex_limits_defaults{limit_name="max_fetched_chunks_per_query"} 27
+cortex_limits_defaults{limit_name="max_fetched_series_per_query"} 28
+cortex_limits_defaults{limit_name="max_fetched_chunk_bytes_per_query"} 29
+cortex_limits_defaults{limit_name="ruler_max_rules_per_rule_group"} 31
+cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 32
+`
+	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_defaults")
+	assert.NoError(t, err)
+}
+
+func TestOverridesExporter_withEnabledMetricsConfig(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-a": {
 			RequestRate:                                10,
 			RequestBurstSize:                           11,
-			MaxGlobalSeriesPerUser:                     12,
-			MaxGlobalSeriesPerMetric:                   13,
-			MaxGlobalExemplarsPerUser:                  14,
 			MaxGlobalMetricsWithMetadataPerUser:        12,
 			MaxGlobalMetadataPerMetric:                 13,
-			MaxChunksPerQuery:                          15,
-			MaxFetchedSeriesPerQuery:                   16,
-			MaxFetchedChunkBytesPerQuery:               17,
-			RulerMaxRulesPerRuleGroup:                  19,
-			RulerMaxRuleGroupsPerTenant:                20,
 			NotificationRateLimit:                      40,
 			AlertmanagerMaxDispatcherAggregationGroups: 41,
 			AlertmanagerMaxAlertsCount:                 42,
@@ -74,21 +130,22 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		},
 	}
 
-	exporter, err := NewOverridesExporter(Config{}, &validation.Limits{
-		IngestionRate:                              22,
-		IngestionBurstSize:                         23,
+	exporter, err := NewOverridesExporter(Config{
+		EnabledMetrics: []string{
+			"request_rate",
+			"request_burst_size",
+			"max_global_metadata_per_user",
+			"max_global_metadata_per_metric",
+			"alertmanager_notification_rate_limit",
+			"alertmanager_max_dispatcher_aggregation_groups",
+			"alertmanager_max_alerts_count",
+			"alertmanager_max_alerts_size_bytes",
+		},
+	}, &validation.Limits{
 		RequestRate:                                22,
 		RequestBurstSize:                           23,
-		MaxGlobalSeriesPerUser:                     24,
-		MaxGlobalSeriesPerMetric:                   25,
-		MaxGlobalExemplarsPerUser:                  26,
 		MaxGlobalMetricsWithMetadataPerUser:        24,
 		MaxGlobalMetadataPerMetric:                 25,
-		MaxChunksPerQuery:                          27,
-		MaxFetchedSeriesPerQuery:                   28,
-		MaxFetchedChunkBytesPerQuery:               29,
-		RulerMaxRulesPerRuleGroup:                  31,
-		RulerMaxRuleGroupsPerTenant:                32,
 		NotificationRateLimit:                      50,
 		AlertmanagerMaxDispatcherAggregationGroups: 51,
 		AlertmanagerMaxAlertsCount:                 52,
@@ -98,20 +155,10 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 	limitsMetrics := `
 # HELP cortex_limits_overrides Resource limit overrides applied to tenants
 # TYPE cortex_limits_overrides gauge
-cortex_limits_overrides{limit_name="ingestion_rate",user="tenant-a"} 10
-cortex_limits_overrides{limit_name="ingestion_burst_size",user="tenant-a"} 11
 cortex_limits_overrides{limit_name="request_rate",user="tenant-a"} 10
 cortex_limits_overrides{limit_name="request_burst_size",user="tenant-a"} 11
-cortex_limits_overrides{limit_name="max_global_series_per_user",user="tenant-a"} 12
-cortex_limits_overrides{limit_name="max_global_series_per_metric",user="tenant-a"} 13
-cortex_limits_overrides{limit_name="max_global_exemplars_per_user",user="tenant-a"} 14
 cortex_limits_overrides{limit_name="max_global_metadata_per_user",user="tenant-a"} 12
 cortex_limits_overrides{limit_name="max_global_metadata_per_metric",user="tenant-a"} 13
-cortex_limits_overrides{limit_name="max_fetched_chunks_per_query",user="tenant-a"} 15
-cortex_limits_overrides{limit_name="max_fetched_series_per_query",user="tenant-a"} 16
-cortex_limits_overrides{limit_name="max_fetched_chunk_bytes_per_query",user="tenant-a"} 17
-cortex_limits_overrides{limit_name="ruler_max_rules_per_rule_group",user="tenant-a"} 19
-cortex_limits_overrides{limit_name="ruler_max_rule_groups_per_tenant",user="tenant-a"} 20
 cortex_limits_overrides{limit_name="alertmanager_notification_rate_limit",user="tenant-a"} 40
 cortex_limits_overrides{limit_name="alertmanager_max_dispatcher_aggregation_groups",user="tenant-a"} 41
 cortex_limits_overrides{limit_name="alertmanager_max_alerts_count",user="tenant-a"} 42
@@ -125,20 +172,10 @@ cortex_limits_overrides{limit_name="alertmanager_max_alerts_size_bytes",user="te
 	limitsMetrics = `
 # HELP cortex_limits_defaults Resource limit defaults for tenants without overrides
 # TYPE cortex_limits_defaults gauge
-cortex_limits_defaults{limit_name="ingestion_rate"} 22
-cortex_limits_defaults{limit_name="ingestion_burst_size"} 23
 cortex_limits_defaults{limit_name="request_rate"} 22
 cortex_limits_defaults{limit_name="request_burst_size"} 23
-cortex_limits_defaults{limit_name="max_global_series_per_user"} 24
-cortex_limits_defaults{limit_name="max_global_series_per_metric"} 25
-cortex_limits_defaults{limit_name="max_global_exemplars_per_user"} 26
 cortex_limits_defaults{limit_name="max_global_metadata_per_user"} 24
 cortex_limits_defaults{limit_name="max_global_metadata_per_metric"} 25
-cortex_limits_defaults{limit_name="max_fetched_chunks_per_query"} 27
-cortex_limits_defaults{limit_name="max_fetched_series_per_query"} 28
-cortex_limits_defaults{limit_name="max_fetched_chunk_bytes_per_query"} 29
-cortex_limits_defaults{limit_name="ruler_max_rules_per_rule_group"} 31
-cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 32
 cortex_limits_defaults{limit_name="alertmanager_notification_rate_limit"} 50
 cortex_limits_defaults{limit_name="alertmanager_max_dispatcher_aggregation_groups"} 51
 cortex_limits_defaults{limit_name="alertmanager_max_alerts_count"} 52
@@ -156,7 +193,10 @@ func TestOverridesExporter_withRing(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	cfg1 := Config{RingConfig{Enabled: true}}
+	cfg1 := Config{
+		Ring:           RingConfig{Enabled: true},
+		EnabledMetrics: []string{},
+	}
 	cfg1.Ring.Common.KVStore.Mock = ringStore
 	cfg1.Ring.Common.InstancePort = 1234
 	cfg1.Ring.Common.HeartbeatPeriod = 15 * time.Second

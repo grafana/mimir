@@ -350,6 +350,10 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
+  # Comma-separated list of metrics to include in the exporter.
+  # CLI flag: -overrides-exporter.enabled-metrics
+  [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group"]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
