@@ -8,6 +8,7 @@ The build image currently can only be updated by a Grafana Mimir maintainer. If 
 6. Open a PR and make sure the CI with the new build image passes
 
 The automatic procedure is as follows:
+
 1. Update `mimir-build-image/Dockerfile` and create a pull request.
 2. When the PR is changed to ready to review, wait for CI to add an additional commit to your pull request, which updates `LATEST_BUILD_IMAGE_TAG` in the Makefile.
 3. Merge the pull request.
