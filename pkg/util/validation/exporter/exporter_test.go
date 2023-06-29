@@ -34,7 +34,7 @@ func TestOverridesExporter_noConfig(t *testing.T) {
 
 	// The defaults should exist though
 	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
-	assert.Equal(t, 14, count)
+	assert.Equal(t, 18, count)
 }
 
 func TestOverridesExporter_emptyConfig(t *testing.T) {
@@ -47,45 +47,52 @@ func TestOverridesExporter_emptyConfig(t *testing.T) {
 
 	// The defaults should exist though
 	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
-	assert.Equal(t, 14, count)
+	assert.Equal(t, 18, count)
 }
 
 func TestOverridesExporter_withConfig(t *testing.T) {
 	tenantLimits := map[string]*validation.Limits{
 		"tenant-a": {
-			IngestionRate:                       10,
-			IngestionBurstSize:                  11,
-			RequestRate:                         10,
-			RequestBurstSize:                    11,
-			MaxGlobalSeriesPerUser:              12,
-			MaxGlobalSeriesPerMetric:            13,
-			MaxGlobalExemplarsPerUser:           14,
-			MaxGlobalMetricsWithMetadataPerUser: 12,
-			MaxGlobalMetadataPerMetric:          13,
-			MaxChunksPerQuery:                   15,
-			MaxFetchedSeriesPerQuery:            16,
-			MaxFetchedChunkBytesPerQuery:        17,
-			RulerMaxRulesPerRuleGroup:           19,
-			RulerMaxRuleGroupsPerTenant:         20,
-			
+			IngestionRate:                              10,
+			IngestionBurstSize:                         11,
+			RequestRate:                                10,
+			RequestBurstSize:                           11,
+			MaxGlobalSeriesPerUser:                     12,
+			MaxGlobalSeriesPerMetric:                   13,
+			MaxGlobalExemplarsPerUser:                  14,
+			MaxGlobalMetricsWithMetadataPerUser:        12,
+			MaxGlobalMetadataPerMetric:                 13,
+			MaxChunksPerQuery:                          15,
+			MaxFetchedSeriesPerQuery:                   16,
+			MaxFetchedChunkBytesPerQuery:               17,
+			RulerMaxRulesPerRuleGroup:                  19,
+			RulerMaxRuleGroupsPerTenant:                20,
+			NotificationRateLimit:                      40,
+			AlertmanagerMaxDispatcherAggregationGroups: 41,
+			AlertmanagerMaxAlertsCount:                 42,
+			AlertmanagerMaxAlertsSizeBytes:             43,
 		},
 	}
 
 	exporter, err := NewOverridesExporter(Config{}, &validation.Limits{
-		IngestionRate:                       22,
-		IngestionBurstSize:                  23,
-		RequestRate:                         22,
-		RequestBurstSize:                    23,
-		MaxGlobalSeriesPerUser:              24,
-		MaxGlobalSeriesPerMetric:            25,
-		MaxGlobalExemplarsPerUser:           26,
-		MaxGlobalMetricsWithMetadataPerUser: 24,
-		MaxGlobalMetadataPerMetric:          25,
-		MaxChunksPerQuery:                   27,
-		MaxFetchedSeriesPerQuery:            28,
-		MaxFetchedChunkBytesPerQuery:        29,
-		RulerMaxRulesPerRuleGroup:           31,
-		RulerMaxRuleGroupsPerTenant:         32,
+		IngestionRate:                              22,
+		IngestionBurstSize:                         23,
+		RequestRate:                                22,
+		RequestBurstSize:                           23,
+		MaxGlobalSeriesPerUser:                     24,
+		MaxGlobalSeriesPerMetric:                   25,
+		MaxGlobalExemplarsPerUser:                  26,
+		MaxGlobalMetricsWithMetadataPerUser:        24,
+		MaxGlobalMetadataPerMetric:                 25,
+		MaxChunksPerQuery:                          27,
+		MaxFetchedSeriesPerQuery:                   28,
+		MaxFetchedChunkBytesPerQuery:               29,
+		RulerMaxRulesPerRuleGroup:                  31,
+		RulerMaxRuleGroupsPerTenant:                32,
+		NotificationRateLimit:                      50,
+		AlertmanagerMaxDispatcherAggregationGroups: 51,
+		AlertmanagerMaxAlertsCount:                 52,
+		AlertmanagerMaxAlertsSizeBytes:             53,
 	}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	limitsMetrics := `
@@ -105,6 +112,10 @@ cortex_limits_overrides{limit_name="max_fetched_series_per_query",user="tenant-a
 cortex_limits_overrides{limit_name="max_fetched_chunk_bytes_per_query",user="tenant-a"} 17
 cortex_limits_overrides{limit_name="ruler_max_rules_per_rule_group",user="tenant-a"} 19
 cortex_limits_overrides{limit_name="ruler_max_rule_groups_per_tenant",user="tenant-a"} 20
+cortex_limits_overrides{limit_name="alertmanager_notification_rate_limit",user="tenant-a"} 40
+cortex_limits_overrides{limit_name="alertmanager_max_dispatcher_aggregation_groups",user="tenant-a"} 41
+cortex_limits_overrides{limit_name="alertmanager_max_alerts_count",user="tenant-a"} 42
+cortex_limits_overrides{limit_name="alertmanager_max_alerts_size_bytes",user="tenant-a"} 43
 `
 
 	// Make sure each override matches the values from the supplied `Limit`
@@ -128,6 +139,10 @@ cortex_limits_defaults{limit_name="max_fetched_series_per_query"} 28
 cortex_limits_defaults{limit_name="max_fetched_chunk_bytes_per_query"} 29
 cortex_limits_defaults{limit_name="ruler_max_rules_per_rule_group"} 31
 cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 32
+cortex_limits_defaults{limit_name="alertmanager_notification_rate_limit"} 50
+cortex_limits_defaults{limit_name="alertmanager_max_dispatcher_aggregation_groups"} 51
+cortex_limits_defaults{limit_name="alertmanager_max_alerts_count"} 52
+cortex_limits_defaults{limit_name="alertmanager_max_alerts_size_bytes"} 53
 `
 	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_defaults")
 	assert.NoError(t, err)
