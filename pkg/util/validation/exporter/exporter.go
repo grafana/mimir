@@ -106,7 +106,7 @@ func (c *Config) Validate() error {
 	}
 	for _, metricName := range c.EnabledMetrics {
 		if !util.StringsContain(allowedMetricNames, metricName) {
-			return fmt.Errorf("enabled-metrics: metric name '%s' not allowed", metricName)
+			return fmt.Errorf("enabled-metrics: unknown metric name '%s'", metricName)
 		}
 	}
 	return nil
