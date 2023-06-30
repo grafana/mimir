@@ -23,7 +23,7 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 		require.True(t, ok)
 
 		_, err = db.acquireAppendLock(20)
-		require.Equal(t, errTSDBForcedCompaction, err)
+		require.ErrorIs(t, err, errTSDBForcedCompaction)
 
 		state, err = db.acquireAppendLock(21)
 		require.NoError(t, err)

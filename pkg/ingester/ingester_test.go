@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -5272,7 +5273,10 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = i.Push(ctx, req)
-	require.Equal(t, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(errTSDBForcedCompaction, userID).Error()), err)
+	grpcErr, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, http.StatusServiceUnavailable, int(grpcErr.Code()))
+	require.ErrorContains(t, err, errTSDBForcedCompaction.Error())
 
 	// Ingestion is successful after a flush.
 	ok, _ = db.changeState(forceCompacting, active)

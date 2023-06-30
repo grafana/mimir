@@ -492,6 +492,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 				return a.Metric.Before(b.Metric)
 			})
 
+			require.Len(t, res, numSeries)
+
 			for entryIdx, entry := range res {
 				expectedMetric := model.Metric{model.MetricNameLabel: model.LabelValue(fmt.Sprintf("series_%05d", entryIdx))}
 				require.Equalf(t, expectedMetric, entry.Metric, "response entry: %d", entryIdx)

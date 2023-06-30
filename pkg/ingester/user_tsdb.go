@@ -433,8 +433,8 @@ func (u *userTSDB) acquireAppendLock(minTimestamp int64) (tsdbState, error) {
 	case activeShipping:
 		// Pushes are allowed.
 	case forceCompacting:
-		if minTimestamp <= u.forcedCompactionMaxTime.Load() {
-			return u.state, errTSDBForcedCompaction
+		if allowed := u.forcedCompactionMaxTime.Load(); minTimestamp <= allowed {
+			return u.state, errors.Wrapf(errTSDBForcedCompaction, "request_min_timestamp: %d allowed_min_timestamp: %d", minTimestamp, allowed)
 		}
 	case closing:
 		return u.state, errTSDBClosing
