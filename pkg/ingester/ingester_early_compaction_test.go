@@ -64,20 +64,20 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
-	// Push a series and force TSDB head compaction
+	// Push a series and trigger early TSDB head compaction
 	{
 		// Push a series with a sample.
 		sampleTime := now
 		sampleTimes = append(sampleTimes, sampleTime)
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 1.0, sampleTime.UnixMilli()}}))
 
-		// Advance time and then check if TSDB head compaction should be forced.
+		// Advance time and then check if TSDB head early compaction is triggered.
 		// We expect no block to be created because there's no sample before "now - active series idle timeout".
 		now = now.Add(10 * time.Minute)
 		ingester.compactBlocksToReduceInMemorySeries(ctx, now)
 		require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 
-		// Further advance time and then check if TSDB head compaction should be forced.
+		// Further advance time and then check if TSDB head early compaction is triggered.
 		// The previously written sample is expected to be compacted.
 		now = now.Add(11 * time.Minute)
 		ingester.compactBlocksToReduceInMemorySeries(ctx, now)
@@ -99,14 +99,14 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		assert.Equal(t, uint64(0), db.Head().NumSeries())
 	}
 
-	// Push again the same series and force TSDB head compaction
+	// Push again the same series and trigger TSDB head early compaction.
 	{
 		// Advance time and push another sample to the same series.
 		sampleTime := now
 		sampleTimes = append(sampleTimes, sampleTime)
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 2.0, sampleTime.UnixMilli()}}))
 
-		// Advance time and force the TSDB head compaction and then check the compacted block.
+		// Advance time, trigger the TSDB head early compaction, and then check the compacted block.
 		now = now.Add(20 * time.Minute)
 		ingester.compactBlocksToReduceInMemorySeries(ctx, now)
 
@@ -198,7 +198,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 
 	cfg := defaultIngesterTestConfig(t)
 	cfg.ActiveSeriesMetrics.Enabled = true
-	cfg.ActiveSeriesMetrics.IdleTimeout = 0                         // Consider all series as inactive, so that the forced compaction will always run.
+	cfg.ActiveSeriesMetrics.IdleTimeout = 0                         // Consider all series as inactive, so that the early compaction will always run.
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
@@ -225,7 +225,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 		now = now.Add(time.Hour)
 	}
 
-	// Force TSDB Head compaction.
+	// TSDB Head early compaction.
 	ingester.compactBlocksToReduceInMemorySeries(ctx, now)
 
 	// Check compacted blocks.
@@ -263,7 +263,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 	}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[2].String()), metricName))
 }
 
-func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamplesOlderThanActiveSeriesIdleTimeoutAfterForcedCompaction(t *testing.T) {
+func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamplesOlderThanActiveSeriesIdleTimeoutAfterEarlyCompaction(t *testing.T) {
 	var (
 		ctx         = context.Background()
 		ctxWithUser = user.InjectOrgID(ctx, userID)
@@ -295,7 +295,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_1"), 1.0, startTime.UnixMilli()}}))
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_1"), 2.0, startTime.Add(20 * time.Minute).UnixMilli()}}))
 
-	// Force TSDB Head compaction.
+	// TSDB Head early compaction.
 	ingester.compactBlocksToReduceInMemorySeries(ctx, startTime.Add(30*time.Minute))
 
 	// Check compacted blocks.
@@ -341,13 +341,13 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 					},
 				}
 
-				startForcedCompaction          = make(chan struct{})
-				stopReadersAndForcedCompaction = make(chan struct{})
+				startEarlyCompaction          = make(chan struct{})
+				stopReadersAndEarlyCompaction = make(chan struct{})
 			)
 
 			cfg := defaultIngesterTestConfig(t)
 			cfg.ActiveSeriesMetrics.Enabled = true
-			cfg.ActiveSeriesMetrics.IdleTimeout = 0                         // Consider all series as inactive so that the forced compaction is always triggered.
+			cfg.ActiveSeriesMetrics.IdleTimeout = 0                         // Consider all series as inactive so that the early compaction is always triggered.
 			cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
@@ -400,9 +400,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 						writerTimes[writerID] = timestamp
 						writerTimesMx.Unlock()
 
-						// Start the forced compaction once we've written some samples.
+						// Start the early compaction once we've written some samples.
 						if writerID == 0 && sampleIdx == 200 {
-							close(startForcedCompaction)
+							close(startEarlyCompaction)
 						}
 
 						// Throttle.
@@ -412,11 +412,16 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			}
 
 			// Start readers (each reader reads all series).
+			readersAndEarlyCompaction := sync.WaitGroup{}
+			readersAndEarlyCompaction.Add(numReaders)
+
 			for i := 0; i < numReaders; i++ {
 				go func() {
+					defer readersAndEarlyCompaction.Done()
+
 					for {
 						select {
-						case <-stopReadersAndForcedCompaction:
+						case <-stopReadersAndEarlyCompaction:
 							return
 						case <-time.After(100 * time.Millisecond):
 							s := stream{ctx: ctxWithUser}
@@ -441,18 +446,22 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 				}()
 			}
 
-			// Start a goroutine continuously forcing the TSDB head compaction.
+			// Start a goroutine continuously triggering the TSDB head early compaction.
+			readersAndEarlyCompaction.Add(1)
+
 			go func() {
+				defer readersAndEarlyCompaction.Done()
+
 				// Wait until the start has been signaled.
 				select {
-				case <-stopReadersAndForcedCompaction:
+				case <-stopReadersAndEarlyCompaction:
 					return
-				case <-startForcedCompaction:
+				case <-startEarlyCompaction:
 				}
 
 				for {
 					select {
-					case <-stopReadersAndForcedCompaction:
+					case <-stopReadersAndEarlyCompaction:
 						return
 					case <-time.After(100 * time.Millisecond):
 						lowestWriterTime := int64(math.MaxInt64)
@@ -477,10 +486,11 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			// Wait until all writers have done.
 			writers.Wait()
 
-			// We can now stop reader and compaction.
-			close(stopReadersAndForcedCompaction)
+			// We can now stop reader and early compaction.
+			close(stopReadersAndEarlyCompaction)
+			readersAndEarlyCompaction.Wait()
 
-			// Ensure at least 2 forced compactions have been done.
+			// Ensure at least 2 early compactions have been done.
 			blocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 			assert.Greater(t, len(listBlocksInDir(t, blocksDir)), 1)
 
