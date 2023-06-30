@@ -336,7 +336,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.panel('Index-header lazy load gate latency') +
-        $.latencyPanel('cortex_bucket_stores_gate_duration_seconds{gate="index_header"}', '{%s}' % $.jobMatcher($._config.job_names.store_gateway)) +
+        $.latencyPanel('cortex_bucket_stores_gate_duration_seconds', '{%s,gate="index_header"}' % $.jobMatcher($._config.job_names.store_gateway)) +
         $.panelDescription(
           'Index-header lazy load gate latency',
           |||
