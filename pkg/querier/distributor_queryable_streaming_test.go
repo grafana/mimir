@@ -106,7 +106,7 @@ func TestStreamingChunkSeries_CreateIteratorTwice(t *testing.T) {
 			chunkIteratorFunc: streamingChunkSeriesTestIteratorFunc,
 			mint:              1000,
 			maxt:              6000,
-			queryChunkMetrics: stats.NewQueryChunkMetrics(prometheus.NewPedanticRegistry()),
+			queryMetrics:      stats.NewQueryMetrics(prometheus.NewPedanticRegistry()),
 			queryStats:        &stats.Stats{},
 		},
 	}
