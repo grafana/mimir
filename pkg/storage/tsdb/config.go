@@ -109,18 +109,18 @@ const (
 
 // Validation errors
 var (
-	errInvalidShipConcurrency                        = errors.New("invalid TSDB ship concurrency")
-	errInvalidOpeningConcurrency                     = errors.New("invalid TSDB opening concurrency")
-	errInvalidCompactionInterval                     = errors.New("invalid TSDB compaction interval")
-	errInvalidCompactionConcurrency                  = errors.New("invalid TSDB compaction concurrency")
-	errInvalidWALSegmentSizeBytes                    = errors.New("invalid TSDB WAL segment size bytes")
-	errInvalidWALReplayConcurrency                   = errors.New("invalid TSDB WAL replay concurrency")
-	errInvalidStripeSize                             = errors.New("invalid TSDB stripe size")
-	errInvalidStreamingBatchSize                     = errors.New("invalid store-gateway streaming batch size")
-	errInvalidForcedHeadCompactionMinSeriesReduction = errors.New("forced compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
-	errForcedCompactionRequiresActiveSeries          = fmt.Errorf("forced compaction requires -%s to be enabled", activeSeriesMetricsEnabledFlag)
-	errEmptyBlockranges                              = errors.New("empty block ranges for TSDB")
-	errInvalidIndexHeaderLazyLoadingConcurrency      = errors.New("invalid index-header lazy loading max concurrency; must be non-negative")
+	errInvalidShipConcurrency                       = errors.New("invalid TSDB ship concurrency")
+	errInvalidOpeningConcurrency                    = errors.New("invalid TSDB opening concurrency")
+	errInvalidCompactionInterval                    = errors.New("invalid TSDB compaction interval")
+	errInvalidCompactionConcurrency                 = errors.New("invalid TSDB compaction concurrency")
+	errInvalidWALSegmentSizeBytes                   = errors.New("invalid TSDB WAL segment size bytes")
+	errInvalidWALReplayConcurrency                  = errors.New("invalid TSDB WAL replay concurrency")
+	errInvalidStripeSize                            = errors.New("invalid TSDB stripe size")
+	errInvalidStreamingBatchSize                    = errors.New("invalid store-gateway streaming batch size")
+	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
+	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeSeriesMetricsEnabledFlag)
+	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
+	errInvalidIndexHeaderLazyLoadingConcurrency     = errors.New("invalid index-header lazy loading max concurrency; must be non-negative")
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
@@ -332,11 +332,11 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg ActiveSeriesMetricsConfig, logge
 	}
 
 	if cfg.EarlyHeadCompactionMinInMemorySeries > 0 && !activeSeriesCfg.Enabled {
-		return errForcedCompactionRequiresActiveSeries
+		return errEarlyCompactionRequiresActiveSeries
 	}
 
 	if cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage < 0 || cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage > 100 {
-		return errInvalidForcedHeadCompactionMinSeriesReduction
+		return errInvalidEarlyHeadCompactionMinSeriesReduction
 	}
 
 	return nil

@@ -138,13 +138,13 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.TSDB.EarlyHeadCompactionMinInMemorySeries = 1_000_000
 				activeSeriesCfg.Enabled = false
 			},
-			expectedErr: errForcedCompactionRequiresActiveSeries,
+			expectedErr: errEarlyCompactionRequiresActiveSeries,
 		},
 		"should fail on invalid forced compaction min series reduction percentage": {
 			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
 				cfg.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 101
 			},
-			expectedErr: errInvalidForcedHeadCompactionMinSeriesReduction,
+			expectedErr: errInvalidEarlyHeadCompactionMinSeriesReduction,
 		},
 	}
 
