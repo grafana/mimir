@@ -347,14 +347,12 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 	startTime, err := time.Parse(time.RFC3339, "2023-06-24T00:00:00Z")
 	require.NoError(t, err)
 
-	now := startTime
 	for i := 0; i < 5; i++ {
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, float64(i), now.UnixMilli()}}))
-		now = now.Add(time.Hour)
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, float64(i), startTime.Add(time.Duration(i) * time.Hour).UnixMilli()}}))
 	}
 
 	// TSDB Head early compaction.
-	ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+	ingester.compactBlocksToReduceInMemorySeries(ctx, time.Now())
 
 	// Check compacted blocks.
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
