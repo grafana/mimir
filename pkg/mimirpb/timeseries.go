@@ -163,13 +163,9 @@ func (p *PreallocTimeseries) clearUnmarshalData() {
 	p.marshalledData = nil
 }
 
-var TimeseriesUnmarshalCachingEnabled = true
-
 // Unmarshal implements proto.Message. Input data slice is retained.
 func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
-	if TimeseriesUnmarshalCachingEnabled {
-		p.marshalledData = dAtA
-	}
+	p.marshalledData = dAtA
 	p.TimeSeries = TimeseriesFromPool()
 	return p.TimeSeries.Unmarshal(dAtA)
 }
