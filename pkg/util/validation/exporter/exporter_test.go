@@ -25,7 +25,7 @@ import (
 )
 
 func TestOverridesExporter_noConfig(t *testing.T) {
-	exporter, err := NewOverridesExporter(Config{EnabledMetrics: DefaultEnabledMetricNames}, &validation.Limits{}, nil, log.NewNopLogger(), nil)
+	exporter, err := NewOverridesExporter(Config{EnabledMetrics: defaultEnabledMetricNames}, &validation.Limits{}, nil, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
 	// With no updated override configurations, there should be no override metrics
@@ -38,7 +38,7 @@ func TestOverridesExporter_noConfig(t *testing.T) {
 }
 
 func TestOverridesExporter_emptyConfig(t *testing.T) {
-	exporter, err := NewOverridesExporter(Config{EnabledMetrics: DefaultEnabledMetricNames}, &validation.Limits{}, validation.NewMockTenantLimits(nil), log.NewNopLogger(), nil)
+	exporter, err := NewOverridesExporter(Config{EnabledMetrics: defaultEnabledMetricNames}, &validation.Limits{}, validation.NewMockTenantLimits(nil), log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
 	// With no updated override configurations, there should be no override metrics
@@ -66,7 +66,7 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		},
 	}
 
-	exporter, err := NewOverridesExporter(Config{EnabledMetrics: DefaultEnabledMetricNames}, &validation.Limits{
+	exporter, err := NewOverridesExporter(Config{EnabledMetrics: defaultEnabledMetricNames}, &validation.Limits{
 		IngestionRate:                22,
 		IngestionBurstSize:           23,
 		MaxGlobalSeriesPerUser:       24,
@@ -132,14 +132,14 @@ func TestOverridesExporter_withEnabledMetricsConfig(t *testing.T) {
 
 	exporter, err := NewOverridesExporter(Config{
 		EnabledMetrics: []string{
-			MaxGlobalMetricsWithMetadataPerUser,
-			MaxGlobalMetadataPerMetric,
-			RequestRate,
-			RequestBurstSize,
-			NotificationRateLimit,
-			AlertmanagerMaxDispatcherAggregationGroups,
-			AlertmanagerMaxAlertsCount,
-			AlertmanagerMaxAlertsSizeBytes,
+			maxGlobalMetricsWithMetadataPerUser,
+			maxGlobalMetadataPerMetric,
+			requestRate,
+			requestBurstSize,
+			notificationRateLimit,
+			alertmanagerMaxDispatcherAggregationGroups,
+			alertmanagerMaxAlertsCount,
+			alertmanagerMaxAlertsSizeBytes,
 		},
 	}, &validation.Limits{
 		RequestRate:                                22,
