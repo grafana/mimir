@@ -32,6 +32,134 @@ import (
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
+func TestIngester_filterUsersToCompactToReduceInMemorySeries(t *testing.T) {
+	tests := map[string]struct {
+		numMemorySeries              int64
+		earlyCompactionMinSeries     int64
+		earlyCompactionMinPercentage int
+		estimations                  []seriesReductionEstimation
+		expected                     []string
+	}{
+		"should return no tenant if compacting all tenants the ingester wouldn't reduce the number of in-memory at least by the configured percentage": {
+			numMemorySeries:              100,
+			earlyCompactionMinSeries:     80,
+			earlyCompactionMinPercentage: 20,
+			estimations: []seriesReductionEstimation{
+				{userID: "1", estimatedCount: 1, estimatedPercentage: 9},
+				{userID: "2", estimatedCount: 2, estimatedPercentage: 10},
+				{userID: "3", estimatedCount: 3, estimatedPercentage: 11},
+				{userID: "4", estimatedCount: 4, estimatedPercentage: 50},
+			},
+			expected: nil,
+		},
+		"should return tenants with estimated series reduction >= configured percentage": {
+			numMemorySeries:              100,
+			earlyCompactionMinSeries:     80,
+			earlyCompactionMinPercentage: 20,
+			estimations: []seriesReductionEstimation{
+				{userID: "1", estimatedCount: 1, estimatedPercentage: 19},
+				{userID: "2", estimatedCount: 2, estimatedPercentage: 20},
+				{userID: "3", estimatedCount: 3, estimatedPercentage: 21},
+				{userID: "4", estimatedCount: 50, estimatedPercentage: 50},
+			},
+			expected: []string{"2", "3", "4"},
+		},
+		"should return tenants with estimated series reduction < configured percentage if required to reach the minimum overall reduction": {
+			numMemorySeries:              100,
+			earlyCompactionMinSeries:     80,
+			earlyCompactionMinPercentage: 20,
+			estimations: []seriesReductionEstimation{
+				{userID: "1", estimatedCount: 6, estimatedPercentage: 1},
+				{userID: "2", estimatedCount: 7, estimatedPercentage: 2},
+				{userID: "3", estimatedCount: 8, estimatedPercentage: 3},
+				{userID: "4", estimatedCount: 15, estimatedPercentage: 4},
+			},
+			expected: []string{"3", "4"},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			actual := filterUsersToCompactToReduceInMemorySeries(testData.numMemorySeries, testData.earlyCompactionMinSeries, testData.earlyCompactionMinPercentage, testData.estimations)
+			assert.ElementsMatch(t, testData.expected, actual)
+		})
+	}
+}
+
+func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnlyIfEstimatedSeriesReductionIsGreaterThanConfiguredPercentage(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+		now         = time.Now()
+
+		// Use a constant sample for the timestamp so that TSDB head is guaranteed to not span across 2h boundaries.
+		// The sample timestamp is irrelevant towards active series tracking.
+		sampleTimestamp = time.Now().UnixMilli()
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 50
+
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+	})
+
+	// Wait until it's ACTIVE.
+	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
+		return ingester.lifecycler.GetState()
+	})
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+
+	// Push 10 series.
+	for seriesID := 0; seriesID < 10; seriesID++ {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{
+			{labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)), 0, sampleTimestamp},
+		}))
+	}
+
+	// TSDB head early compaction should not trigger because there are no inactive series yet.
+	ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
+
+	// Use a trick to track all series we've written so far as "inactive".
+	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30 * time.Minute))
+
+	// Pre-condition check.
+	require.Equal(t, uint64(10), ingester.getTSDB(userID).Head().NumSeries())
+	require.Equal(t, 0, ingester.getTSDB(userID).activeSeries.Active())
+
+	// Push 20 more series.
+	for seriesID := 10; seriesID < 30; seriesID++ {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{
+			{labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)), 0, sampleTimestamp},
+		}))
+	}
+
+	// The last 20 series are active so since only 33% of series are inactive we expect the early compaction to not trigger yet.
+	ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
+
+	require.Equal(t, uint64(30), ingester.getTSDB(userID).Head().NumSeries())
+	require.Equal(t, 20, ingester.getTSDB(userID).activeSeries.Active())
+
+	// Advance time until the last series are inactive too. Now we expect the early compaction to trigger.
+	now = now.Add(30 * time.Minute)
+
+	ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
+
+	require.Equal(t, uint64(0), ingester.getTSDB(userID).Head().NumSeries())
+	require.Equal(t, 0, ingester.getTSDB(userID).activeSeries.Active())
+}
+
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNowMinusActiveSeriesMetricsIdleTimeout(t *testing.T) {
 	var (
 		ctx          = context.Background()

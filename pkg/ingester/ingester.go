@@ -2513,17 +2513,10 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 
 	level.Info(i.logger).Log("msg", "the number of in-memory series is higher than the configured early compaction threshold", "in_memory_series", numInitialMemorySeries, "early_compaction_threshold", i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries)
 
-	type estimation struct {
-		userID                             string
-		estimatedSeriesReduction           int64
-		estimatedSeriesReductionPercentage int
-	}
-
 	// Estimates the series reduction opportunity for each tenant.
 	var (
-		userIDs                       = i.getTSDBUsers()
-		estimations                   = make([]estimation, 0, len(userIDs))
-		totalEstimatedSeriesReduction = int64(0)
+		userIDs     = i.getTSDBUsers()
+		estimations = make([]seriesReductionEstimation, 0, len(userIDs))
 	)
 
 	for _, userID := range userIDs {
@@ -2540,44 +2533,63 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 		estimatedSeriesReduction := util_math.Max(0, int64(db.Head().NumSeries())-int64(db.activeSeries.Active()))
 
 		if estimatedSeriesReduction > 0 {
-			totalEstimatedSeriesReduction += estimatedSeriesReduction
-			estimations = append(estimations, estimation{
-				userID:                             userID,
-				estimatedSeriesReduction:           estimatedSeriesReduction,
-				estimatedSeriesReductionPercentage: int((uint64(estimatedSeriesReduction) * 100) / db.Head().NumSeries()),
+			estimations = append(estimations, seriesReductionEstimation{
+				userID:              userID,
+				estimatedCount:      estimatedSeriesReduction,
+				estimatedPercentage: int((uint64(estimatedSeriesReduction) * 100) / db.Head().NumSeries()),
 			})
 		}
 	}
 
-	// Skip if the estimated series reduction is too low (there would be no big benefit).
-	if float64(totalEstimatedSeriesReduction)/float64(numInitialMemorySeries)*100 < float64(i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage) {
+	usersToCompact := filterUsersToCompactToReduceInMemorySeries(numInitialMemorySeries, i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries, i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, estimations)
+	if len(usersToCompact) == 0 {
 		level.Info(i.logger).Log("msg", "no viable per-tenant TSDB found to early compact in order to reduce in-memory series")
 		return
-	}
-
-	// Compact all TSDBs blocks required to get the number of in-memory series below the threshold and, in addition,
-	// all TSDBs where the estimated series reduction is greater than the minimum reduction percentage.
-	slices.SortFunc(estimations, func(a, b estimation) bool {
-		return a.estimatedSeriesReduction > b.estimatedSeriesReduction
-	})
-
-	var (
-		usersToCompact        []string
-		seriesReductionSum    = int64(0)
-		seriesReductionTarget = numInitialMemorySeries - i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries
-	)
-
-	for _, entry := range estimations {
-		if seriesReductionSum < seriesReductionTarget || entry.estimatedSeriesReductionPercentage > i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage {
-			usersToCompact = append(usersToCompact, entry.userID)
-			seriesReductionSum += entry.estimatedSeriesReduction
-		}
 	}
 
 	level.Info(i.logger).Log("msg", "running TSDB head compaction to reduce the number of in-memory series", "users", strings.Join(usersToCompact, " "))
 	forcedCompactionMaxTime := now.Add(-i.cfg.ActiveSeriesMetrics.IdleTimeout).UnixMilli()
 	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowedTenants(usersToCompact, nil))
 	level.Info(i.logger).Log("msg", "run TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", numInitialMemorySeries, "after_in_memory_series", i.seriesCount.Load())
+}
+
+type seriesReductionEstimation struct {
+	userID              string
+	estimatedCount      int64
+	estimatedPercentage int
+}
+
+func filterUsersToCompactToReduceInMemorySeries(numMemorySeries, earlyCompactionMinSeries int64, earlyCompactionMinPercentage int, estimations []seriesReductionEstimation) []string {
+	var (
+		usersToCompact        []string
+		seriesReductionSum    = int64(0)
+		seriesReductionTarget = numMemorySeries - earlyCompactionMinSeries
+	)
+
+	// Skip if the estimated series reduction is too low (there would be no big benefit).
+	totalEstimatedSeriesReduction := int64(0)
+	for _, entry := range estimations {
+		totalEstimatedSeriesReduction += entry.estimatedCount
+	}
+
+	if (totalEstimatedSeriesReduction*100)/numMemorySeries < int64(earlyCompactionMinPercentage) {
+		return nil
+	}
+
+	// Compact all TSDBs blocks required to get the number of in-memory series below the threshold and, in addition,
+	// all TSDBs where the estimated series reduction is greater than the minimum reduction percentage.
+	slices.SortFunc(estimations, func(a, b seriesReductionEstimation) bool {
+		return a.estimatedCount > b.estimatedCount
+	})
+
+	for _, entry := range estimations {
+		if seriesReductionSum < seriesReductionTarget || entry.estimatedPercentage >= earlyCompactionMinPercentage {
+			usersToCompact = append(usersToCompact, entry.userID)
+			seriesReductionSum += entry.estimatedCount
+		}
+	}
+
+	return usersToCompact
 }
 
 func (i *Ingester) closeAndDeleteIdleUserTSDBs(ctx context.Context) error {
