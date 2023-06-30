@@ -161,8 +161,15 @@ func TestNextForcedHeadCompactionRange(t *testing.T) {
 			expectedIsValid: true,
 			expectedIsLast:  true,
 		},
-		"should return no range if head is empty": {
+		"should return no range if head has min time not set": {
 			headMinTime:     math.MaxInt64,
+			headMaxTime:     20,
+			forcedMaxTime:   12,
+			expectedIsValid: false,
+			expectedIsLast:  true,
+		},
+		"should return no range if head has max time not set": {
+			headMinTime:     0,
 			headMaxTime:     math.MinInt64,
 			forcedMaxTime:   12,
 			expectedIsValid: false,
