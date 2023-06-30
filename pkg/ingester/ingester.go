@@ -2496,17 +2496,17 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 // in order to reduce the in-memory series.
 func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now time.Time) {
 	// Skip if disabled.
-	if i.cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries <= 0 || !i.cfg.ActiveSeriesMetrics.Enabled {
+	if i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 || !i.cfg.ActiveSeriesMetrics.Enabled {
 		return
 	}
 
 	// No need to prematurely compact TSDB heads if the number of in-memory series is below a critical threshold.
 	numInitialMemorySeries := i.seriesCount.Load()
-	if numInitialMemorySeries < i.cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries {
+	if numInitialMemorySeries < i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries {
 		return
 	}
 
-	level.Info(i.logger).Log("msg", "the number of in-memory series is higher than the configured forced compaction threshold", "in_memory_series", numInitialMemorySeries, "forced_compaction_threshold", i.cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries)
+	level.Info(i.logger).Log("msg", "the number of in-memory series is higher than the configured early compaction threshold", "in_memory_series", numInitialMemorySeries, "early_compaction_threshold", i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries)
 
 	var (
 		usersToCompact          []string
@@ -2529,7 +2529,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 		estimatedSeriesReduction := db.Head().NumSeries() - uint64(db.activeSeries.Active())
 
 		// Skip if the estimated series reduction is too low (there would be no big benefit).
-		if float64(estimatedSeriesReduction)/float64(numInitialMemorySeries)*100 < i.cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage {
+		if float64(estimatedSeriesReduction)/float64(numInitialMemorySeries)*100 < float64(i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage) {
 			continue
 		}
 
@@ -2537,13 +2537,13 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 	}
 
 	if len(usersToCompact) == 0 {
-		level.Info(i.logger).Log("msg", "no viable per-tenant TSDB found to force compact in order to reduce in-memory series")
+		level.Info(i.logger).Log("msg", "no viable per-tenant TSDB found to early compact in order to reduce in-memory series")
 		return
 	}
 
-	level.Info(i.logger).Log("msg", "forcing TSDB head compaction to reduce the number of in-memory series", "users", strings.Join(usersToCompact, " "))
+	level.Info(i.logger).Log("msg", "running TSDB head compaction to reduce the number of in-memory series", "users", strings.Join(usersToCompact, " "))
 	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowedTenants(usersToCompact, nil))
-	level.Info(i.logger).Log("msg", "forced TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", numInitialMemorySeries, "after_in_memory_series", i.seriesCount.Load())
+	level.Info(i.logger).Log("msg", "run TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", numInitialMemorySeries, "after_in_memory_series", i.seriesCount.Load())
 }
 
 func (i *Ingester) closeAndDeleteIdleUserTSDBs(ctx context.Context) error {

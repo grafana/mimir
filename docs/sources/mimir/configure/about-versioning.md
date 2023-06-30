@@ -90,9 +90,9 @@ The following features are currently experimental:
   - CPU/memory utilization based read request limiting:
     - `-ingester.read-path-cpu-utilization-limit`
     - `-ingester.read-path-memory-utilization-limit"`
-  - Force TSDB Head compaction to reduce in-memory series:
-    - `-blocks-storage.tsdb.forced-head-compaction-min-in-memory-series`
-    - `-blocks-storage.tsdb.forced-head-compaction-min-estimated-series-reduction-percentage`
+  - Early TSDB Head compaction to reduce in-memory series:
+    - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
+    - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`, `-querier.streaming-chunks-per-ingester-buffer-size`)

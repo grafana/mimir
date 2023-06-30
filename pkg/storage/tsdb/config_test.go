@@ -135,14 +135,14 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		"should fail if forced compaction is enabled but active series tracker is not": {
 			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
-				cfg.TSDB.ForcedHeadCompactionMinInMemorySeries = 1_000_000
+				cfg.TSDB.EarlyHeadCompactionMinInMemorySeries = 1_000_000
 				activeSeriesCfg.Enabled = false
 			},
 			expectedErr: errForcedCompactionRequiresActiveSeries,
 		},
 		"should fail on invalid forced compaction min series reduction percentage": {
 			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *ActiveSeriesMetricsConfig) {
-				cfg.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage = 101
+				cfg.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 101
 			},
 			expectedErr: errInvalidForcedHeadCompactionMinSeriesReduction,
 		},

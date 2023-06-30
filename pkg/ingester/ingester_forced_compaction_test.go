@@ -47,8 +47,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 	cfg.ActiveSeriesMetrics.Enabled = true
 	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
-	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries = 1
-	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
 	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
@@ -196,8 +196,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 	cfg.ActiveSeriesMetrics.Enabled = true
 	cfg.ActiveSeriesMetrics.IdleTimeout = 0                         // Consider all series as inactive, so that the forced compaction will always run.
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
-	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries = 1
-	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
 	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
@@ -269,8 +269,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	cfg.ActiveSeriesMetrics.Enabled = true
 	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
-	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries = 1
-	cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
 	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
@@ -345,8 +345,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			cfg.ActiveSeriesMetrics.Enabled = true
 			cfg.ActiveSeriesMetrics.IdleTimeout = 0                         // Consider all series as inactive so that the forced compaction is always triggered.
 			cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
-			cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinInMemorySeries = 1
-			cfg.BlocksStorageConfig.TSDB.ForcedHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
+			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
 			ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 			require.NoError(t, err)

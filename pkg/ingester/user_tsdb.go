@@ -73,7 +73,8 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 }
 
 var (
-	errTSDBForcedCompaction = errors.New("TSDB Head forced compaction in progress and the request contains samples overlapping with it")
+	errTSDBForcedCompaction = errors.New("TSDB Head forced compaction in progress and no write request is currently allowed")
+	errTSDBEarlyCompaction  = errors.New("TSDB Head early compaction in progress and the write request contains samples overlapping with it")
 	errTSDBClosing          = errors.New("TSDB is closing")
 	errTSDBNotActive        = errors.New("TSDB is not active")
 )
@@ -434,7 +435,10 @@ func (u *userTSDB) acquireAppendLock(minTimestamp int64) (tsdbState, error) {
 		// Pushes are allowed.
 	case forceCompacting:
 		if allowed := u.forcedCompactionMaxTime.Load(); minTimestamp <= allowed {
-			return u.state, errors.Wrapf(errTSDBForcedCompaction, "request_min_timestamp: %d allowed_min_timestamp: %d", minTimestamp, allowed)
+			if allowed == math.MaxInt64 {
+				return u.state, errTSDBForcedCompaction
+			}
+			return u.state, errors.Wrapf(errTSDBEarlyCompaction, "request_min_timestamp: %s allowed_min_timestamp: %s", time.UnixMilli(minTimestamp).String(), time.UnixMilli(allowed).String())
 		}
 	case closing:
 		return u.state, errTSDBClosing
