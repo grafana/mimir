@@ -92,7 +92,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 			},
 		}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, newBlockID.String()), metricName))
 
-		// We expect the series to be dropped from TSDB Head because there's was no sample more recent than
+		// We expect the series to be dropped from TSDB Head because there was no sample more recent than
 		// "now - active series idle timeout".
 		db := ingester.getTSDB(userID)
 		require.NotNil(t, db)
@@ -120,7 +120,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 			},
 		}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, newBlockID.String()), metricName))
 
-		// We expect the series to be dropped from TSDB Head because there's was no sample more recent than
+		// We expect the series to be dropped from TSDB Head because there was no sample more recent than
 		// "now - active series idle timeout".
 		db := ingester.getTSDB(userID)
 		require.NotNil(t, db)
