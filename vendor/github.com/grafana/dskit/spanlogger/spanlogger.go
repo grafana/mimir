@@ -44,7 +44,7 @@ func New(ctx context.Context, logger log.Logger, method string, resolver TenantR
 	if ids, err := resolver.TenantIDs(ctx); err == nil && len(ids) > 0 {
 		span.SetTag(TenantIDsTagName, ids)
 	}
-	lwc, sampled := withContext(ctx, logger, resolver)
+	lwc, sampled := withContext(ctx, logger, resolver, false)
 	l := &SpanLogger{
 		Logger:  log.With(lwc, "method", method),
 		Span:    span,
@@ -71,7 +71,7 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 	if sp == nil {
 		sp = opentracing.NoopTracer{}.StartSpan("noop")
 	}
-	lwc, sampled := withContext(ctx, logger, resolver)
+	lwc, sampled := withContext(ctx, logger, resolver, false)
 	return &SpanLogger{
 		Logger:  lwc,
 		Span:    sp,
@@ -104,13 +104,19 @@ func (s *SpanLogger) Error(err error) error {
 	return err
 }
 
-func withContext(ctx context.Context, logger log.Logger, resolver TenantResolver) (log.Logger, bool) {
+func withContext(ctx context.Context, logger log.Logger, resolver TenantResolver, otel bool) (log.Logger, bool) {
 	userID, err := resolver.TenantID(ctx)
 	if err == nil && userID != "" {
 		logger = log.With(logger, "user", userID)
 	}
 
-	traceID, ok := tracing.ExtractSampledTraceID(ctx)
+	var traceID string
+	var ok bool
+	if otel {
+		traceID, ok = tracing.ExtractOpentelemetrySampledTraceID(ctx)
+	} else {
+		traceID, ok = tracing.ExtractSampledTraceID(ctx)
+	}
 	if !ok {
 		return logger, false
 	}

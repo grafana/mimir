@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"flag"
 	"fmt"
@@ -181,10 +182,10 @@ func main() {
 		}
 
 		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-		if trace, err := tracing.NewFromEnv(name); err != nil {
+		if tProvider, err := tracing.NewOpenTelemetryTracerProvider(name); err != nil {
 			level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		} else {
-			defer trace.Close()
+			defer tProvider.Shutdown(context.Background())
 		}
 	}
 

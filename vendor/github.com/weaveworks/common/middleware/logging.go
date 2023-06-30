@@ -14,11 +14,12 @@ import (
 
 // Log middleware logs http requests
 type Log struct {
-	Log                   logging.Interface
-	LogRequestHeaders     bool // LogRequestHeaders true -> dump http headers at debug log level
-	LogRequestAtInfoLevel bool // LogRequestAtInfoLevel true -> log requests at info log level
-	SourceIPs             *SourceIPExtractor
-	HttpHeadersToExclude  map[string]bool
+	Log                      logging.Interface
+	DisableRequestSuccessLog bool
+	LogRequestHeaders        bool // LogRequestHeaders true -> dump http headers at debug log level
+	LogRequestAtInfoLevel    bool // LogRequestAtInfoLevel true -> log requests at info log level
+	SourceIPs                *SourceIPExtractor
+	HttpHeadersToExclude     map[string]bool
 }
 
 var defaultExcludedHeaders = map[string]bool{
@@ -94,20 +95,27 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 
 			return
 		}
-		if 100 <= statusCode && statusCode < 500 || statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable {
+
+		switch {
+		// success and shouldn't log successful requests.
+		case statusCode >= 200 && statusCode < 300 && l.DisableRequestSuccessLog:
+			return
+
+		case 100 <= statusCode && statusCode < 500 || statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable:
 			if l.LogRequestAtInfoLevel {
 				requestLog.Infof("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
-			} else {
-				requestLog.Debugf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
-			}
-			if l.LogRequestHeaders && headers != nil {
-				if l.LogRequestAtInfoLevel {
+
+				if l.LogRequestHeaders && headers != nil {
 					requestLog.Infof("ws: %v; %s", IsWSHandshakeRequest(r), string(headers))
-				} else {
-					requestLog.Debugf("ws: %v; %s", IsWSHandshakeRequest(r), string(headers))
 				}
+				return
 			}
-		} else {
+
+			requestLog.Debugf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin))
+			if l.LogRequestHeaders && headers != nil {
+				requestLog.Debugf("ws: %v; %s", IsWSHandshakeRequest(r), string(headers))
+			}
+		default:
 			requestLog.Warnf("%s %s (%d) %s Response: %q ws: %v; %s",
 				r.Method, uri, statusCode, time.Since(begin), buf.Bytes(), IsWSHandshakeRequest(r), headers)
 		}

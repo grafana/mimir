@@ -47,10 +47,10 @@ func main() {
 	})
 
 	// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-	if trace, err := tracing.NewFromEnv("mimir-continuous-test"); err != nil {
+	if tProvider, err := tracing.NewOpenTelemetryTracerProvider("mimir-continuous-test"); err != nil {
 		level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 	} else {
-		defer trace.Close()
+		defer tProvider.Shutdown(context.Background())
 	}
 
 	logger := util_log.Logger
