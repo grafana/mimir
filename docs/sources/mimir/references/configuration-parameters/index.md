@@ -3578,9 +3578,9 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-in-memory-series
   [early_head_compaction_min_in_memory_series: <int> | default = 0]
 
-  # (experimental) When the early compaction is enabled, the ingester compacts
-  # only per-tenant TSDBs where the estimated series reduction is at least the
-  # configured percentage (0-100).
+  # (experimental) When the early compaction is enabled, the early compaction is
+  # triggered only if the estimated series reduction is at least the configured
+  # percentage (0-100).
   # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage
   [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 10]
 ```
