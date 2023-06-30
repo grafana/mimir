@@ -106,6 +106,9 @@
     // this improves startup times when running on HDDs instead of SSDs as it reduces random reads.
     store_gateway_lazy_loading_enabled: true,
 
+    // Number of memcached replicas for each memcached statefulset
+    memcached_replicas: 3,
+
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,
     cache_frontend_backend: 'memcached',

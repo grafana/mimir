@@ -79,6 +79,7 @@
 * [ENHANCEMENT] Store-gateway: set `GOMEMLIMIT` to the memory request value. This should reduce the likelihood the store-gateway may go out of memory, at the cost of an higher CPU utilization due to more frequent garbage collections when the memory utilization gets closer or above the configured requested memory. #4971
 * [ENHANCEMENT] Store-gateway: add `store_gateway_lazy_loading_enabled` configuration option which combines disabled lazy-loading and reducing blocks sync concurrency. Reducing blocks sync concurrency improves startup times with disabled lazy loading on HDDs. #5025
 * [BUGFIX] Backend: configure `-ruler.alertmanager-url` to `mimir-backend` when running in read-write deployment mode. #4892
+* [ENHANCEMENT] Memcached: don't overwrite upsteam memcached statefulset jsonnet to allow chosing between antiAffinity and topologySpreadConstraints.
 
 ### Mimirtool
 
