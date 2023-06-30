@@ -2077,7 +2077,7 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 ```yaml
 # Configures the gRPC client used to communicate with ingesters from
-# distributors and queriers.
+# distributors, queriers and rulers.
 # The CLI flags prefix for this block configuration is: ingester.client
 [grpc_client_config: <grpc_client>]
 ```
