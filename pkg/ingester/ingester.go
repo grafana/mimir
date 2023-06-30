@@ -146,7 +146,7 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period" category:"advanced"`
 
-	ActiveSeriesMetrics mimir_tsdb.ActiveSeriesMetricsConfig `yaml:",inline"`
+	ActiveSeriesMetrics activeseries.Config `yaml:",inline"`
 
 	TSDBConfigUpdatePeriod time.Duration `yaml:"tsdb_config_update_period" category:"experimental"`
 

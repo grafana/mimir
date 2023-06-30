@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/util"
@@ -98,13 +99,11 @@ const (
 	maxTSDBOpeningConcurrencyOnStartupFlag    = "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup"
 	defaultMaxTSDBOpeningConcurrencyOnStartup = 10
 
-	maxChunksBytesPoolFlag             = "blocks-storage.bucket-store.max-chunk-pool-bytes"
-	minBucketSizeBytesFlag             = "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes"
-	maxBucketSizeBytesFlag             = "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes"
-	seriesSelectionStrategyFlag        = "blocks-storage.bucket-store.series-selection-strategy"
-	bucketIndexFlagPrefix              = "blocks-storage.bucket-store.bucket-index."
-	activeSeriesMetricsEnabledFlag     = "ingester.active-series-metrics-enabled"
-	activeSeriesMetricsIdleTimeoutFlag = "ingester.active-series-metrics-idle-timeout"
+	maxChunksBytesPoolFlag      = "blocks-storage.bucket-store.max-chunk-pool-bytes"
+	minBucketSizeBytesFlag      = "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes"
+	maxBucketSizeBytesFlag      = "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes"
+	seriesSelectionStrategyFlag = "blocks-storage.bucket-store.series-selection-strategy"
+	bucketIndexFlagPrefix       = "blocks-storage.bucket-store.bucket-index."
 )
 
 // Validation errors
@@ -118,7 +117,7 @@ var (
 	errInvalidStripeSize                            = errors.New("invalid TSDB stripe size")
 	errInvalidStreamingBatchSize                    = errors.New("invalid store-gateway streaming batch size")
 	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
-	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeSeriesMetricsEnabledFlag)
+	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
 	errInvalidIndexHeaderLazyLoadingConcurrency     = errors.New("invalid index-header lazy loading max concurrency; must be non-negative")
 )
@@ -175,7 +174,7 @@ func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Validate the config.
-func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg ActiveSeriesMetricsConfig, logger log.Logger) error {
+func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, logger log.Logger) error {
 	if err := cfg.Bucket.Validate(); err != nil {
 		return err
 	}
@@ -286,12 +285,12 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.BlockPostingsForMatchersCacheTTL, "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl", 10*time.Second, "How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls.")
 	f.IntVar(&cfg.BlockPostingsForMatchersCacheSize, "blocks-storage.tsdb.block-postings-for-matchers-cache-size", 100, "Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0.")
 	f.BoolVar(&cfg.BlockPostingsForMatchersCacheForce, "blocks-storage.tsdb.block-postings-for-matchers-cache-force", false, "Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.")
-	f.Int64Var(&cfg.EarlyHeadCompactionMinInMemorySeries, "blocks-storage.tsdb.early-head-compaction-min-in-memory-series", 0, fmt.Sprintf("When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -%s time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -%s time ago (unless out of order ingestion is enabled). The ingester checks every -%s whether an early compaction is required. Use 0 to disable it.", activeSeriesMetricsIdleTimeoutFlag, activeSeriesMetricsIdleTimeoutFlag, headCompactionIntervalFlag))
+	f.Int64Var(&cfg.EarlyHeadCompactionMinInMemorySeries, "blocks-storage.tsdb.early-head-compaction-min-in-memory-series", 0, fmt.Sprintf("When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -%s time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -%s time ago (unless out of order ingestion is enabled). The ingester checks every -%s whether an early compaction is required. Use 0 to disable it.", activeseries.IdleTimeoutFlag, activeseries.IdleTimeoutFlag, headCompactionIntervalFlag))
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 10, "When the early compaction is enabled, the ingester compacts only per-tenant TSDBs where the estimated series reduction is at least the configured percentage (0-100).")
 }
 
 // Validate the config.
-func (cfg *TSDBConfig) Validate(activeSeriesCfg ActiveSeriesMetricsConfig, logger log.Logger) error {
+func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config, logger log.Logger) error {
 	if cfg.ShipInterval > 0 && cfg.ShipConcurrency <= 0 {
 		return errInvalidShipConcurrency
 	}
@@ -508,16 +507,4 @@ func (cfg *BucketIndexConfig) Validate(logger log.Logger) error {
 		util.WarnDeprecatedConfig(bucketIndexFlagPrefix+"enabled", logger)
 	}
 	return nil
-}
-
-type ActiveSeriesMetricsConfig struct {
-	Enabled      bool          `yaml:"active_series_metrics_enabled" category:"advanced"`
-	UpdatePeriod time.Duration `yaml:"active_series_metrics_update_period" category:"advanced"`
-	IdleTimeout  time.Duration `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
-}
-
-func (cfg *ActiveSeriesMetricsConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, activeSeriesMetricsEnabledFlag, true, "Enable tracking of active series and export them as metrics.")
-	f.DurationVar(&cfg.UpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
-	f.DurationVar(&cfg.IdleTimeout, activeSeriesMetricsIdleTimeoutFlag, 10*time.Minute, "After what time a series is considered to be inactive.")
 }
