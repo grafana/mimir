@@ -53,7 +53,7 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 		db.releaseAppendLock(stateActive)
 		select {
 		case <-inFlightAppendsDone:
-			t.Fatalf("in-flight appends has been signaled as done, but there's still a lock acquired while force compacting")
+			t.Fatal("in-flight appends has been signaled as done, but there's still a lock acquired while force compacting")
 		case <-time.After(100 * time.Millisecond):
 		}
 
@@ -61,7 +61,7 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 		db.releaseAppendLock(stateForcedCompaction)
 		select {
 		case <-time.After(100 * time.Millisecond):
-			t.Fatalf("in-flight appends have no been signaled as done, but all locks has been released")
+			t.Fatal("in-flight appends have no been signaled as done, but all locks has been released")
 		case <-inFlightAppendsDone:
 		}
 	})
@@ -89,7 +89,7 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 		db.releaseAppendLock(stateActive)
 		select {
 		case <-time.After(100 * time.Millisecond):
-			t.Fatalf("in-flight appends started before forced compaction has not been signaled as done")
+			t.Fatal("in-flight appends started before forced compaction has not been signaled as done")
 		case <-inFlightAppendsWithoutForcedCompactionDone:
 		}
 
