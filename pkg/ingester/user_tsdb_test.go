@@ -30,7 +30,7 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 		db.releaseAppendLock(state)
 	})
 
-	t.Run("should count all acquired locks towards inflight appends", func(t *testing.T) {
+	t.Run("should count all acquired locks in the inflight appends", func(t *testing.T) {
 		db := &userTSDB{}
 
 		stateActive, err := db.acquireAppendLock(20)
@@ -66,7 +66,7 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 		}
 	})
 
-	t.Run("should count only locks acquire while not force compacting towards inflight appends without forced compaction", func(t *testing.T) {
+	t.Run("should count only locks acquired while not force compacting in the inflight appends started before forced compaction", func(t *testing.T) {
 		db := &userTSDB{}
 
 		stateActive, err := db.acquireAppendLock(20)
@@ -81,7 +81,7 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 		// Start a goroutine that will signal once in-flight appends are done.
 		inFlightAppendsWithoutForcedCompactionDone := make(chan struct{})
 		go func() {
-			db.inFlightAppendsWithoutForcedCompaction.Wait()
+			db.inFlightAppendsStartedBeforeForcedCompaction.Wait()
 			close(inFlightAppendsWithoutForcedCompactionDone)
 		}()
 
@@ -89,7 +89,7 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 		db.releaseAppendLock(stateActive)
 		select {
 		case <-time.After(100 * time.Millisecond):
-			t.Fatalf("in-flight appends without forced compaction has not been signaled as done")
+			t.Fatalf("in-flight appends started before forced compaction has not been signaled as done")
 		case <-inFlightAppendsWithoutForcedCompactionDone:
 		}
 

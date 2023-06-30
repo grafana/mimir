@@ -88,10 +88,10 @@ type userTSDB struct {
 	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
 	instanceLimitsFn    func() *InstanceLimits
 
-	stateMtx                               sync.RWMutex
-	state                                  tsdbState
-	inFlightAppends                        sync.WaitGroup // Increased with stateMtx read lock held.
-	inFlightAppendsWithoutForcedCompaction sync.WaitGroup // Increased with stateMtx read lock held.
+	stateMtx                                     sync.RWMutex
+	state                                        tsdbState
+	inFlightAppends                              sync.WaitGroup // Increased with stateMtx read lock held.
+	inFlightAppendsStartedBeforeForcedCompaction sync.WaitGroup // Increased with stateMtx read lock held.
 
 	// Used to detect idle TSDBs.
 	lastUpdate atomic.Int64
@@ -207,7 +207,7 @@ func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) err
 	// For this reason, we wait for existing in-flight requests to finish, except the ones that have been intentionally
 	// allowed while forced compaction was in progress because they append samples newer than forcedMaxTime
 	// (requests appending samples older than forcedMaxTime will fail until forced compaction is completed).
-	u.inFlightAppendsWithoutForcedCompaction.Wait()
+	u.inFlightAppendsStartedBeforeForcedCompaction.Wait()
 
 	// Compact the TSDB head.
 	h := u.Head()
@@ -444,7 +444,7 @@ func (u *userTSDB) acquireAppendLock(minTimestamp int64) (tsdbState, error) {
 
 	u.inFlightAppends.Add(1)
 	if u.state != forceCompacting {
-		u.inFlightAppendsWithoutForcedCompaction.Add(1)
+		u.inFlightAppendsStartedBeforeForcedCompaction.Add(1)
 	}
 
 	return u.state, nil
@@ -455,6 +455,6 @@ func (u *userTSDB) acquireAppendLock(minTimestamp int64) (tsdbState, error) {
 func (u *userTSDB) releaseAppendLock(acquireState tsdbState) {
 	u.inFlightAppends.Done()
 	if acquireState != forceCompacting {
-		u.inFlightAppendsWithoutForcedCompaction.Done()
+		u.inFlightAppendsStartedBeforeForcedCompaction.Done()
 	}
 }
