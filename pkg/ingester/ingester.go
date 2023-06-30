@@ -2492,8 +2492,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 	})
 }
 
-// compactBlocksToReduceInMemorySeries checks whether the per-tenant TSDB Head should be compacted into a block
-// in order to reduce the in-memory series.
+// compactBlocksToReduceInMemorySeries compacts the TSDB Head of the elegible tenants in order to reduce the in-memory series.
 func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now time.Time) {
 	// Skip if disabled.
 	if i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 || !i.cfg.ActiveSeriesMetrics.Enabled {
