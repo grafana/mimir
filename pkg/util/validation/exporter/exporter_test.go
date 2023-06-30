@@ -25,7 +25,7 @@ import (
 )
 
 func TestOverridesExporter_noConfig(t *testing.T) {
-	exporter, err := NewOverridesExporter(Config{}, &validation.Limits{}, nil, log.NewNopLogger(), nil)
+	exporter, err := NewOverridesExporter(Config{EnabledMetrics: defaultEnabledMetricNames}, &validation.Limits{}, nil, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
 	// With no updated override configurations, there should be no override metrics
@@ -38,7 +38,7 @@ func TestOverridesExporter_noConfig(t *testing.T) {
 }
 
 func TestOverridesExporter_emptyConfig(t *testing.T) {
-	exporter, err := NewOverridesExporter(Config{}, &validation.Limits{}, validation.NewMockTenantLimits(nil), log.NewNopLogger(), nil)
+	exporter, err := NewOverridesExporter(Config{EnabledMetrics: defaultEnabledMetricNames}, &validation.Limits{}, validation.NewMockTenantLimits(nil), log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
 	// With no updated override configurations, there should be no override metrics
@@ -66,7 +66,7 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		},
 	}
 
-	exporter, err := NewOverridesExporter(Config{}, &validation.Limits{
+	exporter, err := NewOverridesExporter(Config{EnabledMetrics: defaultEnabledMetricNames}, &validation.Limits{
 		IngestionRate:                22,
 		IngestionBurstSize:           23,
 		MaxGlobalSeriesPerUser:       24,
@@ -116,6 +116,75 @@ cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 32
 	assert.NoError(t, err)
 }
 
+func TestOverridesExporter_withEnabledMetricsConfig(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-a": {
+			RequestRate:                                10,
+			RequestBurstSize:                           11,
+			MaxGlobalMetricsWithMetadataPerUser:        12,
+			MaxGlobalMetadataPerMetric:                 13,
+			NotificationRateLimit:                      40,
+			AlertmanagerMaxDispatcherAggregationGroups: 41,
+			AlertmanagerMaxAlertsCount:                 42,
+			AlertmanagerMaxAlertsSizeBytes:             43,
+		},
+	}
+
+	exporter, err := NewOverridesExporter(Config{
+		EnabledMetrics: []string{
+			maxGlobalMetricsWithMetadataPerUser,
+			maxGlobalMetadataPerMetric,
+			requestRate,
+			requestBurstSize,
+			notificationRateLimit,
+			alertmanagerMaxDispatcherAggregationGroups,
+			alertmanagerMaxAlertsCount,
+			alertmanagerMaxAlertsSizeBytes,
+		},
+	}, &validation.Limits{
+		RequestRate:                                22,
+		RequestBurstSize:                           23,
+		MaxGlobalMetricsWithMetadataPerUser:        24,
+		MaxGlobalMetadataPerMetric:                 25,
+		NotificationRateLimit:                      50,
+		AlertmanagerMaxDispatcherAggregationGroups: 51,
+		AlertmanagerMaxAlertsCount:                 52,
+		AlertmanagerMaxAlertsSizeBytes:             53,
+	}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	limitsMetrics := `
+# HELP cortex_limits_overrides Resource limit overrides applied to tenants
+# TYPE cortex_limits_overrides gauge
+cortex_limits_overrides{limit_name="request_rate",user="tenant-a"} 10
+cortex_limits_overrides{limit_name="request_burst_size",user="tenant-a"} 11
+cortex_limits_overrides{limit_name="max_global_metadata_per_user",user="tenant-a"} 12
+cortex_limits_overrides{limit_name="max_global_metadata_per_metric",user="tenant-a"} 13
+cortex_limits_overrides{limit_name="alertmanager_notification_rate_limit",user="tenant-a"} 40
+cortex_limits_overrides{limit_name="alertmanager_max_dispatcher_aggregation_groups",user="tenant-a"} 41
+cortex_limits_overrides{limit_name="alertmanager_max_alerts_count",user="tenant-a"} 42
+cortex_limits_overrides{limit_name="alertmanager_max_alerts_size_bytes",user="tenant-a"} 43
+`
+
+	// Make sure each override matches the values from the supplied `Limit`
+	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_overrides")
+	assert.NoError(t, err)
+
+	limitsMetrics = `
+# HELP cortex_limits_defaults Resource limit defaults for tenants without overrides
+# TYPE cortex_limits_defaults gauge
+cortex_limits_defaults{limit_name="request_rate"} 22
+cortex_limits_defaults{limit_name="request_burst_size"} 23
+cortex_limits_defaults{limit_name="max_global_metadata_per_user"} 24
+cortex_limits_defaults{limit_name="max_global_metadata_per_metric"} 25
+cortex_limits_defaults{limit_name="alertmanager_notification_rate_limit"} 50
+cortex_limits_defaults{limit_name="alertmanager_max_dispatcher_aggregation_groups"} 51
+cortex_limits_defaults{limit_name="alertmanager_max_alerts_count"} 52
+cortex_limits_defaults{limit_name="alertmanager_max_alerts_size_bytes"} 53
+`
+	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_defaults")
+	assert.NoError(t, err)
+}
+
 func TestOverridesExporter_withRing(t *testing.T) {
 	tenantLimits := map[string]*validation.Limits{
 		"tenant-a": {},
@@ -124,7 +193,10 @@ func TestOverridesExporter_withRing(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	cfg1 := Config{RingConfig{Enabled: true}}
+	cfg1 := Config{
+		Ring:           RingConfig{Enabled: true},
+		EnabledMetrics: []string{},
+	}
 	cfg1.Ring.Common.KVStore.Mock = ringStore
 	cfg1.Ring.Common.InstancePort = 1234
 	cfg1.Ring.Common.HeartbeatPeriod = 15 * time.Second

@@ -63,12 +63,17 @@ type BasicLifecyclerConfig struct {
 	RingTokenGenerator TokenGenerator
 }
 
-// BasicLifecycler is a basic ring lifecycler which allows to hook custom
-// logic at different stages of the lifecycle. This lifecycler should be
-// used to build higher level lifecyclers.
-//
-// This lifecycler never change the instance state. It's the delegate
-// responsibility to ChangeState().
+/*
+BasicLifecycler is a Service that is responsible for publishing changes to a ring for a single instance.
+It accepts a delegate that can handle lifecycle events, and should be used to build higher level lifecyclers.
+Unlike [Lifecycler], BasicLifecycler does not change instance state internally.
+Rather, it's the delegate's responsibility to call [BasicLifecycler.ChangeState].
+
+  - When a BasicLifecycler first starts, it will call [ring.BasicLifecyclerDelegate.OnRingInstanceRegister] for the delegate, and will add the instance to the ring.
+  - The lifecycler will then periodically, based on the [ring.BasicLifecyclerConfig.TokensObservePeriod], attempt to verify that its tokens have been added to the ring, after which it will call [ring.BasicLifecyclerDelegate.OnRingInstanceTokens].
+  - The lifecycler will update they key/value store with heartbeats and state changes based on the [ring.BasicLifecyclerConfig.HeartbeatPeriod], calling [ring.BasicLifecyclerDelegate.OnRingInstanceHeartbeat] each time.
+  - When the BasicLifecycler is stopped, it will call [ring.BasicLifecyclerDelegate.OnRingInstanceStopping].
+*/
 type BasicLifecycler struct {
 	*services.BasicService
 

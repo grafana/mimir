@@ -3,6 +3,8 @@
 package querier
 
 import (
+	"fmt"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -15,7 +17,7 @@ import (
 type streamingChunkSeriesContext struct {
 	chunkIteratorFunc chunkIteratorFunc
 	mint, maxt        int64
-	queryChunkMetrics *stats.QueryChunkMetrics
+	queryMetrics      *stats.QueryMetrics
 	queryStats        *stats.Stats
 }
 
@@ -27,6 +29,8 @@ type streamingChunkSeries struct {
 	labels  labels.Labels
 	sources []client.StreamingSeriesSource
 	context *streamingChunkSeriesContext
+
+	alreadyCreated bool
 }
 
 func (s *streamingChunkSeries) Labels() labels.Labels {
@@ -34,6 +38,12 @@ func (s *streamingChunkSeries) Labels() labels.Labels {
 }
 
 func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	if s.alreadyCreated {
+		return series.NewErrIterator(fmt.Errorf("can't create iterator multiple times for the one streaming series (%v)", s.labels.String()))
+	}
+
+	s.alreadyCreated = true
+
 	var uniqueChunks []client.Chunk
 	totalChunks := 0
 
@@ -48,8 +58,8 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		uniqueChunks = client.AccumulateChunks(uniqueChunks, c)
 	}
 
-	s.context.queryChunkMetrics.IngesterChunksTotal.Add(float64(totalChunks))
-	s.context.queryChunkMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(uniqueChunks)))
+	s.context.queryMetrics.IngesterChunksTotal.Add(float64(totalChunks))
+	s.context.queryMetrics.IngesterChunksDeduplicated.Add(float64(totalChunks - len(uniqueChunks)))
 
 	s.context.queryStats.AddFetchedChunks(uint64(len(uniqueChunks)))
 

@@ -41,6 +41,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -alertmanager-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -alertmanager-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -alertmanager-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -alertmanager-storage.s3.max-idle-connections int
@@ -491,6 +493,8 @@ Usage of ./cmd/mimir/mimir:
     	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.index-cache.redis.write-timeout duration
     	Client write timeout. (default 3s)
+  -blocks-storage.bucket-store.index-header-lazy-loading-concurrency int
+    	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
@@ -653,6 +657,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -blocks-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -blocks-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -blocks-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -blocks-storage.s3.max-idle-connections int
@@ -803,6 +809,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -common.storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -common.storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -common.storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -common.storage.s3.max-idle-connections int
@@ -1437,6 +1445,8 @@ Usage of ./cmd/mimir/mimir:
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -modules
     	List available values that can be used as target.
+  -overrides-exporter.enabled-metrics comma-separated-list-of-strings
+    	[experimental] Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
   -overrides-exporter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -overrides-exporter.ring.consul.cas-retry-delay duration
@@ -1597,6 +1607,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.minimize-ingester-requests
     	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.
+  -querier.minimize-ingester-requests-hedging-delay duration
+    	[experimental] Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
   -querier.prefer-streaming-chunks-from-ingesters
     	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.
   -querier.prefer-streaming-chunks-from-store-gateways
@@ -2071,6 +2083,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -ruler-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -ruler-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -ruler-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -ruler-storage.s3.max-idle-connections int

@@ -1708,6 +1708,17 @@
         },
         {
           "kind": "field",
+          "name": "minimize_ingester_requests_hedging_delay",
+          "required": false,
+          "desc": "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 3000000000,
+          "fieldFlag": "querier.minimize-ingester-requests-hedging-delay",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
@@ -5004,6 +5015,17 @@
             },
             {
               "kind": "field",
+              "name": "list_objects_version",
+              "required": false,
+              "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.s3.list-objects-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "storage_class",
               "required": false,
               "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW",
@@ -7406,6 +7428,17 @@
               "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "index_header_lazy_loading_concurrency",
+              "required": false,
+              "desc": "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-concurrency",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -10457,6 +10490,17 @@
             },
             {
               "kind": "field",
+              "name": "list_objects_version",
+              "required": false,
+              "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.s3.list-objects-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "storage_class",
               "required": false,
               "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW",
@@ -12407,6 +12451,17 @@
               "fieldValue": null,
               "fieldDefaultValue": "v4",
               "fieldFlag": "alertmanager-storage.s3.signature-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "list_objects_version",
+              "required": false,
+              "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.s3.list-objects-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -14528,6 +14583,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "enabled_metrics",
+          "required": false,
+          "desc": "Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.",
+          "fieldValue": null,
+          "fieldDefaultValue": "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant",
+          "fieldFlag": "overrides-exporter.enabled-metrics",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -14630,6 +14696,17 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "v4",
                   "fieldFlag": "common.storage.s3.signature-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "list_objects_version",
+                  "required": false,
+                  "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.s3.list-objects-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
                 },

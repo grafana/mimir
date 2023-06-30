@@ -350,6 +350,19 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
+  # (experimental) Comma-separated list of metrics to include in the exporter.
+  # Allowed metric names: ingestion_rate, ingestion_burst_size,
+  # max_global_series_per_user, max_global_series_per_metric,
+  # max_global_exemplars_per_user, max_fetched_chunks_per_query,
+  # max_fetched_series_per_query, max_fetched_chunk_bytes_per_query,
+  # ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant,
+  # max_global_metadata_per_user, max_global_metadata_per_metric, request_rate,
+  # request_burst_size, alertmanager_notification_rate_limit,
+  # alertmanager_max_dispatcher_aggregation_groups,
+  # alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.
+  # CLI flag: -overrides-exporter.enabled-metrics
+  [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant"]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
@@ -1117,6 +1130,13 @@ store_gateway_client:
 # path at the cost of increased latency for the unhappy path.
 # CLI flag: -querier.minimize-ingester-requests
 [minimize_ingester_requests: <boolean> | default = false]
+
+# (experimental) Delay before initiating requests to further ingesters when
+# request minimization is enabled and the initially selected set of ingesters
+# have not all responded. Ignored if -querier.minimize-ingester-requests is not
+# enabled.
+# CLI flag: -querier.minimize-ingester-requests-hedging-delay
+[minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
@@ -2080,8 +2100,8 @@ The `flusher` block configures the WAL flusher target, used to manually run one-
 The `ingester_client` block configures how the distributors connect to the ingesters.
 
 ```yaml
-# Configures the gRPC client used to communicate between distributors and
-# ingesters.
+# Configures the gRPC client used to communicate with ingesters from
+# distributors, queriers and rulers.
 # The CLI flags prefix for this block configuration is: ingester.client
 [grpc_client_config: <grpc_client>]
 ```
@@ -3361,6 +3381,11 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout
   [index_header_lazy_loading_idle_timeout: <duration> | default = 1h]
 
+  # (experimental) Maximum number of concurrent index header loads across all
+  # tenants. If set to 0, concurrency is unlimited.
+  # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-concurrency
+  [index_header_lazy_loading_concurrency: <int> | default = 0]
+
   # (advanced) Max size - in bytes - of a gap for which the partitioner
   # aggregates together two bucket GET object requests.
   # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes
@@ -4207,6 +4232,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # Supported values are: v4, v2.
 # CLI flag: -<prefix>.s3.signature-version
 [signature_version: <string> | default = "v4"]
+
+# (advanced) Use a specific version of the S3 list object API. Supported values
+# are v1 or v2. Default is unset.
+# CLI flag: -<prefix>.s3.list-objects-version
+[list_objects_version: <string> | default = ""]
 
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
