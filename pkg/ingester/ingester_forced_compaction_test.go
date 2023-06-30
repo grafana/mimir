@@ -64,7 +64,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
-	t.Run("push a series and force TSDB head compaction", func(t *testing.T) {
+	// Push a series and force TSDB head compaction
+	{
 		// Push a series with a sample.
 		sampleTime := now
 		sampleTimes = append(sampleTimes, sampleTime)
@@ -96,9 +97,10 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		db := ingester.getTSDB(userID)
 		require.NotNil(t, db)
 		assert.Equal(t, uint64(0), db.Head().NumSeries())
-	})
+	}
 
-	t.Run("push again the same series and force TSDB head compaction", func(t *testing.T) {
+	// Push again the same series and force TSDB head compaction
+	{
 		// Advance time and push another sample to the same series.
 		sampleTime := now
 		sampleTimes = append(sampleTimes, sampleTime)
@@ -123,9 +125,10 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		db := ingester.getTSDB(userID)
 		require.NotNil(t, db)
 		assert.Equal(t, uint64(0), db.Head().NumSeries())
-	})
+	}
 
-	t.Run("push again the same series and trigger the normal TSDB head compaction", func(t *testing.T) {
+	// Push again the same series and trigger the normal TSDB head compaction
+	{
 		// Push a sample with the timestamp BEFORE the next TSDB block range boundary.
 		firstSampleTime := now
 		sampleTimes = append(sampleTimes, firstSampleTime)
@@ -154,9 +157,10 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		db := ingester.getTSDB(userID)
 		require.NotNil(t, db)
 		assert.Equal(t, uint64(1), db.Head().NumSeries())
-	})
+	}
 
-	t.Run("querying ingester should return all samples", func(t *testing.T) {
+	// Querying ingester should return all samples
+	{
 		req := &client.QueryRequest{
 			StartTimestampMs: math.MinInt64,
 			EndTimestampMs:   math.MaxInt64,
@@ -180,7 +184,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 				{Timestamp: model.Time(sampleTimes[3].UnixMilli()), Value: 4.0},
 			},
 		}}, res)
-	})
+	}
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonoringBlockRangePeriod(t *testing.T) {
