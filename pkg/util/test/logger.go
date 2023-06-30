@@ -9,10 +9,10 @@ import (
 )
 
 type testingLogger struct {
-	t *testing.T
+	t testing.TB
 }
 
-func NewTestingLogger(t *testing.T) log.Logger {
+func NewTestingLogger(t testing.TB) log.Logger {
 	return &testingLogger{
 		t: t,
 	}

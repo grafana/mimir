@@ -3456,9 +3456,9 @@ tsdb:
 
   # (advanced) How frequently the ingester checks whether the TSDB head should
   # be compacted and, if so, triggers the compaction. Mimir applies a jitter to
-  # the first check, while subsequent checks will happen at the configured
-  # interval. Block is only created if data covers smallest block range. The
-  # configured interval must be between 0 and 15 minutes.
+  # the first check, and subsequent checks will happen at the configured
+  # interval. A block is only created if data covers the smallest block range.
+  # The configured interval must be between 0 and 15 minutes.
   # CLI flag: -blocks-storage.tsdb.head-compaction-interval
   [head_compaction_interval: <duration> | default = 1m]
 
@@ -3578,6 +3578,24 @@ tsdb:
   # compacted blocks, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-force
   [block_postings_for_matchers_cache_force: <boolean> | default = false]
+
+  # (experimental) When the number of in-memory series in the ingester is equal
+  # to or greater than this setting, the ingester tries to compact the TSDB
+  # Head. The early compaction removes from the memory all samples and inactive
+  # series up until -ingester.active-series-metrics-idle-timeout time ago. After
+  # an early compaction, the ingester will not accept any sample with a
+  # timestamp older than -ingester.active-series-metrics-idle-timeout time ago
+  # (unless out of order ingestion is enabled). The ingester checks every
+  # -blocks-storage.tsdb.head-compaction-interval whether an early compaction is
+  # required. Use 0 to disable it.
+  # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-in-memory-series
+  [early_head_compaction_min_in_memory_series: <int> | default = 0]
+
+  # (experimental) When the early compaction is enabled, the early compaction is
+  # triggered only if the estimated series reduction is at least the configured
+  # percentage (0-100).
+  # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage
+  [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 10]
 ```
 
 ### compactor

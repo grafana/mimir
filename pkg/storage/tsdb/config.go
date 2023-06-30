@@ -7,6 +7,7 @@ package tsdb
 
 import (
 	"flag"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/util"
@@ -93,6 +95,7 @@ const (
 	headStripeSizeHelp            = "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance."
 	headChunksWriteQueueSizeHelp  = "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue."
 
+	headCompactionIntervalFlag                = "blocks-storage.tsdb.head-compaction-interval"
 	maxTSDBOpeningConcurrencyOnStartupFlag    = "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup"
 	defaultMaxTSDBOpeningConcurrencyOnStartup = 10
 
@@ -105,16 +108,18 @@ const (
 
 // Validation errors
 var (
-	errInvalidShipConcurrency                   = errors.New("invalid TSDB ship concurrency")
-	errInvalidOpeningConcurrency                = errors.New("invalid TSDB opening concurrency")
-	errInvalidCompactionInterval                = errors.New("invalid TSDB compaction interval")
-	errInvalidCompactionConcurrency             = errors.New("invalid TSDB compaction concurrency")
-	errInvalidWALSegmentSizeBytes               = errors.New("invalid TSDB WAL segment size bytes")
-	errInvalidWALReplayConcurrency              = errors.New("invalid TSDB WAL replay concurrency")
-	errInvalidStripeSize                        = errors.New("invalid TSDB stripe size")
-	errInvalidStreamingBatchSize                = errors.New("invalid store-gateway streaming batch size")
-	errEmptyBlockranges                         = errors.New("empty block ranges for TSDB")
-	errInvalidIndexHeaderLazyLoadingConcurrency = errors.New("invalid index-header lazy loading max concurrency; must be non-negative")
+	errInvalidShipConcurrency                       = errors.New("invalid TSDB ship concurrency")
+	errInvalidOpeningConcurrency                    = errors.New("invalid TSDB opening concurrency")
+	errInvalidCompactionInterval                    = errors.New("invalid TSDB compaction interval")
+	errInvalidCompactionConcurrency                 = errors.New("invalid TSDB compaction concurrency")
+	errInvalidWALSegmentSizeBytes                   = errors.New("invalid TSDB WAL segment size bytes")
+	errInvalidWALReplayConcurrency                  = errors.New("invalid TSDB WAL replay concurrency")
+	errInvalidStripeSize                            = errors.New("invalid TSDB stripe size")
+	errInvalidStreamingBatchSize                    = errors.New("invalid store-gateway streaming batch size")
+	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
+	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
+	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
+	errInvalidIndexHeaderLazyLoadingConcurrency     = errors.New("invalid index-header lazy loading max concurrency; must be non-negative")
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
@@ -169,12 +174,12 @@ func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Validate the config.
-func (cfg *BlocksStorageConfig) Validate(logger log.Logger) error {
+func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, logger log.Logger) error {
 	if err := cfg.Bucket.Validate(); err != nil {
 		return err
 	}
 
-	if err := cfg.TSDB.Validate(logger); err != nil {
+	if err := cfg.TSDB.Validate(activeSeriesCfg, logger); err != nil {
 		return err
 	}
 
@@ -242,6 +247,12 @@ type TSDBConfig struct {
 	// BlockPostingsForMatchersCacheForce forces the usage of postings for matchers cache for all calls compacted blocks
 	// regardless of the `concurrent` param.
 	BlockPostingsForMatchersCacheForce bool `yaml:"block_postings_for_matchers_cache_force" category:"experimental"`
+
+	EarlyHeadCompactionMinInMemorySeries                     int64 `yaml:"early_head_compaction_min_in_memory_series" category:"experimental"`
+	EarlyHeadCompactionMinEstimatedSeriesReductionPercentage int   `yaml:"early_head_compaction_min_estimated_series_reduction_percentage" category:"experimental"`
+
+	// HeadCompactionIntervalJitterEnabled is enabled by default, but allows to disable it in tests.
+	HeadCompactionIntervalJitterEnabled bool `yaml:"-"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -257,7 +268,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.ShipConcurrency, "blocks-storage.tsdb.ship-concurrency", 10, "Maximum number of tenants concurrently shipping blocks to the storage.")
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.tsdb.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
 	f.IntVar(&cfg.DeprecatedMaxTSDBOpeningConcurrencyOnStartup, maxTSDBOpeningConcurrencyOnStartupFlag, defaultMaxTSDBOpeningConcurrencyOnStartup, "limit the number of concurrently opening TSDB's on startup")
-	f.DurationVar(&cfg.HeadCompactionInterval, "blocks-storage.tsdb.head-compaction-interval", 1*time.Minute, "How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, while subsequent checks will happen at the configured interval. Block is only created if data covers smallest block range. The configured interval must be between 0 and 15 minutes.")
+	f.DurationVar(&cfg.HeadCompactionInterval, headCompactionIntervalFlag, 1*time.Minute, "How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes.")
 	f.IntVar(&cfg.HeadCompactionConcurrency, "blocks-storage.tsdb.head-compaction-concurrency", 1, "Maximum number of tenants concurrently compacting TSDB head into a new block")
 	f.DurationVar(&cfg.HeadCompactionIdleTimeout, "blocks-storage.tsdb.head-compaction-idle-timeout", 1*time.Hour, "If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled.")
 	f.IntVar(&cfg.HeadChunksWriteBufferSize, "blocks-storage.tsdb.head-chunks-write-buffer-size-bytes", chunks.DefaultWriteBufferSize, headChunkWriterBufferSizeHelp)
@@ -277,10 +288,14 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.BlockPostingsForMatchersCacheTTL, "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl", 10*time.Second, "How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls.")
 	f.IntVar(&cfg.BlockPostingsForMatchersCacheSize, "blocks-storage.tsdb.block-postings-for-matchers-cache-size", 100, "Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0.")
 	f.BoolVar(&cfg.BlockPostingsForMatchersCacheForce, "blocks-storage.tsdb.block-postings-for-matchers-cache-force", false, "Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.")
+	f.Int64Var(&cfg.EarlyHeadCompactionMinInMemorySeries, "blocks-storage.tsdb.early-head-compaction-min-in-memory-series", 0, fmt.Sprintf("When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -%s time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -%s time ago (unless out of order ingestion is enabled). The ingester checks every -%s whether an early compaction is required. Use 0 to disable it.", activeseries.IdleTimeoutFlag, activeseries.IdleTimeoutFlag, headCompactionIntervalFlag))
+	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 10, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
+
+	cfg.HeadCompactionIntervalJitterEnabled = true
 }
 
 // Validate the config.
-func (cfg *TSDBConfig) Validate(logger log.Logger) error {
+func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config, logger log.Logger) error {
 	if cfg.ShipInterval > 0 && cfg.ShipConcurrency <= 0 {
 		return errInvalidShipConcurrency
 	}
@@ -318,6 +333,14 @@ func (cfg *TSDBConfig) Validate(logger log.Logger) error {
 
 	if cfg.WALReplayConcurrency < 0 {
 		return errInvalidWALReplayConcurrency
+	}
+
+	if cfg.EarlyHeadCompactionMinInMemorySeries > 0 && !activeSeriesCfg.Enabled {
+		return errEarlyCompactionRequiresActiveSeries
+	}
+
+	if cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage < 0 || cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage > 100 {
+		return errInvalidEarlyHeadCompactionMinSeriesReduction
 	}
 
 	return nil
