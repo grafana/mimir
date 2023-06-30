@@ -93,6 +93,7 @@ type userTSDB struct {
 	state                                        tsdbState
 	inFlightAppends                              sync.WaitGroup // Increased with stateMtx read lock held.
 	inFlightAppendsStartedBeforeForcedCompaction sync.WaitGroup // Increased with stateMtx read lock held.
+	forcedCompactionMaxTime                      int64          // Max timestamp of samples that will be compacted from the TSDB head during a forced o early compaction.
 
 	// Used to detect idle TSDBs.
 	lastUpdate atomic.Int64
@@ -117,11 +118,6 @@ type userTSDB struct {
 	// Cached shipped blocks.
 	shippedBlocksMtx sync.Mutex
 	shippedBlocks    map[ulid.ULID]time.Time
-
-	// The max timestamp of samples that will be compacted from the TSDB head
-	// during the on-going forced compaction. This is used to check whether a
-	// write request could be accepted while the forced compaction is in progress.
-	forcedCompactionMaxTime atomic.Int64
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -187,7 +183,7 @@ func (u *userTSDB) changeState(from, to tsdbState, updates ...func()) (bool, tsd
 // setting the forcedCompactionMaxTime too.
 func (u *userTSDB) changeStateToForcedCompaction(from tsdbState, forcedCompactionMaxTime int64) (bool, tsdbState) {
 	return u.changeState(from, forceCompacting, func() {
-		u.forcedCompactionMaxTime.Store(forcedCompactionMaxTime)
+		u.forcedCompactionMaxTime = forcedCompactionMaxTime
 	})
 }
 
@@ -434,11 +430,11 @@ func (u *userTSDB) acquireAppendLock(minTimestamp int64) (tsdbState, error) {
 	case activeShipping:
 		// Pushes are allowed.
 	case forceCompacting:
-		if allowed := u.forcedCompactionMaxTime.Load(); minTimestamp <= allowed {
-			if allowed == math.MaxInt64 {
-				return u.state, errTSDBForcedCompaction
-			}
-			return u.state, errors.Wrapf(errTSDBEarlyCompaction, "request_min_timestamp: %s allowed_min_timestamp: %s", time.UnixMilli(minTimestamp).String(), time.UnixMilli(allowed).String())
+		if u.forcedCompactionMaxTime == math.MaxInt64 {
+			return u.state, errTSDBForcedCompaction
+		}
+		if minTimestamp <= u.forcedCompactionMaxTime {
+			return u.state, errors.Wrapf(errTSDBEarlyCompaction, "request_min_timestamp: %s allowed_min_timestamp: %s", time.UnixMilli(minTimestamp).String(), time.UnixMilli(u.forcedCompactionMaxTime+1).String())
 		}
 	case closing:
 		return u.state, errTSDBClosing

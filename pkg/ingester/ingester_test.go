@@ -5265,7 +5265,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	// We mock a flushing by setting the boolean.
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	ok, _ := db.changeState(active, forceCompacting, func() { db.forcedCompactionMaxTime.Store(math.MaxInt64) })
+	ok, _ := db.changeStateToForcedCompaction(active, math.MaxInt64)
 	require.True(t, ok)
 
 	// Ingestion should fail with a 503.
