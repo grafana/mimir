@@ -29,6 +29,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNowMinusActiveSeriesMetricsIdleTimeout(t *testing.T) {
@@ -312,12 +313,14 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) {
+	util_test.VerifyNoLeak(t)
+
 	const (
-		numRuns             = 10
-		numSeries           = 100
-		numSamplesPerSeries = 1000
-		numWriters          = 10
-		numReaders          = 10
+		numRuns             = 3
+		numSeries           = 50
+		numSamplesPerSeries = 120 * 10 // Ensure we create multiple chunks.
+		numWriters          = 5
+		numReaders          = 5
 	)
 
 	for r := 0; r < numRuns; r++ {
@@ -325,7 +328,6 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			var (
 				ctx         = context.Background()
 				ctxWithUser = user.InjectOrgID(ctx, userID)
-				wg          = sync.WaitGroup{}
 				startTime   = time.Now()
 				readerReq   = &client.QueryRequest{
 					StartTimestampMs: math.MinInt64,
@@ -334,6 +336,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 						{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: "series_.*"},
 					},
 				}
+
+				startForcedCompaction          = make(chan struct{})
+				stopReadersAndForcedCompaction = make(chan struct{})
 			)
 
 			cfg := defaultIngesterTestConfig(t)
@@ -360,10 +365,12 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			writerTimes := make([]int64, numWriters)
 
 			// Start writers.
-			wg.Add(numWriters)
+			writers := sync.WaitGroup{}
+			writers.Add(numWriters)
+
 			for i := 0; i < numWriters; i++ {
 				go func(writerID int) {
-					defer wg.Done()
+					defer writers.Done()
 
 					// Decide the series written by this writer.
 					fromSeriesID := writerID * (numSeries / numWriters)
@@ -388,42 +395,60 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 						writerTimesMx.Lock()
 						writerTimes[writerID] = timestamp
 						writerTimesMx.Unlock()
+
+						// Start the forced compaction once we've written some samples.
+						if writerID == 0 && sampleIdx == 200 {
+							close(startForcedCompaction)
+						}
+
+						// Throttle.
+						time.Sleep(time.Millisecond)
 					}
 				}(i)
 			}
 
 			// Start readers (each reader reads all series).
-			wg.Add(numReaders)
 			for i := 0; i < numReaders; i++ {
 				go func() {
-					defer wg.Done()
+					for {
+						select {
+						case <-stopReadersAndForcedCompaction:
+							return
+						case <-time.After(100 * time.Millisecond):
+							s := stream{ctx: ctxWithUser}
+							err := ingester.QueryStream(readerReq, &s)
+							require.NoError(t, err)
 
-					s := stream{ctx: ctxWithUser}
-					err := ingester.QueryStream(readerReq, &s)
-					require.NoError(t, err)
+							res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+							require.NoError(t, err)
 
-					res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
-					require.NoError(t, err)
+							// We expect a response consistent with the samples written.
+							for entryIdx, entry := range res {
+								for sampleIdx, sample := range entry.Values {
+									expectedTime := model.Time(startTime.Add(time.Duration(sampleIdx) * time.Millisecond).UnixMilli())
+									expectedValue := model.SampleValue(sampleIdx)
 
-					// We expect a response consistent with the samples written.
-					for entryIdx, entry := range res {
-						for sampleIdx, sample := range entry.Values {
-							expectedTime := model.Time(startTime.Add(time.Duration(sampleIdx) * time.Millisecond).UnixMilli())
-							expectedValue := model.SampleValue(sampleIdx)
-
-							require.Equalf(t, expectedTime, sample.Timestamp, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
-							require.Equalf(t, expectedValue, sample.Value, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+									require.Equalf(t, expectedTime, sample.Timestamp, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+									require.Equalf(t, expectedValue, sample.Value, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+								}
+							}
 						}
 					}
 				}()
 			}
 
 			// Start a goroutine continuously forcing the TSDB head compaction.
-			stopForcedCompaction := make(chan struct{})
 			go func() {
+				// Wait until the start has been signaled.
+				select {
+				case <-stopReadersAndForcedCompaction:
+					return
+				case <-startForcedCompaction:
+				}
+
 				for {
 					select {
-					case <-stopForcedCompaction:
+					case <-stopReadersAndForcedCompaction:
 						return
 					case <-time.After(100 * time.Millisecond):
 						lowestWriterTime := int64(math.MaxInt64)
@@ -445,15 +470,15 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 				}
 			}()
 
-			// Wait until all readers and writers have done.
-			wg.Wait()
+			// Wait until all writers have done.
+			writers.Wait()
 
-			// Since all readers and writers have done, we can now stop forcing the TSDB head compaction too.
-			close(stopForcedCompaction)
+			// We can now stop reader and compaction.
+			close(stopReadersAndForcedCompaction)
 
-			// Ensure at least 1 forced compaction has been done.
+			// Ensure at least 2 forced compactions have been done.
 			blocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
-			assert.Greater(t, len(listBlocksInDir(t, blocksDir)), 0)
+			assert.Greater(t, len(listBlocksInDir(t, blocksDir)), 1)
 
 			// Query again all series. We expect to read back all written series and samples.
 			s := stream{ctx: ctxWithUser}
