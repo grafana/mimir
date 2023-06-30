@@ -47,6 +47,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
@@ -2512,14 +2513,20 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 
 	level.Info(i.logger).Log("msg", "the number of in-memory series is higher than the configured early compaction threshold", "in_memory_series", numInitialMemorySeries, "early_compaction_threshold", i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries)
 
+	type estimation struct {
+		userID                             string
+		estimatedSeriesReduction           int64
+		estimatedSeriesReductionPercentage int
+	}
+
+	// Estimates the series reduction opportunity for each tenant.
 	var (
-		usersToCompact          []string
-		forcedCompactionMaxTime = now.Add(-i.cfg.ActiveSeriesMetrics.IdleTimeout).UnixMilli()
+		userIDs                       = i.getTSDBUsers()
+		estimations                   = make([]estimation, 0, len(userIDs))
+		totalEstimatedSeriesReduction = int64(0)
 	)
 
-	// Find a list of tenants that could help to significantly drop the number of in-memory series
-	// if we would forcely compact their TSDB head.
-	for _, userID := range i.getTSDBUsers() {
+	for _, userID := range userIDs {
 		db := i.getTSDB(userID)
 		if db == nil {
 			continue
@@ -2530,22 +2537,45 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 
 		// Estimate the number of series that would be dropped from the TSDB Head if we would
 		// compact the head up until "now - active series idle timeout".
-		estimatedSeriesReduction := db.Head().NumSeries() - uint64(db.activeSeries.Active())
+		estimatedSeriesReduction := util_math.Max(0, int64(db.Head().NumSeries())-int64(db.activeSeries.Active()))
 
-		// Skip if the estimated series reduction is too low (there would be no big benefit).
-		if float64(estimatedSeriesReduction)/float64(numInitialMemorySeries)*100 < float64(i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage) {
-			continue
+		if estimatedSeriesReduction > 0 {
+			totalEstimatedSeriesReduction += estimatedSeriesReduction
+			estimations = append(estimations, estimation{
+				userID:                             userID,
+				estimatedSeriesReduction:           estimatedSeriesReduction,
+				estimatedSeriesReductionPercentage: int((uint64(estimatedSeriesReduction) * 100) / db.Head().NumSeries()),
+			})
 		}
-
-		usersToCompact = append(usersToCompact, userID)
 	}
 
-	if len(usersToCompact) == 0 {
+	// Skip if the estimated series reduction is too low (there would be no big benefit).
+	if float64(totalEstimatedSeriesReduction)/float64(numInitialMemorySeries)*100 < float64(i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage) {
 		level.Info(i.logger).Log("msg", "no viable per-tenant TSDB found to early compact in order to reduce in-memory series")
 		return
 	}
 
+	// Compact all TSDBs blocks required to get the number of in-memory series below the threshold and, in addition,
+	// all TSDBs where the estimated series reduction is greater than the minimum reduction percentage.
+	slices.SortFunc(estimations, func(a, b estimation) bool {
+		return a.estimatedSeriesReduction > b.estimatedSeriesReduction
+	})
+
+	var (
+		usersToCompact        []string
+		seriesReductionSum    = int64(0)
+		seriesReductionTarget = numInitialMemorySeries - i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries
+	)
+
+	for _, entry := range estimations {
+		if seriesReductionSum < seriesReductionTarget || entry.estimatedSeriesReductionPercentage > i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage {
+			usersToCompact = append(usersToCompact, entry.userID)
+			seriesReductionSum += entry.estimatedSeriesReduction
+		}
+	}
+
 	level.Info(i.logger).Log("msg", "running TSDB head compaction to reduce the number of in-memory series", "users", strings.Join(usersToCompact, " "))
+	forcedCompactionMaxTime := now.Add(-i.cfg.ActiveSeriesMetrics.IdleTimeout).UnixMilli()
 	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowedTenants(usersToCompact, nil))
 	level.Info(i.logger).Log("msg", "run TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", numInitialMemorySeries, "after_in_memory_series", i.seriesCount.Load())
 }
