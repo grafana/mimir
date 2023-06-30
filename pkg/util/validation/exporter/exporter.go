@@ -82,7 +82,7 @@ const (
 // Config holds the configuration for an overrides-exporter
 type Config struct {
 	Ring           RingConfig             `yaml:"ring"`
-	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics"`
+	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics" category:"experimental"`
 }
 
 type exportedMetric struct {

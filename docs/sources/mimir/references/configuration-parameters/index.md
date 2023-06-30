@@ -350,14 +350,14 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
-  # Comma-separated list of metrics to include in the exporter. Allowed metric
-  # names: ingestion_rate, ingestion_burst_size, max_global_series_per_user,
-  # max_global_series_per_metric, max_global_exemplars_per_user,
-  # max_fetched_chunks_per_query, max_fetched_series_per_query,
-  # max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group,
-  # ruler_max_rule_groups_per_tenant, max_global_metadata_per_user,
-  # max_global_metadata_per_metric, request_rate, request_burst_size,
-  # alertmanager_notification_rate_limit,
+  # (experimental) Comma-separated list of metrics to include in the exporter.
+  # Allowed metric names: ingestion_rate, ingestion_burst_size,
+  # max_global_series_per_user, max_global_series_per_metric,
+  # max_global_exemplars_per_user, max_fetched_chunks_per_query,
+  # max_fetched_series_per_query, max_fetched_chunk_bytes_per_query,
+  # ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant,
+  # max_global_metadata_per_user, max_global_metadata_per_metric, request_rate,
+  # request_burst_size, alertmanager_notification_rate_limit,
   # alertmanager_max_dispatcher_aggregation_groups,
   # alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.
   # CLI flag: -overrides-exporter.enabled-metrics
