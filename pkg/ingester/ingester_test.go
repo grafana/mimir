@@ -3660,6 +3660,9 @@ func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Confi
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
 	ingesterCfg.BlocksStorageConfig.Bucket.Filesystem.Directory = bucketDir
 
+	// Disable TSDB head compaction jitter to have predictable tests.
+	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+
 	ingester, err := New(ingesterCfg, overrides, nil, registerer, log.NewNopLogger())
 	if err != nil {
 		return nil, err

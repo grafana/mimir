@@ -250,6 +250,9 @@ type TSDBConfig struct {
 
 	EarlyHeadCompactionMinInMemorySeries                     int64 `yaml:"early_head_compaction_min_in_memory_series" category:"experimental"`
 	EarlyHeadCompactionMinEstimatedSeriesReductionPercentage int   `yaml:"early_head_compaction_min_estimated_series_reduction_percentage" category:"experimental"`
+
+	// HeadCompactionIntervalJitterEnabled is enabled by default, but allows to disable it in tests.
+	HeadCompactionIntervalJitterEnabled bool `yaml:"-"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -287,6 +290,8 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.BlockPostingsForMatchersCacheForce, "blocks-storage.tsdb.block-postings-for-matchers-cache-force", false, "Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.")
 	f.Int64Var(&cfg.EarlyHeadCompactionMinInMemorySeries, "blocks-storage.tsdb.early-head-compaction-min-in-memory-series", 0, fmt.Sprintf("When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -%s time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -%s time ago (unless out of order ingestion is enabled). The ingester checks every -%s whether an early compaction is required. Use 0 to disable it.", activeseries.IdleTimeoutFlag, activeseries.IdleTimeoutFlag, headCompactionIntervalFlag))
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 10, "When the early compaction is enabled, the ingester compacts only per-tenant TSDBs where the estimated series reduction is at least the configured percentage (0-100).")
+
+	cfg.HeadCompactionIntervalJitterEnabled = true
 }
 
 // Validate the config.

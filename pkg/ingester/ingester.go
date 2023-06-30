@@ -2401,7 +2401,12 @@ func (i *Ingester) compactionLoop(ctx context.Context) error {
 	// interval. Then, the next compactions will happen at a regular interval. This logic
 	// helps to have different ingesters running the compaction at a different time,
 	// effectively spreading the compactions over the configured interval.
-	ticker := time.NewTicker(util.DurationWithNegativeJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval, 1))
+	firstHeadCompactionInterval := i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval
+	if i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled {
+		firstHeadCompactionInterval = util.DurationWithNegativeJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval, 1)
+	}
+
+	ticker := time.NewTicker(firstHeadCompactionInterval)
 	defer ticker.Stop()
 	tickerRunOnce := false
 
