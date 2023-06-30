@@ -1246,30 +1246,35 @@ func TestStoreGateway_Series_QueryShardingShouldGuaranteeSeriesShardingConsisten
 
 	// Query all series, 1 shard at a time.
 	for shardID := 0; shardID < numShards; shardID++ {
-		shardLabel := sharding.FormatShardIDLabelValue(uint64(shardID), numShards)
-		expectedSeriesIDs := expectedSeriesIDByShard[shardLabel]
+		for _, streamingBatchSize := range []int{0, 1, 5} {
+			t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+				shardLabel := sharding.FormatShardIDLabelValue(uint64(shardID), numShards)
+				expectedSeriesIDs := expectedSeriesIDByShard[shardLabel]
 
-		req := &storepb.SeriesRequest{
-			MinTime: math.MinInt64,
-			MaxTime: math.MaxInt64,
-			Matchers: []storepb.LabelMatcher{
-				{Type: storepb.LabelMatcher_RE, Name: "series_id", Value: ".+"},
-				{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: shardLabel},
-			},
-		}
+				req := &storepb.SeriesRequest{
+					MinTime: math.MinInt64,
+					MaxTime: math.MaxInt64,
+					Matchers: []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_RE, Name: "series_id", Value: ".+"},
+						{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: shardLabel},
+					},
+					StreamingChunksBatchSize: uint64(streamingBatchSize),
+				}
 
-		seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
-		require.NoError(t, err)
-		assert.Empty(t, warnings)
-		require.Greater(t, len(seriesSet), 0)
+				seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+				require.NoError(t, err)
+				assert.Empty(t, warnings)
+				require.Greater(t, len(seriesSet), 0)
 
-		for _, series := range seriesSet {
-			// Ensure the series below to the right shard.
-			seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-			seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
-			require.NoError(t, err)
+				for _, series := range seriesSet {
+					// Ensure the series below to the right shard.
+					seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+					seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
+					require.NoError(t, err)
 
-			assert.Contains(t, expectedSeriesIDs, seriesID, "series:", seriesLabels.String())
+					assert.Contains(t, expectedSeriesIDs, seriesID, "series:", seriesLabels.String())
+				}
+			})
 		}
 	}
 }
@@ -1321,63 +1326,69 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 
 	srv := newStoreGatewayTestServer(t, g)
 
-	// Keep track of all responses received (by shard).
-	responsesMx := sync.Mutex{}
-	responses := make(map[int][][]*storepb.Series)
+	for _, streamingBatchSize := range []int{0, 1, 5} {
+		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+			// Keep track of all responses received (by shard).
+			responsesMx := sync.Mutex{}
+			responses := make(map[int][][]*storepb.Series)
 
-	wg := sync.WaitGroup{}
-	wg.Add(numQueries)
+			wg := sync.WaitGroup{}
+			wg.Add(numQueries)
 
-	for i := 0; i < numQueries; i++ {
-		go func(shardIndex int) {
-			defer wg.Done()
+			for i := 0; i < numQueries; i++ {
+				go func(shardIndex int) {
+					defer wg.Done()
 
-			req := &storepb.SeriesRequest{
-				MinTime: math.MinInt64,
-				MaxTime: math.MaxInt64,
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
-					{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
-						ShardIndex: uint64(shardIndex),
-						ShardCount: uint64(shardCount),
-					}.LabelValue()},
-				},
+					req := &storepb.SeriesRequest{
+						MinTime: math.MinInt64,
+						MaxTime: math.MaxInt64,
+						Matchers: []storepb.LabelMatcher{
+							{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
+							{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
+								ShardIndex: uint64(shardIndex),
+								ShardCount: uint64(shardCount),
+							}.LabelValue()},
+						},
+						StreamingChunksBatchSize: uint64(streamingBatchSize),
+					}
+
+					seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+					require.NoError(t, err)
+					assert.Empty(t, warnings)
+
+					responsesMx.Lock()
+					responses[shardIndex] = append(responses[shardIndex], seriesSet)
+					responsesMx.Unlock()
+				}(i % shardCount)
 			}
 
-			seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
-			require.NoError(t, err)
-			assert.Empty(t, warnings)
+			// Wait until all requests completed.
+			wg.Wait()
 
-			responsesMx.Lock()
-			responses[shardIndex] = append(responses[shardIndex], seriesSet)
-			responsesMx.Unlock()
-		}(i % shardCount)
-	}
+			// We expect all responses for a given shard contain the same series
+			// and all shards merged together contain all the series in the TSDB block.
+			totalSeries := 0
 
-	// Wait until all requests completed.
-	wg.Wait()
+			for shardIndex := 0; shardIndex < shardCount; shardIndex++ {
+				var expected []*storepb.Series
 
-	// We expect all responses for a given shard contain the same series
-	// and all shards merged together contain all the series in the TSDB block.
-	totalSeries := 0
+				for resIdx, res := range responses[shardIndex] {
+					// We consider the 1st response for a shard as the expected one
+					// (all in all we expect all responses to be the same).
+					if resIdx == 0 {
+						expected = res
+						totalSeries += len(res)
+						continue
+					}
 
-	for shardIndex := 0; shardIndex < shardCount; shardIndex++ {
-		var expected []*storepb.Series
-
-		for resIdx, res := range responses[shardIndex] {
-			// We consider the 1st response for a shard as the expected one
-			// (all in all we expect all responses to be the same).
-			if resIdx == 0 {
-				expected = res
-				totalSeries += len(res)
-				continue
+					assert.Equalf(t, expected, res, "shard: %d", shardIndex)
+				}
 			}
 
-			assert.Equalf(t, expected, res, "shard: %d", shardIndex)
-		}
+			assert.Equal(t, numSeries, totalSeries)
+		})
 	}
 
-	assert.Equal(t, numSeries, totalSeries)
 }
 
 func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testing.T) {

@@ -745,21 +745,33 @@ func openBlockSeriesChunkRefsSetsIterator(
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	chunkRangesPerSeries int,
 	stats *safeQueryStats,
-	ps []storage.SeriesRef, // If this is not empty, these posting are used as it is without fetching new ones.
-	pendingMatchers []*labels.Matcher, // This is used in conjunction with 'ps'.
+	reuse *reusedPostingsAndMatchers, // If this is not nil, these posting and matchers are used as it is without fetching new ones.
+
 	logger log.Logger,
-) (seriesChunkRefsSetIterator, []storage.SeriesRef, []*labels.Matcher, error) {
+) (seriesChunkRefsSetIterator, error) {
 	if batchSize <= 0 {
-		return nil, nil, nil, errors.New("set size must be a positive number")
+		return nil, errors.New("set size must be a positive number")
 	}
 
+	var ps []storage.SeriesRef
+	var pendingMatchers []*labels.Matcher
+	if reuse != nil {
+		ps = reuse.ps
+		pendingMatchers = reuse.matchers
+	}
 	if len(ps) == 0 {
 		var err error
 		ps, pendingMatchers, err = indexr.ExpandedPostings(ctx, matchers, stats)
 		if err != nil {
-			return nil, nil, nil, errors.Wrap(err, "expanded matching postings")
+			return nil, errors.Wrap(err, "expanded matching postings")
+		}
+		if reuse != nil {
+			reuse.put(ps, pendingMatchers)
 		}
 	}
+
+	returnPs := make([]storage.SeriesRef, len(ps))
+	copy(returnPs, ps)
 
 	var iterator seriesChunkRefsSetIterator
 	iterator = newLoadingSeriesChunkRefsSetIterator(
@@ -782,7 +794,26 @@ func openBlockSeriesChunkRefsSetsIterator(
 		iterator = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, iterator, stats)
 	}
 
-	return seriesStreamingFetchRefsDurationIterator(iterator, stats), ps, pendingMatchers, nil
+	return seriesStreamingFetchRefsDurationIterator(iterator, stats), nil
+}
+
+// reusedPostings is used to share the postings and matches across function calls for re-use
+// in case of streaming series. We have it as a separate struct so that we can give a safe way
+// to use it by making a copy where required. You can use it to put items only once.
+type reusedPostingsAndMatchers struct {
+	ps       []storage.SeriesRef
+	matchers []*labels.Matcher
+}
+
+func (p *reusedPostingsAndMatchers) put(ps []storage.SeriesRef, matchers []*labels.Matcher) {
+	if len(p.ps) > 0 {
+		// We already have something here.
+		return
+	}
+	// Postings list can be modified later, so we make a copy here.
+	p.ps = make([]storage.SeriesRef, len(ps))
+	copy(p.ps, ps)
+	p.matchers = matchers
 }
 
 // seriesStreamingFetchRefsDurationIterator tracks the time spent loading series and chunk refs.

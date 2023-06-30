@@ -419,7 +419,6 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		c.recordCachedChunks(cachedRanges)
 	}
 	c.chunkReaders.reset()
-
 	for sIdx, s := range nextUnloaded.series {
 		nextSet.series[sIdx].lset = s.lset
 		nextSet.series[sIdx].chks = nextSet.newSeriesAggrChunkSlice(s.numChunks())
