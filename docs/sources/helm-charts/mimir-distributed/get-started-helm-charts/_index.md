@@ -159,6 +159,20 @@ In the example that follows, metamonitoring scrapes metrics about Grafana Mimir 
 
    > **Note:** In a production environment the `url` above would point to an external system, independent of your Grafana Mimir instance, such as an instance of Grafana Cloud Metrics.
 
+1. Download the Grafana Agent Operator Custom Resource Definitions (CRDs) required to enable metamonitoring from
+   https://github.com/grafana/agent/tree/main/production/operator/crds
+
+   Install the CRDs on your cluster:
+
+   ```bash
+   kubectl apply -f production/operator/crds/
+   ```
+
+   Helm will only install Custom Resource Definitions on an initial chart install,
+   [not on a chart upgrade](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/).
+   If metamonitoring was not enabled when the chart was first installed,
+   the CRDs must be installed manually before a Helm upgrade to enable metamonitoring.
+
 1. Upgrade Grafana Mimir by using the `helm` command:
 
    ```bash
