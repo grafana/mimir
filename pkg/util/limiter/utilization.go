@@ -55,9 +55,9 @@ type UtilizationBasedLimiter struct {
 	logger             log.Logger
 	utilizationScanner utilizationScanner
 
-	// Memory limit in bytes
+	// Memory limit in bytes. The limit is enabled if the value is > 0.
 	memoryLimit uint64
-	// CPU limit in cores
+	// CPU limit in cores. The limit is enabled if the value is > 0.
 	cpuLimit float64
 	// Last CPU time counter
 	lastCPUTime float64
@@ -132,9 +132,9 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) {
 	cpuA := float64(l.cpuMovingAvg.Rate()) / 100
 
 	var reason string
-	if memUtil >= l.memoryLimit {
+	if l.memoryLimit > 0 && memUtil >= l.memoryLimit {
 		reason = "memory"
-	} else if cpuA >= l.cpuLimit {
+	} else if l.cpuLimit > 0 && cpuA >= l.cpuLimit {
 		reason = "cpu"
 	}
 
@@ -147,12 +147,36 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) {
 
 	if enable {
 		level.Info(l.logger).Log("msg", "enabling resource utilization based limiting",
-			"reason", reason, "memory_limit", l.memoryLimit, "memory_utilization", memUtil,
-			"cpu_limit", l.cpuLimit, "cpu_utilization", cpuA)
+			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(memUtil),
+			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(cpuA))
 	} else {
 		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
-			"memory_limit", l.memoryLimit, "memory_utilization", memUtil,
-			"cpu_limit", l.cpuLimit, "cpu_utilization", cpuA)
+			"memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(memUtil),
+			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(cpuA))
 	}
 	l.limitingReason.Store(reason)
+}
+
+func formatCPU(value float64) string {
+	return fmt.Sprintf("%.2f", value)
+}
+
+func formatCPULimit(limit float64) string {
+	if limit == 0 {
+		return "disabled"
+	}
+	return formatCPU(limit)
+}
+
+func formatMemory(value uint64) string {
+	// We're not using a nicer format like units.Base2Bytes() because the actual value
+	// is harder to read and compare when not a multiple of a unit (e.g. not a multiple of GB).
+	return fmt.Sprintf("%d", value)
+}
+
+func formatMemoryLimit(limit uint64) string {
+	if limit == 0 {
+		return "disabled"
+	}
+	return formatMemory(limit)
 }
