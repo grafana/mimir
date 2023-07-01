@@ -29,39 +29,29 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-type metrics struct {
-	dirSyncs                 prometheus.Counter
-	dirSyncFailures          prometheus.Counter
+// shipperMetrics holds the shipper metrics. Mimir runs 1 shipper for each tenant but
+// the metrics instance is shared across all tenants.
+type shipperMetrics struct {
 	uploads                  prometheus.Counter
 	uploadFailures           prometheus.Counter
 	lastSuccessfulUploadTime prometheus.Gauge
 }
 
-func newMetrics(reg prometheus.Registerer) *metrics {
-	var m metrics
-
-	m.dirSyncs = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_dir_syncs_total",
-		Help: "Total number of dir syncs",
-	})
-	m.dirSyncFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_dir_sync_failures_total",
-		Help: "Total number of failed dir syncs",
-	})
-	m.uploads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_uploads_total",
-		Help: "Total number of uploaded blocks",
-	})
-	m.uploadFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_upload_failures_total",
-		Help: "Total number of block upload failures",
-	})
-	m.lastSuccessfulUploadTime = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "thanos_shipper_last_successful_upload_time",
-		Help: "Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket.",
-	})
-
-	return &m
+func newShipperMetrics(reg prometheus.Registerer) *shipperMetrics {
+	return &shipperMetrics{
+		uploads: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_shipper_uploads_total",
+			Help: "Total number of uploaded TSDB blocks",
+		}),
+		uploadFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_shipper_upload_failures_total",
+			Help: "Total number of TSDB block upload failures",
+		}),
+		lastSuccessfulUploadTime: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_shipper_last_successful_upload_time",
+			Help: "Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.",
+		}),
+	}
 }
 
 type ShipperConfigProvider interface {
@@ -76,7 +66,7 @@ type shipper struct {
 	cfgProvider ShipperConfigProvider
 	userID      string
 	dir         string
-	metrics     *metrics
+	metrics     *shipperMetrics
 	bucket      objstore.Bucket
 	source      block.SourceType
 }
@@ -88,7 +78,7 @@ func newShipper(
 	logger log.Logger,
 	cfgProvider ShipperConfigProvider,
 	userID string,
-	r prometheus.Registerer,
+	metrics *shipperMetrics,
 	dir string,
 	bucket objstore.Bucket,
 	source block.SourceType,
@@ -103,7 +93,7 @@ func newShipper(
 		userID:      userID,
 		dir:         dir,
 		bucket:      bucket,
-		metrics:     newMetrics(r),
+		metrics:     metrics,
 		source:      source,
 	}
 }
@@ -185,7 +175,6 @@ func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
 		level.Warn(s.logger).Log("msg", "updating meta file failed", "err", err)
 	}
 
-	s.metrics.dirSyncs.Inc()
 	if uploadErrs > 0 {
 		s.metrics.uploadFailures.Add(float64(uploadErrs))
 		return shipped, errors.Errorf("failed to sync %v blocks", uploadErrs)

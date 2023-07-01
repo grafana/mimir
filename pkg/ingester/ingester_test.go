@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -4209,7 +4210,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_time Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_time gauge
+					cortex_ingester_shipper_last_successful_upload_time 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_time"))
 
 				// Shutdown ingester. This triggers flushing of the block.
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
@@ -4222,6 +4227,8 @@ func TestIngester_flushing(t *testing.T) {
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 1
 				`), "cortex_ingester_shipper_uploads_total"))
+
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
 			},
 		},
 
@@ -4240,7 +4247,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_time Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_time gauge
+					cortex_ingester_shipper_last_successful_upload_time 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_time"))
 
 				response1 := httptest.NewRecorder()
 				i.PrepareShutdownHandler(response1, httptest.NewRequest("GET", "/ingester/prepare-shutdown", nil))
@@ -4286,6 +4297,8 @@ func TestIngester_flushing(t *testing.T) {
 					cortex_ingester_shipper_uploads_total 1
 				`), "cortex_ingester_shipper_uploads_total"))
 
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
+
 				// If the ingester isn't "running", requests to the prepare-shutdown endpoint should fail
 				response6 := httptest.NewRecorder()
 				i.PrepareShutdownHandler(response6, httptest.NewRequest("POST", "/ingester/prepare-shutdown", nil))
@@ -4305,19 +4318,25 @@ func TestIngester_flushing(t *testing.T) {
 
 				// Nothing shipped yet.
 				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
-		# TYPE cortex_ingester_shipper_uploads_total counter
-		cortex_ingester_shipper_uploads_total 0
-	`), "cortex_ingester_shipper_uploads_total"))
+					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
+					# TYPE cortex_ingester_shipper_uploads_total counter
+					cortex_ingester_shipper_uploads_total 0
+
+					# HELP cortex_ingester_shipper_last_successful_upload_time Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_time gauge
+					cortex_ingester_shipper_last_successful_upload_time 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_time"))
 
 				i.ShutdownHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/shutdown", nil))
 
 				verifyCompactedHead(t, i, true)
 				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
-		# TYPE cortex_ingester_shipper_uploads_total counter
-		cortex_ingester_shipper_uploads_total 1
-	`), "cortex_ingester_shipper_uploads_total"))
+					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
+					# TYPE cortex_ingester_shipper_uploads_total counter
+					cortex_ingester_shipper_uploads_total 1
+				`), "cortex_ingester_shipper_uploads_total"))
+
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
 			},
 		},
 
@@ -4334,7 +4353,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_time Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_time gauge
+					cortex_ingester_shipper_last_successful_upload_time 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_time"))
 
 				// Using wait=true makes this a synchronous call.
 				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/flush?wait=true", nil))
@@ -4345,6 +4368,8 @@ func TestIngester_flushing(t *testing.T) {
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 1
 				`), "cortex_ingester_shipper_uploads_total"))
+
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
 			},
 		},
 
@@ -4361,7 +4386,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_time Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_time gauge
+					cortex_ingester_shipper_last_successful_upload_time 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_time"))
 
 				users := url.Values{}
 				users.Add(tenantParam, "unknown-user")
@@ -4375,7 +4404,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_time Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_time gauge
+					cortex_ingester_shipper_last_successful_upload_time 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_time"))
 				verifyCompactedHead(t, i, false)
 
 				users = url.Values{}
@@ -4391,6 +4424,8 @@ func TestIngester_flushing(t *testing.T) {
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 1
 				`), "cortex_ingester_shipper_uploads_total"))
+
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
 			},
 		},
 
@@ -4417,7 +4452,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_time Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_time gauge
+					cortex_ingester_shipper_last_successful_upload_time 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_time"))
 
 				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/flush?wait=true", nil))
 
@@ -4428,6 +4467,8 @@ func TestIngester_flushing(t *testing.T) {
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 3
 				`), "cortex_ingester_shipper_uploads_total"))
+
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
 
 				userDB := i.getTSDB(userID)
 				require.NotNil(t, userDB)
@@ -7351,4 +7392,12 @@ func verifyUtilizationLimitedRequestsMetric(t *testing.T, reg *prometheus.Regist
 				`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expMetrics),
 		"cortex_ingester_utilization_limited_read_requests_total"))
+}
+
+func verifyShipperLastSuccessfulUploadTimeMetric(t *testing.T, reg *prometheus.Registry, expected int64) {
+	t.Helper()
+
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	assert.InDelta(t, float64(expected), metrics.MaxGauges("cortex_ingester_shipper_last_successful_upload_time"), 5)
 }

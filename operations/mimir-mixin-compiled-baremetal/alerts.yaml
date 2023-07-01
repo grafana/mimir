@@ -605,9 +605,9 @@ groups:
         }} has not shipped any block in the last 4 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterhasnotshippedblocks
     expr: |
-      (min by(cluster, namespace, instance) (time() - thanos_shipper_last_successful_upload_time) > 60 * 60 * 4)
+      (min by(cluster, namespace, instance) (time() - cortex_ingester_shipper_last_successful_upload_time) > 60 * 60 * 4)
       and
-      (max by(cluster, namespace, instance) (thanos_shipper_last_successful_upload_time) > 0)
+      (max by(cluster, namespace, instance) (cortex_ingester_shipper_last_successful_upload_time) > 0)
       and
       # Only if the ingester has ingested samples over the last 4h.
       (max by(cluster, namespace, instance) (max_over_time(cluster_namespace_instance:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
@@ -626,7 +626,7 @@ groups:
         }} has not shipped any block in the last 4 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterhasnotshippedblockssincestart
     expr: |
-      (max by(cluster, namespace, instance) (thanos_shipper_last_successful_upload_time) == 0)
+      (max by(cluster, namespace, instance) (cortex_ingester_shipper_last_successful_upload_time) == 0)
       and
       (max by(cluster, namespace, instance) (max_over_time(cluster_namespace_instance:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
     for: 4h
