@@ -3,6 +3,7 @@
 package limiter
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -28,6 +29,12 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 	t.Run("CPU based limiting should be enabled if set to a value greater than 0", func(t *testing.T) {
 		lim, _ := setup(t, 0.11, gigabyte)
 
+		// Warmup the CPU utilization.
+		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
+			lim.compute(tim)
+			tim = tim.Add(time.Second)
+		}
+
 		// The fake utilization scanner linearly increases CPU usage for a minute
 		for i := 0; i < 59; i++ {
 			lim.compute(tim)
@@ -38,9 +45,12 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 		tim = tim.Add(time.Second)
 		require.Equal(t, "cpu", lim.LimitingReason(), "Limiting should be enabled due to CPU")
 
-		// The fake utilization scanner drops CPU usage again after a minute
-		lim.compute(tim)
-		tim = tim.Add(time.Second)
+		// The fake utilization scanner drops CPU usage again after a minute, so we expect
+		// limiting to be disabled shortly.
+		for i := 0; i < 5; i++ {
+			lim.compute(tim)
+			tim = tim.Add(time.Second)
+		}
 		require.Empty(t, lim.LimitingReason(), "Limiting should be disabled again")
 	})
 
@@ -109,6 +119,102 @@ func TestFormatMemoryLimit(t *testing.T) {
 	assert.Equal(t, "1073741825", formatMemoryLimit((1024*1024*1024)+1))
 }
 
+func TestUtilizationBasedLimiter_CPUUtilizationSensitivity(t *testing.T) {
+	tests := map[string]struct {
+		instantCPUValues          []float64
+		expectedMaxCPUUtilization float64
+	}{
+		"2 minutes idle": {
+			instantCPUValues:          generateConstCPUUtilization(120, 0),
+			expectedMaxCPUUtilization: 0,
+		},
+		"2 minutes at constant utilization": {
+			instantCPUValues:          generateConstCPUUtilization(120, 2.00),
+			expectedMaxCPUUtilization: 2,
+		},
+		"1 minute idle + 10 seconds spike + 50 seconds idle": {
+			instantCPUValues: func() []float64 {
+				values := generateConstCPUUtilization(60, 0)
+				values = append(values, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+				values = append(values, generateConstCPUUtilization(50, 0)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 1.49,
+		},
+		"10 seconds spike + 110 seconds idle (moving average warmups the first 60 seconds)": {
+			instantCPUValues: func() []float64 {
+				values := []float64{10, 9, 8, 7, 6, 5, 4, 3, 2, 1}
+				values = append(values, generateConstCPUUtilization(110, 0)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 1.44,
+		},
+		"1 minute base utilization + 10 seconds spike + 50 seconds base utilization": {
+			instantCPUValues: func() []float64 {
+				values := generateConstCPUUtilization(60, 1.0)
+				values = append(values, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+				values = append(values, generateConstCPUUtilization(50, 1.0)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 2.25,
+		},
+		"1 minute base utilization + 10 seconds steady spike + 50 seconds base utilization": {
+			instantCPUValues: func() []float64 {
+				values := generateConstCPUUtilization(60, 1.0)
+				values = append(values, generateConstCPUUtilization(10, 10.0)...)
+				values = append(values, generateConstCPUUtilization(50, 1.0)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 3.55,
+		},
+		"1 minute base utilization + 30 seconds steady spike + 30 seconds base utilization": {
+			instantCPUValues: func() []float64 {
+				values := generateConstCPUUtilization(60, 1.0)
+				values = append(values, generateConstCPUUtilization(30, 10.0)...)
+				values = append(values, generateConstCPUUtilization(30, 1.0)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 6.69,
+		},
+		"linear increase and then linear decrease utilization": {
+			instantCPUValues: func() []float64 {
+				values := generateLinearStepCPUUtilization(60, 0, 0.1)
+				values = append(values, generateLinearStepCPUUtilization(60, 60*0.1, -0.1)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 4.13,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			scanner := &preRecordedUtilizationScanner{instantCPUValues: testData.instantCPUValues}
+
+			lim := NewUtilizationBasedLimiter(1, 0, log.NewNopLogger())
+			lim.utilizationScanner = scanner
+
+			minCPUUtilization := float64(math.MaxInt64)
+			maxCPUUtilization := float64(math.MinInt64)
+
+			for i, ts := 0, time.Now(); i < len(testData.instantCPUValues); i++ {
+				currCPUUtilization, _ := lim.compute(ts)
+				ts = ts.Add(time.Second)
+
+				// Keep track of the max CPU utilization as computed by the limiter.
+				if currCPUUtilization < minCPUUtilization {
+					minCPUUtilization = currCPUUtilization
+				}
+				if currCPUUtilization > maxCPUUtilization {
+					maxCPUUtilization = currCPUUtilization
+				}
+			}
+
+			assert.InDelta(t, 0, minCPUUtilization, 0.01) // The minimum should always be 0 because of the warmup period.
+			assert.InDelta(t, testData.expectedMaxCPUUtilization, maxCPUUtilization, 0.01)
+		})
+	}
+}
+
 type fakeUtilizationScanner struct {
 	totalTime         float64
 	counter           int
@@ -120,4 +226,46 @@ func (s *fakeUtilizationScanner) Scan() (float64, uint64, error) {
 	s.counter++
 	s.counter %= 60
 	return s.totalTime, s.memoryUtilization, nil
+}
+
+func (s *fakeUtilizationScanner) String() string {
+	return "fake"
+}
+
+// preRecordedUtilizationScanner allows to replay CPU values.
+type preRecordedUtilizationScanner struct {
+	instantCPUValues []float64
+
+	// Keeps track of the accumulated CPU utilization.
+	totalCPUUtilization float64
+}
+
+func (s *preRecordedUtilizationScanner) Scan() (float64, uint64, error) {
+	if len(s.instantCPUValues) == 0 {
+		return s.totalCPUUtilization, 0, nil
+	}
+
+	s.totalCPUUtilization += s.instantCPUValues[0]
+	s.instantCPUValues = s.instantCPUValues[1:]
+	return s.totalCPUUtilization, 0, nil
+}
+
+func (s *preRecordedUtilizationScanner) String() string {
+	return ""
+}
+
+func generateConstCPUUtilization(count int, value float64) []float64 {
+	values := make([]float64, 0, count)
+	for i := 0; i < count; i++ {
+		values = append(values, value)
+	}
+	return values
+}
+
+func generateLinearStepCPUUtilization(count int, from, step float64) []float64 {
+	values := make([]float64, 0, count)
+	for i := 0; i < count; i++ {
+		values = append(values, from+(float64(i)*step))
+	}
+	return values
 }
