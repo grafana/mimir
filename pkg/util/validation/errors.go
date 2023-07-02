@@ -77,7 +77,7 @@ func newInvalidLabelError(series []mimirpb.LabelAdapter, labelName string) Valid
 }
 
 var unsortedLabelsMsgFormat = globalerror.SeriesWithUnsortedLabels.Message(
-	"received a series with unsorted labelsseries: '%.200s'")
+	"received a series with unsorted labels: '%.200s'")
 
 func newUnsortedLabelsError(series []mimirpb.LabelAdapter) ValidationError {
 	return genericValidationError{
