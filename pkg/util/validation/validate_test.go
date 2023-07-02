@@ -63,22 +63,26 @@ func TestValidateLabels(t *testing.T) {
 	cfg.maxLabelNamesPerSeries = 2
 
 	for _, c := range []struct {
-		metric                  model.Metric
+		metric                  []mimirpb.LabelAdapter
 		skipLabelNameValidation bool
+		reverseLabelOrder       bool
 		err                     error
 	}{
 		{
-			map[model.LabelName]model.LabelValue{},
+			nil,
+			false,
 			false,
 			newNoMetricNameError(),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: " "},
+			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: " "}},
+			false,
 			false,
 			newInvalidMetricNameError(" "),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
+			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "valid"}, {Name: "foo ", Value: "bar"}},
+			false,
 			false,
 			newInvalidLabelError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "valid"},
@@ -86,12 +90,14 @@ func TestValidateLabels(t *testing.T) {
 			}, "foo "),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid"},
+			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "valid"}},
+			false,
 			false,
 			nil,
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore"},
+			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "badLabelName"}, {Name: "this_is_a_really_really_long_name_that_should_cause_an_error", Value: "test_value_please_ignore"}},
+			false,
 			false,
 			newLabelNameTooLongError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "badLabelName"},
@@ -99,7 +105,8 @@ func TestValidateLabels(t *testing.T) {
 			}, "this_is_a_really_really_long_name_that_should_cause_an_error"),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here"},
+			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "badLabelValue"}, {Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"}},
+			false,
 			false,
 			newLabelValueTooLongError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "badLabelValue"},
@@ -107,7 +114,8 @@ func TestValidateLabels(t *testing.T) {
 			}, "test_value_please_ignore_no_really_nothing_to_see_here"),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
+			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "foo"}, {Name: "bar", Value: "baz"}, {Name: "blip", Value: "blop"}},
+			false,
 			false,
 			newTooManyLabelsError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "foo"},
@@ -116,12 +124,22 @@ func TestValidateLabels(t *testing.T) {
 			}, 2),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "invalid%label&name": "bar"},
+			[]mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}, {Name: model.MetricNameLabel, Value: "foo"}},
+			false,
 			true,
+			newUnsortedLabelsError([]mimirpb.LabelAdapter{
+				{Name: "bar", Value: "baz"},
+				{Name: model.MetricNameLabel, Value: "foo"},
+			}),
+		},
+		{
+			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "foo"}, {Name: "invalid%label&name", Value: "bar"}},
+			true,
+			false,
 			nil,
 		},
 	} {
-		err := ValidateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
+		err := ValidateLabels(s, cfg, userID, "custom label", c.metric, c.skipLabelNameValidation)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
@@ -134,6 +152,7 @@ func TestValidateLabels(t *testing.T) {
 			cortex_discarded_samples_total{group="custom label",reason="label_invalid",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="label_name_too_long",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="label_value_too_long",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="labels_not_sorted",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_series",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="missing_metric_name",user="testUser"} 1
