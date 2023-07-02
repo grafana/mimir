@@ -76,6 +76,16 @@ func newInvalidLabelError(series []mimirpb.LabelAdapter, labelName string) Valid
 	}
 }
 
+var unsortedLabelsMsgFormat = globalerror.SeriesWithUnsortedLabels.Message(
+	"received a series with unsorted labelsseries: '%.200s'")
+
+func newUnsortedLabelsError(series []mimirpb.LabelAdapter) ValidationError {
+	return genericValidationError{
+		message: unsortedLabelsMsgFormat,
+		series:  series,
+	}
+}
+
 var duplicateLabelMsgFormat = globalerror.SeriesWithDuplicateLabelNames.Message(
 	"received a series with duplicate label name, label: '%.200s' series: '%.200s'")
 

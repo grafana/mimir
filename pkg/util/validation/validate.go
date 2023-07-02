@@ -36,6 +36,7 @@ var (
 	reasonLabelNameTooLong          = metricReasonFromErrorID(globalerror.SeriesLabelNameTooLong)
 	reasonLabelValueTooLong         = metricReasonFromErrorID(globalerror.SeriesLabelValueTooLong)
 	reasonMaxNativeHistogramBuckets = metricReasonFromErrorID(globalerror.MaxNativeHistogramBuckets)
+	reasonUnsortedLabels            = metricReasonFromErrorID(globalerror.SeriesWithUnsortedLabels)
 	reasonDuplicateLabelNames       = metricReasonFromErrorID(globalerror.SeriesWithDuplicateLabelNames)
 	reasonTooFarInFuture            = metricReasonFromErrorID(globalerror.SampleTooFarInFuture)
 
@@ -122,6 +123,7 @@ type SampleValidationMetrics struct {
 	labelNameTooLong          *prometheus.CounterVec
 	labelValueTooLong         *prometheus.CounterVec
 	maxNativeHistogramBuckets *prometheus.CounterVec
+	unsortedLabels            *prometheus.CounterVec
 	duplicateLabelNames       *prometheus.CounterVec
 	tooFarInFuture            *prometheus.CounterVec
 }
@@ -135,6 +137,7 @@ func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
 	m.labelNameTooLong.DeletePartialMatch(filter)
 	m.labelValueTooLong.DeletePartialMatch(filter)
 	m.maxNativeHistogramBuckets.DeletePartialMatch(filter)
+	m.unsortedLabels.DeletePartialMatch(filter)
 	m.duplicateLabelNames.DeletePartialMatch(filter)
 	m.tooFarInFuture.DeletePartialMatch(filter)
 }
@@ -147,6 +150,7 @@ func (m *SampleValidationMetrics) DeleteUserMetricsForGroup(userID, group string
 	m.labelNameTooLong.DeleteLabelValues(userID, group)
 	m.labelValueTooLong.DeleteLabelValues(userID, group)
 	m.maxNativeHistogramBuckets.DeleteLabelValues(userID, group)
+	m.unsortedLabels.DeleteLabelValues(userID, group)
 	m.duplicateLabelNames.DeleteLabelValues(userID, group)
 	m.tooFarInFuture.DeleteLabelValues(userID, group)
 }
@@ -160,6 +164,7 @@ func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetric
 		labelNameTooLong:          DiscardedSamplesCounter(r, reasonLabelNameTooLong),
 		labelValueTooLong:         DiscardedSamplesCounter(r, reasonLabelValueTooLong),
 		maxNativeHistogramBuckets: DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
+		unsortedLabels:            DiscardedSamplesCounter(r, reasonUnsortedLabels),
 		duplicateLabelNames:       DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
 		tooFarInFuture:            DiscardedSamplesCounter(r, reasonTooFarInFuture),
 	}
@@ -332,6 +337,9 @@ func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userI
 		} else if len(l.Value) > maxLabelValueLength {
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
 			return newLabelValueTooLongError(ls, l.Value)
+		} else if lastLabelName > l.Name {
+			m.unsortedLabels.WithLabelValues(userID, group).Inc()
+			return newUnsortedLabelsError(ls)
 		} else if lastLabelName == l.Name {
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
 			return newDuplicatedLabelError(ls, l.Name)

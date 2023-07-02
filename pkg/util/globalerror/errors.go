@@ -19,6 +19,7 @@ const (
 	MaxLabelNamesPerSeries        ID = "max-label-names-per-series"
 	MaxNativeHistogramBuckets     ID = "max-native-histogram-buckets"
 	SeriesInvalidLabel            ID = "label-invalid"
+	SeriesWithUnsortedLabels      ID = "labels-not-sorted"
 	SeriesLabelNameTooLong        ID = "label-name-too-long"
 	SeriesLabelValueTooLong       ID = "label-value-too-long"
 	SeriesWithDuplicateLabelNames ID = "duplicate-label-names"
