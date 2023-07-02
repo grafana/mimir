@@ -65,24 +65,20 @@ func TestValidateLabels(t *testing.T) {
 	for _, c := range []struct {
 		metric                  []mimirpb.LabelAdapter
 		skipLabelNameValidation bool
-		reverseLabelOrder       bool
 		err                     error
 	}{
 		{
 			nil,
-			false,
 			false,
 			newNoMetricNameError(),
 		},
 		{
 			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: " "}},
 			false,
-			false,
 			newInvalidMetricNameError(" "),
 		},
 		{
 			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "valid"}, {Name: "foo ", Value: "bar"}},
-			false,
 			false,
 			newInvalidLabelError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "valid"},
@@ -92,12 +88,10 @@ func TestValidateLabels(t *testing.T) {
 		{
 			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "valid"}},
 			false,
-			false,
 			nil,
 		},
 		{
 			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "badLabelName"}, {Name: "this_is_a_really_really_long_name_that_should_cause_an_error", Value: "test_value_please_ignore"}},
-			false,
 			false,
 			newLabelNameTooLongError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "badLabelName"},
@@ -107,7 +101,6 @@ func TestValidateLabels(t *testing.T) {
 		{
 			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "badLabelValue"}, {Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"}},
 			false,
-			false,
 			newLabelValueTooLongError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "badLabelValue"},
 				{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
@@ -115,7 +108,6 @@ func TestValidateLabels(t *testing.T) {
 		},
 		{
 			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "foo"}, {Name: "bar", Value: "baz"}, {Name: "blip", Value: "blop"}},
-			false,
 			false,
 			newTooManyLabelsError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "foo"},
@@ -126,7 +118,6 @@ func TestValidateLabels(t *testing.T) {
 		{
 			[]mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}, {Name: model.MetricNameLabel, Value: "foo"}},
 			false,
-			true,
 			newUnsortedLabelsError([]mimirpb.LabelAdapter{
 				{Name: "bar", Value: "baz"},
 				{Name: model.MetricNameLabel, Value: "foo"},
@@ -135,7 +126,6 @@ func TestValidateLabels(t *testing.T) {
 		{
 			[]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "foo"}, {Name: "invalid%label&name", Value: "bar"}},
 			true,
-			false,
 			nil,
 		},
 	} {
