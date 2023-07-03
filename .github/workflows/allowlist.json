@@ -14,5 +14,13 @@
   {
     "name": "github.com/stretchr/testify",
     "reason": "the library is only used in tests"
+  },
+  {
+    "name": "google.golang.org/api",
+    "reason": "the library is only used for tool/copyblocks not in production"
+  },
+  {
+    "name": "github.com/sirupsen/logrus",
+    "reason": "the library is a stable logging library"
   }
 ]
