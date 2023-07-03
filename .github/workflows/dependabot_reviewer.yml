@@ -23,6 +23,24 @@ jobs:
         uses: dependabot/fetch-metadata@v1.5.1
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
+      # For the current supported version, update dependencies according to docs
+      - name: Get list of supported version and backport dependencies
+        id: supported-versions
+        run: |
+          supportedVersions=$(jq -r '.versions[] | select(.support_end_date > (now | strftime("%Y-%m-%d"))) | .branch | "backport \(.)"' supported_versions.json | paste -sd, -)
+          
+          # Join array elements with commas
+          joinedVersions=$(printf "%s, " "${supportedVersions[@]}")
+          joinedVersions=${joinedVersions%, }  # Remove the trailing comma     
+
+          gh pr edit $NUMBER --add-label "$supportedVersions"
+          gh pr comment $NUMBER --body "**This PR will automatically be backported to branches: $joinedVersions**
+
+          The supported versions, along with their corresponding reasons for support, are specified in 
+          [supported_versions.json](https://github.com/grafana/mimir/tree/main/.github/workflows/supported_versions.json)."
+        env: 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMBER: ${{ github.event.pull_request.number }}
 
       - name: Check allowlist
         id: check-allowlist
@@ -81,3 +99,4 @@ jobs:
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+

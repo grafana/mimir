@@ -1,0 +1,22 @@
+{
+    "versions": [
+        {
+            "version": "2.9",
+            "branch": "release-2.9",
+            "support_reason": "Standard support schedule",
+            "support_end_date": "2023-12-31"
+        },
+        {
+            "version":"2.8",
+            "branch": "release-2.8",
+            "support_reason": "Standard support schedule",
+            "support_end_date": "2023-12-31"
+        },
+        {
+            "version":"2.7",
+            "branch": "release-2.7",
+            "support_reason": "Standard support schedule",
+            "support_end_date": "2022-12-31"
+        }
+    ]
+}
