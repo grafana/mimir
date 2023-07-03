@@ -584,17 +584,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		return status.Error(codes.InvalidArgument, errors.Wrap(err, "parse query sharding label").Error())
 	}
 
-	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
-	level.Debug(spanLogger).Log(
-		"msg", "BucketStore.Series",
-		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
-		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
-		"request matchers", storepb.PromMatchersToString(matchers...),
-		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
-		"streaming chunks batch size", req.StreamingChunksBatchSize,
-	)
-
 	var (
+		spanLogger       = spanlogger.FromContext(srv.Context(), s.logger)
 		ctx              = srv.Context()
 		stats            = newSafeQueryStats()
 		reqBlockMatchers []*labels.Matcher
@@ -613,7 +604,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 	}
 
-	logSeriesRequestToSpan(srv.Context(), s.logger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector)
+	logSeriesRequestToSpan(srv.Context(), s.logger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
@@ -666,6 +657,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			"num_series", numSeries,
 			"duration", time.Since(seriesLoadStart),
 		)
+
+		if numSeries == 0 {
+			// There is no series to send chunks for.
+			return nil
+		}
 	}
 
 	// We create the limiter twice in the case of streaming so that we don't double count the series
@@ -960,7 +956,7 @@ func (s *BucketStore) sendHintsAndStats(srv storepb.Store_SeriesServer, resHints
 	return nil
 }
 
-func logSeriesRequestToSpan(ctx context.Context, l log.Logger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector) {
+func logSeriesRequestToSpan(ctx context.Context, l log.Logger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
 	spanLogger := spanlogger.FromContext(ctx, l)
 	level.Debug(spanLogger).Log(
 		"msg", "BucketStore.Series",
@@ -969,6 +965,7 @@ func logSeriesRequestToSpan(ctx context.Context, l log.Logger, minT, maxT int64,
 		"request matchers", storepb.PromMatchersToString(matchers...),
 		"request block matchers", storepb.PromMatchersToString(blockMatchers...),
 		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
+		"streaming chunks batch size", streamingChunksBatchSize,
 	)
 }
 
