@@ -176,23 +176,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", true, "Stream chunks from ingesters to queriers.")
 	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "ingester.tsdb-config-update-period", 15*time.Second, "Period with which to update the per-tenant TSDB configuration.")
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
-	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting")
-	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting")
+	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
+	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 }
 
 func (cfg *Config) Validate() error {
-	utilizationLimitsEnabled := cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0
-	if !utilizationLimitsEnabled {
-		return nil
-	}
-
-	if cfg.ReadPathCPUUtilizationLimit <= 0 {
-		return fmt.Errorf("read path CPU utilization limit must be greater than 0")
-	}
-	if cfg.ReadPathMemoryUtilizationLimit <= 0 {
-		return fmt.Errorf("read path memory utilization limit must be greater than 0")
-	}
-
 	return cfg.IngesterRing.Validate()
 }
 
@@ -422,7 +410,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	if i.cfg.ReadPathCPUUtilizationLimit > 0 && i.cfg.ReadPathMemoryUtilizationLimit > 0 {
+	if i.cfg.ReadPathCPUUtilizationLimit > 0 || i.cfg.ReadPathMemoryUtilizationLimit > 0 {
 		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(i.cfg.ReadPathCPUUtilizationLimit,
 			i.cfg.ReadPathMemoryUtilizationLimit, log.WithPrefix(i.logger, "context", "read path"))
 		servs = append(servs, i.utilizationBasedLimiter)

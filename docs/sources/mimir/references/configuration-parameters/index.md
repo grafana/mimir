@@ -980,12 +980,12 @@ instance_limits:
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 
 # (experimental) CPU utilization limit, as CPU cores, for CPU/memory utilization
-# based read request limiting
+# based read request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-cpu-utilization-limit
 [read_path_cpu_utilization_limit: <float> | default = 0]
 
 # (experimental) Memory limit, in bytes, for CPU/memory utilization based read
-# request limiting
+# request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
 ```
