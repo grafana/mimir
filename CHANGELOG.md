@@ -76,6 +76,8 @@
 
 ### Tools
 
+* [BUGFIX] Stop tools from panicking when `-help` flag is passed. #5412
+
 ## 2.9.0
 
 ### Grafana Mimir
