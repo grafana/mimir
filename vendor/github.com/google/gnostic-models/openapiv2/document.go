@@ -17,7 +17,7 @@ package openapi_v2
 import (
 	"gopkg.in/yaml.v3"
 
-	"github.com/google/gnostic/compiler"
+	"github.com/google/gnostic-models/compiler"
 )
 
 // ParseDocument reads an OpenAPI v2 description from a YAML/JSON representation.
