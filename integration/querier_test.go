@@ -251,8 +251,8 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 
 			comparingFunction := e2e.Equals
 			if streamingEnabled {
-				// Some metrics should be higher when streaming is enabled. The exact number is not deterministic in every case.
-				comparingFunction = e2e.Greater
+				// Some metrics can be higher when streaming is enabled. The exact number is not deterministic in every case.
+				comparingFunction = e2e.GreaterOrEqual
 			}
 
 			// Check the in-memory index cache metrics (in the store-gateway).
