@@ -28,8 +28,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Changed max unavailable ingesters and store-gateways in a zone to 50. #5327
 * [CHANGE] Don't render PodSecurityPolicy on Kubernetes >=1.24. (was >= 1.25). This helps with upgrades between 1.24 and 1.25. To use a PSP in 1.24, toggle `rbac.forcePSPOnKubernetes124: true`. #5357
-* [ENHANCEMENT] Ruler: configure the ruler storage cache when the metadata cache is enabled. #5326
+* [ENHANCEMENT] Ruler: configure the ruler storage cache when the metadata cache is enabled. #5326 #5334
+* [ENHANCEMENT] Helm: support metricRelabelings in the monitoring serviceMonitor resources. #5340
 
 ## 4.5.0
 

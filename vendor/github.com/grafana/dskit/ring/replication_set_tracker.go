@@ -34,6 +34,14 @@ type replicationSetResultTracker interface {
 	// This method must only be called before calling done.
 	startMinimumRequests()
 
+	// Starts additional request(s) as defined by the quorum requirements of this tracker.
+	// For example, a zone-aware tracker would start requests for another zone, whereas a
+	// non-zone-aware tracker would start a request for another instance.
+	// This method must only be called after calling startMinimumRequests or startAllRequests.
+	// If requests for all instances have already been started, this method does nothing.
+	// This method must only be called before calling done.
+	startAdditionalRequests()
+
 	// Starts requests for all instances.
 	// Calling this method multiple times may lead to unpredictable behaviour.
 	// Calling both this method and releaseMinimumRequests may lead to unpredictable behaviour.
@@ -95,13 +103,7 @@ func (t *defaultResultTracker) done(_ *InstanceDesc, err error) {
 		}
 	} else {
 		t.numErrors++
-
-		if len(t.pendingInstances) > 0 {
-			// There are some outstanding requests we could make before we reach maxErrors. Release the next one.
-			i := t.pendingInstances[0]
-			t.instanceRelease[i] <- struct{}{}
-			t.pendingInstances = t.pendingInstances[1:]
-		}
+		t.startAdditionalRequests()
 	}
 }
 
@@ -151,6 +153,15 @@ func (t *defaultResultTracker) startMinimumRequests() {
 	// then make sure we don't block requests forever.
 	if t.succeeded() {
 		t.onSucceeded()
+	}
+}
+
+func (t *defaultResultTracker) startAdditionalRequests() {
+	if len(t.pendingInstances) > 0 {
+		// There are some outstanding requests we could make before we reach maxErrors. Release the next one.
+		i := t.pendingInstances[0]
+		t.instanceRelease[i] <- struct{}{}
+		t.pendingInstances = t.pendingInstances[1:]
 	}
 }
 
@@ -251,11 +262,9 @@ func (t *zoneAwareResultTracker) done(instance *InstanceDesc, err error) {
 	} else {
 		t.failuresByZone[instance.Zone]++
 
-		if len(t.pendingZones) > 0 && t.failuresByZone[instance.Zone] == 1 {
-			// If there are more zones we could try before reaching maxUnavailableZones and this was the first
-			// failure for this zone, release another zone's requests and signal they should start.
-			t.releaseZone(t.pendingZones[0], true)
-			t.pendingZones = t.pendingZones[1:]
+		if t.failuresByZone[instance.Zone] == 1 {
+			// If this was the first failure for this zone, release another zone's requests and signal they should start.
+			t.startAdditionalRequests()
 		}
 	}
 }
@@ -315,6 +324,14 @@ func (t *zoneAwareResultTracker) startMinimumRequests() {
 	// then make sure we don't block requests forever.
 	if t.succeeded() {
 		t.onSucceeded()
+	}
+}
+
+func (t *zoneAwareResultTracker) startAdditionalRequests() {
+	if len(t.pendingZones) > 0 {
+		// If there are more zones we could try before reaching maxUnavailableZones, release another zone's requests and signal they should start.
+		t.releaseZone(t.pendingZones[0], true)
+		t.pendingZones = t.pendingZones[1:]
 	}
 }
 

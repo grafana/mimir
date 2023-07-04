@@ -1,6 +1,7 @@
 ---
 aliases:
   - migration-guide/
+  - ../migrate/
 description: Refer to these guides when migrating to Grafana Mimir.
 menuTitle: Migrate
 title: Migrate to Grafana Mimir

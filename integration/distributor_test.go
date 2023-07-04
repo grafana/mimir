@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -24,16 +23,6 @@ import (
 )
 
 func TestDistributor(t *testing.T) {
-	t.Run("caching_unmarshal_data_enabled", func(t *testing.T) {
-		testDistributorWithCachingUnmarshalData(t, true)
-	})
-
-	t.Run("caching_unmarshal_data_disabled", func(t *testing.T) {
-		testDistributorWithCachingUnmarshalData(t, false)
-	})
-}
-
-func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataEnabled bool) {
 	queryEnd := time.Now().Round(time.Second)
 	queryStart := queryEnd.Add(-1 * time.Hour)
 	queryStep := 10 * time.Minute
@@ -231,14 +220,13 @@ overrides:
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	baseFlags := map[string]string{
-		"-distributor.ingestion-tenant-shard-size":           "0",
-		"-ingester.ring.heartbeat-period":                    "1s",
-		"-distributor.ha-tracker.enable":                     "true",
-		"-distributor.ha-tracker.enable-for-all-users":       "true",
-		"-distributor.ha-tracker.store":                      "consul",
-		"-distributor.ha-tracker.consul.hostname":            consul.NetworkHTTPEndpoint(),
-		"-distributor.ha-tracker.prefix":                     "prom_ha/",
-		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(cachingUnmarshalDataEnabled),
+		"-distributor.ingestion-tenant-shard-size":     "0",
+		"-ingester.ring.heartbeat-period":              "1s",
+		"-distributor.ha-tracker.enable":               "true",
+		"-distributor.ha-tracker.enable-for-all-users": "true",
+		"-distributor.ha-tracker.store":                "consul",
+		"-distributor.ha-tracker.consul.hostname":      consul.NetworkHTTPEndpoint(),
+		"-distributor.ha-tracker.prefix":               "prom_ha/",
 	}
 
 	flags := mergeFlags(

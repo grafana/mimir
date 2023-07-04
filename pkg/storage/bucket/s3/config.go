@@ -75,14 +75,15 @@ func (cfg *HTTPConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 // Config holds the config options for an S3 backend
 type Config struct {
-	Endpoint         string         `yaml:"endpoint"`
-	Region           string         `yaml:"region"`
-	BucketName       string         `yaml:"bucket_name"`
-	SecretAccessKey  flagext.Secret `yaml:"secret_access_key"`
-	AccessKeyID      string         `yaml:"access_key_id"`
-	Insecure         bool           `yaml:"insecure" category:"advanced"`
-	SignatureVersion string         `yaml:"signature_version" category:"advanced"`
-	StorageClass     string         `yaml:"storage_class" category:"experimental"`
+	Endpoint           string         `yaml:"endpoint"`
+	Region             string         `yaml:"region"`
+	BucketName         string         `yaml:"bucket_name"`
+	SecretAccessKey    flagext.Secret `yaml:"secret_access_key"`
+	AccessKeyID        string         `yaml:"access_key_id"`
+	Insecure           bool           `yaml:"insecure" category:"advanced"`
+	SignatureVersion   string         `yaml:"signature_version" category:"advanced"`
+	ListObjectsVersion string         `yaml:"list_objects_version" category:"advanced"`
+	StorageClass       string         `yaml:"storage_class" category:"experimental"`
 
 	SSE  SSEConfig  `yaml:"sse"`
 	HTTP HTTPConfig `yaml:"http"`
@@ -102,6 +103,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Endpoint, prefix+"s3.endpoint", "", "The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.")
 	f.BoolVar(&cfg.Insecure, prefix+"s3.insecure", false, "If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.")
 	f.StringVar(&cfg.SignatureVersion, prefix+"s3.signature-version", SignatureVersionV4, fmt.Sprintf("The signature version to use for authenticating against S3. Supported values are: %s.", strings.Join(supportedSignatureVersions, ", ")))
+	f.StringVar(&cfg.ListObjectsVersion, prefix+"s3.list-objects-version", "", "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.")
 	f.StringVar(&cfg.StorageClass, prefix+"s3.storage-class", "", "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: "+strings.Join(supportedStorageClasses, ", "))
 	cfg.SSE.RegisterFlagsWithPrefix(prefix+"s3.sse.", f)
 	cfg.HTTP.RegisterFlagsWithPrefix(prefix, f)

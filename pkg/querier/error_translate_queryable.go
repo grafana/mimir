@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/gogo/status"
 	"github.com/pkg/errors"
@@ -50,7 +51,6 @@ func TranslateToPromqlAPIError(err error) error {
 		}
 
 		s, ok := status.FromError(err)
-
 		if !ok {
 			s, ok = status.FromError(errors.Cause(err))
 		}
@@ -62,9 +62,8 @@ func TranslateToPromqlAPIError(err error) error {
 			if code >= 400 && code < 500 {
 				// Return directly, will be mapped to 422
 				return err
-			} else if code >= 500 && code < 599 {
-				// Wrap into ErrStorage for mapping to 500
-				return promql.ErrStorage{Err: err}
+			} else if code == http.StatusServiceUnavailable {
+				return promql.ErrQueryTimeout(s.Message())
 			}
 		}
 
