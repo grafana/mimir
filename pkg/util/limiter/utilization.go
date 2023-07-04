@@ -4,7 +4,6 @@ package limiter
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -23,18 +22,12 @@ const (
 )
 
 type utilizationScanner interface {
-	fmt.Stringer
-
 	// Scan returns CPU time in seconds and memory utilization in bytes, or an error.
 	Scan() (float64, uint64, error)
 }
 
 type procfsScanner struct {
 	proc procfs.Proc
-}
-
-func (s procfsScanner) String() string {
-	return "/proc"
 }
 
 func (s procfsScanner) Scan() (float64, uint64, error) {
@@ -109,8 +102,7 @@ func (l *UtilizationBasedLimiter) update(_ context.Context) error {
 func (l *UtilizationBasedLimiter) compute(now time.Time) {
 	cpuTime, memUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
-		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "method",
-			l.utilizationScanner.String(), "err", err.Error())
+		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "err", err.Error())
 		// Disable any limiting, since we can't tell resource utilization
 		l.limitingReason.Store("")
 		return

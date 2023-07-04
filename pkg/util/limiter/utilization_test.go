@@ -63,7 +63,3 @@ func (s *fakeUtilizationScanner) Scan() (float64, uint64, error) {
 	s.counter %= 60
 	return s.totalTime, s.memoryUtilization, nil
 }
-
-func (s *fakeUtilizationScanner) String() string {
-	return "fake"
-}
