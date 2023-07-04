@@ -1,17 +1,18 @@
-multitenancy_enabled: false
+# NOTE(santiago): acá.
+multitenancy_enabled: true
 
 common:
   storage:
     backend: s3
     s3:
-      endpoint:          minio:9000
-      access_key_id:     mimir
+      endpoint: minio:9000
+      access_key_id: mimir
       secret_access_key: supersecret
-      insecure:          true
+      insecure: true
 
 blocks_storage:
   s3:
-    bucket_name:       mimir-blocks
+    bucket_name: mimir-blocks
   tsdb:
     dir: /data/ingester
 
@@ -31,10 +32,9 @@ blocks_storage:
       memcached:
         addresses: dns+memcached:11211
 
-
 memberlist:
   # Use write replicas as seed nodes.
-  join_members: [ mimir-write-1, mimir-write-2, mimir-write-3 ]
+  join_members: [mimir-write-1, mimir-write-2, mimir-write-3]
 
 ruler:
   rule_path: /data/ruler
@@ -43,7 +43,7 @@ ruler:
 
 ruler_storage:
   s3:
-    bucket_name:       mimir-ruler
+    bucket_name: mimir-ruler
   cache:
     backend: memcached
     memcached:

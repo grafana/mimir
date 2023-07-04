@@ -46,6 +46,7 @@ type Config struct {
 }
 
 // MimirClient is a client to the Mimir API.
+// NOTE(santiago): importante, client!
 type MimirClient struct {
 	user      string
 	key       string

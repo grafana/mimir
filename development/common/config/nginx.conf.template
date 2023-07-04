@@ -32,10 +32,11 @@ http {
 
   server {
     listen 8080;
+    auth_basic "algo";
+    auth_basic_user_file /etc/nginx/.htpasswd;
 
-    location = / {
+    location = / {  
       return 200 'OK';
-      auth_basic off;
     }
 
     proxy_set_header X-Scope-OrgID $ensured_x_scope_orgid;

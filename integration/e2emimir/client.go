@@ -35,6 +35,7 @@ import (
 var ErrNotFound = errors.New("not found")
 
 // Client is a client used to interact with Mimir in integration tests
+// NOTE(santiago): otro client, este se usa en tests pero...
 type Client struct {
 	alertmanagerClient  promapi.Client
 	querierAddress      string

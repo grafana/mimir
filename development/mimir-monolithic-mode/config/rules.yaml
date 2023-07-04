@@ -1,0 +1,11 @@
+# Example rules file to load to Mimir via the ruler API.
+groups:
+  - name: test
+    rules:
+      - alert: Test
+        expr: go_goroutines > 1
+        for: 30s
+        labels:
+          severity: page
+        annotations:
+          summary: Too many services

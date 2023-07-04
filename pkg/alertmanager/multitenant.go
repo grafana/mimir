@@ -528,6 +528,7 @@ func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncR
 	level.Info(am.logger).Log("msg", "synchronizing alertmanager configs for users")
 	am.syncTotal.WithLabelValues(syncReason).Inc()
 
+	// NOTE(santiago): it's taking all configs and initing the AM.
 	allUsers, cfgs, err := am.loadAlertmanagerConfigs(ctx)
 	if err != nil {
 		am.syncFailures.WithLabelValues(syncReason).Inc()
@@ -583,6 +584,7 @@ func (am *MultitenantAlertmanager) stopping(_ error) error {
 // - The configurations of users owned by this instance.
 func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertspb.AlertConfigDesc, error) {
 	// Find all users with an alertmanager config.
+	// NOTE(santiago): this function should return all users, including Grafana users...
 	allUserIDs, err := am.store.ListAllUsers(ctx)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to list users with alertmanager configuration")
@@ -598,6 +600,7 @@ func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) 
 	}
 	numUsersOwned := len(ownedUserIDs)
 
+	// NOTE(santiago): this should have Grafana users too.
 	// Load the configs for the owned users.
 	configs, err := am.store.GetAlertConfigs(ctx, ownedUserIDs)
 	if err != nil {
@@ -660,7 +663,7 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertCon
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
-	var userAmConfig *amconfig.Config
+	var userAmConfig *AlertmanagerConfig
 	var err error
 	var hasTemplateChanges bool
 	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
@@ -715,13 +718,13 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			return fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
 		}
 		level.Debug(am.logger).Log("msg", "blank Alertmanager configuration; using fallback", "user", cfg.User)
-		userAmConfig, err = amconfig.Load(am.fallbackConfig)
+		userAmConfig, err = LoadConfig(am.fallbackConfig)
 		if err != nil {
 			return fmt.Errorf("unable to load fallback configuration for %v: %v", cfg.User, err)
 		}
 		rawCfg = am.fallbackConfig
 	} else {
-		userAmConfig, err = amconfig.Load(cfg.RawConfig)
+		userAmConfig, err = LoadConfig(cfg.RawConfig)
 		if err != nil && hasExisting {
 			// This means that if a user has a working config and
 			// they submit a broken one, the Manager will keep running the last known
@@ -763,7 +766,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amconfig.Config, rawCfg string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *AlertmanagerConfig, rawCfg string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)

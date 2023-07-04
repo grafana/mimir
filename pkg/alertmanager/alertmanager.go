@@ -310,7 +310,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg string) error {
+func (am *Alertmanager) ApplyConfig(userID string, conf *AlertmanagerConfig, rawCfg string) error {
 	templateFiles := make([]string, len(conf.Templates))
 	for i, t := range conf.Templates {
 		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
@@ -327,7 +327,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
 
-	am.api.Update(conf, func(_ model.LabelSet) {})
+	am.api.Update(&conf.Config, func(_ model.LabelSet) {})
 
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
@@ -353,6 +353,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
+	// TODO(santiago): add integrations!
 	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
@@ -456,6 +457,46 @@ func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewal
 		}
 		integrationsMap[rcv.Name] = integrations
 	}
+
+	// apiReceiver := alertingNotify.APIReceiver{
+	// 	GrafanaIntegrations: grafanaIntegrations,
+	// }
+
+	// decryptFn := func(ctx context.Context, sjd map[string][]byte, key string, fallback string) string {
+	// 	return key
+	// }
+	// receiverCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), &apiReceiver, decryptFn)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// // TODO(santiago): actually add senders...
+	// whSenderFn := func(n receivers.Metadata) (receivers.WebhookSender, error) {
+	// 	return nil, nil
+	// }
+	// emailSenderFn := func(n receivers.Metadata) (receivers.EmailSender, error) {
+	// 	return nil, nil
+	// }
+
+	// var loggerFactory alertingLogging.LoggerFactory = func(logger string, ctx ...interface{}) alertingLogging.Logger {
+	// 	return alertingLogging.FakeLogger{}
+	// }
+
+	// fmt.Println("Haciendo los notifiers!!! :P")
+	// alertingNotify.BuildReceiverIntegrations(
+	// 	receiverCfg,
+	// 	tmpl,
+	// 	&images.UnavailableProvider{},
+	// 	loggerFactory,
+	// 	whSenderFn,
+	// 	emailSenderFn,
+	// 	1,
+	// 	"lol",
+	// )
+	// if err != nil {
+	// 	return nil, err
+	// }
+
 	return integrationsMap, nil
 }
 

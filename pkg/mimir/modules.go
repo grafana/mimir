@@ -784,10 +784,12 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	return t.Ruler, nil
 }
 
+// NOTE(santiago): importante!
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
 
+	// NOTE(santiago): this now has Grafana Alertmanager storage.
 	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return

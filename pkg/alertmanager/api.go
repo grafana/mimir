@@ -195,7 +195,7 @@ func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits 
 		return fmt.Errorf("configuration provided is empty, if you'd like to remove your configuration please use the delete configuration endpoint")
 	}
 
-	amCfg, err := config.Load(cfg.RawConfig)
+	amCfg, err := LoadConfig(cfg.RawConfig)
 	if err != nil {
 		return err
 	}

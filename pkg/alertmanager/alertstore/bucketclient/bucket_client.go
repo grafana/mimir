@@ -59,14 +59,17 @@ func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigPro
 	}
 }
 
+// NOTE(santiago): importante!
 // ListAllUsers implements alertstore.AlertStore.
 func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
 	var userIDs []string
 
+	// NOTE(santiago): looking in alert config bucket and listing userIDs.
 	err := s.alertsBucket.Iter(ctx, "", func(key string) error {
 		userIDs = append(userIDs, key)
 		return nil
 	})
+	// fmt.Println("ListAllUsers returns these user IDs:", userIDs)
 
 	return userIDs, err
 }
