@@ -1266,10 +1266,6 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
-# (advanced) Cache requests that are not step-aligned.
-# CLI flag: -query-frontend.cache-unaligned-requests
-[cache_unaligned_requests: <boolean> | default = false]
-
 # How many series a single sharded partial query should load at most. This is
 # not a strict requirement guaranteed to be honoured by query sharding, but a
 # hint given to the query sharding when the query execution is initially
@@ -2896,6 +2892,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # value 0 disables the cache.
 # CLI flag: -query-frontend.results-cache-ttl-for-cardinality-query
 [results_cache_ttl_for_cardinality_query: <duration> | default = 0s]
+
+# (advanced) Cache requests that are not step-aligned.
+# CLI flag: -query-frontend.cache-unaligned-requests
+[cache_unaligned_requests: <boolean> | default = false]
 
 # (experimental) Max size of the raw query, in bytes. 0 to not apply a limit to
 # the size of the query.
