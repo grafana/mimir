@@ -200,10 +200,6 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 }
 
 func TestPreallocTimeseries_Unmarshal(t *testing.T) {
-	defer func() {
-		TimeseriesUnmarshalCachingEnabled = true
-	}()
-
 	// Prepare message
 	msg := PreallocTimeseries{}
 	{
@@ -222,14 +218,6 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 
 		data, err := src.Marshal()
 		require.NoError(t, err)
-
-		TimeseriesUnmarshalCachingEnabled = false
-
-		require.NoError(t, msg.Unmarshal(data))
-		require.True(t, src.Equal(msg.TimeSeries))
-		require.Nil(t, msg.marshalledData)
-
-		TimeseriesUnmarshalCachingEnabled = true
 
 		require.NoError(t, msg.Unmarshal(data))
 		require.True(t, src.Equal(msg.TimeSeries))

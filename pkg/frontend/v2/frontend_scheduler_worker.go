@@ -220,7 +220,7 @@ type frontendSchedulerWorker struct {
 	wg     sync.WaitGroup
 
 	// Shared between all frontend workers.
-	requestCh <-chan *frontendRequest
+	requestsCh <-chan *frontendRequest
 
 	// Cancellation requests for this scheduler are received via this channel. It is passed to frontend after
 	// query has been enqueued to scheduler.
@@ -230,14 +230,14 @@ type frontendSchedulerWorker struct {
 	enqueuedRequests prometheus.Counter
 }
 
-func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestCh <-chan *frontendRequest, concurrency int, enqueuedRequests prometheus.Counter, log log.Logger) *frontendSchedulerWorker {
+func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestsCh <-chan *frontendRequest, concurrency int, enqueuedRequests prometheus.Counter, log log.Logger) *frontendSchedulerWorker {
 	w := &frontendSchedulerWorker{
 		log:              log,
 		conn:             conn,
 		concurrency:      concurrency,
 		schedulerAddr:    schedulerAddr,
 		frontendAddr:     frontendAddr,
-		requestCh:        requestCh,
+		requestsCh:       requestsCh,
 		cancelCh:         make(chan uint64, schedulerWorkerCancelChanCapacity),
 		enqueuedRequests: enqueuedRequests,
 	}
@@ -331,7 +331,7 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 			level.Debug(w.log).Log("msg", "stream context finished", "err", ctx.Err())
 			return nil
 
-		case req := <-w.requestCh:
+		case req := <-w.requestsCh:
 			err := loop.Send(&schedulerpb.FrontendToScheduler{
 				Type:            schedulerpb.ENQUEUE,
 				QueryID:         req.queryID,
