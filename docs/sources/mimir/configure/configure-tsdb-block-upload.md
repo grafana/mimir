@@ -55,10 +55,12 @@ We intend to add validation of uploaded blocks in a future release, which would 
 
 ### The results-cache needs flushing
 
-After uploading one or more blocks, the results-cache needs flushing. The reason is that Grafana Mimir caches query results
-for queries that don’t touch the most recent 10 minutes of data. After uploading blocks however, queries may return different
-results (because new data was uploaded). Therefore cached results may be wrong, meaning the cache should manually be flushed
-after uploading blocks.
+Grafana Mimir caches query results for queries that don’t require the most recent 10 minutes of data. 
+After uploading blocks however, queries may return different results – because new data was uploaded.
+This means that cached results may be wrong.
+To fix the cache results, Mimir operator can manually flush the results cache.
+Possible alternative is to decrease time-to-live period for cache results from default 7 days to shorter period, for example 6 hours, by using `-query-frontend.results-cache-ttl` command line option (or per tenant).
+This will guarantee that query results will use backfilled data at most after this period.  
 
 ### Blocks that are too new will not be queryable until later
 
