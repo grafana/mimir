@@ -183,7 +183,7 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
-func newSeriesSetWithChunks(
+func newChunksPreloadingIterator(
 	ctx context.Context,
 	logger log.Logger,
 	userID string,

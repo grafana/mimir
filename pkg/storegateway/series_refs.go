@@ -1000,11 +1000,16 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 			series symbolizedSeriesChunkRefs
 		)
 		series.lset, metas, err = s.loadSeries(id, loadedSeries, stats, symbolizedSet.labelsPool)
+		if err != nil {
+			return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "read series")
+		}
+
 		if isNoChunkRefsAndOverlapMintMaxt {
 			overlaps := false
 			for _, m := range metas {
 				if m.MaxTime >= s.minTime && m.MinTime <= s.maxTime {
 					overlaps = true
+					break
 				}
 			}
 			if !overlaps {
@@ -1012,9 +1017,6 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 			}
 		}
 
-		if err != nil {
-			return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "read series")
-		}
 		if !s.strategy.isNoChunkRefs() {
 			clampLastChunkLength(symbolizedSet.series, metas)
 			series.chunksRanges = metasToRanges(partitionChunks(metas, s.chunkRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)

@@ -645,7 +645,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return err
 		}
 
-		numSeries, err := s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet, resHints)
+		numSeries, err := s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
 		if err != nil {
 			return err
 		}
@@ -722,7 +722,6 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 	srv storepb.Store_SeriesServer,
 	stats *safeQueryStats,
 	seriesSet storepb.SeriesSet,
-	resHints *hintspb.SeriesResponseHints,
 ) (numSeries int, err error) {
 	var (
 		encodeDuration = time.Duration(0)
@@ -1006,7 +1005,7 @@ func (s *BucketStore) nonStreamingSeriesSetForBlocks(
 		if s.fineGrainedChunksCachingEnabled {
 			cache = s.chunksCache
 		}
-		ss := newSeriesSetWithChunks(ctx, s.logger, s.userID, cache, *chunkReaders, it, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+		ss := newChunksPreloadingIterator(ctx, s.logger, s.userID, cache, *chunkReaders, it, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
 		set = newSeriesChunksSeriesSet(ss)
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, it, stats)
@@ -1067,7 +1066,7 @@ func (s *BucketStore) streamingChunksSetForBlocks(
 	if s.fineGrainedChunksCachingEnabled {
 		cache = s.chunksCache
 	}
-	scsi := newSeriesSetWithChunks(ctx, s.logger, s.userID, cache, *chunkReaders, it, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
+	scsi := newChunksPreloadingIterator(ctx, s.logger, s.userID, cache, *chunkReaders, it, s.maxSeriesPerBatch, stats, req.MinTime, req.MaxTime)
 	return scsi, nil
 }
 

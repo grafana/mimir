@@ -175,7 +175,7 @@ func (s *safeQueryStats) export() *queryStats {
 	return &copied
 }
 
-// seriesAndChunksCount the value of mergedSeriesCount and mergedChunksCount fields.
+// seriesAndChunksCount return the value of mergedSeriesCount and mergedChunksCount fields.
 func (s *safeQueryStats) seriesAndChunksCount() (seriesCount, chunksCount int) {
 	s.unsafeStatsMx.Lock()
 	defer s.unsafeStatsMx.Unlock()

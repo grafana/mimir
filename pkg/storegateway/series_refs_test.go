@@ -1117,13 +1117,13 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 	})
 
 	type testCase struct {
-		blockFactory                func() *bucketBlock // if nil, defaultTestBlockFactory is used
-		shard                       *sharding.ShardSelector
-		matchers                    []*labels.Matcher
-		seriesHasher                seriesHasher
-		skipChunks, streamingSeries bool
-		minT, maxT                  int64
-		batchSize                   int
+		blockFactory func() *bucketBlock // if nil, defaultTestBlockFactory is used
+		shard        *sharding.ShardSelector
+		matchers     []*labels.Matcher
+		seriesHasher seriesHasher
+		strategy     seriesIteratorStrategy
+		minT, maxT   int64
+		batchSize    int
 
 		expectedSets []seriesChunkRefsSet
 	}
@@ -1177,11 +1177,11 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			},
 		},
 		"skips chunks": {
-			skipChunks: true,
-			minT:       0,
-			maxT:       40,
-			batchSize:  100,
-			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			strategy:  noChunkRefs,
+			minT:      0,
+			maxT:      40,
+			batchSize: 100,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1")},
@@ -1251,11 +1251,11 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			},
 		},
 		"ignores mixT/maxT when skipping chunks": {
-			minT:       0,
-			maxT:       10,
-			skipChunks: true,
-			batchSize:  4,
-			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			minT:      0,
+			maxT:      10,
+			strategy:  noChunkRefs,
+			batchSize: 4,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1")},
@@ -1269,7 +1269,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			blockFactory: largerTestBlockFactory,
 			minT:         0,
 			maxT:         math.MaxInt64,
-			skipChunks:   true, // There is still no easy way to assert on the refs of 100K chunks, so we skip them.
+			strategy:     noChunkRefs, // There is still no easy way to assert on the refs of 100K chunks, so we skip them.
 			batchSize:    largerTestBlockSeriesCount,
 			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", ".*")},
 			expectedSets: func() []seriesChunkRefsSet {
@@ -1288,7 +1288,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			blockFactory: largerTestBlockFactory,
 			minT:         0,
 			maxT:         math.MaxInt64,
-			skipChunks:   true, // There is still no easy way to assert on the refs of 100K chunks, so we skip them.
+			strategy:     noChunkRefs, // There is still no easy way to assert on the refs of 100K chunks, so we skip them.
 			batchSize:    5000,
 			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", ".*")},
 			expectedSets: func() []seriesChunkRefsSet {
@@ -1309,13 +1309,12 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				return sets
 			}(),
 		},
-		"skip chunks with streaming on 1": {
-			minT:            0,
-			maxT:            25,
-			batchSize:       100,
-			skipChunks:      true,
-			streamingSeries: true, // mint and maxt is considered.
-			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+		"skip chunks with streaming on block 1": {
+			minT:      0,
+			maxT:      25,
+			batchSize: 100,
+			strategy:  noChunkRefs | overlapMintMaxt,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1")},
@@ -1323,13 +1322,12 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				}},
 			},
 		},
-		"skip chunks with streaming on 2": {
-			minT:            15,
-			maxT:            35,
-			batchSize:       100,
-			skipChunks:      true,
-			streamingSeries: true, // mint and maxt is considered.
-			matchers:        []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+		"skip chunks with streaming on block 2": {
+			minT:      15,
+			maxT:      35,
+			batchSize: 100,
+			strategy:  noChunkRefs | overlapMintMaxt,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v2")},
@@ -1357,13 +1355,6 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		if hasher == nil {
 			hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
 		}
-		var strategy seriesIteratorStrategy
-		if tc.skipChunks {
-			strategy |= noChunkRefs
-		}
-		if tc.streamingSeries {
-			strategy |= overlapMintMaxt
-		}
 		loadingIterator := newLoadingSeriesChunkRefsSetIterator(
 			context.Background(),
 			postingsIterator,
@@ -1373,7 +1364,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			block.meta,
 			tc.shard,
 			hasher,
-			strategy,
+			tc.strategy,
 			tc.minT,
 			tc.maxT,
 			"t1",
@@ -1391,20 +1382,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		testName, tc := testName, testCase
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			if tc.skipChunks {
-				runTest(tc)
-			} else {
-				// We test with both streaming on and off when we are fetching chunks.
-				for _, streaming := range []bool{true, false} {
-					tcCopy := tc
-					streaming := streaming
-					t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
-						t.Parallel()
-						tcCopy.streamingSeries = streaming
-						runTest(tcCopy)
-					})
-				}
-			}
+			runTest(tc)
 		})
 	}
 }

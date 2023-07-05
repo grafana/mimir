@@ -66,8 +66,11 @@ type storeSuite struct {
 	logger log.Logger
 }
 
+// When nonOverlappingBlocks is false, prepareTestBlocks creates 2 blocks per block range.
+// When nonOverlappingBlocks is true, it shifts the 2nd block ahead by 2hrs for every block range.
+// This way the first and the last blocks created have no overlapping blocks.
 func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt objstore.Bucket,
-	series []labels.Labels, extLset labels.Labels, shiftedBlocks bool) (minTime, maxTime int64) {
+	series []labels.Labels, extLset labels.Labels, nonOverlappingBlocks bool) (minTime, maxTime int64) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
@@ -85,10 +88,7 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 		// gets created each. This way we can easily verify we got 10 chunks per series below.
 		id1, err := block.CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset)
 		assert.NoError(t, err)
-		if shiftedBlocks {
-			// This shifts the 2nd block ahead by 2hrs. This way the first and the
-			// last blocks created have no overlapping blocks.
-			// This is used to test some case with streaming series.
+		if nonOverlappingBlocks {
 			mint = maxt
 			maxt = timestamp.FromTime(now.Add(2 * time.Hour))
 			maxTime = maxt
@@ -125,7 +125,10 @@ type prepareStoreConfig struct {
 	chunksCache          chunkscache.Cache
 	metricsRegistry      *prometheus.Registry
 	postingsStrategy     postingsSelectionStrategy
-	shiftedBlocks        bool
+	// When nonOverlappingBlocks is false, prepare store creates 2 blocks per block range.
+	// When nonOverlappingBlocks is true, it shifts the 2nd block ahead by 2hrs for every block range.
+	// This way the first and the last blocks created have no overlapping blocks.
+	nonOverlappingBlocks bool
 }
 
 func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareStoreConfig {
@@ -173,7 +176,7 @@ func withManyParts() prepareStoreConfigOption {
 func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
-	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset, cfg.shiftedBlocks)
+	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset, cfg.nonOverlappingBlocks)
 
 	s := &storeSuite{
 		logger:          log.NewNopLogger(),
@@ -527,10 +530,9 @@ func TestBucketStore_e2e(t *testing.T) {
 				MaxSize:     2e5,
 			})
 			assert.NoError(t, err)
-			chunksCache, err := chunkscache.NewChunksCache(s.logger, chunkscache.NewMockedCacheClient(nil), nil)
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache)
-			s.cache.SwapChunksCacheWith(chunksCache)
+			s.cache.SwapChunksCacheWith(newInMemoryChunksCache())
 			testBucketStore_e2e(t, ctx, s)
 		})
 	})
@@ -542,7 +544,7 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 		defer cancel()
 
 		s := newSuite(func(config *prepareStoreConfig) {
-			config.shiftedBlocks = true
+			config.nonOverlappingBlocks = true
 		})
 
 		_, maxt := s.store.TimeRange()
@@ -606,10 +608,9 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 				MaxSize:     2e5,
 			})
 			assert.NoError(t, err)
-			chunksCache, err := chunkscache.NewChunksCache(s.logger, chunkscache.NewMockedCacheClient(nil), nil)
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache)
-			s.cache.SwapChunksCacheWith(chunksCache)
+			s.cache.SwapChunksCacheWith(newInMemoryChunksCache())
 			testBucketStore_e2e(t, ctx, s)
 		})
 	})
