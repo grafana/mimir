@@ -3594,8 +3594,8 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 			streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
 				StreamingSeries: []client.QueryStreamSeries{
 					{
-						Labels:      ts.Labels,
-						ChunksCount: int64(len(wireChunks)),
+						Labels:              ts.Labels,
+						EstimatedChunkCount: int64(len(wireChunks)),
 					},
 				},
 			})

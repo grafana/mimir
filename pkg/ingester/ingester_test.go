@@ -3117,9 +3117,9 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 
 	seriesLabelsMsg := client.QueryStreamResponse{
 		StreamingSeries: []client.QueryStreamSeries{
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "1")), ChunksCount: 834},
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "2")), ChunksCount: 8334},
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "3")), ChunksCount: 4167},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "1")), EstimatedChunkCount: 834},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "2")), EstimatedChunkCount: 8334},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "3")), EstimatedChunkCount: 4167},
 		},
 		IsEndOfSeriesStream: true,
 	}

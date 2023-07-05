@@ -1829,8 +1829,8 @@ func (i *Ingester) sendStreamingQuerySeries(q storage.ChunkQuerier, from, throug
 		seriesCount++
 
 		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
-			Labels:      mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-			ChunksCount: int64(series.ChunksCount()),
+			Labels:              mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+			EstimatedChunkCount: int64(series.EstimatedChunkCount()),
 		})
 
 		if len(seriesInBatch) >= queryStreamBatchSize {

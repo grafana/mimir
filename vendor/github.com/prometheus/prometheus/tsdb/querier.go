@@ -649,7 +649,7 @@ func (s *chunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator {
 	return pi
 }
 
-func (s *chunkSeriesEntry) ChunksCount() int {
+func (s *chunkSeriesEntry) EstimatedChunkCount() int {
 	return len(s.chks)
 }
 
