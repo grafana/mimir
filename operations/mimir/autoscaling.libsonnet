@@ -14,6 +14,14 @@
     autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
     autoscaling_distributor_max_replicas: error 'you must set autoscaling_distributor_max_replicas in the _config',
 
+    // When GOMEMLIMIT is set to memory request, average memory working set is usually slightly higher than
+    // the request (observed 101% -- 102% of the request). To avoid always scaling up, we require 105%.
+    autoscaling_distributor_memory_query_min_scaling_percentage: 105,
+
+    // To signal scale down, we will ask for 75% of replicas. We need more than 10% scale-down for HPA to even try.
+    // 75% allows to get to minimum of 3 instances. (ceil(4 * 0.75) = 3, ceil(3 * 0.75) = 3).
+    autoscaling_distributor_memory_query_scaledown_percentage: 75,
+
     autoscaling_ruler_enabled: false,
     autoscaling_ruler_min_replicas: error 'you must set autoscaling_ruler_min_replicas in the _config',
     autoscaling_ruler_max_replicas: error 'you must set autoscaling_ruler_max_replicas in the _config',
@@ -347,12 +355,27 @@
       },
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+        metric_type: 'Value',  // Defaults to AverageValue (ie. per-pod value). But that's not what we're computing.
 
-        // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all distributors over 15m.
-        query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
+        // We compute scaling factor for up-scaling or return scale-down value, if scaling is not needed.
+        //
+        // This query expects that distributors use GOMEMLIMIT=<request> and GOGC=<high value or off> settings
+        // and that memory working set is close to GOMEMLIMIT most of the time.
+        // It means that we can't detect how much to scale down, and so we always report "scale down percentage" unless memory usage is too high.
+        // This allows HPA to find a balance between memory and CPU scaling.
+        //
+        // We compute it as percentage (100 * ...) because KEDA works with ints only.
+        query: |||
+          (
+              100 * max_over_time(avg(container_memory_working_set_bytes{namespace="%s",container="%s"})[5m:])
+              /
+              avg(kube_pod_container_resource_requests{namespace="%s",container=~"%s",resource="memory"})
+          ) > %d
+          or vector(%d)
+        ||| % [$._config.namespace, name, $._config.namespace, name, $._config.autoscaling_distributor_memory_query_min_scaling_percentage, $._config.autoscaling_distributor_memory_query_scaledown_percentage],
 
         // threshold is expected to be a string
-        threshold: std.toString($.util.siToBytes(distributor_memory_requests)),
+        threshold: '100',
       },
     ],
   }),

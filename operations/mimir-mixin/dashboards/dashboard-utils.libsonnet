@@ -495,6 +495,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   cpuAndMemoryBasedAutoScalingRow(componentTitle)::
     local component = std.asciiLower(componentTitle);
     local field = std.strReplace(component, '-', '_');
+    local container = field;
     super.row('%s - autoscaling' % [componentTitle])
     .addPanel(
       local title = 'Replicas';
@@ -589,12 +590,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
             keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}
             /
             on(metric) group_left label_replace(
-                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s", metric_target_type="average"},
                 "metric", "$1", "metric_name", "(.+)"
+            )
+
+            or
+
+            count (up{%(namespace)s, container="%(container)s"}) *
+            scalar(
+              keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}
+              /
+              on(metric) group_left label_replace(
+                  kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s", metric_target_type="value"},
+                  "metric", "$1", "metric_name", "(.+)"
+              )
             )
           ||| % {
             hpa_name: $._config.autoscaling[field].hpa_name,
             namespace: $.namespaceMatcher(),
+            container: container,
           },
         ], [
           '{{ scaledObject }}',
