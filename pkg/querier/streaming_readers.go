@@ -91,14 +91,13 @@ func (s *StoreGatewayStreamReader) StartBuffering() {
 				return
 			}
 
-			totalSeries++
-			if totalSeries > s.expectedSeriesCount {
-				s.errorChan <- fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
-				return
+			if len(c.Series) == 0 {
+				continue
 			}
 
-			if err := s.queryLimiter.AddChunks(len(c.Series)); err != nil {
-				s.errorChan <- validation.LimitError(err.Error())
+			totalSeries += len(c.Series)
+			if totalSeries > s.expectedSeriesCount {
+				s.errorChan <- fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
 				return
 			}
 
@@ -109,6 +108,11 @@ func (s *StoreGatewayStreamReader) StartBuffering() {
 				for _, ch := range s.Chunks {
 					chunkBytes += ch.Size()
 				}
+			}
+
+			if err := s.queryLimiter.AddChunks(numChunks); err != nil {
+				s.errorChan <- validation.LimitError(err.Error())
+				return
 			}
 			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
 				s.errorChan <- validation.LimitError(err.Error())
