@@ -113,11 +113,20 @@ groups:
       severity: warning
   - alert: MimirIngesterRestarts
     annotations:
-      message: '{{ $labels.job }}/{{ $labels.instance }} has restarted {{ printf "%.2f"
-        $value }} times in the last 30 mins.'
+      message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has restarted {{ printf "%.2f" $value }} times in the last 30 mins.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterrestarts
     expr: |
-      changes(process_start_time_seconds{job=~".*/(ingester.*|cortex|mimir|mimir-write.*)"}[30m]) >= 2
+      (
+        sum by(cluster, namespace, instance) (
+          increase(kube_pod_container_status_restarts_total{container=~"(ingester|mimir-write)"}[30m])
+        )
+        >= 2
+      )
+      and
+      (
+        count by(cluster, namespace, instance) (cortex_build_info) > 0
+      )
     labels:
       severity: warning
   - alert: MimirKVStoreFailure
