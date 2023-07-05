@@ -17,11 +17,6 @@
       'distributor.ha-tracker.etcd.endpoints': 'etcd-client.%s.svc.cluster.local.:2379' % $._config.namespace,
       'distributor.ha-tracker.prefix': 'prom_ha/',
 
-      // The memory requests are 2G, and we barely use 100M.
-      // By adding a ballast of 1G, we can drastically reduce GC, but also keep the usage at
-      // around 1.25G, reducing the 99%ile.
-      'mem-ballast-size-bytes': 1 << 30,  // 1GB
-
       'server.http-listen-port': $._config.server_http_port,
 
       // The ingestion rate global limit requires the distributors to form a ring.
@@ -32,7 +27,21 @@
 
   distributor_ports:: $.util.defaultPorts,
 
-  distributor_env_map:: {},
+  distributor_env_map:: {
+    // Dynamically set GOMEMLIMIT based on memory request.
+    GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.distributor_container.resources.requests.memory))),
+
+    // We don't want to run GC unless GOMEMLIMIT is reached. We could use GOGC=off, but we use numeric value instead to
+    // run GC regularly even when GOMEMLIMIT is not reached yet.
+    GOGC: '1000',
+
+    // We set GOMAXPROCS as otherwise Go runtime may use 50% cores on the node to run GC when memory reaches GOMEMLIMIT.
+    // On nodes with lot of cores that seems unnecessary.
+    // We want to allow for some spikes, hence the *2 factor.
+    GOMAXPROCS: std.toString(
+      std.ceil($.util.parseCPU($.distributor_container.resources.requests.cpu) * 2,)
+    ),
+  },
 
   distributor_container::
     container.new('distributor', $._images.distributor) +
