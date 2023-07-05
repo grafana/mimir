@@ -10,6 +10,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
+	"github.com/grafana/mimir/pkg/storage/bucket/s3"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"io"
 	"strings"
 	"testing"
@@ -396,13 +401,35 @@ func (b *testBucket) GetRange(ctx context.Context, name string, off, length int6
 }
 
 func TestCachedIter(t *testing.T) {
-	inmem := objstore.NewInMemBucket()
-	assert.NoError(t, inmem.Upload(context.Background(), "/file-1", strings.NewReader("hej")))
-	assert.NoError(t, inmem.Upload(context.Background(), "/file-2", strings.NewReader("ahoj")))
-	assert.NoError(t, inmem.Upload(context.Background(), "/file-3", strings.NewReader("hello")))
-	assert.NoError(t, inmem.Upload(context.Background(), "/file-4", strings.NewReader("ciao")))
+	s, err := e2e.NewScenario("mimir-e2e-hack")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		s.Close()
+	})
 
-	allFiles := []string{"/file-1", "/file-2", "/file-3", "/file-4"}
+	minio := e2edb.NewMinio(9000, "mimir-blocks")
+	require.NoError(t, s.StartAndWaitReady(minio))
+
+	var secret flagext.Secret
+	require.NoError(t, secret.Set("supersecret"))
+
+	c := s3.Config{
+		Endpoint:        minio.Endpoint(9000),
+		BucketName:      "mimir-blocks",
+		AccessKeyID:     "Cheescake",
+		SecretAccessKey: secret,
+		Insecure:        true,
+	}
+
+	client, err := s3.NewBucketClient(c, "test", util_test.NewTestingLogger(t))
+	require.NoError(t, err)
+
+	require.NoError(t, client.Upload(context.Background(), "/file-1", strings.NewReader("hej")))
+	require.NoError(t, client.Upload(context.Background(), "/file-2", strings.NewReader("ahoj")))
+	require.NoError(t, client.Upload(context.Background(), "/file-3", strings.NewReader("hello")))
+	require.NoError(t, client.Upload(context.Background(), "/file-4", strings.NewReader("ciao")))
+
+	allFiles := []string{"file-1", "file-2", "file-3", "file-4"}
 
 	// We reuse cache between tests (!)
 	cache := cache.NewMockCache()
@@ -412,7 +439,7 @@ func TestCachedIter(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheIter(cfgName, cache, func(string) bool { return true }, 5*time.Minute, JSONIterCodec{})
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", client, cfg, nil, nil)
 	assert.NoError(t, err)
 
 	t.Run("Iter() should return objects list from the cache on cache hit", func(t *testing.T) {
@@ -420,11 +447,11 @@ func TestCachedIter(t *testing.T) {
 		cache.Flush()
 		verifyIter(ctx, t, cb, allFiles, true, false, cfgName)
 
-		assert.NoError(t, inmem.Upload(context.Background(), "/file-5", strings.NewReader("nazdar")))
+		assert.NoError(t, client.Upload(context.Background(), "file-5", strings.NewReader("nazdar")))
 		verifyIter(ctx, t, cb, allFiles, true, true, cfgName) // Iter returns old response.
 
 		cache.Flush()
-		allFiles = append(allFiles, "/file-5")
+		allFiles = append(allFiles, "file-5")
 		verifyIter(ctx, t, cb, allFiles, true, false, cfgName)
 	})
 
@@ -435,11 +462,11 @@ func TestCachedIter(t *testing.T) {
 
 		// Pre-condition: add a new object and make sure it's NOT returned by the Iter()
 		// (because result is picked up from the cache).
-		assert.NoError(t, inmem.Upload(context.Background(), "/file-6", strings.NewReader("world")))
+		assert.NoError(t, client.Upload(context.Background(), "file-6", strings.NewReader("world")))
 		verifyIter(ctx, t, cb, allFiles, true, true, cfgName)
 
 		// Calling Iter() with cache lookup disabled should return the new object and also update the cached list.
-		allFiles = append(allFiles, "/file-6")
+		allFiles = append(allFiles, "file-6")
 		verifyIter(WithCacheLookupEnabled(ctx, false), t, cb, allFiles, false, false, cfgName)
 		verifyIter(ctx, t, cb, allFiles, true, true, cfgName)
 	})
@@ -463,7 +490,7 @@ func verifyIter(ctx context.Context, t *testing.T, cb *CachingBucket, expectedFi
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
 
 	col := iterCollector{}
-	assert.NoError(t, cb.Iter(ctx, "/", col.collect))
+	require.NoError(t, cb.Iter(ctx, "/", col.collect))
 
 	requestsAfter := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName)))
 	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))

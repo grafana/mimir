@@ -185,6 +185,9 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 		return cb.Bucket.Iter(ctx, dir, f, options...)
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	key := cachingKeyIter(cb.bucketID, dir, options...)
 
 	// Lookup the cache.
@@ -211,6 +214,9 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	// We will compute TTL based on time when iteration started.
 	iterTime := time.Now()
 	var list []string
+
+	cancel()
+
 	err := cb.Bucket.Iter(ctx, dir, func(s string) error {
 		list = append(list, s)
 		return f(s)
