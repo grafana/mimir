@@ -74,7 +74,7 @@ function generate_manifests() {
     ARGS+=("--set-string" "kubeVersionOverride=${DEFAULT_KUBE_VERSION}")
   fi
 
-  echo "Launching helm template in PID $BASHPID 'helm template ${ARGS[*]}'"
+  echo "Rendering helm test $TEST_NAME in PID $BASHPID: 'helm template ${ARGS[*]}'"
   helm template "${ARGS[@]}" 1>/dev/null
   cp -r "${INTERMEDIATE_OUTPUT_DIR}" "${OUTPUT_DIR}"
   rm "${OUTPUT_DIR}/${CHART_NAME}/templates/values-for-rego-tests.yaml"
@@ -87,7 +87,8 @@ for FILEPATH in $TESTS; do
   INTERMEDIATE_OUTPUT_DIR="${INTERMEDIATE_PATH}/${TEST_NAME}-generated"
   OUTPUT_DIR="${OUTPUT_PATH}/${TEST_NAME}-generated"
 
-  generate_manifests "$TEST_NAME" "$INTERMEDIATE_OUTPUT_DIR" "$OUTPUT_DIR" &
+  # Prefix every stdout and stderr line from the test name. This makes the interleaved output of different tests easier to follow
+  generate_manifests "$TEST_NAME" "$INTERMEDIATE_OUTPUT_DIR" "$OUTPUT_DIR" > >(sed "s/^/$TEST_NAME (stdout): /") 2> >(sed "s/^/$TEST_NAME (stderr): /" >&2) &
   pid=$!
   pids+=("$pid")
 done
