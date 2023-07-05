@@ -104,6 +104,7 @@ The following features are currently experimental:
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
   - Cardinality query result caching (`-query-frontend.results-cache-ttl-for-cardinality-query`)
+  - Label names and values query result caching (`-query-frontend.results-cache-ttl-for-labels-query`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
