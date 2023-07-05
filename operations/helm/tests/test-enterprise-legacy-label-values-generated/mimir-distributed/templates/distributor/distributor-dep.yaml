@@ -87,6 +87,12 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOGC"
+              value: "1000"
+            - name: "GOMAXPROCS"
+              value: "1"
+            - name: "GOMEMLIMIT"
+              value: "536870912"
           envFrom:
       nodeSelector:
         {}

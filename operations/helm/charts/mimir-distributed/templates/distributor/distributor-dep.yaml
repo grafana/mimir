@@ -97,6 +97,19 @@ spec:
             {{- with .Values.distributor.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            - name: "GOGC"
+              value: "1000"
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
+            {{- if $cpu_request }}
+              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+            - name: "GOMAXPROCS"
+              value: {{ $cpu_request_doubled | toString | toYaml }}
+            {{- end }}
+            {{- $mem_request := dig "requests" "memory" nil .Values.distributor.resources }}
+            {{- if $mem_request }}
+            - name: "GOMEMLIMIT"
+              value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
+            {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
