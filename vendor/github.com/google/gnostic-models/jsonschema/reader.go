@@ -165,6 +165,7 @@ func NewSchemaFromObject(jsonData *yaml.Node) *Schema {
 
 	default:
 		fmt.Printf("schemaValue: unexpected node %+v\n", jsonData)
+		return nil
 	}
 
 	return nil
