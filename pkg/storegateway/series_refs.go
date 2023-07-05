@@ -746,32 +746,32 @@ func openBlockSeriesChunkRefsSetsIterator(
 	chunkRangesPerSeries int,
 	stats *safeQueryStats,
 	reuse *reusedPostingsAndMatchers, // If this is not nil, these posting and matchers are used as it is without fetching new ones.
-
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
 	}
 
-	var ps []storage.SeriesRef
-	var pendingMatchers []*labels.Matcher
+	var (
+		ps              []storage.SeriesRef
+		pendingMatchers []*labels.Matcher
+		fetchPostings   = true
+	)
 	if reuse != nil {
+		fetchPostings = !reuse.isSet()
 		ps = reuse.ps
 		pendingMatchers = reuse.matchers
 	}
-	if len(ps) == 0 {
+	if fetchPostings {
 		var err error
 		ps, pendingMatchers, err = indexr.ExpandedPostings(ctx, matchers, stats)
 		if err != nil {
 			return nil, errors.Wrap(err, "expanded matching postings")
 		}
 		if reuse != nil {
-			reuse.put(ps, pendingMatchers)
+			reuse.set(ps, pendingMatchers)
 		}
 	}
-
-	returnPs := make([]storage.SeriesRef, len(ps))
-	copy(returnPs, ps)
 
 	var iterator seriesChunkRefsSetIterator
 	iterator = newLoadingSeriesChunkRefsSetIterator(
@@ -803,10 +803,11 @@ func openBlockSeriesChunkRefsSetsIterator(
 type reusedPostingsAndMatchers struct {
 	ps       []storage.SeriesRef
 	matchers []*labels.Matcher
+	filled   bool
 }
 
-func (p *reusedPostingsAndMatchers) put(ps []storage.SeriesRef, matchers []*labels.Matcher) {
-	if len(p.ps) > 0 {
+func (p *reusedPostingsAndMatchers) set(ps []storage.SeriesRef, matchers []*labels.Matcher) {
+	if p.filled {
 		// We already have something here.
 		return
 	}
@@ -814,6 +815,11 @@ func (p *reusedPostingsAndMatchers) put(ps []storage.SeriesRef, matchers []*labe
 	p.ps = make([]storage.SeriesRef, len(ps))
 	copy(p.ps, ps)
 	p.matchers = matchers
+	p.filled = true
+}
+
+func (p *reusedPostingsAndMatchers) isSet() bool {
+	return p.filled
 }
 
 // seriesStreamingFetchRefsDurationIterator tracks the time spent loading series and chunk refs.

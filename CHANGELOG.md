@@ -7,7 +7,7 @@
 * [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
 * [CHANGE] Querier: change the default value of the experimental `-querier.streaming-chunks-per-ingester-buffer-size` flag to 256. #5203
 * [CHANGE] Querier: only initiate query requests to ingesters in the `ACTIVE` state in the ring. #5342
-* [CHANGE] Querier: `-querier.prefer-streaming-chunks` was renamed to `-querier.prefer-streaming-chunks-for-ingesters` to enable streaming chunks from ingesters to queriers.
+* [CHANGE] Querier: Renamed `-querier.prefer-streaming-chunks` to `-querier.prefer-streaming-chunks-for-ingesters` to enable streaming chunks from ingesters to queriers. #5182
 * [CHANGE] Querier: `-query-frontend.cache-unaligned-requests` has been moved from a global flag to a per-tenant override. #5312
 * [CHANGE] Ingester: removed `cortex_ingester_shipper_dir_syncs_total` and `cortex_ingester_shipper_dir_sync_failures_total` metrics. The former metric was not much useful, and the latter was never incremented. #5396
 * [FEATURE] Cardinality API: Add a new `count_method` parameter which enables counting active series #5136

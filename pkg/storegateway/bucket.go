@@ -620,15 +620,17 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		readers = newChunkReaders(chunkReaders)
 	}
 
-	// If we are streaming the series labels and chunks separately, we don't need to fetch the postings
-	// twice. So we use these slices to re-use them.
-	// Each reusePostings[i] and reusePendingMatchers[i] corresponds to a single block.
 	var (
+		// If we are streaming the series labels and chunks separately, we don't need to fetch the postings
+		// twice. So we use these slices to re-use them. Each reuse[i] corresponds to a single block.
 		reuse    []*reusedPostingsAndMatchers
 		resHints = &hintspb.SeriesResponseHints{}
 	)
 	for _, b := range blocks {
 		resHints.AddQueriedBlock(b.meta.ULID)
+	}
+	if err := s.sendHints(srv, resHints); err != nil {
+		return err
 	}
 	if req.StreamingChunksBatchSize > 0 {
 		var (
@@ -643,7 +645,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return err
 		}
 
-		numSeries, err := s.sendStreamingSeriesLabelsHintsStats(req, srv, stats, seriesSet, resHints)
+		numSeries, err := s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet, resHints)
 		if err != nil {
 			return err
 		}
@@ -653,7 +655,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
 			"request matchers", storepb.PromMatchersToString(matchers...),
 			"request shard selector", maybeNilShard(shardSelector).LabelValue(),
-			"streaming chunks batch size", req.StreamingChunksBatchSize,
 			"num_series", numSeries,
 			"duration", time.Since(seriesLoadStart),
 		)
@@ -700,24 +701,23 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
 		"request matchers", storepb.PromMatchersToString(matchers...),
 		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
-		"streaming chunks batch size", req.StreamingChunksBatchSize,
 		"num_series", numSeries,
 		"num_chunks", numChunks,
 		"duration", time.Since(start),
 	)
 
-	if req.StreamingChunksBatchSize == 0 || req.SkipChunks {
-		// Hints and stats were not sent before, so send it now.
-		return s.sendHintsAndStats(srv, resHints, stats)
+	if req.StreamingChunksBatchSize == 0 {
+		// Stats were not sent before, so send it now.
+		return s.sendStats(srv, stats)
 	}
 
 	return nil
 }
 
-// sendStreamingSeriesLabelsHintsStats sends the labels of the streaming series.
+// sendStreamingSeriesLabelsAndStats sends the labels of the streaming series.
 // Since hints and stats need to be sent before the "end of stream" streaming series message,
 // this function also sends the hints and the stats.
-func (s *BucketStore) sendStreamingSeriesLabelsHintsStats(
+func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 	req *storepb.SeriesRequest,
 	srv storepb.Store_SeriesServer,
 	stats *safeQueryStats,
@@ -772,9 +772,8 @@ func (s *BucketStore) sendStreamingSeriesLabelsHintsStats(
 		return 0, errors.Wrap(seriesSet.Err(), "expand series set")
 	}
 
-	// We need to send hints and stats before sending the chunks.
-	// Also, these need to be sent before we send IsEndOfSeriesStream=true.
-	if err := s.sendHintsAndStats(srv, resHints, stats); err != nil {
+	// We need to send stats before sending IsEndOfSeriesStream=true.
+	if err := s.sendStats(srv, stats); err != nil {
 		return 0, err
 	}
 
@@ -937,7 +936,7 @@ func (s *BucketStore) sendMessage(typ string, srv storepb.Store_SeriesServer, ms
 	return nil
 }
 
-func (s *BucketStore) sendHintsAndStats(srv storepb.Store_SeriesServer, resHints *hintspb.SeriesResponseHints, stats *safeQueryStats) error {
+func (s *BucketStore) sendHints(srv storepb.Store_SeriesServer, resHints *hintspb.SeriesResponseHints) error {
 	var anyHints *types.Any
 	var err error
 	if anyHints, err = types.MarshalAny(resHints); err != nil {
@@ -948,11 +947,14 @@ func (s *BucketStore) sendHintsAndStats(srv storepb.Store_SeriesServer, resHints
 		return status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
 	}
 
+	return nil
+}
+
+func (s *BucketStore) sendStats(srv storepb.Store_SeriesServer, stats *safeQueryStats) error {
 	unsafeStats := stats.export()
 	if err := srv.Send(storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum + unsafeStats.seriesProcessedSizeSum)); err != nil {
 		return status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
 	}
-
 	return nil
 }
 

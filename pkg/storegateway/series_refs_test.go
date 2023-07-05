@@ -2564,6 +2564,46 @@ func TestPostingsSetsIterator(t *testing.T) {
 	}
 }
 
+func TestReusedPostingsAndMatchers(t *testing.T) {
+	postingsList := [][]storage.SeriesRef{
+		nil,
+		{},
+		{1, 2, 3},
+	}
+	matchersList := [][]*labels.Matcher{
+		nil,
+		{},
+		{labels.MustNewMatcher(labels.MatchEqual, "a", "b")},
+	}
+
+	for _, firstPostings := range postingsList {
+		for _, firstMatchers := range matchersList {
+			for _, secondPostings := range postingsList {
+				for _, secondMatchers := range matchersList {
+					r := reusedPostingsAndMatchers{}
+					require.False(t, r.isSet())
+
+					verify := func() {
+						r.set(firstPostings, firstMatchers)
+						require.True(t, r.isSet())
+						if firstPostings == nil {
+							require.Equal(t, []storage.SeriesRef{}, r.ps)
+						} else {
+							require.Equal(t, firstPostings, r.ps)
+						}
+						require.Equal(t, firstMatchers, r.matchers)
+					}
+					verify()
+
+					// This should not overwrite the first set.
+					r.set(secondPostings, secondMatchers)
+					verify()
+				}
+			}
+		}
+	}
+}
+
 type mockSeriesHasher struct {
 	cached map[storage.SeriesRef]uint64
 	hashes map[string]uint64
