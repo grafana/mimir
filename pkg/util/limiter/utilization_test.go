@@ -141,7 +141,7 @@ func TestUtilizationBasedLimiter_CPUUtilizationSensitivity(t *testing.T) {
 			}(),
 			expectedMaxCPUUtilization: 1.49,
 		},
-		"10 seconds spike + 110 seconds idle (moving average warmups the first 60 seconds)": {
+		"10 seconds spike + 110 seconds idle (moving average warms up the first 60 seconds)": {
 			instantCPUValues: func() []float64 {
 				values := []float64{10, 9, 8, 7, 6, 5, 4, 3, 2, 1}
 				values = append(values, generateConstCPUUtilization(110, 0)...)

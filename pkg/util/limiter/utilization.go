@@ -132,7 +132,7 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 	// sliding window. During the warmup, the reported CPU utilization will be 0.
 	if l.firstUpdate.IsZero() {
 		l.firstUpdate = now
-	} else if now.Add(-resourceUtilizationSlidingWindow + 1).After(l.firstUpdate) {
+	} else if now.Sub(l.firstUpdate) >= resourceUtilizationSlidingWindow {
 		currCPUUtil = float64(l.cpuMovingAvg.Rate()) / 100
 	}
 
