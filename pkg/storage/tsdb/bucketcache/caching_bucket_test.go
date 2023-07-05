@@ -445,14 +445,14 @@ func TestCachedIter(t *testing.T) {
 	t.Run("Iter() should return objects list from the cache on cache hit", func(t *testing.T) {
 		// Pre-condition: populate the cache.
 		cache.Flush()
-		verifyIter(ctx, t, cb, allFiles, true, false, cfgName)
+		verifyIter(context.Background(), t, cb, allFiles, true, false, cfgName)
 
 		assert.NoError(t, client.Upload(context.Background(), "file-5", strings.NewReader("nazdar")))
-		verifyIter(ctx, t, cb, allFiles, true, true, cfgName) // Iter returns old response.
+		verifyIter(context.Background(), t, cb, allFiles, true, true, cfgName) // Iter returns old response.
 
 		cache.Flush()
 		allFiles = append(allFiles, "file-5")
-		verifyIter(ctx, t, cb, allFiles, true, false, cfgName)
+		verifyIter(context.Background(), t, cb, allFiles, true, false, cfgName)
 	})
 
 	t.Run("Iter() should skip the cache lookup but cache the result on cache lookup disabled", func(t *testing.T) {

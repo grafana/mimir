@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -224,12 +225,15 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 
 	remainingTTL := cfg.ttl - time.Since(iterTime)
 	if err == nil && remainingTTL > 0 {
+		fmt.Printf("STORING LIST: %+v\n", list)
 		data, encErr := cfg.codec.Encode(list)
 		if encErr == nil {
 			cfg.cache.StoreAsync(map[string][]byte{key: data}, remainingTTL)
 			return nil
 		}
 		level.Warn(cb.logger).Log("msg", "failed to encode Iter result", "key", key, "err", encErr)
+	} else {
+		fmt.Printf("NOT STORING LIST: %+v\n", list)
 	}
 	return err
 }
