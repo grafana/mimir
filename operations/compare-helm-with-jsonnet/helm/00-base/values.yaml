@@ -25,3 +25,10 @@ ingester:
 store_gateway:
   zoneAwareReplication:
     enabled: false
+
+# Used to compute GOMEMLIMIT and GOMAXPROCS. These request values are used in Jsonnet.
+distributor:
+  resources:
+    requests:
+      cpu: 2
+      memory: 2Gi
