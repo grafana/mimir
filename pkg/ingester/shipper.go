@@ -48,7 +48,7 @@ func newShipperMetrics(reg prometheus.Registerer) *shipperMetrics {
 			Help: "Total number of TSDB block upload failures",
 		}),
 		lastSuccessfulUploadTime: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_ingester_shipper_last_successful_upload_time",
+			Name: "cortex_ingester_shipper_last_successful_upload_timestamp_seconds",
 			Help: "Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.",
 		}),
 	}
