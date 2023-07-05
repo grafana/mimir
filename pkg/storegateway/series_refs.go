@@ -987,12 +987,25 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 		return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "preload series")
 	}
 
+	isNoChunkRefsAndOverlapMintMaxt := s.strategy.isNoChunkRefsAndOverlapMintMaxt()
 	for _, id := range postings {
 		var (
 			metas  []chunks.Meta
 			series symbolizedSeriesChunkRefs
 		)
 		series.lset, metas, err = s.loadSeries(id, loadedSeries, stats, symbolizedSet.labelsPool)
+		if isNoChunkRefsAndOverlapMintMaxt {
+			overlaps := false
+			for _, m := range metas {
+				if m.MaxTime >= s.minTime && m.MinTime <= s.maxTime {
+					overlaps = true
+				}
+			}
+			if !overlaps {
+				continue
+			}
+		}
+
 		if err != nil {
 			return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "read series")
 		}
@@ -1189,7 +1202,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
 func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) ([]symbolizedLabel, []chunks.Meta, error) {
-	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.minTime, s.maxTime, s.strategy, stats, lsetPool)
+	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.strategy, stats, lsetPool)
 	if !ok || err != nil {
 		return nil, nil, errors.Wrap(err, "loadSeries")
 	}

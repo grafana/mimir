@@ -121,11 +121,14 @@ message SeriesResponse {
 
     /// streaming_series is a list of series labels sent as part of a streaming Series call.
     /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
+    /// Series are sent in batches because sending one at a time has additional CPU overhead for not much memory gains.
     StreamingSeriesBatch streaming_series = 5;
 
     /// streaming_chunks is a list of chunks sent as part of a streaming Series request.
     /// They are associated with series labels sent as streaming_series earlier in the same Series request.
     /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
+    /// Chunks are sent in batches because sending one series' chunks at a time has additional
+    //  CPU overhead for not much memory gains.
     StreamingChunksBatch streaming_chunks = 6;
   }
 }

@@ -1983,7 +1983,7 @@ type symbolizedLabel struct {
 // decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
 // If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if at least single chunk is within time range.
 // decodeSeries returns false, when there are no series data for given time range.
-func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, resMint, resMaxt int64, strategy seriesIteratorStrategy) (ok bool, lset []symbolizedLabel, err error) {
+func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, strategy seriesIteratorStrategy) (ok bool, lset []symbolizedLabel, err error) {
 
 	*chks = (*chks)[:0]
 
@@ -2009,8 +2009,7 @@ func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]ch
 	// Similar for first ref.
 	ref := int64(d.Uvarint64())
 
-	isNoChunks := strategy.isNoChunkRefs()
-	isNoChunkOverlapMintMaxt := strategy.isNoChunkRefsAndOverlapMintMaxt()
+	isNoChunks := strategy.isNoChunkRefsOnEntireBlock()
 	for i := 0; i < k; i++ {
 		if i > 0 {
 			mint += int64(d.Uvarint64())
@@ -2019,22 +2018,16 @@ func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]ch
 		}
 
 		// Found a chunk.
-		if isNoChunkOverlapMintMaxt {
-			// We are not interested in chunks, but we want the series to overlap with the query mint-maxt.
-			if maxt >= resMint && mint <= resMaxt {
-				// Chunk overlaps.
-				return true, lset, nil
-			}
-		} else if isNoChunks {
+		if isNoChunks {
 			// We are not interested in chunks and we know there is at least one, that's enough to return series.
 			return true, lset, nil
-		} else {
-			*chks = append(*chks, chunks.Meta{
-				Ref:     chunks.ChunkRef(ref),
-				MinTime: mint,
-				MaxTime: maxt,
-			})
 		}
+
+		*chks = append(*chks, chunks.Meta{
+			Ref:     chunks.ChunkRef(ref),
+			MinTime: mint,
+			MaxTime: maxt,
+		})
 
 		mint = maxt
 	}
