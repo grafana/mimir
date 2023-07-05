@@ -112,13 +112,26 @@ For more information about required disk space, refer to [Compactor disk utiliza
 
 ## Caching
 
+You can configure the query results cache, which is enabled by default in the Helm chart. You can also properly scale Memcached.
+
+### Configure the query results cache
+
+The Helm chart enables the query results cache by default. If you need to configure the query results cache manually, follows these steps:
+
+TODO
+
 ### Ensure Memcached is properly scaled
 
 We recommend ensuring Memcached evictions happen infrequently.
 Grafana Mimir query performance might be negatively affected if your Memcached cluster evicts items frequently.
-We recommend increasing your Memcached cluster replicas to add more memory to the cluster and reduce evictions.
 
-We also recommend running a dedicated Memcached cluster for each type of cache: query results, metadata, index, and chunks.
+We recommend increasing your Memcached cluster replicas to add more memory to the cluster and to reduce evictions. We also recommend running a dedicated Memcached cluster for each type of cache:
+
+* query results
+* metadata
+* index
+* chunks
+
 Running a dedicated Memcached cluster for each cache type is not required, but recommended so that each cache is isolated from the others.
 
 ## Security
