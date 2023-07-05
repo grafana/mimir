@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"log"
+	"os"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -14,6 +15,9 @@ import (
 )
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	flag.Parse()
 
 	filepath := flag.Arg(0)

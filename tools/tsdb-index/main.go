@@ -21,6 +21,9 @@ import (
 var logger = log.NewLogfmtLogger(os.Stderr)
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	metricSelector := flag.String("select", "", "PromQL metric selector")
 	printChunks := flag.Bool("show-chunks", false, "Print chunk details")
 	flag.Parse()
