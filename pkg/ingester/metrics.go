@@ -360,12 +360,6 @@ func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
 
 // TSDB metrics collector. Each tenant has its own registry, that TSDB code uses.
 type tsdbMetrics struct {
-	// Metrics aggregated from Thanos shipper.
-	dirSyncs        *prometheus.Desc // sum(thanos_shipper_dir_syncs_total)
-	dirSyncFailures *prometheus.Desc // sum(thanos_shipper_dir_sync_failures_total)
-	uploads         *prometheus.Desc // sum(thanos_shipper_uploads_total)
-	uploadFailures  *prometheus.Desc // sum(thanos_shipper_upload_failures_total)
-
 	// Metrics aggregated from TSDB.
 	tsdbCompactionsTotal              *prometheus.Desc
 	tsdbCompactionDuration            *prometheus.Desc
@@ -421,22 +415,6 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 	m := &tsdbMetrics{
 		regs: dskit_metrics.NewTenantRegistries(logger),
 
-		dirSyncs: prometheus.NewDesc(
-			"cortex_ingester_shipper_dir_syncs_total",
-			"Total number of TSDB dir syncs",
-			nil, nil),
-		dirSyncFailures: prometheus.NewDesc(
-			"cortex_ingester_shipper_dir_sync_failures_total",
-			"Total number of failed TSDB dir syncs",
-			nil, nil),
-		uploads: prometheus.NewDesc(
-			"cortex_ingester_shipper_uploads_total",
-			"Total number of uploaded TSDB blocks",
-			nil, nil),
-		uploadFailures: prometheus.NewDesc(
-			"cortex_ingester_shipper_upload_failures_total",
-			"Total number of TSDB block upload failures",
-			nil, nil),
 		tsdbCompactionsTotal: prometheus.NewDesc(
 			"cortex_ingester_tsdb_compactions_total",
 			"Total number of TSDB compactions that were executed.",
@@ -614,11 +592,6 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 }
 
 func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
-	out <- sm.dirSyncs
-	out <- sm.dirSyncFailures
-	out <- sm.uploads
-	out <- sm.uploadFailures
-
 	out <- sm.tsdbCompactionsTotal
 	out <- sm.tsdbCompactionDuration
 	out <- sm.tsdbFsyncDuration
@@ -666,12 +639,6 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 
 func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data := sm.regs.BuildMetricFamiliesPerTenant()
-
-	// OK, we have it all. Let's build results.
-	data.SendSumOfCounters(out, sm.dirSyncs, "thanos_shipper_dir_syncs_total")
-	data.SendSumOfCounters(out, sm.dirSyncFailures, "thanos_shipper_dir_sync_failures_total")
-	data.SendSumOfCounters(out, sm.uploads, "thanos_shipper_uploads_total")
-	data.SendSumOfCounters(out, sm.uploadFailures, "thanos_shipper_upload_failures_total")
 
 	data.SendSumOfCounters(out, sm.tsdbCompactionsTotal, "prometheus_tsdb_compactions_total")
 	data.SendSumOfHistograms(out, sm.tsdbCompactionDuration, "prometheus_tsdb_compaction_duration_seconds")

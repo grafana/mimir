@@ -91,12 +91,11 @@ type splitAndCacheMiddleware struct {
 	splitInterval time.Duration
 
 	// Results caching.
-	cacheEnabled           bool
-	cacheUnalignedRequests bool
-	cache                  cache.Cache
-	splitter               CacheSplitter
-	extractor              Extractor
-	shouldCacheReq         shouldCacheFn
+	cacheEnabled   bool
+	cache          cache.Cache
+	splitter       CacheSplitter
+	extractor      Extractor
+	shouldCacheReq shouldCacheFn
 
 	// Can be set from tests
 	currentTime func() time.Time
@@ -107,7 +106,6 @@ func newSplitAndCacheMiddleware(
 	splitEnabled bool,
 	cacheEnabled bool,
 	splitInterval time.Duration,
-	cacheUnalignedRequests bool,
 	limits Limits,
 	merger Merger,
 	cache cache.Cache,
@@ -120,20 +118,19 @@ func newSplitAndCacheMiddleware(
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &splitAndCacheMiddleware{
-			splitEnabled:           splitEnabled,
-			cacheEnabled:           cacheEnabled,
-			cacheUnalignedRequests: cacheUnalignedRequests,
-			next:                   next,
-			limits:                 limits,
-			merger:                 merger,
-			splitInterval:          splitInterval,
-			metrics:                metrics,
-			cache:                  cache,
-			splitter:               splitter,
-			extractor:              extractor,
-			shouldCacheReq:         shouldCacheReq,
-			logger:                 logger,
-			currentTime:            time.Now,
+			splitEnabled:   splitEnabled,
+			cacheEnabled:   cacheEnabled,
+			next:           next,
+			limits:         limits,
+			merger:         merger,
+			splitInterval:  splitInterval,
+			metrics:        metrics,
+			cache:          cache,
+			splitter:       splitter,
+			extractor:      extractor,
+			shouldCacheReq: shouldCacheReq,
+			logger:         logger,
+			currentTime:    time.Now,
 		}
 	})
 }
@@ -154,6 +151,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
 	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
 	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
+	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
 
 	// Lookup the results cache.
 	if isCacheEnabled {
@@ -165,7 +163,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 
 		for _, splitReq := range splitReqs {
 			// Do not try to pick response from cache at all if the request is not cachable.
-			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger); !cachable {
+			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
 				splitReq.downstreamRequests = []Request{splitReq.orig}
 				s.metrics.queryResultCacheSkippedCount.WithLabelValues(reason).Inc()
 				continue
@@ -247,7 +245,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Skip caching if the request is not cachable.
-			if cachable, _ := isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger); !cachable {
+			if cachable, _ := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
 				continue
 			}
 

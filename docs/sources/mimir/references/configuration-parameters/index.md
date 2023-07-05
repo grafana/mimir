@@ -980,12 +980,12 @@ instance_limits:
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 
 # (experimental) CPU utilization limit, as CPU cores, for CPU/memory utilization
-# based read request limiting
+# based read request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-cpu-utilization-limit
 [read_path_cpu_utilization_limit: <float> | default = 0]
 
 # (experimental) Memory limit, in bytes, for CPU/memory utilization based read
-# request limiting
+# request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
 ```
@@ -1276,10 +1276,6 @@ results_cache:
 # True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
-
-# (advanced) Cache requests that are not step-aligned.
-# CLI flag: -query-frontend.cache-unaligned-requests
-[cache_unaligned_requests: <boolean> | default = false]
 
 # How many series a single sharded partial query should load at most. This is
 # not a strict requirement guaranteed to be honoured by query sharding, but a
@@ -2907,6 +2903,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # value 0 disables the cache.
 # CLI flag: -query-frontend.results-cache-ttl-for-cardinality-query
 [results_cache_ttl_for_cardinality_query: <duration> | default = 0s]
+
+# (advanced) Cache requests that are not step-aligned.
+# CLI flag: -query-frontend.cache-unaligned-requests
+[cache_unaligned_requests: <boolean> | default = false]
 
 # (experimental) Max size of the raw query, in bytes. 0 to not apply a limit to
 # the size of the query.

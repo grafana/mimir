@@ -88,6 +88,9 @@ type Limits interface {
 
 	// ResultsCacheTTLForCardinalityQuery returns TTL for cached results for cardinality queries.
 	ResultsCacheTTLForCardinalityQuery(userID string) time.Duration
+
+	// ResultsCacheForUnalignedQueryEnabled returns whether to cache results for queries that are not step-aligned
+	ResultsCacheForUnalignedQueryEnabled(userID string) bool
 }
 
 type limitsMiddleware struct {
