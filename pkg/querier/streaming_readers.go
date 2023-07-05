@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package storegateway
+package querier
 
 import (
 	"fmt"
@@ -19,9 +19,9 @@ import (
 
 // The code in this file is used by the queriers to read the streaming chunks from the storegateway.
 
-// SeriesChunksStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
+// StoreGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
 // chunks in memory until they are consumed by the PromQL engine.
-type SeriesChunksStreamReader struct {
+type StoreGatewayStreamReader struct {
 	client              storegatewaypb.StoreGateway_SeriesClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
@@ -33,8 +33,8 @@ type SeriesChunksStreamReader struct {
 	errorChan        chan error
 }
 
-func NewSeriesChunksStreamReader(client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *SeriesChunksStreamReader {
-	return &SeriesChunksStreamReader{
+func NewStoreGatewayStreamReader(client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *StoreGatewayStreamReader {
+	return &StoreGatewayStreamReader{
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		queryLimiter:        queryLimiter,
@@ -46,20 +46,20 @@ func NewSeriesChunksStreamReader(client storegatewaypb.StoreGateway_SeriesClient
 	}
 }
 
-// Close cleans up all resources associated with this SeriesChunksStreamReader.
+// Close cleans up all resources associated with this StoreGatewayStreamReader.
 // This method should only be called if StartBuffering is not called.
-func (s *SeriesChunksStreamReader) Close() {
+func (s *StoreGatewayStreamReader) Close() {
 	if err := s.client.CloseSend(); err != nil {
 		level.Warn(s.log).Log("msg", "closing storegateway client stream failed", "err", err)
 	}
 }
 
 // StartBuffering begins streaming series' chunks from the storegateway associated with
-// this SeriesChunksStreamReader. Once all series have been consumed with GetChunks, all resources
-// associated with this SeriesChunksStreamReader are cleaned up.
+// this StoreGatewayStreamReader. Once all series have been consumed with GetChunks, all resources
+// associated with this StoreGatewayStreamReader are cleaned up.
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
-// To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's storegatewaypb.StoreGateway_SeriesClient.
-func (s *SeriesChunksStreamReader) StartBuffering() {
+// To cancel buffering, cancel the context associated with this StoreGatewayStreamReader's storegatewaypb.StoreGateway_SeriesClient.
+func (s *StoreGatewayStreamReader) StartBuffering() {
 	ctxDone := s.client.Context().Done()
 
 	go func() {
@@ -138,7 +138,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
-func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, error) {
+func (s *StoreGatewayStreamReader) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, error) {
 	if len(s.chunksBatch) == 0 {
 		chks, channelOpen := <-s.seriesChunksChan
 

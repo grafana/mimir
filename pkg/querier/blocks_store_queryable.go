@@ -708,7 +708,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		spanLog       = spanlogger.FromContext(ctx, q.logger)
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
-		streamReaders []*storegateway.SeriesChunksStreamReader
+		streamReaders []*StoreGatewayStreamReader
 		streams       []storegatewaypb.StoreGateway_SeriesClient
 	)
 
@@ -831,7 +831,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			}
 
 			reqStats.AddFetchedIndexBytes(indexBytesFetched)
-			var streamReader *storegateway.SeriesChunksStreamReader
+			var streamReader *StoreGatewayStreamReader
 			if len(mySeries) > 0 {
 				chunksFetched, chunkBytes := countChunksAndBytes(mySeries...)
 
@@ -850,7 +850,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			} else if len(myStreamingSeries) > 0 {
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
 				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
-				streamReader = storegateway.NewSeriesChunksStreamReader(stream, len(myStreamingSeries), queryLimiter, reqStats, q.logger)
+				streamReader = NewStoreGatewayStreamReader(stream, len(myStreamingSeries), queryLimiter, reqStats, q.logger)
 				level.Debug(spanLog).Log("msg", "received streaming series from store-gateway",
 					"instance", c.RemoteAddress(),
 					"fetched series", len(myStreamingSeries),
