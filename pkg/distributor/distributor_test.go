@@ -3620,7 +3620,7 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 		}
 	}
 
-	results := []*client.QueryStreamResponse{}
+	var results []*client.QueryStreamResponse
 
 	if req.StreamingChunksBatchSize > 0 {
 		endOfLabelsMessage := &client.QueryStreamResponse{
