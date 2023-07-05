@@ -241,6 +241,9 @@ type Ingester struct {
 	// Value used by shipper as external label.
 	shipperIngesterID string
 
+	// Metrics shared across all per-tenant shippers.
+	shipperMetrics *shipperMetrics
+
 	subservices  *services.Manager
 	activeGroups *util.ActiveGroupsCleanupService
 
@@ -301,6 +304,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		usersMetadata:       make(map[string]*userMetricsMetadata),
 		bucket:              bucketClient,
 		tsdbMetrics:         newTSDBMetrics(registerer, logger),
+		shipperMetrics:      newShipperMetrics(registerer),
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
@@ -2088,7 +2092,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			userLogger,
 			i.limits,
 			userID,
-			tsdbPromReg,
+			i.shipperMetrics,
 			udir,
 			bucket.NewUserBucketClient(userID, i.bucket, i.limits),
 			block.ReceiveSource,
