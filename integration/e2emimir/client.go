@@ -69,13 +69,19 @@ func NewClient(
 		return nil, err
 	}
 
+	// Use fresh transport for each Client.
+	tr := (http.DefaultTransport).(*http.Transport).Clone()
+	tr.MaxIdleConns = 0
+	tr.MaxConnsPerHost = 0
+	tr.MaxIdleConnsPerHost = 10000 // 0 would mean DefaultMaxIdleConnsPerHost, ie. 2.
+
 	c := &Client{
 		distributorAddress:  distributorAddress,
 		querierAddress:      querierAddress,
 		alertmanagerAddress: alertmanagerAddress,
 		rulerAddress:        rulerAddress,
 		timeout:             5 * time.Second,
-		httpClient:          &http.Client{},
+		httpClient:          &http.Client{Transport: tr},
 		querierClient:       promv1.NewAPI(querierAPIClient),
 		orgID:               orgID,
 	}
@@ -1047,4 +1053,8 @@ func (c *Client) doRequest(method, url string, body io.Reader) (*http.Response, 
 // FormatTime converts a time to a string acceptable by the Prometheus API.
 func FormatTime(t time.Time) string {
 	return strconv.FormatFloat(float64(t.Unix())+float64(t.Nanosecond())/1e9, 'f', -1, 64)
+}
+
+func (c *Client) CloseIdleConnections() {
+	c.httpClient.CloseIdleConnections()
 }

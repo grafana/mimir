@@ -34,6 +34,14 @@ type replicationSetResultTracker interface {
 	// This method must only be called before calling done.
 	startMinimumRequests()
 
+	// Starts additional request(s) as defined by the quorum requirements of this tracker.
+	// For example, a zone-aware tracker would start requests for another zone, whereas a
+	// non-zone-aware tracker would start a request for another instance.
+	// This method must only be called after calling startMinimumRequests or startAllRequests.
+	// If requests for all instances have already been started, this method does nothing.
+	// This method must only be called before calling done.
+	startAdditionalRequests()
+
 	// Starts requests for all instances.
 	// Calling this method multiple times may lead to unpredictable behaviour.
 	// Calling both this method and releaseMinimumRequests may lead to unpredictable behaviour.
@@ -49,8 +57,11 @@ type replicationSetResultTracker interface {
 }
 
 type replicationSetContextTracker interface {
-	// Returns a context.Context for instance.
-	contextFor(instance *InstanceDesc) context.Context
+	// Returns a context.Context and context.CancelFunc for instance.
+	// The context.CancelFunc will only cancel the context for this instance (ie. if this tracker
+	// is zone-aware, calling the context.CancelFunc should not cancel contexts for other instances
+	// in the same zone).
+	contextFor(instance *InstanceDesc) (context.Context, context.CancelFunc)
 
 	// Cancels the context for instance previously obtained with contextFor.
 	// This method may cancel the context for other instances if those other instances are part of
@@ -92,13 +103,7 @@ func (t *defaultResultTracker) done(_ *InstanceDesc, err error) {
 		}
 	} else {
 		t.numErrors++
-
-		if len(t.pendingInstances) > 0 {
-			// There are some outstanding requests we could make before we reach maxErrors. Release the next one.
-			i := t.pendingInstances[0]
-			t.instanceRelease[i] <- struct{}{}
-			t.pendingInstances = t.pendingInstances[1:]
-		}
+		t.startAdditionalRequests()
 	}
 }
 
@@ -151,6 +156,15 @@ func (t *defaultResultTracker) startMinimumRequests() {
 	}
 }
 
+func (t *defaultResultTracker) startAdditionalRequests() {
+	if len(t.pendingInstances) > 0 {
+		// There are some outstanding requests we could make before we reach maxErrors. Release the next one.
+		i := t.pendingInstances[0]
+		t.instanceRelease[i] <- struct{}{}
+		t.pendingInstances = t.pendingInstances[1:]
+	}
+}
+
 func (t *defaultResultTracker) startAllRequests() {
 	t.instanceRelease = make(map[*InstanceDesc]chan struct{}, len(t.instances))
 
@@ -186,10 +200,10 @@ func newDefaultContextTracker(ctx context.Context, instances []InstanceDesc) *de
 	}
 }
 
-func (t *defaultContextTracker) contextFor(instance *InstanceDesc) context.Context {
+func (t *defaultContextTracker) contextFor(instance *InstanceDesc) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(t.ctx)
 	t.cancelFuncs[instance] = cancel
-	return ctx
+	return ctx, cancel
 }
 
 func (t *defaultContextTracker) cancelContextFor(instance *InstanceDesc) {
@@ -248,11 +262,9 @@ func (t *zoneAwareResultTracker) done(instance *InstanceDesc, err error) {
 	} else {
 		t.failuresByZone[instance.Zone]++
 
-		if len(t.pendingZones) > 0 && t.failuresByZone[instance.Zone] == 1 {
-			// If there are more zones we could try before reaching maxUnavailableZones and this was the first
-			// failure for this zone, release another zone's requests and signal they should start.
-			t.releaseZone(t.pendingZones[0], true)
-			t.pendingZones = t.pendingZones[1:]
+		if t.failuresByZone[instance.Zone] == 1 {
+			// If this was the first failure for this zone, release another zone's requests and signal they should start.
+			t.startAdditionalRequests()
 		}
 	}
 }
@@ -315,6 +327,14 @@ func (t *zoneAwareResultTracker) startMinimumRequests() {
 	}
 }
 
+func (t *zoneAwareResultTracker) startAdditionalRequests() {
+	if len(t.pendingZones) > 0 {
+		// If there are more zones we could try before reaching maxUnavailableZones, release another zone's requests and signal they should start.
+		t.releaseZone(t.pendingZones[0], true)
+		t.pendingZones = t.pendingZones[1:]
+	}
+}
+
 func (t *zoneAwareResultTracker) startAllRequests() {
 	t.createReleaseChannels()
 
@@ -352,41 +372,47 @@ func (t *zoneAwareResultTracker) awaitStart(ctx context.Context, instance *Insta
 }
 
 type zoneAwareContextTracker struct {
-	contexts    map[string]context.Context
-	cancelFuncs map[string]context.CancelFunc
+	contexts    map[*InstanceDesc]context.Context
+	cancelFuncs map[*InstanceDesc]context.CancelFunc
 }
 
 func newZoneAwareContextTracker(ctx context.Context, instances []InstanceDesc) *zoneAwareContextTracker {
 	t := &zoneAwareContextTracker{
-		contexts:    map[string]context.Context{},
-		cancelFuncs: map[string]context.CancelFunc{},
+		contexts:    make(map[*InstanceDesc]context.Context, len(instances)),
+		cancelFuncs: make(map[*InstanceDesc]context.CancelFunc, len(instances)),
 	}
 
-	for _, instance := range instances {
-		if _, ok := t.contexts[instance.Zone]; !ok {
-			zoneCtx, cancel := context.WithCancel(ctx)
-			t.contexts[instance.Zone] = zoneCtx
-			t.cancelFuncs[instance.Zone] = cancel
-		}
+	for i := range instances {
+		instance := &instances[i]
+		ctx, cancel := context.WithCancel(ctx)
+		t.contexts[instance] = ctx
+		t.cancelFuncs[instance] = cancel
 	}
 
 	return t
 }
 
-func (t *zoneAwareContextTracker) contextFor(instance *InstanceDesc) context.Context {
-	return t.contexts[instance.Zone]
+func (t *zoneAwareContextTracker) contextFor(instance *InstanceDesc) (context.Context, context.CancelFunc) {
+	return t.contexts[instance], t.cancelFuncs[instance]
 }
 
 func (t *zoneAwareContextTracker) cancelContextFor(instance *InstanceDesc) {
-	if cancel, ok := t.cancelFuncs[instance.Zone]; ok {
-		cancel()
-		delete(t.cancelFuncs, instance.Zone)
+	// Why not create a per-zone parent context to make this easier?
+	// If we create a per-zone parent context, we'd need to have some way to cancel the per-zone context when the last of the individual
+	// contexts in a zone are cancelled using the context.CancelFunc returned from contextFor.
+	for i, cancel := range t.cancelFuncs {
+		if i.Zone == instance.Zone {
+			cancel()
+			delete(t.contexts, i)
+			delete(t.cancelFuncs, i)
+		}
 	}
 }
 
 func (t *zoneAwareContextTracker) cancelAllContexts() {
-	for zone, cancel := range t.cancelFuncs {
+	for instance, cancel := range t.cancelFuncs {
 		cancel()
-		delete(t.cancelFuncs, zone)
+		delete(t.contexts, instance)
+		delete(t.cancelFuncs, instance)
 	}
 }

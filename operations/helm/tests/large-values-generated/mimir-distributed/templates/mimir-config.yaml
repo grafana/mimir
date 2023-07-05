@@ -99,6 +99,12 @@ data:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.large-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
       enable_api: true
       rule_path: /data
+    ruler_storage:
+      cache:
+        backend: memcached
+        memcached:
+          addresses: dns+large-values-mimir-metadata-cache.citestns.svc:11211
+          max_item_size: 1048576
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:

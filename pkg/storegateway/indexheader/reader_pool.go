@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/gate"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,6 +44,9 @@ type ReaderPool struct {
 	logger                log.Logger
 	metrics               *ReaderPoolMetrics
 
+	// Gate used to limit the number of concurrent index-header loads.
+	lazyLoadingGate gate.Gate
+
 	// Channel used to signal once the pool is closing.
 	close chan struct{}
 
@@ -52,8 +56,8 @@ type ReaderPool struct {
 }
 
 // NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers if enabled.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics) *ReaderPool {
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics)
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, lazyLoadingGate, metrics)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -75,12 +79,13 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics) *ReaderPool {
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
 	return &ReaderPool{
 		logger:                logger,
 		metrics:               metrics,
 		lazyReaderEnabled:     lazyReaderEnabled,
 		lazyReaderIdleTimeout: lazyReaderIdleTimeout,
+		lazyLoadingGate:       lazyLoadingGate,
 		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
 		close:                 make(chan struct{}),
 	}
@@ -99,7 +104,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	}
 
 	if p.lazyReaderEnabled {
-		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
+		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
 	} else {
 		reader, err = readerFactory()
 	}

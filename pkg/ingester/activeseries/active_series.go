@@ -6,6 +6,7 @@
 package activeseries
 
 import (
+	"flag"
 	"math"
 	"sync"
 	"time"
@@ -16,7 +17,22 @@ import (
 
 const (
 	numStripes = 512
+
+	EnabledFlag     = "ingester.active-series-metrics-enabled"
+	IdleTimeoutFlag = "ingester.active-series-metrics-idle-timeout"
 )
+
+type Config struct {
+	Enabled      bool          `yaml:"active_series_metrics_enabled" category:"advanced"`
+	UpdatePeriod time.Duration `yaml:"active_series_metrics_update_period" category:"advanced"`
+	IdleTimeout  time.Duration `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
+}
+
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enabled, EnabledFlag, true, "Enable tracking of active series and export them as metrics.")
+	f.DurationVar(&cfg.UpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
+	f.DurationVar(&cfg.IdleTimeout, IdleTimeoutFlag, 10*time.Minute, "After what time a series is considered to be inactive.")
+}
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {

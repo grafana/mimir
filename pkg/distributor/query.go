@@ -26,7 +26,13 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
+)
+
+var (
+	// readNoExtend is a ring.Operation that only selects instances marked as ring.ACTIVE.
+	// This should mirror the operation used when choosing ingesters to write series to (ring.WriteNoExtend).
+	readNoExtend = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 )
 
 func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*ingester_client.ExemplarQueryResponse, error) {
@@ -105,10 +111,10 @@ func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, er
 	lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
 
 	if shardSize > 0 && lookbackPeriod > 0 {
-		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(ring.Read)
+		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(readNoExtend)
 	}
 
-	return d.ingestersRing.GetReplicationSetForOperation(ring.Read)
+	return d.ingestersRing.GetReplicationSetForOperation(readNoExtend)
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
@@ -140,18 +146,9 @@ func mergeExemplarSets(a, b []mimirpb.Exemplar) []mimirpb.Exemplar {
 func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.ExemplarQueryRequest) (*ingester_client.ExemplarQueryResponse, error) {
 	// Fetch exemplars from multiple ingesters in parallel, using the replicationSet
 	// to deal with consistency.
-	results, err := replicationSet.Do(ctx, 0, func(ctx context.Context, ing *ring.InstanceDesc) (interface{}, error) {
-		client, err := d.ingesterPool.GetClientFor(ing.Addr)
-		if err != nil {
-			return nil, err
-		}
 
-		resp, err := client.(ingester_client.IngesterClient).QueryExemplars(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-
-		return resp, nil
+	results, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.ExemplarQueryResponse, error) {
+		return client.QueryExemplars(ctx, req)
 	})
 	if err != nil {
 		return nil, err
@@ -160,11 +157,10 @@ func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSe
 	return mergeExemplarQueryResponses(results), nil
 }
 
-func mergeExemplarQueryResponses(results []interface{}) *ingester_client.ExemplarQueryResponse {
+func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryResponse) *ingester_client.ExemplarQueryResponse {
 	var keys []string
 	exemplarResults := make(map[string]mimirpb.TimeSeries)
-	for _, result := range results {
-		r := result.(*ingester_client.ExemplarQueryResponse)
+	for _, r := range results {
 		for _, ts := range r.Timeseries {
 			lbls := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
 			e, ok := exemplarResults[lbls]
@@ -202,25 +198,39 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
-	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc) (ingesterQueryResult, error) {
+	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelFunc) (ingesterQueryResult, error) {
+		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
+		cleanup := func() {
+			log.Span.Finish()
+			cancelContext()
+		}
+
+		var stream ingester_client.Ingester_QueryStreamClient
+		closeStream := true
+		defer func() {
+			if closeStream {
+				if stream != nil {
+					if err := stream.CloseSend(); err != nil {
+						level.Warn(log).Log("msg", "closing ingester client stream failed", "err", err)
+					}
+				}
+
+				cleanup()
+			}
+		}()
+
+		log.Span.SetTag("ingester_address", ing.Addr)
+		log.Span.SetTag("ingester_zone", ing.Zone)
+
 		client, err := d.ingesterPool.GetClientFor(ing.Addr)
 		if err != nil {
 			return ingesterQueryResult{}, err
 		}
 
-		stream, err := client.(ingester_client.IngesterClient).QueryStream(ctx, req)
+		stream, err = client.(ingester_client.IngesterClient).QueryStream(ctx, req)
 		if err != nil {
 			return ingesterQueryResult{}, err
 		}
-
-		closeStream := true
-		defer func() {
-			if closeStream {
-				if err := stream.CloseSend(); err != nil {
-					level.Warn(d.log).Log("msg", "closing ingester client stream failed", "err", err)
-				}
-			}
-		}()
 
 		result := ingesterQueryResult{}
 
@@ -242,7 +252,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 			if len(resp.Timeseries) > 0 {
 				for _, series := range resp.Timeseries {
 					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
-						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
+						return ingesterQueryResult{}, limitErr
 					}
 				}
 
@@ -250,17 +260,17 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 			} else if len(resp.Chunkseries) > 0 {
 				// Enforce the max chunks limits.
 				if chunkLimitErr := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); chunkLimitErr != nil {
-					return ingesterQueryResult{}, validation.LimitError(chunkLimitErr.Error())
+					return ingesterQueryResult{}, chunkLimitErr
 				}
 
 				for _, series := range resp.Chunkseries {
 					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
-						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
+						return ingesterQueryResult{}, limitErr
 					}
 				}
 
 				if chunkBytesLimitErr := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); chunkBytesLimitErr != nil {
-					return ingesterQueryResult{}, validation.LimitError(chunkBytesLimitErr.Error())
+					return ingesterQueryResult{}, chunkBytesLimitErr
 				}
 
 				result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
@@ -270,7 +280,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 				for _, s := range resp.StreamingSeries {
 					if limitErr := queryLimiter.AddSeries(s.Labels); limitErr != nil {
-						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
+						return ingesterQueryResult{}, limitErr
 					}
 
 					labelsBatch = append(labelsBatch, mimirpb.FromLabelAdaptersToLabels(s.Labels))
@@ -287,7 +297,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := ingester_client.NewSeriesChunksStreamReader(stream, streamingSeriesCount, queryLimiter, d.log)
+					streamReader := ingester_client.NewSeriesChunksStreamReader(stream, streamingSeriesCount, queryLimiter, cleanup, d.log)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}
@@ -303,7 +313,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
-	results, err := ring.DoUntilQuorum(ctx, replicationSet, d.cfg.MinimizeIngesterRequests, queryIngester, cleanup)
+	results, err := ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, d.queryQuorumConfig, queryIngester, cleanup)
 	if err != nil {
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}
@@ -316,8 +326,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	deduplicatedChunks := 0
 	totalChunks := 0
 	defer func() {
-		d.QueryChunkMetrics.IngesterChunksDeduplicated.Add(float64(deduplicatedChunks))
-		d.QueryChunkMetrics.IngesterChunksTotal.Add(float64(totalChunks))
+		d.QueryMetrics.IngesterChunksDeduplicated.Add(float64(deduplicatedChunks))
+		d.QueryMetrics.IngesterChunksTotal.Add(float64(totalChunks))
 	}()
 
 	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}

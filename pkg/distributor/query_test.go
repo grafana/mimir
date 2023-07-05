@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -25,6 +26,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -45,7 +47,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 		limits:          limits,
 	})
 
-	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, maxChunksLimit))
+	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, maxChunksLimit, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
 	// Push a number of series below the max chunks limit. Each series has 1 sample,
 	// so expect 1 chunk per series when querying back.
@@ -90,7 +92,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 	ctx := user.InjectOrgID(context.Background(), "user")
 	limits := &validation.Limits{}
 	flagext.DefaultValues(limits)
-	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0))
+	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
 	// Prepare distributors.
 	ds, _, _ := prepare(t, prepConfig{
@@ -171,7 +173,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	maxBytesLimit := (seriesToAdd) * responseChunkSize
 
 	// Update the limiter with the calculated limits.
-	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0))
+	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
 	// Push a number of series below the max chunk bytes limit. Subtract one for the series added above.
 	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false, false)
@@ -363,11 +365,11 @@ func TestMergeExemplars(t *testing.T) {
 		t.Run(fmt.Sprint("test", i), func(t *testing.T) {
 			rA := &ingester_client.ExemplarQueryResponse{Timeseries: c.seriesA}
 			rB := &ingester_client.ExemplarQueryResponse{Timeseries: c.seriesB}
-			e := mergeExemplarQueryResponses([]interface{}{rA, rB})
+			e := mergeExemplarQueryResponses([]*ingester_client.ExemplarQueryResponse{rA, rB})
 			require.Equal(t, c.expected, e.Timeseries)
 			if !c.nonReversible {
 				// Check the other way round too
-				e = mergeExemplarQueryResponses([]interface{}{rB, rA})
+				e = mergeExemplarQueryResponses([]*ingester_client.ExemplarQueryResponse{rB, rA})
 				require.Equal(t, c.expected, e.Timeseries)
 			}
 		})
@@ -401,7 +403,7 @@ func BenchmarkMergeExemplars(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		// Merge input with itself three times
-		mergeExemplarQueryResponses([]interface{}{input, input, input})
+		mergeExemplarQueryResponses([]*ingester_client.ExemplarQueryResponse{input, input, input})
 	}
 }
 

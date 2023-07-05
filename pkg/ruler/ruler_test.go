@@ -12,7 +12,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -37,12 +36,15 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -138,8 +140,9 @@ type prepareOptions struct {
 	start            bool
 }
 
-func applyPrepareOptions(opts ...prepareOption) prepareOptions {
-	defaultLogger := log.NewLogfmtLogger(os.Stdout)
+func applyPrepareOptions(t *testing.T, instanceID string, opts ...prepareOption) prepareOptions {
+	defaultLogger := testutil.NewLogger(t)
+	defaultLogger = log.With(defaultLogger, "instance", instanceID)
 	defaultLogger = level.NewFilter(defaultLogger, level.AllowInfo())
 
 	applied := prepareOptions{
@@ -197,7 +200,7 @@ func withPrometheusRegisterer(reg prometheus.Registerer) prepareOption {
 }
 
 func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ...prepareOption) *Ruler {
-	options := applyPrepareOptions(opts...)
+	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 	manager := prepareRulerManager(t, cfg, opts...)
 
 	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
@@ -221,7 +224,7 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ..
 }
 
 func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *DefaultMultiTenantManager {
-	options := applyPrepareOptions(opts...)
+	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 
 	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return storage.NoopQuerier(), nil
@@ -365,29 +368,29 @@ func TestGetRules(t *testing.T) {
 	expectedRulesByRuler := expectedRulesMap{
 		"ruler1": map[string]rulespb.RuleGroupList{
 			"user1": {
-				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "first", Interval: 10 * time.Second},
-				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "second", Interval: 10 * time.Second},
+				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "first", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
+				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "second", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
 			},
 			"user2": {
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "third", Interval: 10 * time.Second},
+				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "third", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
 			},
 		},
 		"ruler2": map[string]rulespb.RuleGroupList{
 			"user1": {
-				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "third", Interval: 10 * time.Second},
+				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "third", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
 			},
 			"user2": {
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "first", Interval: 10 * time.Second},
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "second", Interval: 10 * time.Second},
+				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "first", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
+				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "second", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
 			},
 		},
 		"ruler3": map[string]rulespb.RuleGroupList{
 			"user3": {
-				&rulespb.RuleGroupDesc{User: "user3", Namespace: "namespace", Name: "third", Interval: 10 * time.Second},
+				&rulespb.RuleGroupDesc{User: "user3", Namespace: "namespace", Name: "third", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
 			},
 			"user2": {
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "forth", Interval: 10 * time.Second},
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "fifty", Interval: 10 * time.Second},
+				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "forth", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
+				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "fifty", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
 			},
 		},
 	}
@@ -473,7 +476,7 @@ func TestGetRules(t *testing.T) {
 				ctx := user.InjectOrgID(ctx, u)
 
 				for _, r := range rulerAddrMap {
-					rules, err := r.GetRules(ctx, AnyRule)
+					rules, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
 					require.NoError(t, err)
 					require.Equal(t, len(allRulesByUser[u]), len(rules))
 
@@ -1058,7 +1061,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// the per-tenant rules manager gets started asynchronously.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
 						return len(actualRuleGroups)
 					})
@@ -1081,7 +1084,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// We use test.Poll() because the rule syncing is asynchronous in each ruler.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, numRuleGroups-1, func() interface{} {
-						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
 						return len(actualRuleGroups)
 					})
@@ -1104,7 +1107,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// the rule syncing is asynchronous in each ruler.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, 0, func() interface{} {
-						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
 						return len(actualRuleGroups)
 					})
@@ -1204,21 +1207,29 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	// the per-tenant rules manager gets started asynchronously.
 	for _, ruler := range rulers {
 		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 			return len(actualRuleGroups)
 		})
 	}
 
 	// We expect rule groups to have been sharded between the rulers.
-	actualRuleGroupsCount := 0
-	for _, ruler := range rulers {
-		actualRuleGroups, err := ruler.getLocalRules(userID, AnyRule)
-		require.NoError(t, err)
-		require.NotEmpty(t, actualRuleGroups)
-		actualRuleGroupsCount += len(actualRuleGroups)
-	}
-	assert.Equal(t, numRuleGroups, actualRuleGroupsCount)
+	test.Poll(t, time.Second, []int{numRuleGroups, len(rulers)}, func() interface{} {
+		var actualRuleGroupsCount int
+		var actualRulersWithRuleGroups int
+
+		for _, ruler := range rulers {
+			actualRuleGroups, err := ruler.getLocalRules(userID, RulesRequest{Filter: AnyRule})
+			require.NoError(t, err)
+			actualRuleGroupsCount += len(actualRuleGroups)
+
+			if len(actualRuleGroups) > 0 {
+				actualRulersWithRuleGroups++
+			}
+		}
+
+		return []int{actualRuleGroupsCount, actualRulersWithRuleGroups}
+	})
 
 	// Change the tenant's ruler shard size to 1, so that only 1 ruler will load all the rule groups after the next sync.
 	tenantLimits[userID].RulerTenantShardSize = 1
@@ -1235,23 +1246,25 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	// the rule syncing is asynchronous in each ruler.
 	for _, ruler := range rulers {
 		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 			return len(actualRuleGroups)
 		})
 	}
 
 	// We expect rule groups to have been loaded only from 1 ruler (not important which one).
-	var actualRuleGroupsCountPerRuler []int
-	for _, ruler := range rulers {
-		actualRuleGroups, err := ruler.getLocalRules(userID, AnyRule)
-		require.NoError(t, err)
+	test.Poll(t, time.Second, []int{0, numRuleGroups}, func() interface{} {
+		var actualRuleGroupsCountPerRuler []int
 
-		if len(actualRuleGroups) > 0 {
+		for _, ruler := range rulers {
+			actualRuleGroups, err := ruler.getLocalRules(userID, RulesRequest{Filter: AnyRule})
+			require.NoError(t, err)
 			actualRuleGroupsCountPerRuler = append(actualRuleGroupsCountPerRuler, len(actualRuleGroups))
 		}
-	}
-	assert.Equal(t, []int{numRuleGroups}, actualRuleGroupsCountPerRuler)
+
+		slices.Sort(actualRuleGroupsCountPerRuler)
+		return actualRuleGroupsCountPerRuler
+	})
 
 	// Post-condition check: there should have been no other rules syncing other than the initial one
 	// and the one driven by the API.
@@ -1343,7 +1356,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 
 	// GetRules() should return no configured rule groups, because no re-sync happened.
 	for _, ruler := range rulers {
-		actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+		actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
 		require.Empty(t, actualRuleGroups)
 	}
@@ -1378,7 +1391,12 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 
 	// "upload" rule groups
 	for _, key := range ruleGroups {
-		desc := rulespb.ToProto(key.user, key.namespace, rulefmt.RuleGroup{Name: key.group})
+		desc := rulespb.ToProto(key.user, key.namespace, rulefmt.RuleGroup{Name: key.group, Rules: []rulefmt.RuleNode{
+			{
+				Record: yaml.Node{Value: "up", Kind: yaml.ScalarNode},
+				Expr:   yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+			},
+		}})
 		require.NoError(t, rs.SetRuleGroup(context.Background(), key.user, key.namespace, desc))
 	}
 
@@ -1479,7 +1497,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 	t.Run("GetRules()", func(t *testing.T) {
 		// The rules manager updates the rules asynchronously so we need to poll it.
 		test.Poll(t, time.Second, expectedDeleted, func() interface{} {
-			list, err := r.GetRules(user.InjectOrgID(ctx, userID), AnyRule)
+			list, err := r.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 
 			return len(list) == 0

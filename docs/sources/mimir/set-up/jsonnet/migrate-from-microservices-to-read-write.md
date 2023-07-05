@@ -1,8 +1,9 @@
 ---
 aliases:
   - ../../operators-guide/deploy-grafana-mimir/jsonnet/migrate-from-microservices-to-read-write/
-description: Migrate from a cluster deployed as microservices to
-  one in read-write mode.
+description:
+  Migrate from a cluster deployed as microservices to one in read-write
+  mode.
 menuTitle: Migrate from microservices to read-write mode
 title: Migrate from microservices to read-write mode without downtime
 weight: 40
@@ -23,7 +24,7 @@ Steps can be applied vice-versa for migrating from read-write mode to microservi
 
 ## Step 1: Configure prerequisite zone-awareness
 
-Read-write mode requires that you enable [multi-zone ingesters and store-gateways]({{< relref "../../configure/configure-zone-aware-replication.md#enabling-zone-awareness-via-the-grafana-mimir-jsonnet" >}}).
+Read-write mode requires that you enable [multi-zone ingesters and store-gateways]({{< relref "../../configure/configure-zone-aware-replication#enabling-zone-awareness-via-the-grafana-mimir-jsonnet" >}}).
 
 ```jsonnet
 {

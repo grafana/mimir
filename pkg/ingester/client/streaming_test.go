@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -73,7 +75,9 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: testCase.batches}
-			reader := NewSeriesChunksStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0), log.NewNopLogger())
+			cleanedUp := atomic.NewBool(false)
+			cleanup := func() { cleanedUp.Store(true) }
+			reader := NewSeriesChunksStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 
 			for i, expected := range [][]Chunk{series0, series1, series2, series3, series4} {
@@ -85,6 +89,8 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 			require.Eventually(t, func() bool {
 				return mockClient.closed.Load()
 			}, time.Second, 10*time.Millisecond)
+
+			require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
 		})
 	}
 }
@@ -108,8 +114,10 @@ func TestSeriesChunksStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	mockClient := &mockQueryStreamClient{ctx: ctx, batches: batches}
+	cleanedUp := atomic.NewBool(false)
+	cleanup := func() { cleanedUp.Store(true) }
 
-	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0), log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	cancel()
 	reader.StartBuffering()
 
@@ -128,6 +136,7 @@ func TestSeriesChunksStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 	}
 
 	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after context cancelled")
+	require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
 }
 
 func TestSeriesChunksStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
@@ -138,7 +147,8 @@ func TestSeriesChunksStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 	}
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0), log.NewNopLogger())
+	cleanup := func() {}
+	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(1)
@@ -155,7 +165,8 @@ func TestSeriesChunksStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 	}
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0), log.NewNopLogger())
+	cleanup := func() {}
+	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -176,7 +187,10 @@ func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 	}
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0), log.NewNopLogger())
+	cleanedUp := atomic.NewBool(false)
+	cleanup := func() { cleanedUp.Store(true) }
+
+	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -186,6 +200,9 @@ func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 	s, err = reader.GetChunks(1)
 	require.Nil(t, s)
 	require.EqualError(t, err, "attempted to read series at index 1 from stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series")
+
+	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after failure")
+	require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
 }
 
 func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
@@ -198,7 +215,10 @@ func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 	}
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0), log.NewNopLogger())
+	cleanedUp := atomic.NewBool(false)
+	cleanup := func() { cleanedUp.Store(true) }
+
+	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -206,6 +226,7 @@ func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 	require.EqualError(t, err, "attempted to read series at index 0 from stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series")
 
 	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
+	require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
 }
 
 func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
@@ -222,12 +243,12 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 		"query selects too many chunks": {
 			maxChunks:     2,
 			maxChunkBytes: 200,
-			expectedError: "attempted to read series at index 0 from stream, but the stream has failed: the query exceeded the maximum number of chunks (limit: 2 chunks) (err-mimir-max-chunks-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunks-per-query, or contact your service administrator.",
+			expectedError: "the query exceeded the maximum number of chunks (limit: 2 chunks) (err-mimir-max-chunks-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunks-per-query, or contact your service administrator.",
 		},
 		"query selects too many chunk bytes": {
 			maxChunks:     4,
 			maxChunkBytes: 100,
-			expectedError: "attempted to read series at index 0 from stream, but the stream has failed: the query exceeded the aggregated chunks size limit (limit: 100 bytes) (err-mimir-max-chunks-bytes-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunk-bytes-per-query, or contact your service administrator.",
+			expectedError: "the query exceeded the aggregated chunks size limit (limit: 100 bytes) (err-mimir-max-chunks-bytes-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunk-bytes-per-query, or contact your service administrator.",
 		},
 	}
 
@@ -240,7 +261,10 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 			}
 
 			mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
-			reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks), log.NewNopLogger())
+			cleanedUp := atomic.NewBool(false)
+			cleanup := func() { cleanedUp.Store(true) }
+			queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
+			reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, queryMetrics), cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 
 			_, err := reader.GetChunks(0)
@@ -252,6 +276,7 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 			}
 
 			require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed")
+			require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
 		})
 	}
 }

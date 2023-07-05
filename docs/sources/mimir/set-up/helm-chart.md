@@ -1,7 +1,7 @@
 ---
 description: Learn how to deploy Mimir with Helm.
-title: Deploy Mimir with Helm
 menuTitle: Deploy with Helm
+title: Deploy Mimir with Helm
 weight: 10
 ---
 
