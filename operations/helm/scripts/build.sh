@@ -87,7 +87,7 @@ for FILEPATH in $TESTS; do
   INTERMEDIATE_OUTPUT_DIR="${INTERMEDIATE_PATH}/${TEST_NAME}-generated"
   OUTPUT_DIR="${OUTPUT_PATH}/${TEST_NAME}-generated"
 
-  generate_manifests $TEST_NAME $INTERMEDIATE_OUTPUT_DIR $OUTPUT_DIR &
+  generate_manifests "$TEST_NAME" "$INTERMEDIATE_OUTPUT_DIR" "$OUTPUT_DIR" &
   pid=$!
   pids+=("$pid")
 done
