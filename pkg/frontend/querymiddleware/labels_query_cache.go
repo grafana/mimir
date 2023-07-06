@@ -4,7 +4,6 @@ package querymiddleware
 
 import (
 	"fmt"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -26,11 +25,6 @@ const (
 
 	stringParamSeparator = rune(0)
 	stringValueSeparator = rune(1)
-)
-
-var (
-	prometheusMinTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC().UnixMilli()
-	prometheusMaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC().UnixMilli()
 )
 
 func newLabelsQueryCacheRoundTripper(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
@@ -72,12 +66,12 @@ func (c *labelsQueryCache) parseRequest(req *http.Request) (*genericQueryRequest
 
 	// Both the label names and label values API endpoints support the same exact parameters (with the same defaults),
 	// so in this function there's no distinction between the two.
-	startTime, err := parseRequestTimeParam(req, "start", prometheusMinTime)
+	startTime, err := parseRequestTimeParam(req, "start", util.PrometheusMinTime.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
 
-	endTime, err := parseRequestTimeParam(req, "end", prometheusMaxTime)
+	endTime, err := parseRequestTimeParam(req, "end", util.PrometheusMaxTime.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
@@ -102,12 +96,12 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	// Align start and end times to default block boundaries. The reason is that both TSDB (so the Mimir ingester)
 	// and Mimir store-gateway query the label names and values out of blocks overlapping within the start and end
 	// time. This means that for maximum granularity is the block.
-	if startTime != prometheusMinTime {
+	if startTime != util.PrometheusMinTime.UnixMilli() {
 		if reminder := startTime % twoHoursMillis; reminder != 0 {
 			startTime -= reminder
 		}
 	}
-	if endTime != prometheusMaxTime {
+	if endTime != util.PrometheusMaxTime.UnixMilli() {
 		if reminder := endTime % twoHoursMillis; reminder != 0 {
 			endTime += twoHoursMillis - reminder
 		}

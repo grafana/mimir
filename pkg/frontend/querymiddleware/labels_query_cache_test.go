@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestLabelsQueryCache_RoundTrip(t *testing.T) {
@@ -40,14 +42,14 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 	}{
 		"no parameters provided": {
 			expectedCacheKeyWithLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", prometheusMinTime),
-				fmt.Sprintf("%d", prometheusMaxTime),
+				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
+				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
 				labelName,
 				"0",
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", prometheusMinTime),
-				fmt.Sprintf("%d", prometheusMaxTime),
+				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
+				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
 				"0",
 			}, string(stringParamSeparator)),
 		},
@@ -57,13 +59,13 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 			},
 			expectedCacheKeyWithLabelName: strings.Join([]string{
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
-				fmt.Sprintf("%d", prometheusMaxTime),
+				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
 				labelName,
 				"0",
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
-				fmt.Sprintf("%d", prometheusMaxTime),
+				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
 				"0",
 			}, string(stringParamSeparator)),
 		},
@@ -72,13 +74,13 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 				"end": []string{"2023-07-05T07:00:00Z"},
 			},
 			expectedCacheKeyWithLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", prometheusMinTime),
+				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T08:00:00Z")),
 				labelName,
 				"0",
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", prometheusMinTime),
+				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T08:00:00Z")),
 				"0",
 			}, string(stringParamSeparator)),
@@ -88,15 +90,15 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 				"match[]": []string{`{second!="2",first="1"}`},
 			},
 			expectedCacheKeyWithLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", prometheusMinTime),
-				fmt.Sprintf("%d", prometheusMaxTime),
+				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
+				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
 				labelName,
 				"1",
 				strings.Join([]string{`first="1"`, `second!="2"`}, string(stringValueSeparator)),
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", prometheusMinTime),
-				fmt.Sprintf("%d", prometheusMaxTime),
+				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
+				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
 				"1",
 				strings.Join([]string{`first="1"`, `second!="2"`}, string(stringValueSeparator)),
 			}, string(stringParamSeparator)),
@@ -193,11 +195,11 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 			}, string(stringParamSeparator)),
 		},
 		"start and end time match prometheus min/max time": {
-			startTime: prometheusMinTime,
-			endTime:   prometheusMaxTime,
+			startTime: util.PrometheusMinTime.UnixMilli(),
+			endTime:   util.PrometheusMaxTime.UnixMilli(),
 			expectedCacheKey: strings.Join([]string{
-				fmt.Sprintf("%d", prometheusMinTime),
-				fmt.Sprintf("%d", prometheusMaxTime),
+				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
+				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
 				"0",
 			}, string(stringParamSeparator)),
 		},
