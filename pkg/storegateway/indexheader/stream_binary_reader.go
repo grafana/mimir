@@ -20,11 +20,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	samplepb "github.com/grafana/mimir/pkg/storegateway/indexheader/samplepb"
 )
 
 type StreamBinaryReaderMetrics struct {
@@ -80,7 +80,7 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 		return nil, fmt.Errorf("cannot write index header: %w", err)
 	}
 
-	// TODO: construct sample and write to disk
+	// TODO: construct sample and write to disk; call writeSample()
 
 	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
 	return newFileStreamBinaryReader(binfn, samplefn, postingOffsetsInMemSampling, logger, metrics, cfg)
@@ -93,17 +93,25 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 		factory: streamencoding.NewDecbufFactory(binpath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
 	}
 
-	in, err := ioutil.ReadFile(samplepath)
-
+	// Unmarshal sample from disk
+	data, err := ioutil.ReadFile(samplepath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading index-header sample file: %w", err)
 	}
-	book := &AddressBook{}
-	if err := proto.Unmarshal(in, book); err != nil {
-		log.Fatalln("Failed to parse address book:", err)
+	sample := &samplepb.Sample{}
+	if err := sample.Unmarshal(data); err != nil {
+		return nil, fmt.Errorf("failed to parse index-header sample file: %w", err)
 	}
 
-	return
+	// Load unmarshaled sample into memory
+	r.version = int(sample.Version)
+	r.indexVersion = int(sample.IndexVersion)
+	r.nameSymbols = sample.NameSymbols
+	r.postingsOffsetTable = sample.PostingsOffsetTable
+	r.symbols = sample.Symbols
+	r.toc = (*BinaryTOC)(sample.Toc)
+
+	return r, err
 }
 
 // Reads index-header, constructs an abbreviated sample, and write the sample to disk.
