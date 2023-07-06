@@ -21,13 +21,13 @@ func TestLabelsQueryCache_RoundTrip(t *testing.T) {
 	testGenericQueryCacheRoundTrip(t, newLabelsQueryCacheRoundTripper, "label_names_and_values", map[string]testGenericQueryCacheRequestType{
 		"label names request": {
 			url:            mustParseURL(t, `/prometheus/api/v1/labels?start=2023-07-05T01:00:00Z&end=2023-07-05T08:00:00Z&match[]={job="test_1"}&match[]={job!="test_2"}`),
-			cacheKey:       "user-1:1688515200000\x001688544000000\x002\x00job!=\"test_2\"\x00job=\"test_1\"",
-			hashedCacheKey: labelNamesQueryCachePrefix + cacheHashKey("user-1:1688515200000\x001688544000000\x002\x00job!=\"test_2\"\x00job=\"test_1\""),
+			cacheKey:       "user-1:1688515200000\x001688544000000\x00{job!=\"test_2\"},{job=\"test_1\"}",
+			hashedCacheKey: labelNamesQueryCachePrefix + cacheHashKey("user-1:1688515200000\x001688544000000\x00{job!=\"test_2\"},{job=\"test_1\"}"),
 		},
 		"label values request": {
 			url:            mustParseURL(t, `/prometheus/api/v1/label/test/values?start=2023-07-05T01:00:00Z&end=2023-07-05T08:00:00Z&match[]={job="test_1"}&match[]={job!="test_2"}`),
-			cacheKey:       "user-1:1688515200000\x001688544000000\x00test\x002\x00job!=\"test_2\"\x00job=\"test_1\"",
-			hashedCacheKey: labelValuesQueryCachePrefix + cacheHashKey("user-1:1688515200000\x001688544000000\x00test\x002\x00job!=\"test_2\"\x00job=\"test_1\""),
+			cacheKey:       "user-1:1688515200000\x001688544000000\x00test\x00{job!=\"test_2\"},{job=\"test_1\"}",
+			hashedCacheKey: labelValuesQueryCachePrefix + cacheHashKey("user-1:1688515200000\x001688544000000\x00test\x00{job!=\"test_2\"},{job=\"test_1\"}"),
 		},
 	})
 }
@@ -45,12 +45,12 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
 				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
 				labelName,
-				"0",
+				"",
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
 				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
 				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
-				"0",
+				"",
 			}, string(stringParamSeparator)),
 		},
 		"only start parameter provided": {
@@ -61,12 +61,12 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
 				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
 				labelName,
-				"0",
+				"",
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
 				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
-				"0",
+				"",
 			}, string(stringParamSeparator)),
 		},
 		"only end parameter provided": {
@@ -77,12 +77,12 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T08:00:00Z")),
 				labelName,
-				"0",
+				"",
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
 				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T08:00:00Z")),
-				"0",
+				"",
 			}, string(stringParamSeparator)),
 		},
 		"only match[] parameter provided": {
@@ -93,14 +93,12 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
 				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
 				labelName,
-				"1",
-				strings.Join([]string{`first="1"`, `second!="2"`}, string(stringValueSeparator)),
+				`{first="1",second!="2"}`,
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
 				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
 				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
-				"1",
-				strings.Join([]string{`first="1"`, `second!="2"`}, string(stringValueSeparator)),
+				`{first="1",second!="2"}`,
 			}, string(stringParamSeparator)),
 		},
 		"all parameters provided with mixed timestamp formats": {
@@ -113,16 +111,12 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T08:00:00Z")),
 				labelName,
-				"2",
-				strings.Join([]string{`first="1"`, `second!="2"`}, string(stringValueSeparator)),
-				`third="3"`,
+				`{first="1",second!="2"},{third="3"}`,
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T08:00:00Z")),
-				"2",
-				strings.Join([]string{`first="1"`, `second!="2"`}, string(stringValueSeparator)),
-				`third="3"`,
+				`{first="1",second!="2"},{third="3"}`,
 			}, string(stringParamSeparator)),
 		},
 	}
@@ -182,7 +176,7 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 			expectedCacheKey: strings.Join([]string{
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T06:00:00Z")),
-				"0",
+				"",
 			}, string(stringParamSeparator)),
 		},
 		"start and end time are not aligned to 2h boundaries": {
@@ -191,7 +185,7 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 			expectedCacheKey: strings.Join([]string{
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T08:00:00Z")),
-				"0",
+				"",
 			}, string(stringParamSeparator)),
 		},
 		"start and end time match prometheus min/max time": {
@@ -200,7 +194,7 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 			expectedCacheKey: strings.Join([]string{
 				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
 				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
-				"0",
+				"",
 			}, string(stringParamSeparator)),
 		},
 		"single label matcher set": {
@@ -215,8 +209,7 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 			expectedCacheKey: strings.Join([]string{
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T06:00:00Z")),
-				"1",
-				strings.Join([]string{`first="1"`, `second!="2"`}, string(stringValueSeparator)),
+				`{first="1",second!="2"}`,
 			}, string(stringParamSeparator)),
 		},
 		"multiple label matcher sets": {
@@ -233,9 +226,7 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 			expectedCacheKey: strings.Join([]string{
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T06:00:00Z")),
-				"2",
-				strings.Join([]string{`first="1"`, `second!="2"`}, string(stringValueSeparator)),
-				`first!="0"`,
+				`{first="1",second!="2"},{first!="0"}`,
 			}, string(stringParamSeparator)),
 		},
 		"multiple label matcher sets and label name": {
@@ -254,9 +245,7 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T06:00:00Z")),
 				"test",
-				"2",
-				strings.Join([]string{`first="1"`, `second!="2"`}, string(stringValueSeparator)),
-				`first!="0"`,
+				`{first="1",second!="2"},{first!="0"}`,
 			}, string(stringParamSeparator)),
 		},
 	}

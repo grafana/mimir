@@ -24,7 +24,6 @@ const (
 	labelValuesQueryCachePrefix = "lv:"
 
 	stringParamSeparator = rune(0)
-	stringValueSeparator = rune(1)
 )
 
 func newLabelsQueryCacheRoundTripper(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
@@ -120,18 +119,7 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 
 	// Add matcher sets.
 	b.WriteRune(stringParamSeparator)
-	b.WriteString(fmt.Sprintf("%d", len(matcherSets)))
-
-	for _, set := range matcherSets {
-		b.WriteRune(stringParamSeparator)
-
-		for idx, matcher := range set {
-			if idx > 0 {
-				b.WriteRune(stringValueSeparator)
-			}
-			b.WriteString(matcher.String())
-		}
-	}
+	b.WriteString(util.MultiMatchersStringer(matcherSets).String())
 
 	return b.String()
 }
