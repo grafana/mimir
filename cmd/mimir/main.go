@@ -22,11 +22,11 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/tracing"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/trace"
 	"github.com/grafana/mimir/pkg/util/usage"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -180,12 +180,15 @@ func main() {
 			}
 		}
 
-		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-		if trace, err := tracing.NewFromEnv(name); err != nil {
-			level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
-		} else {
-			defer trace.Close()
+		if err := trace.InitTracingService(util_log.Logger); err != nil {
+			level.Error(util_log.Logger).Log("msg", "Failed to initialize tracing", "err", err.Error())
 		}
+		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
+		// if trace, err := tracing.NewFromEnv(name); err != nil {
+		// 	level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
+		// } else {
+		// 	defer trace.Close()
+		// }
 	}
 
 	// Initialise seed for randomness usage.

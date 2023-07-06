@@ -34,6 +34,7 @@ import (
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -48,6 +49,7 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/push"
+	"github.com/grafana/mimir/pkg/util/trace"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -707,9 +709,9 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = copyString(cluster), copyString(replica)
 
-		span := opentracing.SpanFromContext(ctx)
+		ctx, span := trace.GetTracer().Start(ctx, "distributor.prePushHaDedupeMiddleware")
 		if span != nil {
-			span.SetTag("cluster", cluster)
+			span.SetAttributes("cluster", cluster, attribute.String("cluster", cluster))
 			span.SetTag("replica", replica)
 		}
 
