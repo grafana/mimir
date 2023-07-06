@@ -350,13 +350,22 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
+  # (experimental) Comma-separated list of metrics to include in the exporter.
+  # Allowed metric names: ingestion_rate, ingestion_burst_size,
+  # max_global_series_per_user, max_global_series_per_metric,
+  # max_global_exemplars_per_user, max_fetched_chunks_per_query,
+  # max_fetched_series_per_query, max_fetched_chunk_bytes_per_query,
+  # ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant,
+  # max_global_metadata_per_user, max_global_metadata_per_metric, request_rate,
+  # request_burst_size, alertmanager_notification_rate_limit,
+  # alertmanager_max_dispatcher_aggregation_groups,
+  # alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.
+  # CLI flag: -overrides-exporter.enabled-metrics
+  [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant"]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
-
-# (experimental) Enables optimized marshaling of timeseries.
-# CLI flag: -timeseries-unmarshal-caching-optimization-enabled
-[timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
 ```
 
 ### common
@@ -768,10 +777,6 @@ instance_limits:
   # per-tenant. Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
-
-# (experimental) Enable pooling of buffers used for marshaling write requests.
-# CLI flag: -distributor.write-requests-buffer-pooling-enabled
-[write_requests_buffer_pooling_enabled: <boolean> | default = false]
 ```
 
 ### ingester
@@ -975,12 +980,12 @@ instance_limits:
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 
 # (experimental) CPU utilization limit, as CPU cores, for CPU/memory utilization
-# based read request limiting
+# based read request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-cpu-utilization-limit
 [read_path_cpu_utilization_limit: <float> | default = 0]
 
 # (experimental) Memory limit, in bytes, for CPU/memory utilization based read
-# request limiting
+# request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
 ```
@@ -1260,10 +1265,6 @@ results_cache:
 # True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
-
-# (advanced) Cache requests that are not step-aligned.
-# CLI flag: -query-frontend.cache-unaligned-requests
-[cache_unaligned_requests: <boolean> | default = false]
 
 # How many series a single sharded partial query should load at most. This is
 # not a strict requirement guaranteed to be honoured by query sharding, but a
@@ -2892,6 +2893,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.results-cache-ttl-for-cardinality-query
 [results_cache_ttl_for_cardinality_query: <duration> | default = 0s]
 
+# (advanced) Cache requests that are not step-aligned.
+# CLI flag: -query-frontend.cache-unaligned-requests
+[cache_unaligned_requests: <boolean> | default = false]
+
 # (experimental) Max size of the raw query, in bytes. 0 to not apply a limit to
 # the size of the query.
 # CLI flag: -query-frontend.max-query-expression-size-bytes
@@ -3443,9 +3448,9 @@ tsdb:
 
   # (advanced) How frequently the ingester checks whether the TSDB head should
   # be compacted and, if so, triggers the compaction. Mimir applies a jitter to
-  # the first check, while subsequent checks will happen at the configured
-  # interval. Block is only created if data covers smallest block range. The
-  # configured interval must be between 0 and 15 minutes.
+  # the first check, and subsequent checks will happen at the configured
+  # interval. A block is only created if data covers the smallest block range.
+  # The configured interval must be between 0 and 15 minutes.
   # CLI flag: -blocks-storage.tsdb.head-compaction-interval
   [head_compaction_interval: <duration> | default = 1m]
 
@@ -3565,6 +3570,24 @@ tsdb:
   # compacted blocks, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-force
   [block_postings_for_matchers_cache_force: <boolean> | default = false]
+
+  # (experimental) When the number of in-memory series in the ingester is equal
+  # to or greater than this setting, the ingester tries to compact the TSDB
+  # Head. The early compaction removes from the memory all samples and inactive
+  # series up until -ingester.active-series-metrics-idle-timeout time ago. After
+  # an early compaction, the ingester will not accept any sample with a
+  # timestamp older than -ingester.active-series-metrics-idle-timeout time ago
+  # (unless out of order ingestion is enabled). The ingester checks every
+  # -blocks-storage.tsdb.head-compaction-interval whether an early compaction is
+  # required. Use 0 to disable it.
+  # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-in-memory-series
+  [early_head_compaction_min_in_memory_series: <int> | default = 0]
+
+  # (experimental) When the early compaction is enabled, the early compaction is
+  # triggered only if the estimated series reduction is at least the configured
+  # percentage (0-100).
+  # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage
+  [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 10]
 ```
 
 ### compactor

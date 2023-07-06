@@ -70,46 +70,36 @@ local filename = 'mimir-queries.json';
         $.panel('Query results cache hit ratio') +
         $.queryPanel(
           |||
-            # Query metrics before and after migration to new memcached backend.
-            sum (
-              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_hits_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+            # Query the new metric introduced in Mimir 2.10.
+            (
+              sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{%(frontend)s}[$__rate_interval]))
+              /
+              sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{%(frontend)s}[$__rate_interval]))
             )
-            /
-            sum (
-              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
+            # Otherwise fallback to the previous general-purpose metrics.
+            or
+            (
+              label_replace(
+                # Query metrics before and after migration to new memcached backend.
+                sum (
+                  rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
+                  or
+                  rate(thanos_cache_memcached_hits_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+                )
+                /
+                sum (
+                  rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
+                  or
+                  rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
+                ),
+                "request_type", "query_range", "", "")
             )
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
           },
-          'Hit ratio',
+          '{{request_type}}',
         ) +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
-      )
-      .addPanel(
-        $.panel('Query results cache misses') +
-        $.queryPanel(
-          |||
-            # Query metrics before and after migration to new memcached backend.
-            sum (
-              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_requests_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-            )
-            -
-            sum (
-              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_hits_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
-            )
-          ||| % {
-            frontend: $.jobMatcher($._config.job_names.query_frontend),
-          },
-          'Missed query results per second'
-        ),
       )
       .addPanel(
         $.panel('Query results cache skipped') +

@@ -32,18 +32,22 @@ const (
 	instantQueryPathSuffix           = "/query"
 	cardinalityLabelNamesPathSuffix  = "/cardinality/label_names"
 	cardinalityLabelValuesPathSuffix = "/cardinality/label_values"
+
+	// DefaultDeprecatedCacheUnalignedRequests is the default value for the deprecated querier frontend config DeprecatedCacheUnalignedRequests
+	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.12
+	DefaultDeprecatedCacheUnalignedRequests = false
 )
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	AlignQueriesWithStep   bool          `yaml:"align_queries_with_step"`
-	ResultsCacheConfig     `yaml:"results_cache"`
-	CacheResults           bool   `yaml:"cache_results"`
-	MaxRetries             int    `yaml:"max_retries" category:"advanced"`
-	ShardedQueries         bool   `yaml:"parallelize_shardable_queries"`
-	CacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced"`
-	TargetSeriesPerShard   uint64 `yaml:"query_sharding_target_series_per_shard"`
+	SplitQueriesByInterval           time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
+	AlignQueriesWithStep             bool          `yaml:"align_queries_with_step"`
+	ResultsCacheConfig               `yaml:"results_cache"`
+	CacheResults                     bool   `yaml:"cache_results"`
+	MaxRetries                       int    `yaml:"max_retries" category:"advanced"`
+	ShardedQueries                   bool   `yaml:"parallelize_shardable_queries"`
+	DeprecatedCacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
+	TargetSeriesPerShard             uint64 `yaml:"query_sharding_target_series_per_shard"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
@@ -59,10 +63,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-queries-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
-	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	cfg.ResultsCacheConfig.RegisterFlags(f)
+
+	// The query-frontend.cache-unaligned-requests flag has been moved to the limits.go file
+	// cfg.DeprecatedCacheUnalignedRequests is set to the default here for clarity
+	// and consistency with the process for migrating limits to per-tenant config
+	// TODO: Remove in Mimir 2.12.0
+	cfg.DeprecatedCacheUnalignedRequests = DefaultDeprecatedCacheUnalignedRequests
 }
 
 // Validate validates the config.
@@ -220,7 +229,6 @@ func newQueryTripperware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
-			cfg.CacheUnalignedRequests,
 			limits,
 			codec,
 			c,

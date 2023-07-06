@@ -580,7 +580,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -656,15 +656,15 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "# Query metrics before and after migration to new memcached backend.\nsum (\n  rate(cortex_cache_hits{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n  or\n  rate(thanos_cache_memcached_hits_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n)\n/\nsum (\n  rate(cortex_cache_fetched_keys{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n  or\n  rate(thanos_cache_memcached_requests_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n)\n",
+                        "expr": "# Query the new metric introduced in Mimir 2.10.\n(\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n  /\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n)\n# Otherwise fallback to the previous general-purpose metrics.\nor\n(\n  label_replace(\n    # Query metrics before and after migration to new memcached backend.\n    sum (\n      rate(cortex_cache_hits{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n      or\n      rate(thanos_cache_memcached_hits_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n    )\n    /\n    sum (\n      rate(cortex_cache_fetched_keys{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n      or\n      rate(thanos_cache_memcached_requests_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n    ),\n    \"request_type\", \"query_range\", \"\", \"\")\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "Hit ratio",
+                        "legendFormat": "{{request_type}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -711,85 +711,9 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 10,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
-                  "span": 3,
-                  "stack": false,
-                  "steppedLine": false,
-                  "targets": [
-                     {
-                        "expr": "# Query metrics before and after migration to new memcached backend.\nsum (\n  rate(cortex_cache_fetched_keys{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n  or\n  rate(thanos_cache_memcached_requests_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n)\n-\nsum (\n  rate(cortex_cache_hits{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n  or\n  rate(thanos_cache_memcached_hits_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n)\n",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "Missed query results per second",
-                        "legendLink": null,
-                        "step": 10
-                     }
-                  ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
-                  "title": "Query results cache misses",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
-               },
-               {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "$datasource",
                   "description": "### Query results cache skipped\nThe % of queries whose results could not be cached.\nIt is tracked for each split query when the splitting by interval is enabled.\n\n",
                   "fill": 10,
-                  "id": 11,
+                  "id": 10,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -809,7 +733,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
                   "stack": true,
                   "steppedLine": false,
                   "targets": [
@@ -878,7 +802,7 @@
                   "datasource": "$datasource",
                   "description": "### Sharded queries ratio\nThe % of queries that have been successfully rewritten and executed in a shardable way.\nThis panel only takes into account the type of queries that are supported by query sharding (eg. range queries).\n\n",
                   "fill": 1,
-                  "id": 12,
+                  "id": 11,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -955,7 +879,7 @@
                   "datasource": "$datasource",
                   "description": "### Number of sharded queries per query\nThe number of sharded queries that have been executed for a single input query. It only tracks queries that\nhave been successfully rewritten in a shardable way.\n\n",
                   "fill": 1,
-                  "id": 13,
+                  "id": 12,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1059,7 +983,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 14,
+                  "id": 13,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1151,7 +1075,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 15,
+                  "id": 14,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1243,7 +1167,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 16,
+                  "id": 15,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1347,7 +1271,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 17,
+                  "id": 16,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1439,7 +1363,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 18,
+                  "id": 17,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1533,7 +1457,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 19,
+                  "id": 18,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1621,7 +1545,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 20,
+                  "id": 19,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1716,7 +1640,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 21,
+                  "id": 20,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1800,7 +1724,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 22,
+                  "id": 21,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1904,7 +1828,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 23,
+                  "id": 22,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1980,7 +1904,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 24,
+                  "id": 23,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2056,7 +1980,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 25,
+                  "id": 24,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2144,7 +2068,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 26,
+                  "id": 25,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2220,7 +2144,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 27,
+                  "id": 26,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2297,7 +2221,7 @@
                   "datasource": "$datasource",
                   "description": "### Series batch preloading efficiency\nThis panel shows the % of time reduced by preloading, for Series() requests which have been\nsplit to 2+ batches. If a Series() request is served within a single batch, then preloading\nis not triggered, and thus not counted in this measurement.\n\n",
                   "fill": 1,
-                  "id": 28,
+                  "id": 27,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2385,7 +2309,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 0,
-                  "id": 29,
+                  "id": 28,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2464,7 +2388,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 30,
+                  "id": 29,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2551,7 +2475,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 31,
+                  "id": 30,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2647,7 +2571,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 0,
-                  "id": 32,
+                  "id": 31,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2723,7 +2647,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 33,
+                  "id": 32,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2816,7 +2740,7 @@
                   "datasource": "$datasource",
                   "description": "### Index-header lazy load gate latency\nTime spent waiting for a turn to load an index header. This time is not included in \"Index-header lazy load duration.\"\n\n",
                   "fill": 1,
-                  "id": 34,
+                  "id": 33,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2920,7 +2844,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 35,
+                  "id": 34,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2996,7 +2920,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 36,
+                  "id": 35,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3072,7 +2996,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 37,
+                  "id": 36,
                   "legend": {
                      "avg": false,
                      "current": false,

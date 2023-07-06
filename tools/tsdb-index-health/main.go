@@ -16,6 +16,9 @@ import (
 var logger = log.NewLogfmtLogger(os.Stderr)
 
 func main() {
+	// Cleanup all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	verifyChunks := flag.Bool("check-chunks", false, "Verify chunks in segment files.")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [options...] <block-dir> [<block-dir> ...]:\n", os.Args[0])

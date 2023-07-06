@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -23,16 +22,6 @@ import (
 )
 
 func TestDistributorHighConcurrency(t *testing.T) {
-	for _, caching := range []bool{false, true} {
-		for _, poolWriteReqs := range []bool{false, true} {
-			t.Run(fmt.Sprintf("caching_unmarshal_data=%t, pooling_write_requests=%t", caching, poolWriteReqs), func(t *testing.T) {
-				testDistributorHighConcurrency(t, caching, poolWriteReqs)
-			})
-		}
-	}
-}
-
-func testDistributorHighConcurrency(t *testing.T, cachingUnmarshalDataEnabled bool, poolWriteRequestBuffer bool) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	t.Cleanup(s.Close)
@@ -47,9 +36,6 @@ func testDistributorHighConcurrency(t *testing.T, cachingUnmarshalDataEnabled bo
 		"-ingester.ring.heartbeat-period":          "1s",
 		"-ingester.out-of-order-time-window":       "0",
 		"-blocks-storage.tsdb.block-ranges-period": "2h", // This is changed by BlocksStorageFlags to 1m, but we don't want to run any compaction in our test.
-
-		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(cachingUnmarshalDataEnabled),
-		"-distributor.write-requests-buffer-pooling-enabled": strconv.FormatBool(poolWriteRequestBuffer),
 	}
 
 	flags := mergeFlags(
