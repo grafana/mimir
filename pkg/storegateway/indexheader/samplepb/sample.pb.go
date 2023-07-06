@@ -28,12 +28,15 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type Sample struct {
-	Toc                 *BinaryTOC        `protobuf:"bytes,1,opt,name=toc,proto3" json:"toc,omitempty"`
-	Symbols             *Symbols          `protobuf:"bytes,2,opt,name=symbols,proto3" json:"symbols,omitempty"`
-	NameSymbols         map[uint32]string `protobuf:"bytes,3,rep,name=nameSymbols,proto3" json:"nameSymbols,omitempty" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-	PostingsOffsetTable *types.Any        `protobuf:"bytes,4,opt,name=postingsOffsetTable,proto3" json:"postingsOffsetTable,omitempty"`
-	Version             int64             `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
-	IndexVersion        int64             `protobuf:"varint,6,opt,name=indexVersion,proto3" json:"indexVersion,omitempty"`
+	Factory             *types.Any        `protobuf:"bytes,1,opt,name=factory,proto3" json:"factory,omitempty"`
+	Toc                 *BinaryTOC        `protobuf:"bytes,2,opt,name=toc,proto3" json:"toc,omitempty"`
+	Symbols             *Symbols          `protobuf:"bytes,3,opt,name=symbols,proto3" json:"symbols,omitempty"`
+	NameSymbols         map[uint32]string `protobuf:"bytes,4,rep,name=nameSymbols,proto3" json:"nameSymbols,omitempty" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	ValueSymbolsMx      *Mutex            `protobuf:"bytes,5,opt,name=valueSymbolsMx,proto3" json:"valueSymbolsMx,omitempty"`
+	ValueSymbols        *ValueSymbols     `protobuf:"bytes,6,opt,name=valueSymbols,proto3" json:"valueSymbols,omitempty"`
+	PostingsOffsetTable *types.Any        `protobuf:"bytes,7,opt,name=postingsOffsetTable,proto3" json:"postingsOffsetTable,omitempty"`
+	Version             int64             `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
+	IndexVersion        int64             `protobuf:"varint,9,opt,name=indexVersion,proto3" json:"indexVersion,omitempty"`
 }
 
 func (m *Sample) Reset()      { *m = Sample{} }
@@ -68,6 +71,13 @@ func (m *Sample) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_Sample proto.InternalMessageInfo
 
+func (m *Sample) GetFactory() *types.Any {
+	if m != nil {
+		return m.Factory
+	}
+	return nil
+}
+
 func (m *Sample) GetToc() *BinaryTOC {
 	if m != nil {
 		return m.Toc
@@ -85,6 +95,20 @@ func (m *Sample) GetSymbols() *Symbols {
 func (m *Sample) GetNameSymbols() map[uint32]string {
 	if m != nil {
 		return m.NameSymbols
+	}
+	return nil
+}
+
+func (m *Sample) GetValueSymbolsMx() *Mutex {
+	if m != nil {
+		return m.ValueSymbolsMx
+	}
+	return nil
+}
+
+func (m *Sample) GetValueSymbols() *ValueSymbols {
+	if m != nil {
+		return m.ValueSymbols
 	}
 	return nil
 }
@@ -236,46 +260,155 @@ func (m *Symbols) GetSeen() int64 {
 	return 0
 }
 
+type Mutex struct {
+	State int32  `protobuf:"varint,1,opt,name=state,proto3" json:"state,omitempty"`
+	Sema  uint32 `protobuf:"varint,2,opt,name=sema,proto3" json:"sema,omitempty"`
+}
+
+func (m *Mutex) Reset()      { *m = Mutex{} }
+func (*Mutex) ProtoMessage() {}
+func (*Mutex) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2141552de9bf11d0, []int{3}
+}
+func (m *Mutex) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Mutex) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Mutex.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *Mutex) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Mutex.Merge(m, src)
+}
+func (m *Mutex) XXX_Size() int {
+	return m.Size()
+}
+func (m *Mutex) XXX_DiscardUnknown() {
+	xxx_messageInfo_Mutex.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Mutex proto.InternalMessageInfo
+
+func (m *Mutex) GetState() int32 {
+	if m != nil {
+		return m.State
+	}
+	return 0
+}
+
+func (m *Mutex) GetSema() uint32 {
+	if m != nil {
+		return m.Sema
+	}
+	return 0
+}
+
+type ValueSymbols struct {
+	Index  uint32 `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
+	Symbol string `protobuf:"bytes,2,opt,name=symbol,proto3" json:"symbol,omitempty"`
+}
+
+func (m *ValueSymbols) Reset()      { *m = ValueSymbols{} }
+func (*ValueSymbols) ProtoMessage() {}
+func (*ValueSymbols) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2141552de9bf11d0, []int{4}
+}
+func (m *ValueSymbols) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ValueSymbols) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ValueSymbols.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ValueSymbols) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ValueSymbols.Merge(m, src)
+}
+func (m *ValueSymbols) XXX_Size() int {
+	return m.Size()
+}
+func (m *ValueSymbols) XXX_DiscardUnknown() {
+	xxx_messageInfo_ValueSymbols.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ValueSymbols proto.InternalMessageInfo
+
+func (m *ValueSymbols) GetIndex() uint32 {
+	if m != nil {
+		return m.Index
+	}
+	return 0
+}
+
+func (m *ValueSymbols) GetSymbol() string {
+	if m != nil {
+		return m.Symbol
+	}
+	return ""
+}
+
 func init() {
 	proto.RegisterType((*Sample)(nil), "sample.Sample")
 	proto.RegisterMapType((map[uint32]string)(nil), "sample.Sample.NameSymbolsEntry")
 	proto.RegisterType((*BinaryTOC)(nil), "sample.BinaryTOC")
 	proto.RegisterType((*Symbols)(nil), "sample.Symbols")
+	proto.RegisterType((*Mutex)(nil), "sample.Mutex")
+	proto.RegisterType((*ValueSymbols)(nil), "sample.ValueSymbols")
 }
 
 func init() { proto.RegisterFile("sample.proto", fileDescriptor_2141552de9bf11d0) }
 
 var fileDescriptor_2141552de9bf11d0 = []byte{
-	// 452 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x6c, 0x52, 0x3f, 0x6f, 0xd3, 0x40,
-	0x14, 0xf7, 0xd9, 0x69, 0x42, 0x5f, 0x8a, 0x08, 0xd7, 0x0e, 0x47, 0x84, 0x0e, 0x2b, 0x2c, 0x61,
-	0xc0, 0x45, 0x65, 0x41, 0x0c, 0x95, 0x1a, 0x04, 0x23, 0x45, 0xd7, 0x0a, 0x24, 0x36, 0x3b, 0x5c,
-	0x8c, 0x85, 0x73, 0x17, 0xf9, 0x2e, 0x15, 0xde, 0xf8, 0x08, 0x7c, 0x0b, 0xf8, 0x28, 0x8c, 0x19,
-	0x3b, 0x12, 0x67, 0x61, 0xec, 0x47, 0x40, 0xbe, 0xcb, 0xa5, 0x49, 0xe5, 0x29, 0xef, 0xf7, 0xe7,
-	0xbd, 0x77, 0xef, 0x17, 0xc3, 0x81, 0x8a, 0xa7, 0xb3, 0x9c, 0x47, 0xb3, 0x42, 0x6a, 0x89, 0xdb,
-	0x16, 0xf5, 0x9f, 0xa7, 0x99, 0xfe, 0x3a, 0x4f, 0xa2, 0xb1, 0x9c, 0x1e, 0xa7, 0x32, 0x95, 0xc7,
-	0x46, 0x4e, 0xe6, 0x13, 0x83, 0x0c, 0x30, 0x95, 0x6d, 0xeb, 0x3f, 0x4a, 0xa5, 0x4c, 0x73, 0x7e,
-	0xeb, 0x8a, 0x45, 0x69, 0xa5, 0xc1, 0xd2, 0x87, 0xf6, 0x85, 0x19, 0x8a, 0x9f, 0x42, 0xa0, 0xe5,
-	0x98, 0xa0, 0x10, 0x0d, 0xbb, 0x27, 0x0f, 0xa3, 0xf5, 0xe2, 0x51, 0x26, 0xe2, 0xa2, 0xbc, 0x3c,
-	0x7f, 0xc3, 0x6a, 0x15, 0x3f, 0x83, 0x8e, 0x2a, 0xa7, 0x89, 0xcc, 0x15, 0xf1, 0x8d, 0xf1, 0x81,
-	0x33, 0x5e, 0x58, 0x9a, 0x39, 0x1d, 0x9f, 0x41, 0x57, 0xc4, 0x53, 0xbe, 0xe6, 0x49, 0x10, 0x06,
-	0xc3, 0xee, 0xc9, 0x93, 0x8d, 0xdd, 0xfe, 0xbc, 0xbf, 0x75, 0xbc, 0x15, 0xba, 0x28, 0xd9, 0x76,
-	0x0f, 0x7e, 0x07, 0x87, 0x33, 0xa9, 0x74, 0x26, 0x52, 0x75, 0x3e, 0x99, 0x28, 0xae, 0x2f, 0xe3,
-	0x24, 0xe7, 0xa4, 0x65, 0x36, 0x1f, 0x45, 0xf6, 0xac, 0xc8, 0x9d, 0x15, 0x9d, 0x89, 0x92, 0x35,
-	0x35, 0x60, 0x02, 0x9d, 0x2b, 0x5e, 0xa8, 0x4c, 0x0a, 0xb2, 0x17, 0xa2, 0x61, 0xc0, 0x1c, 0xc4,
-	0x03, 0x38, 0xc8, 0xc4, 0x17, 0xfe, 0xfd, 0xe3, 0x5a, 0x6e, 0x1b, 0x79, 0x87, 0xeb, 0x9f, 0x42,
-	0xef, 0xee, 0x33, 0x71, 0x0f, 0x82, 0x6f, 0xbc, 0x34, 0x61, 0xdd, 0x67, 0x75, 0x89, 0x8f, 0x60,
-	0xef, 0x2a, 0xce, 0xe7, 0xdc, 0xe4, 0xb2, 0xcf, 0x2c, 0x78, 0xed, 0xbf, 0x42, 0x83, 0x4f, 0xb0,
-	0xbf, 0x49, 0xb1, 0x7e, 0x8a, 0x4b, 0xa4, 0x6e, 0x6e, 0x31, 0x07, 0xf1, 0x0b, 0x38, 0xfc, 0xd0,
-	0x70, 0xac, 0x6f, 0x5c, 0x4d, 0xd2, 0xe0, 0x17, 0xda, 0x0c, 0xc3, 0x11, 0x74, 0x26, 0xf1, 0x58,
-	0xcb, 0xa2, 0x5c, 0xff, 0x83, 0xcd, 0xf1, 0x38, 0xd3, 0x76, 0x24, 0xfe, 0x6e, 0x24, 0x21, 0x74,
-	0x75, 0x3d, 0xde, 0x6e, 0x22, 0x81, 0x51, 0xb7, 0x29, 0xfc, 0x18, 0x3a, 0xd2, 0x54, 0x8a, 0xb4,
-	0xc2, 0x60, 0x18, 0x8c, 0xfc, 0x1e, 0x62, 0x8e, 0xc2, 0x18, 0x5a, 0x8a, 0x73, 0x97, 0xb4, 0xa9,
-	0x47, 0xa7, 0x8b, 0x25, 0xf5, 0xae, 0x97, 0xd4, 0xbb, 0x59, 0x52, 0xf4, 0xa3, 0xa2, 0xe8, 0x77,
-	0x45, 0xd1, 0x9f, 0x8a, 0xa2, 0x45, 0x45, 0xd1, 0xdf, 0x8a, 0xa2, 0x7f, 0x15, 0xf5, 0x6e, 0x2a,
-	0x8a, 0x7e, 0xae, 0xa8, 0xb7, 0x58, 0x51, 0xef, 0x7a, 0x45, 0xbd, 0xcf, 0xf7, 0xec, 0xb7, 0x32,
-	0x4b, 0x92, 0xb6, 0x39, 0xe2, 0xe5, 0xff, 0x00, 0x00, 0x00, 0xff, 0xff, 0x2a, 0xb6, 0x12, 0xbc,
-	0x0f, 0x03, 0x00, 0x00,
+	// 542 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x52, 0xcd, 0x6e, 0xd3, 0x4c,
+	0x14, 0xf5, 0xc4, 0xf9, 0x69, 0x6e, 0x92, 0xef, 0x0b, 0xd3, 0x0a, 0x99, 0x08, 0x0d, 0x91, 0xd9,
+	0x84, 0x05, 0x2e, 0x14, 0x21, 0x55, 0x08, 0x55, 0x6a, 0x10, 0xec, 0x4a, 0xd1, 0xb4, 0x2a, 0x12,
+	0x3b, 0x3b, 0x4c, 0x4c, 0x44, 0xe2, 0x89, 0xec, 0x49, 0x15, 0xef, 0x10, 0x4f, 0xc0, 0x5b, 0xc0,
+	0xa3, 0xb0, 0xcc, 0xb2, 0x4b, 0xe2, 0x6c, 0x58, 0xf6, 0x11, 0x90, 0xef, 0xd8, 0xa9, 0x53, 0x45,
+	0x48, 0xac, 0x7c, 0xcf, 0xbd, 0xe7, 0x8c, 0xef, 0x9c, 0x39, 0xd0, 0x8c, 0xdc, 0xc9, 0x74, 0x2c,
+	0x9c, 0x69, 0x28, 0x95, 0xa4, 0x55, 0x8d, 0x3a, 0x8f, 0xfd, 0x91, 0xfa, 0x34, 0xf3, 0x9c, 0x81,
+	0x9c, 0xec, 0xfb, 0xd2, 0x97, 0xfb, 0x38, 0xf6, 0x66, 0x43, 0x44, 0x08, 0xb0, 0xd2, 0xb2, 0xce,
+	0x3d, 0x5f, 0x4a, 0x7f, 0x2c, 0x6e, 0x58, 0x6e, 0x10, 0xeb, 0x91, 0xfd, 0xb5, 0x0c, 0xd5, 0x33,
+	0x3c, 0x94, 0x3a, 0x50, 0x1b, 0xba, 0x03, 0x25, 0xc3, 0xd8, 0x22, 0x5d, 0xd2, 0x6b, 0x1c, 0xec,
+	0x39, 0x5a, 0xe7, 0xe4, 0x3a, 0xe7, 0x38, 0x88, 0x79, 0x4e, 0xa2, 0x0f, 0xc1, 0x54, 0x72, 0x60,
+	0x95, 0x90, 0x7b, 0xc7, 0xc9, 0x16, 0xed, 0x8f, 0x02, 0x37, 0x8c, 0xcf, 0x4f, 0x5f, 0xf1, 0x74,
+	0x4a, 0x1f, 0x41, 0x2d, 0x8a, 0x27, 0x9e, 0x1c, 0x47, 0x96, 0x89, 0xc4, 0xff, 0x73, 0xe2, 0x99,
+	0x6e, 0xf3, 0x7c, 0x4e, 0x8f, 0xa1, 0x11, 0xb8, 0x13, 0x91, 0xf5, 0xad, 0x72, 0xd7, 0xec, 0x35,
+	0x0e, 0x1e, 0xac, 0xe9, 0xfa, 0xf3, 0xf6, 0x86, 0xf1, 0x3a, 0x50, 0x61, 0xcc, 0x8b, 0x1a, 0xfa,
+	0x1c, 0xfe, 0xbb, 0x74, 0xc7, 0xb3, 0x1c, 0x9f, 0xcc, 0xad, 0x0a, 0xfe, 0xb4, 0x95, 0x9f, 0x72,
+	0x32, 0x53, 0x62, 0xce, 0x6f, 0x91, 0xe8, 0x21, 0x34, 0x8b, 0x1d, 0xab, 0x9a, 0x5d, 0x3f, 0x13,
+	0x5d, 0x14, 0x66, 0x7c, 0x83, 0x49, 0xdf, 0xc0, 0xee, 0x54, 0x46, 0x6a, 0x14, 0xf8, 0xd1, 0xe9,
+	0x70, 0x18, 0x09, 0x75, 0xee, 0x7a, 0x63, 0x61, 0xd5, 0xfe, 0xe2, 0xdf, 0x36, 0x01, 0xb5, 0xa0,
+	0x76, 0x29, 0xc2, 0x68, 0x24, 0x03, 0x6b, 0xa7, 0x4b, 0x7a, 0x26, 0xcf, 0x21, 0xb5, 0xa1, 0x39,
+	0x0a, 0x3e, 0x8a, 0xf9, 0x45, 0x36, 0xae, 0xe3, 0x78, 0xa3, 0xd7, 0x39, 0x82, 0xf6, 0x6d, 0x5f,
+	0x68, 0x1b, 0xcc, 0xcf, 0x42, 0xbf, 0x64, 0x8b, 0xa7, 0x25, 0xdd, 0x83, 0x0a, 0xee, 0x8e, 0x2f,
+	0x56, 0xe7, 0x1a, 0xbc, 0x28, 0x1d, 0x12, 0xfb, 0x3d, 0xd4, 0xd7, 0xcf, 0x96, 0xae, 0x92, 0xfb,
+	0x90, 0x8a, 0xcb, 0x3c, 0x87, 0xf4, 0x09, 0xec, 0xbe, 0xdb, 0x72, 0xd9, 0x12, 0xb2, 0xb6, 0x8d,
+	0xec, 0xef, 0x64, 0x7d, 0xd8, 0x3f, 0xc7, 0xab, 0x60, 0x49, 0x69, 0xd3, 0x92, 0x2e, 0x34, 0x54,
+	0x7a, 0xbc, 0xfe, 0x13, 0xe6, 0xca, 0xe4, 0xc5, 0x16, 0xbd, 0x0f, 0x35, 0x89, 0x95, 0x8e, 0x91,
+	0xd9, 0x2f, 0xb5, 0x09, 0xcf, 0x5b, 0x94, 0x42, 0x39, 0x12, 0x22, 0xc0, 0x6c, 0x98, 0x1c, 0x6b,
+	0xfb, 0x29, 0x54, 0x30, 0x1b, 0xa9, 0x4b, 0x91, 0x72, 0x95, 0xc0, 0x25, 0x2b, 0x5c, 0x03, 0x2d,
+	0x99, 0xb8, 0xb8, 0x49, 0x8b, 0x63, 0x6d, 0xbf, 0x84, 0x66, 0x31, 0x19, 0xa9, 0x12, 0x5f, 0x25,
+	0xf3, 0x5c, 0x03, 0x7a, 0x17, 0xaa, 0x3a, 0xe0, 0x99, 0xed, 0x19, 0xea, 0x1f, 0x2d, 0x96, 0xcc,
+	0xb8, 0x5a, 0x32, 0xe3, 0x7a, 0xc9, 0xc8, 0x97, 0x84, 0x91, 0x1f, 0x09, 0x23, 0x3f, 0x13, 0x46,
+	0x16, 0x09, 0x23, 0xbf, 0x12, 0x46, 0x7e, 0x27, 0xcc, 0xb8, 0x4e, 0x18, 0xf9, 0xb6, 0x62, 0xc6,
+	0x62, 0xc5, 0x8c, 0xab, 0x15, 0x33, 0x3e, 0xec, 0xe8, 0x48, 0x4e, 0x3d, 0xaf, 0x8a, 0xae, 0x3d,
+	0xfb, 0x13, 0x00, 0x00, 0xff, 0xff, 0xab, 0xa7, 0xab, 0xb5, 0x21, 0x04, 0x00, 0x00,
 }
 
 func (this *Sample) Equal(that interface{}) bool {
@@ -297,6 +430,9 @@ func (this *Sample) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
+	if !this.Factory.Equal(that1.Factory) {
+		return false
+	}
 	if !this.Toc.Equal(that1.Toc) {
 		return false
 	}
@@ -310,6 +446,12 @@ func (this *Sample) Equal(that interface{}) bool {
 		if this.NameSymbols[i] != that1.NameSymbols[i] {
 			return false
 		}
+	}
+	if !this.ValueSymbolsMx.Equal(that1.ValueSymbolsMx) {
+		return false
+	}
+	if !this.ValueSymbols.Equal(that1.ValueSymbols) {
+		return false
 	}
 	if !this.PostingsOffsetTable.Equal(that1.PostingsOffsetTable) {
 		return false
@@ -390,12 +532,69 @@ func (this *Symbols) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *Mutex) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Mutex)
+	if !ok {
+		that2, ok := that.(Mutex)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.State != that1.State {
+		return false
+	}
+	if this.Sema != that1.Sema {
+		return false
+	}
+	return true
+}
+func (this *ValueSymbols) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ValueSymbols)
+	if !ok {
+		that2, ok := that.(ValueSymbols)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Index != that1.Index {
+		return false
+	}
+	if this.Symbol != that1.Symbol {
+		return false
+	}
+	return true
+}
 func (this *Sample) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 10)
+	s := make([]string, 0, 13)
 	s = append(s, "&samplepb.Sample{")
+	if this.Factory != nil {
+		s = append(s, "Factory: "+fmt.Sprintf("%#v", this.Factory)+",\n")
+	}
 	if this.Toc != nil {
 		s = append(s, "Toc: "+fmt.Sprintf("%#v", this.Toc)+",\n")
 	}
@@ -414,6 +613,12 @@ func (this *Sample) GoString() string {
 	mapStringForNameSymbols += "}"
 	if this.NameSymbols != nil {
 		s = append(s, "NameSymbols: "+mapStringForNameSymbols+",\n")
+	}
+	if this.ValueSymbolsMx != nil {
+		s = append(s, "ValueSymbolsMx: "+fmt.Sprintf("%#v", this.ValueSymbolsMx)+",\n")
+	}
+	if this.ValueSymbols != nil {
+		s = append(s, "ValueSymbols: "+fmt.Sprintf("%#v", this.ValueSymbols)+",\n")
 	}
 	if this.PostingsOffsetTable != nil {
 		s = append(s, "PostingsOffsetTable: "+fmt.Sprintf("%#v", this.PostingsOffsetTable)+",\n")
@@ -450,6 +655,28 @@ func (this *Symbols) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *Mutex) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&samplepb.Mutex{")
+	s = append(s, "State: "+fmt.Sprintf("%#v", this.State)+",\n")
+	s = append(s, "Sema: "+fmt.Sprintf("%#v", this.Sema)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *ValueSymbols) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&samplepb.ValueSymbols{")
+	s = append(s, "Index: "+fmt.Sprintf("%#v", this.Index)+",\n")
+	s = append(s, "Symbol: "+fmt.Sprintf("%#v", this.Symbol)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func valueToGoStringSample(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -481,12 +708,12 @@ func (m *Sample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if m.IndexVersion != 0 {
 		i = encodeVarintSample(dAtA, i, uint64(m.IndexVersion))
 		i--
-		dAtA[i] = 0x30
+		dAtA[i] = 0x48
 	}
 	if m.Version != 0 {
 		i = encodeVarintSample(dAtA, i, uint64(m.Version))
 		i--
-		dAtA[i] = 0x28
+		dAtA[i] = 0x40
 	}
 	if m.PostingsOffsetTable != nil {
 		{
@@ -498,7 +725,31 @@ func (m *Sample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i = encodeVarintSample(dAtA, i, uint64(size))
 		}
 		i--
-		dAtA[i] = 0x22
+		dAtA[i] = 0x3a
+	}
+	if m.ValueSymbols != nil {
+		{
+			size, err := m.ValueSymbols.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintSample(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x32
+	}
+	if m.ValueSymbolsMx != nil {
+		{
+			size, err := m.ValueSymbolsMx.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintSample(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x2a
 	}
 	if len(m.NameSymbols) > 0 {
 		for k := range m.NameSymbols {
@@ -514,7 +765,7 @@ func (m *Sample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			dAtA[i] = 0x8
 			i = encodeVarintSample(dAtA, i, uint64(baseI-i))
 			i--
-			dAtA[i] = 0x1a
+			dAtA[i] = 0x22
 		}
 	}
 	if m.Symbols != nil {
@@ -527,11 +778,23 @@ func (m *Sample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i = encodeVarintSample(dAtA, i, uint64(size))
 		}
 		i--
-		dAtA[i] = 0x12
+		dAtA[i] = 0x1a
 	}
 	if m.Toc != nil {
 		{
 			size, err := m.Toc.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintSample(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Factory != nil {
+		{
+			size, err := m.Factory.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -603,21 +866,21 @@ func (m *Symbols) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x28
 	}
 	if len(m.Offsets) > 0 {
-		dAtA5 := make([]byte, len(m.Offsets)*10)
-		var j4 int
+		dAtA8 := make([]byte, len(m.Offsets)*10)
+		var j7 int
 		for _, num1 := range m.Offsets {
 			num := uint64(num1)
 			for num >= 1<<7 {
-				dAtA5[j4] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA8[j7] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
-				j4++
+				j7++
 			}
-			dAtA5[j4] = uint8(num)
-			j4++
+			dAtA8[j7] = uint8(num)
+			j7++
 		}
-		i -= j4
-		copy(dAtA[i:], dAtA5[:j4])
-		i = encodeVarintSample(dAtA, i, uint64(j4))
+		i -= j7
+		copy(dAtA[i:], dAtA8[:j7])
+		i = encodeVarintSample(dAtA, i, uint64(j7))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -646,6 +909,74 @@ func (m *Symbols) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *Mutex) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Mutex) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Mutex) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Sema != 0 {
+		i = encodeVarintSample(dAtA, i, uint64(m.Sema))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.State != 0 {
+		i = encodeVarintSample(dAtA, i, uint64(m.State))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ValueSymbols) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ValueSymbols) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ValueSymbols) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Symbol) > 0 {
+		i -= len(m.Symbol)
+		copy(dAtA[i:], m.Symbol)
+		i = encodeVarintSample(dAtA, i, uint64(len(m.Symbol)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Index != 0 {
+		i = encodeVarintSample(dAtA, i, uint64(m.Index))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintSample(dAtA []byte, offset int, v uint64) int {
 	offset -= sovSample(v)
 	base := offset
@@ -663,6 +994,10 @@ func (m *Sample) Size() (n int) {
 	}
 	var l int
 	_ = l
+	if m.Factory != nil {
+		l = m.Factory.Size()
+		n += 1 + l + sovSample(uint64(l))
+	}
 	if m.Toc != nil {
 		l = m.Toc.Size()
 		n += 1 + l + sovSample(uint64(l))
@@ -678,6 +1013,14 @@ func (m *Sample) Size() (n int) {
 			mapEntrySize := 1 + sovSample(uint64(k)) + 1 + len(v) + sovSample(uint64(len(v)))
 			n += mapEntrySize + 1 + sovSample(uint64(mapEntrySize))
 		}
+	}
+	if m.ValueSymbolsMx != nil {
+		l = m.ValueSymbolsMx.Size()
+		n += 1 + l + sovSample(uint64(l))
+	}
+	if m.ValueSymbols != nil {
+		l = m.ValueSymbols.Size()
+		n += 1 + l + sovSample(uint64(l))
 	}
 	if m.PostingsOffsetTable != nil {
 		l = m.PostingsOffsetTable.Size()
@@ -736,6 +1079,37 @@ func (m *Symbols) Size() (n int) {
 	return n
 }
 
+func (m *Mutex) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.State != 0 {
+		n += 1 + sovSample(uint64(m.State))
+	}
+	if m.Sema != 0 {
+		n += 1 + sovSample(uint64(m.Sema))
+	}
+	return n
+}
+
+func (m *ValueSymbols) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Index != 0 {
+		n += 1 + sovSample(uint64(m.Index))
+	}
+	l = len(m.Symbol)
+	if l > 0 {
+		n += 1 + l + sovSample(uint64(l))
+	}
+	return n
+}
+
 func sovSample(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -757,9 +1131,12 @@ func (this *Sample) String() string {
 	}
 	mapStringForNameSymbols += "}"
 	s := strings.Join([]string{`&Sample{`,
+		`Factory:` + strings.Replace(fmt.Sprintf("%v", this.Factory), "Any", "types.Any", 1) + `,`,
 		`Toc:` + strings.Replace(this.Toc.String(), "BinaryTOC", "BinaryTOC", 1) + `,`,
 		`Symbols:` + strings.Replace(this.Symbols.String(), "Symbols", "Symbols", 1) + `,`,
 		`NameSymbols:` + mapStringForNameSymbols + `,`,
+		`ValueSymbolsMx:` + strings.Replace(this.ValueSymbolsMx.String(), "Mutex", "Mutex", 1) + `,`,
+		`ValueSymbols:` + strings.Replace(this.ValueSymbols.String(), "ValueSymbols", "ValueSymbols", 1) + `,`,
 		`PostingsOffsetTable:` + strings.Replace(fmt.Sprintf("%v", this.PostingsOffsetTable), "Any", "types.Any", 1) + `,`,
 		`Version:` + fmt.Sprintf("%v", this.Version) + `,`,
 		`IndexVersion:` + fmt.Sprintf("%v", this.IndexVersion) + `,`,
@@ -788,6 +1165,28 @@ func (this *Symbols) String() string {
 		`TableOffset:` + fmt.Sprintf("%v", this.TableOffset) + `,`,
 		`Offsets:` + fmt.Sprintf("%v", this.Offsets) + `,`,
 		`Seen:` + fmt.Sprintf("%v", this.Seen) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *Mutex) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&Mutex{`,
+		`State:` + fmt.Sprintf("%v", this.State) + `,`,
+		`Sema:` + fmt.Sprintf("%v", this.Sema) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ValueSymbols) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ValueSymbols{`,
+		`Index:` + fmt.Sprintf("%v", this.Index) + `,`,
+		`Symbol:` + fmt.Sprintf("%v", this.Symbol) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -831,6 +1230,42 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Factory", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSample
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSample
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSample
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Factory == nil {
+				m.Factory = &types.Any{}
+			}
+			if err := m.Factory.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Toc", wireType)
 			}
 			var msglen int
@@ -865,7 +1300,7 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 2:
+		case 3:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Symbols", wireType)
 			}
@@ -901,7 +1336,7 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 3:
+		case 4:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field NameSymbols", wireType)
 			}
@@ -1014,7 +1449,79 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 			}
 			m.NameSymbols[mapkey] = mapvalue
 			iNdEx = postIndex
-		case 4:
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ValueSymbolsMx", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSample
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSample
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSample
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.ValueSymbolsMx == nil {
+				m.ValueSymbolsMx = &Mutex{}
+			}
+			if err := m.ValueSymbolsMx.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ValueSymbols", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSample
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSample
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSample
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.ValueSymbols == nil {
+				m.ValueSymbols = &ValueSymbols{}
+			}
+			if err := m.ValueSymbols.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 7:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field PostingsOffsetTable", wireType)
 			}
@@ -1050,7 +1557,7 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 5:
+		case 8:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Version", wireType)
 			}
@@ -1069,7 +1576,7 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
-		case 6:
+		case 9:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field IndexVersion", wireType)
 			}
@@ -1401,6 +1908,201 @@ func (m *Symbols) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipSample(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthSample
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthSample
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Mutex) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowSample
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: Mutex: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Mutex: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field State", wireType)
+			}
+			m.State = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSample
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.State |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sema", wireType)
+			}
+			m.Sema = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSample
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Sema |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipSample(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthSample
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthSample
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ValueSymbols) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowSample
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ValueSymbols: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ValueSymbols: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Index", wireType)
+			}
+			m.Index = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSample
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Index |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Symbol", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSample
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthSample
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthSample
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Symbol = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipSample(dAtA[iNdEx:])

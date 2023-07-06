@@ -8,6 +8,7 @@ package indexheader
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"path/filepath"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
@@ -65,7 +67,8 @@ type StreamBinaryReader struct {
 // NewStreamBinaryReader loads or builds new index-header if not present on disk.
 func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (*StreamBinaryReader, error) {
 	binfn := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-	br, err := newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, logger, metrics, cfg)
+	samplefn := filepath.Join(dir, id.String(), block.SampleFilename)
+	br, err := newFileStreamBinaryReader(binfn, samplefn, postingOffsetsInMemSampling, logger, metrics, cfg)
 	if err == nil {
 		return br, nil
 	}
@@ -80,12 +83,26 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	// TODO: construct sample and write to disk
 
 	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
-	return newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, logger, metrics, cfg)
+	return newFileStreamBinaryReader(binfn, samplefn, postingOffsetsInMemSampling, logger, metrics, cfg)
 }
 
-func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	// TODO: attempt to read sample from disk
 	// return error if sample is not on disk, should send NewStreamBinaryReader() to writeSample() which will construct and write sample to disk
+	r := &StreamBinaryReader{
+		factory: streamencoding.NewDecbufFactory(binpath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
+	}
+
+	in, err := ioutil.ReadFile(samplepath)
+
+	if err != nil {
+		return nil, fmt.Errorf("error reading index-header sample file: %w", err)
+	}
+	book := &AddressBook{}
+	if err := proto.Unmarshal(in, book); err != nil {
+		log.Fatalln("Failed to parse address book:", err)
+	}
+
 	return
 }
 

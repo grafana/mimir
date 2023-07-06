@@ -15,16 +15,21 @@ option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 
 message Sample {
-    BinaryTOC toc = 1;
+    google.protobuf.Any factory = 1;
+    
+    BinaryTOC toc = 2;
 
-	Symbols symbols = 2;
+	Symbols symbols = 3;
 	
-	map<uint32, string> nameSymbols = 3;
+	map<uint32, string> nameSymbols = 4;
 
-	google.protobuf.Any postingsOffsetTable = 4;
+    Mutex valueSymbolsMx = 5;
+	ValueSymbols valueSymbols = 6;
 
-	int64 version = 5;
-	int64 indexVersion = 6;
+	google.protobuf.Any postingsOffsetTable = 7;
+
+	int64 version = 8;
+	int64 indexVersion = 9;
 }
 
 message BinaryTOC {
@@ -41,4 +46,14 @@ message Symbols {
 
     repeated int64 offsets = 4 [packed=true];
 	int64 seen = 5;
+}
+
+message Mutex {
+	int32 state = 1;
+	uint32 sema = 2;
+}
+
+message ValueSymbols {
+    uint32 index = 1;
+	string symbol = 2;
 }
