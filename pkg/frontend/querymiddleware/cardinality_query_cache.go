@@ -21,14 +21,22 @@ const (
 )
 
 func newCardinalityQueryCacheRoundTripper(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
-	getTTL := func(userID string) time.Duration {
-		return limits.ResultsCacheTTLForCardinalityQuery(userID)
+	delegate := &cardinalityQueryCache{
+		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, parseCardinalityQueryRequest, getTTL, next, logger, newResultsCacheMetrics("cardinality", reg))
+	return newGenericQueryCacheRoundTripper(cache, delegate, next, logger, newResultsCacheMetrics("cardinality", reg))
 }
 
-func parseCardinalityQueryRequest(req *http.Request) (*genericQueryRequest, error) {
+type cardinalityQueryCache struct {
+	limits Limits
+}
+
+func (c *cardinalityQueryCache) getTTL(userID string) time.Duration {
+	return c.limits.ResultsCacheTTLForCardinalityQuery(userID)
+}
+
+func (c *cardinalityQueryCache) parseRequest(req *http.Request) (*genericQueryRequest, error) {
 	switch {
 	case strings.HasSuffix(req.URL.Path, cardinalityLabelNamesPathSuffix):
 		parsed, err := cardinality.DecodeLabelNamesRequest(req)

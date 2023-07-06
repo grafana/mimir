@@ -27,24 +27,30 @@ type genericQueryRequest struct {
 	cacheKeyPrefix string
 }
 
-// genericQueryCache is a http.RoundTripped wrapping the downstream with a generic HTTP response cache.
-type genericQueryCache struct {
-	cache        cache.Cache
-	parseRequest func(req *http.Request) (*genericQueryRequest, error)
-	getTTL       func(userID string) time.Duration
-	metrics      *resultsCacheMetrics
-	next         http.RoundTripper
-	logger       log.Logger
+type genericQueryDelegate interface {
+	// parseRequest parses the input req and returns a genericQueryRequest, or an error if parsing fails.
+	parseRequest(req *http.Request) (*genericQueryRequest, error)
+
+	// getTTL returns the cache TTL for the input userID.
+	getTTL(userID string) time.Duration
 }
 
-func newGenericQueryCacheRoundTripper(cache cache.Cache, parseRequest func(req *http.Request) (*genericQueryRequest, error), getTTL func(userID string) time.Duration, next http.RoundTripper, logger log.Logger, metrics *resultsCacheMetrics) http.RoundTripper {
+// genericQueryCache is a http.RoundTripped wrapping the downstream with a generic HTTP response cache.
+type genericQueryCache struct {
+	cache    cache.Cache
+	delegate genericQueryDelegate
+	metrics  *resultsCacheMetrics
+	next     http.RoundTripper
+	logger   log.Logger
+}
+
+func newGenericQueryCacheRoundTripper(cache cache.Cache, delegate genericQueryDelegate, next http.RoundTripper, logger log.Logger, metrics *resultsCacheMetrics) http.RoundTripper {
 	return &genericQueryCache{
-		cache:        cache,
-		parseRequest: parseRequest,
-		getTTL:       getTTL,
-		metrics:      metrics,
-		next:         next,
-		logger:       logger,
+		cache:    cache,
+		delegate: delegate,
+		metrics:  metrics,
+		next:     next,
+		logger:   logger,
 	}
 }
 
@@ -67,14 +73,14 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 
 	// Skip the cache if disabled for the tenant. We look at the minimum TTL so that we skip the cache
 	// if it's disabled for any of tenants.
-	cacheTTL := validation.MinDurationPerTenant(tenantIDs, c.getTTL)
+	cacheTTL := validation.MinDurationPerTenant(tenantIDs, c.delegate.getTTL)
 	if cacheTTL <= 0 {
 		level.Debug(spanLog).Log("msg", "cache disabled for the tenant")
 		return c.next.RoundTrip(req)
 	}
 
 	// Decode the request.
-	queryReq, err := c.parseRequest(req)
+	queryReq, err := c.delegate.parseRequest(req)
 	if err != nil {
 		// Logging as info because it's not an actionable error here.
 		// We defer it to the downstream.
