@@ -185,7 +185,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.panel('Rejected queries') +
-        $.queryPanel('sum by (reason) (rate(cortex_querier_queries_rejected_total{%s}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{%s, route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier), $.queries.query_http_routes_regex], '{{reason}}') +
+        $.queryPanel('sum by (reason) (rate(cortex_querier_queries_rejected_total{%(job_matcher)s}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{%(job_matcher)s, route=~"%(routes_regex)s"}[$__rate_interval]))' % { job_matcher: $.jobMatcher($._config.job_names.querier), routes_regex: $.queries.query_http_routes_regex }, '{{reason}}') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
         $.panelDescription(
           'Rejected queries',
