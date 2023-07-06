@@ -477,7 +477,13 @@ Get the no_auth_tenant from the configuration
 Return if we should create a PodSecurityPolicy. Takes into account user values and supported kubernetes versions.
 */}}
 {{- define "mimir.rbac.usePodSecurityPolicy" -}}
-{{- and (semverCompare "< 1.25-0" (include "mimir.kubeVersion" .)) (and .Values.rbac.create (eq .Values.rbac.type "psp")) -}}
+{{- and
+      (
+        or (semverCompare "< 1.24-0" (include "mimir.kubeVersion" .))
+           (and (semverCompare "< 1.25-0" (include "mimir.kubeVersion" .)) .Values.rbac.forcePSPOnKubernetes124)
+      )
+      (and .Values.rbac.create (eq .Values.rbac.type "psp"))
+-}}
 {{- end -}}
 
 {{/*
