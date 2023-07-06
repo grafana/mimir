@@ -368,11 +368,17 @@ func TestIsLabelsQuery(t *testing.T) {
 			path:     "/api/v1/labels",
 			expected: true,
 		}, {
+			path:     "/labels",
+			expected: false,
+		}, {
 			path:     "/prometheus/api/v1/labels",
 			expected: true,
 		}, {
 			path:     "/api/v1/label/test/values",
 			expected: true,
+		}, {
+			path:     "/values",
+			expected: false,
 		}, {
 			path:     "/prometheus/api/v1/label/test/values",
 			expected: true,
