@@ -206,23 +206,23 @@ func (cfg *Config) Validate(logger log.Logger) error {
 type ConfigProvider interface {
 	bucket.TenantConfigProvider
 
-	// CompactorBlocksRetentionPeriod returns the retention period for a given user.
-	CompactorBlocksRetentionPeriod(user string) time.Duration
+	// CompactorBlocksRetentionPeriod returns the retention period for a given tenant.
+	CompactorBlocksRetentionPeriod(tenantID string) time.Duration
 
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
-	CompactorSplitAndMergeShards(userID string) int
+	CompactorSplitAndMergeShards(tenantID string) int
 
 	// CompactorSplitGroups returns the number of groups that blocks used for splitting should
 	// be grouped into. Different groups are then split by different jobs.
-	CompactorSplitGroups(userID string) int
+	CompactorSplitGroups(tenantID string) int
 
-	// CompactorTenantShardSize returns the number of compactors that this user can use. 0 = all compactors.
-	CompactorTenantShardSize(userID string) int
+	// CompactorTenantShardSize returns the number of compactors that this tenant can use. 0 = all compactors.
+	CompactorTenantShardSize(tenantID string) int
 
-	// CompactorPartialBlockDeletionDelay returns the partial block delay time period for a given user,
+	// CompactorPartialBlockDeletionDelay returns the partial block delay time period for a given tenant,
 	// and whether the configured value is valid. If the value isn't valid, the returned delay is the default one
 	// and the caller is responsible for warning the Mimir operator about it.
-	CompactorPartialBlockDeletionDelay(userID string) (delay time.Duration, valid bool)
+	CompactorPartialBlockDeletionDelay(tenant string) (delay time.Duration, valid bool)
 
 	// CompactorBlockUploadEnabled returns whether block upload is enabled for a given tenant.
 	CompactorBlockUploadEnabled(tenantID string) bool
@@ -233,8 +233,9 @@ type ConfigProvider interface {
 	// CompactorBlockUploadVerifyChunks returns whether chunk verification is enabled for a given tenant.
 	CompactorBlockUploadVerifyChunks(tenantID string) bool
 
-	// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated for a given user.
-	CompactorBlockUploadMaxBlockSizeBytes(userID string) int64
+	// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded
+	// or validated for a given tenant.
+	CompactorBlockUploadMaxBlockSizeBytes(tenantID string) int64
 }
 
 // MultitenantCompactor is a multi-tenant TSDB block compactor based on Thanos.
@@ -668,7 +669,7 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 
 		level.Info(c.logger).Log("msg", "starting compaction of user blocks", "user", userID)
 
-		if err = c.compactUserWithRetries(ctx, userID); err != nil {
+		if err := c.compactUserWithRetries(ctx, userID); err != nil {
 			switch {
 			case errors.Is(err, context.Canceled):
 				// We don't want to count shutdowns as failed compactions because we will pick up with the rest of the compaction after the restart.
@@ -919,7 +920,9 @@ func (s *splitAndMergeShardingStrategy) instanceOwningJob(job *Job) (ring.Instan
 func instancesForKey(r ring.ReadRing, key string) (ring.ReplicationSet, error) {
 	// Hash the key.
 	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(key))
+	if _, err := hasher.Write([]byte(key)); err != nil {
+		return false, errors.Wrap(err, "hash sharding key")
+	}
 	hash := hasher.Sum32()
 
 	return r.Get(hash, RingOp, nil, nil, nil)

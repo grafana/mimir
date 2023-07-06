@@ -382,9 +382,9 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 
 	// Let's do a final cleanup of the tenant.
 	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.DebugMetas, userLogger); err != nil {
-		return errors.Wrap(err, "failed to delete "+block.DebugMetas)
+		return errors.Wrapf(err, "failed to delete %s", block.DebugMetas)
 	} else if deleted > 0 {
-		level.Info(userLogger).Log("msg", "deleted files under "+block.DebugMetas+" for tenant marked for deletion", "count", deleted)
+		level.Info(userLogger).Log("msg", fmt.Sprintf("deleted files under %s for tenant marked for deletion", block.DebugMetas), "count", deleted)
 	}
 
 	// Tenant deletion mark file is inside Markers as well.

@@ -379,29 +379,26 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 	// Best effort cleanup of disk-cached metas.
 	if f.cacheDir != "" {
 		fis, err := os.ReadDir(f.cacheDir)
-		names := make([]string, 0, len(fis))
-		for _, fi := range fis {
-			names = append(names, fi.Name())
-		}
 		if err != nil {
 			level.Warn(f.logger).Log("msg", "best effort remove of not needed cached dirs failed; ignoring", "err", err)
-		} else {
-			for _, n := range names {
-				id, ok := IsBlockDir(n)
-				if !ok {
-					continue
-				}
+			return resp, nil
+		}
 
-				if _, ok := resp.metas[id]; ok {
-					continue
-				}
+		for _, fi := range fis {
+			id, ok := IsBlockDir(fi.Name())
+			if !ok {
+				continue
+			}
 
-				cachedBlockDir := filepath.Join(f.cacheDir, id.String())
+			if _, ok := resp.metas[id]; ok {
+				continue
+			}
 
-				// No such block loaded, remove the local dir.
-				if err := os.RemoveAll(cachedBlockDir); err != nil {
-					level.Warn(f.logger).Log("msg", "best effort remove of not needed cached dir failed; ignoring", "dir", cachedBlockDir, "err", err)
-				}
+			cachedBlockDir := filepath.Join(f.cacheDir, id.String())
+
+			// No such block loaded, remove the local dir.
+			if err := os.RemoveAll(cachedBlockDir); err != nil {
+				level.Warn(f.logger).Log("msg", "best effort remove of not needed cached dir failed; ignoring", "dir", cachedBlockDir, "err", err)
 			}
 		}
 	}

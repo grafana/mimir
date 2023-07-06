@@ -147,9 +147,8 @@ func (g blocksGroup) maxCompactionLevel() int {
 // getNonShardedBlocks returns the list of non-sharded blocks.
 func (g blocksGroup) getNonShardedBlocks() []*block.Meta {
 	var out []*block.Meta
-
 	for _, b := range g.blocks {
-		if value, ok := b.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]; !ok || value == "" {
+		if value := b.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]; value == "" {
 			out = append(out, b)
 		}
 	}
