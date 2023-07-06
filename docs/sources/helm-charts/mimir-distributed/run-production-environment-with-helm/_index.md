@@ -42,10 +42,12 @@ Meet all the follow prerequisites:
   or OpenStack Swift. Alternatively, to deploy MinIO yourself, see [MinIO High
   Performance Object Storage](https://min.io/docs/minio/kubernetes/upstream/index.html).
 
-- Note that, like Amazon S3, the chosen object storage implementation must not create directories.
+- {{% admonition type="note" %}}
+Like Amazon S3, the chosen object storage implementation must not create directories.
   Grafana Mimir doesn't have any notion of object storage directories, and so will leave
-  empty directories behind when removing blocks. E.g., if you use Azure Blob Storage, you must disable
+  empty directories behind when removing blocks. For example, if you use Azure Blob Storage, you must disable
   [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace).
+{{% /admonition %}}
 
 ## Plan capacity
 
