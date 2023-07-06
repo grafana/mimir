@@ -39,7 +39,7 @@
 * [ENHANCEMENT] Ruler: add `cortex_ruler_sync_rules_duration_seconds` metric, tracking the time spent syncing all rule groups owned by the ruler instance. #5311
 * [ENHANCEMENT] Store-gateway: add experimental `blocks-storage.bucket-store.index-header-lazy-loading-concurrency` config option to limit the number of concurrent index-headers loads when lazy loading. #5313
 * [ENHANCEMENT] Ingester and querier: improve level of detail in traces emitted for queries that hit ingesters. #5315
-* [ENHANCEMENT] Querier: add `cortex_queries_rejected_total` metric that counts the number of queries rejected due to hitting a limit (eg. max series per query or max chunks per query). #5316
+* [ENHANCEMENT] Querier: add `cortex_querier_queries_rejected_total` metric that counts the number of queries rejected due to hitting a limit (eg. max series per query or max chunks per query). #5316
 * [ENHANCEMENT] Querier: add experimental `-querier.minimize-ingester-requests-hedging-delay` option to initiate requests to further ingesters when request minimisation is enabled and not all initial requests have completed. #5368
 * [ENHANCEMENT] Clarify docs for `-ingester.client.*` flags to make it clear that these are used by both queriers and distributors. #5375
 * [ENHANCEMENT] Ingester: added `cortex_ingester_shipper_last_successful_upload_timestamp_seconds` metric tracking the last successful TSDB block uploaded to the bucket (unix timestamp in seconds). #5396
@@ -57,6 +57,7 @@
 * [ENHANCEMENT] Dashboards: show container name first in "pods count per version" panel on "rollout progress" dashboard. #5113
 * [ENHANCEMENT] Dashboards: show time spend waiting for turn when lazy loading index headers in the "index-header lazy load gate latency" panel on the "queries" dashboard. #5313
 * [ENHANCEMENT] Dashboards: split query results cache hit ratio by request type in "Query results cache hit ratio" panel on the "Mimir / Queries" dashboard. #5423
+* [ENHANCEMENT] Dashboards: add "rejected queries" panel to "queries" dashboard. #5429
 * [BUGFIX] Alerts: fix `MimirIngesterRestarts` to fire only when the ingester container is restarted, excluding the cases the pod is rescheduled. #5397
 * [BUGFIX] Dashboards: fix "unhealthy pods" panel on "rollout progress" dashboard showing only a number rather than the name of the workload and the number of unhealthy pods if only one workload has unhealthy pods. #5113 #5200
 * [BUGFIX] Alerts: fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts. #5396

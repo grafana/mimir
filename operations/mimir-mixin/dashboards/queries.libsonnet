@@ -183,6 +183,17 @@ local filename = 'mimir-queries.json';
         $.failurePanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Failure Rate') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
+      .addPanel(
+        $.panel('Rejected queries') +
+        $.queryPanel('sum by (reason) (rate(cortex_querier_queries_rejected_total{%(job_matcher)s}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{%(job_matcher)s, route=~"%(routes_regex)s"}[$__rate_interval]))' % { job_matcher: $.jobMatcher($._config.job_names.querier), routes_regex: $.queries.query_http_routes_regex }, '{{reason}}') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        $.panelDescription(
+          'Rejected queries',
+          |||
+            The proportion of all queries received by queriers that were rejected for some reason.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('')

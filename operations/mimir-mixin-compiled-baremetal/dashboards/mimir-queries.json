@@ -1291,7 +1291,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 4,
+                  "span": 3,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -1383,7 +1383,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 4,
+                  "span": 3,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -1477,7 +1477,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 4,
+                  "span": 3,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -1494,6 +1494,83 @@
                   "timeFrom": null,
                   "timeShift": null,
                   "title": "Consistency checks failed",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "percentunit",
+                        "label": null,
+                        "logBase": 1,
+                        "max": 1,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Rejected queries\nThe proportion of all queries received by queriers that were rejected for some reason.\n\n",
+                  "fill": 1,
+                  "id": 19,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum by (reason) (rate(cortex_querier_queries_rejected_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_query(_range)?\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "{{reason}}",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Rejected queries",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -1545,7 +1622,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 19,
+                  "id": 20,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1640,7 +1717,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 20,
+                  "id": 21,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1724,7 +1801,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 21,
+                  "id": 22,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1828,7 +1905,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 22,
+                  "id": 23,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1904,7 +1981,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 23,
+                  "id": 24,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1980,7 +2057,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 24,
+                  "id": 25,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2068,7 +2145,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 25,
+                  "id": 26,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2144,7 +2221,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 26,
+                  "id": 27,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2221,7 +2298,7 @@
                   "datasource": "$datasource",
                   "description": "### Series batch preloading efficiency\nThis panel shows the % of time reduced by preloading, for Series() requests which have been\nsplit to 2+ batches. If a Series() request is served within a single batch, then preloading\nis not triggered, and thus not counted in this measurement.\n\n",
                   "fill": 1,
-                  "id": 27,
+                  "id": 28,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2309,7 +2386,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 0,
-                  "id": 28,
+                  "id": 29,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2388,7 +2465,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 29,
+                  "id": 30,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2475,7 +2552,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 30,
+                  "id": 31,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2571,7 +2648,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 0,
-                  "id": 31,
+                  "id": 32,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2647,7 +2724,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 32,
+                  "id": 33,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2740,7 +2817,7 @@
                   "datasource": "$datasource",
                   "description": "### Index-header lazy load gate latency\nTime spent waiting for a turn to load an index header. This time is not included in \"Index-header lazy load duration.\"\n\n",
                   "fill": 1,
-                  "id": 33,
+                  "id": 34,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2844,7 +2921,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 34,
+                  "id": 35,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2920,7 +2997,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 35,
+                  "id": 36,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2996,7 +3073,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 36,
+                  "id": 37,
                   "legend": {
                      "avg": false,
                      "current": false,
