@@ -77,11 +77,20 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 		return nil, fmt.Errorf("cannot write index header: %w", err)
 	}
 
+	// TODO: construct sample and write to disk
+
 	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
 	return newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, logger, metrics, cfg)
 }
 
 func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+	// TODO: attempt to read sample from disk
+	// return error if sample is not on disk, should send NewStreamBinaryReader() to writeSample() which will construct and write sample to disk
+	return
+}
+
+// Reads index-header, constructs an abbreviated sample, and write the sample to disk.
+func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
 		factory: streamencoding.NewDecbufFactory(path, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
 	}
