@@ -307,6 +307,7 @@ func (p *preloadingSetIterator[Set]) Err() error {
 
 func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, preloadedSetsCount int, iterator genericIterator[Set], stats *safeQueryStats) genericIterator[Set] {
 	// Track the time spent loading batches (including preloading).
+	numBatches := 0
 	iterator = newNextDurationMeasuringIterator[Set](iterator, func(duration time.Duration, hasNext bool) {
 		stats.update(func(stats *queryStats) {
 			stats.streamingSeriesBatchLoadDuration += duration
@@ -314,8 +315,9 @@ func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, prel
 			// This function is called for each Next() invocation, so we can use it to measure
 			// into how many batches the request has been split.
 			if hasNext {
-				stats.streamingSeriesBatchCount++
+				numBatches++
 			}
+			stats.streamingSeriesBatchCount = numBatches
 		})
 	})
 
