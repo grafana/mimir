@@ -21,7 +21,7 @@ import (
 )
 
 func TestJob_MinCompactionLevel(t *testing.T) {
-	job := NewJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
+	job := newJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
 	require.NoError(t, job.AppendMeta(&block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(1, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}))
 	assert.Equal(t, 2, job.MinCompactionLevel())
 
@@ -106,7 +106,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			job := NewJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
+			job := newJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
 			for _, b := range testData.jobBlocks {
 				require.NoError(t, job.AppendMeta(b.meta))
 			}
