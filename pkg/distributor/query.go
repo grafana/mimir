@@ -284,7 +284,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					}
 
 					// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.
-					if chunkLimitErr := queryLimiter.AddChunks(int(s.EstimatedChunkCount)); chunkLimitErr != nil {
+					if chunkLimitErr := queryLimiter.AddChunks(int(s.ChunkCount)); chunkLimitErr != nil {
 						return ingesterQueryResult{}, chunkLimitErr
 					}
 
