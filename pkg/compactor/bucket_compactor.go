@@ -353,6 +353,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	for ix, meta := range toCompact {
 		blocksToCompactDirs[ix] = filepath.Join(subDir, meta.ULID.String())
 	}
+	toCompactStrs := strings.Join(blocksToCompactDirs, ",")
 
 	elapsed := time.Since(downloadBegin)
 	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "block_count", blockCount, "blocks", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
@@ -365,7 +366,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		compIDs, err = c.comp.Compact(subDir, blocksToCompactDirs, nil)
 	}
 	if err != nil {
-		return false, nil, errors.Wrapf(err, "compact blocks %s", toCompactStr)
+		return false, nil, errors.Wrapf(err, "compact blocks %s", toCompactStrs)
 	}
 
 	if !hasNonZeroULIDs(compIDs) {
