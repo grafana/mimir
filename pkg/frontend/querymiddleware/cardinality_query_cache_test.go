@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,7 +24,15 @@ import (
 	"github.com/weaveworks/common/user"
 )
 
-func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
+type newGenericQueryCacheFunc func(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
+
+type testGenericQueryCacheRequestType struct {
+	url            *url.URL
+	cacheKey       string
+	hashedCacheKey string
+}
+
+func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQueryCacheFunc, requestTypeLabelValue string, requestTypes map[string]testGenericQueryCacheRequestType) {
 	const (
 		userID = "user-1"
 	)
@@ -153,26 +162,9 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 		},
 	}
 
-	requests := map[string]struct {
-		url            *url.URL
-		cacheKey       string
-		hashedCacheKey string
-	}{
-		"label names request": {
-			url:            mustParseURL(t, `/prometheus/api/v1/cardinality/label_names?selector={job="test"}&limit=100`),
-			cacheKey:       "user-1:job=\"test\"\x00100",
-			hashedCacheKey: cardinalityLabelNamesQueryCachePrefix + cacheHashKey("user-1:job=\"test\"\x00100"),
-		},
-		"label values request": {
-			url:            mustParseURL(t, `/prometheus/api/v1/cardinality/label_values?selector={job="test"}&label_names[]=metric_1&label_names[]=metric_2&limit=100`),
-			cacheKey:       "user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100",
-			hashedCacheKey: cardinalityLabelValuesQueryCachePrefix + cacheHashKey("user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100"),
-		},
-	}
-
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			for reqName, reqData := range requests {
+			for reqName, reqData := range requestTypes {
 				t.Run(reqName, func(t *testing.T) {
 					// Mock the limits.
 					limits := multiTenantMockLimits{
@@ -200,7 +192,7 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 					initialStoreCallsCount := cacheBackend.CountStoreCalls()
 
 					reg := prometheus.NewPedanticRegistry()
-					rt := newCardinalityQueryCacheRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t), reg)
+					rt := newRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t), reg)
 					res, err := rt.RoundTrip(req)
 					require.NoError(t, err)
 
@@ -245,14 +237,14 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 					}
 
 					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-						# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
-        	            # TYPE cortex_frontend_query_result_cache_requests_total counter
-        	            cortex_frontend_query_result_cache_requests_total{request_type="cardinality"} %d
+                        # HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
+                        # TYPE cortex_frontend_query_result_cache_requests_total counter
+                        cortex_frontend_query_result_cache_requests_total{request_type="%s"} %d
 
-						# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
-        	            # TYPE cortex_frontend_query_result_cache_hits_total counter
-        	            cortex_frontend_query_result_cache_hits_total{request_type="cardinality"} %d
-					`, expectedRequestsCount, expectedHitsCount)),
+                        # HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
+                        # TYPE cortex_frontend_query_result_cache_hits_total counter
+                        cortex_frontend_query_result_cache_hits_total{request_type="%s"} %d
+					`, requestTypeLabelValue, expectedRequestsCount, requestTypeLabelValue, expectedHitsCount)),
 						"cortex_frontend_query_result_cache_requests_total",
 						"cortex_frontend_query_result_cache_hits_total",
 					))
@@ -345,6 +337,21 @@ func TestCardinalityQueryCache_RoundTrip_WithTenantFederation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
+	testGenericQueryCacheRoundTrip(t, newCardinalityQueryCacheRoundTripper, "cardinality", map[string]testGenericQueryCacheRequestType{
+		"label names request": {
+			url:            mustParseURL(t, `/prometheus/api/v1/cardinality/label_names?selector={job="test"}&limit=100`),
+			cacheKey:       "user-1:job=\"test\"\x00100",
+			hashedCacheKey: cardinalityLabelNamesQueryCachePrefix + cacheHashKey("user-1:job=\"test\"\x00100"),
+		},
+		"label values request": {
+			url:            mustParseURL(t, `/prometheus/api/v1/cardinality/label_values?selector={job="test"}&label_names[]=metric_1&label_names[]=metric_2&limit=100`),
+			cacheKey:       "user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100",
+			hashedCacheKey: cardinalityLabelValuesQueryCachePrefix + cacheHashKey("user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100"),
+		},
+	})
 }
 
 func mustParseURL(t *testing.T, rawURL string) *url.URL {
