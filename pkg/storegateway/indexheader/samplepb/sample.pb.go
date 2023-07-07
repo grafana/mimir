@@ -7,8 +7,6 @@ import (
 	fmt "fmt"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
-	github_com_gogo_protobuf_sortkeys "github.com/gogo/protobuf/sortkeys"
-	types "github.com/gogo/protobuf/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -28,12 +26,8 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type Sample struct {
-	Toc                 *BinaryTOC        `protobuf:"bytes,1,opt,name=toc,proto3" json:"toc,omitempty"`
-	Symbols             *Symbols          `protobuf:"bytes,2,opt,name=symbols,proto3" json:"symbols,omitempty"`
-	NameSymbols         map[uint32]string `protobuf:"bytes,3,rep,name=nameSymbols,proto3" json:"nameSymbols,omitempty" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-	PostingsOffsetTable *types.Any        `protobuf:"bytes,4,opt,name=postingsOffsetTable,proto3" json:"postingsOffsetTable,omitempty"`
-	Version             int64             `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
-	IndexVersion        int64             `protobuf:"varint,6,opt,name=indexVersion,proto3" json:"indexVersion,omitempty"`
+	Version      int64 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	IndexVersion int64 `protobuf:"varint,2,opt,name=indexVersion,proto3" json:"indexVersion,omitempty"`
 }
 
 func (m *Sample) Reset()      { *m = Sample{} }
@@ -68,34 +62,6 @@ func (m *Sample) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_Sample proto.InternalMessageInfo
 
-func (m *Sample) GetToc() *BinaryTOC {
-	if m != nil {
-		return m.Toc
-	}
-	return nil
-}
-
-func (m *Sample) GetSymbols() *Symbols {
-	if m != nil {
-		return m.Symbols
-	}
-	return nil
-}
-
-func (m *Sample) GetNameSymbols() map[uint32]string {
-	if m != nil {
-		return m.NameSymbols
-	}
-	return nil
-}
-
-func (m *Sample) GetPostingsOffsetTable() *types.Any {
-	if m != nil {
-		return m.PostingsOffsetTable
-	}
-	return nil
-}
-
 func (m *Sample) GetVersion() int64 {
 	if m != nil {
 		return m.Version
@@ -110,172 +76,26 @@ func (m *Sample) GetIndexVersion() int64 {
 	return 0
 }
 
-type BinaryTOC struct {
-	Symbols             uint64 `protobuf:"varint,1,opt,name=Symbols,proto3" json:"Symbols,omitempty"`
-	PostingsOffsetTable uint64 `protobuf:"varint,2,opt,name=PostingsOffsetTable,proto3" json:"PostingsOffsetTable,omitempty"`
-}
-
-func (m *BinaryTOC) Reset()      { *m = BinaryTOC{} }
-func (*BinaryTOC) ProtoMessage() {}
-func (*BinaryTOC) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2141552de9bf11d0, []int{1}
-}
-func (m *BinaryTOC) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *BinaryTOC) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_BinaryTOC.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *BinaryTOC) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_BinaryTOC.Merge(m, src)
-}
-func (m *BinaryTOC) XXX_Size() int {
-	return m.Size()
-}
-func (m *BinaryTOC) XXX_DiscardUnknown() {
-	xxx_messageInfo_BinaryTOC.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_BinaryTOC proto.InternalMessageInfo
-
-func (m *BinaryTOC) GetSymbols() uint64 {
-	if m != nil {
-		return m.Symbols
-	}
-	return 0
-}
-
-func (m *BinaryTOC) GetPostingsOffsetTable() uint64 {
-	if m != nil {
-		return m.PostingsOffsetTable
-	}
-	return 0
-}
-
-type Symbols struct {
-	Factory     *types.Any `protobuf:"bytes,1,opt,name=factory,proto3" json:"factory,omitempty"`
-	Version     int64      `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
-	TableOffset int64      `protobuf:"varint,3,opt,name=tableOffset,proto3" json:"tableOffset,omitempty"`
-	Offsets     []int64    `protobuf:"varint,4,rep,packed,name=offsets,proto3" json:"offsets,omitempty"`
-	Seen        int64      `protobuf:"varint,5,opt,name=seen,proto3" json:"seen,omitempty"`
-}
-
-func (m *Symbols) Reset()      { *m = Symbols{} }
-func (*Symbols) ProtoMessage() {}
-func (*Symbols) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2141552de9bf11d0, []int{2}
-}
-func (m *Symbols) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *Symbols) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_Symbols.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *Symbols) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Symbols.Merge(m, src)
-}
-func (m *Symbols) XXX_Size() int {
-	return m.Size()
-}
-func (m *Symbols) XXX_DiscardUnknown() {
-	xxx_messageInfo_Symbols.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_Symbols proto.InternalMessageInfo
-
-func (m *Symbols) GetFactory() *types.Any {
-	if m != nil {
-		return m.Factory
-	}
-	return nil
-}
-
-func (m *Symbols) GetVersion() int64 {
-	if m != nil {
-		return m.Version
-	}
-	return 0
-}
-
-func (m *Symbols) GetTableOffset() int64 {
-	if m != nil {
-		return m.TableOffset
-	}
-	return 0
-}
-
-func (m *Symbols) GetOffsets() []int64 {
-	if m != nil {
-		return m.Offsets
-	}
-	return nil
-}
-
-func (m *Symbols) GetSeen() int64 {
-	if m != nil {
-		return m.Seen
-	}
-	return 0
-}
-
 func init() {
 	proto.RegisterType((*Sample)(nil), "sample.Sample")
-	proto.RegisterMapType((map[uint32]string)(nil), "sample.Sample.NameSymbolsEntry")
-	proto.RegisterType((*BinaryTOC)(nil), "sample.BinaryTOC")
-	proto.RegisterType((*Symbols)(nil), "sample.Symbols")
 }
 
 func init() { proto.RegisterFile("sample.proto", fileDescriptor_2141552de9bf11d0) }
 
 var fileDescriptor_2141552de9bf11d0 = []byte{
-	// 452 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x6c, 0x52, 0x3f, 0x6f, 0xd3, 0x40,
-	0x14, 0xf7, 0xd9, 0x69, 0x42, 0x5f, 0x8a, 0x08, 0xd7, 0x0e, 0x47, 0x84, 0x0e, 0x2b, 0x2c, 0x61,
-	0xc0, 0x45, 0x65, 0x41, 0x0c, 0x95, 0x1a, 0x04, 0x23, 0x45, 0xd7, 0x0a, 0x24, 0x36, 0x3b, 0x5c,
-	0x8c, 0x85, 0x73, 0x17, 0xf9, 0x2e, 0x15, 0xde, 0xf8, 0x08, 0x7c, 0x0b, 0xf8, 0x28, 0x8c, 0x19,
-	0x3b, 0x12, 0x67, 0x61, 0xec, 0x47, 0x40, 0xbe, 0xcb, 0xa5, 0x49, 0xe5, 0x29, 0xef, 0xf7, 0xe7,
-	0xbd, 0x77, 0xef, 0x17, 0xc3, 0x81, 0x8a, 0xa7, 0xb3, 0x9c, 0x47, 0xb3, 0x42, 0x6a, 0x89, 0xdb,
-	0x16, 0xf5, 0x9f, 0xa7, 0x99, 0xfe, 0x3a, 0x4f, 0xa2, 0xb1, 0x9c, 0x1e, 0xa7, 0x32, 0x95, 0xc7,
-	0x46, 0x4e, 0xe6, 0x13, 0x83, 0x0c, 0x30, 0x95, 0x6d, 0xeb, 0x3f, 0x4a, 0xa5, 0x4c, 0x73, 0x7e,
-	0xeb, 0x8a, 0x45, 0x69, 0xa5, 0xc1, 0xd2, 0x87, 0xf6, 0x85, 0x19, 0x8a, 0x9f, 0x42, 0xa0, 0xe5,
-	0x98, 0xa0, 0x10, 0x0d, 0xbb, 0x27, 0x0f, 0xa3, 0xf5, 0xe2, 0x51, 0x26, 0xe2, 0xa2, 0xbc, 0x3c,
-	0x7f, 0xc3, 0x6a, 0x15, 0x3f, 0x83, 0x8e, 0x2a, 0xa7, 0x89, 0xcc, 0x15, 0xf1, 0x8d, 0xf1, 0x81,
-	0x33, 0x5e, 0x58, 0x9a, 0x39, 0x1d, 0x9f, 0x41, 0x57, 0xc4, 0x53, 0xbe, 0xe6, 0x49, 0x10, 0x06,
-	0xc3, 0xee, 0xc9, 0x93, 0x8d, 0xdd, 0xfe, 0xbc, 0xbf, 0x75, 0xbc, 0x15, 0xba, 0x28, 0xd9, 0x76,
-	0x0f, 0x7e, 0x07, 0x87, 0x33, 0xa9, 0x74, 0x26, 0x52, 0x75, 0x3e, 0x99, 0x28, 0xae, 0x2f, 0xe3,
-	0x24, 0xe7, 0xa4, 0x65, 0x36, 0x1f, 0x45, 0xf6, 0xac, 0xc8, 0x9d, 0x15, 0x9d, 0x89, 0x92, 0x35,
-	0x35, 0x60, 0x02, 0x9d, 0x2b, 0x5e, 0xa8, 0x4c, 0x0a, 0xb2, 0x17, 0xa2, 0x61, 0xc0, 0x1c, 0xc4,
-	0x03, 0x38, 0xc8, 0xc4, 0x17, 0xfe, 0xfd, 0xe3, 0x5a, 0x6e, 0x1b, 0x79, 0x87, 0xeb, 0x9f, 0x42,
-	0xef, 0xee, 0x33, 0x71, 0x0f, 0x82, 0x6f, 0xbc, 0x34, 0x61, 0xdd, 0x67, 0x75, 0x89, 0x8f, 0x60,
-	0xef, 0x2a, 0xce, 0xe7, 0xdc, 0xe4, 0xb2, 0xcf, 0x2c, 0x78, 0xed, 0xbf, 0x42, 0x83, 0x4f, 0xb0,
-	0xbf, 0x49, 0xb1, 0x7e, 0x8a, 0x4b, 0xa4, 0x6e, 0x6e, 0x31, 0x07, 0xf1, 0x0b, 0x38, 0xfc, 0xd0,
-	0x70, 0xac, 0x6f, 0x5c, 0x4d, 0xd2, 0xe0, 0x17, 0xda, 0x0c, 0xc3, 0x11, 0x74, 0x26, 0xf1, 0x58,
-	0xcb, 0xa2, 0x5c, 0xff, 0x83, 0xcd, 0xf1, 0x38, 0xd3, 0x76, 0x24, 0xfe, 0x6e, 0x24, 0x21, 0x74,
-	0x75, 0x3d, 0xde, 0x6e, 0x22, 0x81, 0x51, 0xb7, 0x29, 0xfc, 0x18, 0x3a, 0xd2, 0x54, 0x8a, 0xb4,
-	0xc2, 0x60, 0x18, 0x8c, 0xfc, 0x1e, 0x62, 0x8e, 0xc2, 0x18, 0x5a, 0x8a, 0x73, 0x97, 0xb4, 0xa9,
-	0x47, 0xa7, 0x8b, 0x25, 0xf5, 0xae, 0x97, 0xd4, 0xbb, 0x59, 0x52, 0xf4, 0xa3, 0xa2, 0xe8, 0x77,
-	0x45, 0xd1, 0x9f, 0x8a, 0xa2, 0x45, 0x45, 0xd1, 0xdf, 0x8a, 0xa2, 0x7f, 0x15, 0xf5, 0x6e, 0x2a,
-	0x8a, 0x7e, 0xae, 0xa8, 0xb7, 0x58, 0x51, 0xef, 0x7a, 0x45, 0xbd, 0xcf, 0xf7, 0xec, 0xb7, 0x32,
-	0x4b, 0x92, 0xb6, 0x39, 0xe2, 0xe5, 0xff, 0x00, 0x00, 0x00, 0xff, 0xff, 0x2a, 0xb6, 0x12, 0xbc,
-	0x0f, 0x03, 0x00, 0x00,
+	// 184 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x29, 0x4e, 0xcc, 0x2d,
+	0xc8, 0x49, 0xd5, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x83, 0xf0, 0xa4, 0x74, 0xd3, 0x33,
+	0x4b, 0x32, 0x4a, 0x93, 0xf4, 0x92, 0xf3, 0x73, 0xf5, 0xd3, 0xf3, 0xd3, 0xf3, 0xf5, 0xc1, 0xd2,
+	0x49, 0xa5, 0x69, 0x60, 0x1e, 0x98, 0x03, 0x66, 0x41, 0xb4, 0x29, 0xb9, 0x71, 0xb1, 0x05, 0x83,
+	0x35, 0x0a, 0x49, 0x70, 0xb1, 0x97, 0xa5, 0x16, 0x15, 0x67, 0xe6, 0xe7, 0x49, 0x30, 0x2a, 0x30,
+	0x6a, 0x30, 0x07, 0xc1, 0xb8, 0x42, 0x4a, 0x5c, 0x3c, 0x99, 0x79, 0x29, 0xa9, 0x15, 0x61, 0x50,
+	0x69, 0x26, 0xb0, 0x34, 0x8a, 0x98, 0x93, 0xdd, 0x85, 0x87, 0x72, 0x0c, 0x37, 0x1e, 0xca, 0x31,
+	0x7c, 0x78, 0x28, 0xc7, 0xd8, 0xf0, 0x48, 0x8e, 0x71, 0xc5, 0x23, 0x39, 0xc6, 0x13, 0x8f, 0xe4,
+	0x18, 0x2f, 0x3c, 0x92, 0x63, 0x7c, 0xf0, 0x48, 0x8e, 0xf1, 0xc5, 0x23, 0x39, 0x86, 0x0f, 0x8f,
+	0xe4, 0x18, 0x27, 0x3c, 0x96, 0x63, 0xb8, 0xf0, 0x58, 0x8e, 0xe1, 0xc6, 0x63, 0x39, 0x86, 0x28,
+	0x0e, 0x88, 0xa3, 0x0b, 0x92, 0x92, 0xd8, 0xc0, 0xce, 0x31, 0x06, 0x04, 0x00, 0x00, 0xff, 0xff,
+	0x25, 0xac, 0x3a, 0x44, 0xd5, 0x00, 0x00, 0x00,
 }
 
 func (this *Sample) Equal(that interface{}) bool {
@@ -297,23 +117,6 @@ func (this *Sample) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if !this.Toc.Equal(that1.Toc) {
-		return false
-	}
-	if !this.Symbols.Equal(that1.Symbols) {
-		return false
-	}
-	if len(this.NameSymbols) != len(that1.NameSymbols) {
-		return false
-	}
-	for i := range this.NameSymbols {
-		if this.NameSymbols[i] != that1.NameSymbols[i] {
-			return false
-		}
-	}
-	if !this.PostingsOffsetTable.Equal(that1.PostingsOffsetTable) {
-		return false
-	}
 	if this.Version != that1.Version {
 		return false
 	}
@@ -322,131 +125,14 @@ func (this *Sample) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *BinaryTOC) Equal(that interface{}) bool {
-	if that == nil {
-		return this == nil
-	}
-
-	that1, ok := that.(*BinaryTOC)
-	if !ok {
-		that2, ok := that.(BinaryTOC)
-		if ok {
-			that1 = &that2
-		} else {
-			return false
-		}
-	}
-	if that1 == nil {
-		return this == nil
-	} else if this == nil {
-		return false
-	}
-	if this.Symbols != that1.Symbols {
-		return false
-	}
-	if this.PostingsOffsetTable != that1.PostingsOffsetTable {
-		return false
-	}
-	return true
-}
-func (this *Symbols) Equal(that interface{}) bool {
-	if that == nil {
-		return this == nil
-	}
-
-	that1, ok := that.(*Symbols)
-	if !ok {
-		that2, ok := that.(Symbols)
-		if ok {
-			that1 = &that2
-		} else {
-			return false
-		}
-	}
-	if that1 == nil {
-		return this == nil
-	} else if this == nil {
-		return false
-	}
-	if !this.Factory.Equal(that1.Factory) {
-		return false
-	}
-	if this.Version != that1.Version {
-		return false
-	}
-	if this.TableOffset != that1.TableOffset {
-		return false
-	}
-	if len(this.Offsets) != len(that1.Offsets) {
-		return false
-	}
-	for i := range this.Offsets {
-		if this.Offsets[i] != that1.Offsets[i] {
-			return false
-		}
-	}
-	if this.Seen != that1.Seen {
-		return false
-	}
-	return true
-}
 func (this *Sample) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 10)
+	s := make([]string, 0, 6)
 	s = append(s, "&samplepb.Sample{")
-	if this.Toc != nil {
-		s = append(s, "Toc: "+fmt.Sprintf("%#v", this.Toc)+",\n")
-	}
-	if this.Symbols != nil {
-		s = append(s, "Symbols: "+fmt.Sprintf("%#v", this.Symbols)+",\n")
-	}
-	keysForNameSymbols := make([]uint32, 0, len(this.NameSymbols))
-	for k, _ := range this.NameSymbols {
-		keysForNameSymbols = append(keysForNameSymbols, k)
-	}
-	github_com_gogo_protobuf_sortkeys.Uint32s(keysForNameSymbols)
-	mapStringForNameSymbols := "map[uint32]string{"
-	for _, k := range keysForNameSymbols {
-		mapStringForNameSymbols += fmt.Sprintf("%#v: %#v,", k, this.NameSymbols[k])
-	}
-	mapStringForNameSymbols += "}"
-	if this.NameSymbols != nil {
-		s = append(s, "NameSymbols: "+mapStringForNameSymbols+",\n")
-	}
-	if this.PostingsOffsetTable != nil {
-		s = append(s, "PostingsOffsetTable: "+fmt.Sprintf("%#v", this.PostingsOffsetTable)+",\n")
-	}
 	s = append(s, "Version: "+fmt.Sprintf("%#v", this.Version)+",\n")
 	s = append(s, "IndexVersion: "+fmt.Sprintf("%#v", this.IndexVersion)+",\n")
-	s = append(s, "}")
-	return strings.Join(s, "")
-}
-func (this *BinaryTOC) GoString() string {
-	if this == nil {
-		return "nil"
-	}
-	s := make([]string, 0, 6)
-	s = append(s, "&samplepb.BinaryTOC{")
-	s = append(s, "Symbols: "+fmt.Sprintf("%#v", this.Symbols)+",\n")
-	s = append(s, "PostingsOffsetTable: "+fmt.Sprintf("%#v", this.PostingsOffsetTable)+",\n")
-	s = append(s, "}")
-	return strings.Join(s, "")
-}
-func (this *Symbols) GoString() string {
-	if this == nil {
-		return "nil"
-	}
-	s := make([]string, 0, 9)
-	s = append(s, "&samplepb.Symbols{")
-	if this.Factory != nil {
-		s = append(s, "Factory: "+fmt.Sprintf("%#v", this.Factory)+",\n")
-	}
-	s = append(s, "Version: "+fmt.Sprintf("%#v", this.Version)+",\n")
-	s = append(s, "TableOffset: "+fmt.Sprintf("%#v", this.TableOffset)+",\n")
-	s = append(s, "Offsets: "+fmt.Sprintf("%#v", this.Offsets)+",\n")
-	s = append(s, "Seen: "+fmt.Sprintf("%#v", this.Seen)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -481,167 +167,12 @@ func (m *Sample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if m.IndexVersion != 0 {
 		i = encodeVarintSample(dAtA, i, uint64(m.IndexVersion))
 		i--
-		dAtA[i] = 0x30
+		dAtA[i] = 0x10
 	}
 	if m.Version != 0 {
 		i = encodeVarintSample(dAtA, i, uint64(m.Version))
-		i--
-		dAtA[i] = 0x28
-	}
-	if m.PostingsOffsetTable != nil {
-		{
-			size, err := m.PostingsOffsetTable.MarshalToSizedBuffer(dAtA[:i])
-			if err != nil {
-				return 0, err
-			}
-			i -= size
-			i = encodeVarintSample(dAtA, i, uint64(size))
-		}
-		i--
-		dAtA[i] = 0x22
-	}
-	if len(m.NameSymbols) > 0 {
-		for k := range m.NameSymbols {
-			v := m.NameSymbols[k]
-			baseI := i
-			i -= len(v)
-			copy(dAtA[i:], v)
-			i = encodeVarintSample(dAtA, i, uint64(len(v)))
-			i--
-			dAtA[i] = 0x12
-			i = encodeVarintSample(dAtA, i, uint64(k))
-			i--
-			dAtA[i] = 0x8
-			i = encodeVarintSample(dAtA, i, uint64(baseI-i))
-			i--
-			dAtA[i] = 0x1a
-		}
-	}
-	if m.Symbols != nil {
-		{
-			size, err := m.Symbols.MarshalToSizedBuffer(dAtA[:i])
-			if err != nil {
-				return 0, err
-			}
-			i -= size
-			i = encodeVarintSample(dAtA, i, uint64(size))
-		}
-		i--
-		dAtA[i] = 0x12
-	}
-	if m.Toc != nil {
-		{
-			size, err := m.Toc.MarshalToSizedBuffer(dAtA[:i])
-			if err != nil {
-				return 0, err
-			}
-			i -= size
-			i = encodeVarintSample(dAtA, i, uint64(size))
-		}
-		i--
-		dAtA[i] = 0xa
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *BinaryTOC) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *BinaryTOC) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *BinaryTOC) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.PostingsOffsetTable != 0 {
-		i = encodeVarintSample(dAtA, i, uint64(m.PostingsOffsetTable))
-		i--
-		dAtA[i] = 0x10
-	}
-	if m.Symbols != 0 {
-		i = encodeVarintSample(dAtA, i, uint64(m.Symbols))
 		i--
 		dAtA[i] = 0x8
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *Symbols) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *Symbols) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *Symbols) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.Seen != 0 {
-		i = encodeVarintSample(dAtA, i, uint64(m.Seen))
-		i--
-		dAtA[i] = 0x28
-	}
-	if len(m.Offsets) > 0 {
-		dAtA5 := make([]byte, len(m.Offsets)*10)
-		var j4 int
-		for _, num1 := range m.Offsets {
-			num := uint64(num1)
-			for num >= 1<<7 {
-				dAtA5[j4] = uint8(uint64(num)&0x7f | 0x80)
-				num >>= 7
-				j4++
-			}
-			dAtA5[j4] = uint8(num)
-			j4++
-		}
-		i -= j4
-		copy(dAtA[i:], dAtA5[:j4])
-		i = encodeVarintSample(dAtA, i, uint64(j4))
-		i--
-		dAtA[i] = 0x22
-	}
-	if m.TableOffset != 0 {
-		i = encodeVarintSample(dAtA, i, uint64(m.TableOffset))
-		i--
-		dAtA[i] = 0x18
-	}
-	if m.Version != 0 {
-		i = encodeVarintSample(dAtA, i, uint64(m.Version))
-		i--
-		dAtA[i] = 0x10
-	}
-	if m.Factory != nil {
-		{
-			size, err := m.Factory.MarshalToSizedBuffer(dAtA[:i])
-			if err != nil {
-				return 0, err
-			}
-			i -= size
-			i = encodeVarintSample(dAtA, i, uint64(size))
-		}
-		i--
-		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
@@ -663,75 +194,11 @@ func (m *Sample) Size() (n int) {
 	}
 	var l int
 	_ = l
-	if m.Toc != nil {
-		l = m.Toc.Size()
-		n += 1 + l + sovSample(uint64(l))
-	}
-	if m.Symbols != nil {
-		l = m.Symbols.Size()
-		n += 1 + l + sovSample(uint64(l))
-	}
-	if len(m.NameSymbols) > 0 {
-		for k, v := range m.NameSymbols {
-			_ = k
-			_ = v
-			mapEntrySize := 1 + sovSample(uint64(k)) + 1 + len(v) + sovSample(uint64(len(v)))
-			n += mapEntrySize + 1 + sovSample(uint64(mapEntrySize))
-		}
-	}
-	if m.PostingsOffsetTable != nil {
-		l = m.PostingsOffsetTable.Size()
-		n += 1 + l + sovSample(uint64(l))
-	}
 	if m.Version != 0 {
 		n += 1 + sovSample(uint64(m.Version))
 	}
 	if m.IndexVersion != 0 {
 		n += 1 + sovSample(uint64(m.IndexVersion))
-	}
-	return n
-}
-
-func (m *BinaryTOC) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if m.Symbols != 0 {
-		n += 1 + sovSample(uint64(m.Symbols))
-	}
-	if m.PostingsOffsetTable != 0 {
-		n += 1 + sovSample(uint64(m.PostingsOffsetTable))
-	}
-	return n
-}
-
-func (m *Symbols) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if m.Factory != nil {
-		l = m.Factory.Size()
-		n += 1 + l + sovSample(uint64(l))
-	}
-	if m.Version != 0 {
-		n += 1 + sovSample(uint64(m.Version))
-	}
-	if m.TableOffset != 0 {
-		n += 1 + sovSample(uint64(m.TableOffset))
-	}
-	if len(m.Offsets) > 0 {
-		l = 0
-		for _, e := range m.Offsets {
-			l += sovSample(uint64(e))
-		}
-		n += 1 + sovSample(uint64(l)) + l
-	}
-	if m.Seen != 0 {
-		n += 1 + sovSample(uint64(m.Seen))
 	}
 	return n
 }
@@ -746,48 +213,9 @@ func (this *Sample) String() string {
 	if this == nil {
 		return "nil"
 	}
-	keysForNameSymbols := make([]uint32, 0, len(this.NameSymbols))
-	for k, _ := range this.NameSymbols {
-		keysForNameSymbols = append(keysForNameSymbols, k)
-	}
-	github_com_gogo_protobuf_sortkeys.Uint32s(keysForNameSymbols)
-	mapStringForNameSymbols := "map[uint32]string{"
-	for _, k := range keysForNameSymbols {
-		mapStringForNameSymbols += fmt.Sprintf("%v: %v,", k, this.NameSymbols[k])
-	}
-	mapStringForNameSymbols += "}"
 	s := strings.Join([]string{`&Sample{`,
-		`Toc:` + strings.Replace(this.Toc.String(), "BinaryTOC", "BinaryTOC", 1) + `,`,
-		`Symbols:` + strings.Replace(this.Symbols.String(), "Symbols", "Symbols", 1) + `,`,
-		`NameSymbols:` + mapStringForNameSymbols + `,`,
-		`PostingsOffsetTable:` + strings.Replace(fmt.Sprintf("%v", this.PostingsOffsetTable), "Any", "types.Any", 1) + `,`,
 		`Version:` + fmt.Sprintf("%v", this.Version) + `,`,
 		`IndexVersion:` + fmt.Sprintf("%v", this.IndexVersion) + `,`,
-		`}`,
-	}, "")
-	return s
-}
-func (this *BinaryTOC) String() string {
-	if this == nil {
-		return "nil"
-	}
-	s := strings.Join([]string{`&BinaryTOC{`,
-		`Symbols:` + fmt.Sprintf("%v", this.Symbols) + `,`,
-		`PostingsOffsetTable:` + fmt.Sprintf("%v", this.PostingsOffsetTable) + `,`,
-		`}`,
-	}, "")
-	return s
-}
-func (this *Symbols) String() string {
-	if this == nil {
-		return "nil"
-	}
-	s := strings.Join([]string{`&Symbols{`,
-		`Factory:` + strings.Replace(fmt.Sprintf("%v", this.Factory), "Any", "types.Any", 1) + `,`,
-		`Version:` + fmt.Sprintf("%v", this.Version) + `,`,
-		`TableOffset:` + fmt.Sprintf("%v", this.TableOffset) + `,`,
-		`Offsets:` + fmt.Sprintf("%v", this.Offsets) + `,`,
-		`Seen:` + fmt.Sprintf("%v", this.Seen) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -830,227 +258,6 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Toc", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSample
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthSample
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthSample
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			if m.Toc == nil {
-				m.Toc = &BinaryTOC{}
-			}
-			if err := m.Toc.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Symbols", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSample
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthSample
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthSample
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			if m.Symbols == nil {
-				m.Symbols = &Symbols{}
-			}
-			if err := m.Symbols.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 3:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field NameSymbols", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSample
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthSample
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthSample
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			if m.NameSymbols == nil {
-				m.NameSymbols = make(map[uint32]string)
-			}
-			var mapkey uint32
-			var mapvalue string
-			for iNdEx < postIndex {
-				entryPreIndex := iNdEx
-				var wire uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return ErrIntOverflowSample
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					wire |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				fieldNum := int32(wire >> 3)
-				if fieldNum == 1 {
-					for shift := uint(0); ; shift += 7 {
-						if shift >= 64 {
-							return ErrIntOverflowSample
-						}
-						if iNdEx >= l {
-							return io.ErrUnexpectedEOF
-						}
-						b := dAtA[iNdEx]
-						iNdEx++
-						mapkey |= uint32(b&0x7F) << shift
-						if b < 0x80 {
-							break
-						}
-					}
-				} else if fieldNum == 2 {
-					var stringLenmapvalue uint64
-					for shift := uint(0); ; shift += 7 {
-						if shift >= 64 {
-							return ErrIntOverflowSample
-						}
-						if iNdEx >= l {
-							return io.ErrUnexpectedEOF
-						}
-						b := dAtA[iNdEx]
-						iNdEx++
-						stringLenmapvalue |= uint64(b&0x7F) << shift
-						if b < 0x80 {
-							break
-						}
-					}
-					intStringLenmapvalue := int(stringLenmapvalue)
-					if intStringLenmapvalue < 0 {
-						return ErrInvalidLengthSample
-					}
-					postStringIndexmapvalue := iNdEx + intStringLenmapvalue
-					if postStringIndexmapvalue < 0 {
-						return ErrInvalidLengthSample
-					}
-					if postStringIndexmapvalue > l {
-						return io.ErrUnexpectedEOF
-					}
-					mapvalue = string(dAtA[iNdEx:postStringIndexmapvalue])
-					iNdEx = postStringIndexmapvalue
-				} else {
-					iNdEx = entryPreIndex
-					skippy, err := skipSample(dAtA[iNdEx:])
-					if err != nil {
-						return err
-					}
-					if skippy < 0 {
-						return ErrInvalidLengthSample
-					}
-					if (iNdEx + skippy) > postIndex {
-						return io.ErrUnexpectedEOF
-					}
-					iNdEx += skippy
-				}
-			}
-			m.NameSymbols[mapkey] = mapvalue
-			iNdEx = postIndex
-		case 4:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field PostingsOffsetTable", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSample
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthSample
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthSample
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			if m.PostingsOffsetTable == nil {
-				m.PostingsOffsetTable = &types.Any{}
-			}
-			if err := m.PostingsOffsetTable.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 5:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Version", wireType)
 			}
@@ -1069,7 +276,7 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
-		case 6:
+		case 2:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field IndexVersion", wireType)
 			}
@@ -1084,319 +291,6 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 				b := dAtA[iNdEx]
 				iNdEx++
 				m.IndexVersion |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		default:
-			iNdEx = preIndex
-			skippy, err := skipSample(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if skippy < 0 {
-				return ErrInvalidLengthSample
-			}
-			if (iNdEx + skippy) < 0 {
-				return ErrInvalidLengthSample
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *BinaryTOC) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowSample
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: BinaryTOC: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: BinaryTOC: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Symbols", wireType)
-			}
-			m.Symbols = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSample
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Symbols |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field PostingsOffsetTable", wireType)
-			}
-			m.PostingsOffsetTable = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSample
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.PostingsOffsetTable |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		default:
-			iNdEx = preIndex
-			skippy, err := skipSample(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if skippy < 0 {
-				return ErrInvalidLengthSample
-			}
-			if (iNdEx + skippy) < 0 {
-				return ErrInvalidLengthSample
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *Symbols) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowSample
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: Symbols: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: Symbols: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Factory", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSample
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthSample
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthSample
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			if m.Factory == nil {
-				m.Factory = &types.Any{}
-			}
-			if err := m.Factory.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Version", wireType)
-			}
-			m.Version = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSample
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Version |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 3:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field TableOffset", wireType)
-			}
-			m.TableOffset = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSample
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.TableOffset |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 4:
-			if wireType == 0 {
-				var v int64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return ErrIntOverflowSample
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					v |= int64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				m.Offsets = append(m.Offsets, v)
-			} else if wireType == 2 {
-				var packedLen int
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return ErrIntOverflowSample
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					packedLen |= int(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				if packedLen < 0 {
-					return ErrInvalidLengthSample
-				}
-				postIndex := iNdEx + packedLen
-				if postIndex < 0 {
-					return ErrInvalidLengthSample
-				}
-				if postIndex > l {
-					return io.ErrUnexpectedEOF
-				}
-				var elementCount int
-				var count int
-				for _, integer := range dAtA[iNdEx:postIndex] {
-					if integer < 128 {
-						count++
-					}
-				}
-				elementCount = count
-				if elementCount != 0 && len(m.Offsets) == 0 {
-					m.Offsets = make([]int64, 0, elementCount)
-				}
-				for iNdEx < postIndex {
-					var v int64
-					for shift := uint(0); ; shift += 7 {
-						if shift >= 64 {
-							return ErrIntOverflowSample
-						}
-						if iNdEx >= l {
-							return io.ErrUnexpectedEOF
-						}
-						b := dAtA[iNdEx]
-						iNdEx++
-						v |= int64(b&0x7F) << shift
-						if b < 0x80 {
-							break
-						}
-					}
-					m.Offsets = append(m.Offsets, v)
-				}
-			} else {
-				return fmt.Errorf("proto: wrong wireType = %d for field Offsets", wireType)
-			}
-		case 5:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Seen", wireType)
-			}
-			m.Seen = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSample
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Seen |= int64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}

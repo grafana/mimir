@@ -106,10 +106,6 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	// Load unmarshaled sample into memory
 	r.version = int(sample.Version)
 	r.indexVersion = int(sample.IndexVersion)
-	r.nameSymbols = sample.NameSymbols
-	r.postingsOffsetTable = sample.PostingsOffsetTable
-	r.symbols = sample.Symbols
-	r.toc = (*BinaryTOC)(sample.Toc)
 
 	return r, err
 }
