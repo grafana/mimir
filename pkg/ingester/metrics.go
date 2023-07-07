@@ -39,6 +39,8 @@ type ingesterMetrics struct {
 	activeSeriesCustomTrackersPerUser                 *prometheus.GaugeVec
 	activeSeriesPerUserNativeHistograms               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
+	activeNativeHistogramBucketsPerUser               *prometheus.GaugeVec
+	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
 
 	// Global limit metrics
 	maxUsersGauge           prometheus.GaugeFunc
@@ -268,6 +270,18 @@ func newIngesterMetrics(
 			Help: "Number of currently active native histogram series matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
 
+		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeNativeHistogramBucketsPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_native_histogram_buckets",
+			Help: "Number of currently active native histogram buckets per user.",
+		}, []string{"user"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeNativeHistogramBucketsCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_native_histogram_buckets_custom_tracker",
+			Help: "Number of currently active native histogram buckets matching a pre-configured label matchers per user.",
+		}, []string{"user", "name"}),
+
 		compactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_compactions_triggered_total",
 			Help: "Total number of triggered compactions.",
@@ -330,9 +344,11 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 	m.activeSeriesLoading.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)
 	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
+	m.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 	for _, name := range customTrackerMetrics {
 		m.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
 		m.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
+		m.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
 	}
 }
 

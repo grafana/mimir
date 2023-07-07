@@ -547,7 +547,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
 		} else {
-			allActive, activeMatching, allActiveHistograms, activeMatchingHistograms := userDB.activeSeries.ActiveWithMatchers()
+			allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
@@ -558,6 +558,11 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
 			} else {
 				i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
+			}
+			if allActiveBuckets > 0 {
+				i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValues(userID).Set(float64(allActiveBuckets))
+			} else {
+				i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 			}
 
 			for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
@@ -571,6 +576,11 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
 				} else {
 					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
+				}
+				if activeMatchingBuckets[idx] > 0 {
+					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
+				} else {
+					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
 				}
 			}
 		}
@@ -1461,7 +1471,7 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserSt
 	case client.IN_MEMORY:
 		series = db.Head().NumSeries()
 	case client.ACTIVE:
-		activeSeries, _ := db.activeSeries.Active()
+		activeSeries, _, _ := db.activeSeries.Active()
 		series = uint64(activeSeries)
 	default:
 		return nil, fmt.Errorf("unknown count method %q", req.GetCountMethod())

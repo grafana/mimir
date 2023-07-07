@@ -32,7 +32,7 @@ func TestPostings_Expand(t *testing.T) {
 	}
 
 	valid := activeSeries.Purge(mockedTime)
-	allActive, _, _, _ := activeSeries.ActiveWithMatchers()
+	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 2, allActive)
 
@@ -64,7 +64,7 @@ func TestPostings_Seek(t *testing.T) {
 	}
 
 	valid := activeSeries.Purge(mockedTime)
-	allActive, _, _, _ := activeSeries.ActiveWithMatchers()
+	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 2, allActive)
 
@@ -96,7 +96,7 @@ func TestPostings_SeekToEnd(t *testing.T) {
 	}
 
 	valid := activeSeries.Purge(mockedTime)
-	allActive, _, _, _ := activeSeries.ActiveWithMatchers()
+	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 0, allActive)
 
