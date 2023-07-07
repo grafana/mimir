@@ -35,17 +35,6 @@ func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
 	}
 }
 
-type emptySeriesSet struct{}
-
-func (emptySeriesSet) Next() bool                       { return false }
-func (emptySeriesSet) At() (labels.Labels, []AggrChunk) { return labels.EmptyLabels(), nil }
-func (emptySeriesSet) Err() error                       { return nil }
-
-// EmptySeriesSet returns a new series set that contains no series.
-func EmptySeriesSet() SeriesSet {
-	return emptySeriesSet{}
-}
-
 // SeriesSet is a set of series and their corresponding chunks.
 // The set is sorted by the label sets. Chunks may be overlapping or expected of order.
 type SeriesSet interface {
