@@ -651,10 +651,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 		level.Debug(spanLogger).Log(
 			"msg", "sent streaming series",
-			"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
-			"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
-			"request matchers", storepb.PromMatchersToString(matchers...),
-			"request shard selector", maybeNilShard(shardSelector).LabelValue(),
 			"num_series", numSeries,
 			"duration", time.Since(seriesLoadStart),
 		)
@@ -697,10 +693,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	}
 	level.Debug(spanLogger).Log(
 		"msg", debugMessage,
-		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
-		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
-		"request matchers", storepb.PromMatchersToString(matchers...),
-		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
 		"num_series", numSeries,
 		"num_chunks", numChunks,
 		"duration", time.Since(start),
