@@ -71,7 +71,6 @@ type seriesStripe struct {
 type seriesEntry struct {
 	nanos                     *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
 	matches                   preAllocDynamicSlice //  Index of the matcher matching
-	isNativeHistogram         bool
 	numNativeHistogramBuckets int
 }
 
@@ -110,10 +109,10 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 }
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
-func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.Time, hasNativeHistograms bool, numNativeHistogramBuckets int) {
+func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.Time, numNativeHistogramBuckets int) {
 	stripeID := ref % numStripes
 
-	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, hasNativeHistograms, numNativeHistogramBuckets)
+	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, numNativeHistogramBuckets)
 }
 
 // Purge purges expired entries and returns true if enough time has passed since
@@ -215,13 +214,13 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeH
 	return s.active, s.activeNativeHistograms, s.activeNativeHistogramBuckets
 }
 
-func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref uint64, hasNativeHistograms bool, numNativeHistogramBuckets int) {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref uint64, numNativeHistogramBuckets int) {
 	nowNanos := now.UnixNano()
 
-	e, needsUpdating := s.findEntryForSeries(ref, hasNativeHistograms, numNativeHistogramBuckets)
+	e, needsUpdating := s.findEntryForSeries(ref, numNativeHistogramBuckets)
 	entryTimeSet := false
 	if e == nil || needsUpdating {
-		e, entryTimeSet = s.findAndUpdateOrCreateEntryForSeries(ref, series, nowNanos, hasNativeHistograms, numNativeHistogramBuckets)
+		e, entryTimeSet = s.findAndUpdateOrCreateEntryForSeries(ref, series, nowNanos, numNativeHistogramBuckets)
 	}
 
 	if !entryTimeSet {
@@ -241,51 +240,49 @@ func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels
 	}
 }
 
-func (s *seriesStripe) findEntryForSeries(ref uint64, hasNativeHistograms bool, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
+func (s *seriesStripe) findEntryForSeries(ref uint64, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	entry := s.refs[ref]
-	return entry.nanos, entry.isNativeHistogram != hasNativeHistograms || entry.numNativeHistogramBuckets != numNativeHistogramBuckets
+	return entry.nanos, entry.numNativeHistogramBuckets != numNativeHistogramBuckets
 }
 
-func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64, hasNativeHistograms bool, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
+func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	matches := s.matchers.matches(series)
-	matchesLen := matches.len()
 
 	// Check if already exists within the entries.
 	// This repeats findEntryForSeries(), but under write lock.
 	entry, ok := s.refs[ref]
 	if ok {
-		if entry.isNativeHistogram && !hasNativeHistograms {
-			s.activeNativeHistograms--
-			s.activeNativeHistogramBuckets -= entry.numNativeHistogramBuckets
-			for i := 0; i < matchesLen; i++ {
-				match := matches.get(i)
-				s.activeMatchingNativeHistograms[match]--
-				s.activeMatchingNativeHistogramBuckets[match] -= entry.numNativeHistogramBuckets
-			}
-			entry.isNativeHistogram = false
-			entry.numNativeHistogramBuckets = 0
-			s.refs[ref] = entry
-		} else if !entry.isNativeHistogram && hasNativeHistograms {
-			s.activeNativeHistograms++
-			s.activeNativeHistogramBuckets += numNativeHistogramBuckets
-			for i := 0; i < matchesLen; i++ {
-				match := matches.get(i)
-				s.activeMatchingNativeHistograms[match]++
-				s.activeMatchingNativeHistogramBuckets[match] += numNativeHistogramBuckets
-			}
-			entry.isNativeHistogram = true
-			entry.numNativeHistogramBuckets = numNativeHistogramBuckets
-			s.refs[ref] = entry
-		} else if entry.numNativeHistogramBuckets != numNativeHistogramBuckets {
-			diff := numNativeHistogramBuckets - entry.numNativeHistogramBuckets
-			s.activeNativeHistogramBuckets += diff
-			for i := 0; i < matchesLen; i++ {
-				s.activeMatchingNativeHistogramBuckets[matches.get(i)] += diff
+		if entry.numNativeHistogramBuckets != numNativeHistogramBuckets {
+			matches := s.matchers.matches(series)
+			matchesLen := matches.len()
+			if numNativeHistogramBuckets >= 0 && entry.numNativeHistogramBuckets >= 0 {
+				// change number of buckets but still a histogram
+				diff := numNativeHistogramBuckets - entry.numNativeHistogramBuckets
+				s.activeNativeHistogramBuckets += diff
+				for i := 0; i < matchesLen; i++ {
+					s.activeMatchingNativeHistogramBuckets[matches.get(i)] += diff
+				}
+			} else if numNativeHistogramBuckets >= 0 {
+				// change from float to histogram
+				s.activeNativeHistograms++
+				s.activeNativeHistogramBuckets += numNativeHistogramBuckets
+				for i := 0; i < matchesLen; i++ {
+					match := matches.get(i)
+					s.activeMatchingNativeHistograms[match]++
+					s.activeMatchingNativeHistogramBuckets[match] += numNativeHistogramBuckets
+				}
+			} else {
+				// change from histogram to float
+				s.activeNativeHistograms--
+				s.activeNativeHistogramBuckets -= entry.numNativeHistogramBuckets
+				for i := 0; i < matchesLen; i++ {
+					match := matches.get(i)
+					s.activeMatchingNativeHistograms[match]--
+					s.activeMatchingNativeHistogramBuckets[match] -= entry.numNativeHistogramBuckets
+				}
 			}
 			entry.numNativeHistogramBuckets = numNativeHistogramBuckets
 			s.refs[ref] = entry
@@ -293,15 +290,18 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref uint64, series la
 		return entry.nanos, false
 	}
 
+	matches := s.matchers.matches(series)
+	matchesLen := matches.len()
+
 	s.active++
-	if hasNativeHistograms {
+	if numNativeHistogramBuckets >= 0 {
 		s.activeNativeHistograms++
 		s.activeNativeHistogramBuckets += numNativeHistogramBuckets
 	}
 	for i := 0; i < matchesLen; i++ {
 		match := matches.get(i)
 		s.activeMatching[match]++
-		if hasNativeHistograms {
+		if numNativeHistogramBuckets >= 0 {
 			s.activeMatchingNativeHistograms[match]++
 			s.activeMatchingNativeHistogramBuckets[match] += numNativeHistogramBuckets
 		}
@@ -310,7 +310,6 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref uint64, series la
 	e := seriesEntry{
 		nanos:                     atomic.NewInt64(nowNanos),
 		matches:                   matches,
-		isNativeHistogram:         hasNativeHistograms,
 		numNativeHistogramBuckets: numNativeHistogramBuckets,
 	}
 
@@ -378,7 +377,7 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 		}
 
 		s.active++
-		if entry.isNativeHistogram {
+		if entry.numNativeHistogramBuckets >= 0 {
 			s.activeNativeHistograms++
 			s.activeNativeHistogramBuckets += entry.numNativeHistogramBuckets
 		}
@@ -386,7 +385,7 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 		for i := 0; i < ml; i++ {
 			match := entry.matches.get(i)
 			s.activeMatching[match]++
-			if entry.isNativeHistogram {
+			if entry.numNativeHistogramBuckets >= 0 {
 				s.activeMatchingNativeHistograms[match]++
 				s.activeMatchingNativeHistogramBuckets[match] += entry.numNativeHistogramBuckets
 			}

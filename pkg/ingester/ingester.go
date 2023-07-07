@@ -1026,8 +1026,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return wrapWithUser(err, userID)
 		}
 
-		hasNativeHistograms := false
-		numNativeHistogramBuckets := 0
+		numNativeHistogramBuckets := -1
 		if nativeHistogramsIngestionEnabled {
 			for _, h := range ts.Histograms {
 				var (
@@ -1072,7 +1071,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				lastNativeHistogram := ts.Histograms[numNativeHistograms-1]
 				numFloats := len(ts.Samples)
 				if numFloats == 0 || ts.Samples[numFloats-1].TimestampMs < lastNativeHistogram.Timestamp {
-					hasNativeHistograms = true
+					numNativeHistogramBuckets = 0
 					for _, span := range lastNativeHistogram.PositiveSpans {
 						numNativeHistogramBuckets += int(span.Length)
 					}
@@ -1084,7 +1083,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, uint64(ref), startAppend, hasNativeHistograms, numNativeHistogramBuckets)
+			activeSeries.UpdateSeries(nonCopiedLabels, uint64(ref), startAppend, numNativeHistogramBuckets)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {

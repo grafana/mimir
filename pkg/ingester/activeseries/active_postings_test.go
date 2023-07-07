@@ -28,7 +28,7 @@ func TestPostings_Expand(t *testing.T) {
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], uint64(allStorageRefs[i]), time.Unix(int64(i), 0), false, 0)
+		activeSeries.UpdateSeries(series[i], uint64(allStorageRefs[i]), time.Unix(int64(i), 0), -1)
 	}
 
 	valid := activeSeries.Purge(mockedTime)
@@ -60,7 +60,7 @@ func TestPostings_Seek(t *testing.T) {
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], uint64(allStorageRefs[i]), time.Unix(int64(i), 0), false, 0)
+		activeSeries.UpdateSeries(series[i], uint64(allStorageRefs[i]), time.Unix(int64(i), 0), -1)
 	}
 
 	valid := activeSeries.Purge(mockedTime)
@@ -92,7 +92,7 @@ func TestPostings_SeekToEnd(t *testing.T) {
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], uint64(allStorageRefs[i]), time.Unix(int64(i), 0), false, 0)
+		activeSeries.UpdateSeries(series[i], uint64(allStorageRefs[i]), time.Unix(int64(i), 0), -1)
 	}
 
 	valid := activeSeries.Purge(mockedTime)
