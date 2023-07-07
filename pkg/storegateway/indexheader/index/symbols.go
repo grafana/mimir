@@ -60,6 +60,21 @@ func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *samplep
 	return s, nil
 }
 
+func (s *Symbols) NewSymbolSample() (sample *samplepb.Symbols) {
+	sampleSymbols := &samplepb.Symbols{}
+
+	offsets := make([]int64, 0)
+
+	for _, offset := range s.offsets {
+		offsets = append(offsets, int64(offset))
+	}
+
+	sampleSymbols.Offsets = offsets
+	sampleSymbols.Seen = int64(s.seen)
+
+	return sampleSymbols
+}
+
 // NewSymbols returns a Symbols object for symbol lookups.
 func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int, doChecksum bool) (s *Symbols, err error) {
 	var d streamencoding.Decbuf

@@ -235,11 +235,21 @@ func constructSample(binpath string, samplepath string, postingOffsetsInMemSampl
 		return nil, err
 	}
 
-	return r, fmt.Errorf("testing: %w", err)
+	// Write sampled index-header to disk.
+	writeSampleToFile(samplepath, r)
+
+	return r, err
 }
 
 func writeSampleToFile(samplepath string, reader *StreamBinaryReader) {
 	sample := &samplepb.Sample{}
+
+	sample.IndexVersion = int64(reader.indexVersion)
+	sample.Version = int64(reader.version)
+
+	sample.Symbols = reader.symbols.NewSymbolSample()
+	sample.PostingsOffsetTable = reader.postingsOffsetTable.NewPostingOffsetTableFromSample()
+
 }
 
 // newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be
