@@ -37,7 +37,7 @@ type PostingOffsetTable interface {
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
 
-	NewPostingOffsetTableSample() (table *samplepb.PostingOffsetTable, err error)
+	NewPostingOffsetTableSample() (table *samplepb.PostingOffsetTable)
 }
 
 // PostingListOffset contains the start and end offset of a posting list.
@@ -242,19 +242,6 @@ func NewPostingOffsetTableFromSample(factory *streamencoding.DecbufFactory, samp
 	return &t, err
 }
 
-func (t *PostingOffsetTableV2) NewPostingOffsetTableSample() (table *samplepb.PostingOffsetTable, err error) {
-	sample := &samplepb.PostingOffsetTable{}
-
-	for name, offsets := range t.postings {
-		sample.Postings[name] = &samplepb.PostingValueOffsets{}
-		for _, postingOff := range offsets.offsets {
-			sample.Postings[name].Offsets = append(sample.Postings[name].Offsets, &samplepb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)})
-		}
-	}
-
-	return sample, err
-}
-
 // readOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
 func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func(string, string, uint64) error) (err error) {
@@ -329,6 +316,10 @@ func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
 	slices.Sort(labelNames)
 
 	return labelNames, nil
+}
+
+func (t *PostingOffsetTableV1) NewPostingOffsetTableSample() (table *samplepb.PostingOffsetTable) {
+	return &samplepb.PostingOffsetTable{}
 }
 
 type PostingOffsetTableV2 struct {
@@ -598,6 +589,19 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	slices.Sort(labelNames)
 
 	return labelNames, nil
+}
+
+func (t *PostingOffsetTableV2) NewPostingOffsetTableSample() (table *samplepb.PostingOffsetTable) {
+	sample := &samplepb.PostingOffsetTable{}
+
+	for name, offsets := range t.postings {
+		sample.Postings[name] = &samplepb.PostingValueOffsets{}
+		for _, postingOff := range offsets.offsets {
+			sample.Postings[name].Offsets = append(sample.Postings[name].Offsets, &samplepb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)})
+		}
+	}
+
+	return sample
 }
 
 func skipNAndName(d *streamencoding.Decbuf, buf *int) {

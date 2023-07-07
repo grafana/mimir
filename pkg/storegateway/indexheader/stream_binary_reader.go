@@ -112,7 +112,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 	sample := &samplepb.Sample{}
 	if err := sample.Unmarshal(data); err != nil {
-		return nil, fmt.Errorf("failed to parse index-header sample file: %w", err)
+		return nil, fmt.Errorf("failed to decode index-header sample file: %w", err)
 	}
 
 	// Load unmarshaled sample into memory
@@ -241,15 +241,25 @@ func constructSample(binpath string, samplepath string, postingOffsetsInMemSampl
 	return r, err
 }
 
-func writeSampleToFile(samplepath string, reader *StreamBinaryReader) {
+func writeSampleToFile(samplepath string, reader *StreamBinaryReader) error {
 	sample := &samplepb.Sample{}
 
 	sample.IndexVersion = int64(reader.indexVersion)
 	sample.Version = int64(reader.version)
 
 	sample.Symbols = reader.symbols.NewSymbolSample()
-	sample.PostingsOffsetTable = reader.postingsOffsetTable.NewPostingOffsetTableFromSample()
+	sample.PostingsOffsetTable = reader.postingsOffsetTable.NewPostingOffsetTableSample()
 
+	// Write the new address book back to disk.
+	out, err := sample.Marshal()
+	if err != nil {
+		return fmt.Errorf("failed to encode index-header sample: %w", err)
+	}
+	if err := ioutil.WriteFile(samplepath, out, 0644); err != nil {
+		return fmt.Errorf("failed to write index-header sample file: %w", err)
+	}
+
+	return nil
 }
 
 // newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be
