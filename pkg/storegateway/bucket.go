@@ -719,10 +719,21 @@ func logSeriesRequestToSpan(ctx context.Context, l log.Logger, minT, maxT int64,
 		"msg", "BucketStore.Series",
 		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
 		"request max time", time.UnixMilli(maxT).UTC().Format(time.RFC3339Nano),
-		"request matchers", storepb.PromMatchersToString(matchers...),
-		"request block matchers", storepb.PromMatchersToString(blockMatchers...),
+		"request matchers", promMatchersToString(matchers...),
+		"request block matchers", promMatchersToString(blockMatchers...),
 		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
 	)
+}
+
+func promMatchersToString(ms ...*labels.Matcher) string {
+	var res string
+	for i, m := range ms {
+		res += m.String()
+		if i < len(ms)-1 {
+			res += ", "
+		}
+	}
+	return "{" + res + "}"
 }
 
 func chunksSize(chks []storepb.AggrChunk) (size int) {

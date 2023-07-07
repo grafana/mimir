@@ -94,16 +94,3 @@ func MatchersToPromMatchers(ms ...LabelMatcher) ([]*labels.Matcher, error) {
 	}
 	return res, nil
 }
-
-// PromMatchersToString converts prometheus label matchers to string format.
-// String should be parsable as a valid PromQL query metric selector.
-func PromMatchersToString(ms ...*labels.Matcher) string {
-	var res string
-	for i, m := range ms {
-		res += m.String()
-		if i < len(ms)-1 {
-			res += ", "
-		}
-	}
-	return "{" + res + "}"
-}
