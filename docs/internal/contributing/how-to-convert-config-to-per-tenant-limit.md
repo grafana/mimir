@@ -164,6 +164,14 @@ We need to ensure that a user who is still setting the option in the old config 
    }
    ```
 
-## Updating Mimir Config File Docs
+## Updating Mimir Docs
 
-Run `make doc` from repository root.
+1. Update the Mimir Config file docs.
+
+   Run `make doc` from repository root.
+
+2. Update `CHANGELOG.md` for the upcoming version.
+
+   ```markdown
+   [CHANGE] Querier: `-query-frontend.cache-unaligned-requests` has been moved from a global flag to a per-tenant override. #5312
+   ```
