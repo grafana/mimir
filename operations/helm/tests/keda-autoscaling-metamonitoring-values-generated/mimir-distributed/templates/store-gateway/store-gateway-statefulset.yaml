@@ -14,7 +14,7 @@ metadata:
     rollout-group: store-gateway
     zone: zone-a
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
   replicas: 1
@@ -155,7 +155,7 @@ metadata:
     rollout-group: store-gateway
     zone: zone-b
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
   replicas: 1
@@ -296,7 +296,7 @@ metadata:
     rollout-group: store-gateway
     zone: zone-c
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
   replicas: 1
