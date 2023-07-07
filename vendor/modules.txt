@@ -982,7 +982,7 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/objstore v0.0.0-20230201072718-11ffbc490204
+# github.com/thanos-io/objstore v0.0.0-20230201072718-11ffbc490204 => github.com/56quarters/objstore v0.0.0-20230706223159-32218870d09b
 ## explicit; go 1.18
 github.com/thanos-io/objstore
 github.com/thanos-io/objstore/exthttp
@@ -1480,3 +1480,4 @@ sigs.k8s.io/yaml
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
 # github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
+# github.com/thanos-io/objstore => github.com/56quarters/objstore v0.0.0-20230706223159-32218870d09b
