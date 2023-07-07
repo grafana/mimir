@@ -222,10 +222,10 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeH
 func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref uint64, hasNativeHistograms bool, numNativeHistogramBuckets int) {
 	nowNanos := now.UnixNano()
 
-	e := s.findEntryForSeries(ref)
+	e, needsUpdating := s.findEntryForSeries(ref, hasNativeHistograms, numNativeHistogramBuckets)
 	entryTimeSet := false
-	if e == nil {
-		e, entryTimeSet = s.findOrCreateEntryForSeries(ref, series, nowNanos, hasNativeHistograms, numNativeHistogramBuckets)
+	if e == nil || needsUpdating {
+		e, entryTimeSet = s.findAndUpdateOrCreateEntryForSeries(ref, series, nowNanos, hasNativeHistograms, numNativeHistogramBuckets)
 	}
 
 	if !entryTimeSet {
@@ -245,25 +245,57 @@ func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels
 	}
 }
 
-func (s *seriesStripe) findEntryForSeries(ref uint64) *atomic.Int64 {
+func (s *seriesStripe) findEntryForSeries(ref uint64, hasNativeHistograms bool, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.refs[ref].nanos
+	entry := s.refs[ref]
+	return entry.nanos, entry.isNativeHistogram != hasNativeHistograms || entry.numNativeHistogramBuckets != numNativeHistogramBuckets
 }
 
-func (s *seriesStripe) findOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64, hasNativeHistograms bool, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
+func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64, hasNativeHistograms bool, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	matches := s.matchers.matches(series)
+	matchesLen := matches.len()
 
 	// Check if already exists within the entries.
 	// This repeats findEntryForSeries(), but under write lock.
 	entry, ok := s.refs[ref]
 	if ok {
+		if entry.isNativeHistogram && !hasNativeHistograms {
+			s.activeNativeHistograms--
+			s.activeNativeHistogramBuckets -= entry.numNativeHistogramBuckets
+			for i := 0; i < matchesLen; i++ {
+				match := matches.get(i)
+				s.activeMatchingNativeHistograms[match]--
+				s.activeMatchingNativeHistogramBuckets[match] -= entry.numNativeHistogramBuckets
+			}
+			entry.isNativeHistogram = false
+			entry.numNativeHistogramBuckets = 0
+			s.refs[ref] = entry
+		} else if !entry.isNativeHistogram && hasNativeHistograms {
+			s.activeNativeHistograms++
+			s.activeNativeHistogramBuckets += numNativeHistogramBuckets
+			for i := 0; i < matchesLen; i++ {
+				match := matches.get(i)
+				s.activeMatchingNativeHistograms[match]++
+				s.activeMatchingNativeHistogramBuckets[match] += numNativeHistogramBuckets
+			}
+			entry.isNativeHistogram = true
+			entry.numNativeHistogramBuckets = numNativeHistogramBuckets
+			s.refs[ref] = entry
+		} else if entry.numNativeHistogramBuckets != numNativeHistogramBuckets {
+			diff := numNativeHistogramBuckets - entry.numNativeHistogramBuckets
+			s.activeNativeHistogramBuckets += diff
+			for i := 0; i < matchesLen; i++ {
+				s.activeMatchingNativeHistogramBuckets[matches.get(i)] += diff
+			}
+			entry.numNativeHistogramBuckets = numNativeHistogramBuckets
+			s.refs[ref] = entry
+		}
 		return entry.nanos, false
 	}
-
-	matches := s.matchers.matches(series)
-	matchesLen := matches.len()
 
 	s.active++
 	if hasNativeHistograms {

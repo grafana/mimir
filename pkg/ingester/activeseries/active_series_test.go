@@ -23,6 +23,7 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
 	ref2, ls2 := uint64(2), labels.FromStrings("a", "2")
 	ref3, ls3 := uint64(3), labels.FromStrings("a", "3")
+	ref4, ls4 := uint64(4), labels.FromStrings("a", "4")
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 	valid := c.Purge(time.Now())
@@ -82,6 +83,44 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	assert.Equal(t, 3, allActive)
 	assert.Equal(t, 1, allActiveHistograms)
 	assert.Equal(t, 5, allActiveBuckets)
+
+	c.UpdateSeries(ls4, ref4, time.Now(), true, 3)
+	valid = c.Purge(time.Now())
+	allActive, _, allActiveHistograms, _, allActiveBuckets, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 2, allActiveHistograms)
+	assert.Equal(t, 8, allActiveBuckets)
+	assert.True(t, valid)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 2, allActiveHistograms)
+	assert.Equal(t, 8, allActiveBuckets)
+
+	// more buckets for a histogram
+	c.UpdateSeries(ls3, ref3, time.Now(), true, 7)
+	valid = c.Purge(time.Now())
+	allActive, _, allActiveHistograms, _, allActiveBuckets, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 2, allActiveHistograms)
+	assert.Equal(t, 10, allActiveBuckets)
+	assert.True(t, valid)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 2, allActiveHistograms)
+	assert.Equal(t, 10, allActiveBuckets)
+
+	// changing a metric from histogram to float
+	c.UpdateSeries(ls4, ref4, time.Now(), false, 0)
+	valid = c.Purge(time.Now())
+	allActive, _, allActiveHistograms, _, allActiveBuckets, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, 7, allActiveBuckets)
+	assert.True(t, valid)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, 7, allActiveBuckets)
 }
 
 func TestActiveSeries_ContainsRef(t *testing.T) {
@@ -237,6 +276,38 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 2, allActiveHistograms)
 	assert.Equal(t, 8, allActiveBuckets)
+
+	// changing a metric from float to histogram
+	c.UpdateSeries(ls3, ref3, time.Now(), true, 6)
+	valid = c.Purge(time.Now())
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, []int{3}, activeMatching)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assert.Equal(t, 14, allActiveBuckets)
+	assert.Equal(t, []int{9}, activeMatchingBuckets)
+	assert.True(t, valid)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, 14, allActiveBuckets)
+
+	// fewer (zero) buckets for a histogram
+	c.UpdateSeries(ls4, ref4, time.Now(), true, 0)
+	valid = c.Purge(time.Now())
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, []int{3}, activeMatching)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assert.Equal(t, 11, allActiveBuckets)
+	assert.Equal(t, []int{6}, activeMatchingBuckets)
+	assert.True(t, valid)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, 11, allActiveBuckets)
 }
 
 func labelsWithHashCollision() (labels.Labels, labels.Labels) {
