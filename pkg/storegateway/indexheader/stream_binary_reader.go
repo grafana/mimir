@@ -80,10 +80,6 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 		return nil, fmt.Errorf("cannot write index header: %w", err)
 	}
 
-	if err := writeSample(binfn, postingOffsetsInMemSampling, logger, metrics, cfg); err != nil {
-		return nil, fmt.Errorf("cannot write index header sample: %w", err)
-	}
-
 	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
 	return newFileStreamBinaryReader(binfn, samplefn, postingOffsetsInMemSampling, logger, metrics, cfg)
 }
@@ -95,11 +91,24 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 		factory: streamencoding.NewDecbufFactory(binpath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
 	}
 
+	// Create a new raw decoding buffer with access to the entire index-header file to
+	// read initial version information and the table of contents.
+	d := r.factory.NewRawDecbuf()
+	if err = d.Err(); err != nil {
+		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
+	}
+
 	// Unmarshal sample from disk
 	data, err := ioutil.ReadFile(samplepath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading index-header sample file: %w", err)
+		// If sample is not on disk, write sample to disk.
+		level.Debug(logger).Log("msg", "failed to read index-header sample from disk; recreating", "path", samplepath, "err", err)
+		if err := writeSample(binpath, postingOffsetsInMemSampling, logger, metrics, cfg); err != nil {
+			return nil, fmt.Errorf("cannot write index header sample: %w", err)
+		}
+		return newFileStreamBinaryReader(binpath, samplepath, postingOffsetsInMemSampling, logger, metrics, cfg)
 	}
+
 	sample := &samplepb.Sample{}
 	if err := sample.Unmarshal(data); err != nil {
 		return nil, fmt.Errorf("failed to parse index-header sample file: %w", err)
@@ -108,14 +117,6 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	// Load unmarshaled sample into memory
 	r.version = int(sample.Version)
 	r.indexVersion = int(sample.IndexVersion)
-
-	// Create a new raw decoding buffer with access to the entire index-header file to
-	// read initial version information and the table of contents.
-	d := r.factory.NewRawDecbuf()
-	defer runutil.CloseWithErrCapture(&err, &d, "new file stream binary reader")
-	if err = d.Err(); err != nil {
-		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
-	}
 
 	// Grab the full length of the index header before we read any of it. This is needed
 	// so that we can skip directly to the table of contents at the end of file.
