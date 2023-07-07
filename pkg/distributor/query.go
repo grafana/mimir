@@ -283,6 +283,11 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						return ingesterQueryResult{}, limitErr
 					}
 
+					// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.
+					if chunkLimitErr := queryLimiter.AddChunks(int(s.ChunkCount)); chunkLimitErr != nil {
+						return ingesterQueryResult{}, chunkLimitErr
+					}
+
 					labelsBatch = append(labelsBatch, mimirpb.FromLabelAdaptersToLabels(s.Labels))
 				}
 
