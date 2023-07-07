@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -28,14 +29,19 @@ import (
 
 const (
 	day                              = 24 * time.Hour
-	queryRangePathSuffix             = "/query_range"
-	instantQueryPathSuffix           = "/query"
-	cardinalityLabelNamesPathSuffix  = "/cardinality/label_names"
-	cardinalityLabelValuesPathSuffix = "/cardinality/label_values"
+	queryRangePathSuffix             = "/api/v1/query_range"
+	instantQueryPathSuffix           = "/api/v1/query"
+	cardinalityLabelNamesPathSuffix  = "/api/v1/cardinality/label_names"
+	cardinalityLabelValuesPathSuffix = "/api/v1/cardinality/label_values"
+	labelNamesPathSuffix             = "/api/v1/labels"
 
 	// DefaultDeprecatedCacheUnalignedRequests is the default value for the deprecated querier frontend config DeprecatedCacheUnalignedRequests
 	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.12
 	DefaultDeprecatedCacheUnalignedRequests = false
+)
+
+var (
+	labelValuesPathSuffix = regexp.MustCompile(`\/api\/v1\/label\/([^\/]+)\/values$`)
 )
 
 // Config for query_range middleware chain.
@@ -296,10 +302,13 @@ func newQueryTripperware(
 			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
 		)
 
-		// Inject the cardinality query cache roundtripper only if the query results cache is enabled.
+		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
 		cardinality := next
+		labels := next
+
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, next, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(c, limits, next, log, registerer)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -310,6 +319,8 @@ func newQueryTripperware(
 				return instant.RoundTrip(r)
 			case isCardinalityQuery(r.URL.Path):
 				return cardinality.RoundTrip(r)
+			case isLabelsQuery(r.URL.Path):
+				return labels.RoundTrip(r)
 			default:
 				return next.RoundTrip(r)
 			}
@@ -361,6 +372,10 @@ func isInstantQuery(path string) bool {
 
 func isCardinalityQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityLabelNamesPathSuffix) || strings.HasSuffix(path, cardinalityLabelValuesPathSuffix)
+}
+
+func isLabelsQuery(path string) bool {
+	return strings.HasSuffix(path, labelNamesPathSuffix) || labelValuesPathSuffix.MatchString(path)
 }
 
 func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTripper {

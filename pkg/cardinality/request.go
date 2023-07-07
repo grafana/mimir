@@ -23,9 +23,6 @@ const (
 )
 
 const (
-	RequestTypeLabelNames  = RequestType(iota)
-	RequestTypeLabelValues = RequestType(iota)
-
 	minLimit           = 0
 	maxLimit           = 500
 	defaultLimit       = 20
@@ -34,8 +31,6 @@ const (
 	stringParamSeparator = rune(0)
 	stringValueSeparator = rune(1)
 )
-
-type RequestType int
 
 type LabelNamesRequest struct {
 	Matchers []*labels.Matcher
@@ -60,10 +55,6 @@ func (r *LabelNamesRequest) String() string {
 	b.WriteString(strconv.Itoa(r.Limit))
 
 	return b.String()
-}
-
-func (r *LabelNamesRequest) RequestType() RequestType {
-	return RequestTypeLabelNames
 }
 
 // DecodeLabelNamesRequest decodes the input http.Request into a LabelNamesRequest.
@@ -130,10 +121,6 @@ func (r *LabelValuesRequest) String() string {
 	b.WriteString(strconv.Itoa(r.Limit))
 
 	return b.String()
-}
-
-func (r *LabelValuesRequest) RequestType() RequestType {
-	return RequestTypeLabelValues
 }
 
 // DecodeLabelValuesRequest decodes the input http.Request into a LabelValuesRequest.

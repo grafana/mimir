@@ -3216,6 +3216,17 @@
         },
         {
           "kind": "field",
+          "name": "results_cache_ttl_for_labels_query",
+          "required": false,
+          "desc": "Time to live duration for cached label names and label values query results. The value 0 disables the cache.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.results-cache-ttl-for-labels-query",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cache_unaligned_requests",
           "required": false,
           "desc": "Cache requests that are not step-aligned.",
