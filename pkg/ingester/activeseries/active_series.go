@@ -57,16 +57,20 @@ type seriesStripe struct {
 	// without holding the lock -- hence the atomic).
 	oldestEntryTs atomic.Int64
 
-	mu             sync.RWMutex
-	refs           map[uint64]seriesEntry
-	active         int   // Number of active entries in this stripe. Only decreased during purge or clear.
-	activeMatching []int // Number of active entries in this stripe matching each matcher of the configured Matchers.
+	mu                             sync.RWMutex
+	refs                           map[uint64]seriesEntry
+	active                         int   // Number of active entries in this stripe. Only decreased during purge or clear.
+	activeMatching                 []int // Number of active entries in this stripe matching each matcher of the configured Matchers.
+	activeNativeHistograms         int   // Number of active entries in this stripe. Only decreased during purge or clear.
+	activeMatchingNativeHistograms []int // Number of active entries in this stripe matching each matcher of the configured Matchers.
 }
 
 // seriesEntry holds a timestamp for single series.
 type seriesEntry struct {
-	nanos   *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
-	matches preAllocDynamicSlice //  Index of the matcher matching
+	nanos                     *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
+	matches                   preAllocDynamicSlice //  Index of the matcher matching
+	isNativeHistogram         bool
+	numNativeHistogramBuckets int
 }
 
 func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
@@ -104,10 +108,10 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 }
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
-func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.Time) {
+func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.Time, hasNativeHistograms bool, numNativeHistogramBuckets int) {
 	stripeID := ref % numStripes
 
-	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref)
+	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, hasNativeHistograms, numNativeHistogramBuckets)
 }
 
 // Purge purges expired entries and returns true if enough time has passed since
@@ -134,31 +138,40 @@ func (c *ActiveSeries) ContainsRef(ref uint64) bool {
 	return c.stripes[stripeID].containsRef(ref)
 }
 
-// Active returns the total number of active series. This method does not purge
+// Active returns the total number of active series and the total number
+// of active native histogram series. This method does not purge
 // expired entries, so Purge should be called periodically.
-func (c *ActiveSeries) Active() int {
+func (c *ActiveSeries) Active() (int, int) {
 	total := 0
+	totalNativeHistograms := 0
 	for s := 0; s < numStripes; s++ {
-		total += c.stripes[s].getTotal()
+		all, histograms := c.stripes[s].getTotal()
+		total += all
+		totalNativeHistograms += histograms
 	}
-	return total
+	return total, totalNativeHistograms
 }
 
 // ActiveWithMatchers returns the total number of active series, as well as a
 // slice of active series matching each one of the custom trackers provided (in
-// the same order as custom trackers are defined). This method does not purge
+// the same order as custom trackers are defined), and then the same thing for
+// only active series that are native histograms. This method does not purge
 // expired entries, so Purge should be called periodically.
-func (c *ActiveSeries) ActiveWithMatchers() (int, []int) {
+func (c *ActiveSeries) ActiveWithMatchers() (int, []int, int, []int) {
 	c.matchersMutex.RLock()
 	defer c.matchersMutex.RUnlock()
 
 	total := 0
 	totalMatching := resizeAndClear(len(c.matchers.MatcherNames()), nil)
+	totalNativeHistograms := 0
+	totalMatchingNativeHistograms := resizeAndClear(len(c.matchers.MatcherNames()), nil)
 	for s := 0; s < numStripes; s++ {
-		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
+		all, histograms := c.stripes[s].getTotalAndUpdateMatching(totalMatching, totalMatchingNativeHistograms)
+		total += all
+		totalNativeHistograms += histograms
 	}
 
-	return total, totalMatching
+	return total, totalMatching, totalNativeHistograms, totalMatchingNativeHistograms
 }
 
 func (s *seriesStripe) containsRef(ref uint64) bool {
@@ -170,15 +183,16 @@ func (s *seriesStripe) containsRef(ref uint64) bool {
 }
 
 // getTotal will return the total active series in the stripe
-func (s *seriesStripe) getTotal() int {
+// and the total active series that are native histograms.
+func (s *seriesStripe) getTotal() (int, int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.active
+	return s.active, s.activeNativeHistograms
 }
 
 // getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
-// with each matcher's total.
-func (s *seriesStripe) getTotalAndUpdateMatching(matching []int) int {
+// with each matcher's total, and will also do the same for total active series that are native histograms.
+func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeHistograms []int) (int, int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -186,17 +200,20 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int) int {
 	for i, a := range s.activeMatching {
 		matching[i] += a
 	}
+	for i, a := range s.activeMatchingNativeHistograms {
+		matchingNativeHistograms[i] += a
+	}
 
-	return s.active
+	return s.active, s.activeNativeHistograms
 }
 
-func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref uint64) {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref uint64, hasNativeHistograms bool, numNativeHistogramBuckets int) {
 	nowNanos := now.UnixNano()
 
 	e := s.findEntryForSeries(ref)
 	entryTimeSet := false
 	if e == nil {
-		e, entryTimeSet = s.findOrCreateEntryForSeries(ref, series, nowNanos)
+		e, entryTimeSet = s.findOrCreateEntryForSeries(ref, series, nowNanos, hasNativeHistograms, numNativeHistogramBuckets)
 	}
 
 	if !entryTimeSet {
@@ -222,7 +239,7 @@ func (s *seriesStripe) findEntryForSeries(ref uint64) *atomic.Int64 {
 	return s.refs[ref].nanos
 }
 
-func (s *seriesStripe) findOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64) (*atomic.Int64, bool) {
+func (s *seriesStripe) findOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64, hasNativeHistograms bool, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -237,13 +254,22 @@ func (s *seriesStripe) findOrCreateEntryForSeries(ref uint64, series labels.Labe
 	matchesLen := matches.len()
 
 	s.active++
+	if hasNativeHistograms {
+		s.activeNativeHistograms++
+	}
 	for i := 0; i < matchesLen; i++ {
-		s.activeMatching[matches.get(i)]++
+		match := matches.get(i)
+		s.activeMatching[match]++
+		if hasNativeHistograms {
+			s.activeMatchingNativeHistograms[match]++
+		}
 	}
 
 	e := seriesEntry{
-		nanos:   atomic.NewInt64(nowNanos),
-		matches: matches,
+		nanos:                     atomic.NewInt64(nowNanos),
+		matches:                   matches,
+		isNativeHistogram:         hasNativeHistograms,
+		numNativeHistogramBuckets: numNativeHistogramBuckets,
 	}
 
 	s.refs[ref] = e
@@ -259,8 +285,10 @@ func (s *seriesStripe) clear() {
 	s.oldestEntryTs.Store(0)
 	s.refs = map[uint64]seriesEntry{}
 	s.active = 0
+	s.activeNativeHistograms = 0
 	for i := range s.activeMatching {
 		s.activeMatching[i] = 0
+		s.activeMatchingNativeHistograms[i] = 0
 	}
 }
 
@@ -272,8 +300,10 @@ func (s *seriesStripe) reinitialize(asm *Matchers) {
 	s.oldestEntryTs.Store(0)
 	s.refs = map[uint64]seriesEntry{}
 	s.active = 0
+	s.activeNativeHistograms = 0
 	s.matchers = asm
 	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
+	s.activeMatchingNativeHistograms = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistograms)
 }
 
 func (s *seriesStripe) purge(keepUntil time.Time) {
@@ -287,7 +317,9 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 	defer s.mu.Unlock()
 
 	s.active = 0
+	s.activeNativeHistograms = 0
 	s.activeMatching = resizeAndClear(len(s.activeMatching), s.activeMatching)
+	s.activeMatchingNativeHistograms = resizeAndClear(len(s.activeMatchingNativeHistograms), s.activeMatchingNativeHistograms)
 
 	oldest := int64(math.MaxInt64)
 	for ref, entry := range s.refs {
@@ -298,9 +330,16 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 		}
 
 		s.active++
+		if entry.isNativeHistogram {
+			s.activeNativeHistograms++
+		}
 		ml := entry.matches.len()
 		for i := 0; i < ml; i++ {
-			s.activeMatching[entry.matches.get(i)]++
+			match := entry.matches.get(i)
+			s.activeMatching[match]++
+			if entry.isNativeHistogram {
+				s.activeMatchingNativeHistograms[match]++
+			}
 		}
 		if ts < oldest {
 			oldest = ts

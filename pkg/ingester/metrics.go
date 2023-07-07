@@ -34,9 +34,11 @@ type ingesterMetrics struct {
 	memMetadataCreatedTotal *prometheus.CounterVec
 	memMetadataRemovedTotal *prometheus.CounterVec
 
-	activeSeriesLoading               *prometheus.GaugeVec
-	activeSeriesPerUser               *prometheus.GaugeVec
-	activeSeriesCustomTrackersPerUser *prometheus.GaugeVec
+	activeSeriesLoading                               *prometheus.GaugeVec
+	activeSeriesPerUser                               *prometheus.GaugeVec
+	activeSeriesCustomTrackersPerUser                 *prometheus.GaugeVec
+	activeSeriesPerUserNativeHistograms               *prometheus.GaugeVec
+	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
 
 	// Global limit metrics
 	maxUsersGauge           prometheus.GaugeFunc
@@ -254,6 +256,18 @@ func newIngesterMetrics(
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
 
+		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeSeriesPerUserNativeHistograms: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_native_histogram_series",
+			Help: "Number of currently active native histogram series per user.",
+		}, []string{"user"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeSeriesCustomTrackersPerUserNativeHistograms: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_native_histogram_series_custom_tracker",
+			Help: "Number of currently active native histogram series matching a pre-configured label matchers per user.",
+		}, []string{"user", "name"}),
+
 		compactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_compactions_triggered_total",
 			Help: "Total number of triggered compactions.",
@@ -315,8 +329,10 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
 	m.activeSeriesLoading.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)
+	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
 	for _, name := range customTrackerMetrics {
 		m.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+		m.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
 	}
 }
 

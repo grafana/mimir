@@ -22,37 +22,56 @@ const DefaultTimeout = 5 * time.Minute
 func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
 	ref2, ls2 := uint64(2), labels.FromStrings("a", "2")
+	ref3, ls3 := uint64(3), labels.FromStrings("a", "3")
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 	valid := c.Purge(time.Now())
-	allActive, activeMatching := c.ActiveWithMatchers()
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Nil(t, activeMatching)
+	assert.Equal(t, 0, allActiveHistograms)
+	assert.Nil(t, activeMatchingHistograms)
 	assert.True(t, valid)
 
-	c.UpdateSeries(ls1, ref1, time.Now())
+	c.UpdateSeries(ls1, ref1, time.Now(), false, 0)
 	valid = c.Purge(time.Now())
-	allActive, _ = c.ActiveWithMatchers()
+	allActive, _, allActiveHistograms, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
 	assert.True(t, valid)
-	allActive = c.Active()
+	allActive, allActiveHistograms = c.Active()
 	assert.Equal(t, 1, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
 
-	c.UpdateSeries(ls1, ref1, time.Now())
+	c.UpdateSeries(ls1, ref1, time.Now(), false, 0)
 	valid = c.Purge(time.Now())
-	allActive, _ = c.ActiveWithMatchers()
+	allActive, _, allActiveHistograms, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
 	assert.True(t, valid)
-	allActive = c.Active()
+	allActive, allActiveHistograms = c.Active()
 	assert.Equal(t, 1, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
 
-	c.UpdateSeries(ls2, ref2, time.Now())
+	c.UpdateSeries(ls2, ref2, time.Now(), false, 0)
 	valid = c.Purge(time.Now())
-	allActive, _ = c.ActiveWithMatchers()
+	allActive, _, allActiveHistograms, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 2, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
 	assert.True(t, valid)
-	allActive = c.Active()
+	allActive, allActiveHistograms = c.Active()
 	assert.Equal(t, 2, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
+
+	c.UpdateSeries(ls3, ref3, time.Now(), true, 0)
+	valid = c.Purge(time.Now())
+	allActive, _, allActiveHistograms, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 3, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.True(t, valid)
+	allActive, allActiveHistograms = c.Active()
+	assert.Equal(t, 3, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
 }
 
 func TestActiveSeries_ContainsRef(t *testing.T) {
@@ -74,7 +93,7 @@ func TestActiveSeries_ContainsRef(t *testing.T) {
 
 			// Update each series with a different timestamp according to each index
 			for i := 0; i < len(series); i++ {
-				c.UpdateSeries(series[i], refs[i], time.Unix(int64(i), 0))
+				c.UpdateSeries(series[i], refs[i], time.Unix(int64(i), 0), false, 0)
 			}
 
 			c.purge(time.Unix(int64(ttl), 0))
@@ -83,7 +102,7 @@ func TestActiveSeries_ContainsRef(t *testing.T) {
 			// because the first ttl series should be purged
 			exp := len(series) - (ttl)
 			valid := c.Purge(mockedTime)
-			allActive, activeMatching := c.ActiveWithMatchers()
+			allActive, activeMatching, _, _ := c.ActiveWithMatchers()
 			assert.Equal(t, exp, allActive)
 			assert.Nil(t, activeMatching)
 			assert.True(t, valid)
@@ -99,53 +118,94 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
 	ref2, ls2 := uint64(2), labels.FromStrings("a", "2")
 	ref3, ls3 := uint64(3), labels.FromStrings("a", "3")
+	ref4, ls4 := uint64(4), labels.FromStrings("a", "4")
+	ref5, ls5 := uint64(5), labels.FromStrings("a", "5")
 
-	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3"}`}))
+	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3|4"}`}))
 
 	c := NewActiveSeries(asm, DefaultTimeout)
 	valid := c.Purge(time.Now())
-	allActive, activeMatching := c.ActiveWithMatchers()
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0}, activeMatching)
+	assert.Equal(t, 0, allActiveHistograms)
+	assert.Equal(t, []int{0}, activeMatchingHistograms)
 	assert.True(t, valid)
-	allActive = c.Active()
+	allActive, allActiveHistograms = c.Active()
 	assert.Equal(t, 0, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
 
-	c.UpdateSeries(ls1, ref1, time.Now())
+	c.UpdateSeries(ls1, ref1, time.Now(), false, 0)
 	valid = c.Purge(time.Now())
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{0}, activeMatching)
+	assert.Equal(t, 0, allActiveHistograms)
+	assert.Equal(t, []int{0}, activeMatchingHistograms)
 	assert.True(t, valid)
-	allActive = c.Active()
+	allActive, allActiveHistograms = c.Active()
 	assert.Equal(t, 1, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
 
-	c.UpdateSeries(ls2, ref2, time.Now())
+	c.UpdateSeries(ls2, ref2, time.Now(), false, 0)
 	valid = c.Purge(time.Now())
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms = c.ActiveWithMatchers()
 	assert.Equal(t, 2, allActive)
 	assert.Equal(t, []int{1}, activeMatching)
+	assert.Equal(t, 0, allActiveHistograms)
+	assert.Equal(t, []int{0}, activeMatchingHistograms)
 	assert.True(t, valid)
-	allActive = c.Active()
+	allActive, allActiveHistograms = c.Active()
 	assert.Equal(t, 2, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
 
-	c.UpdateSeries(ls3, ref3, time.Now())
+	c.UpdateSeries(ls3, ref3, time.Now(), false, 0)
 	valid = c.Purge(time.Now())
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms = c.ActiveWithMatchers()
 	assert.Equal(t, 3, allActive)
 	assert.Equal(t, []int{2}, activeMatching)
+	assert.Equal(t, 0, allActiveHistograms)
+	assert.Equal(t, []int{0}, activeMatchingHistograms)
 	assert.True(t, valid)
-	allActive = c.Active()
+	allActive, allActiveHistograms = c.Active()
 	assert.Equal(t, 3, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
 
-	c.UpdateSeries(ls3, ref3, time.Now())
+	c.UpdateSeries(ls3, ref3, time.Now(), false, 0)
 	valid = c.Purge(time.Now())
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms = c.ActiveWithMatchers()
 	assert.Equal(t, 3, allActive)
 	assert.Equal(t, []int{2}, activeMatching)
+	assert.Equal(t, 0, allActiveHistograms)
+	assert.Equal(t, []int{0}, activeMatchingHistograms)
 	assert.True(t, valid)
-	allActive = c.Active()
+	allActive, allActiveHistograms = c.Active()
 	assert.Equal(t, 3, allActive)
+	assert.Equal(t, 0, allActiveHistograms)
+
+	c.UpdateSeries(ls4, ref4, time.Now(), true, 0)
+	valid = c.Purge(time.Now())
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms = c.ActiveWithMatchers()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, []int{3}, activeMatching)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, []int{1}, activeMatchingHistograms)
+	assert.True(t, valid)
+	allActive, allActiveHistograms = c.Active()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+
+	c.UpdateSeries(ls5, ref5, time.Now(), true, 0)
+	valid = c.Purge(time.Now())
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms = c.ActiveWithMatchers()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, []int{3}, activeMatching)
+	assert.Equal(t, 2, allActiveHistograms)
+	assert.Equal(t, []int{1}, activeMatchingHistograms)
+	assert.True(t, valid)
+	allActive, allActiveHistograms = c.Active()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, 2, allActiveHistograms)
 }
 
 func labelsWithHashCollision() (labels.Labels, labels.Labels) {
@@ -171,11 +231,11 @@ func TestActiveSeries_ShouldCorrectlyHandleHashCollisions(t *testing.T) {
 	ref1, ref2 := uint64(1), uint64(2)
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
-	c.UpdateSeries(ls1, ref1, time.Now())
-	c.UpdateSeries(ls2, ref2, time.Now())
+	c.UpdateSeries(ls1, ref1, time.Now(), false, 0)
+	c.UpdateSeries(ls2, ref2, time.Now(), false, 0)
 
 	valid := c.Purge(time.Now())
-	allActive, _ := c.ActiveWithMatchers()
+	allActive, _, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 2, allActive)
 	assert.True(t, valid)
 }
@@ -198,7 +258,7 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 			c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 
 			for i := 0; i < len(series); i++ {
-				c.UpdateSeries(series[i], refs[i], time.Unix(int64(i), 0))
+				c.UpdateSeries(series[i], refs[i], time.Unix(int64(i), 0), false, 0)
 			}
 
 			c.purge(time.Unix(int64(ttl), 0))
@@ -208,7 +268,7 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 			exp := len(series) - (ttl)
 			// Purge is not intended to purge
 			valid := c.Purge(mockedTime)
-			allActive, activeMatching := c.ActiveWithMatchers()
+			allActive, activeMatching, _, _ := c.ActiveWithMatchers()
 			assert.Equal(t, exp, allActive)
 			assert.Nil(t, activeMatching)
 			assert.True(t, valid)
@@ -240,7 +300,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 			expMatchingSeries := 0
 
 			for i, s := range series {
-				c.UpdateSeries(series[i], refs[i], time.Unix(int64(i), 0))
+				c.UpdateSeries(series[i], refs[i], time.Unix(int64(i), 0), false, 0)
 
 				// if this series is matching, and they're within the ttl
 				if asm.matchers[0].Matches(s) && i >= ttl {
@@ -253,7 +313,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 			c.purge(time.Unix(int64(ttl), 0))
 
 			valid := c.Purge(mockedTime)
-			allActive, activeMatching := c.ActiveWithMatchers()
+			allActive, activeMatching, _, _ := c.ActiveWithMatchers()
 			assert.Equal(t, exp, allActive)
 			assert.Equal(t, []int{expMatchingSeries}, activeMatching)
 			assert.True(t, valid)
@@ -268,27 +328,27 @@ func TestActiveSeries_PurgeOpt(t *testing.T) {
 	currentTime := time.Now()
 	c := NewActiveSeries(&Matchers{}, 59*time.Second)
 
-	c.UpdateSeries(ls1, ref1, currentTime.Add(-2*time.Minute))
-	c.UpdateSeries(ls2, ref2, currentTime)
+	c.UpdateSeries(ls1, ref1, currentTime.Add(-2*time.Minute), false, 0)
+	c.UpdateSeries(ls2, ref2, currentTime, false, 0)
 
 	valid := c.Purge(currentTime)
-	allActive, _ := c.ActiveWithMatchers()
+	allActive, _, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.True(t, valid)
 
-	c.UpdateSeries(ls1, ref1, currentTime.Add(-1*time.Minute))
-	c.UpdateSeries(ls2, ref2, currentTime)
+	c.UpdateSeries(ls1, ref1, currentTime.Add(-1*time.Minute), false, 0)
+	c.UpdateSeries(ls2, ref2, currentTime, false, 0)
 
 	valid = c.Purge(currentTime)
-	allActive, _ = c.ActiveWithMatchers()
+	allActive, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.True(t, valid)
 
 	// This will *not* update the series, since there is already newer timestamp.
-	c.UpdateSeries(ls2, ref2, currentTime.Add(-1*time.Minute))
+	c.UpdateSeries(ls2, ref2, currentTime.Add(-1*time.Minute), false, 0)
 
 	valid = c.Purge(currentTime)
-	allActive, _ = c.ActiveWithMatchers()
+	allActive, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.True(t, valid)
 }
@@ -305,14 +365,14 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	c := NewActiveSeries(asm, DefaultTimeout)
 
 	valid := c.Purge(currentTime)
-	allActive, activeMatching := c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0}, activeMatching)
 	assert.True(t, valid)
 
-	c.UpdateSeries(ls1, ref1, currentTime)
+	c.UpdateSeries(ls1, ref1, currentTime, false, 0)
 	valid = c.Purge(currentTime)
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{1}, activeMatching)
 	assert.True(t, valid)
@@ -323,10 +383,10 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 
 	// Adding timeout time to make Purge results valid.
 	currentTime = currentTime.Add(DefaultTimeout)
-	c.UpdateSeries(ls1, ref1, currentTime)
-	c.UpdateSeries(ls2, ref2, currentTime)
+	c.UpdateSeries(ls1, ref1, currentTime, false, 0)
+	c.UpdateSeries(ls2, ref2, currentTime, false, 0)
 	valid = c.Purge(currentTime)
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 2, allActive)
 	assert.Equal(t, []int{2}, activeMatching)
 	assert.True(t, valid)
@@ -336,9 +396,9 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 
 	// Adding timeout time to make Purge results valid.
 	currentTime = currentTime.Add(DefaultTimeout)
-	c.UpdateSeries(ls3, ref3, currentTime)
+	c.UpdateSeries(ls3, ref3, currentTime, false, 0)
 	valid = c.Purge(currentTime)
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int(nil), activeMatching)
 	assert.True(t, valid)
@@ -351,9 +411,9 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 
 	// Adding timeout time to make Purge results valid.
 	currentTime = currentTime.Add(DefaultTimeout)
-	c.UpdateSeries(ls4, ref4, currentTime)
+	c.UpdateSeries(ls4, ref4, currentTime, false, 0)
 	valid = c.Purge(currentTime)
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{0, 1}, activeMatching)
 	assert.True(t, valid)
@@ -370,14 +430,14 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	currentTime := time.Now()
 	c := NewActiveSeries(asm, DefaultTimeout)
 	valid := c.Purge(currentTime)
-	allActive, activeMatching := c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0, 0}, activeMatching)
 	assert.True(t, valid)
 
-	c.UpdateSeries(ls1, ref1, currentTime)
+	c.UpdateSeries(ls1, ref1, currentTime, false, 0)
 	valid = c.Purge(currentTime)
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{1, 1}, activeMatching)
 	assert.True(t, valid)
@@ -391,7 +451,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	// Adding timeout time to make Purge results valid.
 	currentTime = currentTime.Add(DefaultTimeout)
 	valid = c.Purge(currentTime)
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0}, activeMatching)
 	assert.True(t, valid)
@@ -409,14 +469,14 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 
 	c := NewActiveSeries(asm, DefaultTimeout)
 	valid := c.Purge(currentTime)
-	allActive, activeMatching := c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0, 0}, activeMatching)
 	assert.True(t, valid)
 
-	c.UpdateSeries(ls1, ref1, currentTime)
+	c.UpdateSeries(ls1, ref1, currentTime, false, 0)
 	valid = c.Purge(currentTime)
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{1, 1}, activeMatching)
 	assert.True(t, valid)
@@ -432,7 +492,7 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 	currentTime = currentTime.Add(DefaultTimeout)
 
 	valid = c.Purge(currentTime)
-	allActive, activeMatching = c.ActiveWithMatchers()
+	allActive, activeMatching, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0, 0}, activeMatching)
 	assert.True(t, valid)
@@ -468,7 +528,7 @@ func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) 
 
 			for ix := 0; ix < max; ix++ {
 				now = now.Add(time.Duration(ix) * time.Millisecond)
-				c.UpdateSeries(series, ref, now)
+				c.UpdateSeries(series, ref, now, false, 0)
 			}
 		}()
 	}
@@ -523,7 +583,7 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 				c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 				for round := 0; round <= tt.nRounds; round++ {
 					for ix := 0; ix < tt.nSeries; ix++ {
-						c.UpdateSeries(series[ix], refs[ix], time.Unix(0, now))
+						c.UpdateSeries(series[ix], refs[ix], time.Unix(0, now), false, 0)
 						now++
 					}
 				}
@@ -560,14 +620,14 @@ func benchmarkPurge(b *testing.B, twice bool) {
 		// Prepare series
 		for ix, s := range series {
 			if ix < numExpiresSeries {
-				c.UpdateSeries(s, refs[ix], currentTime.Add(-DefaultTimeout))
+				c.UpdateSeries(s, refs[ix], currentTime.Add(-DefaultTimeout), false, 0)
 			} else {
-				c.UpdateSeries(s, refs[ix], currentTime)
+				c.UpdateSeries(s, refs[ix], currentTime, false, 0)
 			}
 		}
 
 		valid := c.Purge(currentTime)
-		allActive, _ := c.ActiveWithMatchers()
+		allActive, _, _, _ := c.ActiveWithMatchers()
 		assert.Equal(b, numSeries, allActive)
 		assert.True(b, valid)
 		b.StartTimer()
@@ -575,13 +635,13 @@ func benchmarkPurge(b *testing.B, twice bool) {
 		// Purge is going to purge everything
 		currentTime = currentTime.Add(DefaultTimeout)
 		valid = c.Purge(currentTime)
-		allActive, _ = c.ActiveWithMatchers()
+		allActive, _, _, _ = c.ActiveWithMatchers()
 		assert.Equal(b, numSeries-numExpiresSeries, allActive)
 		assert.True(b, valid)
 
 		if twice {
 			valid = c.Purge(currentTime)
-			allActive, _ = c.ActiveWithMatchers()
+			allActive, _, _, _ = c.ActiveWithMatchers()
 			assert.Equal(b, numSeries-numExpiresSeries, allActive)
 			assert.True(b, valid)
 		}

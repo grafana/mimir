@@ -547,12 +547,17 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
 		} else {
-			allActive, activeMatching := userDB.activeSeries.ActiveWithMatchers()
+			allActive, activeMatching, allActiveHistograms, activeMatchingHistograms := userDB.activeSeries.ActiveWithMatchers()
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 			} else {
 				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+			}
+			if allActiveHistograms > 0 {
+				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
+			} else {
+				i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
 			}
 
 			for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
@@ -561,6 +566,11 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 					i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
 				} else {
 					i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+				}
+				if activeMatchingHistograms[idx] > 0 {
+					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
+				} else {
+					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
 				}
 			}
 		}
@@ -1006,6 +1016,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return wrapWithUser(err, userID)
 		}
 
+		hasNativeHistograms := false
+		numNativeHistogramBuckets := 0
 		if nativeHistogramsIngestionEnabled {
 			for _, h := range ts.Histograms {
 				var (
@@ -1045,10 +1057,21 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				return wrapWithUser(err, userID)
 			}
+			numNativeHistograms := len(ts.Histograms)
+			if numNativeHistograms > 0 {
+				hasNativeHistograms = true
+				lastNativeHistogram := ts.Histograms[numNativeHistograms-1]
+				for _, span := range lastNativeHistogram.PositiveSpans {
+					numNativeHistogramBuckets += int(span.Length)
+				}
+				for _, span := range lastNativeHistogram.NegativeSpans {
+					numNativeHistogramBuckets += int(span.Length)
+				}
+			}
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, uint64(ref), startAppend)
+			activeSeries.UpdateSeries(nonCopiedLabels, uint64(ref), startAppend, hasNativeHistograms, numNativeHistogramBuckets)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -1438,7 +1461,7 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserSt
 	case client.IN_MEMORY:
 		series = db.Head().NumSeries()
 	case client.ACTIVE:
-		activeSeries := db.activeSeries.Active()
+		activeSeries, _ := db.activeSeries.Active()
 		series = uint64(activeSeries)
 	default:
 		return nil, fmt.Errorf("unknown count method %q", req.GetCountMethod())
