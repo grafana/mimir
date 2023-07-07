@@ -2562,7 +2562,8 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 
 		// Estimate the number of series that would be dropped from the TSDB Head if we would
 		// compact the head up until "now - active series idle timeout".
-		estimatedSeriesReduction := util_math.Max(0, int64(userMemorySeries)-int64(db.activeSeries.Active()))
+		totalActiveSeries, _, _ := db.activeSeries.Active()
+		estimatedSeriesReduction := util_math.Max(0, int64(userMemorySeries)-int64(totalActiveSeries))
 		estimations = append(estimations, seriesReductionEstimation{
 			userID:              userID,
 			estimatedCount:      estimatedSeriesReduction,
