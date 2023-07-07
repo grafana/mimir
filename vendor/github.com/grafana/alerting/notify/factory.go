@@ -76,7 +76,6 @@ func BuildReceiverIntegrations(
 		ci(i, cfg.Metadata, dinding.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), nl(cfg.Metadata)))
 	}
 	for i, cfg := range receiver.DiscordConfigs {
-		fmt.Println("Discord configs webhook url:", cfg.Settings.WebhookURL)
 		ci(i, cfg.Metadata, discord.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata), version))
 	}
 	for i, cfg := range receiver.EmailConfigs {

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
@@ -403,12 +402,10 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 		}
 		result.DingdingConfigs = append(result.DingdingConfigs, newNotifierConfig(receiver, cfg))
 	case "discord":
-		fmt.Println("Discord settings:", string(receiver.Settings))
 		cfg, err := discord.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		spew.Dump("Discord config:", cfg)
 		result.DiscordConfigs = append(result.DiscordConfigs, newNotifierConfig(receiver, cfg))
 	case "email":
 		cfg, err := email.NewConfig(receiver.Settings)

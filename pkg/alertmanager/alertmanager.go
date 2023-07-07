@@ -14,12 +14,17 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/alerting/images"
+	alertingLogging "github.com/grafana/alerting/logging"
+	alertingNotify "github.com/grafana/alerting/notify"
+	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
@@ -327,8 +332,6 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *AlertmanagerConfig, raw
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
 
-	am.api.Update(&conf.Config, func(_ model.LabelSet) {})
-
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
 		am.inhibitor.Stop()
@@ -353,8 +356,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *AlertmanagerConfig, raw
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	// TODO(santiago): add integrations!
-	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := buildIntegrationsMap(conf.Receivers, conf.GrafanaReceivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -365,7 +367,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *AlertmanagerConfig, raw
 			return newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
 		}
 		return notifier
-	})
+	}, userID)
 	if err != nil {
 		return nil
 	}
@@ -379,8 +381,17 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *AlertmanagerConfig, raw
 		timeIntervals[ti.Name] = ti.TimeIntervals
 	}
 
+	var receivers []*notify.Receiver
+	for k, v := range integrationsMap {
+		// TODO(santiago): which receivers are active?
+		receivers = append(receivers, notify.NewReceiver(k, true, v))
+	}
+
+	// NOTE(santiago): now needs slice of receivers as second argument
+	am.api.Update(&conf.Config, receivers, func(_ model.LabelSet) {})
+
 	pipeline := am.pipelineBuilder.New(
-		integrationsMap,
+		receivers,
 		waitFunc,
 		am.inhibitor,
 		silence.NewSilencer(am.silences, am.marker, am.logger),
@@ -448,8 +459,8 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a
 // list of receiver config.
-func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
-	integrationsMap := make(map[string][]notify.Integration, len(nc))
+func buildIntegrationsMap(nc []config.Receiver, grafanaReceivers []*alertingNotify.APIReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier, tenantID string) (map[string][]*notify.Integration, error) {
+	integrationsMap := make(map[string][]*notify.Integration, len(nc))
 	for _, rcv := range nc {
 		integrations, err := buildReceiverIntegrations(rcv, tmpl, firewallDialer, logger, notifierWrapper)
 		if err != nil {
@@ -458,44 +469,54 @@ func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewal
 		integrationsMap[rcv.Name] = integrations
 	}
 
-	// apiReceiver := alertingNotify.APIReceiver{
-	// 	GrafanaIntegrations: grafanaIntegrations,
-	// }
+	// NOTE(santiago): no-op
+	decryptFn := func(ctx context.Context, sjd map[string][]byte, key string, fallback string) string {
+		if value, ok := sjd[key]; ok {
+			return string(value)
+		}
+		return fallback
+	}
 
-	// decryptFn := func(ctx context.Context, sjd map[string][]byte, key string, fallback string) string {
-	// 	return key
-	// }
-	// receiverCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), &apiReceiver, decryptFn)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	whSenderFn := func(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
+		return sender{}, nil
+	}
+	emailSenderFn := func(n alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
+		return sender{}, nil
+	}
 
-	// // TODO(santiago): actually add senders...
-	// whSenderFn := func(n receivers.Metadata) (receivers.WebhookSender, error) {
-	// 	return nil, nil
-	// }
-	// emailSenderFn := func(n receivers.Metadata) (receivers.EmailSender, error) {
-	// 	return nil, nil
-	// }
+	// TODO(santiago): actual logger factory
+	var loggerFactory alertingLogging.LoggerFactory = func(logger string, ctx ...interface{}) alertingLogging.Logger {
+		return alertingLogging.FakeLogger{}
+	}
 
-	// var loggerFactory alertingLogging.LoggerFactory = func(logger string, ctx ...interface{}) alertingLogging.Logger {
-	// 	return alertingLogging.FakeLogger{}
-	// }
+	for _, rcv := range grafanaReceivers {
+		receiverCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, decryptFn)
+		if err != nil {
+			return nil, err
+		}
 
-	// fmt.Println("Haciendo los notifiers!!! :P")
-	// alertingNotify.BuildReceiverIntegrations(
-	// 	receiverCfg,
-	// 	tmpl,
-	// 	&images.UnavailableProvider{},
-	// 	loggerFactory,
-	// 	whSenderFn,
-	// 	emailSenderFn,
-	// 	1,
-	// 	"lol",
-	// )
-	// if err != nil {
-	// 	return nil, err
-	// }
+		orgID, err := strconv.Atoi(tenantID)
+		if err != nil {
+			fmt.Printf("could not convert tenantID %s into int\n", tenantID)
+		}
+
+		// NOTE(santiago): possibly change BuildReceiverIntegrations to accept strings as orgIDs (e.g. "anonymous")
+		integrations, err := alertingNotify.BuildReceiverIntegrations(
+			receiverCfg,
+			tmpl,
+			&images.UnavailableProvider{},
+			loggerFactory,
+			whSenderFn,
+			emailSenderFn,
+			int64(orgID),
+			"lol",
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		integrationsMap[receiverCfg.Name] = integrations
+	}
 
 	return integrationsMap, nil
 }
@@ -503,10 +524,10 @@ func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewal
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
+func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]*notify.Integration, error) {
 	var (
 		errs         types.MultiError
-		integrations []notify.Integration
+		integrations []*notify.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
 			n, err := f(log.With(logger, "integration", name))
 			if err != nil {

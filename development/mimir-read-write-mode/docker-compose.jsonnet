@@ -6,7 +6,7 @@ std.manifestYamlDoc({
     self.backend +
     self.nginx +
     self.minio +
-    self.grafana +
+    // self.grafana +
     self.grafana_agent +
     self.memcached +
     {},
@@ -94,19 +94,19 @@ std.manifestYamlDoc({
     },
   },
 
-  grafana:: {
-    grafana: {
-      image: 'grafana/grafana:9.4.3',
-      environment: [
-        'GF_AUTH_ANONYMOUS_ENABLED=true',
-        'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
-      ],
-      volumes: [
-        './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
-      ],
-      ports: ['3000:3000'],
-    },
-  },
+  // grafana:: {
+  //   grafana: {
+  //     image: 'grafana/grafana:9.4.3',
+  //     environment: [
+  //       'GF_AUTH_ANONYMOUS_ENABLED=true',
+  //       'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
+  //     ],
+  //     volumes: [
+  //       './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
+  //     ],
+  //     ports: ['3000:3000'],
+  //   },
+  // },
 
   grafana_agent:: {
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
