@@ -141,12 +141,24 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	}
 
 	// TODO: construct postingoffsettable from sample
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad, true)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSample(r.factory, sample, int(r.toc.PostingsOffsetTable), indexLastPostingListEndBound, postingOffsetsInMemSampling)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: construct nameSymbols from memory
+	labelNames, err := r.postingsOffsetTable.LabelNames()
+	if err != nil {
+		return nil, err
+	}
+
+	r.nameSymbols = make(map[uint32]string, len(labelNames))
+	if err = r.symbols.ForEachSymbol(labelNames, func(sym string, offset uint32) error {
+		r.nameSymbols[offset] = sym
+		return nil
+	}); err != nil {
+		return nil, err
+	}
 
 	return r, err
 }
@@ -201,7 +213,7 @@ func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger
 		return nil, fmt.Errorf("cannot load symbols: %w", err)
 	}
 
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad, false)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
 	if err != nil {
 		return nil, err
 	}
