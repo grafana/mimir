@@ -7,7 +7,7 @@ metadata:
   namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.4
+    chart: minio-5.0.7
     release: keda-autoscaling-metamonitoring-values
     heritage: Helm
 spec:
@@ -28,8 +28,8 @@ spec:
         app: minio
         release: keda-autoscaling-metamonitoring-values
       annotations:
-        checksum/secrets: 01b63763c5339c9382af3db71c156991073e1639beb76b1da5efef5aee1284e9
-        checksum/config: b9a834569278ffb212351e1d62c522d70beac8e03f98a2a1e19a8b5b1913a304
+        checksum/secrets: 28301a40d441e1dfdb8ee6e66247fa8728acb9c13f24d9fbb87681a401bcf082
+        checksum/config: 0abda6ee9d629199007eb003f9f4d967e7fa257f955d8a60f736054c88b603bb
     spec:
       securityContext:
         runAsUser: 1000
@@ -40,7 +40,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2022-12-12T19-27-27Z"
+          image: "quay.io/minio/minio:RELEASE.2023-02-10T18-48-39Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

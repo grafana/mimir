@@ -33,14 +33,14 @@ spec:
   - metadata:
       metricName: cortex_distributor_cpu_hpa_default
       query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="distributor",namespace="citestns"}[5m]))[15m:]) * 1000
-      serverAddress: 
+      serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus
       threshold: "80"
       customHeaders: "X-Scope-OrgID=tenant-1"
     type: prometheus
   - metadata:
       metricName: cortex_distributor_memory_hpa_default
       query: max_over_time(sum(container_memory_working_set_bytes{container="distributor",namespace="citestns"})[15m:])
-      serverAddress: 
+      serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus
       threshold: "429496729"
       customHeaders: "X-Scope-OrgID=tenant-1"
     type: prometheus

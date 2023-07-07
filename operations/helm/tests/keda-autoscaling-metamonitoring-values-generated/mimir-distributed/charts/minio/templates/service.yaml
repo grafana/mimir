@@ -7,7 +7,7 @@ metadata:
   namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.4
+    chart: minio-5.0.7
     release: keda-autoscaling-metamonitoring-values
     heritage: Helm
     monitoring: "true"

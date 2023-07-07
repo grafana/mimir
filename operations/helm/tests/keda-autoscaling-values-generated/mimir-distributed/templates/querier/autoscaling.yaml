@@ -33,7 +33,7 @@ spec:
   - metadata:
       metricName: cortex_querier_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="citestns",quantile="0.75"}[5m]))
-      serverAddress: 
+      serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus
       threshold: "6"
       customHeaders: "X-Scope-OrgID=tenant-1"
     type: prometheus
