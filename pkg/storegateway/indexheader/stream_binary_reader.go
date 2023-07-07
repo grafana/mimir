@@ -80,7 +80,9 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 		return nil, fmt.Errorf("cannot write index header: %w", err)
 	}
 
-	// TODO: construct sample and write to disk; call writeSample()
+	if err := writeSample(binfn, postingOffsetsInMemSampling, logger, metrics, cfg); err != nil {
+		return nil, fmt.Errorf("cannot write index header sample: %w", err)
+	}
 
 	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
 	return newFileStreamBinaryReader(binfn, samplefn, postingOffsetsInMemSampling, logger, metrics, cfg)
@@ -164,7 +166,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 }
 
 // Reads index-header, constructs an abbreviated sample, and write the sample to disk.
-func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (err error) {
 	r := &StreamBinaryReader{
 		factory: streamencoding.NewDecbufFactory(path, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
 	}
@@ -174,14 +176,14 @@ func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger
 	d := r.factory.NewRawDecbuf()
 	defer runutil.CloseWithErrCapture(&err, &d, "new file stream binary reader")
 	if err = d.Err(); err != nil {
-		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
+		return fmt.Errorf("cannot create decoding buffer: %w", err)
 	}
 
 	// Grab the full length of the index header before we read any of it. This is needed
 	// so that we can skip directly to the table of contents at the end of file.
 	indexHeaderSize := d.Len()
 	if magic := d.Be32(); magic != MagicIndex {
-		return nil, fmt.Errorf("invalid magic number %x", magic)
+		return fmt.Errorf("invalid magic number %x", magic)
 	}
 
 	r.version = int(d.Byte())
@@ -196,31 +198,31 @@ func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger
 	indexLastPostingListEndBound := d.Be64()
 
 	if err = d.Err(); err != nil {
-		return nil, fmt.Errorf("cannot read version and index version: %w", err)
+		return fmt.Errorf("cannot read version and index version: %w", err)
 	}
 
 	if r.version != BinaryFormatV1 {
-		return nil, fmt.Errorf("unknown index-header file version %d", r.version)
+		return fmt.Errorf("unknown index-header file version %d", r.version)
 	}
 
 	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
+		return fmt.Errorf("cannot read table-of-contents: %w", err)
 	}
 
 	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
 	if err != nil {
-		return nil, fmt.Errorf("cannot load symbols: %w", err)
+		return fmt.Errorf("cannot load symbols: %w", err)
 	}
 
 	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	labelNames, err := r.postingsOffsetTable.LabelNames()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	r.nameSymbols = make(map[uint32]string, len(labelNames))
@@ -228,10 +230,10 @@ func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger
 		r.nameSymbols[offset] = sym
 		return nil
 	}); err != nil {
-		return nil, err
+		return err
 	}
 
-	return r, nil
+	return err
 }
 
 // newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be

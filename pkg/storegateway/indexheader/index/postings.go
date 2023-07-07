@@ -237,7 +237,7 @@ func NewPostingOffsetTableFromSample(factory *streamencoding.DecbufFactory, samp
 		t.postings[sName].lastValOffset = sOffsets.LastValOffset
 	}
 
-	return &t, nil
+	return &t, err
 }
 
 // readOffsetTable reads an offset table and at the given position calls f for each
