@@ -103,10 +103,11 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	if err != nil {
 		// If sample is not on disk, write sample to disk.
 		level.Debug(logger).Log("msg", "failed to read index-header sample from disk; recreating", "path", samplepath, "err", err)
-		if err := writeSample(binpath, postingOffsetsInMemSampling, logger, metrics, cfg); err != nil {
+		br, err := constructSample(binpath, samplepath, postingOffsetsInMemSampling, logger, metrics, cfg)
+		if err != nil {
 			return nil, fmt.Errorf("cannot write index header sample: %w", err)
 		}
-		return newFileStreamBinaryReader(binpath, samplepath, postingOffsetsInMemSampling, logger, metrics, cfg)
+		return br, err
 	}
 
 	sample := &samplepb.Sample{}
@@ -167,9 +168,9 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 }
 
 // Reads index-header, constructs an abbreviated sample, and write the sample to disk.
-func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (err error) {
+func constructSample(binpath string, samplepath string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
-		factory: streamencoding.NewDecbufFactory(path, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
+		factory: streamencoding.NewDecbufFactory(binpath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
 	}
 
 	// Create a new raw decoding buffer with access to the entire index-header file to
@@ -177,14 +178,14 @@ func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger
 	d := r.factory.NewRawDecbuf()
 	defer runutil.CloseWithErrCapture(&err, &d, "new file stream binary reader")
 	if err = d.Err(); err != nil {
-		return fmt.Errorf("cannot create decoding buffer: %w", err)
+		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
 	}
 
 	// Grab the full length of the index header before we read any of it. This is needed
 	// so that we can skip directly to the table of contents at the end of file.
 	indexHeaderSize := d.Len()
 	if magic := d.Be32(); magic != MagicIndex {
-		return fmt.Errorf("invalid magic number %x", magic)
+		return nil, fmt.Errorf("invalid magic number %x", magic)
 	}
 
 	r.version = int(d.Byte())
@@ -199,31 +200,31 @@ func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger
 	indexLastPostingListEndBound := d.Be64()
 
 	if err = d.Err(); err != nil {
-		return fmt.Errorf("cannot read version and index version: %w", err)
+		return nil, fmt.Errorf("cannot read version and index version: %w", err)
 	}
 
 	if r.version != BinaryFormatV1 {
-		return fmt.Errorf("unknown index-header file version %d", r.version)
+		return nil, fmt.Errorf("unknown index-header file version %d", r.version)
 	}
 
 	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
 	if err != nil {
-		return fmt.Errorf("cannot read table-of-contents: %w", err)
+		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
 	}
 
 	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
 	if err != nil {
-		return fmt.Errorf("cannot load symbols: %w", err)
+		return nil, fmt.Errorf("cannot load symbols: %w", err)
 	}
 
 	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	labelNames, err := r.postingsOffsetTable.LabelNames()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	r.nameSymbols = make(map[uint32]string, len(labelNames))
@@ -231,10 +232,14 @@ func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger
 		r.nameSymbols[offset] = sym
 		return nil
 	}); err != nil {
-		return err
+		return nil, err
 	}
 
-	return fmt.Errorf("testing: %w", err)
+	return r, fmt.Errorf("testing: %w", err)
+}
+
+func writeSampleToFile(samplepath string, reader *StreamBinaryReader) {
+	sample := &samplepb.Sample{}
 }
 
 // newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be
