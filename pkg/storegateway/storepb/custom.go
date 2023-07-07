@@ -9,8 +9,6 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func NewSeriesResponse(series *Series) *SeriesResponse {
@@ -119,9 +117,4 @@ func PromMatchersToString(ms ...*labels.Matcher) string {
 		}
 	}
 	return "{" + res + "}"
-}
-
-// PromLabels return Prometheus labels.Labels without extra allocation.
-func (m *Series) PromLabels() labels.Labels {
-	return mimirpb.FromLabelAdaptersToLabels(m.Labels)
 }

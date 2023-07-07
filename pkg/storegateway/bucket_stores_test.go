@@ -551,7 +551,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			nextSeriesIdx := 0
 
 			if testData.expectedSamplesForOutOfOrderChunks != nil {
-				assert.Equal(t, seriesWithOutOfOrderChunks, seriesSet[nextSeriesIdx].PromLabels())
+				assert.Equal(t, seriesWithOutOfOrderChunks, promLabels(seriesSet[nextSeriesIdx]))
 
 				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
 				require.NoError(t, err)
@@ -561,7 +561,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			}
 
 			if testData.expectedSamplesForOverlappingChunks != nil {
-				assert.Equal(t, seriesWithOverlappingChunks, seriesSet[nextSeriesIdx].PromLabels())
+				assert.Equal(t, seriesWithOverlappingChunks, promLabels(seriesSet[nextSeriesIdx]))
 
 				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
 				require.NoError(t, err)
@@ -569,6 +569,10 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func promLabels(m *storepb.Series) labels.Labels {
+	return mimirpb.FromLabelAdaptersToLabels(m.Labels)
 }
 
 func prepareStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {

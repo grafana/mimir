@@ -1173,7 +1173,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 
 			actualMetrics := make([]string, 0, len(seriesSet))
 			for _, s := range seriesSet {
-				actualMetrics = append(actualMetrics, s.PromLabels().Get(labels.MetricName))
+				actualMetrics = append(actualMetrics, promLabels(s).Get(labels.MetricName))
 			}
 			assert.ElementsMatch(t, testData.expectedMetrics, actualMetrics)
 		})
