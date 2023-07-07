@@ -26,7 +26,7 @@ spec:
   - metadata:
       metricName: cortex_distributor_cpu_hpa_default
       query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="distributor",namespace="{{ .Release.Namespace }}"}[5m]))[15m:]) * 1000
-      serverAddress: {{ include "mimir.metaMonitoring.metrics.remoteReadUrl" (dict "ctx" $ "url" .Values.metaMonitoring.grafanaAgent.metrics.remote.url) }}
+      serverAddress: {{ include "mimir.metaMonitoring.metrics.remoteReadUrl" (dict "ctx" $) }}
       threshold: {{ mulf (include "mimir.lib.milliCPUInt" (dict "ctx" . "component" "distributor")) (divf .Values.distributor.kedaAutoscaling.targetCPUUtilizationPercentage 100) | floor | int64 | quote }}
       {{- if .Values.distributor.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.distributor.kedaAutoscaling.customHeaders)) | quote }}
@@ -35,7 +35,7 @@ spec:
   - metadata:
       metricName: cortex_distributor_memory_hpa_default
       query: max_over_time(sum(container_memory_working_set_bytes{container="distributor",namespace="{{ .Release.Namespace }}"})[15m:])
-      serverAddress: {{ include "mimir.metaMonitoring.metrics.remoteReadUrl" (dict "ctx" $ "url" .Values.metaMonitoring.grafanaAgent.metrics.remote.url) }}
+      serverAddress: {{ include "mimir.metaMonitoring.metrics.remoteReadUrl" (dict "ctx" $) }}
       threshold: {{ mulf (include "mimir.lib.memorySiToBytes" (dict "ctx" . "component" "distributor")) (divf .Values.distributor.kedaAutoscaling.targetMemoryUtilizationPercentage 100) | floor | int64 | quote }}
       {{- if .Values.distributor.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.distributor.kedaAutoscaling.customHeaders)) | quote }}

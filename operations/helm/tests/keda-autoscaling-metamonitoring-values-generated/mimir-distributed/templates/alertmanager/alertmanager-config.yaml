@@ -1,0 +1,21 @@
+---
+# Source: mimir-distributed/templates/alertmanager/alertmanager-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keda-autoscaling-metamonitoring-values-mimir-alertmanager-fallback-config
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-metamonitoring-values
+    app.kubernetes.io/component: alertmanager
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {} 
+  namespace: "citestns"
+data:
+  alertmanager_fallback_config.yaml: |
+    receivers:
+        - name: default-receiver
+    route:
+        receiver: default-receiver

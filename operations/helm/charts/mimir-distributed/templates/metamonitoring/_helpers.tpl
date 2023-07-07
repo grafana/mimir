@@ -58,11 +58,13 @@
 {{- end -}}
 
 {{- define "mimir.metaMonitoring.metrics.remoteReadUrl" -}}
-{{- $writeBackToMimir := not .url -}}
+{{- with $.ctx.Values.metaMonitoring.grafanaAgent.metrics }}
+{{- $writeBackToMimir := not (.remote).url -}}
 {{- if $writeBackToMimir -}}
-{{- include "mimir.remoteReadUrl.inCluster" .ctx }}
+{{- include "mimir.remoteReadUrl.inCluster" $.ctx }}
 {{- else -}}
-{{- $parsed := urlParse .url -}}
+{{- $parsed := urlParse (.remote).url -}}
 {{ $parsed.scheme }}://{{ $parsed.host }}{{ include "mimir.prometheusHttpPrefix" $.ctx }}
+{{- end }}
 {{- end -}}
 {{- end -}}
