@@ -81,12 +81,14 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
    The interface definition - which may need to be created - should be named `Limits` and define all related per-tenant config options.
 
    In the example PR, the config option was used in `pkg/frontend/querymiddleware/limits.go`.
-   Interface `querymiddleware.Limits` already existed, so we just added a new interface method:
+   Interface `querymiddleware.Limits` already existed, so we only needed to add a new interface method:
 
    ```go
     // ResultsCacheForUnalignedQueryEnabled returns whether to cache results for queries that are not step-aligned
     ResultsCacheForUnalignedQueryEnabled(userID string) bool
    ```
+
+   This interface method may also need to be added to test mocks.
 
    Then add the implementation of the interface method to the `validation.Overrides` struct in `pkg/util/validation/limits.go`:
 
@@ -95,3 +97,73 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
        return o.getOverridesForUser(user).ResultsCacheForUnalignedQueryEnabled
    }
    ```
+
+4. Decide how to consume the option when multi-tenant paths have different limits.
+
+   Multi-tenant codepaths using limits can involve a mix of tenants which are set to default limits and tenants which have varying tenant-specific overrides.
+   These codepaths may need to determine whether to take a largest, smallest, or other value from the varied tenant limits.
+
+   In the example PR, we decided to only cache the request if all tenants have the caching enabled.
+   In `pkg/util/validation/limits.go`, we added a helper function:
+
+   ```go
+    // AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants
+    func AllTrueBooleansPerTenant(tenantIDs []string, f func(string) bool) bool {
+        for _, tenantID := range tenantIDs {
+            if !f(tenantID) {
+                return false
+            }
+        }
+        return true
+    }
+   ```
+
+   Similar helper functions may already exist for similar purposes: `SmallestPositiveNonZeroIntPerTenant`, `LargestPositiveNonZeroDurationPerTenant`, etc.
+
+5. Consume the overrides with the multiple tenant limits.
+
+   Combining our work from steps 4 and 5 allows us to actually use the limits & overrides wherever they are needed in a multi-tenant codepath:
+
+   ```go
+   cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(
+       tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled,
+   )
+   ```
+
+## Set the New Config Option to be Backwards Compatible with the Deprecated Option
+
+We need to ensure that a user who is still setting the option in the old config section does not have their setting overridden by the default value for the config option now in the `limits` section.
+
+1. Ensure the config option is set to the default by the old config section.
+
+   In the old config struct's `RegisterFlags` method where we had removed the old flag registration, explicitly set the old config option to the default value.
+   In the example PR, this was not technically necessary as an unset boolean field defaults to false, but it is much clearer to be explicit when we are working on a migration and deprecation through many layers of config:
+
+   ```go
+   // The query-frontend.cache-unaligned-requests flag has been moved to the limits.go file
+   // cfg.DeprecatedCacheUnalignedRequests is set to the default here for clarity
+   // and consistency with the process for migrating limits to per-tenant config
+   // TODO: Remove in Mimir 2.12.0
+   cfg.DeprecatedCacheUnalignedRequests = DefaultDeprecatedCacheUnalignedRequests
+   ```
+
+2. Ensure a non-default setting for the deprecated option is carried into the `limits` config.
+
+   If the deprecated option is set to a non-default value and the new limits option is set to the default, we assume the user intends to use the deprecated option and has not yet migrated to use the new option under `limits`.
+   Any non-default setting in the `limits` config or tenant-specific overrides in the runtime config will still take precedence.
+
+   In `pkg/mimir/modules.go` in `initRuntimeConfig`:
+
+   ```go
+   // DeprecatedCacheUnalignedRequests is moving from a global config that can in the frontend yaml to a limit config
+   // We need to preserve the option in the frontend yaml for two releases
+   // If the frontend config is configured by the user, the default limit is overwritten
+   // TODO: Remove in Mimir 2.12.0
+   if t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests != querymiddleware.DefaultDeprecatedCacheUnalignedRequests {
+       t.Cfg.LimitsConfig.ResultsCacheForUnalignedQueryEnabled = t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests
+   }
+   ```
+
+## Updating Mimir Config File Docs
+
+Run `make doc` from repository root.
