@@ -18,9 +18,24 @@ message Sample {
 	int64 indexVersion = 2;
 
 	Symbols symbols = 3;
+	PostingOffsetTable postingsOffsetTable = 4;
 }
 
 message Symbols {
 	repeated int64 offsets = 1 [packed=true];
 	int64 seen = 2;
+}
+
+message PostingOffsetTable {
+	map<string, postingValueOffsets> postings = 1;
+}
+
+message postingValueOffsets {
+	repeated postingOffset offsets = 1;   
+	int64 lastValOffset = 2;
+}
+
+message postingOffset {
+	string value = 1;
+	int64 tableOff = 2;
 }

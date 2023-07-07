@@ -122,6 +122,14 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 		return nil, fmt.Errorf("invalid magic number %x", magic)
 	}
 
+	// As of now this value is also the actual end of the last posting list. In the future
+	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
+	// after the last posting list).
+	// This value used to be the offset of the postings offset table up to and including Mimir 2.7.
+	// After that this is the offset of the label indices table.
+	// So what we read here will depend on what version of Mimir created the index header file.
+	indexLastPostingListEndBound := d.Be64()
+
 	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
@@ -129,10 +137,14 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 	r.symbols, err = streamindex.NewSymbolsFromSample(r.factory, sample, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
 	if err != nil {
-		return nil, fmt.Errorf("cannot load symbols: %w", err)
+		return nil, fmt.Errorf("cannot load symbols: %w", err) // TODO: make better error check
 	}
 
 	// TODO: construct postingoffsettable from sample
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad, true)
+	if err != nil {
+		return nil, err
+	}
 
 	// TODO: construct nameSymbols from memory
 
@@ -189,7 +201,7 @@ func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger
 		return nil, fmt.Errorf("cannot load symbols: %w", err)
 	}
 
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad, false)
 	if err != nil {
 		return nil, err
 	}

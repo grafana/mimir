@@ -51,11 +51,15 @@ type PostingOffsetTableV1 struct {
 	postings map[string]map[string]index.Range
 }
 
-func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (PostingOffsetTable, error) {
+func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool, isFromSample bool) (PostingOffsetTable, error) {
 	if indexVersion == index.FormatV1 {
 		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound)
 	} else if indexVersion == index.FormatV2 {
-		return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound, postingOffsetsInMemSampling, doChecksum)
+		if isFromSample {
+			return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound, postingOffsetsInMemSampling, doChecksum)
+		} else {
+			return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound, postingOffsetsInMemSampling, doChecksum)
+		}
 	}
 
 	return nil, fmt.Errorf("unknown index version %v", indexVersion)
@@ -102,6 +106,123 @@ func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 }
 
 func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (table *PostingOffsetTableV2, err error) {
+	t := PostingOffsetTableV2{
+		factory:                     factory,
+		tableOffset:                 tableOffset,
+		postings:                    map[string]*postingValueOffsets{},
+		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
+	}
+
+	var d streamencoding.Decbuf
+	if doChecksum {
+		d = factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
+	} else {
+		d = factory.NewDecbufAtUnchecked(tableOffset)
+	}
+
+	defer runutil.CloseWithErrCapture(&err, &d, "read offset table")
+
+	remainingCount := d.Be32()
+	currentName := ""
+	valuesForCurrentKey := 0
+	lastEntryOffsetInTable := -1
+
+	for d.Err() == nil && remainingCount > 0 {
+		lastName := currentName
+		offsetInTable := d.Position()
+		keyCount := d.Uvarint()
+
+		// The Postings offset table takes only 2 keys per entry (name and value of label).
+		if keyCount != 2 {
+			return nil, errors.Errorf("unexpected key length for posting table %d", keyCount)
+		}
+
+		// Important: this value is only valid as long as we don't perform any further reads from d.
+		// If we need to retain its value, we must copy it before performing another read.
+		if unsafeName := d.UnsafeUvarintBytes(); len(t.postings) == 0 || lastName != string(unsafeName) {
+			newName := string(unsafeName)
+
+			if lastEntryOffsetInTable != -1 {
+				// We haven't recorded the last offset for the last value of the previous name.
+				// Go back and read the last value for the previous name.
+				newValueOffsetInTable := d.Position()
+				d.ResetAt(lastEntryOffsetInTable)
+				d.Uvarint()          // Skip the key count
+				d.SkipUvarintBytes() // Skip the name
+				value := d.UvarintStr()
+				t.postings[lastName].offsets = append(t.postings[lastName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
+
+				// Skip ahead to where we were before we called ResetAt() above.
+				d.Skip(newValueOffsetInTable - d.Position())
+			}
+
+			currentName = newName
+			t.postings[currentName] = &postingValueOffsets{}
+			valuesForCurrentKey = 0
+		}
+
+		// Retain every 1-in-postingOffsetsInMemSampling entries, starting with the first one.
+		if valuesForCurrentKey%postingOffsetsInMemSampling == 0 {
+			value := d.UvarintStr()
+			off := d.Uvarint64()
+			t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: offsetInTable})
+
+			if lastName != currentName {
+				t.postings[lastName].lastValOffset = int64(off - crc32.Size)
+			}
+
+			// If the current value is the last one for this name, we don't need to record it again.
+			lastEntryOffsetInTable = -1
+		} else {
+			// We only need to store this value if it's the last one for this name.
+			// Record our current position in the table and come back to it if it turns out this is the last value.
+			lastEntryOffsetInTable = offsetInTable
+
+			// Skip over the value and offset.
+			d.SkipUvarintBytes()
+			d.Uvarint64()
+		}
+
+		valuesForCurrentKey++
+		remainingCount--
+	}
+
+	if lastEntryOffsetInTable != -1 {
+		// We haven't recorded the last offset for the last value of the last key
+		// Go back and read the last value for the last key.
+		d.ResetAt(lastEntryOffsetInTable)
+		d.Uvarint()          // Skip the key count
+		d.SkipUvarintBytes() // Skip the key
+		value := d.UvarintStr()
+		t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
+	}
+
+	if d.Err() != nil {
+		return nil, errors.Wrap(d.Err(), "read postings table")
+	}
+
+	if len(t.postings) > 0 {
+		// In case lastValOffset is unknown as we don't have next posting anymore. Guess from the index table of contents.
+		// The last posting list ends before the label offset table.
+		// In worst case we will overfetch a few bytes.
+		t.postings[currentName].lastValOffset = int64(indexLastPostingListEndBound) - crc32.Size
+	}
+
+	// Trim any extra space in the slices.
+	for k, v := range t.postings {
+		if len(v.offsets) == cap(v.offsets) {
+			continue
+		}
+
+		l := make([]postingOffset, len(v.offsets))
+		copy(l, v.offsets)
+		t.postings[k].offsets = l
+	}
+
+	return &t, nil
+}
+
+func newV2PostingOffsetTableFromSample(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
