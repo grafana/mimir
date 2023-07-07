@@ -1069,13 +1069,16 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 			numNativeHistograms := len(ts.Histograms)
 			if numNativeHistograms > 0 {
-				hasNativeHistograms = true
 				lastNativeHistogram := ts.Histograms[numNativeHistograms-1]
-				for _, span := range lastNativeHistogram.PositiveSpans {
-					numNativeHistogramBuckets += int(span.Length)
-				}
-				for _, span := range lastNativeHistogram.NegativeSpans {
-					numNativeHistogramBuckets += int(span.Length)
+				numFloats := len(ts.Samples)
+				if numFloats == 0 || ts.Samples[numFloats-1].TimestampMs < lastNativeHistogram.Timestamp {
+					hasNativeHistograms = true
+					for _, span := range lastNativeHistogram.PositiveSpans {
+						numNativeHistogramBuckets += int(span.Length)
+					}
+					for _, span := range lastNativeHistogram.NegativeSpans {
+						numNativeHistogramBuckets += int(span.Length)
+					}
 				}
 			}
 		}

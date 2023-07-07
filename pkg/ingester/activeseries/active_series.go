@@ -140,37 +140,33 @@ func (c *ActiveSeries) ContainsRef(ref uint64) bool {
 	return c.stripes[stripeID].containsRef(ref)
 }
 
-// Active returns the total number of active series and the total number
-// of active native histogram series. This method does not purge
-// expired entries, so Purge should be called periodically.
-func (c *ActiveSeries) Active() (int, int, int) {
-	total := 0
-	totalNativeHistograms := 0
-	totalNativeHistogramBuckets := 0
+// Active returns the total numbers of active series, active native
+// histogram series, and buckets of those native histogram series.
+// This method does not purge expired entries, so Purge should be
+// called periodically.
+func (c *ActiveSeries) Active() (total, totalNativeHistograms, totalNativeHistogramBuckets int) {
 	for s := 0; s < numStripes; s++ {
 		all, histograms, buckets := c.stripes[s].getTotal()
 		total += all
 		totalNativeHistograms += histograms
 		totalNativeHistogramBuckets += buckets
 	}
-	return total, totalNativeHistograms, totalNativeHistogramBuckets
+	return
 }
 
 // ActiveWithMatchers returns the total number of active series, as well as a
 // slice of active series matching each one of the custom trackers provided (in
 // the same order as custom trackers are defined), and then the same thing for
-// only active series that are native histograms. This method does not purge
+// only active series that are native histograms, then the same for the number
+// of buckets in those active native histogram series. This method does not purge
 // expired entries, so Purge should be called periodically.
-func (c *ActiveSeries) ActiveWithMatchers() (int, []int, int, []int, int, []int) {
+func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, totalNativeHistograms int, totalMatchingNativeHistograms []int, totalNativeHistogramBuckets int, totalMatchingNativeHistogramBuckets []int) {
 	c.matchersMutex.RLock()
 	defer c.matchersMutex.RUnlock()
 
-	total := 0
-	totalMatching := resizeAndClear(len(c.matchers.MatcherNames()), nil)
-	totalNativeHistograms := 0
-	totalMatchingNativeHistograms := resizeAndClear(len(c.matchers.MatcherNames()), nil)
-	totalNativeHistogramBuckets := 0
-	totalMatchingNativeHistogramBuckets := resizeAndClear(len(c.matchers.MatcherNames()), nil)
+	totalMatching = resizeAndClear(len(c.matchers.MatcherNames()), nil)
+	totalMatchingNativeHistograms = resizeAndClear(len(c.matchers.MatcherNames()), nil)
+	totalMatchingNativeHistogramBuckets = resizeAndClear(len(c.matchers.MatcherNames()), nil)
 	for s := 0; s < numStripes; s++ {
 		all, histograms, buckets := c.stripes[s].getTotalAndUpdateMatching(totalMatching, totalMatchingNativeHistograms, totalMatchingNativeHistogramBuckets)
 		total += all
@@ -178,7 +174,7 @@ func (c *ActiveSeries) ActiveWithMatchers() (int, []int, int, []int, int, []int)
 		totalNativeHistogramBuckets += buckets
 	}
 
-	return total, totalMatching, totalNativeHistograms, totalMatchingNativeHistograms, totalNativeHistogramBuckets, totalMatchingNativeHistogramBuckets
+	return
 }
 
 func (s *seriesStripe) containsRef(ref uint64) bool {
