@@ -1,0 +1,38 @@
+{{- if .Values.ruler.kedaAutoscaling.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ruler.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      {{- with .Values.ruler.kedaAutoscaling.behavior }}
+      behavior:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  maxReplicaCount: {{ .Values.ruler.kedaAutoscaling.maxReplicaCount }}
+  minReplicaCount: {{ .Values.ruler.kedaAutoscaling.minReplicaCount }}
+  pollingInterval: {{ .Values.ruler.kedaAutoscaling.pollingInterval }}
+  scaleTargetRef:
+    name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler") }}
+    apiVersion: apps/v1
+    kind: Deployment
+  triggers:
+  - metadata:
+      metricName: ruler_cpu_hpa_default
+      query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="ruler",namespace="{{ .Release.Namespace }}"}[5m]))[15m:]) * 1000
+      serverAddress: http://{{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
+      threshold: {{ mulf (include "mimir.lib.milliCPUInt" (dict "ctx" . "component" "ruler")) (divf .Values.ruler.kedaAutoscaling.targetCPUUtilizationPercentage 100) | floor | int64 | quote }}
+    type: prometheus
+  - metadata:
+      metricName: ruler_memory_hpa_default
+      query: max_over_time(sum(container_memory_working_set_bytes{container="ruler",namespace="{{ .Release.Namespace }}"})[15m:])
+      serverAddress: http://{{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
+      threshold: {{ mulf (include "mimir.lib.memorySiToBytes" (dict "ctx" . "component" "ruler")) (divf .Values.ruler.kedaAutoscaling.targetMemoryUtilizationPercentage 100) | floor | int64 | quote }}
+    type: prometheus
+{{- end }}

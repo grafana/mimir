@@ -8,7 +8,9 @@ metadata:
     {{- toYaml .Values.query_frontend.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  {{- if not .Values.query_frontend.kedaAutoscaling.enabled }}
   replicas: {{ .Values.query_frontend.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "query-frontend") | nindent 6 }}

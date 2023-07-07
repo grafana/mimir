@@ -8,7 +8,9 @@ metadata:
     {{- toYaml .Values.querier.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  {{- if not .Values.querier.kedaAutoscaling.enabled }}
   replicas: {{ .Values.querier.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "querier" "memberlist" true) | nindent 6 }}

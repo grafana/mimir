@@ -1,0 +1,35 @@
+{{- if .Values.querier.kedaAutoscaling.enabled }}
+{{- if not .Values.query_scheduler.enabled }}
+{{- fail "KEDA autoscaling for querier requires query scheduler to be enabled" }}
+{{- end }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "querier") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "querier" "memberlist" true) | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.querier.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      {{- with .Values.querier.kedaAutoscaling.behavior }}
+      behavior:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  maxReplicaCount: {{ .Values.querier.kedaAutoscaling.maxReplicaCount }}
+  minReplicaCount: {{ .Values.querier.kedaAutoscaling.minReplicaCount }}
+  pollingInterval: {{ .Values.querier.kedaAutoscaling.pollingInterval }}
+  scaleTargetRef:
+    name: {{ include "mimir.resourceName" (dict "ctx" . "component" "querier") }}
+    apiVersion: apps/v1
+    kind: Deployment
+  triggers:
+  - metadata:
+      metricName: cortex_querier_hpa_default
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.75"}[5m]))
+      serverAddress: http://{{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
+      threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
+    type: prometheus
+{{- end }}

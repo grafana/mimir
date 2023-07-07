@@ -1,0 +1,38 @@
+{{- if .Values.distributor.kedaAutoscaling.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "distributor") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.distributor.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      {{- with .Values.distributor.kedaAutoscaling.behavior }}
+      behavior:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  maxReplicaCount: {{ .Values.distributor.kedaAutoscaling.maxReplicaCount }}
+  minReplicaCount: {{ .Values.distributor.kedaAutoscaling.minReplicaCount }}
+  pollingInterval: {{ .Values.distributor.kedaAutoscaling.pollingInterval }}
+  scaleTargetRef:
+    name: {{ include "mimir.resourceName" (dict "ctx" . "component" "distributor") }}
+    apiVersion: apps/v1
+    kind: Deployment
+  triggers:
+  - metadata:
+      metricName: cortex_distributor_cpu_hpa_default
+      query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="distributor",namespace="{{ .Release.Namespace }}"}[5m]))[15m:]) * 1000
+      serverAddress: http://{{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
+      threshold: {{ mulf (include "mimir.lib.milliCPUInt" (dict "ctx" . "component" "distributor")) (divf .Values.distributor.kedaAutoscaling.targetCPUUtilizationPercentage 100) | floor | int64 | quote }}
+    type: prometheus
+  - metadata:
+      metricName: cortex_distributor_memory_hpa_default
+      query: max_over_time(sum(container_memory_working_set_bytes{container="distributor",namespace="{{ .Release.Namespace }}"})[15m:])
+      serverAddress: http://{{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
+      threshold: {{ mulf (include "mimir.lib.memorySiToBytes" (dict "ctx" . "component" "distributor")) (divf .Values.distributor.kedaAutoscaling.targetMemoryUtilizationPercentage 100) | floor | int64 | quote }}
+    type: prometheus
+{{- end }}
