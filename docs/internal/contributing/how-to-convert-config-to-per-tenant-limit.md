@@ -8,7 +8,7 @@ These global limits can then be overridden for specified tenants via the `overri
 If a config option is not present in the `limits` section, it cannot be overridden on a per-tenant basis.
 If the need arises to override an existing config option for individual tenants, we must follow a deprecation process to move the option into the `limits` section.
 
-## Deprecation and Conversion Process
+## Deprecation and Migration Process
 
 We need to ensure that:
 
@@ -26,7 +26,7 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
 
 2. Locate the actual config option in code and mark it as deprecated by renaming the variable and marking it as `hidden` and `deprecated`.
 
-   In the example PR, the existing config option was field of the `querymiddleware.Config` struct, declared in `pkg/frontend/querymiddleware/roundtrip.go`.
+   In the example PR, the existing config option was a field of the `querymiddleware.Config` struct, declared in `pkg/frontend/querymiddleware/roundtrip.go`.
 
    The line
 
@@ -54,11 +54,11 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
 
 1. Add the new config option to the `validation.Limits` struct in `pkg/util/validation/limits.go`.
 
-   Add it the section for related configuration options if one exists.
+   Add the option alongside any related `limits` options for the same service component.
    The new struct field may need a more descriptive name as is now a member of a more generalized config section.
 
    In the example, the previous field name under `querymiddleware.Config` was `CacheUnalignedRequests`.
-   The new field is named `ResultsCacheForUnalignedQueryEnabled`:
+   The new field is named `ResultsCacheForUnalignedQueryEnabled` to align with the naming of related options:
 
    ```go
    ResultsCacheForUnalignedQueryEnabled bool `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
@@ -77,7 +77,7 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
 
 3. Expose the tenant-specific overrides for the new config option
 
-   First add the tenant-specifc method and docstring to the _interface_ which uses the config option.
+   First add the tenant-specific method and docstring to the _interface_ which uses the config option.
    The interface definition - which may need to be created - should be named `Limits` and define all related per-tenant config options.
 
    In the example PR, the config option was used in `pkg/frontend/querymiddleware/limits.go`.
@@ -98,9 +98,11 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
    }
    ```
 
+   This ensures that the `Overrides` struct, which holds any tenant-specific runtime config, will implement the `Limits` interface needed for your codepath.
+
 4. Decide how to consume the option when multi-tenant paths have different limits.
 
-   Multi-tenant codepaths using limits can involve a mix of tenants which are set to default limits and tenants which have varying tenant-specific overrides.
+   Multi-tenant codepaths using limits can involve a mix of tenants using limits and tenants which have varying tenant-specific overrides.
    These codepaths may need to determine whether to take a largest, smallest, or other value from the varied tenant limits.
 
    In the example PR, we decided to only cache the request if all tenants have the caching enabled.
@@ -132,12 +134,14 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
 
 ## Set the New Config Option to be Backwards Compatible with the Deprecated Option
 
-We need to ensure that a user who is still setting the option in the old config section does not have their setting overridden by the default value for the config option now in the `limits` section.
+Until deprecation is complete, we need to ensure that a user who is still setting the option in the old config section does not have their setting overridden by the default value for the config option now in the `limits` section.
 
 1. Ensure the config option is set to the default by the old config section.
 
    In the old config struct's `RegisterFlags` method where we had removed the old flag registration, explicitly set the old config option to the default value.
    In the example PR, this was not technically necessary as an unset boolean field defaults to false, but it is much clearer to be explicit when we are working on a migration and deprecation through many layers of config:
+
+   In `pkg/frontend/querymiddleware/roundtrip.go` in `RegisterFlags`:
 
    ```go
    // The query-frontend.cache-unaligned-requests flag has been moved to the limits.go file
