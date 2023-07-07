@@ -12,6 +12,15 @@
       distributor+: {
         enabled: true,
       },
+      ruler+: {
+        enabled: true,
+      },
+      query_frontend+: {
+        enabled: true,
+      },
+      ruler_query_frontend+: {
+        enabled: true,
+      },
     },
   },
 }

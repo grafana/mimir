@@ -594,34 +594,38 @@
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
     autoscaling: {
+
+      // Wrap the regexp into an Helm compatible matcher.
+      local instanceMatcher = function(regexp) 'keda-hpa-(.*mimir-)?%s' % regexp,
+
       query_frontend: {
         enabled: false,
-        hpa_name: 'keda-hpa-query-frontend',
+        hpa_name: instanceMatcher(componentNameRegexp.query_frontend),
       },
       ruler_query_frontend: {
         enabled: false,
-        hpa_name: 'keda-hpa-ruler-query-frontend',
+        hpa_name: instanceMatcher(componentNameRegexp.ruler_query_frontend),
       },
       querier: {
         enabled: false,
         // hpa_name can be a regexp to support multiple querier deployments, like "keda-hpa-querier(-burst(-backup)?)?".
-        hpa_name: 'keda-hpa-querier',
+        hpa_name: instanceMatcher(componentNameRegexp.querier),
       },
       ruler_querier: {
         enabled: false,
-        hpa_name: 'keda-hpa-ruler-querier',
+        hpa_name: instanceMatcher(componentNameRegexp.ruler_querier),
       },
       distributor: {
         enabled: false,
-        hpa_name: 'keda-hpa-distributor',
+        hpa_name: instanceMatcher(componentNameRegexp.distributor),
       },
       ruler: {
         enabled: false,
-        hpa_name: 'keda-hpa-ruler',
+        hpa_name: instanceMatcher(componentNameRegexp.ruler),
       },
       gateway: {
         enabled: false,
-        hpa_name: 'keda-hpa-cortex-gw.*',
+        hpa_name: instanceMatcher(componentNameRegexp.gateway),
       },
     },
 

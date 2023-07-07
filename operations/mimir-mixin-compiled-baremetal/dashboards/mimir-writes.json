@@ -975,7 +975,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n",
+                        "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"}\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Max {{ scaletargetref_name }}",
@@ -983,7 +983,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n# HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active\n* on (cluster, namespace, horizontalpodautoscaler)\n  kube_horizontalpodautoscaler_status_condition{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\", condition=\"ScalingActive\", status=\"true\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n",
+                        "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"}\n# HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active\n* on (cluster, namespace, horizontalpodautoscaler)\n  kube_horizontalpodautoscaler_status_condition{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\", condition=\"ScalingActive\", status=\"true\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"}\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Current {{ scaletargetref_name }}",
@@ -1060,7 +1060,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*cpu.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                        "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*cpu.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ scaledObject }}",
@@ -1137,7 +1137,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                        "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ scaledObject }}",
@@ -1214,7 +1214,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                        "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{metric}} failures",
