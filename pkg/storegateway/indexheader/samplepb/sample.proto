@@ -22,5 +22,5 @@ message Sample {
 
 message Symbols {
 	repeated int64 offsets = 1 [packed=true];
-	int64 seen;
+	int64 seen = 2;
 }

@@ -41,7 +41,7 @@ type Symbols struct {
 
 const symbolFactor = 32
 
-// NewSymbols returns a Symbols object for symbol lookups.
+// NewSymbolFromSample reads from sampled index header and returns a Symbols object for symbol lookups.
 func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *samplepb.Sample, version int, offset int, doChecksum bool) (s *Symbols, err error) {
 	s = &Symbols{
 		factory:     factory,
@@ -49,19 +49,13 @@ func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *samplep
 		tableOffset: offset,
 	}
 
-	cnt := d.Be32int()
-	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
-	for d.Err() == nil && s.seen < cnt {
-		if s.seen%symbolFactor == 0 {
-			s.offsets = append(s.offsets, d.Position())
-		}
-		d.SkipUvarintBytes() // The symbol.
-		s.seen++
+	s.offsets = make([]int, 0)
+
+	for _, offset := range sample.Symbols.Offsets {
+		s.offsets = append(s.offsets, int(offset))
 	}
 
-	if d.Err() != nil {
-		return nil, d.Err()
-	}
+	s.seen = int(sample.Symbols.Seen)
 
 	return s, nil
 }
