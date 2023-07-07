@@ -753,6 +753,8 @@ distributor:
     pollingInterval: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
+    customHeaders: {}
+      # X-Scope-OrgID: ""
     behavior:
       scaleDown:
         policies:
@@ -1118,6 +1120,8 @@ ruler:
     pollingInterval: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
+    customHeaders: {}
+      # X-Scope-OrgID: ""
     behavior:
       scaleDown:
         policies:
@@ -1197,10 +1201,12 @@ querier:
 
   kedaAutoscaling:
     enabled: true
-    minReplicaCount: 1
+    minReplicaCount: 2
     maxReplicaCount: 10
     pollingInterval: 10
     querySchedulerInflightRequestsThreshold: 6
+    customHeaders: {}
+      # X-Scope-OrgID: ""
     behavior:
       scaleDown:
         policies:
@@ -1285,6 +1291,8 @@ query_frontend:
     pollingInterval: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
+    customHeaders: {}
+      # X-Scope-OrgID: ""
     behavior:
       scaleDown:
         policies:

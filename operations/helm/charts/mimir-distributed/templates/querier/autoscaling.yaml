@@ -29,7 +29,10 @@ spec:
   - metadata:
       metricName: cortex_querier_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.75"}[5m]))
-      serverAddress: http://{{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
+      serverAddress: {{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
+      {{- if .Values.querier.kedaAutoscaling.customHeaders }}
+      customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.querier.kedaAutoscaling.customHeaders)) | quote }}
+      {{- end }}
     type: prometheus
 {{- end }}

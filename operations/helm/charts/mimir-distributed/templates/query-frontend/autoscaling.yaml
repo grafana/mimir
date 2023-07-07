@@ -26,13 +26,19 @@ spec:
   - metadata:
       metricName: query_frontend_cpu_hpa_default
       query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="query-frontend",namespace="{{ .Release.Namespace }}"}[5m]))[15m:]) * 1000
-      serverAddress: http://{{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
+      serverAddress: {{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
       threshold: {{ mulf (include "mimir.lib.milliCPUInt" (dict "ctx" . "component" "query-frontend")) (divf .Values.query_frontend.kedaAutoscaling.targetCPUUtilizationPercentage 100) | floor | int64 | quote }}
+      {{- if .Values.query_frontend.kedaAutoscaling.customHeaders }}
+      customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.query_frontend.kedaAutoscaling.customHeaders)) | quote }}
+      {{- end }}
     type: prometheus
   - metadata:
       metricName: query_frontend_memory_hpa_default
       query: max_over_time(sum(container_memory_working_set_bytes{container="query-frontend",namespace="{{ .Release.Namespace }}"})[15m:])
-      serverAddress: http://{{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
+      serverAddress: {{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
       threshold: {{ mulf (include "mimir.lib.memorySiToBytes" (dict "ctx" . "component" "query-frontend")) (divf .Values.query_frontend.kedaAutoscaling.targetMemoryUtilizationPercentage 100) | floor | int64 | quote }}
+      {{- if .Values.query_frontend.kedaAutoscaling.customHeaders }}
+      customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.query_frontend.kedaAutoscaling.customHeaders)) | quote }}
+      {{- end }}
     type: prometheus
 {{- end }}
