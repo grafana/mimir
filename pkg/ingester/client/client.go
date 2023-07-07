@@ -9,12 +9,12 @@ import (
 	"flag"
 
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	mimirtrace "github.com/grafana/mimir/pkg/util/trace"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 //lint:ignore faillint It's non-trivial to remove this global variable.
@@ -39,7 +39,7 @@ type closableHealthAndIngesterClient struct {
 
 // MakeIngesterClient makes a new IngesterClient
 func MakeIngesterClient(addr string, cfg Config) (HealthAndIngesterClient, error) {
-	dialOpts, err := cfg.GRPCClientConfig.DialOption(grpcclient.Instrument(ingesterClientRequestDuration))
+	dialOpts, err := cfg.GRPCClientConfig.DialOption(mimirtrace.GRPCClientInstrument(ingesterClientRequestDuration))
 	if err != nil {
 		return nil, err
 	}

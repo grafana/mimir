@@ -10,12 +10,12 @@ import (
 	"strconv"
 
 	"github.com/grafana/dskit/tenant"
-	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/push"
+	mimirtrace "github.com/grafana/mimir/pkg/util/trace"
 )
 
 // ActivityTrackerWrapper is a wrapper around Ingester that adds queries to activity tracker.
@@ -169,7 +169,7 @@ func (i *ActivityTrackerWrapper) UserRegistryHandler(writer http.ResponseWriter,
 
 func requestActivity(ctx context.Context, name string, req interface{}) string {
 	userID, _ := tenant.TenantID(ctx)
-	traceID, _ := tracing.ExtractSampledTraceID(ctx)
+	traceID, _ := mimirtrace.ExtractSampledTraceID(ctx)
 
 	switch r := req.(type) {
 	case *client.QueryRequest:

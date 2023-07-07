@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
+	mimirtrace "github.com/grafana/mimir/pkg/util/trace"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -69,7 +70,7 @@ func newRulerClientFactory(clientCfg grpcclient.Config, reg prometheus.Registere
 }
 
 func dialRulerClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*rulerExtendedClient, error) {
-	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
+	opts, err := clientCfg.DialOption(mimirtrace.GRPCClientInstrument(requestDuration))
 	if err != nil {
 		return nil, err
 	}

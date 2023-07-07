@@ -6,11 +6,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
 	"github.com/weaveworks/common/user"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestQueryTrackerUnlimitedMaxConcurrency(t *testing.T) {
@@ -31,11 +32,13 @@ func TestActivityDescription(t *testing.T) {
 	assert.Equal(t, "query=query string", generateActivityDescription(ctx, "query string"))
 	assert.Equal(t, "tenant=user query=query string", generateActivityDescription(user.InjectOrgID(ctx, "user"), "query string"))
 
-	tr, closers := jaeger.NewTracer("test", jaeger.NewConstSampler(true), jaeger.NewNullReporter())
-	defer func() { _ = closers.Close() }()
-	opentracing.SetGlobalTracer(tr)
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(tracetest.NewInMemoryExporter()),
+	)
+	otel.SetTracerProvider(tp)
+	defer func() { tp.Shutdown(ctx) }()
 
-	_, ctxWithTrace := opentracing.StartSpanFromContext(ctx, "operation")
+	ctxWithTrace, _ := otel.Tracer("").Start(ctx, "operation")
 	{
 		activity := generateActivityDescription(ctxWithTrace, "query string")
 		assert.Contains(t, activity, "traceID=")

@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
-	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -28,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/trace"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -340,7 +340,7 @@ func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValues
 
 func requestActivity(ctx context.Context, name string, req interface{}) string {
 	user := getUserIDFromGRPCContext(ctx)
-	traceID, _ := tracing.ExtractSampledTraceID(ctx)
+	traceID, _ := mimirtrace.ExtractSampledTraceID(ctx)
 	return fmt.Sprintf("%s: user=%q trace=%q request=%v", name, user, traceID, req)
 }
 

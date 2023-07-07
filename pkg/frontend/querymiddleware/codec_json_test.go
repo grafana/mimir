@@ -171,7 +171,7 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			codec := NewPrometheusCodec(reg, formatJSON)
 
-			body, err := json.Marshal(tc.resp)
+			body, err := jsonObj.Marshal(tc.resp)
 			require.NoError(t, err)
 			httpResponse := &http.Response{
 				StatusCode:    200,

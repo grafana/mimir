@@ -76,6 +76,8 @@ func handler(maxRecvMsgSize int,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+		// here to print context
+		level.Error(log.Logger).Log("msg", fmt.Sprintf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx %v", ctx))
 		logger := log.WithContext(ctx, log.Logger)
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)

@@ -6,10 +6,10 @@
 package httpgrpcutil
 
 import (
-	"errors"
+	"context"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/weaveworks/common/httpgrpc"
+	"go.opentelemetry.io/otel"
 )
 
 // Used to transfer trace information from/to HTTP request.
@@ -33,15 +33,25 @@ func (c *HttpgrpcHeadersCarrier) ForeachKey(handler func(key, val string) error)
 	return nil
 }
 
-func GetParentSpanForRequest(tracer opentracing.Tracer, req *httpgrpc.HTTPRequest) (opentracing.SpanContext, error) {
-	if tracer == nil {
-		return nil, nil
+func (c *HttpgrpcHeadersCarrier) Get(key string) string {
+	for _, h := range c.Headers {
+		if h.Key == key {
+			return h.Values[0]
+		}
 	}
+	return ""
+}
 
-	carrier := (*HttpgrpcHeadersCarrier)(req)
-	extracted, err := tracer.Extract(opentracing.HTTPHeaders, carrier)
-	if errors.Is(err, opentracing.ErrSpanContextNotFound) {
-		err = nil
+func (c *HttpgrpcHeadersCarrier) Keys() []string {
+	keys := make([]string, 0, len(c.Headers))
+	for _, h := range c.Headers {
+		keys = append(keys, h.Key)
 	}
-	return extracted, err
+	return keys
+}
+
+func GetParentSpanForRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (context.Context, error) {
+	carrier := (*HttpgrpcHeadersCarrier)(req)
+	ctx = otel.GetTextMapPropagator().Extract(ctx, carrier)
+	return ctx, nil
 }

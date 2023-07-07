@@ -20,6 +20,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -77,7 +79,7 @@ type Frontend struct {
 
 type request struct {
 	enqueueTime time.Time
-	queueSpan   opentracing.Span
+	queueSpan   trace.Span
 	originalCtx context.Context
 
 	request  *httpgrpc.HTTPRequest
@@ -217,7 +219,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		req := reqWrapper.(*request)
 
 		f.queueDuration.Observe(time.Since(req.enqueueTime).Seconds())
-		req.queueSpan.Finish()
+		req.queueSpan.End()
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.
@@ -322,7 +324,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 
 	now := time.Now()
 	req.enqueueTime = now
-	req.queueSpan, _ = opentracing.StartSpanFromContext(ctx, "queued")
+	_, req.queueSpan = otel.Tracer("").Start(ctx, "queued")
 
 	// aggregate the max queriers limit in the case of a multi tenant query
 	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, f.limits.MaxQueriersPerUser)

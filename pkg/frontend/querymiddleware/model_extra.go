@@ -15,16 +15,16 @@ import (
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 var (
-	json = jsoniter.Config{
+	jsonObj = jsoniter.Config{
 		EscapeHTML:             false, // No HTML in our responses.
 		SortMapKeys:            true,
 		ValidateJsonRawMessage: true,
@@ -93,13 +93,12 @@ func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 }
 
 // LogToSpan logs the current `PrometheusRangeQueryRequest` parameters to the specified span.
-func (q *PrometheusRangeQueryRequest) LogToSpan(sp opentracing.Span) {
-	sp.LogFields(
-		otlog.String("query", q.GetQuery()),
-		otlog.String("start", timestamp.Time(q.GetStart()).String()),
-		otlog.String("end", timestamp.Time(q.GetEnd()).String()),
-		otlog.Int64("step (ms)", q.GetStep()),
-	)
+func (q *PrometheusRangeQueryRequest) LogToSpan(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("query", q.GetQuery()),
+		attribute.String("start", timestamp.Time(q.GetStart()).String()),
+		attribute.String("end", timestamp.Time(q.GetEnd()).String()),
+		attribute.Int64("step (ms)", q.GetStep()))
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {
@@ -156,11 +155,10 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {
-	sp.LogFields(
-		otlog.String("query", r.GetQuery()),
-		otlog.String("time", timestamp.Time(r.GetTime()).String()),
-	)
+func (r *PrometheusInstantQueryRequest) LogToSpan(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("query", r.GetQuery()),
+		attribute.String("time", timestamp.Time(r.GetTime()).String()))
 }
 
 func (d *PrometheusData) UnmarshalJSON(b []byte) error {
@@ -169,7 +167,7 @@ func (d *PrometheusData) UnmarshalJSON(b []byte) error {
 		Result stdjson.RawMessage `json:"result"`
 	}{}
 
-	err := json.Unmarshal(b, &v)
+	err := jsonObj.Unmarshal(b, &v)
 	if err != nil {
 		return err
 	}
@@ -177,7 +175,7 @@ func (d *PrometheusData) UnmarshalJSON(b []byte) error {
 	switch v.Type {
 	case model.ValString:
 		var sss stringSampleStreams
-		if err := json.Unmarshal(v.Result, &sss); err != nil {
+		if err := jsonObj.Unmarshal(v.Result, &sss); err != nil {
 			return err
 		}
 		d.Result = sss
@@ -185,7 +183,7 @@ func (d *PrometheusData) UnmarshalJSON(b []byte) error {
 
 	case model.ValScalar:
 		var sss scalarSampleStreams
-		if err := json.Unmarshal(v.Result, &sss); err != nil {
+		if err := jsonObj.Unmarshal(v.Result, &sss); err != nil {
 			return err
 		}
 		d.Result = sss
@@ -193,14 +191,14 @@ func (d *PrometheusData) UnmarshalJSON(b []byte) error {
 
 	case model.ValVector:
 		var vss []vectorSampleStream
-		if err := json.Unmarshal(v.Result, &vss); err != nil {
+		if err := jsonObj.Unmarshal(v.Result, &vss); err != nil {
 			return err
 		}
 		d.Result = fromVectorSampleStreams(vss)
 		return nil
 
 	case model.ValMatrix:
-		return json.Unmarshal(v.Result, &d.Result)
+		return jsonObj.Unmarshal(v.Result, &d.Result)
 
 	default:
 		return fmt.Errorf("unsupported value type %q", v.Type)
@@ -214,7 +212,7 @@ func (d *PrometheusData) MarshalJSON() ([]byte, error) {
 
 	switch d.ResultType {
 	case model.ValString.String():
-		return json.Marshal(struct {
+		return jsonObj.Marshal(struct {
 			Type   model.ValueType     `json:"resultType"`
 			Result stringSampleStreams `json:"result"`
 		}{
@@ -223,7 +221,7 @@ func (d *PrometheusData) MarshalJSON() ([]byte, error) {
 		})
 
 	case model.ValScalar.String():
-		return json.Marshal(struct {
+		return jsonObj.Marshal(struct {
 			Type   model.ValueType     `json:"resultType"`
 			Result scalarSampleStreams `json:"result"`
 		}{
@@ -232,7 +230,7 @@ func (d *PrometheusData) MarshalJSON() ([]byte, error) {
 		})
 
 	case model.ValVector.String():
-		return json.Marshal(struct {
+		return jsonObj.Marshal(struct {
 			Type   model.ValueType      `json:"resultType"`
 			Result []vectorSampleStream `json:"result"`
 		}{
@@ -242,7 +240,7 @@ func (d *PrometheusData) MarshalJSON() ([]byte, error) {
 
 	case model.ValMatrix.String():
 		type plain *PrometheusData
-		return json.Marshal(plain(d))
+		return jsonObj.Marshal(plain(d))
 
 	default:
 		return nil, fmt.Errorf("can't marshal prometheus result type %q", d.ResultType)
@@ -266,12 +264,12 @@ func (sss stringSampleStreams) MarshalJSON() ([]byte, error) {
 	}
 	s := ss.Samples[0]
 
-	return json.Marshal(model.String{Value: l.Value, Timestamp: model.Time(s.TimestampMs)})
+	return jsonObj.Marshal(model.String{Value: l.Value, Timestamp: model.Time(s.TimestampMs)})
 }
 
 func (sss *stringSampleStreams) UnmarshalJSON(b []byte) error {
 	var sv model.String
-	if err := json.Unmarshal(b, &sv); err != nil {
+	if err := jsonObj.Unmarshal(b, &sv); err != nil {
 		return err
 	}
 	*sss = []SampleStream{{
@@ -292,7 +290,7 @@ func (sss scalarSampleStreams) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("scalar sample stream should have exactly one sample, got %d", len(ss.Samples))
 	}
 	s := ss.Samples[0]
-	return json.Marshal(model.Scalar{
+	return jsonObj.Marshal(model.Scalar{
 		Timestamp: model.Time(s.TimestampMs),
 		Value:     model.SampleValue(s.Value),
 	})
@@ -300,7 +298,7 @@ func (sss scalarSampleStreams) MarshalJSON() ([]byte, error) {
 
 func (sss *scalarSampleStreams) UnmarshalJSON(b []byte) error {
 	var sv model.Scalar
-	if err := json.Unmarshal(b, &sv); err != nil {
+	if err := jsonObj.Unmarshal(b, &sv); err != nil {
 		return err
 	}
 	*sss = []SampleStream{{
@@ -324,7 +322,7 @@ type vectorSampleStream SampleStream
 
 func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 	s := model.Sample{}
-	if err := json.Unmarshal(b, &s); err != nil {
+	if err := jsonObj.Unmarshal(b, &s); err != nil {
 		return err
 	}
 	if s.Histogram != nil {
@@ -356,7 +354,7 @@ func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
 			Histogram: mimirpb.FromFloatHistogramToPromHistogram(vs.Histograms[0].Histogram.ToPrometheusModel()),
 		}
 	}
-	return json.Marshal(sample)
+	return jsonObj.Marshal(sample)
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -366,7 +364,7 @@ func (s *SampleStream) UnmarshalJSON(data []byte) error {
 		Values     []mimirpb.Sample              `json:"values"`
 		Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
 	}
-	if err := json.Unmarshal(data, &stream); err != nil {
+	if err := jsonObj.Unmarshal(data, &stream); err != nil {
 		return err
 	}
 	s.Labels = mimirpb.FromMetricsToLabelAdapters(stream.Metric)
@@ -403,7 +401,7 @@ func (s *SampleStream) MarshalJSON() ([]byte, error) {
 		Histograms: histograms,
 	}
 
-	return json.Marshal(stream)
+	return jsonObj.Marshal(stream)
 }
 
 type byFirstTime []*PrometheusResponse

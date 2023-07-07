@@ -13,9 +13,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/weaveworks/common/user"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -112,7 +112,7 @@ func newLimitsMiddleware(l Limits, logger log.Logger) Middleware {
 
 func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, l.logger, "limits")
-	defer log.Finish()
+	defer log.End()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
@@ -243,7 +243,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
-	if span := opentracing.SpanFromContext(ctx); span != nil {
+	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
 		request.LogToSpan(span)
 	}
 	tenantIDs, err := tenant.TenantIDs(ctx)

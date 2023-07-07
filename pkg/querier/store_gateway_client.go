@@ -13,13 +13,13 @@ import (
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring/client"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	mimirtrace "github.com/grafana/mimir/pkg/util/trace"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
-
-	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
 func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer) client.PoolFactory {
@@ -37,7 +37,7 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 }
 
 func dialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*storeGatewayClient, error) {
-	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
+	opts, err := clientCfg.DialOption(mimirtrace.GRPCClientInstrument(requestDuration))
 	if err != nil {
 		return nil, err
 	}

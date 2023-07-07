@@ -12,13 +12,13 @@ const jsonMimeType = "application/json"
 type jsonFormatter struct{}
 
 func (j jsonFormatter) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {
-	return json.Marshal(resp)
+	return jsonObj.Marshal(resp)
 }
 
 func (j jsonFormatter) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
 	var resp PrometheusResponse
 
-	if err := json.Unmarshal(buf, &resp); err != nil {
+	if err := jsonObj.Unmarshal(buf, &resp); err != nil {
 		return nil, err
 	}
 

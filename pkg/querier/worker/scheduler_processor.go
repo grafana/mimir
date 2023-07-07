@@ -26,6 +26,8 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -164,12 +166,12 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 			// We need to inject user into context for sending response back.
 			ctx = user.InjectOrgID(ctx, request.UserID)
 
-			tracer := opentracing.GlobalTracer()
+			// tracer := otel.Tracer("")
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
-			parentSpanContext, _ := httpgrpcutil.GetParentSpanForRequest(tracer, request.HttpRequest)
+			parentSpanContext, _ := httpgrpcutil.GetParentSpanForRequest(ctx, request.HttpRequest)
 			if parentSpanContext != nil {
-				queueSpan, spanCtx := opentracing.StartSpanFromContextWithTracer(ctx, tracer, "querier_processor_runRequest", opentracing.ChildOf(parentSpanContext))
-				defer queueSpan.Finish()
+				spanCtx, queueSpan := otel.Tracer("").Start(ctx, "querier_processor_runRequest", trace.WithSpanKind(trace.SpanKindServer))
+				defer queueSpan.End()
 
 				ctx = spanCtx
 			}

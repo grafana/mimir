@@ -219,13 +219,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rww.statusCode > 0 {
 		attributes = append(attributes, semconv.HTTPStatusCode(rww.statusCode))
 	}
-	h.counters[RequestContentLength].Add(ctx, bw.read, attributes...)
-	h.counters[ResponseContentLength].Add(ctx, rww.written, attributes...)
+
+	recordOpts := metric.WithAttributes(attributes...)
+	h.counters[RequestContentLength].Add(ctx, bw.read, recordOpts)
+	h.counters[ResponseContentLength].Add(ctx, rww.written, recordOpts)
 
 	// Use floating point division here for higher precision (instead of Millisecond method).
 	elapsedTime := float64(time.Since(requestStartTime)) / float64(time.Millisecond)
 
-	h.valueRecorders[ServerLatency].Record(ctx, elapsedTime, attributes...)
+	h.valueRecorders[ServerLatency].Record(ctx, elapsedTime, recordOpts)
 }
 
 func setAfterServeAttributes(span trace.Span, read, wrote int64, statusCode int, rerr, werr error) {

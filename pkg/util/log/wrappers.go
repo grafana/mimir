@@ -9,9 +9,9 @@ import (
 	"context"
 
 	"github.com/go-kit/log"
-	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/mimir/pkg/util/trace"
 )
 
 // WithUserID returns a Logger that has information about the current user in
@@ -50,7 +50,7 @@ func WithContext(ctx context.Context, l log.Logger) log.Logger {
 		l = WithUserIDs(userIDs, l)
 	}
 
-	traceID, ok := tracing.ExtractSampledTraceID(ctx)
+	traceID, ok := mimirtrace.ExtractSampledTraceID(ctx)
 	if !ok {
 		return l
 	}

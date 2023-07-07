@@ -1095,7 +1095,7 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
-	defer spanlog.Finish()
+	defer spanlog.End()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1464,7 +1464,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")
-	defer spanlog.Finish()
+	defer spanlog.End()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {

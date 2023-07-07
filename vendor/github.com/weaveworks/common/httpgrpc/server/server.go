@@ -10,15 +10,15 @@ import (
 	"net/url"
 	"strings"
 
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing/opentracing-go"
 	"github.com/sercand/kuberesolver/v4"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/middleware"
 )
 
@@ -132,7 +132,7 @@ func NewClient(address string) (*Client, error) {
 		grpc.WithDefaultServiceConfig(grpcServiceConfig),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(
-			otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+			otelgrpc.UnaryClientInterceptor(otelgrpc.WithPropagators(propagation.TraceContext{})),
 			middleware.ClientUserHeaderInterceptor,
 		),
 	}
@@ -182,14 +182,7 @@ func WriteError(w http.ResponseWriter, err error) {
 
 // ServeHTTP implements http.Handler
 func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if tracer := opentracing.GlobalTracer(); tracer != nil {
-		if span := opentracing.SpanFromContext(r.Context()); span != nil {
-			if err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(r.Header)); err != nil {
-				logging.Global().Warnf("Failed to inject tracing headers into request: %v", err)
-			}
-		}
-	}
-
+	otel.GetTextMapPropagator().Inject(r.Context(), propagation.HeaderCarrier(r.Header))
 	req, err := HTTPRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

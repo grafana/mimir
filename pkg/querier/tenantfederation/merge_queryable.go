@@ -143,7 +143,7 @@ type mergeQuerier struct {
 // of the underlying queriers for `idLabelName`.
 func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	spanlog, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelValues")
-	defer spanlog.Finish()
+	defer spanlog.End()
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
 
@@ -173,7 +173,7 @@ func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 // results the original `idLabelName`.
 func (m *mergeQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	spanlog, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelNames")
-	defer spanlog.Finish()
+	defer spanlog.End()
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
 
@@ -293,7 +293,7 @@ type selectJob struct {
 // on `idLabelName`.
 func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanlog, ctx := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.Select")
-	defer spanlog.Finish()
+	defer spanlog.End()
 
 	matchedValues, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
 

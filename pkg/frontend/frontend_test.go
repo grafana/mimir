@@ -22,9 +22,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
@@ -36,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 )
 
 const (
@@ -242,7 +241,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())),
+		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
 	)
 	defer grpcServer.GracefulStop()
 

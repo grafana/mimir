@@ -15,20 +15,22 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 const (
@@ -172,7 +174,7 @@ func (m *mockSeriesSet) Warnings() storage.Warnings {
 // Select implements the storage.Querier interface.
 func (m mockTenantQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mockTenantQuerier.select")
-	defer log.Span.Finish()
+	defer log.Span.End()
 	var matrix model.Matrix
 
 	for _, s := range m.matrix() {
@@ -893,9 +895,16 @@ func TestSetLabelsRetainExisting(t *testing.T) {
 }
 
 func TestTracingMergeQueryable(t *testing.T) {
-	mockTracer := mocktracer.New()
-	opentracing.SetGlobalTracer(mockTracer)
-	ctx := user.InjectOrgID(context.Background(), "team-a|team-b")
+	// mockTracer := mocktracer.New()
+	ctx := context.Background()
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+	)
+	otel.SetTracerProvider(tp)
+
+	// opentracing.SetGlobalTracer(mockTracer)
+	ctx = user.InjectOrgID(ctx, "team-a|team-b")
 
 	// set a multi tenant resolver
 	tenant.WithDefaultResolver(tenant.NewMultiResolver())
@@ -909,7 +918,10 @@ func TestTracingMergeQueryable(t *testing.T) {
 		End: maxt})
 
 	require.NoError(t, seriesSet.Err())
-	spans := mockTracer.FinishedSpans()
+
+	// force flush to ensure spans are exported
+	tp.ForceFlush(ctx)
+	spans := exp.GetSpans().Snapshots()
 	assertSpanExists(t, spans, "mergeQuerier.Select", expectedTag{spanlogger.TenantIDsTagName,
 		[]string{"team-a", "team-b"}})
 	assertSpanExists(t, spans, "mockTenantQuerier.select", expectedTag{spanlogger.TenantIDsTagName,
@@ -919,13 +931,13 @@ func TestTracingMergeQueryable(t *testing.T) {
 }
 
 func assertSpanExists(t *testing.T,
-	actualSpans []*mocktracer.MockSpan,
+	actualSpans []trace.ReadOnlySpan,
 	name string,
 	tag expectedTag) {
 	t.Helper()
 
 	for _, span := range actualSpans {
-		if span.OperationName == name && containsTags(span, tag) {
+		if span.Name() == name && containsTags(span, tag) {
 			return
 		}
 	}
@@ -935,16 +947,26 @@ func assertSpanExists(t *testing.T,
 		name, tag, extractNameWithTags(actualSpans))
 }
 
-func extractNameWithTags(actualSpans []*mocktracer.MockSpan) []spanWithTags {
+func extractNameWithTags(actualSpans []trace.ReadOnlySpan) []spanWithTags {
 	result := make([]spanWithTags, len(actualSpans))
 	for i, span := range actualSpans {
-		result[i] = spanWithTags{span.OperationName, span.Tags()}
+		spanAttributes := span.Attributes()
+		tags := make(map[string]interface{}, len(spanAttributes))
+		for _, att := range spanAttributes {
+			tags[string(att.Key)] = att.Value
+		}
+		result[i] = spanWithTags{span.Name(), tags}
 	}
 	return result
 }
 
-func containsTags(span *mocktracer.MockSpan, expectedTag expectedTag) bool {
-	return reflect.DeepEqual(span.Tag(expectedTag.key), expectedTag.values)
+func containsTags(span trace.ReadOnlySpan, expectedTag expectedTag) bool {
+	for _, att := range span.Attributes() {
+		if string(att.Key) == expectedTag.key {
+			return reflect.DeepEqual(att.Value.AsStringSlice(), expectedTag.values)
+		}
+	}
+	return false
 }
 
 type spanWithTags struct {

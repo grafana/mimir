@@ -6,11 +6,10 @@ import (
 	"bytes"
 	"context"
 
-	"github.com/weaveworks/common/tracing"
-
 	"github.com/grafana/dskit/tenant" //lint:ignore faillint queryTracker needs tenant package
 
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint queryTracker needs activitytracker
+	"github.com/grafana/mimir/pkg/util/trace"
 )
 
 // queryTracker implements promql.QueryTracker interface and can be used by PromQL engine for tracking queries.
@@ -41,7 +40,7 @@ func (q *queryTracker) Insert(ctx context.Context, query string) (int, error) {
 
 func generateActivityDescription(ctx context.Context, query string) string {
 	buf := bytes.Buffer{}
-	traceID, _ := tracing.ExtractSampledTraceID(ctx)
+	traceID, _ := mimirtrace.ExtractSampledTraceID(ctx)
 
 	sep := ""
 	if traceID != "" {

@@ -258,7 +258,7 @@ type querier struct {
 // The bool passed is ignored because the series is always sorted.
 func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "querier.Select")
-	defer log.Span.Finish()
+	defer log.Span.End()
 
 	if sp == nil {
 		sp = &storage.SelectHints{

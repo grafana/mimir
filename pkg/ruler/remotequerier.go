@@ -19,8 +19,6 @@ import (
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcclient"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -32,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 )
 
 const (
@@ -87,7 +86,7 @@ func (c *QueryFrontendConfig) Validate() error {
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
 func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
 	opts, err := cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
-		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+		otelgrpc.UnaryClientInterceptor(),
 		middleware.ClientUserHeaderInterceptor,
 	}, nil)
 	if err != nil {
@@ -146,7 +145,7 @@ func NewRemoteQuerier(
 // See: https://github.com/prometheus/prometheus/blob/1291ec71851a7383de30b089f456fdb6202d037a/storage/remote/client.go#L264
 func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Read")
-	defer log.Span.Finish()
+	defer log.Span.End()
 
 	rdReq := &prompb.ReadRequest{
 		Queries: []*prompb.Query{
@@ -210,7 +209,7 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 // Query performs a query for the given time.
 func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 	logger, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Query")
-	defer logger.Span.Finish()
+	defer logger.Span.End()
 
 	return q.query(ctx, qs, t, logger)
 }

@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -34,6 +33,8 @@ import (
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -706,11 +707,10 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = copyString(cluster), copyString(replica)
-
-		span := opentracing.SpanFromContext(ctx)
+		span := trace.SpanFromContext(ctx)
 		if span != nil {
-			span.SetTag("cluster", cluster)
-			span.SetTag("replica", replica)
+			span.SetAttributes(attribute.String("cluster", cluster))
+			span.SetAttributes(attribute.String("replica", replica))
 		}
 
 		numSamples := 0
@@ -1098,9 +1098,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		return &mimirpb.WriteResponse{}, nil
 	}
 
-	span := opentracing.SpanFromContext(ctx)
+	span := trace.SpanFromContext(ctx)
 	if span != nil {
-		span.SetTag("organization", userID)
+		span.SetAttributes(attribute.String("organization", userID))
 	}
 
 	seriesKeys := d.getTokensForSeries(userID, req.Timeseries)
@@ -1119,8 +1119,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	// Get clientIP(s) from Context and add it to localCtx
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
 	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
-	if sp := opentracing.SpanFromContext(ctx); sp != nil {
-		localCtx = opentracing.ContextWithSpan(localCtx, sp)
+	sp := trace.SpanFromContext(ctx)
+	if sp.SpanContext().IsValid() && sp.SpanContext().IsSampled() {
+		localCtx = trace.ContextWithSpan(localCtx, sp)
 	}
 
 	// All tokens, stored in order: series, metadata.

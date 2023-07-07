@@ -15,11 +15,12 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/weaveworks/common/instrument"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/exp/slices"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -54,8 +55,8 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 			return err
 		}
 
-		if s := opentracing.SpanFromContext(ctx); s != nil {
-			s.LogKV("series", len(result.Timeseries))
+		if s := trace.SpanFromContext(ctx); s.SpanContext().IsValid() {
+			s.SetAttributes(attribute.Int("series", len(result.Timeseries)))
 		}
 		return nil
 	})
@@ -85,11 +86,11 @@ func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matc
 			return err
 		}
 
-		if s := opentracing.SpanFromContext(ctx); s != nil {
-			s.LogKV(
-				"chunk-series", len(result.Chunkseries),
-				"time-series", len(result.Timeseries),
-				"streaming-series", len(result.StreamingSeries),
+		if s := trace.SpanFromContext(ctx); s != nil {
+			s.SetAttributes(
+				attribute.Int("chunk-series", len(result.Chunkseries)),
+				attribute.Int("time-series", len(result.Timeseries)),
+				attribute.Int("streaming-series", len(result.StreamingSeries)),
 			)
 		}
 		return nil
@@ -201,7 +202,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelFunc) (ingesterQueryResult, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
 		cleanup := func() {
-			log.Span.Finish()
+			log.Span.End()
 			cancelContext()
 		}
 
@@ -219,8 +220,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 			}
 		}()
 
-		log.Span.SetTag("ingester_address", ing.Addr)
-		log.Span.SetTag("ingester_zone", ing.Zone)
+		log.Span.SetAttributes(
+			attribute.String("ingester_address", ing.Addr),
+			attribute.String("ingester_zone", ing.Zone),
+		)
 
 		client, err := d.ingesterPool.GetClientFor(ing.Addr)
 		if err != nil {

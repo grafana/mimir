@@ -282,7 +282,7 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 			codec := NewPrometheusCodec(reg, formatJSON)
 
 			resp := prometheusAPIResponse{}
-			body, err := json.Marshal(resp)
+			body, err := jsonObj.Marshal(resp)
 			require.NoError(t, err)
 			httpResponse := &http.Response{
 				StatusCode:    200,
@@ -707,7 +707,7 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 
 	// Generate a mocked response and marshal it.
 	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
-	encodedRes, err := json.Marshal(res)
+	encodedRes, err := jsonObj.Marshal(res)
 	require.NoError(b, err)
 	b.Log("test prometheus response size:", len(encodedRes))
 

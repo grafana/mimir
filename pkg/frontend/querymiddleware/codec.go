@@ -22,13 +22,14 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/munnerz/goautoneg"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/weaveworks/common/httpgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/exp/slices"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -112,7 +113,7 @@ type Request interface {
 	WithEstimatedSeriesCountHint(uint64) Request
 	proto.Message
 	// LogToSpan writes information about this request to an OpenTracing span
-	LogToSpan(opentracing.Span)
+	LogToSpan(trace.Span)
 }
 
 // Response represents a query range response.
@@ -371,9 +372,11 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 		log.Error(err)
 		return nil, err
 	}
-	log.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
-		otlog.Int("status_code", r.StatusCode),
-		otlog.Int("bytes", len(buf)))
+	log.SetAttributes(
+		attribute.String("message", "ParseQueryRangeResponse"),
+		attribute.Int("status_code", r.StatusCode),
+		attribute.Int("bytes", len(buf)),
+	)
 
 	contentType := r.Header.Get("Content-Type")
 	formatter := findFormatter(contentType)
@@ -411,15 +414,15 @@ func findFormatter(contentType string) formatter {
 }
 
 func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
-	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.Finish()
+	ctx, sp := otel.Tracer("").Start(ctx, "APIResponse.ToHTTPResponse")
+	defer sp.End()
 
 	a, ok := res.(*PrometheusResponse)
 	if !ok {
 		return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 	}
 	if a.Data != nil {
-		sp.LogFields(otlog.Int("series", len(a.Data.Result)))
+		sp.SetAttributes(attribute.Int("series", len(a.Data.Result)))
 	}
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
@@ -435,7 +438,7 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, 
 
 	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
 	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.LogFields(otlog.Int("bytes", len(b)))
+	sp.SetAttributes(attribute.Int("bytes", len(b)))
 
 	resp := http.Response{
 		Header: http.Header{

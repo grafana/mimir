@@ -26,6 +26,8 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/dskit/tenant"
@@ -197,10 +199,10 @@ type schedulerRequest struct {
 
 	ctx       context.Context
 	ctxCancel context.CancelFunc
-	queueSpan opentracing.Span
+	queueSpan trace.Span
 
 	// This is only used for testing.
-	parentSpanContext opentracing.SpanContext
+	parentSpanContext trace.SpanContext
 }
 
 // FrontendLoop handles connection from frontend.
@@ -317,8 +319,8 @@ func (s *Scheduler) enqueueRequest(frontendContext context.Context, frontendAddr
 
 	// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
 	// information, since that is a long-running request.
-	tracer := opentracing.GlobalTracer()
-	parentSpanContext, err := httpgrpcutil.GetParentSpanForRequest(tracer, msg.HttpRequest)
+	// tracer := opentracing.GlobalTracer()
+	parentSpanContext, err := httpgrpcutil.GetParentSpanForRequest(ctx, msg.HttpRequest)
 	if err != nil {
 		return err
 	}
@@ -335,8 +337,9 @@ func (s *Scheduler) enqueueRequest(frontendContext context.Context, frontendAddr
 
 	now := time.Now()
 
-	req.parentSpanContext = parentSpanContext
-	req.queueSpan, req.ctx = opentracing.StartSpanFromContextWithTracer(ctx, tracer, "queued", opentracing.ChildOf(parentSpanContext))
+	req.ctx = parentSpanContext
+	req.ctx, req.queueSpan = otel.Tracer("").Start(ctx, "queued")
+	// req.queueSpan, req.ctx = opentracing.StartSpanFromContextWithTracer(ctx, tracer, "queued", opentracing.ChildOf(parentSpanContext))
 	req.enqueueTime = now
 	req.ctxCancel = cancel
 
@@ -401,7 +404,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		r := req.(*schedulerRequest)
 
 		s.queueDuration.Observe(time.Since(r.enqueueTime).Seconds())
-		r.queueSpan.Finish()
+		r.queueSpan.End()
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.
