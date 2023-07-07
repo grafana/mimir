@@ -10,16 +10,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-const (
-	RejectReasonMaxSeries     = "max-fetched-series-per-query"
-	RejectReasonMaxChunkBytes = "max-fetched-chunk-bytes-per-query"
-	RejectReasonMaxChunks     = "max-fetched-chunks-per-query"
-)
-
-var (
-	rejectReasons = []string{RejectReasonMaxSeries, RejectReasonMaxChunkBytes, RejectReasonMaxChunks}
-)
-
 // QueryMetrics collects metrics on the number of chunks used while serving queries.
 type QueryMetrics struct {
 	// The number of chunks received from ingesters that were exact duplicates of chunks received from other ingesters
@@ -35,7 +25,7 @@ type QueryMetrics struct {
 }
 
 func NewQueryMetrics(reg prometheus.Registerer) *QueryMetrics {
-	m := &QueryMetrics{
+	return &QueryMetrics{
 		IngesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_query_ingester_chunks_deduped_total",
@@ -52,11 +42,4 @@ func NewQueryMetrics(reg prometheus.Registerer) *QueryMetrics {
 			Help:      "Number of queries that were rejected, for example because they exceeded a limit.",
 		}, []string{"reason"}),
 	}
-
-	// Ensure the reject metric is initialised (so that we export the value "0" before a limit is reached for the first time).
-	for _, reason := range rejectReasons {
-		m.QueriesRejectedTotal.WithLabelValues(reason)
-	}
-
-	return m
 }
