@@ -56,3 +56,13 @@
     cluster: {{ include "mimir.clusterName" $.ctx | quote}}
 {{- end -}}
 {{- end -}}
+
+{{- define "mimir.metaMonitoring.metrics.remoteReadUrl" -}}
+{{- $writeBackToMimir := not .url -}}
+{{- if $writeBackToMimir -}}
+{{- include "mimir.remoteReadUrl.inCluster" .ctx }}
+{{- else -}}
+{{- $parsed := urlParse .url -}}
+{{ $parsed.scheme }}://{{ $parsed.host }}{{ include "mimir.prometheusHttpPrefix" $.ctx }}
+{{- end -}}
+{{- end -}}
