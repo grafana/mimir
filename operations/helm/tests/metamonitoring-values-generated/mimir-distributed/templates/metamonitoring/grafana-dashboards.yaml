@@ -22570,9 +22570,347 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Replicas\nThe maximum, and current number of querier replicas.\nPlease note that the current number of replicas can still show 1 replica even when scaled to 0.\nSince HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                      "description": "### Replicas\nThe maximum and current number of query-frontend replicas.\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
                       "fill": 1,
                       "id": 24,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [
+                         {
+                            "alias": "/Max .+/",
+                            "dashes": true,
+                            "fill": 0
+                         },
+                         {
+                            "alias": "/Current .+/",
+                            "fill": 0
+                         }
+                      ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?query-frontend\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?query-frontend\"}\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Max {{ scaletargetref_name }}",
+                            "legendLink": null,
+                            "step": 10
+                         },
+                         {
+                            "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?query-frontend\"}\n# HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active\n* on (cluster, namespace, horizontalpodautoscaler)\n  kube_horizontalpodautoscaler_status_condition{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?query-frontend\", condition=\"ScalingActive\", status=\"true\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?query-frontend\"}\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Replicas",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fill": 1,
+                      "id": 25,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*cpu.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?query-frontend\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "{{ scaledObject }}",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Scaling metric (CPU): Desired replicas",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (memory): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fill": 1,
+                      "id": 26,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?query-frontend\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "{{ scaledObject }}",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Scaling metric (memory): Desired replicas",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.\n\n",
+                      "fill": 1,
+                      "id": 27,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?query-frontend\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "{{metric}} failures",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Autoscaler failures rate",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Query-frontend - autoscaling",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Replicas\nThe maximum, and current number of querier replicas.\nPlease note that the current number of replicas can still show 1 replica even when scaled to 0.\nSince HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                      "fill": 1,
+                      "id": 28,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -22607,7 +22945,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"}\n# Add the scaletargetref_name label which is more readable than \"kube-hpa-...\"\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"}\n",
+                            "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?querier\"}\n# Add the scaletargetref_name label which is more readable than \"kube-hpa-...\"\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?querier\"}\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Max {{ scaletargetref_name }}",
@@ -22615,7 +22953,7 @@ data:
                             "step": 10
                          },
                          {
-                            "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"}\n# HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active.\n* on (cluster, namespace, horizontalpodautoscaler)\n  kube_horizontalpodautoscaler_status_condition{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\", condition=\"ScalingActive\", status=\"true\"}\n# Add the scaletargetref_name label which is more readable than \"kube-hpa-...\"\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"}\n",
+                            "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?querier\"}\n# HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active.\n* on (cluster, namespace, horizontalpodautoscaler)\n  kube_horizontalpodautoscaler_status_condition{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?querier\", condition=\"ScalingActive\", status=\"true\"}\n# Add the scaletargetref_name label which is more readable than \"kube-hpa-...\"\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?querier\"}\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Current {{ scaletargetref_name }}",
@@ -22667,7 +23005,7 @@ data:
                       "datasource": "$datasource",
                       "description": "### Scaling metric (desired replicas)\nThis panel shows the result scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints which are applied later.\n\n",
                       "fill": 1,
-                      "id": 25,
+                      "id": 29,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -22697,7 +23035,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "keda_metrics_adapter_scaler_metrics_value\n/\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "keda_metrics_adapter_scaler_metrics_value\n/\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?querier\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{ scaledObject }}",
@@ -22749,7 +23087,7 @@ data:
                       "datasource": "$datasource",
                       "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.\n\n",
                       "fill": 1,
-                      "id": 26,
+                      "id": 30,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -22774,7 +23112,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?querier\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{metric}} failures",
@@ -22846,7 +23184,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 10,
-                      "id": 27,
+                      "id": 31,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -22922,7 +23260,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 28,
+                      "id": 32,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23026,7 +23364,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 10,
-                      "id": 29,
+                      "id": 33,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23102,7 +23440,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 30,
+                      "id": 34,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23195,7 +23533,7 @@ data:
                       "datasource": "$datasource",
                       "description": "### Hit ratio\nEven if you do not set up memcached for the blocks index cache, you will still see data in this panel because the store-gateway by default has an\nin-memory blocks index cache.\n\n",
                       "fill": 1,
-                      "id": 31,
+                      "id": 35,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23283,7 +23621,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 10,
-                      "id": 32,
+                      "id": 36,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23359,7 +23697,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 33,
+                      "id": 37,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23451,7 +23789,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 34,
+                      "id": 38,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23539,7 +23877,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 10,
-                      "id": 35,
+                      "id": 39,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23615,7 +23953,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 36,
+                      "id": 40,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23707,7 +24045,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 37,
+                      "id": 41,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23795,7 +24133,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 10,
-                      "id": 38,
+                      "id": 42,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23871,7 +24209,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 39,
+                      "id": 43,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -23963,7 +24301,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 40,
+                      "id": 44,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -24051,7 +24389,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 10,
-                      "id": 41,
+                      "id": 45,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -24130,7 +24468,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 42,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -24162,7 +24500,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 43,
+                      "id": 47,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -24254,7 +24592,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 44,
+                      "id": 48,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -24358,7 +24696,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 45,
+                      "id": 49,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -24450,7 +24788,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 46,
+                      "id": 50,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -24542,7 +24880,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 47,
+                      "id": 51,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -24634,7 +24972,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 48,
+                      "id": 52,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -24738,7 +25076,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 10,
-                      "id": 49,
+                      "id": 53,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -24817,7 +25155,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 50,
+                      "id": 54,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -24849,7 +25187,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 51,
+                      "id": 55,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -24941,7 +25279,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 52,
+                      "id": 56,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -25045,7 +25383,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 53,
+                      "id": 57,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -25137,7 +25475,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 54,
+                      "id": 58,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -25229,7 +25567,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 55,
+                      "id": 59,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -25321,7 +25659,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 56,
+                      "id": 60,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -27426,7 +27764,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-ruler-querier\"}",
+                            "expr": "kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-(.*mimir-)?ruler-querier\"}",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Min",
@@ -27434,7 +27772,7 @@ data:
                             "step": 10
                          },
                          {
-                            "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-ruler-querier\"}",
+                            "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-(.*mimir-)?ruler-querier\"}",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Max",
@@ -27442,7 +27780,7 @@ data:
                             "step": 10
                          },
                          {
-                            "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-ruler-querier\"}",
+                            "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-(.*mimir-)?ruler-querier\"}",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Current",
@@ -27524,7 +27862,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "keda_metrics_adapter_scaler_metrics_value +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "keda_metrics_adapter_scaler_metrics_value +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler-querier\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Scaling metric",
@@ -27532,7 +27870,7 @@ data:
                             "step": 10
                          },
                          {
-                            "expr": "kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-ruler-querier\"}",
+                            "expr": "kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-(.*mimir-)?ruler-querier\"}",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Target per replica",
@@ -27609,7 +27947,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler-querier\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{metric}} failures",
@@ -30164,6 +30502,682 @@ data:
                 "height": "250px",
                 "panels": [
                    {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Replicas\nThe maximum and current number of ruler replicas.\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                      "fill": 1,
+                      "id": 11,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [
+                         {
+                            "alias": "/Max .+/",
+                            "dashes": true,
+                            "fill": 0
+                         },
+                         {
+                            "alias": "/Current .+/",
+                            "fill": 0
+                         }
+                      ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler\"}\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Max {{ scaletargetref_name }}",
+                            "legendLink": null,
+                            "step": 10
+                         },
+                         {
+                            "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler\"}\n# HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active\n* on (cluster, namespace, horizontalpodautoscaler)\n  kube_horizontalpodautoscaler_status_condition{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler\", condition=\"ScalingActive\", status=\"true\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler\"}\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Replicas",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fill": 1,
+                      "id": 12,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*cpu.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "{{ scaledObject }}",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Scaling metric (CPU): Desired replicas",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (memory): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fill": 1,
+                      "id": 13,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "{{ scaledObject }}",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Scaling metric (memory): Desired replicas",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.\n\n",
+                      "fill": 1,
+                      "id": 14,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "{{metric}} failures",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Autoscaler failures rate",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Ruler - autoscaling",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Replicas\nThe maximum and current number of ruler-query-frontend replicas.\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                      "fill": 1,
+                      "id": 15,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [
+                         {
+                            "alias": "/Max .+/",
+                            "dashes": true,
+                            "fill": 0
+                         },
+                         {
+                            "alias": "/Current .+/",
+                            "fill": 0
+                         }
+                      ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler-query-frontend\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler-query-frontend\"}\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Max {{ scaletargetref_name }}",
+                            "legendLink": null,
+                            "step": 10
+                         },
+                         {
+                            "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler-query-frontend\"}\n# HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active\n* on (cluster, namespace, horizontalpodautoscaler)\n  kube_horizontalpodautoscaler_status_condition{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler-query-frontend\", condition=\"ScalingActive\", status=\"true\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler-query-frontend\"}\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Replicas",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fill": 1,
+                      "id": 16,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*cpu.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler-query-frontend\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "{{ scaledObject }}",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Scaling metric (CPU): Desired replicas",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (memory): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fill": 1,
+                      "id": 17,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler-query-frontend\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "{{ scaledObject }}",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Scaling metric (memory): Desired replicas",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.\n\n",
+                      "fill": 1,
+                      "id": 18,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?ruler-query-frontend\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "{{metric}} failures",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Autoscaler failures rate",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Ruler-query-frontend - autoscaling",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
                       "aliasColors": {
                          "1xx": "#EAB839",
                          "2xx": "#7EB26D",
@@ -30179,7 +31193,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 10,
-                      "id": 11,
+                      "id": 19,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -30255,7 +31269,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 12,
+                      "id": 20,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -30359,7 +31373,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 13,
+                      "id": 21,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -30451,7 +31465,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 14,
+                      "id": 22,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -30545,7 +31559,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 15,
+                      "id": 23,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -30634,7 +31648,7 @@ data:
                             "unit": "short"
                          }
                       },
-                      "id": 16,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -30672,7 +31686,7 @@ data:
                          }
                       },
                       "fill": 1,
-                      "id": 17,
+                      "id": 25,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -30749,7 +31763,7 @@ data:
                             "unit": "short"
                          }
                       },
-                      "id": 18,
+                      "id": 26,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -30793,7 +31807,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 19,
+                      "id": 27,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -30869,7 +31883,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 20,
+                      "id": 28,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -30945,7 +31959,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 21,
+                      "id": 29,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -31033,7 +32047,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 22,
+                      "id": 30,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -31121,7 +32135,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 10,
-                      "id": 23,
+                      "id": 31,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -31200,7 +32214,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 24,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -31232,7 +32246,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 25,
+                      "id": 33,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -31324,7 +32338,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 26,
+                      "id": 34,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -31428,7 +32442,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 27,
+                      "id": 35,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -31520,7 +32534,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 28,
+                      "id": 36,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -31612,7 +32626,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 29,
+                      "id": 37,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -31704,7 +32718,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 30,
+                      "id": 38,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -40373,7 +41387,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n",
+                            "expr": "kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"}\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Max {{ scaletargetref_name }}",
@@ -40381,7 +41395,7 @@ data:
                             "step": 10
                          },
                          {
-                            "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n# HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active\n* on (cluster, namespace, horizontalpodautoscaler)\n  kube_horizontalpodautoscaler_status_condition{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\", condition=\"ScalingActive\", status=\"true\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n",
+                            "expr": "kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"}\n# HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active\n* on (cluster, namespace, horizontalpodautoscaler)\n  kube_horizontalpodautoscaler_status_condition{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\", condition=\"ScalingActive\", status=\"true\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"}\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Current {{ scaletargetref_name }}",
@@ -40458,7 +41472,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*cpu.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*cpu.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{ scaledObject }}",
@@ -40535,7 +41549,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{ scaledObject }}",
@@ -40612,7 +41626,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(.*mimir-)?distributor\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{metric}} failures",

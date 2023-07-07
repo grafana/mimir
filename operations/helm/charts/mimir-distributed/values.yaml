@@ -747,7 +747,7 @@ distributor:
   extraEnvFrom: []
 
   kedaAutoscaling:
-    enabled: true
+    enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
     pollingInterval: 10
@@ -1114,7 +1114,7 @@ ruler:
   extraEnvFrom: []
 
   kedaAutoscaling:
-    enabled: true
+    enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
     pollingInterval: 10
@@ -1200,7 +1200,7 @@ querier:
   extraEnvFrom: []
 
   kedaAutoscaling:
-    enabled: true
+    enabled: false
     minReplicaCount: 2
     maxReplicaCount: 10
     pollingInterval: 10
@@ -1285,7 +1285,7 @@ query_frontend:
   extraEnvFrom: []
 
   kedaAutoscaling:
-    enabled: true
+    enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
     pollingInterval: 10
