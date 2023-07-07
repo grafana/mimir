@@ -107,6 +107,35 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	r.version = int(sample.Version)
 	r.indexVersion = int(sample.IndexVersion)
 
+	// Create a new raw decoding buffer with access to the entire index-header file to
+	// read initial version information and the table of contents.
+	d := r.factory.NewRawDecbuf()
+	defer runutil.CloseWithErrCapture(&err, &d, "new file stream binary reader")
+	if err = d.Err(); err != nil {
+		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
+	}
+
+	// Grab the full length of the index header before we read any of it. This is needed
+	// so that we can skip directly to the table of contents at the end of file.
+	indexHeaderSize := d.Len()
+	if magic := d.Be32(); magic != MagicIndex {
+		return nil, fmt.Errorf("invalid magic number %x", magic)
+	}
+
+	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
+	}
+
+	r.symbols, err = streamindex.NewSymbolsFromSample(r.factory, sample, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
+	if err != nil {
+		return nil, fmt.Errorf("cannot load symbols: %w", err)
+	}
+
+	// TODO: construct postingoffsettable from sample
+
+	// TODO: construct nameSymbols from memory
+
 	return r, err
 }
 

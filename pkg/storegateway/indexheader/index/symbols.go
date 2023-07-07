@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/grafana/dskit/runutil"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader/samplepb"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
@@ -39,6 +40,31 @@ type Symbols struct {
 }
 
 const symbolFactor = 32
+
+// NewSymbols returns a Symbols object for symbol lookups.
+func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *samplepb.Sample, version int, offset int, doChecksum bool) (s *Symbols, err error) {
+	s = &Symbols{
+		factory:     factory,
+		version:     version,
+		tableOffset: offset,
+	}
+
+	cnt := d.Be32int()
+	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
+	for d.Err() == nil && s.seen < cnt {
+		if s.seen%symbolFactor == 0 {
+			s.offsets = append(s.offsets, d.Position())
+		}
+		d.SkipUvarintBytes() // The symbol.
+		s.seen++
+	}
+
+	if d.Err() != nil {
+		return nil, d.Err()
+	}
+
+	return s, nil
+}
 
 // NewSymbols returns a Symbols object for symbol lookups.
 func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int, doChecksum bool) (s *Symbols, err error) {
