@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -369,4 +370,28 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 
 	wg.Wait()
 	require.Equal(t, totalLoaded.Load(), uint32(numLazyReader))
+}
+
+func TestSamplePersistence(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
+	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+
+	// Create block.
+	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("a", "3"),
+	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	require.NoError(t, err)
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+
+	logger := log.NewNopLogger()
+	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+
+	fmt.Print(err)
+	require.Error(t, err)
 }

@@ -234,7 +234,7 @@ func writeSample(path string, postingOffsetsInMemSampling int, logger log.Logger
 		return err
 	}
 
-	return err
+	return fmt.Errorf("testing: %w", err)
 }
 
 // newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be
