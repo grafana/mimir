@@ -6,8 +6,6 @@
 package storepb
 
 import (
-	"fmt"
-
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -121,23 +119,6 @@ func PromMatchersToString(ms ...*labels.Matcher) string {
 		}
 	}
 	return "{" + res + "}"
-}
-
-func (m *LabelMatcher) PromString() string {
-	return fmt.Sprintf("%s%s%q", m.Name, m.Type.PromString(), m.Value)
-}
-
-func (x LabelMatcher_Type) PromString() string {
-	typeToStr := map[LabelMatcher_Type]string{
-		LabelMatcher_EQ:  "=",
-		LabelMatcher_NEQ: "!=",
-		LabelMatcher_RE:  "=~",
-		LabelMatcher_NRE: "!~",
-	}
-	if str, ok := typeToStr[x]; ok {
-		return str
-	}
-	panic("unknown match type")
 }
 
 // PromLabels return Prometheus labels.Labels without extra allocation.
