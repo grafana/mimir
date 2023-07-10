@@ -71,7 +71,7 @@ type seriesStripe struct {
 type seriesEntry struct {
 	nanos                     *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
 	matches                   preAllocDynamicSlice //  Index of the matcher matching
-	numNativeHistogramBuckets int
+	numNativeHistogramBuckets int                  // Number of buckets in native histogram series, -1 if not a native histogram.
 }
 
 func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
@@ -109,6 +109,7 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 }
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
+// Pass -1 in numNativeHistogramBuckets if the series is not a native histogram series.
 func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.Time, numNativeHistogramBuckets int) {
 	stripeID := ref % numStripes
 
