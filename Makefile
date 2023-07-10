@@ -423,7 +423,7 @@ build-mixin: check-mixin-jb
 		./tools/check-rules.sh "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" 20 ; \
 		cd "$(MIXIN_OUT_PATH)$$suffix/.." && zip -q -r "mimir-mixin$$suffix.zip" $$(basename "$(MIXIN_OUT_PATH)$$suffix"); \
 		cd -; \
-		echo "The mixin has been compiled to $(MIXIN_OUT_PATH)$$suffix and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)$$suffix/../mimir-mixin$$suffix.zip)"; \
+		echo "The mixin has been compiled to $(MIXIN_OUT_PATH)$$suffix and archived to $$(realpath $(MIXIN_OUT_PATH)$$suffix/../mimir-mixin$$suffix.zip)"; \
 	done
 
 check-mixin-tests: ## Test the mixin files.
