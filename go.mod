@@ -41,8 +41,8 @@ require (
 	github.com/weaveworks/common v0.0.0-20230511094633-334485600903
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.2.1
-	golang.org/x/crypto v0.10.0
-	golang.org/x/net v0.11.0
+	golang.org/x/crypto v0.11.0
+	golang.org/x/net v0.12.0
 	golang.org/x/sync v0.3.0
 	golang.org/x/time v0.3.0
 	google.golang.org/grpc v1.56.1
@@ -73,7 +73,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.16.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
-	google.golang.org/api v0.129.0
+	google.golang.org/api v0.130.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	sigs.k8s.io/kustomize/kyaml v0.14.3
 )
@@ -231,14 +231,14 @@ require (
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/oauth2 v0.9.0 // indirect
-	golang.org/x/sys v0.9.0 // indirect
-	golang.org/x/text v0.10.0 // indirect
+	golang.org/x/sys v0.10.0 // indirect
+	golang.org/x/text v0.11.0 // indirect
 	golang.org/x/tools v0.9.3 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230530153820-e85fd2cbaebc // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230530153820-e85fd2cbaebc // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230530153820-e85fd2cbaebc // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230629202037-9506855d4529 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/telebot.v3 v3.1.3 // indirect
