@@ -24,8 +24,11 @@ Due to how Helm [works](https://helm.sh/docs/topics/kubernetes_apis/), PodSecuri
 
 1. If `rbac.create` is `false` or `rbac.type` is `scc`, then there is nothing to do, skip the whole procedure.
 1. Optionally follow the Kubernetes [Migrate from PodSecurityPolicy to the Built-In PodSecurity Admission Controller](https://kubernetes.io/docs/tasks/configure-pod-container/migrate-from-psp/) guide to replace PodSecurityPolicy.
-   > **Note**: Grafana Mimir does not require any special permissions on the hosts that it
-   > runs on. Because of this, you can deploy it in environments that enforce the
-   > Kubernetes [Restricted security policy](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
 1. Set the `rbac.create` value to `false`.
 1. Upgrade the deployment. The chart will not install PodSecurityPolicy objects anymore.
+
+{{% admonition type="note" %}}
+Grafana Mimir does not require any special permissions on the hosts that it
+runs on. Because of this, you can deploy it in environments that enforce the
+Kubernetes [Restricted security policy](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
+{{% /admonition %}}
