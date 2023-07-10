@@ -38,7 +38,7 @@ func (cl *CustomLogger) Log(keyvals ...interface{}) error {
 // should fail if unable to load sample
 // sample should be what is expected
 // should rebuild corrupted sample
-func TestLazyBinaryReader_ShouldBuildSampleFromFile(t *testing.T) {
+func TestStreamBinaryReader_ShouldBuildSampleFromFile(t *testing.T) {
 	ctx := context.Background()
 	// logger := log.NewNopLogger()
 	// logger := log.NewLogfmtLogger(os.Stderr)
@@ -59,11 +59,15 @@ func TestLazyBinaryReader_ShouldBuildSampleFromFile(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	// Write sample to disk on first build.
-	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	r1, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	// Read sample to disk on second build.
-	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	r2, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 
 	// Check that last log confirms we read from index-header sample.
 	logStr := strings.Split(logger.Logs[len(logger.Logs)-1], " filepath")[0]
 	require.Equal(t, logStr, "leveldebugmsgreading from index-header sample")
+
+	// Check that the samples are the same.
+	require.Equal(t, r1.indexVersion, r2.indexVersion)
+	require.Equal(t, r1.version, r2.version)
 }

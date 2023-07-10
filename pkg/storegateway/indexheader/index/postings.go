@@ -601,6 +601,7 @@ func (t *PostingOffsetTableV2) NewPostingOffsetTableSample() (table *samplepb.Po
 		for _, postingOff := range offsets.offsets {
 			sample.Postings[name].Offsets = append(sample.Postings[name].Offsets, &samplepb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)})
 		}
+		sample.Postings[name].LastValOffset = offsets.lastValOffset
 	}
 
 	return sample
