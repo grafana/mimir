@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -141,8 +142,6 @@ func newStoreGatewayStreamReader(client storegatewaypb.StoreGateway_SeriesClient
 		stats:               stats,
 		log:                 log,
 		seriesChunksChan:    make(chan *storepb.StreamingChunksBatch, 1),
-		// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
-		errorChan: make(chan error, 1),
 	}
 }
 
@@ -160,26 +159,39 @@ func (s *storeGatewayStreamReader) Close() {
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
 // To cancel buffering, cancel the context associated with this storeGatewayStreamReader's storegatewaypb.StoreGateway_SeriesClient.
 func (s *storeGatewayStreamReader) StartBuffering() {
-	ctxDone := s.client.Context().Done()
+	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
+	s.errorChan = make(chan error, 1)
 
+	ctxDone := s.client.Context().Done()
 	go func() {
+		log, _ := spanlogger.NewWithLogger(s.client.Context(), s.log, "storeGatewayStreamReader.StartBuffering")
+
 		defer func() {
 			s.Close()
 			close(s.seriesChunksChan)
 			close(s.errorChan)
+			log.Finish()
 		}()
 
+		onError := func(err error) {
+			s.errorChan <- err
+			log.Error(err)
+		}
+
 		totalSeries := 0
+		totalChunks := 0
 
 		for {
 			msg, err := s.client.Recv()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					if totalSeries < s.expectedSeriesCount {
-						s.errorChan <- fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries)
+						onError(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries))
+					} else {
+						level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
 					}
 				} else {
-					s.errorChan <- err
+					onError(err)
 				}
 
 				return
@@ -187,7 +199,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 
 			c := msg.GetStreamingChunks()
 			if c == nil {
-				s.errorChan <- fmt.Errorf("expected to receive StreamingSeriesChunks, but got something else")
+				onError(fmt.Errorf("expected to receive StreamingSeriesChunks, but got something else"))
 				return
 			}
 
@@ -197,7 +209,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 
 			totalSeries += len(c.Series)
 			if totalSeries > s.expectedSeriesCount {
-				s.errorChan <- fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
+				onError(fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries))
 				return
 			}
 
@@ -209,13 +221,13 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 					chunkBytes += ch.Size()
 				}
 			}
-
+			totalChunks += numChunks
 			if err := s.queryLimiter.AddChunks(numChunks); err != nil {
-				s.errorChan <- validation.LimitError(err.Error())
+				onError(validation.LimitError(err.Error()))
 				return
 			}
 			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
-				s.errorChan <- validation.LimitError(err.Error())
+				onError(validation.LimitError(err.Error()))
 				return
 			}
 
@@ -231,7 +243,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 				// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
 				// This only works correctly if the context is cancelled when the query request is complete or cancelled,
 				// which is true at the time of writing.
-				s.errorChan <- s.client.Context().Err()
+				onError(s.client.Context().Err())
 				return
 			case s.seriesChunksChan <- c:
 				// Batch enqueued successfully, nothing else to do for this batch.

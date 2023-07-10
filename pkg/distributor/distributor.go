@@ -166,7 +166,7 @@ type Config struct {
 
 	// This config is dynamically injected because it is defined in the querier config.
 	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
-	PreferStreamingChunks                      bool          `yaml:"-"`
+	PreferStreamingChunksFromIngesters         bool          `yaml:"-"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`

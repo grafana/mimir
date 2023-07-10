@@ -71,7 +71,7 @@ func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matc
 			return err
 		}
 
-		if d.cfg.PreferStreamingChunks {
+		if d.cfg.PreferStreamingChunksFromIngesters {
 			req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 		}
 

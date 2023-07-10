@@ -7,7 +7,7 @@
 * [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
 * [CHANGE] Querier: change the default value of the experimental `-querier.streaming-chunks-per-ingester-buffer-size` flag to 256. #5203
 * [CHANGE] Querier: only initiate query requests to ingesters in the `ACTIVE` state in the ring. #5342
-* [CHANGE] Querier: Renamed `-querier.prefer-streaming-chunks` to `-querier.prefer-streaming-chunks-for-ingesters` to enable streaming chunks from ingesters to queriers. #5182
+* [CHANGE] Querier: Renamed `-querier.prefer-streaming-chunks` to `-querier.prefer-streaming-chunks-from-ingesters` to enable streaming chunks from ingesters to queriers. #5182
 * [CHANGE] Querier: `-query-frontend.cache-unaligned-requests` has been moved from a global flag to a per-tenant override. #5312
 * [CHANGE] Ingester: removed `cortex_ingester_shipper_dir_syncs_total` and `cortex_ingester_shipper_dir_sync_failures_total` metrics. The former metric was not much useful, and the latter was never incremented. #5396
 * [FEATURE] Cardinality API: Add a new `count_method` parameter which enables counting active series #5136
@@ -43,7 +43,7 @@
 * [ENHANCEMENT] Querier: add `cortex_querier_queries_rejected_total` metric that counts the number of queries rejected due to hitting a limit (eg. max series per query or max chunks per query). #5316 #5440
 * [ENHANCEMENT] Querier: add experimental `-querier.minimize-ingester-requests-hedging-delay` option to initiate requests to further ingesters when request minimisation is enabled and not all initial requests have completed. #5368
 * [ENHANCEMENT] Clarify docs for `-ingester.client.*` flags to make it clear that these are used by both queriers and distributors. #5375
-* [ENHANCEMENT] Querier and Store-gateway: add experimental support for streaming chunks from store-gateways to queriers while evaluating queries. This can be enabled with `-querier.prefer-streaming-chunks-from-store-gateways=true`. #5182
+* [ENHANCEMENT] Querier and store-gateway: add experimental support for streaming chunks from store-gateways to queriers while evaluating queries. This can be enabled with `-querier.prefer-streaming-chunks-from-store-gateways=true`. #5182
 * [ENHANCEMENT] Querier: enforce `max-chunks-per-query` limit earlier in query processing when streaming chunks from ingesters to queriers to avoid unnecessarily consuming resources for queries that will be aborted. #5369
 * [ENHANCEMENT] Ingester: added `cortex_ingester_shipper_last_successful_upload_timestamp_seconds` metric tracking the last successful TSDB block uploaded to the bucket (unix timestamp in seconds). #5396
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204

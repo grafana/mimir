@@ -264,8 +264,8 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		reg,
 	)
 
-	streamingBufferSize := querierCfg.StreamingChunksPerStoregatewaySeriesBufferSize
-	if !querierCfg.PreferStreamingChunksFromStoregateways {
+	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
+	if !querierCfg.PreferStreamingChunksFromStoreGateways {
 		streamingBufferSize = 0
 	}
 
@@ -694,9 +694,9 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // requests to the store-gateways (e.g., if a chunk or series limit is hit) are
 // considered serious errors. All other errors are not returned, but they give rise to fetch retrials.
 //
-// In case of a successful run, fetchSeriesFromStores returns a streamCloser function if it was a streaming
-// call for series+chunks. If you are ending the execution of the query later without iterating through all the series
-// and consuming the chunks, the streamCloser MUST be called to avoid leaking goroutines and gRPC connections.
+// In case of a successful run, fetchSeriesFromStores returns a startStreamingChunks function to start streaming
+// chunks for the fetched series iff it was a streaming call for series+chunks. startStreamingChunks must be called
+// before iterating on the series.
 func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ storage.Warnings, startStreamingChunks func(), _ error) {
 	var (
 		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, q.userID)
