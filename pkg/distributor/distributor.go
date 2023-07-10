@@ -43,7 +43,6 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -126,7 +125,6 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
-	QueryMetrics                     *stats.QueryMetrics
 
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
 	discardedSamplesRateLimited       *prometheus.CounterVec
@@ -239,7 +237,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		queryQuorumConfig:     ring.DoUntilQuorumConfig{MinimizeRequests: cfg.MinimizeIngesterRequests, HedgingDelay: cfg.MinimiseIngesterRequestsHedgingDelay},
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
-		QueryMetrics:          stats.NewQueryMetrics(reg),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",

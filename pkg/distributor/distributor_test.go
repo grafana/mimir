@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1009,14 +1010,15 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			cfg.shuffleShardSize = tc.shuffleShardSize
 
-			ds, ingesters, _ := prepare(t, cfg)
+			ds, ingesters, reg := prepare(t, cfg)
 
 			request := makeWriteRequest(0, tc.samples, tc.metadata, false, true)
 			writeResponse, err := ds[0].Push(ctx, request)
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
 			assert.Nil(t, err)
 
-			resp, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
+			queryMetrics := stats.NewQueryMetrics(reg[0])
+			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, tc.matchers...)
 
 			if tc.expectedError == nil {
 				require.NoError(t, err)
@@ -1783,14 +1785,15 @@ func TestSlowQueries(t *testing.T) {
 				expectedErr = errFail
 			}
 
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, reg := prepare(t, prepConfig{
 				numIngesters:    nIngesters,
 				happyIngesters:  happy,
 				numDistributors: 1,
 				queryDelay:      100 * time.Millisecond,
 			})
 
-			_, err := ds[0].QueryStream(ctx, 0, 10, nameMatcher)
+			queryMetrics := stats.NewQueryMetrics(reg[0])
+			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, nameMatcher)
 			assert.Equal(t, expectedErr, err)
 		})
 	}
