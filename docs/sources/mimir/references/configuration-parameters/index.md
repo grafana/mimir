@@ -2904,6 +2904,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.results-cache-ttl-for-cardinality-query
 [results_cache_ttl_for_cardinality_query: <duration> | default = 0s]
 
+# (experimental) Time to live duration for cached label names and label values
+# query results. The value 0 disables the cache.
+# CLI flag: -query-frontend.results-cache-ttl-for-labels-query
+[results_cache_ttl_for_labels_query: <duration> | default = 0s]
+
 # (advanced) Cache requests that are not step-aligned.
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]

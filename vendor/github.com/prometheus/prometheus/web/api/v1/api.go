@@ -178,8 +178,13 @@ type TSDBAdminStats interface {
 // QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
 type QueryEngine interface {
 	SetQueryLogger(l promql.QueryLogger)
-	NewInstantQuery(ctx context.Context, q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
-	NewRangeQuery(ctx context.Context, q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
+	NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
+	NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
+}
+
+type QueryOpts interface {
+	EnablePerStepStats() bool
+	LookbackDelta() time.Duration
 }
 
 // API can register a set of endpoints in a router and handle
@@ -281,7 +286,7 @@ func NewAPI(
 	}
 
 	if ap != nil {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, ap)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap)
 	}
 
 	return a
@@ -470,18 +475,18 @@ func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{expr.Pretty(0), nil, nil, nil}
 }
 
-func extractQueryOpts(r *http.Request) (*promql.QueryOpts, error) {
-	opts := &promql.QueryOpts{
-		EnablePerStepStats: r.FormValue("stats") == "all",
-	}
+func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
+	var duration time.Duration
+
 	if strDuration := r.FormValue("lookback_delta"); strDuration != "" {
-		duration, err := parseDuration(strDuration)
+		parsedDuration, err := parseDuration(strDuration)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing lookback delta duration: %w", err)
 		}
-		opts.LookbackDelta = duration
+		duration = parsedDuration
 	}
-	return opts, nil
+
+	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == "all", duration), nil
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -1202,15 +1207,25 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
 		}
 	}
+	limitPerMetric := -1
+	if s := r.FormValue("limit_per_metric"); s != "" {
+		var err error
+		if limitPerMetric, err = strconv.Atoi(s); err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit_per_metric must be a number")}, nil, nil}
+		}
+	}
 
 	metric := r.FormValue("metric")
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
-
 			if metric == "" {
 				for _, mm := range t.MetadataList() {
 					m := metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
 					ms, ok := metrics[mm.Metric]
+
+					if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+						continue
+					}
 
 					if !ok {
 						ms = map[metadata]struct{}{}
@@ -1224,6 +1239,10 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 			if md, ok := t.Metadata(metric); ok {
 				m := metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
 				ms, ok := metrics[md.Metric]
+
+				if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+					continue
+				}
 
 				if !ok {
 					ms = map[metadata]struct{}{}
@@ -1499,7 +1518,7 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 	chunkCount := int64(math.NaN())
 	for _, mF := range metrics {
 		if *mF.Name == "prometheus_tsdb_head_chunks" {
-			m := *mF.Metric[0]
+			m := mF.Metric[0]
 			if m.Gauge != nil {
 				chunkCount = int64(m.Gauge.GetValue())
 				break

@@ -42,13 +42,13 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series2))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
-	assertNoRejectedQueriesMetric(t, reg)
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series1))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
-	assertNoRejectedQueriesMetric(t, reg)
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0)
 }
 
 func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
@@ -74,21 +74,21 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 	)
 	err := limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series1))
 	require.NoError(t, err)
-	assertNoRejectedQueriesMetric(t, reg)
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0)
 
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series2))
 	require.Error(t, err)
-	assertRejectedQueriesMetricValue(t, reg, "max-fetched-series-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0)
 
 	// Add the same series again and ensure that we don't increment the failed queries metric again.
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series2))
 	require.Error(t, err)
-	assertRejectedQueriesMetricValue(t, reg, "max-fetched-series-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0)
 
 	// Add another series and ensure that we don't increment the failed queries metric again.
 	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series3))
 	require.Error(t, err)
-	assertRejectedQueriesMetricValue(t, reg, "max-fetched-series-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0)
 }
 
 func TestQueryLimiter_AddChunkBytes(t *testing.T) {
@@ -97,16 +97,16 @@ func TestQueryLimiter_AddChunkBytes(t *testing.T) {
 
 	err := limiter.AddChunkBytes(100)
 	require.NoError(t, err)
-	assertNoRejectedQueriesMetric(t, reg)
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0)
 
 	err = limiter.AddChunkBytes(1)
 	require.Error(t, err)
-	assertRejectedQueriesMetricValue(t, reg, "max-fetched-chunk-bytes-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, 0, 1, 0)
 
 	// Add more bytes and ensure that we don't increment the failed queries metric again.
 	err = limiter.AddChunkBytes(2)
 	require.Error(t, err)
-	assertRejectedQueriesMetricValue(t, reg, "max-fetched-chunk-bytes-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, 0, 1, 0)
 }
 
 func TestQueryLimiter_AddChunks(t *testing.T) {
@@ -115,16 +115,16 @@ func TestQueryLimiter_AddChunks(t *testing.T) {
 
 	err := limiter.AddChunks(100)
 	require.NoError(t, err)
-	assertNoRejectedQueriesMetric(t, reg)
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0)
 
 	err = limiter.AddChunks(1)
 	require.Error(t, err)
-	assertRejectedQueriesMetricValue(t, reg, "max-fetched-chunks-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 1)
 
 	// Add more chunks and ensure that we don't increment the failed queries metric again.
 	err = limiter.AddChunks(2)
 	require.Error(t, err)
-	assertRejectedQueriesMetricValue(t, reg, "max-fetched-chunks-per-query", 1)
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 1)
 }
 
 func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
@@ -149,18 +149,17 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	}
 }
 
-func assertNoRejectedQueriesMetric(t *testing.T, c prometheus.Collector) {
-	require.NoError(t, testutil.CollectAndCompare(c, bytes.NewBufferString(""), "cortex_querier_queries_rejected_total"))
-}
-
-func assertRejectedQueriesMetricValue(t *testing.T, c prometheus.Collector, reason string, expectedValue int) {
+func assertRejectedQueriesMetricValue(t *testing.T, c prometheus.Collector, expectedMaxSeries, expectedMaxChunkBytes, expectedMaxChunks int) {
 	expected := fmt.Sprintf(`
 		# HELP cortex_querier_queries_rejected_total Number of queries that were rejected, for example because they exceeded a limit.
 		# TYPE cortex_querier_queries_rejected_total counter
-		cortex_querier_queries_rejected_total{reason="%v"} %v
+		cortex_querier_queries_rejected_total{reason="max-fetched-series-per-query"} %v
+		cortex_querier_queries_rejected_total{reason="max-fetched-chunk-bytes-per-query"} %v
+		cortex_querier_queries_rejected_total{reason="max-fetched-chunks-per-query"} %v
 		`,
-		reason,
-		expectedValue,
+		expectedMaxSeries,
+		expectedMaxChunkBytes,
+		expectedMaxChunks,
 	)
 
 	require.NoError(t, testutil.CollectAndCompare(c, bytes.NewBufferString(expected), "cortex_querier_queries_rejected_total"))

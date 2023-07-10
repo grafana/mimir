@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r244-be76906
+  tag: r245-f6d84db
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -417,7 +417,10 @@ runtimeConfig: {}
 # RBAC configuration
 rbac:
   create: true
-  # For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
+  # -- If true, PodSecurityPolicy will be rendered by the chart on Kuberentes 1.24.
+  # By default the PodSecurityPolicy is not rendered on version 1.24.
+  forcePSPOnKubernetes124: false
+  # -- For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
   type: psp
   # -- podSecurityContext is the default pod security context for Mimir, GEM, gateway, and cache components.
   # When installing on OpenShift, override podSecurityContext settings with
@@ -2906,7 +2909,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r244-60c74769
+    tag: r245-e4f5c214
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3376,7 +3379,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r244-be76906
+    tag: r245-f6d84db
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3396,7 +3399,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r244-be76906
+    tag: r245-f6d84db
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 
