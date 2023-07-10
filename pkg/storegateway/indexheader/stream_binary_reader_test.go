@@ -7,7 +7,9 @@ package indexheader
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -19,12 +21,28 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
+// CustomLogger is a custom implementation of log.Logger that captures the logs.
+type CustomLogger struct {
+	// Store the logs in a slice or any other suitable data structure
+	Logs   []string
+	logger log.Logger
+}
+
+func (cl *CustomLogger) Log(keyvals ...interface{}) error {
+	str := fmt.Sprint(keyvals...)
+	cl.Logs = append(cl.Logs, str)
+	return nil
+}
+
 // Tests:
 // should fail if unable to load sample
 // sample should be what is expected
 // should rebuild corrupted sample
 func TestLazyBinaryReader_ShouldBuildSampleFromFile(t *testing.T) {
 	ctx := context.Background()
+	// logger := log.NewNopLogger()
+	// logger := log.NewLogfmtLogger(os.Stderr)
+	logger := &CustomLogger{}
 
 	tmpDir := filepath.Join(t.TempDir(), "test-sample")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
@@ -40,6 +58,12 @@ func TestLazyBinaryReader_ShouldBuildSampleFromFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
-	logger := log.NewNopLogger()
+	// Write sample to disk on first build.
 	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	// Read sample to disk on second build.
+	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+
+	// Check that last log confirms we read from index-header sample.
+	logStr := strings.Split(logger.Logs[len(logger.Logs)-1], " filepath")[0]
+	require.Equal(t, logStr, "leveldebugmsgreading from index-header sample")
 }

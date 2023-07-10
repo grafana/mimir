@@ -107,8 +107,11 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 		if err != nil {
 			return nil, fmt.Errorf("cannot write index header sample: %w", err)
 		}
+		level.Debug(logger).Log("msg", "built index-header sample file", "path", samplepath)
 		return br, err
 	}
+
+	level.Debug(logger).Log("msg", "reading from index-header sample file", "path", samplepath)
 
 	sample := &samplepb.Sample{}
 	if err := sample.Unmarshal(data); err != nil {
