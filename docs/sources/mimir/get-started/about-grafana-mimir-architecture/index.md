@@ -1,10 +1,10 @@
 ---
 aliases:
   - ../operators-guide/architecture/about-grafana-mimir-architecture/
-title: "Grafana Mimir architecture"
-menuTitle: "Grafana Mimir architecture"
-description: "Learn about the Grafana Mimir architecture."
-weight: 10
+description: Learn about the Grafana Mimir architecture.
+menuTitle: Grafana Mimir architecture
+title: Grafana Mimir architecture
+weight: 5
 ---
 
 # Grafana Mimir architecture
@@ -16,13 +16,13 @@ Grafana Mimir microservices are called components.
 Grafana Mimir's design compiles the code for all components into a single binary.
 The `-target` parameter controls which component(s) that single binary will behave as.
 
-To get started easily, run Grafana Mimir in [monolithic mode]({{< relref "../../references/architecture/deployment-modes/index.md#monolithic-mode" >}}) with all components running simultaneously in one process, or in [read-write mode]({{< relref "../../references/architecture/deployment-modes/index.md#read-write-mode" >}}), which groups components into _read_, _write_, and _backend_ paths.
+To get started easily, run Grafana Mimir in [monolithic mode]({{< relref "../../references/architecture/deployment-modes#monolithic-mode" >}}) with all components running simultaneously in one process, or in [read-write mode]({{< relref "../../references/architecture/deployment-modes#read-write-mode" >}}), which groups components into _read_, _write_, and _backend_ paths.
 
-For more information, refer to [Deployment modes]({{< relref "../../references/architecture/deployment-modes/index.md" >}}).
+For more information, refer to [Deployment modes]({{< relref "../../references/architecture/deployment-modes" >}}).
 
 ## Grafana Mimir components
 
-Most components are stateless and do not require any data persisted between process restarts. Some components are stateful and rely on non-volatile storage to prevent data loss between process restarts. For details about each component, see its page in [Components]({{< relref "../../references/architecture/components/_index.md" >}}).
+Most components are stateless and do not require any data persisted between process restarts. Some components are stateful and rely on non-volatile storage to prevent data loss between process restarts. For details about each component, see its page in [Components]({{< relref "../../references/architecture/components" >}}).
 
 ### The write path
 
@@ -39,21 +39,21 @@ The per-tenant TSDB is lazily created in each ingester as soon as the first samp
 The in-memory samples are periodically flushed to disk, and the WAL is truncated, when a new TSDB block is created.
 By default, this occurs every two hours.
 Each newly created block is uploaded to long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires.
-This gives [queriers]({{< relref "../../references/architecture/components/querier.md" >}}) and [store-gateways]({{< relref "../../references/architecture/components/store-gateway.md" >}}) enough time to discover the new block on the storage and download its index-header.
+This gives [queriers]({{< relref "../../references/architecture/components/querier" >}}) and [store-gateways]({{< relref "../../references/architecture/components/store-gateway" >}}) enough time to discover the new block on the storage and download its index-header.
 
 To effectively use the WAL, and to be able to recover the in-memory series if an ingester abruptly terminates, store the WAL to a persistent disk that can survive an ingester failure.
 For example, when running in the cloud, include an AWS EBS volume or a GCP persistent disk.
 If you are running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a persistent volume claim for the ingesters.
 The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The location of the filesystem and the location of the local TSDB blocks cannot be decoupled.
 
-For more information, refer to [timeline of block uploads]({{< relref "../../operators-guide/run-production-environment/production-tips/index.md#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "../../references/architecture/components/ingester.md" >}}).
+For more information, refer to [timeline of block uploads]({{< relref "../../manage/run-production-environment/production-tips#how-to-estimate--querierquery-store-after" >}}) and [Ingester]({{< relref "../../references/architecture/components/ingester" >}}).
 
 #### Series sharding and replication
 
 By default, each time series is replicated to three ingesters, and each ingester writes its own block to the long-term storage.
-The [Compactor]({{< relref "../../references/architecture/components/compactor/index.md" >}}) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
+The [Compactor]({{< relref "../../references/architecture/components/compactor" >}}) merges blocks from multiple ingesters into a single block, and removes duplicate samples.
 Blocks compaction significantly reduces storage utilization.
-For more information, refer to [Compactor]({{< relref "../../references/architecture/components/compactor/index.md" >}}) and [Production tips]({{< relref "../../operators-guide/run-production-environment/production-tips/index.md" >}}).
+For more information, refer to [Compactor]({{< relref "../../references/architecture/components/compactor" >}}) and [Production tips]({{< relref "../../manage/run-production-environment/production-tips" >}}).
 
 ### The read path
 
@@ -69,7 +69,7 @@ The query-frontend next checks the results cache. If the result of a query has b
 
 The queriers act as workers, pulling queries from the queue.
 
-The queriers connect to the store-gateways and the ingesters to fetch all the data needed to execute a query. For more information about how the query is executed, refer to [querier]({{< relref "../../references/architecture/components/querier.md" >}}).
+The queriers connect to the store-gateways and the ingesters to fetch all the data needed to execute a query. For more information about how the query is executed, refer to [querier]({{< relref "../../references/architecture/components/querier" >}}).
 
 After the querier executes the query, it returns the results to the query-frontend for aggregation. The query-frontend then returns the aggregated results to the client.
 
@@ -78,9 +78,9 @@ After the querier executes the query, it returns the results to the query-fronte
 Prometheus instances scrape samples from various targets and push them to Grafana Mimir by using Prometheus’ [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations).
 The remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
 
-Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization]({{< relref "../../operators-guide/secure/authentication-and-authorization.md" >}}) are handled by an external reverse proxy.
+Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization]({{< relref "../../manage/secure/authentication-and-authorization" >}}) are handled by an external reverse proxy.
 
-Incoming samples (writes from Prometheus) are handled by the [distributor]({{< relref "../../references/architecture/components/distributor.md" >}}), and incoming reads (PromQL queries) are handled by the [query frontend]({{< relref "../../references/architecture/components/query-frontend/index.md" >}}).
+Incoming samples (writes from Prometheus) are handled by the [distributor]({{< relref "../../references/architecture/components/distributor" >}}), and incoming reads (PromQL queries) are handled by the [query frontend]({{< relref "../../references/architecture/components/query-frontend" >}}).
 
 ## Long-term storage
 
@@ -102,4 +102,4 @@ Grafana Mimir requires any of the following object stores for the block files:
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift)
 - Local Filesystem (single node only)
 
-For more information, refer to [configure object storage]({{< relref "../../configure/configure-object-storage-backend.md" >}}) and [configure metrics storage retention]({{< relref "../../configure/configure-metrics-storage-retention.md" >}}).
+For more information, refer to [configure object storage]({{< relref "../../configure/configure-object-storage-backend" >}}) and [configure metrics storage retention]({{< relref "../../configure/configure-metrics-storage-retention" >}}).

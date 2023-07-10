@@ -1,33 +1,33 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/store-gateway/
-title: "Grafana Mimir store-gateway"
-menuTitle: "Store-gateway"
-description: "The store-gateway queries blocks from long-term storage."
+description: The store-gateway queries blocks from long-term storage.
+menuTitle: Store-gateway
+title: Grafana Mimir store-gateway
 weight: 70
 ---
 
 # Grafana Mimir store-gateway
 
-The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture/index.md#long-term-storage" >}}).
-On the read path, the [querier]({{< relref "querier.md" >}}) and the [ruler]({{< relref "ruler/index.md" >}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
+The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture#long-term-storage" >}}).
+On the read path, the [querier]({{< relref "./querier" >}}) and the [ruler]({{< relref "./ruler" >}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
 
 ## Bucket index
 
 To find the right blocks to look up at query time, the store-gateway requires a view of the bucket in long-term storage.
 The store-gateway keeps the bucket view updated using one of the following options:
 
-- Periodically downloading the [bucket index]({{< relref "../bucket-index/index.md" >}}) (default)
+- Periodically downloading the [bucket index]({{< relref "../bucket-index" >}}) (default)
 - Periodically scanning the bucket
 
 ### Bucket index enabled (default)
 
-To discover each tenant's blocks and block deletion marks, at startup, store-gateways fetch the [bucket index]({{< relref "../bucket-index/index.md" >}}) from long-term storage for each tenant that belongs to their [shard](#blocks-sharding-and-replication).
+To discover each tenant's blocks and block deletion marks, at startup, store-gateways fetch the [bucket index]({{< relref "../bucket-index" >}}) from long-term storage for each tenant that belongs to their [shard](#blocks-sharding-and-replication).
 
 For each discovered block, the store-gateway downloads the [index header](#blocks-index-header) to the local disk.
 During this initial bucket-synchronization phase, the store-gateway’s `/ready` readiness probe endpoint reports a not-ready status.
 
-For more information about the bucket index, refer to [bucket index]({{< relref "../bucket-index/index.md" >}}).
+For more information about the bucket index, refer to [bucket index]({{< relref "../bucket-index" >}}).
 
 Store-gateways periodically re-download the bucket index to obtain an updated view of the long-term storage and discover new blocks uploaded by ingesters and compactors, or deleted by compactors.
 
@@ -35,11 +35,11 @@ It is possible that the compactor might have deleted blocks or marked others for
 The store-gateway downloads the index header for new blocks, and offloads (deletes) the local copy of index header for deleted blocks.
 You can configure the `-blocks-storage.bucket-store.sync-interval` flag to control the frequency with which the store-gateway checks for changes in the long-term storage.
 
-When a query executes, store-gateway downloads chunks, but it does not fully download the whole block; the store-gateway downloads only the portions of index and chunks that are required to run a given query.
+When a query executes, the store-gateway downloads chunks, but it does not fully download the whole block; the store-gateway downloads only the portions of index and chunks that are required to run a given query.
 To avoid the store-gateway having to re-download the index header during subsequent restarts, we recommend running the store-gateway with a persistent disk.
 For example, if you're running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a PersistentVolumeClaim for the store-gateways.
 
-For more information about the index-header, refer to [Binary index-header documentation]({{< relref "../binary-index-header.md" >}}).
+For more information about the index-header, refer to [Binary index-header documentation]({{< relref "../binary-index-header" >}}).
 
 ### Bucket index disabled
 
@@ -54,7 +54,7 @@ The store-gateway uses blocks sharding to horizontally scale blocks in a large c
 Blocks are replicated across multiple store-gateway instances based on a replication factor configured via `-store-gateway.sharding-ring.replication-factor`.
 The blocks replication is used to protect from query failures caused by some blocks not loaded by any store-gateway instance at a given time, such as in the event of a store-gateway failure or while restarting a store-gateway instance (for example, during a rolling update).
 
-Store-gateway instances build a [hash ring]({{< relref "../hash-ring/index.md" >}}) and shard and replicate blocks across the pool of store-gateway instances registered in the ring.
+Store-gateway instances build a [hash ring]({{< relref "../hash-ring" >}}) and shard and replicate blocks across the pool of store-gateway instances registered in the ring.
 
 Store-gateways continuously monitor the ring state.
 When the ring topology changes, for example, when a new instance is added or removed, or the instance becomes healthy or unhealthy, each store-gateway instance resynchronizes the blocks assigned to its shard.
@@ -66,7 +66,7 @@ When the querier queries blocks via a store-gateway, the response contains the l
 If a querier attempts to query a block that the store-gateway has not loaded, the querier retries the query on a different store-gateway up to the `-store-gateway.sharding-ring.replication-factor` value, which by default is `3`.
 The query fails if the block can't be successfully queried from any replica.
 
-> **Note:** You must configure the [hash ring]({{< relref "../hash-ring/index.md" >}}) via the `-store-gateway.sharding-ring.*` flags or their respective YAML configuration parameters.
+> **Note:** You must configure the [hash ring]({{< relref "../hash-ring" >}}) via the `-store-gateway.sharding-ring.*` flags or their respective YAML configuration parameters.
 
 ### Sharding strategy
 
@@ -79,7 +79,7 @@ The `store_gateway_tenant_shard_size` in the limits overrides can override the s
 
 The default `-store-gateway.tenant-shard-size` value is 0, which means that tenant's blocks are sharded across all store-gateway instances.
 
-For more information about shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../../configure/configure-shuffle-sharding/index.md" >}}).
+For more information about shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../../configure/configure-shuffle-sharding" >}}).
 
 ### Auto-forget
 
@@ -90,7 +90,7 @@ The auto-forget feature works as follows: when an healthy store-gateway instance
 
 ### Zone-awareness
 
-Store-gateway replication optionally supports [zone-awareness]({{< relref "../../../configure/configure-zone-aware-replication.md" >}}). When you enable zone-aware replication and the blocks replication factor is greater than 1, each block is replicated across store-gateway instances located in different availability zones.
+Store-gateway replication optionally supports [zone-awareness]({{< relref "../../../configure/configure-zone-aware-replication" >}}). When you enable zone-aware replication and the blocks replication factor is greater than 1, each block is replicated across store-gateway instances located in different availability zones.
 
 **To enable zone-aware replication for the store-gateways**:
 
@@ -111,7 +111,7 @@ To enable waiting for the ring to be stable at startup, start the store-gateway 
 
 ## Blocks index-header
 
-The [index-header]({{< relref "../binary-index-header.md" >}}) is a subset of the block index that the store-gateway downloads from long-term storage and keeps on the local disk.
+The [index-header]({{< relref "../binary-index-header" >}}) is a subset of the block index that the store-gateway downloads from long-term storage and keeps on the local disk.
 Keeping the index-header on the local disk makes query execution faster.
 
 ### Index-header lazy loading
@@ -132,7 +132,7 @@ The store-gateway supports the following type of caches:
 - [Metadata cache](#metadata-cache)
 
 We recommend that you use caching in a production environment.
-For more information about configuring the cache, refer to [production tips]({{< relref "../../../operators-guide/run-production-environment/production-tips/index.md#caching" >}}).
+For more information about configuring the cache, refer to [production tips]({{< relref "../../../manage/run-production-environment/production-tips#caching" >}}).
 
 ### Index cache
 
@@ -168,18 +168,18 @@ For example, if you're running Memcached in Kubernetes, you might:
 
 1. Deploy your Memcached cluster using a [StatefulSet](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/).
 1. Create a [headless service](https://kubernetes.io/docs/concepts/services-networking/service/#headless-services) for Memcached StatefulSet.
-1. Configure the Mimir's Memcached client address using the `dnssrvnoa+` [service discovery]({{< relref "../../../configure/about-dns-service-discovery.md" >}}).
+1. Configure the Mimir's Memcached client address using the `dnssrvnoa+` [service discovery]({{< relref "../../../configure/about-dns-service-discovery" >}}).
 
 **To configure the Memcached backend**:
 
 1. Use `-blocks-storage.bucket-store.index-cache.backend=memcached`.
 1. Use the `-blocks-storage.bucket-store.index-cache.memcached.addresses` flag to set the address of the Memcached service.
 
-[DNS service discovery]({{< relref "../../../configure/about-dns-service-discovery.md" >}}) resolves the addresses of the Memcached servers.
+[DNS service discovery]({{< relref "../../../configure/about-dns-service-discovery" >}}) resolves the addresses of the Memcached servers.
 
 ### Chunks cache
 
-The store-gateway can also use a cache to store [chunks]({{< relref "../../../references/glossary.md#chunk" >}}) that are fetched from long-term storage.
+The store-gateway can also use a cache to store [chunks]({{< relref "../../glossary#chunk" >}}) that are fetched from long-term storage.
 Chunks contain actual samples, and can be reused if a query hits the same series for the same time range.
 Chunks can only be cached in Memcached.
 
@@ -190,7 +190,7 @@ You can configure the Memcached client via flags that include the prefix `-block
 
 ### Metadata cache
 
-Store-gateways and [queriers]({{< relref "querier.md" >}}) can use memcached to cache the following bucket metadata:
+Store-gateways and [queriers]({{< relref "./querier" >}}) can use memcached to cache the following bucket metadata:
 
 - List of tenants
 - List of blocks per tenant
@@ -215,4 +215,4 @@ Additional flags for configuring metadata cache begin with the prefix `-blocks-s
 
 ## Store-gateway configuration
 
-For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../../references/configuration-parameters/index.md#store_gateway" >}}).
+For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../configuration-parameters#store_gateway" >}}).

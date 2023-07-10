@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -80,7 +81,7 @@ type seriesChunksSet struct {
 	seriesChunksPool *pool.SlabPool[storepb.AggrChunk]
 
 	// chunksReleaser releases the memory used to allocate series chunks.
-	chunksReleaser chunksReleaser
+	chunksReleaser releaser
 }
 
 // newSeriesChunksSet creates a new seriesChunksSet. The series slice is pre-allocated with
@@ -115,8 +116,9 @@ func newSeriesChunksSet(seriesCapacity int, seriesReleasable bool) seriesChunksS
 	}
 }
 
-type chunksReleaser interface {
-	// Release the memory used to allocate series chunks.
+type releaser interface {
+	// Release should release resources associated with this releaser instance.
+	// It is not safe to use any resources from this releaser after calling Release.
 	Release()
 }
 
@@ -164,7 +166,7 @@ func (b *seriesChunksSet) newSeriesAggrChunkSlice(size int) []storepb.AggrChunk 
 	return b.seriesChunksPool.Get(size)
 }
 
-func (b *seriesChunksSet) len() int {
+func (b seriesChunksSet) len() int {
 	return len(b.series)
 }
 
@@ -377,6 +379,16 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		c.err = c.from.Err()
 		return false
 	}
+
+	defer func(startTime time.Time) {
+		spanLog := spanlogger.FromContext(c.ctx, c.logger)
+		level.Debug(spanLog).Log(
+			"msg", "loaded chunks",
+			"series_count", c.At().len(),
+			"err", c.Err(),
+			"duration", time.Since(startTime),
+		)
+	}(time.Now())
 
 	nextUnloaded := c.from.At()
 

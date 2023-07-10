@@ -1,9 +1,11 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/overrides-exporter/
-title: "(Optional) Grafana Mimir overrides-exporter"
-menuTitle: "(Optional) Overrides-exporter"
-description: "The overrides-exporter exports Prometheus metrics containing the configured per-tenant limits."
+description:
+  The overrides-exporter exports Prometheus metrics containing the configured
+  per-tenant limits.
+menuTitle: (Optional) Overrides-exporter
+title: (Optional) Grafana Mimir overrides-exporter
 weight: 110
 ---
 
@@ -13,7 +15,7 @@ Grafana Mimir supports applying overrides on a per-tenant basis.
 A number of overrides configure limits that prevent a single tenant from using too many resources.
 The overrides-exporter component exposes limits as Prometheus metrics so that operators can understand how close tenants are to their limits.
 
-For more information about configuring overrides, refer to [Runtime configuration file]({{< relref "../../../configure/about-runtime-configuration.md" >}}).
+For more information about configuring overrides, refer to [Runtime configuration file]({{< relref "../../../configure/about-runtime-configuration" >}}).
 
 ## Running the overrides-exporter
 

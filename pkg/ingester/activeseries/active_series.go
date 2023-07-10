@@ -6,6 +6,7 @@
 package activeseries
 
 import (
+	"flag"
 	"math"
 	"sync"
 	"time"
@@ -16,12 +17,29 @@ import (
 
 const (
 	numStripes = 512
+
+	EnabledFlag     = "ingester.active-series-metrics-enabled"
+	IdleTimeoutFlag = "ingester.active-series-metrics-idle-timeout"
 )
+
+type Config struct {
+	Enabled      bool          `yaml:"active_series_metrics_enabled" category:"advanced"`
+	UpdatePeriod time.Duration `yaml:"active_series_metrics_update_period" category:"advanced"`
+	IdleTimeout  time.Duration `yaml:"active_series_metrics_idle_timeout" category:"advanced"`
+}
+
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enabled, EnabledFlag, true, "Enable tracking of active series and export them as metrics.")
+	f.DurationVar(&cfg.UpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
+	f.DurationVar(&cfg.IdleTimeout, IdleTimeoutFlag, 10*time.Minute, "After what time a series is considered to be inactive.")
+}
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
-	mu                 sync.RWMutex
-	stripes            [numStripes]seriesStripe
+	stripes [numStripes]seriesStripe
+
+	// matchersMutex protects matchers and lastMatchersUpdate.
+	matchersMutex      sync.RWMutex
 	matchers           *Matchers
 	lastMatchersUpdate time.Time
 
@@ -40,14 +58,13 @@ type seriesStripe struct {
 	oldestEntryTs atomic.Int64
 
 	mu             sync.RWMutex
-	refs           map[uint64][]seriesEntry
+	refs           map[uint64]seriesEntry
 	active         int   // Number of active entries in this stripe. Only decreased during purge or clear.
 	activeMatching []int // Number of active entries in this stripe matching each matcher of the configured Matchers.
 }
 
 // seriesEntry holds a timestamp for single series.
 type seriesEntry struct {
-	lbs     labels.Labels
 	nanos   *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
 	matches preAllocDynamicSlice //  Index of the matcher matching
 }
@@ -64,14 +81,14 @@ func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
 }
 
 func (c *ActiveSeries) CurrentMatcherNames() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.matchersMutex.RLock()
+	defer c.matchersMutex.RUnlock()
 	return c.matchers.MatcherNames()
 }
 
 func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.matchersMutex.Lock()
+	defer c.matchersMutex.Unlock()
 
 	for i := 0; i < numStripes; i++ {
 		c.stripes[i].reinitialize(asm)
@@ -81,16 +98,28 @@ func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
 }
 
 func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.matchersMutex.RLock()
+	defer c.matchersMutex.RUnlock()
 	return c.matchers.Config()
 }
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
-func (c *ActiveSeries) UpdateSeries(series labels.Labels, fp uint64, now time.Time, labelsCopy func(labels.Labels) labels.Labels) {
-	stripeID := fp % numStripes
+func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.Time) {
+	stripeID := ref % numStripes
 
-	c.stripes[stripeID].updateSeriesTimestamp(now, series, fp, labelsCopy)
+	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref)
+}
+
+// Purge purges expired entries and returns true if enough time has passed since
+// last reload. This should be called periodically to avoid unbounded memory
+// growth.
+func (c *ActiveSeries) Purge(now time.Time) bool {
+	c.matchersMutex.Lock()
+	defer c.matchersMutex.Unlock()
+	purgeTime := now.Add(-c.timeout)
+	c.purge(purgeTime)
+
+	return !c.lastMatchersUpdate.After(purgeTime)
 }
 
 // purge removes expired entries from the cache.
@@ -100,19 +129,28 @@ func (c *ActiveSeries) purge(keepUntil time.Time) {
 	}
 }
 
-// Active returns the total number of active series, as well as a slice of active series matching each one of the
-// custom trackers provided (in the same order as custom trackers are defined).
-// The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
-// This should be called periodically to avoid unbounded memory growth.
-func (c *ActiveSeries) Active(now time.Time) (int, []int, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	purgeTime := now.Add(-c.timeout)
-	c.purge(purgeTime)
+func (c *ActiveSeries) ContainsRef(ref uint64) bool {
+	stripeID := ref % numStripes
+	return c.stripes[stripeID].containsRef(ref)
+}
 
-	if c.lastMatchersUpdate.After(purgeTime) {
-		return 0, nil, false
+// Active returns the total number of active series. This method does not purge
+// expired entries, so Purge should be called periodically.
+func (c *ActiveSeries) Active() int {
+	total := 0
+	for s := 0; s < numStripes; s++ {
+		total += c.stripes[s].getTotal()
 	}
+	return total
+}
+
+// ActiveWithMatchers returns the total number of active series, as well as a
+// slice of active series matching each one of the custom trackers provided (in
+// the same order as custom trackers are defined). This method does not purge
+// expired entries, so Purge should be called periodically.
+func (c *ActiveSeries) ActiveWithMatchers() (int, []int) {
+	c.matchersMutex.RLock()
+	defer c.matchersMutex.RUnlock()
 
 	total := 0
 	totalMatching := resizeAndClear(len(c.matchers.MatcherNames()), nil)
@@ -120,7 +158,22 @@ func (c *ActiveSeries) Active(now time.Time) (int, []int, bool) {
 		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
 	}
 
-	return total, totalMatching, true
+	return total, totalMatching
+}
+
+func (s *seriesStripe) containsRef(ref uint64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	_, ok := s.refs[ref]
+	return ok
+}
+
+// getTotal will return the total active series in the stripe
+func (s *seriesStripe) getTotal() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.active
 }
 
 // getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
@@ -137,13 +190,13 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int) int {
 	return s.active
 }
 
-func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels) {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref uint64) {
 	nowNanos := now.UnixNano()
 
-	e := s.findEntryForSeries(fingerprint, series)
+	e := s.findEntryForSeries(ref)
 	entryTimeSet := false
 	if e == nil {
-		e, entryTimeSet = s.findOrCreateEntryForSeries(fingerprint, series, nowNanos, labelsCopy)
+		e, entryTimeSet = s.findOrCreateEntryForSeries(ref, series, nowNanos)
 	}
 
 	if !entryTimeSet {
@@ -163,30 +216,21 @@ func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels
 	}
 }
 
-func (s *seriesStripe) findEntryForSeries(fingerprint uint64, series labels.Labels) *atomic.Int64 {
+func (s *seriesStripe) findEntryForSeries(ref uint64) *atomic.Int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	// Check if already exists within the entries.
-	for _, entry := range s.refs[fingerprint] {
-		if labels.Equal(entry.lbs, series) {
-			return entry.nanos
-		}
-	}
-
-	return nil
+	return s.refs[ref].nanos
 }
 
-func (s *seriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series labels.Labels, nowNanos int64, labelsCopy func(labels.Labels) labels.Labels) (*atomic.Int64, bool) {
+func (s *seriesStripe) findOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64) (*atomic.Int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Check if already exists within the entries.
 	// This repeats findEntryForSeries(), but under write lock.
-	for _, entry := range s.refs[fingerprint] {
-		if labels.Equal(entry.lbs, series) {
-			return entry.nanos, false
-		}
+	entry, ok := s.refs[ref]
+	if ok {
+		return entry.nanos, false
 	}
 
 	matches := s.matchers.matches(series)
@@ -198,12 +242,11 @@ func (s *seriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series lab
 	}
 
 	e := seriesEntry{
-		lbs:     labelsCopy(series),
 		nanos:   atomic.NewInt64(nowNanos),
 		matches: matches,
 	}
 
-	s.refs[fingerprint] = append(s.refs[fingerprint], e)
+	s.refs[ref] = e
 
 	return e.nanos, true
 }
@@ -214,7 +257,7 @@ func (s *seriesStripe) clear() {
 	defer s.mu.Unlock()
 
 	s.oldestEntryTs.Store(0)
-	s.refs = map[uint64][]seriesEntry{}
+	s.refs = map[uint64]seriesEntry{}
 	s.active = 0
 	for i := range s.activeMatching {
 		s.activeMatching[i] = 0
@@ -227,7 +270,7 @@ func (s *seriesStripe) reinitialize(asm *Matchers) {
 	defer s.mu.Unlock()
 
 	s.oldestEntryTs.Store(0)
-	s.refs = map[uint64][]seriesEntry{}
+	s.refs = map[uint64]seriesEntry{}
 	s.active = 0
 	s.matchers = asm
 	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
@@ -247,55 +290,20 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 	s.activeMatching = resizeAndClear(len(s.activeMatching), s.activeMatching)
 
 	oldest := int64(math.MaxInt64)
-	for fp, entries := range s.refs {
-		// Since we do expect very few fingerprint collisions, we
-		// have an optimized implementation for the common case.
-		if len(entries) == 1 {
-			ts := entries[0].nanos.Load()
-			if ts < keepUntilNanos {
-				delete(s.refs, fp)
-				continue
-			}
-
-			s.active++
-			ml := entries[0].matches.len()
-			for i := 0; i < ml; i++ {
-				s.activeMatching[entries[0].matches.get(i)]++
-			}
-			if ts < oldest {
-				oldest = ts
-			}
+	for ref, entry := range s.refs {
+		ts := entry.nanos.Load()
+		if ts < keepUntilNanos {
+			delete(s.refs, ref)
 			continue
 		}
 
-		// We have more entries, which means there's a collision,
-		// so we have to iterate over the entries.
-		for i := 0; i < len(entries); {
-			ts := entries[i].nanos.Load()
-			if ts < keepUntilNanos {
-				entries = append(entries[:i], entries[i+1:]...)
-			} else {
-				if ts < oldest {
-					oldest = ts
-				}
-
-				i++
-			}
+		s.active++
+		ml := entry.matches.len()
+		for i := 0; i < ml; i++ {
+			s.activeMatching[entry.matches.get(i)]++
 		}
-
-		// Either update or delete the entries in the map
-		if cnt := len(entries); cnt == 0 {
-			delete(s.refs, fp)
-		} else {
-			s.active += cnt
-			for i := range entries {
-				ml := entries[i].matches.len()
-				for i := 0; i < ml; i++ {
-					s.activeMatching[entries[i].matches.get(i)]++
-				}
-			}
-
-			s.refs[fp] = entries
+		if ts < oldest {
+			oldest = ts
 		}
 	}
 

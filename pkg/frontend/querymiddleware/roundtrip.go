@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -27,21 +28,32 @@ import (
 )
 
 const (
-	day                    = 24 * time.Hour
-	queryRangePathSuffix   = "/query_range"
-	instantQueryPathSuffix = "/query"
+	day                              = 24 * time.Hour
+	queryRangePathSuffix             = "/api/v1/query_range"
+	instantQueryPathSuffix           = "/api/v1/query"
+	cardinalityLabelNamesPathSuffix  = "/api/v1/cardinality/label_names"
+	cardinalityLabelValuesPathSuffix = "/api/v1/cardinality/label_values"
+	labelNamesPathSuffix             = "/api/v1/labels"
+
+	// DefaultDeprecatedCacheUnalignedRequests is the default value for the deprecated querier frontend config DeprecatedCacheUnalignedRequests
+	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.12
+	DefaultDeprecatedCacheUnalignedRequests = false
+)
+
+var (
+	labelValuesPathSuffix = regexp.MustCompile(`\/api\/v1\/label\/([^\/]+)\/values$`)
 )
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	AlignQueriesWithStep   bool          `yaml:"align_queries_with_step"`
-	ResultsCacheConfig     `yaml:"results_cache"`
-	CacheResults           bool   `yaml:"cache_results"`
-	MaxRetries             int    `yaml:"max_retries" category:"advanced"`
-	ShardedQueries         bool   `yaml:"parallelize_shardable_queries"`
-	CacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced"`
-	TargetSeriesPerShard   uint64 `yaml:"query_sharding_target_series_per_shard" category:"experimental"`
+	SplitQueriesByInterval           time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
+	AlignQueriesWithStep             bool          `yaml:"align_queries_with_step"`
+	ResultsCacheConfig               `yaml:"results_cache"`
+	CacheResults                     bool   `yaml:"cache_results"`
+	MaxRetries                       int    `yaml:"max_retries" category:"advanced"`
+	ShardedQueries                   bool   `yaml:"parallelize_shardable_queries"`
+	DeprecatedCacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
+	TargetSeriesPerShard             uint64 `yaml:"query_sharding_target_series_per_shard"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
@@ -57,10 +69,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-queries-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
-	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	cfg.ResultsCacheConfig.RegisterFlags(f)
+
+	// The query-frontend.cache-unaligned-requests flag has been moved to the limits.go file
+	// cfg.DeprecatedCacheUnalignedRequests is set to the default here for clarity
+	// and consistency with the process for migrating limits to per-tenant config
+	// TODO: Remove in Mimir 2.12.0
+	cfg.DeprecatedCacheUnalignedRequests = DefaultDeprecatedCacheUnalignedRequests
 }
 
 // Validate validates the config.
@@ -205,7 +222,6 @@ func newQueryTripperware(
 
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-
 		shouldCache := func(r Request) bool {
 			return !r.GetOptions().CacheDisabled
 		}
@@ -219,7 +235,6 @@ func newQueryTripperware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
-			cfg.CacheUnalignedRequests,
 			limits,
 			codec,
 			c,
@@ -286,12 +301,26 @@ func newQueryTripperware(
 		instant := defaultInstantQueryParamsRoundTripper(
 			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
 		)
+
+		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
+		cardinality := next
+		labels := next
+
+		if cfg.CacheResults {
+			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, next, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(c, limits, next, log, registerer)
+		}
+
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
 			case isRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)
 			case isInstantQuery(r.URL.Path):
 				return instant.RoundTrip(r)
+			case isCardinalityQuery(r.URL.Path):
+				return cardinality.RoundTrip(r)
+			case isLabelsQuery(r.URL.Path):
+				return labels.RoundTrip(r)
 			default:
 				return next.RoundTrip(r)
 			}
@@ -339,6 +368,14 @@ func isRangeQuery(path string) bool {
 
 func isInstantQuery(path string) bool {
 	return strings.HasSuffix(path, instantQueryPathSuffix)
+}
+
+func isCardinalityQuery(path string) bool {
+	return strings.HasSuffix(path, cardinalityLabelNamesPathSuffix) || strings.HasSuffix(path, cardinalityLabelValuesPathSuffix)
+}
+
+func isLabelsQuery(path string) bool {
+	return strings.HasSuffix(path, labelNamesPathSuffix) || labelValuesPathSuffix.MatchString(path)
 }
 
 func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTripper {

@@ -36,6 +36,8 @@ type Reader interface {
 	// Error is return if the symbol can't be found.
 	LookupSymbol(o uint32) (string, error)
 
+	SymbolsReader() (streamindex.SymbolsReader, error)
+
 	// LabelValuesOffsets returns all label values and the offsets for their posting lists for given label name or error.
 	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
 	// The ranges of each posting list are the same as returned by PostingsOffset.
@@ -51,8 +53,10 @@ type Reader interface {
 
 type Config struct {
 	MaxIdleFileHandles uint `yaml:"max_idle_file_handles" category:"advanced"`
+	VerifyOnLoad       bool `yaml:"verify_on_load" category:"advanced"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file.")
+	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index header file.")
+	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
 }

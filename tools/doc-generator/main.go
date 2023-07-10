@@ -130,6 +130,9 @@ func generateBlockMarkdown(blocks []*parse.ConfigBlock, blockName, fieldName str
 }
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	// Parse the generator flags.
 	flag.Parse()
 	if flag.NArg() != 1 {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -25,6 +26,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -32,56 +34,66 @@ import (
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReached(t *testing.T) {
 	const maxChunksLimit = 30 // Chunks are duplicated due to replication factor.
 
-	ctx := user.InjectOrgID(context.Background(), "user")
-	limits := &validation.Limits{}
-	flagext.DefaultValues(limits)
-	limits.MaxChunksPerQuery = maxChunksLimit
+	for _, streamingEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "user")
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			limits.MaxChunksPerQuery = maxChunksLimit
 
-	// Prepare distributors.
-	ds, _, _ := prepare(t, prepConfig{
-		numIngesters:    3,
-		happyIngesters:  3,
-		numDistributors: 1,
-		limits:          limits,
-	})
+			// Prepare distributors.
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:          3,
+				happyIngesters:        3,
+				numDistributors:       1,
+				limits:                limits,
+				preferStreamingChunks: streamingEnabled,
+			})
 
-	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, maxChunksLimit))
+			// Push a number of series below the max chunks limit. Each series has 1 sample,
+			// so expect 1 chunk per series when querying back.
+			initialSeries := maxChunksLimit / 3
+			writeReq := makeWriteRequest(0, initialSeries, 0, false, false)
+			writeRes, err := ds[0].Push(ctx, writeReq)
+			require.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+			require.Nil(t, err)
 
-	// Push a number of series below the max chunks limit. Each series has 1 sample,
-	// so expect 1 chunk per series when querying back.
-	initialSeries := maxChunksLimit / 3
-	writeReq := makeWriteRequest(0, initialSeries, 0, false, false)
-	writeRes, err := ds[0].Push(ctx, writeReq)
-	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-	assert.Nil(t, err)
+			allSeriesMatchers := []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+			}
 
-	allSeriesMatchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+			ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, maxChunksLimit, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+
+			// Since the number of series (and thus chunks) is equal to the limit (but doesn't
+			// exceed it), we expect a query running on all series to succeed.
+			queryRes, err := ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+			require.NoError(t, err)
+
+			if streamingEnabled {
+				require.Len(t, queryRes.StreamingSeries, initialSeries)
+			} else {
+				require.Len(t, queryRes.Chunkseries, initialSeries)
+			}
+
+			// Push more series to exceed the limit once we'll query back all series.
+			writeReq = &mimirpb.WriteRequest{}
+			for i := 0; i < maxChunksLimit; i++ {
+				writeReq.Timeseries = append(writeReq.Timeseries,
+					makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: fmt.Sprintf("another_series_%d", i)}}, 0, 0),
+				)
+			}
+
+			writeRes, err = ds[0].Push(ctx, writeReq)
+			require.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+			require.Nil(t, err)
+
+			// Since the number of series (and thus chunks) is exceeding to the limit, we expect
+			// a query running on all series to fail.
+			_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "the query exceeded the maximum number of chunks")
+		})
 	}
-
-	// Since the number of series (and thus chunks) is equal to the limit (but doesn't
-	// exceed it), we expect a query running on all series to succeed.
-	queryRes, err := ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-	require.NoError(t, err)
-	assert.Len(t, queryRes.Chunkseries, initialSeries)
-
-	// Push more series to exceed the limit once we'll query back all series.
-	writeReq = &mimirpb.WriteRequest{}
-	for i := 0; i < maxChunksLimit; i++ {
-		writeReq.Timeseries = append(writeReq.Timeseries,
-			makeWriteRequestTimeseries([]mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: fmt.Sprintf("another_series_%d", i)}}, 0, 0),
-		)
-	}
-
-	writeRes, err = ds[0].Push(ctx, writeReq)
-	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-	assert.Nil(t, err)
-
-	// Since the number of series (and thus chunks) is exceeding to the limit, we expect
-	// a query running on all series to fail.
-	_, err = ds[0].QueryStream(ctx, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "the query exceeded the maximum number of chunks")
 }
 
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReached(t *testing.T) {
@@ -90,7 +102,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 	ctx := user.InjectOrgID(context.Background(), "user")
 	limits := &validation.Limits{}
 	flagext.DefaultValues(limits)
-	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0))
+	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
 	// Prepare distributors.
 	ds, _, _ := prepare(t, prepConfig{
@@ -171,7 +183,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	maxBytesLimit := (seriesToAdd) * responseChunkSize
 
 	// Update the limiter with the calculated limits.
-	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0))
+	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
 	// Push a number of series below the max chunk bytes limit. Subtract one for the series added above.
 	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false, false)
@@ -363,11 +375,11 @@ func TestMergeExemplars(t *testing.T) {
 		t.Run(fmt.Sprint("test", i), func(t *testing.T) {
 			rA := &ingester_client.ExemplarQueryResponse{Timeseries: c.seriesA}
 			rB := &ingester_client.ExemplarQueryResponse{Timeseries: c.seriesB}
-			e := mergeExemplarQueryResponses([]interface{}{rA, rB})
+			e := mergeExemplarQueryResponses([]*ingester_client.ExemplarQueryResponse{rA, rB})
 			require.Equal(t, c.expected, e.Timeseries)
 			if !c.nonReversible {
 				// Check the other way round too
-				e = mergeExemplarQueryResponses([]interface{}{rB, rA})
+				e = mergeExemplarQueryResponses([]*ingester_client.ExemplarQueryResponse{rB, rA})
 				require.Equal(t, c.expected, e.Timeseries)
 			}
 		})
@@ -401,7 +413,7 @@ func BenchmarkMergeExemplars(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		// Merge input with itself three times
-		mergeExemplarQueryResponses([]interface{}{input, input, input})
+		mergeExemplarQueryResponses([]*ingester_client.ExemplarQueryResponse{input, input, input})
 	}
 }
 

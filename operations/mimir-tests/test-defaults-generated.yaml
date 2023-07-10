@@ -342,7 +342,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -435,7 +435,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -499,6 +499,7 @@ spec:
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.max-item-size=5242880
@@ -510,7 +511,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -581,7 +582,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -658,7 +659,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -763,7 +764,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -841,6 +842,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -894,6 +896,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -947,6 +950,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1000,6 +1004,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1097,7 +1102,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

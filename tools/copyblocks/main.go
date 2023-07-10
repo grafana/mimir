@@ -110,6 +110,9 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 }
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	cfg := config{}
 	cfg.RegisterFlags(flag.CommandLine)
 

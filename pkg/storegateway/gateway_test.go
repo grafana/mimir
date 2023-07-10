@@ -1565,14 +1565,14 @@ func mockTSDBWithGenerator(t *testing.T, dir string, next func() (bool, labels.L
 }
 
 func generateSortedTokens(numTokens int) ring.Tokens {
-	tokens := ring.GenerateTokens(numTokens, nil)
+	tokens := ring.NewRandomTokenGenerator().GenerateTokens(numTokens, nil)
 
 	// Ensure generated tokens are sorted.
 	sort.Slice(tokens, func(i, j int) bool {
 		return tokens[i] < tokens[j]
 	})
 
-	return ring.Tokens(tokens)
+	return tokens
 }
 
 func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {

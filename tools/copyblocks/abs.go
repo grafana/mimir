@@ -87,7 +87,11 @@ func (bkt *azureBucket) Get(ctx context.Context, objectName string) (io.ReadClos
 
 func (bkt *azureBucket) Copy(ctx context.Context, objectName string, dstBucket bucket) error {
 	sourceClient := bkt.containerClient.NewBlobClient(objectName)
-	sasURL, err := sourceClient.GetSASURL(sas.BlobPermissions{Read: true}, time.Now(), time.Now().Add(10*time.Minute))
+
+	start := time.Now()
+	expiry := start.Add(10 * time.Minute)
+
+	sasURL, err := sourceClient.GetSASURL(sas.BlobPermissions{Read: true}, expiry, &blob.GetSASURLOptions{StartTime: &start})
 	if err != nil {
 		return err
 	}

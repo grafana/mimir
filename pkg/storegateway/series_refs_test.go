@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 	"testing"
@@ -1098,7 +1099,7 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 }
 
 func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
-	newTestBlock := prepareTestBlock(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
+	defaultTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
 		for i := 0; i < 100; i++ {
 			_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
 			assert.NoError(t, err)
@@ -1106,7 +1107,17 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		assert.NoError(t, appender.Commit())
 	})
 
+	const largerTestBlockSeriesCount = 100_000
+	largerTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
+		for i := 0; i < largerTestBlockSeriesCount; i++ {
+			_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
+			assert.NoError(t, err)
+		}
+		assert.NoError(t, appender.Commit())
+	})
+
 	testCases := map[string]struct {
+		blockFactory func() *bucketBlock // if nil, defaultTestBlockFactory is used
 		shard        *sharding.ShardSelector
 		matchers     []*labels.Matcher
 		seriesHasher seriesHasher
@@ -1252,6 +1263,50 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				}},
 			},
 		},
+		"works with many series in a single batch": {
+			blockFactory: largerTestBlockFactory,
+			minT:         0,
+			maxT:         math.MaxInt64,
+			skipChunks:   true, // There is still no easy way to assert on the refs of 100K chunks, so we skip them.
+			batchSize:    largerTestBlockSeriesCount,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", ".*")},
+			expectedSets: func() []seriesChunkRefsSet {
+				set := newSeriesChunkRefsSet(largerTestBlockSeriesCount, true)
+				for i := 0; i < largerTestBlockSeriesCount; i++ {
+					set.series = append(set.series, seriesChunkRefs{lset: labels.FromStrings("l1", fmt.Sprintf("v%d", i))})
+				}
+				// The order of series in the block is by their labels, so we need to sort what we generated.
+				sort.Slice(set.series, func(i, j int) bool {
+					return labels.Compare(set.series[i].lset, set.series[j].lset) < 0
+				})
+				return []seriesChunkRefsSet{set}
+			}(),
+		},
+		"works with many series in many batches batch": {
+			blockFactory: largerTestBlockFactory,
+			minT:         0,
+			maxT:         math.MaxInt64,
+			skipChunks:   true, // There is still no easy way to assert on the refs of 100K chunks, so we skip them.
+			batchSize:    5000,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", ".*")},
+			expectedSets: func() []seriesChunkRefsSet {
+				series := make([]seriesChunkRefs, 0, largerTestBlockSeriesCount)
+				for i := 0; i < largerTestBlockSeriesCount; i++ {
+					series = append(series, seriesChunkRefs{lset: labels.FromStrings("l1", fmt.Sprintf("v%d", i))})
+				}
+				// The order of series in the block is by their labels, so we need to sort what we generated.
+				sort.Slice(series, func(i, j int) bool {
+					return labels.Compare(series[i].lset, series[j].lset) < 0
+				})
+
+				const numBatches = largerTestBlockSeriesCount / 5000
+				sets := make([]seriesChunkRefsSet, numBatches)
+				for setIdx := 0; setIdx < numBatches; setIdx++ {
+					sets[setIdx].series = series[setIdx*largerTestBlockSeriesCount/numBatches : (setIdx+1)*largerTestBlockSeriesCount/numBatches]
+				}
+				return sets
+			}(),
+		},
 	}
 
 	for testName, testCase := range testCases {
@@ -1260,7 +1315,11 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			t.Parallel()
 
 			// Setup
-			block := newTestBlock()
+			blockFactory := defaultTestBlockFactory
+			if testCase.blockFactory != nil {
+				blockFactory = testCase.blockFactory
+			}
+			block := blockFactory()
 			indexr := block.indexReader(selectAllStrategy{})
 			postings, _, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
 			require.NoError(t, err)
@@ -1618,7 +1677,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				maxT,
 				2,
 				newSafeQueryStats(),
-				nil,
+				log.NewNopLogger(),
 			)
 			require.NoError(t, err)
 
@@ -1719,7 +1778,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					block.meta.MaxTime,
 					2,
 					newSafeQueryStats(),
-					nil,
+					log.NewNopLogger(),
 				)
 				require.NoError(t, err)
 				allSets := readAllSeriesChunkRefsSet(iterator)
@@ -1782,7 +1841,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							block.meta.MaxTime,
 							2,
 							newSafeQueryStats(),
-							nil,
+							log.NewNopLogger(),
 						)
 						require.NoError(b, err)
 

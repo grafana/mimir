@@ -66,6 +66,9 @@ type BucketStores struct {
 	// Gate used to limit query concurrency across all tenants.
 	queryGate gate.Gate
 
+	// Gate used to limit concurrency on loading index-headers across all tenants.
+	lazyLoadingGate gate.Gate
+
 	// Keeps a bucket store for each tenant.
 	storesMu sync.RWMutex
 	stores   map[string]*BucketStore
@@ -90,10 +93,21 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
 
+	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
+
 	// The number of concurrent queries against the tenants BucketStores are limited.
-	queryGateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
+	queryGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "query"}, gateReg)
 	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
+
+	// The number of concurrent index header loads from storegateway are limited.
+	lazyLoadingGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
+	lazyLoadingGate := gate.NewNoop()
+	lazyLoadingMax := cfg.BucketStore.IndexHeaderLazyLoadingConcurrency
+	if lazyLoadingMax != 0 {
+		blockingGate := gate.NewBlocking(cfg.BucketStore.IndexHeaderLazyLoadingConcurrency)
+		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeaderLazyLoadingConcurrency, blockingGate)
+	}
 
 	u := &BucketStores{
 		logger:             logger,
@@ -105,6 +119,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
+		lazyLoadingGate:    lazyLoadingGate,
 		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
 		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncBackoffConfig: backoff.Config{
@@ -458,6 +473,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithIndexCache(u.indexCache),
 		WithChunksCache(u.chunksCache),
 		WithQueryGate(u.queryGate),
+		WithLazyLoadingGate(u.lazyLoadingGate),
 		WithFineGrainedChunksCaching(u.cfg.BucketStore.ChunksCache.FineGrainedChunksCachingEnabled),
 	}
 

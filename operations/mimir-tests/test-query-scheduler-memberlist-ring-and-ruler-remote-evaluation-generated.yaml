@@ -491,7 +491,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -587,7 +587,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -654,6 +654,7 @@ spec:
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.max-item-size=5242880
@@ -667,7 +668,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -746,7 +747,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -817,6 +818,10 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -querier.max-partial-query-length=768h
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
@@ -833,7 +838,7 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -929,7 +934,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -996,6 +1001,7 @@ spec:
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.max-item-size=5242880
@@ -1012,7 +1018,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -1091,7 +1097,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -1162,7 +1168,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1260,7 +1266,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1366,7 +1372,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1444,6 +1450,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1497,6 +1504,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1550,6 +1558,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1603,6 +1612,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1701,7 +1711,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

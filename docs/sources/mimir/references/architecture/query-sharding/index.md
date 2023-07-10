@@ -1,9 +1,9 @@
 ---
 aliases:
   - ../../operators-guide/architecture/query-sharding/
-title: "Grafana Mimir query sharding"
-menuTitle: "Query sharding"
-description: "Query sharding parallelizes query execution."
+description: Query sharding parallelizes query execution.
+menuTitle: Query sharding
+title: Grafana Mimir query sharding
 weight: 90
 ---
 
@@ -16,8 +16,8 @@ partial queries are distributed by the query-frontend to run on different
 queriers in parallel. The results of those partial queries are aggregated by the
 query-frontend to return the full query result.
 
-Query sharding is applied on the [`query`]({{< relref "../../http-api/index.md#instant-query" >}})
-and [`query_range`]({{< relref "../../http-api/index.md#range-query" >}}) APIs only.
+Query sharding is applied on the [`query`]({{< relref "../../http-api#instant-query" >}})
+and [`query_range`]({{< relref "../../http-api#range-query" >}}) APIs only.
 
 ## Query sharding at glance
 
@@ -151,7 +151,7 @@ Queries that return more series, such as those that are of high cardinality, nee
 Queries that return few or no series should be executed with fewer or no shards at all.
 When determining the number of shards to use for a given query, the sharding logic can optionally take into account the cardinality (number of series) observed during previous executions of the same query for similar time ranges.
 
-To enable this experimental feature, set `-query-frontend.query-sharding-target-series-per-shard` to a value representing roughly how many series each shard should fetch, and configure the results cache via the `query-frontend.results-cache.*` flags.
+To enable this feature, set `-query-frontend.query-sharding-target-series-per-shard` to a value representing roughly how many series each shard should fetch, and configure the results cache via the `query-frontend.results-cache.*` flags.
 This is necessary even when results caching is disabled, as the estimates are stored in the same cache that's used for query result caching.
 The value that you set for this flag is one of several parameters that the sharding logic uses to determine the appropriate number of shards for a query.
 Therefore, it will not strictly be complied with in all cases, and the actual number of series fetched per shard might exceed the limit.

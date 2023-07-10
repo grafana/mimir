@@ -170,7 +170,6 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		true,
 		false, // Cache disabled.
 		24*time.Hour,
-		false,
 		mockLimits{},
 		codec,
 		nil,
@@ -221,6 +220,12 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
 		# TYPE cortex_frontend_split_queries_total counter
 		cortex_frontend_split_queries_total 4
+		# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
+		# TYPE cortex_frontend_query_result_cache_hits_total counter
+		cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 0
+		# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
+		# TYPE cortex_frontend_query_result_cache_requests_total counter
+		cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 0
 	`)))
 
 	// Assert query stats from context
@@ -231,11 +236,11 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	cacheBackend := cache.NewInstrumentedMockCache()
 
+	reg := prometheus.NewPedanticRegistry()
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
 		cacheBackend,
@@ -243,7 +248,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
 		log.NewNopLogger(),
-		prometheus.NewPedanticRegistry(),
+		reg,
 	)
 
 	expectedResponse := &PrometheusResponse{
@@ -333,6 +338,31 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	// Assert query stats from context
 	queryStats = stats.FromContext(ctx)
 	assert.Equal(t, uint32(2), queryStats.LoadSplitQueries())
+
+	// Assert metrics
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# TYPE cortex_frontend_query_result_cache_attempted_total counter
+		cortex_frontend_query_result_cache_attempted_total 3
+
+		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
+		# TYPE cortex_frontend_query_result_cache_skipped_total counter
+		cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
+		cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 0
+		cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} 0
+
+		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
+		# TYPE cortex_frontend_split_queries_total counter
+		cortex_frontend_split_queries_total 3
+
+		# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
+		# TYPE cortex_frontend_query_result_cache_requests_total counter
+		cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 3
+
+		# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
+		# TYPE cortex_frontend_query_result_cache_hits_total counter
+		cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 2
+	`)))
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAligned(t *testing.T) {
@@ -343,7 +373,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		true,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
 		newTestPrometheusCodec(),
 		cacheBackend,
@@ -423,6 +452,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	// Assert query stats from context
 	queryStats := stats.FromContext(ctx)
 	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
+
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
@@ -436,18 +466,30 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
 		# TYPE cortex_frontend_split_queries_total counter
 		cortex_frontend_split_queries_total 1
+		# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
+		# TYPE cortex_frontend_query_result_cache_hits_total counter
+		cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 0
+		# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
+		# TYPE cortex_frontend_query_result_cache_requests_total counter
+		cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 0
 	`)))
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedRequest(t *testing.T) {
 	cacheBackend := cache.NewInstrumentedMockCache()
 
+	limits := mockLimits{
+		maxCacheFreshness:                    10 * time.Minute,
+		resultsCacheTTL:                      resultsCacheTTL,
+		resultsCacheOutOfOrderWindowTTL:      resultsCacheLowerTTL,
+		resultsCacheForUnalignedQueryEnabled: true,
+	}
+
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
 		24*time.Hour,
-		true, // caching of step-unaligned requests is enabled in this test.
-		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+		limits,
 		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
@@ -572,6 +614,12 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
 				# TYPE cortex_frontend_split_queries_total counter
 				cortex_frontend_split_queries_total 0
+				# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
+				# TYPE cortex_frontend_query_result_cache_hits_total counter
+				cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 0
+				# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
+				# TYPE cortex_frontend_query_result_cache_requests_total counter
+				cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 0
 			`,
 		},
 		"should cache a response up until max cache freshness time ago": {
@@ -602,7 +650,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				false, // No interval splitting.
 				true,
 				24*time.Hour,
-				false,
 				mockLimits{maxCacheFreshness: maxCacheFreshness, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
 				cacheBackend,
@@ -811,7 +858,6 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 					testData.splitEnabled,
 					testData.cacheEnabled,
 					24*time.Hour,
-					testData.cacheUnaligned,
 					mockLimits{
 						maxCacheFreshness:   testData.maxCacheFreshness,
 						maxQueryParallelism: testData.maxQueryParallelism,
@@ -1094,7 +1140,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				false, // No splitting.
 				true,
 				24*time.Hour,
-				false,
 				mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
 				cacheBackend,
@@ -1140,7 +1185,6 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		false,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{
 			resultsCacheTTL:                 1 * time.Hour,
 			resultsCacheOutOfOrderWindowTTL: 10 * time.Minute,
@@ -1226,7 +1270,6 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 		false,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{},
 		newTestPrometheusCodec(),
 		cache.NewMockCache(),

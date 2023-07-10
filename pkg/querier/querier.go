@@ -51,8 +51,10 @@ type Config struct {
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferStreamingChunks                      bool   `yaml:"prefer_streaming_chunks" category:"experimental"`
-	StreamingChunksPerIngesterSeriesBufferSize uint64 `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"experimental"`
+	PreferStreamingChunks                      bool          `yaml:"prefer_streaming_chunks" category:"experimental"`
+	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"experimental"`
+	MinimizeIngesterRequests                   bool          `yaml:"minimize_ingester_requests" category:"experimental"`
+	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -83,20 +85,13 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
 	f.BoolVar(&cfg.PreferStreamingChunks, "querier.prefer-streaming-chunks", false, "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.")
 
-	// Why 512 series / ingester?
-	//
-	// Assuming the worst case scenario of loading a full 13 hours of chunks for a series from an ingester, a 15s scrape
-	// interval, 120 samples per chunk with average chunk size of 300 B, 1024 series would consume ~8 MB (26 chunks needed
-	// per series to cover 13 hours, so 7.8 KB needed per series).
-	//
-	// Note that this will not hold true for native histograms, which can be substantially larger.
-	//
-	// We have up to two active batches per ingester in SeriesChunksStreamReader (one in the channel and one already
-	// received from the channel), so we use 1024/2=512 series per buffer per ingester.
-	//
-	// 512 series / ingester was also a good balance between the CPU overhead of managing a batch of series with the memory
-	// cost of keeping it in memory in our testing.
-	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 512, "Number of series to buffer per ingester when streaming chunks from ingesters.")
+	const minimiseIngesterRequestsFlagName = "querier.minimize-ingester-requests"
+	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlagName, false, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
+	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlagName+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlagName+" is not enabled.")
+
+	// Why 256 series / ingester?
+	// Based on our testing, 256 series / ingester was a good balance between memory consumption and the CPU overhead of managing a batch of series.
+	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 
 	// The querier.query-ingesters-within flag has been moved to the limits.go file
 	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.11.0
@@ -131,10 +126,10 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, queryChunkMetrics *stats.QueryChunkMetrics, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, queryMetrics *stats.QueryMetrics, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
-	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, queryChunkMetrics, logger)
+	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, queryMetrics, logger)
 
 	ns := make([]QueryableWithFilter, len(stores))
 	for ix, s := range stores {
@@ -143,7 +138,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 			QueryStoreAfter:     cfg.QueryStoreAfter,
 		}
 	}
-	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, logger)
+	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, mint int64, maxt int64) (storage.Querier, error) {
@@ -192,8 +187,8 @@ type QueryableWithFilter interface {
 	UseQueryable(now time.Time, queryMinT, queryMaxT int64) bool
 }
 
-// NewQueryable creates a new Queryable for mimir.
-func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, logger log.Logger) storage.Queryable {
+// NewQueryable creates a new Queryable for Mimir.
+func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		now := time.Now()
 
@@ -202,7 +197,7 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 			return nil, err
 		}
 
-		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID)))
+		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID), queryMetrics))
 
 		mint, maxt, err = validateQueryTimeRange(ctx, userID, mint, maxt, limits, cfg.MaxQueryIntoFuture, logger)
 		if errors.Is(err, errEmptyTimeRange) {

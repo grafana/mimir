@@ -123,7 +123,7 @@ func TestSlabPool_Fuzzy(t *testing.T) {
 
 	// Randomise the seed but log it in case we need to reproduce the test on failure.
 	seed := time.Now().UnixNano()
-	rand.Seed(seed)
+	rnd := rand.New(rand.NewSource(seed))
 	t.Log("random generator seed:", seed)
 
 	for r := 0; r < numRuns; r++ {
@@ -132,13 +132,13 @@ func TestSlabPool_Fuzzy(t *testing.T) {
 
 		for n := 0; n < numRequestsPerRun; n++ {
 			// Get a random size between 1 and (slabSize + 10)
-			size := 1 + rand.Intn(slabSize+9)
+			size := 1 + rnd.Intn(slabSize+9)
 
 			slice := slabPool.Get(size)
 
 			// Write some data to the slice.
 			expected := make([]byte, size)
-			_, err := rand.Read(expected)
+			_, err := rnd.Read(expected)
 			require.NoError(t, err)
 
 			copy(slice, expected)

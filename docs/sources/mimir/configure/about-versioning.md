@@ -87,6 +87,12 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
+  - CPU/memory utilization based read request limiting:
+    - `-ingester.read-path-cpu-utilization-limit`
+    - `-ingester.read-path-memory-utilization-limit"`
+  - Early TSDB Head compaction to reduce in-memory series:
+    - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
+    - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`, `-querier.streaming-chunks-per-ingester-buffer-size`)
@@ -97,23 +103,15 @@ The following features are currently experimental:
   - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
-  - `-query-frontend.query-sharding-max-regexp-size-bytes`
+  - Cardinality query result caching (`-query-frontend.results-cache-ttl-for-cardinality-query`)
+  - Label names and values query result caching (`-query-frontend.results-cache-ttl-for-labels-query`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
-  - Max number of used instances (`-query-scheduler.max-used-instances`)
 - Store-gateway
   - `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`
   - `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`
   - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - `-blocks-storage.bucket-store.series-selection-strategy`
-- Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
-  - `-alertmanager-storage.storage-prefix`
-  - `-blocks-storage.storage-prefix`
-  - `-ruler-storage.storage-prefix`
-- Compactor
-  - HTTP API for uploading TSDB blocks
-  - `-compactor.first-level-compaction-wait-period`
-- Anonymous usage statistics tracking
 - Read-write deployment mode
 - `/api/v1/user_limits` API endpoint
 - Metric separation by an additionally configured group label
@@ -121,13 +119,14 @@ The following features are currently experimental:
   - `-max-separate-metrics-groups-per-user`
 - Overrides-exporter
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
+  - Configuring enabled metrics (`-overrides-exporter.enabled-metrics`)
 - Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
 
 ## Deprecated features
 
 Deprecated features are usable up until the release that indicates their removal.
-For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters/index.md#parameter-lifecycle" >}}).
+For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters#parameter-lifecycle" >}}).
 
 The following features are currently deprecated and will be **removed in Mimir 2.10**:
 

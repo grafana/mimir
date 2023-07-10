@@ -1656,6 +1656,9 @@ func prepareConfig(t *testing.T) Config {
 	compactorCfg.ShardingRing.Common.KVStore.Mock = inmem
 	compactorCfg.ShardingRing.Common.InstanceAddr = "localhost"
 
+	// The new default is 25m, but tests rely on the previous value of 0s
+	compactorCfg.CompactionWaitPeriod = 0
+
 	return compactorCfg
 }
 

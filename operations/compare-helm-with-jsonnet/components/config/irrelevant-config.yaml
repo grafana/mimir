@@ -70,6 +70,9 @@ config:
     backend:
     gcs:
       bucket_name:
+    cache:
+      memcached:
+        addresses:
   compactor:
     data_dir:
     sharding_ring:

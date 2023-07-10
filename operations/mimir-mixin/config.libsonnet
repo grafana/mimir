@@ -67,7 +67,7 @@
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary Mimir clusters.
     // Whenever you do any change here, please reflect it in the doc at:
-    // docs/sources/mimir/operators-guide/monitoring-grafana-mimir/requirements.md
+    // docs/sources/mimir/manage/monitoring-grafana-mimir/requirements.md
     job_names: {
       ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
       distributor: ['distributor', 'cortex', 'mimir', 'mimir-write.*'],
@@ -272,7 +272,7 @@
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate,
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[1m])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it

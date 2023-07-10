@@ -48,9 +48,10 @@ type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, []*
 // bucketIndexReader is a custom index reader (not conforming index.Reader interface) that reads index that is stored in
 // object storage without having to fully download it.
 type bucketIndexReader struct {
-	block            *bucketBlock
-	postingsStrategy postingsSelectionStrategy
-	dec              *index.Decoder
+	block             *bucketBlock
+	postingsStrategy  postingsSelectionStrategy
+	dec               *index.Decoder
+	indexHeaderReader indexheader.Reader
 }
 
 func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
@@ -60,6 +61,7 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 		dec: &index.Decoder{
 			LookupSymbol: block.indexHeaderReader.LookupSymbol,
 		},
+		indexHeaderReader: block.indexHeaderReader,
 	}
 	return r
 }
@@ -83,7 +85,7 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 	)
 	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
 	defer func() {
-		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded)
+		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded, "block_id", r.block.meta.ULID.String())
 		if returnErr != nil {
 			span.LogFields(otlog.Error(returnErr))
 		}
@@ -602,9 +604,17 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 }
 
 // preloadSeries expects the provided ids to be sorted.
-func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
-	span, ctx := tracing.StartSpan(ctx, "preloadSeries()")
-	defer span.Finish()
+func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (loadedSeries *bucketIndexLoadedSeries, err error) {
+	defer func(startTime time.Time) {
+		spanLog := spanlogger.FromContext(ctx, r.block.logger)
+		level.Debug(spanLog).Log(
+			"msg", "fetched series and chunk refs from object store",
+			"block_id", r.block.meta.ULID.String(),
+			"series_count", len(loadedSeries.series),
+			"err", err,
+			"duration", time.Since(startTime),
+		)
+	}(time.Now())
 
 	timer := prometheus.NewTimer(r.block.metrics.seriesFetchDuration)
 	defer timer.ObserveDuration()
@@ -745,7 +755,7 @@ func (l *bucketIndexLoadedSeries) addSeries(ref storage.SeriesRef, data []byte) 
 	l.seriesMx.Unlock()
 }
 
-// unsafeLoadSeries populates the given symbolized labels for the series identified by the reference the series has at least one chunk in the block.
+// unsafeLoadSeries returns symbolized labels for the series identified by the reference if the series has at least one chunk in the block.
 // unsafeLoadSeries also populates the given chunk metas slice if skipChunks is set to false. The returned chunkMetas will be in the same
 // order as in the index, which at this point is ordered by minTime and by their ref. The returned chunk metas are all the chunk for the series.
 // unsafeLoadSeries returns false, when there are no series data.
@@ -753,12 +763,12 @@ func (l *bucketIndexLoadedSeries) addSeries(ref storage.SeriesRef, data []byte) 
 // Error is returned on decoding error or if the reference does not resolve to a known series.
 //
 // It's NOT safe to call this function concurrently with addSeries().
-func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, stats *queryStats) (ok bool, err error) {
+func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, chks *[]chunks.Meta, skipChunks bool, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) (ok bool, _ []symbolizedLabel, err error) {
 	b, ok := l.series[ref]
 	if !ok {
-		return false, errors.Errorf("series %d not found", ref)
+		return false, nil, errors.Errorf("series %d not found", ref)
 	}
 	stats.seriesProcessed++
 	stats.seriesProcessedSizeSum += len(b)
-	return decodeSeries(b, lset, chks, skipChunks)
+	return decodeSeries(b, lsetPool, chks, skipChunks)
 }

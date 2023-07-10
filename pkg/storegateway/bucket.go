@@ -52,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -115,6 +116,9 @@ type BucketStore struct {
 
 	// Query gate which limits the maximum amount of concurrent queries.
 	queryGate gate.Gate
+
+	// Gate used to limit concurrency on loading index-headers across all tenants.
+	lazyLoadingGate gate.Gate
 
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
@@ -194,10 +198,17 @@ func WithChunksCache(cache chunkscache.Cache) BucketStoreOption {
 	}
 }
 
-// WithQueryGate sets a queryGate to use instead of a noopGate.
+// WithQueryGate sets a queryGate to use instead of a gate.NewNoop().
 func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.queryGate = queryGate
+	}
+}
+
+// WithLazyLoadingGate sets a lazyLoadingGate to use instead of a gate.NewNoop().
+func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.lazyLoadingGate = lazyLoadingGate
 	}
 }
 
@@ -240,6 +251,7 @@ func NewBucketStore(
 		blockSet:                    newBucketBlockSet(),
 		blockSyncConcurrency:        blockSyncConcurrency,
 		queryGate:                   gate.NewNoop(),
+		lazyLoadingGate:             gate.NewNoop(),
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioners:                partitioners,
@@ -258,7 +270,7 @@ func NewBucketStore(
 	}
 
 	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, metrics.indexHeaderReaderMetrics)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
@@ -566,15 +578,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		return status.Error(codes.InvalidArgument, errors.Wrap(err, "parse query sharding label").Error())
 	}
 
-	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
-	level.Debug(spanLogger).Log(
-		"msg", "BucketStore.Series",
-		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
-		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
-		"request matchers", storepb.PromMatchersToString(matchers...),
-		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
-	)
-
 	var (
 		ctx              = srv.Context()
 		stats            = newSafeQueryStats()
@@ -596,7 +599,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 	}
 
-	span, ctx := tracing.StartSpan(ctx, "bucket_store_preload_all")
+	logSeriesRequestToSpan(srv.Context(), s.logger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector)
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
@@ -606,8 +609,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	for _, r := range chunkReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
 	}
-
-	span.Finish()
 
 	var readers *bucketChunkReaders
 	if !req.SkipChunks {
@@ -710,6 +711,18 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	}
 
 	return err
+}
+
+func logSeriesRequestToSpan(ctx context.Context, l log.Logger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector) {
+	spanLogger := spanlogger.FromContext(ctx, l)
+	level.Debug(spanLogger).Log(
+		"msg", "BucketStore.Series",
+		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
+		"request max time", time.UnixMilli(maxT).UTC().Format(time.RFC3339Nano),
+		"request matchers", storepb.PromMatchersToString(matchers...),
+		"request block matchers", storepb.PromMatchersToString(blockMatchers...),
+		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
+	)
 }
 
 func chunksSize(chks []storepb.AggrChunk) (size int) {
@@ -920,6 +933,10 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
+	// ignore the span context so that we can use the context for cancellation
+	span, _ := tracing.StartSpan(ctx, "bucket_store_open_blocks_for_reading")
+	defer span.Finish()
+
 	s.blocksMx.RLock()
 	defer s.blocksMx.RUnlock()
 
@@ -1639,23 +1656,24 @@ type symbolizedLabel struct {
 // decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
 // If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if at least single chunk is within time range.
 // decodeSeries returns false, when there are no series data for given time range.
-func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool) (ok bool, err error) {
-	*lset = (*lset)[:0]
+func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, skipChunks bool) (ok bool, lset []symbolizedLabel, err error) {
+
 	*chks = (*chks)[:0]
 
 	d := encoding.Decbuf{B: b}
 
 	// Read labels without looking up symbols.
 	k := d.Uvarint()
+	lset = lsetPool.Get(k)[:0]
 	for i := 0; i < k; i++ {
 		lno := uint32(d.Uvarint())
 		lvo := uint32(d.Uvarint())
-		*lset = append(*lset, symbolizedLabel{name: lno, value: lvo})
+		lset = append(lset, symbolizedLabel{name: lno, value: lvo})
 	}
 	// Read the chunks meta data.
 	k = d.Uvarint()
 	if k == 0 {
-		return false, d.Err()
+		return false, nil, d.Err()
 	}
 
 	// First t0 is absolute, rest is just diff so different type is used (Uvarint64).
@@ -1674,7 +1692,7 @@ func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipCh
 		// Found a chunk.
 		if skipChunks {
 			// We are not interested in chunks and we know there is at least one, that's enough to return series.
-			return true, nil
+			return true, lset, nil
 		}
 
 		*chks = append(*chks, chunks.Meta{
@@ -1685,7 +1703,7 @@ func decodeSeries(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipCh
 
 		mint = maxt
 	}
-	return len(*chks) > 0, d.Err()
+	return len(*chks) > 0, lset, d.Err()
 }
 
 func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {

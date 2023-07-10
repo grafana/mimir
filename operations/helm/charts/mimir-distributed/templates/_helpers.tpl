@@ -241,6 +241,9 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.podLabels" -}}
+{{- with .ctx.Values.global.podLabels }}
+{{ toYaml . }}
+{{- end }}
 {{- if .ctx.Values.enterprise.legacyLabels }}
 {{- if .component -}}
 app: {{ include "mimir.name" .ctx }}-{{ .component }}
@@ -405,7 +408,6 @@ Examples:
   "gr-aggr-cache" "gr-aggr-cache"
   "gr-metricname-cache" "gr-metricname-cache"
   "graphite-querier" "graphite.querier"
-  "graphite-web" "graphite.web"
   "graphite-write-proxy" "graphite.write_proxy"
   "index-cache" "index-cache"
   "ingester" "ingester"
@@ -475,7 +477,13 @@ Get the no_auth_tenant from the configuration
 Return if we should create a PodSecurityPolicy. Takes into account user values and supported kubernetes versions.
 */}}
 {{- define "mimir.rbac.usePodSecurityPolicy" -}}
-{{- and (semverCompare "< 1.25-0" (include "mimir.kubeVersion" .)) (and .Values.rbac.create (eq .Values.rbac.type "psp")) -}}
+{{- and
+      (
+        or (semverCompare "< 1.24-0" (include "mimir.kubeVersion" .))
+           (and (semverCompare "< 1.25-0" (include "mimir.kubeVersion" .)) .Values.rbac.forcePSPOnKubernetes124)
+      )
+      (and .Values.rbac.create (eq .Values.rbac.type "psp"))
+-}}
 {{- end -}}
 
 {{/*

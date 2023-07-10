@@ -84,7 +84,7 @@ The Grafana Mimir shuffle sharding implementation provides the following benefit
 - **Shuffling**<br />
   Probabilistically and for a large enough cluster, shuffle sharding ensures that every tenant receives a different set of instances with a reduced number of overlapping instances between two tenants, which improves failure isolation.
 - **Zone-awareness**<br />
-  When you enable [zone-aware replication]({{< relref "../configure-zone-aware-replication.md" >}}), the subset of instances selected for each tenant contains a balanced number of instances for each availability zone.
+  When you enable [zone-aware replication]({{< relref "../configure-zone-aware-replication" >}}), the subset of instances selected for each tenant contains a balanced number of instances for each availability zone.
 
 ### Ingesters shuffle sharding
 
@@ -176,7 +176,7 @@ You must set this flag on the store-gateway, querier, and ruler.
 
 You can override the store-gateway shard size on a per-tenant basis by setting `store_gateway_tenant_shard_size` in the overrides section of the runtime configuration.
 
-For more information about the store-gateway, refer to [store-gateway]({{< relref "../../references/architecture/components/store-gateway.md" >}}).
+For more information about the store-gateway, refer to [store-gateway]({{< relref "../../references/architecture/components/store-gateway" >}}).
 
 ### Ruler shuffle sharding
 

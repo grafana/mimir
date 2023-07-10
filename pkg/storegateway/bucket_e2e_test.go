@@ -891,7 +891,7 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 	})
 }
 
-func toLabels(t *testing.T, labelValuePairs []string) (result labels.Labels) {
+func toLabels(t *testing.T, labelValuePairs []string) (result []labels.Label) {
 	t.Helper()
 
 	if len(labelValuePairs)%2 != 0 {

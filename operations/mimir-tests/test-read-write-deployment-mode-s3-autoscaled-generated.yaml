@@ -452,6 +452,7 @@ spec:
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -query-frontend.results-cache.memcached.max-item-size=5242880
@@ -476,7 +477,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -537,7 +538,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.5.0
+        image: grafana/rollout-operator:v0.6.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -587,6 +588,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -640,6 +642,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -693,6 +696,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -746,6 +750,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -881,6 +886,10 @@ spec:
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
@@ -902,7 +911,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1062,6 +1071,10 @@ spec:
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
@@ -1083,7 +1096,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1243,6 +1256,10 @@ spec:
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
@@ -1264,7 +1281,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1395,7 +1412,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1526,7 +1543,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1657,7 +1674,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:

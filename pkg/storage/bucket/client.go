@@ -119,7 +119,7 @@ func (cfg *StorageBackendConfig) Validate() error {
 type Config struct {
 	StorageBackendConfig `yaml:",inline"`
 
-	StoragePrefix string `yaml:"storage_prefix" category:"experimental"`
+	StoragePrefix string `yaml:"storage_prefix"`
 
 	// Not used internally, meant to allow callers to wrap Buckets
 	// created using this config

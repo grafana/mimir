@@ -32,6 +32,9 @@ import (
 )
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	cfg := struct {
 		bucket           bucket.Config
 		userID           string

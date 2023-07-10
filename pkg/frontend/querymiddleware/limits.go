@@ -83,8 +83,17 @@ type Limits interface {
 	// if out of order ingestion is disabled.
 	ResultsCacheTTL(userID string) time.Duration
 
-	// ResultsCacheForOutOfOrderWindowTTL returns TTL for cached results for query that falls into out-of-order ingestion window.
+	// ResultsCacheTTLForOutOfOrderTimeWindow returns TTL for cached results for query that falls into out-of-order ingestion window.
 	ResultsCacheTTLForOutOfOrderTimeWindow(userID string) time.Duration
+
+	// ResultsCacheTTLForCardinalityQuery returns TTL for cached results for cardinality queries.
+	ResultsCacheTTLForCardinalityQuery(userID string) time.Duration
+
+	// ResultsCacheTTLForLabelsQuery returns TTL for cached results for label names and values queries.
+	ResultsCacheTTLForLabelsQuery(userID string) time.Duration
+
+	// ResultsCacheForUnalignedQueryEnabled returns whether to cache results for queries that are not step-aligned
+	ResultsCacheForUnalignedQueryEnabled(userID string) bool
 }
 
 type limitsMiddleware struct {
