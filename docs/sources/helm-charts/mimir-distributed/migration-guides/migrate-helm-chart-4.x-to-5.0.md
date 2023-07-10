@@ -7,7 +7,7 @@ weight: 110
 
 # Migrate the Helm chart from version 4.x to 5.0
 
-Grafan Mimir Helm chart version 5.0 and later does not install [PodSecurityPolicy](https://kubernetes.io/docs/concepts/security/pod-security-policy/) objects on Kubernetes version 1.24 by default to prepare for upgrade to Kubernetes version 1.25.
+The `mimir-distributed` Helm chart version 5.0 and later does not install [PodSecurityPolicy](https://kubernetes.io/docs/concepts/security/pod-security-policy/) objects on Kubernetes version 1.24 by default to prepare for upgrade to Kubernetes version 1.25.
 
 ## Prerequisite
 
