@@ -993,7 +993,6 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 		return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "preload series")
 	}
 
-	isNoChunkRefsAndOverlapMintMaxt := s.strategy.isNoChunkRefsAndOverlapMintMaxt()
 	for _, id := range postings {
 		var (
 			metas  []chunks.Meta
@@ -1004,7 +1003,8 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 			return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "read series")
 		}
 
-		if isNoChunkRefsAndOverlapMintMaxt {
+		switch {
+		case s.strategy.isNoChunkRefsAndOverlapMintMaxt():
 			overlaps := false
 			for _, m := range metas {
 				if m.MaxTime >= s.minTime && m.MinTime <= s.maxTime {
@@ -1013,11 +1013,9 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 				}
 			}
 			if !overlaps {
-				continue
+				series.lset = nil // setting the labels to nil ends up skipping the series
 			}
-		}
-
-		if !s.strategy.isNoChunkRefs() {
+		case !s.strategy.isNoChunkRefs():
 			clampLastChunkLength(symbolizedSet.series, metas)
 			series.chunksRanges = metasToRanges(partitionChunks(metas, s.chunkRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
 		}
@@ -1069,15 +1067,22 @@ func clampLastChunkLength(series []symbolizedSeriesChunkRefs, nextSeriesChunkMet
 
 // filterSeries filters out series that don't belong to this shard (if sharding is configured) or that don't have any
 // chunk ranges and skipChunks=false. Empty chunks ranges indicates that the series doesn't have any chunk ranges in the
-// requested time range.
+// requested time range. filterSeries expects that the number of series matches the number of postings.
 func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet, postings []storage.SeriesRef, stats *queryStats) seriesChunkRefsSet {
 	writeIdx := 0
 	for sIdx, series := range set.series {
-		// An empty label set means the series had no chunks in this block, so we skip it.
-		// No chunk ranges means the series doesn't have a single chunk range in the requested range.
-		if series.lset.IsEmpty() || (!s.strategy.isNoChunkRefs() && len(series.chunksRanges) == 0) {
+
+		// We skip this series under three conditions:
+		// 1. The series doesn't have any chunks in this block OR the series didn't have any chunks in the requested time range,
+		// 	  but also the request didn't require the chunks (i.e. s.strategy.isNoChunkRefs()). This is signified by an empty label set.
+		if series.lset.IsEmpty() {
 			continue
 		}
+		// 2. The series doesn't have any chunks in the requested time range but the request required the chunks (i.e. !s.strategy.isNoChunkRefs()).
+		if !s.strategy.isNoChunkRefs() && len(series.chunksRanges) == 0 {
+			continue
+		}
+		// 3. The series doesn't belong to this shard.
 		if !shardOwned(s.shard, s.seriesHasher, postings[sIdx], series.lset, stats) {
 			continue
 		}

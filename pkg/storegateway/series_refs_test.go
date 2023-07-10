@@ -1128,6 +1128,9 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		expectedSets []seriesChunkRefsSet
 	}
 
+	sharedSeriesHasher := cachedSeriesHasher{hashcache.NewSeriesHashCache(1000).GetBlockCache("")}
+	sharedSeriesHasher2 := cachedSeriesHasher{hashcache.NewSeriesHashCache(1000).GetBlockCache("")}
+
 	testCases := map[string]testCase{
 		"loads one batch": {
 			minT:      0,
@@ -1335,54 +1338,137 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				}},
 			},
 		},
+
+		// If the first test case stored incorrect hashes in the cache, the second test case would fail.
+		"doesn't pollute the series hash cache with incorrect hashes (pt. 1)": {
+			minT:         15,
+			maxT:         45,
+			seriesHasher: sharedSeriesHasher,
+			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			batchSize:    100,
+			strategy:     noChunkRefs | overlapMintMaxt,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-5]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+				}},
+			},
+		},
+		"doesn't pollute the series hash cache with incorrect hashes (pt. 2)": {
+			minT:         15,
+			maxT:         45,
+			seriesHasher: sharedSeriesHasher,
+			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			batchSize:    100,
+			strategy:     noChunkRefs | overlapMintMaxt,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-5]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+				}},
+			},
+		},
+		"doesn't pollute the series hash cache with incorrect hashes (without streaming; pt. 1)": {
+			minT:         15,
+			maxT:         45,
+			seriesHasher: sharedSeriesHasher2,
+			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			batchSize:    100,
+			strategy:     overlapMintMaxt,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-5]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
+						{minTime: 20, maxTime: 20, segFileOffset: 234, length: 208},
+					}}}},
+					{lset: labels.FromStrings("l1", "v3"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
+						{minTime: 30, maxTime: 30, segFileOffset: 442, length: 208},
+					}}}},
+				}},
+			},
+		},
+		"doesn't pollute the series hash cache with incorrect hashes (without streaming; pt. 2)": {
+			minT:         15,
+			maxT:         45,
+			seriesHasher: sharedSeriesHasher2,
+			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			batchSize:    100,
+			strategy:     overlapMintMaxt,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-5]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
+						{minTime: 20, maxTime: 20, segFileOffset: 234, length: 208},
+					}}}},
+					{lset: labels.FromStrings("l1", "v3"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
+						// The chunk length here is different from the one in pt. 1.
+						// l1=v4 is outside this shard, so it was excluded, and we couldn't use its chunk refs to infer length.
+						// The next series is l1=v5, and we still don't know its shard, so its chunks refs are fetched,
+						// and we can use them to infer the chunk sizes of l1=v3
+						{minTime: 30, maxTime: 30, segFileOffset: 442, length: 416},
+					}}}},
+				}},
+			},
+		},
 	}
 
-	runTest := func(tc testCase) {
-		// Setup
-		blockFactory := defaultTestBlockFactory
-		if tc.blockFactory != nil {
-			blockFactory = tc.blockFactory
-		}
-		block := blockFactory()
-		indexr := block.indexReader(selectAllStrategy{})
-		postings, _, err := indexr.ExpandedPostings(context.Background(), tc.matchers, newSafeQueryStats())
-		require.NoError(t, err)
-		postingsIterator := newPostingsSetsIterator(
-			postings,
-			tc.batchSize,
-		)
-		hasher := tc.seriesHasher
-		if hasher == nil {
-			hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
-		}
-		loadingIterator := newLoadingSeriesChunkRefsSetIterator(
-			context.Background(),
-			postingsIterator,
-			indexr,
-			noopCache{},
-			newSafeQueryStats(),
-			block.meta,
-			tc.shard,
-			hasher,
-			tc.strategy,
-			tc.minT,
-			tc.maxT,
-			"t1",
-			1,
-			log.NewNopLogger(),
-		)
-
-		// Tests
-		sets := readAllSeriesChunkRefsSet(loadingIterator)
-		assert.NoError(t, loadingIterator.Err())
-		assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, tc.expectedSets, sets)
+	sortedTestCases := make([]struct {
+		name string
+		tc   testCase
+	}, 0, len(testCases))
+	for name, tc := range testCases {
+		sortedTestCases = append(sortedTestCases, struct {
+			name string
+			tc   testCase
+		}{name, tc})
 	}
+	sort.Slice(sortedTestCases, func(i, j int) bool {
+		return sortedTestCases[i].name < sortedTestCases[j].name
+	})
 
-	for testName, testCase := range testCases {
-		testName, tc := testName, testCase
+	for _, testCase := range sortedTestCases {
+		testName, tc := testCase.name, testCase.tc
 		t.Run(testName, func(t *testing.T) {
-			t.Parallel()
-			runTest(tc)
+			// Setup
+			blockFactory := defaultTestBlockFactory
+			if tc.blockFactory != nil {
+				blockFactory = tc.blockFactory
+			}
+			block := blockFactory()
+			indexr := block.indexReader(selectAllStrategy{})
+			postings, _, err := indexr.ExpandedPostings(context.Background(), tc.matchers, newSafeQueryStats())
+			require.NoError(t, err)
+			postingsIterator := newPostingsSetsIterator(
+				postings,
+				tc.batchSize,
+			)
+			hasher := tc.seriesHasher
+			if hasher == nil {
+				hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
+			}
+			loadingIterator := newLoadingSeriesChunkRefsSetIterator(
+				context.Background(),
+				postingsIterator,
+				indexr,
+				noopCache{},
+				newSafeQueryStats(),
+				block.meta,
+				tc.shard,
+				hasher,
+				tc.strategy,
+				tc.minT,
+				tc.maxT,
+				"t1",
+				1,
+				log.NewNopLogger(),
+			)
+
+			// Tests
+			sets := readAllSeriesChunkRefsSet(loadingIterator)
+			assert.NoError(t, loadingIterator.Err())
+			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, tc.expectedSets, sets)
 		})
 	}
 }
