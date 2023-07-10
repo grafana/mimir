@@ -121,11 +121,10 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				return
 			}
 
-			chunkCount := 0
 			chunkBytes := 0
 
 			for _, s := range msg.StreamingSeriesChunks {
-				chunkCount += len(s.Chunks)
+				totalChunks += len(s.Chunks)
 
 				for _, c := range s.Chunks {
 					chunkBytes += c.Size()
@@ -137,8 +136,6 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				onError(err)
 				return
 			}
-
-			totalChunks += chunkCount
 
 			select {
 			case <-ctxDone:
