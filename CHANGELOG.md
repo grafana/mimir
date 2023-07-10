@@ -192,6 +192,7 @@
 * [ENHANCEMENT] Store-gateway: add `store_gateway_lazy_loading_enabled` configuration option which combines disabled lazy-loading and reducing blocks sync concurrency. Reducing blocks sync concurrency improves startup times with disabled lazy loading on HDDs. #5025
 * [ENHANCEMENT] Update `rollout-operator` image to `v0.6.0`. #5155
 * [BUGFIX] Backend: configure `-ruler.alertmanager-url` to `mimir-backend` when running in read-write deployment mode. #4892
+* [ENHANCEMENT] Memcached: don't overwrite upsteam memcached statefulset jsonnet to allow chosing between antiAffinity and topologySpreadConstraints.
 
 ### Mimirtool
 
