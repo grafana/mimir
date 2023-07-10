@@ -592,7 +592,9 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 }
 
 func (t *PostingOffsetTableV2) NewPostingOffsetTableSample() (table *samplepb.PostingOffsetTable) {
-	sample := &samplepb.PostingOffsetTable{}
+	sample := &samplepb.PostingOffsetTable{
+		Postings: map[string]*samplepb.PostingValueOffsets{},
+	}
 
 	for name, offsets := range t.postings {
 		sample.Postings[name] = &samplepb.PostingValueOffsets{}
