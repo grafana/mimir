@@ -25,5 +25,5 @@ The `mimir-distributed` Helm chart version 5.0 and later does not install [PodSe
    1. If you have Kubernetes version 1.22 or later and want to upgrade to Kubernetes version 1.25 after this procedure then follow the [Migrate to Kubernetes version 1.25]({{< relref "./migrate-to-kubernetes-version-1.25.md" >}}) guide.
 
 {{% admonition type="warning" %}}
-Using `rbac.forcePSPOnKubernetes124` true value prevents you from upgrading to Kubernetes version 1.25.
+Using `rbac.forcePSPOnKubernetes124` equal `true` value prevents you from upgrading to Kubernetes version 1.25.
 {{% /admonition %}}
