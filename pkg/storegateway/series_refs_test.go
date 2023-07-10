@@ -1405,7 +1405,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v3"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
 						// The chunk length here is different from the one in pt. 1.
 						// l1=v4 is outside this shard, so it was excluded, and we couldn't use its chunk refs to infer length.
-						// The next series is l1=v5, and we still don't know its shard, so its chunks refs are fetches,
+						// The next series is l1=v5, and we still don't know its shard, so its chunks refs are fetched,
 						// and we can use them to infer the chunk sizes of l1=v3
 						{minTime: 30, maxTime: 30, segFileOffset: 442, length: 416},
 					}}}},
