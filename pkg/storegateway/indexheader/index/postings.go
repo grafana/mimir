@@ -221,7 +221,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	return &t, nil
 }
 
-func NewPostingOffsetTableFromSample(factory *streamencoding.DecbufFactory, sample *samplepb.Sample, tableOffset int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
+func NewPostingOffsetTableFromSample(factory *streamencoding.DecbufFactory, sample *samplepb.Sample, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,

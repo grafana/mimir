@@ -14,10 +14,10 @@ import (
 	"unsafe"
 
 	"github.com/grafana/dskit/runutil"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader/samplepb"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader/samplepb"
 )
 
 // The table gets initialized with sync.Once but may still cause a race
@@ -42,7 +42,7 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbolFromSample reads from sampled index header and returns a Symbols object for symbol lookups.
-func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *samplepb.Sample, version int, offset int, doChecksum bool) (s *Symbols, err error) {
+func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *samplepb.Sample, version int, offset int) (s *Symbols, err error) {
 	s = &Symbols{
 		factory:     factory,
 		version:     version,

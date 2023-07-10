@@ -24,8 +24,7 @@ import (
 // CustomLogger is a custom implementation of log.Logger that captures the logs.
 type CustomLogger struct {
 	// Store the logs in a slice or any other suitable data structure
-	Logs   []string
-	logger log.Logger
+	Logs []string
 }
 
 func (cl *CustomLogger) Log(keyvals ...interface{}) error {
@@ -60,8 +59,10 @@ func TestStreamBinaryReader_ShouldBuildSampleFromFile(t *testing.T) {
 
 	// Write sample to disk on first build.
 	r1, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	require.NoError(t, err)
 	// Read sample to disk on second build.
 	r2, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	require.NoError(t, err)
 
 	// Check that last log confirms we read from index-header sample.
 	logStr := strings.Split(logger.Logs[len(logger.Logs)-1], " filepath")[0]

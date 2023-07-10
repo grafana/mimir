@@ -8,7 +8,10 @@ package indexheader
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
+
+	"os"
+
 	"path/filepath"
 	"sync"
 	"time"
@@ -99,7 +102,13 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	}
 
 	// Unmarshal sample from disk
-	data, err := ioutil.ReadFile(samplepath)
+	sampleFile, err := os.Open(samplepath)
+	var data []byte
+	if err == nil {
+		data, err = io.ReadAll(sampleFile)
+	}
+	defer sampleFile.Close()
+
 	if err != nil {
 		// If sample is not on disk, write sample to disk.
 		level.Debug(logger).Log("msg", "failed to read index-header sample from disk; recreating", "path", samplepath, "err", err)
@@ -129,26 +138,18 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 		return nil, fmt.Errorf("invalid magic number %x", magic)
 	}
 
-	// As of now this value is also the actual end of the last posting list. In the future
-	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
-	// after the last posting list).
-	// This value used to be the offset of the postings offset table up to and including Mimir 2.7.
-	// After that this is the offset of the label indices table.
-	// So what we read here will depend on what version of Mimir created the index header file.
-	indexLastPostingListEndBound := d.Be64()
-
 	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
 	}
 
-	r.symbols, err = streamindex.NewSymbolsFromSample(r.factory, sample, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
+	r.symbols, err = streamindex.NewSymbolsFromSample(r.factory, sample, r.indexVersion, int(r.toc.Symbols))
 	if err != nil {
 		return nil, fmt.Errorf("cannot load symbols: %w", err) // TODO: make better error check
 	}
 
 	// TODO: construct postingoffsettable from sample
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSample(r.factory, sample, int(r.toc.PostingsOffsetTable), indexLastPostingListEndBound, postingOffsetsInMemSampling)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSample(r.factory, sample, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +240,9 @@ func constructSample(binpath string, samplepath string, postingOffsetsInMemSampl
 	}
 
 	// Write sampled index-header to disk.
-	writeSampleToFile(samplepath, r)
+	if err := writeSampleToFile(samplepath, r); err != nil {
+		return nil, fmt.Errorf("cannot write sample to disk: %w", err)
+	}
 
 	return r, err
 }
@@ -258,9 +261,16 @@ func writeSampleToFile(samplepath string, reader *StreamBinaryReader) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode index-header sample: %w", err)
 	}
-	if err := ioutil.WriteFile(samplepath, out, 0644); err != nil {
+
+	// Open the file for writing
+	file, err := os.Create(samplepath)
+	if err == nil {
+		_, err = file.Write(out)
+	}
+	if err != nil {
 		return fmt.Errorf("failed to write index-header sample file: %w", err)
 	}
+	defer file.Close()
 
 	return nil
 }
