@@ -7,13 +7,13 @@ weight: 10
 
 # Migrate to Kubernetes version 1.25
 
-This procedure describes how to prepare a Grafana Mimir Helm chart deployment for an upgrade to Kubernetes 1.25.
+This procedure describes how to prepare a `mimir-distributed` Helm chart release for an upgrade to Kubernetes 1.25.
 
 ## Background
 
 Kubernetes version 1.25 removes the support for the deprecated [PodSecurityPolicy](https://kubernetes.io/docs/concepts/security/pod-security-policy/) object. You can learn more about this topic by visiting [PodSecurityPolicy Deprecation: Past, Present, and Future](https://kubernetes.io/blog/2021/04/06/podsecuritypolicy-deprecation-past-present-and-future/).
 
-Due to how Helm [works](https://helm.sh/docs/topics/kubernetes_apis/), PodSecurityPolicy objects must already be removed from the release prior to upgrading to Kubernetes version 1.25. If you are using PodSecurityPolicy on Kubernetes 1.24, this is a breaking change. Grafana Mimir helm chart versions before 5.0 used PodSecurityPolicy by default in Kubernetes version 1.24.
+Due to how Helm [works](https://helm.sh/docs/topics/kubernetes_apis/), PodSecurityPolicy objects must already be removed from the release prior to upgrading to Kubernetes version 1.25. If you are using PodSecurityPolicy on Kubernetes 1.24, this is a breaking change. `mimir-distributed` Helm chart versions before 5.0 used PodSecurityPolicy by default in Kubernetes version 1.24.
 
 ## Prerequisite
 
