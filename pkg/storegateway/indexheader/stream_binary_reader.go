@@ -240,8 +240,10 @@ func constructSample(binpath string, samplepath string, postingOffsetsInMemSampl
 	}
 
 	// Write sampled index-header to disk.
-	if err := writeSampleToFile(samplepath, r); err != nil {
-		return nil, fmt.Errorf("cannot write sample to disk: %w", err)
+	if r.indexVersion == 2 {
+		if err := writeSampleToFile(samplepath, r); err != nil {
+			return nil, fmt.Errorf("cannot write sample to disk: %w", err)
+		}
 	}
 
 	return r, err
