@@ -412,7 +412,26 @@ mimir:
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
   structuredConfig: {}
 
-# runtimeConfig provides a reloadable runtime configuration file for some specific configuration.
+# -- runtimeConfig provides a reloadable runtime configuration. Changing the runtimeConfig doesn't require a restart of all components.
+# For more infromation see https://grafana.com/docs/mimir/latest/configure/about-runtime-configuration/
+#
+# Example:
+#
+# runtimeConfig:
+#   ingester_limits: # limits that each ingester replica enforces
+#     max_ingestion_rate: 20000
+#     max_series: 1500000
+#     max_tenants: 1000
+#     max_inflight_push_requests: 30000
+#   distributor_limits: # limits that each distributor replica enforces
+#     max_ingestion_rate: 20000
+#     max_inflight_push_requests: 30000
+#     max_inflight_push_requests_bytes: 50000000
+#   overrides:
+#     tenant-1: # limits for tenant-1 that the whole cluster enforces
+#       ingestion_tenant_shard_size: 9
+#       max_global_series_per_user: 1500000
+#       max_fetched_series_per_query: 100000
 runtimeConfig: {}
 
 # RBAC configuration
