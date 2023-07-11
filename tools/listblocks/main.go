@@ -44,6 +44,9 @@ type config struct {
 }
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	logger := gokitlog.NewNopLogger()
 	cfg := config{}
 	cfg.bucket.RegisterFlags(flag.CommandLine)

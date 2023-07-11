@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -86,6 +87,8 @@ func TestIngester_Push(t *testing.T) {
 		"cortex_ingester_memory_series_removed_total",
 		"cortex_discarded_samples_total",
 		"cortex_ingester_active_series",
+		"cortex_ingester_active_native_histogram_series",
+		"cortex_ingester_active_native_histogram_buckets",
 	}
 	userID := "test"
 
@@ -236,6 +239,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
 			`,
 			nativeHistograms: true,
 		},
@@ -890,7 +899,7 @@ func TestIngester_Push(t *testing.T) {
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.ReplicationFactor = 1
-			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
+			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
@@ -1004,6 +1013,7 @@ func TestIngester_Push(t *testing.T) {
 
 func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
 	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_histogram"}}}
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
 		"cortex_ingester_ingested_samples_failures_total",
@@ -1012,6 +1022,8 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 		"cortex_ingester_memory_series_created_total",
 		"cortex_ingester_memory_series_removed_total",
 		"cortex_ingester_active_series",
+		"cortex_ingester_active_native_histogram_series",
+		"cortex_ingester_active_native_histogram_buckets",
 	}
 
 	registry := prometheus.NewRegistry()
@@ -1046,6 +1058,10 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 				nil,
 				mimirpb.API,
 			),
+			mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(metricLabelAdaptersHist,
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(7, util_test.GenerateTestHistogram(1))}, nil),
+			mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(metricLabelAdaptersHist,
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(8, util_test.GenerateTestGaugeHistogram(2))}, nil),
 		}
 
 		for _, req := range reqs {
@@ -1062,8 +1078,8 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 	expectedMetrics := `
 		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 		# TYPE cortex_ingester_ingested_samples_total counter
-		cortex_ingester_ingested_samples_total{user="test-1"} 2
-		cortex_ingester_ingested_samples_total{user="test-2"} 2
+		cortex_ingester_ingested_samples_total{user="test-1"} 4
+		cortex_ingester_ingested_samples_total{user="test-2"} 4
 		# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 		# TYPE cortex_ingester_ingested_samples_failures_total counter
 		cortex_ingester_ingested_samples_failures_total{user="test-1"} 0
@@ -1073,19 +1089,27 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 		cortex_ingester_memory_users 2
 		# HELP cortex_ingester_memory_series The current number of series in memory.
 		# TYPE cortex_ingester_memory_series gauge
-		cortex_ingester_memory_series 2
+		cortex_ingester_memory_series 4
 		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
 		# TYPE cortex_ingester_memory_series_created_total counter
-		cortex_ingester_memory_series_created_total{user="test-1"} 1
-		cortex_ingester_memory_series_created_total{user="test-2"} 1
+		cortex_ingester_memory_series_created_total{user="test-1"} 2
+		cortex_ingester_memory_series_created_total{user="test-2"} 2
 		# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
 		# TYPE cortex_ingester_memory_series_removed_total counter
 		cortex_ingester_memory_series_removed_total{user="test-1"} 0
 		cortex_ingester_memory_series_removed_total{user="test-2"} 0
 		# HELP cortex_ingester_active_series Number of currently active series per user.
 		# TYPE cortex_ingester_active_series gauge
-		cortex_ingester_active_series{user="test-1"} 1
-		cortex_ingester_active_series{user="test-2"} 1
+		cortex_ingester_active_series{user="test-1"} 2
+		cortex_ingester_active_series{user="test-2"} 2
+		# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+		# TYPE cortex_ingester_active_native_histogram_series gauge
+		cortex_ingester_active_native_histogram_series{user="test-1"} 1
+		cortex_ingester_active_native_histogram_series{user="test-2"} 1
+		# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+		# TYPE cortex_ingester_active_native_histogram_buckets gauge
+		cortex_ingester_active_native_histogram_buckets{user="test-1"} 8
+		cortex_ingester_active_native_histogram_buckets{user="test-2"} 8
 	`
 
 	assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
@@ -1093,17 +1117,20 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 
 func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_histogram"}}}
 	metricNames := []string{
 		"cortex_ingester_memory_series_created_total",
 		"cortex_ingester_memory_series_removed_total",
 		"cortex_ingester_active_series",
+		"cortex_ingester_active_native_histogram_series",
+		"cortex_ingester_active_native_histogram_buckets",
 	}
 
 	registry := prometheus.NewRegistry()
 
 	// Create a mocked ingester
 	cfg := defaultIngesterTestConfig(t)
-	cfg.ActiveSeriesMetricsIdleTimeout = 100 * time.Millisecond
+	cfg.ActiveSeriesMetrics.IdleTimeout = 100 * time.Millisecond
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
 	currentTime := time.Now()
@@ -1133,6 +1160,10 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 				nil,
 				mimirpb.API,
 			),
+			mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(metricLabelAdaptersHist,
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(7, util_test.GenerateTestHistogram(1))}, nil),
+			mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(metricLabelAdaptersHist,
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(8, util_test.GenerateTestGaugeHistogram(2))}, nil),
 		}
 
 		for _, req := range reqs {
@@ -1144,15 +1175,15 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 
 	// Update active series the after the idle timeout (in the future).
 	// This will remove inactive series.
-	currentTime = currentTime.Add(cfg.ActiveSeriesMetricsIdleTimeout + 1*time.Second)
+	currentTime = currentTime.Add(cfg.ActiveSeriesMetrics.IdleTimeout + 1*time.Second)
 	i.updateActiveSeries(currentTime)
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
 		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
 		# TYPE cortex_ingester_memory_series_created_total counter
-		cortex_ingester_memory_series_created_total{user="test-1"} 1
-		cortex_ingester_memory_series_created_total{user="test-2"} 1
+		cortex_ingester_memory_series_created_total{user="test-1"} 2
+		cortex_ingester_memory_series_created_total{user="test-2"} 2
 		# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
 		# TYPE cortex_ingester_memory_series_removed_total counter
 		cortex_ingester_memory_series_removed_total{user="test-1"} 0
@@ -1820,7 +1851,8 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 	// Create ingester
 	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
 
-	ctx := pushSeriesToIngester(t, series, i)
+	ctx := user.InjectOrgID(context.Background(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
 
 	// Run tests
 	for _, tc := range tests {
@@ -1930,7 +1962,9 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 	// Create ingester
 	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), registry)
 
-	ctx := pushSeriesToIngester(t, series, i)
+	ctx := user.InjectOrgID(context.Background(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
 	// Run tests
 	for tName, tc := range tests {
 		t.Run(tName, func(t *testing.T) {
@@ -1970,14 +2004,15 @@ type series struct {
 	timestamp int64
 }
 
-func pushSeriesToIngester(t testing.TB, series []series, i *Ingester) context.Context {
-	ctx := user.InjectOrgID(context.Background(), "test")
+func pushSeriesToIngester(ctx context.Context, t testing.TB, i *Ingester, series []series) error {
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
 		_, err := i.Push(ctx, req)
-		require.NoError(t, err)
+		if err != nil {
+			return err
+		}
 	}
-	return ctx
+	return nil
 }
 
 func extractItemsWithSortedValues(responses []client.LabelNamesAndValuesResponse) []*client.LabelValues {
@@ -3117,9 +3152,9 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 
 	seriesLabelsMsg := client.QueryStreamResponse{
 		StreamingSeries: []client.QueryStreamSeries{
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "1"))},
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "2"))},
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "3"))},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "1")), ChunkCount: 834},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "2")), ChunkCount: 8334},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "3")), ChunkCount: 4167},
 		},
 		IsEndOfSeriesStream: true,
 	}
@@ -3656,6 +3691,9 @@ func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Confi
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
 	ingesterCfg.BlocksStorageConfig.Bucket.Filesystem.Directory = bucketDir
 
+	// Disable TSDB head compaction jitter to have predictable tests.
+	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+
 	ingester, err := New(ingesterCfg, overrides, nil, registerer, log.NewNopLogger())
 	if err != nil {
 		return nil, err
@@ -3927,7 +3965,7 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 
 	pushSingleSampleWithMetadata(t, i)
 	require.Equal(t, int64(1), i.seriesCount.Load())
-	i.compactBlocks(context.Background(), true, nil)
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
 	require.Equal(t, int64(0), i.seriesCount.Load())
 	i.shipBlocks(context.Background(), nil)
 
@@ -3944,7 +3982,7 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 	// After writing tenant deletion mark,
 	pushSingleSampleWithMetadata(t, i)
 	require.Equal(t, int64(1), i.seriesCount.Load())
-	i.compactBlocks(context.Background(), true, nil)
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
 	require.Equal(t, int64(0), i.seriesCount.Load())
 	i.shipBlocks(context.Background(), nil)
 
@@ -4115,7 +4153,7 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 	require.NotNil(t, db)
 
 	// Run compaction and shipping.
-	i.compactBlocks(context.Background(), true, nil)
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
 	i.shipBlocks(context.Background(), nil)
 
 	// Make sure we can close completely empty TSDB without problems.
@@ -4202,7 +4240,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_timestamp_seconds Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_timestamp_seconds gauge
+					cortex_ingester_shipper_last_successful_upload_timestamp_seconds 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_timestamp_seconds"))
 
 				// Shutdown ingester. This triggers flushing of the block.
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
@@ -4215,6 +4257,8 @@ func TestIngester_flushing(t *testing.T) {
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 1
 				`), "cortex_ingester_shipper_uploads_total"))
+
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
 			},
 		},
 
@@ -4233,7 +4277,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_timestamp_seconds Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_timestamp_seconds gauge
+					cortex_ingester_shipper_last_successful_upload_timestamp_seconds 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_timestamp_seconds"))
 
 				response1 := httptest.NewRecorder()
 				i.PrepareShutdownHandler(response1, httptest.NewRequest("GET", "/ingester/prepare-shutdown", nil))
@@ -4279,6 +4327,8 @@ func TestIngester_flushing(t *testing.T) {
 					cortex_ingester_shipper_uploads_total 1
 				`), "cortex_ingester_shipper_uploads_total"))
 
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
+
 				// If the ingester isn't "running", requests to the prepare-shutdown endpoint should fail
 				response6 := httptest.NewRecorder()
 				i.PrepareShutdownHandler(response6, httptest.NewRequest("POST", "/ingester/prepare-shutdown", nil))
@@ -4298,19 +4348,25 @@ func TestIngester_flushing(t *testing.T) {
 
 				// Nothing shipped yet.
 				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
-		# TYPE cortex_ingester_shipper_uploads_total counter
-		cortex_ingester_shipper_uploads_total 0
-	`), "cortex_ingester_shipper_uploads_total"))
+					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
+					# TYPE cortex_ingester_shipper_uploads_total counter
+					cortex_ingester_shipper_uploads_total 0
+
+					# HELP cortex_ingester_shipper_last_successful_upload_timestamp_seconds Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_timestamp_seconds gauge
+					cortex_ingester_shipper_last_successful_upload_timestamp_seconds 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_timestamp_seconds"))
 
 				i.ShutdownHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/shutdown", nil))
 
 				verifyCompactedHead(t, i, true)
 				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
-		# TYPE cortex_ingester_shipper_uploads_total counter
-		cortex_ingester_shipper_uploads_total 1
-	`), "cortex_ingester_shipper_uploads_total"))
+					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
+					# TYPE cortex_ingester_shipper_uploads_total counter
+					cortex_ingester_shipper_uploads_total 1
+				`), "cortex_ingester_shipper_uploads_total"))
+
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
 			},
 		},
 
@@ -4327,7 +4383,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_timestamp_seconds Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_timestamp_seconds gauge
+					cortex_ingester_shipper_last_successful_upload_timestamp_seconds 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_timestamp_seconds"))
 
 				// Using wait=true makes this a synchronous call.
 				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/flush?wait=true", nil))
@@ -4338,6 +4398,8 @@ func TestIngester_flushing(t *testing.T) {
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 1
 				`), "cortex_ingester_shipper_uploads_total"))
+
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
 			},
 		},
 
@@ -4354,7 +4416,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_timestamp_seconds Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_timestamp_seconds gauge
+					cortex_ingester_shipper_last_successful_upload_timestamp_seconds 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_timestamp_seconds"))
 
 				users := url.Values{}
 				users.Add(tenantParam, "unknown-user")
@@ -4368,7 +4434,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_timestamp_seconds Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_timestamp_seconds gauge
+					cortex_ingester_shipper_last_successful_upload_timestamp_seconds 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_timestamp_seconds"))
 				verifyCompactedHead(t, i, false)
 
 				users = url.Values{}
@@ -4384,6 +4454,8 @@ func TestIngester_flushing(t *testing.T) {
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 1
 				`), "cortex_ingester_shipper_uploads_total"))
+
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
 			},
 		},
 
@@ -4410,7 +4482,11 @@ func TestIngester_flushing(t *testing.T) {
 					# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 0
-				`), "cortex_ingester_shipper_uploads_total"))
+
+					# HELP cortex_ingester_shipper_last_successful_upload_timestamp_seconds Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.
+					# TYPE cortex_ingester_shipper_last_successful_upload_timestamp_seconds gauge
+					cortex_ingester_shipper_last_successful_upload_timestamp_seconds 0
+				`), "cortex_ingester_shipper_uploads_total", "cortex_ingester_shipper_last_successful_upload_timestamp_seconds"))
 
 				i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/flush?wait=true", nil))
 
@@ -4421,6 +4497,8 @@ func TestIngester_flushing(t *testing.T) {
 					# TYPE cortex_ingester_shipper_uploads_total counter
 					cortex_ingester_shipper_uploads_total 3
 				`), "cortex_ingester_shipper_uploads_total"))
+
+				verifyShipperLastSuccessfulUploadTimeMetric(t, reg, time.Now().Unix())
 
 				userDB := i.getTSDB(userID)
 				require.NotNil(t, userDB)
@@ -4688,7 +4766,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 
 	pushSingleSampleWithMetadata(t, i)
 
-	i.compactBlocks(context.Background(), false, nil)
+	i.compactBlocks(context.Background(), false, 0, nil)
 	verifyCompactedHead(t, i, false)
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
 		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
@@ -4707,7 +4785,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 	// wait one second (plus maximum jitter) -- TSDB is now idle.
 	time.Sleep(time.Duration(float64(cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout) * (1 + compactionIdleTimeoutJitter)))
 
-	i.compactBlocks(context.Background(), false, nil)
+	i.compactBlocks(context.Background(), false, 0, nil)
 	verifyCompactedHead(t, i, true)
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
 		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
@@ -5261,17 +5339,17 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	// We mock a flushing by setting the boolean.
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	ok, _ := db.casState(active, forceCompacting)
+	ok, _ := db.changeStateToForcedCompaction(active, math.MaxInt64)
 	require.True(t, ok)
 
 	// Ingestion should fail with a 503.
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = i.Push(ctx, req)
-	require.Equal(t, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(errors.New("forced compaction in progress"), userID).Error()), err)
+	require.Equal(t, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(errTSDBForcedCompaction, userID).Error()), err)
 
 	// Ingestion is successful after a flush.
-	ok, _ = db.casState(forceCompacting, active)
+	ok, _ = db.changeState(forceCompacting, active)
 	require.True(t, ok)
 	pushSingleSampleWithMetadata(t, i)
 }
@@ -5300,7 +5378,8 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 
 	// This mocks a request in flight.
 	db := i.getTSDB(userID)
-	require.NoError(t, db.acquireAppendLock())
+	lockState, err := db.acquireAppendLock(0)
+	require.NoError(t, err)
 
 	// Flush handler only triggers compactions, but doesn't wait for them to finish. We cannot use ?wait=true here,
 	// because it would deadlock -- flush will wait for appendLock to be released.
@@ -5315,7 +5394,7 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 	`), "cortex_ingester_tsdb_compactions_total"))
 
 	// No requests in flight after this.
-	db.releaseAppendLock()
+	db.releaseAppendLock(lockState)
 
 	// Let's wait until all head series have been flushed.
 	test.Poll(t, 5*time.Second, uint64(0), func() interface{} {
@@ -6187,6 +6266,12 @@ func TestIngesterActiveSeries(t *testing.T) {
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
+	labelsToPushHist := [][]mimirpb.LabelAdapter{
+		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+	}
 
 	req := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
 		return mimirpb.ToWriteRequest(
@@ -6197,10 +6282,18 @@ func TestIngesterActiveSeries(t *testing.T) {
 			mimirpb.API,
 		)
 	}
+	reqHist := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
+		return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{lbls},
+			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(t.UnixMilli(), util_test.GenerateTestGaugeHistogram(1))}, nil)
+	}
 
 	metricNames := []string{
 		"cortex_ingester_active_series",
 		"cortex_ingester_active_series_custom_tracker",
+		"cortex_ingester_active_native_histogram_series",
+		"cortex_ingester_active_native_histogram_series_custom_tracker",
+		"cortex_ingester_active_native_histogram_buckets",
+		"cortex_ingester_active_native_histogram_buckets_custom_tracker",
 	}
 	userID := "test_user"
 	userID2 := "other_test_user"
@@ -6216,7 +6309,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 	})
 
 	activeSeriesTenantOverride := new(TenantLimitsMock)
-	activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig})
+	activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 	activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
 
 	tests := map[string]struct {
@@ -6229,6 +6322,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
+				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(time.Now())
@@ -6236,14 +6331,34 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="other_test_user"} 8
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="other_test_user"} 32
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_a",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
 				`
 
 				// Check tracked Prometheus metrics
@@ -6254,6 +6369,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
+				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(time.Now())
@@ -6261,14 +6378,34 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="other_test_user"} 8
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="other_test_user"} 32
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_a",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
 				`
 
 				// Check tracked Prometheus metrics
@@ -6284,6 +6421,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 				currentTime := time.Now()
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
+				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(currentTime)
@@ -6291,14 +6430,34 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="other_test_user"} 8
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="other_test_user"} 32
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_a",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
 				`
 
 				// Check tracked Prometheus metrics
@@ -6307,28 +6466,43 @@ func TestIngesterActiveSeries(t *testing.T) {
 				// Pushing second time to have entires which are not going to be purged
 				currentTime = time.Now()
 				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
 
 				// Adding time to make the first batch of pushes idle.
 				// We update them in the exact moment in time where append time of the first push is already considered idle,
 				// while the second append happens after the purge timestamp.
-				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
 
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_b",user="test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_a",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
 				`
 
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Update active series again in a further future where no series are active anymore.
-				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(""), metricNames...))
 			},
@@ -6338,6 +6512,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
+				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(time.Now())
@@ -6356,10 +6532,11 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
+			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
 
 			limits := defaultLimitsTestConfig()
 			limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+			limits.NativeHistogramsIngestionEnabled = true
 			overrides, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 			require.NoError(t, err)
 
@@ -6385,6 +6562,12 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
+	labelsToPushHist := [][]mimirpb.LabelAdapter{
+		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+	}
 
 	req := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
 		return mimirpb.ToWriteRequest(
@@ -6395,11 +6578,19 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			mimirpb.API,
 		)
 	}
+	reqHist := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
+		return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{lbls},
+			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(t.UnixMilli(), util_test.GenerateTestGaugeHistogram(1))}, nil)
+	}
 
 	metricNames := []string{
 		"cortex_ingester_active_series_loading",
 		"cortex_ingester_active_series",
 		"cortex_ingester_active_series_custom_tracker",
+		"cortex_ingester_active_native_histogram_series",
+		"cortex_ingester_active_native_histogram_series_custom_tracker",
+		"cortex_ingester_active_native_histogram_buckets",
+		"cortex_ingester_active_native_histogram_buckets_custom_tracker",
 	}
 	userID := "test_user"
 	userID2 := "other_test_user"
@@ -6416,7 +6607,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 	defaultActiveSeriesTenantOverride := new(TenantLimitsMock)
 	defaultActiveSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
-	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig})
+	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 
 	tests := map[string]struct {
 		test               func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
@@ -6433,6 +6624,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
+				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(currentTime)
@@ -6440,14 +6633,34 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="other_test_user"} 8
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="other_test_user"} 32
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
@@ -6455,9 +6668,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				// Add new runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
 				activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
-				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig})
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 				limits := defaultLimitsTestConfig()
 				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				require.NoError(t, err)
 				ingester.limits = override
@@ -6467,14 +6681,28 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="other_test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
 					# HELP cortex_ingester_active_series_loading Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.
 					# TYPE cortex_ingester_active_series_loading gauge
 					cortex_ingester_active_series_loading{user="test_user"} 1
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="other_test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
@@ -6482,20 +6710,42 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				currentTime = time.Now()
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
+				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 				// Adding idleTimeout to expose the metrics but not purge the pushes.
-				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="other_test_user"} 8
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-            	    cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
+            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
+            	    cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+            	    cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_a",user="test_user"} 2
+            	    cortex_ingester_active_native_histogram_series_custom_tracker{name="team_b",user="test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="other_test_user"} 32
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
+            	    cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_a",user="test_user"} 16
+            	    cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
@@ -6508,6 +6758,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
+				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(currentTime)
@@ -6515,14 +6767,34 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="other_test_user"} 8
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-            	    cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
+            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
+            	    cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+            	    cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_a",user="test_user"} 2
+            	    cortex_ingester_active_native_histogram_series_custom_tracker{name="team_b",user="test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="other_test_user"} 32
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
+            	    cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_a",user="test_user"} 16
+            	    cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
@@ -6530,6 +6802,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				// Remove runtime configs
 				limits := defaultLimitsTestConfig()
 				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, nil)
 				require.NoError(t, err)
 				ingester.limits = override
@@ -6537,11 +6810,25 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
+					cortex_ingester_active_series{user="other_test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
+            	    cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="other_test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
 					# HELP cortex_ingester_active_series_loading Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.
 					# TYPE cortex_ingester_active_series_loading gauge
 					cortex_ingester_active_series_loading{user="test_user"} 1
@@ -6552,20 +6839,42 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				currentTime = time.Now()
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
+				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 				// Adding idleTimeout to expose the metrics but not purge the pushes.
-				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="other_test_user"} 8
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="other_test_user"} 32
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 16
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
@@ -6576,6 +6885,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				currentTime := time.Now()
 
 				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(currentTime)
@@ -6583,11 +6893,25 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
@@ -6599,9 +6923,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					"team_b": `{team="b"}`,
 					"team_c": `{team="b"}`,
 					"team_d": `{team="b"}`,
-				})})
+				}), NativeHistogramsIngestionEnabled: true})
 				limits := defaultLimitsTestConfig()
 				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				require.NoError(t, err)
 				ingester.limits = override
@@ -6616,19 +6941,39 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				// Saving time before second push to avoid purging it before exposing.
 				currentTime = time.Now()
 				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
 				// Adding idleTimeout to expose the metrics but not purge the pushes.
-				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout)
+				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_c",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_d",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_c",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_d",user="test_user"} 4
+
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_c",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_d",user="test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_a",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_c",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_d",user="test_user"} 16
 				`
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
@@ -6641,6 +6986,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
+				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
 				// Update active series for metrics check.
 				ingester.updateActiveSeries(currentTime)
@@ -6648,14 +6995,34 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 4
-					cortex_ingester_active_series{user="test_user"} 4
+					cortex_ingester_active_series{user="other_test_user"} 8
+					cortex_ingester_active_series{user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 2
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 2
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+					# TYPE cortex_ingester_active_native_histogram_series gauge
+					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
+					cortex_ingester_active_native_histogram_series{user="test_user"} 4
+					# HELP cortex_ingester_active_native_histogram_series_custom_tracker Number of currently active native histogram series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_series_custom_tracker gauge
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_a",user="test_user"} 2
+					cortex_ingester_active_native_histogram_series_custom_tracker{name="team_b",user="test_user"} 2
+					# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets gauge
+					cortex_ingester_active_native_histogram_buckets{user="other_test_user"} 32
+					cortex_ingester_active_native_histogram_buckets{user="test_user"} 32
+					# HELP cortex_ingester_active_native_histogram_buckets_custom_tracker Number of currently active native histogram buckets matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_native_histogram_buckets_custom_tracker gauge
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_a",user="test_user"} 16
+					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
@@ -6687,10 +7054,11 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.ActiveSeriesMetricsEnabled = true
+			cfg.ActiveSeriesMetrics.Enabled = true
 
 			limits := defaultLimitsTestConfig()
 			limits.ActiveSeriesCustomTrackersConfig = testData.activeSeriesConfig
+			limits.NativeHistogramsIngestionEnabled = true
 			var overrides *validation.Overrides
 			var err error
 			// Without this, TenantLimitsMock(nil) != nil when using getOverridesForUser in limits.go
@@ -6972,13 +7340,13 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 
 	// wait one second (plus maximum jitter) -- TSDB is now idle.
 	time.Sleep(time.Duration(float64(cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout) * (1 + compactionIdleTimeoutJitter)))
-	i.compactBlocks(context.Background(), false, nil) // Should be compacted because the TSDB is idle.
+	i.compactBlocks(context.Background(), false, 0, nil) // Should be compacted because the TSDB is idle.
 	verifyCompactedHead(t, i, true)
 
 	pushSamples(110, 110)
 	pushSamples(101, 109)
 	verifySamples(90, 110)
-	i.compactBlocks(context.Background(), true, nil) // Should be compacted because it's forced.
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil) // Should be compacted because it's forced.
 	verifyCompactedHead(t, i, true)
 }
 
@@ -7043,7 +7411,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 			pushSamples(90, 99)
 
 			// Compact and upload the blocks
-			i.compactBlocks(ctx, true, nil)
+			i.compactBlocks(ctx, true, math.MaxInt64, nil)
 			i.shipBlocks(ctx, nil)
 
 			// Now check that an OOO block was uploaded and labeled correctly
@@ -7343,4 +7711,12 @@ func verifyUtilizationLimitedRequestsMetric(t *testing.T, reg *prometheus.Regist
 				`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expMetrics),
 		"cortex_ingester_utilization_limited_read_requests_total"))
+}
+
+func verifyShipperLastSuccessfulUploadTimeMetric(t *testing.T, reg *prometheus.Registry, expected int64) {
+	t.Helper()
+
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	assert.InDelta(t, float64(expected), metrics.MaxGauges("cortex_ingester_shipper_last_successful_upload_timestamp_seconds"), 5)
 }

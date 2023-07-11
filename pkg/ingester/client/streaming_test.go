@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -75,7 +77,7 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 			mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: testCase.batches}
 			cleanedUp := atomic.NewBool(false)
 			cleanup := func() { cleanedUp.Store(true) }
-			reader := NewSeriesChunksStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0), cleanup, log.NewNopLogger())
+			reader := NewSeriesChunksStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 
 			for i, expected := range [][]Chunk{series0, series1, series2, series3, series4} {
@@ -115,7 +117,7 @@ func TestSeriesChunksStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 	cleanedUp := atomic.NewBool(false)
 	cleanup := func() { cleanedUp.Store(true) }
 
-	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	cancel()
 	reader.StartBuffering()
 
@@ -146,7 +148,7 @@ func TestSeriesChunksStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
 	cleanup := func() {}
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(1)
@@ -164,7 +166,7 @@ func TestSeriesChunksStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
 	cleanup := func() {}
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -188,7 +190,7 @@ func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 	cleanedUp := atomic.NewBool(false)
 	cleanup := func() { cleanedUp.Store(true) }
 
-	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -216,7 +218,7 @@ func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 	cleanedUp := atomic.NewBool(false)
 	cleanup := func() { cleanedUp.Store(true) }
 
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -241,7 +243,7 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 		"query selects too many chunks": {
 			maxChunks:     2,
 			maxChunkBytes: 200,
-			expectedError: "the query exceeded the maximum number of chunks (limit: 2 chunks) (err-mimir-max-chunks-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunks-per-query, or contact your service administrator.",
+			expectedError: "", // The limit on the number of chunks is enforced earlier, in distributor.queryIngesterStream()
 		},
 		"query selects too many chunk bytes": {
 			maxChunks:     4,
@@ -261,7 +263,8 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 			mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
 			cleanedUp := atomic.NewBool(false)
 			cleanup := func() { cleanedUp.Store(true) }
-			reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks), cleanup, log.NewNopLogger())
+			queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
+			reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, queryMetrics), cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 
 			_, err := reader.GetChunks(0)

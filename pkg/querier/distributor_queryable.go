@@ -30,7 +30,7 @@ import (
 // Distributor is the read interface to the distributor, made an interface here
 // to reduce package coupling.
 type Distributor interface {
-	QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
+	QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
 	QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error)
 	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, matchers ...*labels.Matcher) ([]string, error)
 	LabelNames(ctx context.Context, from model.Time, to model.Time, matchers ...*labels.Matcher) ([]string, error)
@@ -40,13 +40,13 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryChunkMetrics *stats.QueryChunkMetrics, logger log.Logger) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) QueryableWithFilter {
 	return distributorQueryable{
-		logger:            logger,
-		distributor:       distributor,
-		iteratorFn:        iteratorFn,
-		cfgProvider:       cfgProvider,
-		queryChunkMetrics: queryChunkMetrics,
+		logger:       logger,
+		distributor:  distributor,
+		iteratorFn:   iteratorFn,
+		cfgProvider:  cfgProvider,
+		queryMetrics: queryMetrics,
 	}
 }
 
@@ -55,11 +55,11 @@ type distributorQueryableConfigProvider interface {
 }
 
 type distributorQueryable struct {
-	logger            log.Logger
-	distributor       Distributor
-	iteratorFn        chunkIteratorFunc
-	cfgProvider       distributorQueryableConfigProvider
-	queryChunkMetrics *stats.QueryChunkMetrics
+	logger       log.Logger
+	distributor  Distributor
+	iteratorFn   chunkIteratorFunc
+	cfgProvider  distributorQueryableConfigProvider
+	queryMetrics *stats.QueryMetrics
 }
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -84,7 +84,7 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 		maxt:                 maxt,
 		chunkIterFn:          d.iteratorFn,
 		queryIngestersWithin: queryIngestersWithin,
-		queryChunkMetrics:    d.queryChunkMetrics,
+		queryMetrics:         d.queryMetrics,
 	}, nil
 }
 
@@ -103,7 +103,7 @@ type distributorQuerier struct {
 	mint, maxt           int64
 	chunkIterFn          chunkIteratorFunc
 	queryIngestersWithin time.Duration
-	queryChunkMetrics    *stats.QueryChunkMetrics
+	queryMetrics         *stats.QueryMetrics
 }
 
 // Select implements storage.Querier interface.
@@ -140,7 +140,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
-	results, err := q.distributor.QueryStream(ctx, model.Time(minT), model.Time(maxT), matchers...)
+	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -183,7 +183,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			chunkIteratorFunc: q.chunkIterFn,
 			mint:              minT,
 			maxt:              maxT,
-			queryChunkMetrics: q.queryChunkMetrics,
+			queryMetrics:      q.queryMetrics,
 			queryStats:        stats.FromContext(ctx),
 		}
 

@@ -7,7 +7,6 @@ package util
 
 import (
 	"fmt"
-	"math"
 	"testing"
 	"time"
 
@@ -36,14 +35,14 @@ func TestTimeFromMillis(t *testing.T) {
 	}
 }
 
-func TestTimeRoundTrip(t *testing.T) {
+func TestTimeRoundTripUsingPrometheusMinAndMaxTimestamps(t *testing.T) {
 	refTime, _ := time.Parse(time.Layout, time.Layout)
 	var testExpr = []struct {
 		input time.Time
 	}{
 		{input: refTime},
-		{input: time.Unix(math.MinInt64/1000+62135596801, 0).UTC()},         // minTime from Prometheus API
-		{input: time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()}, // maxTime from Prometheus API
+		{input: PrometheusMinTime},
+		{input: PrometheusMaxTime},
 	}
 
 	for i, c := range testExpr {

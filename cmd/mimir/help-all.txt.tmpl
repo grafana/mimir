@@ -41,6 +41,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -alertmanager-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -alertmanager-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -alertmanager-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -alertmanager-storage.s3.max-idle-connections int
@@ -491,6 +493,8 @@ Usage of ./cmd/mimir/mimir:
     	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.index-cache.redis.write-timeout duration
     	Client write timeout. (default 3s)
+  -blocks-storage.bucket-store.index-header-lazy-loading-concurrency int
+    	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
@@ -653,6 +657,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -blocks-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -blocks-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -blocks-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -blocks-storage.s3.max-idle-connections int
@@ -725,6 +731,10 @@ Usage of ./cmd/mimir/mimir:
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
     	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
+  -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage int
+    	[experimental] When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100). (default 10)
+  -blocks-storage.tsdb.early-head-compaction-min-in-memory-series int
+    	[experimental] When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -ingester.active-series-metrics-idle-timeout time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -ingester.active-series-metrics-idle-timeout time ago (unless out of order ingestion is enabled). The ingester checks every -blocks-storage.tsdb.head-compaction-interval whether an early compaction is required. Use 0 to disable it.
   -blocks-storage.tsdb.flush-blocks-on-shutdown
     	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
   -blocks-storage.tsdb.head-chunks-end-time-variance float
@@ -738,7 +748,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-compaction-idle-timeout duration
     	If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled. (default 1h0m0s)
   -blocks-storage.tsdb.head-compaction-interval duration
-    	How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, while subsequent checks will happen at the configured interval. Block is only created if data covers smallest block range. The configured interval must be between 0 and 15 minutes. (default 1m0s)
+    	How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes. (default 1m0s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-force
     	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
@@ -803,6 +813,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -common.storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -common.storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -common.storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -common.storage.s3.max-idle-connections int
@@ -1159,8 +1171,6 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
-  -distributor.write-requests-buffer-pooling-enabled
-    	[experimental] Enable pooling of buffers used for marshaling write requests.
   -enable-go-runtime-metrics
     	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
   -flusher.exit-after-flush
@@ -1258,9 +1268,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.read-path-cpu-utilization-limit float
-    	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting
+    	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
-    	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting
+    	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration
@@ -1437,6 +1447,8 @@ Usage of ./cmd/mimir/mimir:
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -modules
     	List available values that can be used as target.
+  -overrides-exporter.enabled-metrics comma-separated-list-of-strings
+    	[experimental] Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
   -overrides-exporter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -overrides-exporter.ring.consul.cas-retry-delay duration
@@ -1597,6 +1609,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.minimize-ingester-requests
     	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.
+  -querier.minimize-ingester-requests-hedging-delay duration
+    	[experimental] Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
   -querier.prefer-streaming-chunks
     	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.
   -querier.query-ingesters-within duration
@@ -1721,6 +1735,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
   -query-frontend.results-cache-ttl-for-cardinality-query duration
     	[experimental] Time to live duration for cached cardinality query results. The value 0 disables the cache.
+  -query-frontend.results-cache-ttl-for-labels-query duration
+    	[experimental] Time to live duration for cached label names and label values query results. The value 0 disables the cache.
   -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
     	[experimental] Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -query-frontend.results-cache-ttl so that incoming out-of-order samples are returned in the query results sooner. (default 10m)
   -query-frontend.results-cache.backend string
@@ -2067,6 +2083,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -ruler-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -ruler-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -ruler-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -ruler-storage.s3.max-idle-connections int
@@ -2527,8 +2545,6 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
-  -timeseries-unmarshal-caching-optimization-enabled
-    	[experimental] Enables optimized marshaling of timeseries. (default true)
   -usage-stats.enabled
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string

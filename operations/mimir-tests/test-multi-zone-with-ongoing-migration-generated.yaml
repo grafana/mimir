@@ -20,6 +20,32 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: compactor
+  name: compactor
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: compactor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: distributor
+  name: distributor
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: distributor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: ingester
   name: ingester
   namespace: default
@@ -41,6 +67,123 @@ spec:
   selector:
     matchLabels:
       rollout-group: ingester
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached
+  name: memcached
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-frontend
+  name: memcached-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-index-queries
+  name: memcached-index-queries
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-index-queries
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-metadata
+  name: memcached-metadata
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: querier
+  name: querier
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: querier
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-frontend
+  name: query-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-scheduler
+  name: query-scheduler
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-scheduler
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: rollout-operator
+  name: rollout-operator
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: rollout-operator
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler
+  name: ruler
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -983,6 +1126,10 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -querier.max-partial-query-length=768h
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
@@ -1331,7 +1478,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: ingester
   name: ingester-zone-a
@@ -1449,7 +1596,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: ingester
   name: ingester-zone-b
@@ -1567,7 +1714,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: ingester
   name: ingester-zone-c
@@ -2023,7 +2170,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: store-gateway
   name: store-gateway-zone-a
@@ -2158,7 +2305,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: store-gateway
   name: store-gateway-zone-b
@@ -2293,7 +2440,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: store-gateway
   name: store-gateway-zone-c

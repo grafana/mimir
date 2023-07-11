@@ -13156,7 +13156,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 3,
+                      "span": 4,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -13232,15 +13232,15 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 3,
+                      "span": 4,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "# Query metrics before and after migration to new memcached backend.\nsum (\n  rate(cortex_cache_hits{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n  or\n  rate(thanos_cache_memcached_hits_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n)\n/\nsum (\n  rate(cortex_cache_fetched_keys{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n  or\n  rate(thanos_cache_memcached_requests_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n)\n",
+                            "expr": "# Query the new metric introduced in Mimir 2.10.\n(\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n  /\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n)\n# Otherwise fallback to the previous general-purpose metrics.\nor\n(\n  label_replace(\n    # Query metrics before and after migration to new memcached backend.\n    sum (\n      rate(cortex_cache_hits{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n      or\n      rate(thanos_cache_memcached_hits_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n    )\n    /\n    sum (\n      rate(cortex_cache_fetched_keys{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n      or\n      rate(thanos_cache_memcached_requests_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n    ),\n    \"request_type\", \"query_range\", \"\", \"\")\n)\n",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "Hit ratio",
+                            "legendFormat": "{{request_type}}",
                             "legendLink": null,
                             "step": 10
                          }
@@ -13287,85 +13287,9 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "fill": 1,
-                      "id": 10,
-                      "legend": {
-                         "avg": false,
-                         "current": false,
-                         "max": false,
-                         "min": false,
-                         "show": true,
-                         "total": false,
-                         "values": false
-                      },
-                      "lines": true,
-                      "linewidth": 1,
-                      "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "percentage": false,
-                      "pointradius": 5,
-                      "points": false,
-                      "renderer": "flot",
-                      "seriesOverrides": [ ],
-                      "spaceLength": 10,
-                      "span": 3,
-                      "stack": false,
-                      "steppedLine": false,
-                      "targets": [
-                         {
-                            "expr": "# Query metrics before and after migration to new memcached backend.\nsum (\n  rate(cortex_cache_fetched_keys{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n  or\n  rate(thanos_cache_memcached_requests_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n)\n-\nsum (\n  rate(cortex_cache_hits{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n  or\n  rate(thanos_cache_memcached_hits_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n)\n",
-                            "format": "time_series",
-                            "intervalFactor": 2,
-                            "legendFormat": "Missed query results per second",
-                            "legendLink": null,
-                            "step": 10
-                         }
-                      ],
-                      "thresholds": [ ],
-                      "timeFrom": null,
-                      "timeShift": null,
-                      "title": "Query results cache misses",
-                      "tooltip": {
-                         "shared": false,
-                         "sort": 0,
-                         "value_type": "individual"
-                      },
-                      "type": "graph",
-                      "xaxis": {
-                         "buckets": null,
-                         "mode": "time",
-                         "name": null,
-                         "show": true,
-                         "values": [ ]
-                      },
-                      "yaxes": [
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
-                   },
-                   {
-                      "aliasColors": { },
-                      "bars": false,
-                      "dashLength": 10,
-                      "dashes": false,
-                      "datasource": "$datasource",
                       "description": "### Query results cache skipped\nThe % of queries whose results could not be cached.\nIt is tracked for each split query when the splitting by interval is enabled.\n\n",
                       "fill": 10,
-                      "id": 11,
+                      "id": 10,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13385,7 +13309,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 3,
+                      "span": 4,
                       "stack": true,
                       "steppedLine": false,
                       "targets": [
@@ -13454,7 +13378,7 @@ data:
                       "datasource": "$datasource",
                       "description": "### Sharded queries ratio\nThe % of queries that have been successfully rewritten and executed in a shardable way.\nThis panel only takes into account the type of queries that are supported by query sharding (eg. range queries).\n\n",
                       "fill": 1,
-                      "id": 12,
+                      "id": 11,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13531,7 +13455,7 @@ data:
                       "datasource": "$datasource",
                       "description": "### Number of sharded queries per query\nThe number of sharded queries that have been executed for a single input query. It only tracks queries that\nhave been successfully rewritten in a shardable way.\n\n",
                       "fill": 1,
-                      "id": 13,
+                      "id": 12,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13635,7 +13559,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 14,
+                      "id": 13,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13727,7 +13651,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 15,
+                      "id": 14,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13819,7 +13743,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 16,
+                      "id": 15,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13923,7 +13847,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 17,
+                      "id": 16,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13943,7 +13867,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 4,
+                      "span": 3,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -14015,7 +13939,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 18,
+                      "id": 17,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -14035,7 +13959,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 4,
+                      "span": 3,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -14109,6 +14033,83 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
+                      "id": 18,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_querier_blocks_consistency_checks_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Failure Rate",
+                            "legendLink": null,
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Consistency checks failed",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "percentunit",
+                            "label": null,
+                            "logBase": 1,
+                            "max": 1,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Rejected queries\nThe proportion of all queries received by queriers that were rejected for some reason.\n\n",
+                      "fill": 1,
                       "id": 19,
                       "legend": {
                          "avg": false,
@@ -14129,15 +14130,15 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 4,
+                      "span": 3,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_querier_blocks_consistency_checks_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "expr": "sum by (reason) (rate(cortex_querier_queries_rejected_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_query(_range)?\"}[$__rate_interval]))",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "Failure Rate",
+                            "legendFormat": "{{reason}}",
                             "legendLink": null,
                             "step": 10
                          }
@@ -14145,7 +14146,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Consistency checks failed",
+                      "title": "Rejected queries",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -15243,7 +15244,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 6,
+                      "span": 4,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -15319,7 +15320,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 6,
+                      "span": 4,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -15383,6 +15384,99 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Index-header lazy load gate latency\nTime spent waiting for a turn to load an index header. This time is not included in \"Index-header lazy load duration.\"\n\n",
+                      "fill": 1,
+                      "id": 34,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 4,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_bucket_stores_gate_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\",gate=\"index_header\"}[$__rate_interval])) by (le)) * 1e3",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "99th Percentile",
+                            "refId": "A",
+                            "step": 10
+                         },
+                         {
+                            "expr": "histogram_quantile(0.50, sum(rate(cortex_bucket_stores_gate_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\",gate=\"index_header\"}[$__rate_interval])) by (le)) * 1e3",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "50th Percentile",
+                            "refId": "B",
+                            "step": 10
+                         },
+                         {
+                            "expr": "sum(rate(cortex_bucket_stores_gate_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\",gate=\"index_header\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_bucket_stores_gate_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\",gate=\"index_header\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Average",
+                            "refId": "C",
+                            "step": 10
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Index-header lazy load gate latency",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "ms",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
                    }
                 ],
                 "repeat": null,
@@ -15403,7 +15497,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 34,
+                      "id": 35,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -15479,7 +15573,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 35,
+                      "id": 36,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -15555,7 +15649,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 36,
+                      "id": 37,
                       "legend": {
                          "avg": false,
                          "current": false,

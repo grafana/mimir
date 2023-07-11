@@ -10,7 +10,7 @@ keywords:
   - Tanka
 menuTitle: Deploy with Jsonnet and Tanka
 title: Deploy Grafana Mimir with Jsonnet and Tanka
-weight: 50
+weight: 15
 ---
 
 # Deploy Grafana Mimir with Jsonnet and Tanka

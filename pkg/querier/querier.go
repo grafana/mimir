@@ -51,9 +51,10 @@ type Config struct {
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferStreamingChunks                      bool   `yaml:"prefer_streaming_chunks" category:"experimental"`
-	StreamingChunksPerIngesterSeriesBufferSize uint64 `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"experimental"`
-	MinimizeIngesterRequests                   bool   `yaml:"minimize_ingester_requests" category:"experimental"`
+	PreferStreamingChunks                      bool          `yaml:"prefer_streaming_chunks" category:"experimental"`
+	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"experimental"`
+	MinimizeIngesterRequests                   bool          `yaml:"minimize_ingester_requests" category:"experimental"`
+	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -83,7 +84,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
 	f.BoolVar(&cfg.PreferStreamingChunks, "querier.prefer-streaming-chunks", false, "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.")
-	f.BoolVar(&cfg.MinimizeIngesterRequests, "querier.minimize-ingester-requests", false, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
+
+	const minimiseIngesterRequestsFlagName = "querier.minimize-ingester-requests"
+	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlagName, false, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
+	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlagName+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlagName+" is not enabled.")
 
 	// Why 256 series / ingester?
 	// Based on our testing, 256 series / ingester was a good balance between memory consumption and the CPU overhead of managing a batch of series.
@@ -122,10 +126,11 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, queryChunkMetrics *stats.QueryChunkMetrics, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
+	queryMetrics := stats.NewQueryMetrics(reg)
 
-	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, queryChunkMetrics, logger)
+	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, queryMetrics, logger)
 
 	ns := make([]QueryableWithFilter, len(stores))
 	for ix, s := range stores {
@@ -134,7 +139,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 			QueryStoreAfter:     cfg.QueryStoreAfter,
 		}
 	}
-	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, logger)
+	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, mint int64, maxt int64) (storage.Querier, error) {
@@ -183,8 +188,8 @@ type QueryableWithFilter interface {
 	UseQueryable(now time.Time, queryMinT, queryMaxT int64) bool
 }
 
-// NewQueryable creates a new Queryable for mimir.
-func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, logger log.Logger) storage.Queryable {
+// NewQueryable creates a new Queryable for Mimir.
+func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		now := time.Now()
 
@@ -193,7 +198,7 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 			return nil, err
 		}
 
-		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID)))
+		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID), queryMetrics))
 
 		mint, maxt, err = validateQueryTimeRange(ctx, userID, mint, maxt, limits, cfg.MaxQueryIntoFuture, logger)
 		if errors.Is(err, errEmptyTimeRange) {

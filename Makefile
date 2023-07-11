@@ -316,6 +316,12 @@ lint: check-makefiles
 		"sort.{Strings,Ints}=golang.org/x/exp/slices.Sort" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# Don't use generic ring.Read operation.
+	# ring.Read usually isn't the right choice, and we prefer that each component define its operations explicitly.
+	faillint -paths \
+		"github.com/grafana/dskit/ring.{Read}" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
@@ -417,7 +423,7 @@ build-mixin: check-mixin-jb
 		./tools/check-rules.sh "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" 20 ; \
 		cd "$(MIXIN_OUT_PATH)$$suffix/.." && zip -q -r "mimir-mixin$$suffix.zip" $$(basename "$(MIXIN_OUT_PATH)$$suffix"); \
 		cd -; \
-		echo "The mixin has been compiled to $(MIXIN_OUT_PATH)$$suffix and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)$$suffix/../mimir-mixin$$suffix.zip)"; \
+		echo "The mixin has been compiled to $(MIXIN_OUT_PATH)$$suffix and archived to $$(realpath $(MIXIN_OUT_PATH)$$suffix/../mimir-mixin$$suffix.zip)"; \
 	done
 
 check-mixin-tests: ## Test the mixin files.
