@@ -16,6 +16,8 @@ memcached {
     service:
       $.util.serviceFor(self.statefulSet) +
       service.mixin.spec.withClusterIp('None'),
+
+    podDisruptionBudget: $.newMimirPdb(self.name),
   },
 
   // Optionally configure Memcached to use mTLS for authenticating clients

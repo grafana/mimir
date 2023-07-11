@@ -63,4 +63,7 @@
     // Must be an headless to ensure any gRPC client using it (ruler remote evaluations)
     // correctly balances requests across all mimir-read pods.
     service.mixin.spec.withClusterIp('None'),
+
+  mimir_read_pdb: if !$._config.is_read_write_deployment_mode then null else
+    $.newMimirPdb('mimir-read'),
 }

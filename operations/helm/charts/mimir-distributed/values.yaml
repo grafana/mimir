@@ -478,7 +478,8 @@ alertmanager:
   podAnnotations: {}
 
   # -- Pod Disruption Budget for alertmanager, this will be applied across availability zones to prevent losing redundancy
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for alertmanager pods
   priorityClassName: null
@@ -698,7 +699,8 @@ distributor:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for distributor pods
   priorityClassName: null
@@ -970,7 +972,8 @@ overrides_exporter:
   podLabels: {}
   podAnnotations: {}
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for overrides-exporter pods
   priorityClassName: null
@@ -1049,7 +1052,8 @@ ruler:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   nodeSelector: {}
   affinity: {}
@@ -1119,7 +1123,8 @@ querier:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for querier pods
   priorityClassName: null
@@ -1189,7 +1194,8 @@ query_frontend:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for query-frontend pods
   priorityClassName: null
@@ -1260,7 +1266,8 @@ query_scheduler:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for query-scheduler pods
   priorityClassName: null
@@ -1528,7 +1535,8 @@ compactor:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for compactor pods
   priorityClassName: null
@@ -1686,7 +1694,8 @@ chunks-cache:
   # -- Tolerations for chunks-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for chunks-cache pods
   priorityClassName: null
   # -- Labels for chunks-cache pods
@@ -1753,7 +1762,8 @@ index-cache:
   # -- Tolerations for index-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for index-cache pods
   priorityClassName: null
   # -- Labels for index-cache pods
@@ -1820,7 +1830,8 @@ metadata-cache:
   # -- Tolerations for metadata-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for metadata-cache pods
   priorityClassName: null
   # -- Labels for metadata-cache pods
@@ -1887,7 +1898,8 @@ results-cache:
   # -- Tolerations for results-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for results-cache pods
   priorityClassName: null
   # -- Labels for results-cache pods
@@ -2018,7 +2030,8 @@ nginx:
   # -- Annotations for nginx pods
   podAnnotations: {}
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- Additional CLI args for nginx
   extraArgs: {}
   # -- Environment variables to add to the nginx pods
@@ -2332,7 +2345,8 @@ gateway:
   # -- Annotations Deployment Pods
   podAnnotations: {}
   # -- PodDisruptionBudget https://kubernetes.io/docs/tasks/run-application/configure-pdb/
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- Additional CLI args for the container
   extraArgs: {}
   # -- Environment variables to add to the Pods. https://kubernetes.io/docs/tasks/inject-data-application/define-environment-variable-container/
@@ -2973,7 +2987,8 @@ admin_api:
     whenUnsatisfiable: ScheduleAnyway
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for admin-api pods
   priorityClassName: null
@@ -3053,7 +3068,8 @@ admin-cache:
   # -- Tolerations for admin-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for admin-cache pods
   priorityClassName: null
   # -- Labels for admin-cache pods
@@ -3169,7 +3185,8 @@ graphite:
     env: []
     extraEnvFrom: []
     tolerations: []
-    podDisruptionBudget: {}
+    podDisruptionBudget:
+      maxUnavailable: 1
     initContainers: []
     extraContainers: []
     extraVolumes: []
@@ -3244,7 +3261,8 @@ graphite:
     env: []
     extraEnvFrom: []
     tolerations: []
-    podDisruptionBudget: {}
+    podDisruptionBudget:
+      maxUnavailable: 1
     initContainers: []
     extraContainers: []
     extraVolumes: []
@@ -3280,7 +3298,8 @@ gr-aggr-cache:
   # -- Tolerations for graphite-aggregation-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for graphite-aggregation-cache pods
   priorityClassName: null
   # -- Labels for graphite-aggregation-cache pods
@@ -3341,7 +3360,8 @@ gr-metricname-cache:
   # -- Tolerations for graphite-metric-name-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for graphite-metric-name-cache pods
   priorityClassName: null
   # -- Labels for graphite-metric-name-cache pods

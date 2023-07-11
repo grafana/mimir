@@ -45,6 +45,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add global.podLabels which can add POD labels to PODs directly controlled by this chart (mimir services, nginx). #5055
 * [ENHANCEMENT] Enable the `track_sizes` feature for Memcached pods to help determine cache efficiency. #5209
 * [BUGFIX] Fix Pod Anti-Affinity rule to allow ingesters of from the same zone to run on same node, by using `zone` label since the old `app.kubernetes.io/component` did not allow for this. #5031
+* [ENHANCEMENT] Enable `PodDisruptionBudget`s by default for admin API, alertmanager, compactor, distributor, gateway, overrides-exporter, ruler, querier, query-frontend, query-scheduler, nginx, Graphite components, chunks cache, index cache, metadata cache and results cache.
 
 ## 4.4.1
 
