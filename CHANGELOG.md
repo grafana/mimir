@@ -85,7 +85,7 @@
 
 ### Documentation
 
-* [CHANGE] Docs: Change Docker Compose directory for Get started, fix for #5350
+* [CHANGE] Fix reference to `get-started` documentation directory. #5476
 
 ### Tools
 
