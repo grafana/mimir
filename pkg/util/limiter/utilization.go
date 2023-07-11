@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/VividCortex/ewma"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
@@ -61,9 +62,11 @@ type UtilizationBasedLimiter struct {
 	// The time of the first update
 	firstUpdate time.Time
 	// The time of the last update
-	lastUpdate     time.Time
-	cpuMovingAvg   *math.EwmaRate
-	limitingReason atomic.String
+	lastUpdate      time.Time
+	cpuMovingAvg    *math.EwmaRate
+	altCPUMovingAvg ewma.MovingAverage
+	limitingReason  atomic.String
+	altEnable       atomic.Bool
 }
 
 // NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
@@ -76,7 +79,8 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log
 		cpuLimit:    cpuLimit,
 		memoryLimit: memoryLimit,
 		// Use a minute long window, each sample being a second apart
-		cpuMovingAvg: math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
+		cpuMovingAvg:    math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
+		altCPUMovingAvg: ewma.NewMovingAverage(resourceUtilizationSlidingWindow.Seconds()),
 	}
 	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.starting, l.update, nil)
 	return l
@@ -122,10 +126,13 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 		cpuUtil := (cpuTime - prevCPUTime) / now.Sub(prevUpdate).Seconds()
 		l.cpuMovingAvg.Add(int64(cpuUtil * 100))
 		l.cpuMovingAvg.Tick()
+		l.altCPUMovingAvg.Add(cpuUtil)
 	}
 
 	l.lastUpdate = now
 	l.lastCPUTime = cpuTime
+
+	altCPUUtil := l.altCPUMovingAvg.Value()
 
 	// The CPU utilization moving average requires a warmup period before getting
 	// stable results. In this implementation we use a warmup period equal to the
@@ -143,6 +150,20 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 		reason = "cpu"
 	}
 
+	altEnable := l.cpuLimit > 0 && altCPUUtil >= l.cpuLimit
+	if altEnable != l.altEnable.Load() {
+		if altEnable {
+			level.Info(l.logger).Log("msg", "alternative EWMA algorithm would enable CPU based limiting",
+				"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil),
+				"alt_cpu_utilization", formatCPU(altCPUUtil))
+		} else {
+			level.Info(l.logger).Log("msg", "alternative EWMA algorithm would disable CPU based limiting",
+				"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil),
+				"alt_cpu_utilization", formatCPU(altCPUUtil))
+		}
+		l.altEnable.Store(altEnable)
+	}
+
 	enable := reason != ""
 	prevEnable := l.limitingReason.Load() != ""
 	if enable == prevEnable {
@@ -153,11 +174,13 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 	if enable {
 		level.Info(l.logger).Log("msg", "enabling resource utilization based limiting",
 			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
-			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil))
+			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil),
+			"alt_cpu_utilization", formatCPU(altCPUUtil))
 	} else {
 		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
 			"memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
-			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil))
+			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil),
+			"alt_cpu_utilization", formatCPU(altCPUUtil))
 	}
 
 	l.limitingReason.Store(reason)
