@@ -141,7 +141,6 @@ func newStoreGatewayStreamReader(client storegatewaypb.StoreGateway_SeriesClient
 		queryLimiter:        queryLimiter,
 		stats:               stats,
 		log:                 log,
-		seriesChunksChan:    make(chan *storepb.StreamingChunksBatch, 1),
 	}
 }
 
@@ -161,6 +160,7 @@ func (s *storeGatewayStreamReader) Close() {
 func (s *storeGatewayStreamReader) StartBuffering() {
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
+	s.seriesChunksChan = make(chan *storepb.StreamingChunksBatch, 1)
 
 	ctxDone := s.client.Context().Done()
 	go func() {
