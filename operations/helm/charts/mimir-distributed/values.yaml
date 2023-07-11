@@ -1723,13 +1723,10 @@ chunks-cache:
   statefulStrategy:
     type: RollingUpdate
 
-  # -- Override default CLI args for chunks-cache memcached container.
+  # -- Add extended options for chunks-cache memcached container. The format is the same as for the memcached -o/--extend flag.
   # Example:
-  # args:
-  #   o: modern,track_sizes
-  #   I: 1m
-  #   U: 11211
-  args: {}
+  # extraExtendedOptions: 'tls,modern,track_sizes'
+  extraExtendedOptions: ''
 
   # -- Additional CLI args for chunks-cache
   extraArgs: {}
@@ -1815,13 +1812,10 @@ index-cache:
   statefulStrategy:
     type: RollingUpdate
 
-  # -- Override default CLI args for index-cache memcached container.
+  # -- Add extended options for index-cache memcached container. The format is the same as for the memcached -o/--extend flag.
   # Example:
-  # args:
-  #   o: modern,track_sizes
-  #   I: 1m
-  #   U: 11211
-  args: {}
+  # extraExtendedOptions: 'tls,modern,track_sizes'
+  extraExtendedOptions: ''
 
   # -- Additional CLI args for index-cache
   extraArgs: {}
@@ -1907,13 +1901,10 @@ metadata-cache:
   statefulStrategy:
     type: RollingUpdate
 
-  # -- Override default CLI args for metadata-cache memcached container.
+  # -- Add extended options for metadata-cache memcached container. The format is the same as for the memcached -o/--extend flag.
   # Example:
-  # args:
-  #   o: modern,track_sizes
-  #   I: 1m
-  #   U: 11211
-  args: {}
+  # extraExtendedOptions: 'tls,modern,track_sizes'
+  extraExtendedOptions: ''
 
   # -- Additional CLI args for metadata-cache
   extraArgs: {}
@@ -1999,13 +1990,10 @@ results-cache:
   statefulStrategy:
     type: RollingUpdate
 
-  # -- Override default CLI args for results-cache memcached container.
+  # -- Add extended options for results-cache memcached container. The format is the same as for the memcached -o/--extend flag.
   # Example:
-  # args:
-  #   o: modern,track_sizes
-  #   I: 1m
-  #   U: 11211
-  args: {}
+  # extraExtendedOptions: 'tls,modern,track_sizes'
+  extraExtendedOptions: ''
 
   # -- Additional CLI args for results-cache
   extraArgs: {}

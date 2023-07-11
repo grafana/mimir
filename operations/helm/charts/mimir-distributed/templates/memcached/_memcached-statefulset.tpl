@@ -87,20 +87,14 @@ spec:
             - containerPort: {{ .port }}
               name: client
           args:
-            {{- if .args }}
-            {{- range $key, $value := .args }}
-            - "-{{ $key }}{{ if $value }} {{ $value }}{{ end }}"
-            {{- end }}
-            {{- else }}
             - -m {{ .allocatedMemory }}
-            - --extended=modern,track_sizes
+            - --extended=modern,track_sizes{{ with .extraExtendedOptions }},{{ . }}{{ end }}
             - -I {{ .maxItemMemory }}m
             - -c 16384
             - -v
             - -u {{ .port }}
             {{- range $key, $value := .extraArgs }}
             - "-{{ $key }}{{ if $value }} {{ $value }}{{ end }}"
-            {{- end }}
             {{- end }}
           env:
             {{- with $.ctx.Values.global.extraEnv }}
