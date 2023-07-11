@@ -426,10 +426,11 @@ mimir:
 #     max_ingestion_rate: 20000
 #     max_inflight_push_requests: 30000
 #     max_inflight_push_requests_bytes: 50000000
-#   tenant-1: # limits for tenant-1 that the whole cluster enforces
-#     ingestion_tenant_shard_size: 9
-#     max_global_series_per_user: 1500000
-#     max_fetched_series_per_query: 100000
+#   overrides:
+#     tenant-1: # limits for tenant-1 that the whole cluster enforces
+#       ingestion_tenant_shard_size: 9
+#       max_global_series_per_user: 1500000
+#       max_fetched_series_per_query: 100000
 runtimeConfig: {}
 
 # RBAC configuration
