@@ -199,8 +199,13 @@ func bucketWithMetrics(bucketClient objstore.Bucket, name string, reg prometheus
 		return bucketClient
 	}
 
+	// Thanos objstore no longer includes a "thanos_" prefix but all our dashboards
+	// rely on object storage related metrics including a "thanos_" prefix.
+	reg = prometheus.WrapRegistererWithPrefix("thanos_", reg)
+	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": name}, reg)
+
 	return objstore.BucketWithMetrics(
 		"", // bucket label value
 		bucketClient,
-		prometheus.WrapRegistererWith(prometheus.Labels{"component": name}, reg))
+		reg)
 }
