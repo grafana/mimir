@@ -1725,7 +1725,7 @@ chunks-cache:
 
   # -- Add extended options for chunks-cache memcached container. The format is the same as for the memcached -o/--extend flag.
   # Example:
-  # extraExtendedOptions: 'tls,modern,track_sizes'
+  # extraExtendedOptions: 'tls,no_hashexpand'
   extraExtendedOptions: ''
 
   # -- Additional CLI args for chunks-cache
