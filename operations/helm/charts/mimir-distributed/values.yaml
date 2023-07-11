@@ -75,6 +75,7 @@ serviceAccount:
   # -- Override for the generated service account name.
   name:
   annotations: {}
+  labels: {}
 
 # -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
 useExternalConfig: false

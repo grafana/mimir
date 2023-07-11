@@ -32,6 +32,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Don't render PodSecurityPolicy on Kubernetes >=1.24. (was >= 1.25). This helps with upgrades between 1.24 and 1.25. To use a PSP in 1.24, toggle `rbac.forcePSPOnKubernetes124: true`. #5357
 * [ENHANCEMENT] Ruler: configure the ruler storage cache when the metadata cache is enabled. #5326 #5334
 * [ENHANCEMENT] Helm: support metricRelabelings in the monitoring serviceMonitor resources. #5340
+* [ENHANCEMENT] Service Account: allow adding labels to the service account. #5355
 
 ## 4.5.0
 
