@@ -85,6 +85,8 @@
 
 ### Documentation
 
+* [CHANGE] Fix reference to `get-started` documentation directory. #5476
+
 ### Tools
 
 * [BUGFIX] Stop tools from panicking when `-help` flag is passed. #5412
