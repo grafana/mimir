@@ -411,7 +411,7 @@ mimir:
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
   structuredConfig: {}
 
-# -- runtimeConfig provides a reloadable runtime configuration. Chaning the runtimeConfig doesn't require a restart of all components.
+# -- runtimeConfig provides a reloadable runtime configuration. Changing the runtimeConfig doesn't require a restart of all components.
 # For more infromation see https://grafana.com/docs/mimir/latest/configure/about-runtime-configuration/
 #
 # Example:
