@@ -85,6 +85,8 @@
 
 ### Documentation
 
+* [CHANGE] Docs: Change Docker Compose directory for Get started, fix for #5350
+
 ### Tools
 
 * [BUGFIX] Stop tools from panicking when `-help` flag is passed. #5412

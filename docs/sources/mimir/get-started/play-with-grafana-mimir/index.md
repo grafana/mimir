@@ -51,10 +51,10 @@ In this tutorial, you'll:
    ```
 1. Navigate to the tutorial directory:
    ```bash
-   cd docs/sources/mimir/tutorials/play-with-grafana-mimir/
+   cd docs/sources/mimir/get-started/play-with-grafana-mimir/
    ```
 
-**Note**: the instructions in this tutorial assume that your working directory is `docs/sources/mimir/tutorials/play-with-grafana-mimir/`.
+**Note**: the instructions in this tutorial assume that your working directory is `docs/sources/mimir/get-started/play-with-grafana-mimir/`.
 
 ## Start Grafana Mimir and dependencies
 
