@@ -60,7 +60,7 @@ spec:
       {{- end }}
       {{- if .extraVolumes }}
       volumes:
-      {{ toYaml .extraVolumes | indent 8}}
+        {{- toYaml .extraVolumes | nindent 8 }}
       {{- end }}
       containers:
         {{- if .extraContainers }}
@@ -108,7 +108,7 @@ spec:
             {{- toYaml $.ctx.Values.memcached.containerSecurityContext | nindent 12 }}
           {{- if .extraVolumeMounts }}
           volumeMounts:
-              {{ toYaml .extraVolumeMounts | nindent 12}}
+            {{- toYaml .extraVolumeMounts | nindent 12 }}
           {{- end }}
 
       {{- if $.ctx.Values.memcachedExporter.enabled }}
@@ -132,7 +132,7 @@ spec:
             {{- toYaml $.ctx.Values.memcachedExporter.containerSecurityContext | nindent 12 }}
           {{- if .extraVolumeMounts }}
           volumeMounts:
-            {{ toYaml .extraVolumeMounts | nindent 12}}
+            {{- toYaml .extraVolumeMounts | nindent 12 }}
           {{- end }}
       {{- end }}
 {{- end -}}
