@@ -4,7 +4,36 @@ package mimirpb
 
 import (
 	"bytes"
+	"math"
 )
+
+// MinTimestamp returns the minimum timestamp (milliseconds) among all series
+// in the WriteRequest. Returns math.MaxInt64 if the request is empty.
+func (m *WriteRequest) MinTimestamp() int64 {
+	min := int64(math.MaxInt64)
+
+	for _, series := range m.Timeseries {
+		for _, entry := range series.Samples {
+			if entry.TimestampMs < min {
+				min = entry.TimestampMs
+			}
+		}
+
+		for _, entry := range series.Histograms {
+			if entry.Timestamp < min {
+				min = entry.Timestamp
+			}
+		}
+
+		for _, entry := range series.Exemplars {
+			if entry.TimestampMs < min {
+				min = entry.TimestampMs
+			}
+		}
+	}
+
+	return min
+}
 
 func (h Histogram) IsFloatHistogram() bool {
 	_, ok := h.GetCount().(*Histogram_CountFloat)

@@ -59,4 +59,7 @@
   distributor_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.distributor_deployment, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
+
+  distributor_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('distributor'),
 }

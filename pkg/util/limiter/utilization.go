@@ -18,23 +18,20 @@ import (
 )
 
 const (
-	// Interval for updating resource (CPU/memory) utilization
+	// Interval for updating resource (CPU/memory) utilization.
 	resourceUtilizationUpdateInterval = time.Second
+
+	// How long is the sliding window used to compute the moving average.
+	resourceUtilizationSlidingWindow = 60 * time.Second
 )
 
 type utilizationScanner interface {
-	fmt.Stringer
-
 	// Scan returns CPU time in seconds and memory utilization in bytes, or an error.
 	Scan() (float64, uint64, error)
 }
 
 type procfsScanner struct {
 	proc procfs.Proc
-}
-
-func (s procfsScanner) String() string {
-	return "/proc"
 }
 
 func (s procfsScanner) Scan() (float64, uint64, error) {
@@ -55,12 +52,14 @@ type UtilizationBasedLimiter struct {
 	logger             log.Logger
 	utilizationScanner utilizationScanner
 
-	// Memory limit in bytes
+	// Memory limit in bytes. The limit is enabled if the value is > 0.
 	memoryLimit uint64
-	// CPU limit in cores
+	// CPU limit in cores. The limit is enabled if the value is > 0.
 	cpuLimit float64
 	// Last CPU time counter
 	lastCPUTime float64
+	// The time of the first update
+	firstUpdate time.Time
 	// The time of the last update
 	lastUpdate     time.Time
 	cpuMovingAvg   *math.EwmaRate
@@ -71,7 +70,7 @@ type UtilizationBasedLimiter struct {
 func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log.Logger) *UtilizationBasedLimiter {
 	// Calculate alpha for a minute long window
 	// https://github.com/VividCortex/ewma#choosing-alpha
-	alpha := 2 / (60/resourceUtilizationUpdateInterval.Seconds() + 1)
+	alpha := 2 / (resourceUtilizationSlidingWindow.Seconds()/resourceUtilizationUpdateInterval.Seconds() + 1)
 	l := &UtilizationBasedLimiter{
 		logger:      logger,
 		cpuLimit:    cpuLimit,
@@ -106,35 +105,41 @@ func (l *UtilizationBasedLimiter) update(_ context.Context) error {
 	return nil
 }
 
-func (l *UtilizationBasedLimiter) compute(now time.Time) {
-	cpuTime, memUtil, err := l.utilizationScanner.Scan()
+// compute and return the current CPU and memory utilization.
+// This function must be called at a regular interval (resourceUtilizationUpdateInterval) to get a predictable behaviour.
+func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, currMemoryUtil uint64) {
+	cpuTime, currMemoryUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
-		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "method",
-			l.utilizationScanner.String(), "err", err.Error())
+		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "err", err.Error())
 		// Disable any limiting, since we can't tell resource utilization
 		l.limitingReason.Store("")
 		return
 	}
 
-	lastUpdate := l.lastUpdate
-	l.lastUpdate = now
-
-	lastCPUTime := l.lastCPUTime
-	l.lastCPUTime = cpuTime
-
-	if lastUpdate.IsZero() {
-		return
+	// Add the instant CPU utilization to the moving average. The instant CPU
+	// utilization can only be computed starting from the 2nd tick.
+	if prevUpdate, prevCPUTime := l.lastUpdate, l.lastCPUTime; !prevUpdate.IsZero() {
+		cpuUtil := (cpuTime - prevCPUTime) / now.Sub(prevUpdate).Seconds()
+		l.cpuMovingAvg.Add(int64(cpuUtil * 100))
+		l.cpuMovingAvg.Tick()
 	}
 
-	cpuUtil := (cpuTime - lastCPUTime) / now.Sub(lastUpdate).Seconds()
-	l.cpuMovingAvg.Add(int64(cpuUtil * 100))
-	l.cpuMovingAvg.Tick()
-	cpuA := float64(l.cpuMovingAvg.Rate()) / 100
+	l.lastUpdate = now
+	l.lastCPUTime = cpuTime
+
+	// The CPU utilization moving average requires a warmup period before getting
+	// stable results. In this implementation we use a warmup period equal to the
+	// sliding window. During the warmup, the reported CPU utilization will be 0.
+	if l.firstUpdate.IsZero() {
+		l.firstUpdate = now
+	} else if now.Sub(l.firstUpdate) >= resourceUtilizationSlidingWindow {
+		currCPUUtil = float64(l.cpuMovingAvg.Rate()) / 100
+	}
 
 	var reason string
-	if memUtil >= l.memoryLimit {
+	if l.memoryLimit > 0 && currMemoryUtil >= l.memoryLimit {
 		reason = "memory"
-	} else if cpuA >= l.cpuLimit {
+	} else if l.cpuLimit > 0 && currCPUUtil >= l.cpuLimit {
 		reason = "cpu"
 	}
 
@@ -147,12 +152,38 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) {
 
 	if enable {
 		level.Info(l.logger).Log("msg", "enabling resource utilization based limiting",
-			"reason", reason, "memory_limit", l.memoryLimit, "memory_utilization", memUtil,
-			"cpu_limit", l.cpuLimit, "cpu_utilization", cpuA)
+			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
+			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil))
 	} else {
 		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
-			"memory_limit", l.memoryLimit, "memory_utilization", memUtil,
-			"cpu_limit", l.cpuLimit, "cpu_utilization", cpuA)
+			"memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
+			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil))
 	}
+
 	l.limitingReason.Store(reason)
+	return
+}
+
+func formatCPU(value float64) string {
+	return fmt.Sprintf("%.2f", value)
+}
+
+func formatCPULimit(limit float64) string {
+	if limit == 0 {
+		return "disabled"
+	}
+	return formatCPU(limit)
+}
+
+func formatMemory(value uint64) string {
+	// We're not using a nicer format like units.Base2Bytes() because the actual value
+	// is harder to read and compare when not a multiple of a unit (e.g. not a multiple of GB).
+	return fmt.Sprintf("%d", value)
+}
+
+func formatMemoryLimit(limit uint64) string {
+	if limit == 0 {
+		return "disabled"
+	}
+	return formatMemory(limit)
 }

@@ -60,4 +60,7 @@
 
   ruler_service: if !$._config.is_microservices_deployment_mode || !$._config.ruler_enabled then null else
     $.util.serviceFor($.ruler_deployment, $._config.service_ignored_labels),
+
+  ruler_pdb: if !$._config.is_microservices_deployment_mode || !$._config.ruler_enabled then null else
+    $.newMimirPdb('ruler'),
 }

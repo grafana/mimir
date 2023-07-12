@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/templates/distributor/distributor-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-distributor
+  labels:
+    app: enterprise-metrics-distributor
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app: enterprise-metrics-distributor
+      release: test-enterprise-legacy-label-values
+  maxUnavailable: 1

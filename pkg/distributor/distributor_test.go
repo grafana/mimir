@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1009,14 +1010,15 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			cfg.shuffleShardSize = tc.shuffleShardSize
 
-			ds, ingesters, _ := prepare(t, cfg)
+			ds, ingesters, reg := prepare(t, cfg)
 
 			request := makeWriteRequest(0, tc.samples, tc.metadata, false, true)
 			writeResponse, err := ds[0].Push(ctx, request)
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
 			assert.Nil(t, err)
 
-			resp, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
+			queryMetrics := stats.NewQueryMetrics(reg[0])
+			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, tc.matchers...)
 
 			if tc.expectedError == nil {
 				require.NoError(t, err)
@@ -1783,14 +1785,15 @@ func TestSlowQueries(t *testing.T) {
 				expectedErr = errFail
 			}
 
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, reg := prepare(t, prepConfig{
 				numIngesters:    nIngesters,
 				happyIngesters:  happy,
 				numDistributors: 1,
 				queryDelay:      100 * time.Millisecond,
 			})
 
-			_, err := ds[0].QueryStream(ctx, 0, 10, nameMatcher)
+			queryMetrics := stats.NewQueryMetrics(reg[0])
+			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, nameMatcher)
 			assert.Equal(t, expectedErr, err)
 		})
 	}
@@ -2912,6 +2915,7 @@ type prepConfig struct {
 	ingestersSeriesCountTotal          uint64
 	ingesterZones                      []string
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
+	preferStreamingChunks              bool
 
 	timeOut bool
 }
@@ -3022,6 +3026,8 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DefaultLimits.MaxInflightPushRequestsBytes = cfg.maxInflightRequestsBytes
 		distributorCfg.DefaultLimits.MaxIngestionRate = cfg.maxIngestionRate
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
+		distributorCfg.PreferStreamingChunks = cfg.preferStreamingChunks
+		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
 
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
 
@@ -3493,12 +3499,25 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 		return nil, err
 	}
 
-	results := []*client.QueryStreamResponse{}
+	nonStreamingResponses := []*client.QueryStreamResponse{}
+	streamingLabelResponses := []*client.QueryStreamResponse{}
+	streamingChunkResponses := []*client.QueryStreamResponse{}
+
+	series := make([]*mimirpb.PreallocTimeseries, 0, len(i.timeseries))
+
 	for _, ts := range i.timeseries {
 		if !match(ts.Labels, matchers) {
 			continue
 		}
 
+		series = append(series, ts)
+	}
+
+	slices.SortFunc(series, func(a, b *mimirpb.PreallocTimeseries) bool {
+		return labels.Compare(mimirpb.FromLabelAdaptersToLabels(a.Labels), mimirpb.FromLabelAdaptersToLabels(b.Labels)) < 0
+	})
+
+	for seriesIndex, ts := range series {
 		c, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 		if err != nil {
 			return nil, err
@@ -3574,15 +3593,48 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 			}
 		}
 
-		results = append(results, &client.QueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
-				{
-					Labels: ts.Labels,
-					Chunks: wireChunks,
+		if req.StreamingChunksBatchSize > 0 {
+			streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
+				StreamingSeries: []client.QueryStreamSeries{
+					{
+						Labels:     ts.Labels,
+						ChunkCount: int64(len(wireChunks)),
+					},
 				},
-			},
-		})
+			})
+
+			streamingChunkResponses = append(streamingChunkResponses, &client.QueryStreamResponse{
+				StreamingSeriesChunks: []client.QueryStreamSeriesChunks{
+					{
+						SeriesIndex: uint64(seriesIndex),
+						Chunks:      wireChunks,
+					},
+				},
+			})
+		} else {
+			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
+				Chunkseries: []client.TimeSeriesChunk{
+					{
+						Labels: ts.Labels,
+						Chunks: wireChunks,
+					},
+				},
+			})
+		}
 	}
+
+	var results []*client.QueryStreamResponse
+
+	if req.StreamingChunksBatchSize > 0 {
+		endOfLabelsMessage := &client.QueryStreamResponse{
+			IsEndOfSeriesStream: true,
+		}
+		results = append(streamingLabelResponses, endOfLabelsMessage)
+		results = append(results, streamingChunkResponses...)
+	} else {
+		results = nonStreamingResponses
+	}
+
 	return &stream{
 		results: results,
 	}, nil
@@ -3872,6 +3924,10 @@ func (s *stream) Recv() (*client.QueryStreamResponse, error) {
 	result := s.results[s.i]
 	s.i++
 	return result, nil
+}
+
+func (s *stream) Context() context.Context {
+	return context.Background()
 }
 
 func (i *mockIngester) AllUserStats(context.Context, *client.UserStatsRequest, ...grpc.CallOption) (*client.UsersStatsResponse, error) {

@@ -131,6 +131,11 @@ func (b *globalMarkersBucket) IsObjNotFoundErr(err error) bool {
 	return b.parent.IsObjNotFoundErr(err)
 }
 
+// IsCustomerManagedKeyError implements objstore.Bucket.
+func (b *globalMarkersBucket) IsCustomerManagedKeyError(err error) bool {
+	return b.parent.IsCustomerManagedKeyError(err)
+}
+
 // Attributes implements objstore.Bucket.
 func (b *globalMarkersBucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
 	return b.parent.Attributes(ctx, name)

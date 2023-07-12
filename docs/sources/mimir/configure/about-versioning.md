@@ -90,6 +90,9 @@ The following features are currently experimental:
   - CPU/memory utilization based read request limiting:
     - `-ingester.read-path-cpu-utilization-limit`
     - `-ingester.read-path-memory-utilization-limit"`
+  - Early TSDB Head compaction to reduce in-memory series:
+    - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
+    - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`, `-querier.streaming-chunks-per-ingester-buffer-size`)
@@ -101,6 +104,7 @@ The following features are currently experimental:
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
   - Cardinality query result caching (`-query-frontend.results-cache-ttl-for-cardinality-query`)
+  - Label names and values query result caching (`-query-frontend.results-cache-ttl-for-labels-query`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -115,10 +119,9 @@ The following features are currently experimental:
   - `-max-separate-metrics-groups-per-user`
 - Overrides-exporter
   - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
+  - Configuring enabled metrics (`-overrides-exporter.enabled-metrics`)
 - Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
-- Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
-- Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 
 ## Deprecated features
 

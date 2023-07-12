@@ -125,11 +125,20 @@ spec:
         severity: warning
     - alert: MimirIngesterRestarts
       annotations:
-        message: '{{ $labels.job }}/{{ $labels.pod }} has restarted {{ printf "%.2f"
-          $value }} times in the last 30 mins.'
+        message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+          }} has restarted {{ printf "%.2f" $value }} times in the last 30 mins.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterrestarts
       expr: |
-        changes(process_start_time_seconds{job=~".*/(ingester.*|cortex|mimir|mimir-write.*)"}[30m]) >= 2
+        (
+          sum by(cluster, namespace, pod) (
+            increase(kube_pod_container_status_restarts_total{container=~"(ingester|mimir-write)"}[30m])
+          )
+          >= 2
+        )
+        and
+        (
+          count by(cluster, namespace, pod) (cortex_build_info) > 0
+        )
       labels:
         severity: warning
     - alert: MimirKVStoreFailure
@@ -631,9 +640,9 @@ spec:
           }} has not shipped any block in the last 4 hours.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterhasnotshippedblocks
       expr: |
-        (min by(cluster, namespace, pod) (time() - thanos_shipper_last_successful_upload_time) > 60 * 60 * 4)
+        (min by(cluster, namespace, pod) (time() - cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 60 * 60 * 4)
         and
-        (max by(cluster, namespace, pod) (thanos_shipper_last_successful_upload_time) > 0)
+        (max by(cluster, namespace, pod) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 0)
         and
         # Only if the ingester has ingested samples over the last 4h.
         (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
@@ -652,7 +661,7 @@ spec:
           }} has not shipped any block in the last 4 hours.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterhasnotshippedblockssincestart
       expr: |
-        (max by(cluster, namespace, pod) (thanos_shipper_last_successful_upload_time) == 0)
+        (max by(cluster, namespace, pod) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) == 0)
         and
         (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
       for: 4h

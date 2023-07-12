@@ -124,6 +124,11 @@ func (b *SSEBucketClient) IsObjNotFoundErr(err error) bool {
 	return b.bucket.IsObjNotFoundErr(err)
 }
 
+// IsCustomerManagedKeyError implements objstore.Bucket.
+func (b *SSEBucketClient) IsCustomerManagedKeyError(err error) bool {
+	return b.bucket.IsCustomerManagedKeyError(err)
+}
+
 // Attributes implements objstore.Bucket.
 func (b *SSEBucketClient) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
 	return b.bucket.Attributes(ctx, name)

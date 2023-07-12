@@ -56,4 +56,7 @@
     // use the service cluster IP so that when the service DNS is resolved it
     // returns the set of query-frontend IPs.
     $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
+
+  query_frontend_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('query-frontend'),
 }

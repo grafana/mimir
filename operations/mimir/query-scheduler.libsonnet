@@ -59,6 +59,9 @@
   query_scheduler_discovery_service: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then {} else
     self.newQuerySchedulerDiscoveryService('query-scheduler', $.query_scheduler_deployment),
 
+  query_scheduler_pdb: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then null else
+    $.newMimirPdb('query-scheduler'),
+
   // Reconfigure querier and query-frontend to use scheduler.
 
   local querySchedulerAddress(name) =

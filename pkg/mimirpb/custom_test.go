@@ -8,10 +8,40 @@ package mimirpb
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 )
+
+func TestWriteRequest_MinTimestamp(t *testing.T) {
+	req := &WriteRequest{
+		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
+			Samples:    []Sample{{TimestampMs: 10}},
+			Exemplars:  []Exemplar{{TimestampMs: 20}},
+			Histograms: []Histogram{{Timestamp: 30}},
+		}}},
+	}
+	assert.Equal(t, int64(10), req.MinTimestamp())
+
+	req = &WriteRequest{
+		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
+			Samples:    []Sample{{TimestampMs: 20}},
+			Exemplars:  []Exemplar{{TimestampMs: 10}},
+			Histograms: []Histogram{{Timestamp: 30}},
+		}}},
+	}
+	assert.Equal(t, int64(10), req.MinTimestamp())
+
+	req = &WriteRequest{
+		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
+			Samples:    []Sample{{TimestampMs: 20}},
+			Exemplars:  []Exemplar{{TimestampMs: 30}},
+			Histograms: []Histogram{{Timestamp: 10}},
+		}}},
+	}
+	assert.Equal(t, int64(10), req.MinTimestamp())
+}
 
 func TestIsFloatHistogram(t *testing.T) {
 	tests := map[string]struct {

@@ -108,4 +108,7 @@
 
     $.util.serviceFor($.compactor_statefulset, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
+
+  compactor_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('compactor'),
 }

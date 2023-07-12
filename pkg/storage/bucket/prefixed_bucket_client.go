@@ -78,6 +78,11 @@ func (b *PrefixedBucketClient) IsObjNotFoundErr(err error) bool {
 	return b.bucket.IsObjNotFoundErr(err)
 }
 
+// IsCustomerManagedKeyError returns true if the permissions for key used to encrypt the object was revoked.
+func (b *PrefixedBucketClient) IsCustomerManagedKeyError(err error) bool {
+	return b.bucket.IsCustomerManagedKeyError(err)
+}
+
 // Attributes returns attributes of the specified object.
 func (b *PrefixedBucketClient) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
 	return b.bucket.Attributes(ctx, b.fullName(name))
