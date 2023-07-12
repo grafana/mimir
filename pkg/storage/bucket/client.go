@@ -13,10 +13,9 @@ import (
 	"strings"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/regexp"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"

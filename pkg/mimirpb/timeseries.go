@@ -12,10 +12,9 @@ import (
 	"sync"
 	"unsafe"
 
-	"golang.org/x/exp/slices"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/zeropool"
+	"golang.org/x/exp/slices"
 )
 
 const (
