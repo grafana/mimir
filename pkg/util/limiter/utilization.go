@@ -67,10 +67,13 @@ type UtilizationBasedLimiter struct {
 	altCPUMovingAvg ewma.MovingAverage
 	limitingReason  atomic.String
 	altEnable       atomic.Bool
+	currCPUUtil     *atomic.Float64
+	altCurrCPUUtil  *atomic.Float64
 }
 
 // NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
-func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log.Logger) *UtilizationBasedLimiter {
+func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, currCPUUtil *atomic.Float64, altCurrCPUUtil *atomic.Float64,
+	logger log.Logger) *UtilizationBasedLimiter {
 	// Calculate alpha for a minute long window
 	// https://github.com/VividCortex/ewma#choosing-alpha
 	alpha := 2 / (resourceUtilizationSlidingWindow.Seconds()/resourceUtilizationUpdateInterval.Seconds() + 1)
@@ -81,6 +84,8 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log
 		// Use a minute long window, each sample being a second apart
 		cpuMovingAvg:    math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
 		altCPUMovingAvg: ewma.NewMovingAverage(resourceUtilizationSlidingWindow.Seconds()),
+		currCPUUtil:     currCPUUtil,
+		altCurrCPUUtil:  altCurrCPUUtil,
 	}
 	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.starting, l.update, nil)
 	return l
@@ -133,6 +138,7 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 	l.lastCPUTime = cpuTime
 
 	altCPUUtil := l.altCPUMovingAvg.Value()
+	l.altCurrCPUUtil.Store(altCPUUtil)
 
 	// The CPU utilization moving average requires a warmup period before getting
 	// stable results. In this implementation we use a warmup period equal to the
@@ -141,6 +147,7 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 		l.firstUpdate = now
 	} else if now.Sub(l.firstUpdate) >= resourceUtilizationSlidingWindow {
 		currCPUUtil = float64(l.cpuMovingAvg.Rate()) / 100
+		l.currCPUUtil.Store(currCPUUtil)
 	}
 
 	var reason string
