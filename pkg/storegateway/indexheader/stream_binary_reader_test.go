@@ -37,8 +37,8 @@ func (ml *inMemoryLogger) Log(keyvals ...interface{}) error {
 	return nil
 }
 
-// TestStreamBinaryReader_ShouldBuildSamplesFromFile should accurately construct and
-// write samples on first build and read from disk on the second build.
+// TestStreamBinaryReader_ShouldBuildSamplesFromFile tests if StreamBinaryReady constructs
+// and writes samples on first build and reads from disk on the second build.
 func TestStreamBinaryReader_ShouldBuildSamplesFromFileSimple(t *testing.T) {
 	ctx := context.Background()
 
@@ -66,15 +66,18 @@ func TestStreamBinaryReader_ShouldBuildSamplesFromFileSimple(t *testing.T) {
 	require.NoError(t, err)
 
 	// Checks logs for order of operations: build index-header -> build sample -> read samples.
+	t.Log(logger.logs)
 	require.ElementsMatch(t, []string{
 		"level=debug msg=failed to read index-header from disk; recreating",
 		"level=debug msg=built index-header file",
-		"level=debug msg=failed to read index-header samples from disk; recreating",
+		"level=debug msg=constructing index-header samples",
 		"level=debug msg=built index-header samples file",
 		"level=debug msg=reading from index-header samples file",
 	}, logger.logs, "\n")
 }
 
+// TestStreamBinaryReader_CheckSamplesCorrectnessExtensive tests if StreamBinaryReader
+// reads and writes samples accurately for a variety of index-headers.
 func TestStreamBinaryReader_CheckSamplesCorrectnessExtensive(t *testing.T) {
 	ctx := context.Background()
 
@@ -107,6 +110,7 @@ func TestStreamBinaryReader_CheckSamplesCorrectnessExtensive(t *testing.T) {
 				r2, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 				require.NoError(t, err)
 
+				// Check correctness of samples.
 				compareIndexToHeader(t, b, r2)
 			})
 		}

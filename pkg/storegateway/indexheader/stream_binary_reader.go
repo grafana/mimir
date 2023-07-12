@@ -131,9 +131,12 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 	// Unmarshal samples from disk.
 	sampleData, err := os.ReadFile(samplepath)
+	if err != nil && !os.IsNotExist(err) {
+		level.Warn(logger).Log("msg", "failed to read index-header samples from disk; recreating", "err", err)
+	}
 	if err != nil || r.indexVersion == index.FormatV1 {
 		// If samples are not on disk, construct samples and write to disk.
-		level.Debug(logger).Log("msg", "failed to read index-header samples from disk; recreating", "path", samplepath, "err", err)
+		level.Debug(logger).Log("msg", "constructing index-header samples", "path", samplepath)
 
 		r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
 		if err != nil {
