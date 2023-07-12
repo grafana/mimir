@@ -33,8 +33,8 @@ const (
 	IndexFilename = "index"
 	// IndexHeaderFilename is the canonical name for binary index header file that stores essential information.
 	IndexHeaderFilename = "index-header"
-	// SampleFilename is the canonical name for index header sample file that stores an abbreviated sample of index-header.
-	SampleFilename = "sample"
+	// SampleFilename is the canonical name for index header sample file that stores abbreviated sample slices of index-header.
+	SampleFilename = "sampled-index-header"
 	// ChunksDirname is the known dir name for chunks with compressed samples.
 	ChunksDirname = "chunks"
 

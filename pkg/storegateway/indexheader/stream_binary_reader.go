@@ -100,7 +100,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
 	}
 
-	// Unmarshal sample from disk
+	// Unmarshal sample from disk.
 	sampleFile, err := os.Open(samplepath)
 	var data []byte
 	if err == nil {
@@ -121,7 +121,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 	level.Debug(logger).Log("msg", "reading from index-header sample file", "path", samplepath)
 
-	// Load persisted sample into memory
+	// Load persisted sample into memory.
 	sample := &samplepb.Sample{}
 	if err := sample.Unmarshal(data); err != nil {
 		return nil, fmt.Errorf("failed to decode index-header sample file: %w", err)
