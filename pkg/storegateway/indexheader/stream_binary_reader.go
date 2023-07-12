@@ -27,7 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
-	samplepb "github.com/grafana/mimir/pkg/storegateway/indexheader/samplepb"
+	indexheaderpb "github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
 )
 
 type StreamBinaryReaderMetrics struct {
@@ -122,7 +122,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	level.Debug(logger).Log("msg", "reading from index-header sample file", "path", samplepath)
 
 	// Load persisted sample into memory.
-	sample := &samplepb.Sample{}
+	sample := &indexheaderpb.Samples{}
 	if err := sample.Unmarshal(data); err != nil {
 		return nil, fmt.Errorf("failed to decode index-header sample file: %w", err)
 	}
@@ -248,7 +248,7 @@ func constructSample(binpath string, samplepath string, postingOffsetsInMemSampl
 
 // writeSampleToFile uses protocol buffer to write StreamBinaryReader to disk at samplepath.
 func writeSampleToFile(samplepath string, reader *StreamBinaryReader) error {
-	sample := &samplepb.Sample{}
+	sample := &indexheaderpb.Samples{}
 
 	sample.IndexVersion = int64(reader.indexVersion)
 	sample.Version = int64(reader.version)

@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader/samplepb"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
 )
 
 // The table gets initialized with sync.Once but may still cause a race
@@ -42,7 +42,7 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbolFromSample reads from sampled index header and returns a Symbols object for symbol lookups.
-func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *samplepb.Sample, version int, offset int) (s *Symbols, err error) {
+func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *indexheaderpb.Samples, version int, offset int) (s *Symbols, err error) {
 	s = &Symbols{
 		factory:     factory,
 		version:     version,
@@ -60,8 +60,8 @@ func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *samplep
 	return s, nil
 }
 
-func (s *Symbols) NewSymbolSample() (sample *samplepb.Symbols) {
-	sampleSymbols := &samplepb.Symbols{}
+func (s *Symbols) NewSymbolSample() (sample *indexheaderpb.Symbols) {
+	sampleSymbols := &indexheaderpb.Symbols{}
 
 	offsets := make([]int64, 0)
 

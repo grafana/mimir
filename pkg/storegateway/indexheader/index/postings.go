@@ -17,7 +17,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader/samplepb"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
 )
 
 const postingLengthFieldSize = 4
@@ -37,7 +37,7 @@ type PostingOffsetTable interface {
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
 
-	NewPostingOffsetTableSample() (table *samplepb.PostingOffsetTable)
+	NewPostingOffsetTableSample() (table *indexheaderpb.PostingOffsetTable)
 }
 
 // PostingListOffset contains the start and end offset of a posting list.
@@ -221,7 +221,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	return &t, nil
 }
 
-func NewPostingOffsetTableFromSample(factory *streamencoding.DecbufFactory, sample *samplepb.Sample, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
+func NewPostingOffsetTableFromSample(factory *streamencoding.DecbufFactory, sample *indexheaderpb.Samples, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -318,8 +318,8 @@ func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-func (t *PostingOffsetTableV1) NewPostingOffsetTableSample() (table *samplepb.PostingOffsetTable) {
-	return &samplepb.PostingOffsetTable{}
+func (t *PostingOffsetTableV1) NewPostingOffsetTableSample() (table *indexheaderpb.PostingOffsetTable) {
+	return &indexheaderpb.PostingOffsetTable{}
 }
 
 type PostingOffsetTableV2 struct {
@@ -591,15 +591,15 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-func (t *PostingOffsetTableV2) NewPostingOffsetTableSample() (table *samplepb.PostingOffsetTable) {
-	sample := &samplepb.PostingOffsetTable{
-		Postings: map[string]*samplepb.PostingValueOffsets{},
+func (t *PostingOffsetTableV2) NewPostingOffsetTableSample() (table *indexheaderpb.PostingOffsetTable) {
+	sample := &indexheaderpb.PostingOffsetTable{
+		Postings: map[string]*indexheaderpb.PostingValueOffsets{},
 	}
 
 	for name, offsets := range t.postings {
-		sample.Postings[name] = &samplepb.PostingValueOffsets{}
+		sample.Postings[name] = &indexheaderpb.PostingValueOffsets{}
 		for _, postingOff := range offsets.offsets {
-			sample.Postings[name].Offsets = append(sample.Postings[name].Offsets, &samplepb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)})
+			sample.Postings[name].Offsets = append(sample.Postings[name].Offsets, &indexheaderpb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)})
 		}
 		sample.Postings[name].LastValOffset = offsets.lastValOffset
 	}

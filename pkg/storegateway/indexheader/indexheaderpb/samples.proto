@@ -2,9 +2,9 @@
 
 syntax = "proto3";
 
-package sample;
+package samples;
 
-option go_package = "samplepb";
+option go_package = "indexheaderpb";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
@@ -13,7 +13,7 @@ option (gogoproto.goproto_unkeyed_all) = false;
 option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 
-message Sample {
+message Samples {
 	int64 version = 1;
 	int64 indexVersion = 2;
 
