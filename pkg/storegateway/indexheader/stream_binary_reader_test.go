@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/thanos-io/objstore/providers/filesystem"
@@ -38,11 +39,9 @@ func (ml *inMemoryLogger) Log(keyvals ...interface{}) error {
 
 // TestStreamBinaryReader_ShouldBuildSamplesFromFile should accurately construct and
 // write samples on first build and read from disk on the second build.
-func TestStreamBinaryReader_ShouldBuildSamplesFromFile(t *testing.T) {
+func TestStreamBinaryReader_ShouldBuildSamplesFromFileSimple(t *testing.T) {
 	ctx := context.Background()
 
-	// logs := &concurrency.SyncBuffer{}
-	// logger := &componentLogger{component: "compactor", log: log.NewLogfmtLogger(logs)}
 	logger := &inMemoryLogger{}
 
 	tmpDir := filepath.Join(t.TempDir(), "test-samples")
@@ -60,10 +59,10 @@ func TestStreamBinaryReader_ShouldBuildSamplesFromFile(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	// Write samples to disk on first build.
-	r1, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 	// Read samples to disk on second build.
-	r2, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 
 	// Checks logs for order of operations: build index-header -> build sample -> read samples.
@@ -74,8 +73,42 @@ func TestStreamBinaryReader_ShouldBuildSamplesFromFile(t *testing.T) {
 		"level=debug msg=built index-header samples file",
 		"level=debug msg=reading from index-header samples file",
 	}, logger.logs, "\n")
+}
 
-	// Check that the samples are the same.
-	require.Equal(t, r1.indexVersion, r2.indexVersion)
-	require.Equal(t, r1.version, r2.version)
+func TestStreamBinaryReader_CheckSamplesCorrectnessExtensive(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := filepath.Join(t.TempDir(), "test-samples")
+	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+
+	for _, nameCount := range []int{3, 20, 50} {
+		for _, valueCount := range []int{3, 10, 100, 500} {
+			logger := &inMemoryLogger{}
+
+			nameSymbols := generateSymbols("name", nameCount)
+			valueSymbols := generateSymbols("value", valueCount)
+			blockID, err := block.CreateBlock(ctx, tmpDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+			require.NoError(t, err)
+			require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+
+			t.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(t *testing.T) {
+				indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, blockID.String(), block.IndexFilename))
+				require.NoError(t, err)
+				requireCleanup(t, indexFile.Close)
+
+				b := realByteSlice(indexFile.Bytes())
+
+				// Write samples to disk on first build.
+				_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+				require.NoError(t, err)
+				// Read samples to disk on second build.
+				r2, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+				require.NoError(t, err)
+
+				compareIndexToHeader(t, b, r2)
+			})
+		}
+	}
 }
