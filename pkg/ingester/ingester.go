@@ -257,9 +257,6 @@ type Ingester struct {
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
 
-	currCPUUtil    *atomic.Float64
-	altCurrCPUUtil *atomic.Float64
-
 	// Anonymous usage statistics tracked by ingester.
 	memorySeriesStats                  *expvar.Int
 	memoryTenantsStats                 *expvar.Int
@@ -286,12 +283,6 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	usagestats.GetInt(replicationFactorStatsName).Set(int64(cfg.IngesterRing.ReplicationFactor))
 	usagestats.GetString(ringStoreStatsName).Set(cfg.IngesterRing.KVStore.Store)
 
-	var currCPUUtil *atomic.Float64
-	var altCurrCPUUtil *atomic.Float64
-	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
-		currCPUUtil = &atomic.Float64{}
-		altCurrCPUUtil = &atomic.Float64{}
-	}
 	return &Ingester{
 		cfg:    cfg,
 		limits: limits,
@@ -313,9 +304,6 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		tenantsWithOutOfOrderEnabledStat:   usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName),
 		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
 		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
-
-		currCPUUtil:    currCPUUtil,
-		altCurrCPUUtil: altCurrCPUUtil,
 	}, nil
 }
 
@@ -326,8 +314,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		return nil, err
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
-	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests,
-		i.currCPUUtil, i.altCurrCPUUtil)
+	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 	i.activeGroups = activeGroupsCleanupService
 
 	if registerer != nil {
@@ -351,6 +338,12 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		cfg.IngesterRing.ReplicationFactor,
 		cfg.IngesterRing.ZoneAwarenessEnabled)
 
+	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
+		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cfg.ReadPathCPUUtilizationLimit,
+			cfg.ReadPathMemoryUtilizationLimit, log.WithPrefix(logger, "context", "read path"),
+			prometheus.WrapRegistererWithPrefix("cortex_ingester_", registerer))
+	}
+
 	i.shipperIngesterID = i.lifecycler.ID
 
 	// Apply positive jitter only to ensure that the minimum timeout is adhered to.
@@ -369,8 +362,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	if err != nil {
 		return nil, err
 	}
-	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests,
-		i.currCPUUtil, i.altCurrCPUUtil)
+	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
 	i.shipperIngesterID = "flusher"
 
@@ -428,10 +420,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	if i.cfg.ReadPathCPUUtilizationLimit > 0 || i.cfg.ReadPathMemoryUtilizationLimit > 0 {
-		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(i.cfg.ReadPathCPUUtilizationLimit,
-			i.cfg.ReadPathMemoryUtilizationLimit, i.currCPUUtil, i.altCurrCPUUtil,
-			log.WithPrefix(i.logger, "context", "read path"))
+	if i.utilizationBasedLimiter != nil {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 

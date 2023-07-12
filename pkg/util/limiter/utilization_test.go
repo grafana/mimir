@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +18,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 
 	setup := func(t *testing.T, cpuLimit float64, memoryLimit uint64) (*UtilizationBasedLimiter, *fakeUtilizationScanner) {
 		fakeScanner := &fakeUtilizationScanner{}
-		lim := NewUtilizationBasedLimiter(cpuLimit, memoryLimit, log.NewNopLogger())
+		lim := NewUtilizationBasedLimiter(cpuLimit, memoryLimit, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		lim.utilizationScanner = fakeScanner
 		require.Empty(t, lim.LimitingReason(), "Limiting should initially be disabled")
 
@@ -190,7 +191,7 @@ func TestUtilizationBasedLimiter_CPUUtilizationSensitivity(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			scanner := &preRecordedUtilizationScanner{instantCPUValues: testData.instantCPUValues}
 
-			lim := NewUtilizationBasedLimiter(1, 0, log.NewNopLogger())
+			lim := NewUtilizationBasedLimiter(1, 0, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			lim.utilizationScanner = scanner
 
 			minCPUUtilization := float64(math.MaxInt64)

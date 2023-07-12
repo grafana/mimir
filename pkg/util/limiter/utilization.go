@@ -12,6 +12,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/procfs"
 	"go.uber.org/atomic"
 
@@ -67,13 +69,12 @@ type UtilizationBasedLimiter struct {
 	altCPUMovingAvg ewma.MovingAverage
 	limitingReason  atomic.String
 	altEnable       atomic.Bool
-	currCPUUtil     *atomic.Float64
-	altCurrCPUUtil  *atomic.Float64
+	currCPUUtil     atomic.Float64
+	altCurrCPUUtil  atomic.Float64
 }
 
 // NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
-func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, currCPUUtil *atomic.Float64, altCurrCPUUtil *atomic.Float64,
-	logger log.Logger) *UtilizationBasedLimiter {
+func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log.Logger, reg prometheus.Registerer) *UtilizationBasedLimiter {
 	// Calculate alpha for a minute long window
 	// https://github.com/VividCortex/ewma#choosing-alpha
 	alpha := 2 / (resourceUtilizationSlidingWindow.Seconds()/resourceUtilizationUpdateInterval.Seconds() + 1)
@@ -84,10 +85,26 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, currCPUUti
 		// Use a minute long window, each sample being a second apart
 		cpuMovingAvg:    math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
 		altCPUMovingAvg: ewma.NewMovingAverage(resourceUtilizationSlidingWindow.Seconds()),
-		currCPUUtil:     currCPUUtil,
-		altCurrCPUUtil:  altCurrCPUUtil,
 	}
 	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.starting, l.update, nil)
+
+	if reg != nil {
+		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        "utilization_limiter_current_cpu_load",
+			Help:        "Current average CPU load calculated by utilization based limiter.",
+			ConstLabels: map[string]string{"method": "built-in"},
+		}, func() float64 {
+			return l.currCPUUtil.Load()
+		})
+		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        "utilization_limiter_current_cpu_load",
+			Help:        "Current average CPU load calculated by utilization based limiter.",
+			ConstLabels: map[string]string{"method": "alternate"},
+		}, func() float64 {
+			return l.altCurrCPUUtil.Load()
+		})
+	}
+
 	return l
 }
 

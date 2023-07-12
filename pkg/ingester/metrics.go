@@ -49,8 +49,6 @@ type ingesterMetrics struct {
 	ingestionRate           prometheus.GaugeFunc
 	maxInflightPushRequests prometheus.GaugeFunc
 	inflightRequests        prometheus.GaugeFunc
-	currentCPULoad          prometheus.GaugeFunc
-	altCurrentCPULoad       prometheus.GaugeFunc
 
 	// Head compactions metrics.
 	compactionsTriggered   prometheus.Counter
@@ -81,8 +79,6 @@ func newIngesterMetrics(
 	instanceLimitsFn func() *InstanceLimits,
 	ingestionRate *util_math.EwmaRate,
 	inflightRequests *atomic.Int64,
-	currCPUUtil *atomic.Float64,
-	altCurrCPUUtil *atomic.Float64,
 ) *ingesterMetrics {
 	const (
 		instanceLimits     = "cortex_ingester_instance_limits"
@@ -240,27 +236,6 @@ func newIngesterMetrics(
 		}, func() float64 {
 			if inflightRequests != nil {
 				return float64(inflightRequests.Load())
-			}
-			return 0
-		}),
-
-		currentCPULoad: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
-			Name:        "cortex_ingester_utilization_limiter_current_cpu_load",
-			Help:        "Current average CPU load calculated by utilization based limiter.",
-			ConstLabels: map[string]string{"method": "built-in"},
-		}, func() float64 {
-			if currCPUUtil != nil {
-				return currCPUUtil.Load()
-			}
-			return 0
-		}),
-		altCurrentCPULoad: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
-			Name:        "cortex_ingester_utilization_limiter_current_cpu_load",
-			Help:        "Current average CPU load calculated by utilization based limiter.",
-			ConstLabels: map[string]string{"method": "alternate"},
-		}, func() float64 {
-			if altCurrCPUUtil != nil {
-				return altCurrCPUUtil.Load()
 			}
 			return 0
 		}),
