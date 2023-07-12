@@ -120,15 +120,15 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 		return nil, fmt.Errorf("failed to decode index-header samples file: %w", err)
 	}
 
-	r.version = int(samples.Version)
-	r.indexVersion = int(samples.IndexVersion)
-
 	// Grab the full length of the index header before we read any of it. This is needed
 	// so that we can skip directly to the table of contents at the end of file.
 	indexHeaderSize := d.Len()
 	if magic := d.Be32(); magic != MagicIndex {
 		return nil, fmt.Errorf("invalid magic number %x", magic)
 	}
+
+	r.version = int(d.Byte())
+	r.indexVersion = int(d.Byte())
 
 	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
 	if err != nil {
@@ -242,9 +242,6 @@ func constructSamples(binpath string, samplepath string, postingOffsetsInMemSamp
 // writeSamplesToFile uses protocol buffer to write StreamBinaryReader to disk at samplepath.
 func writeSamplesToFile(samplepath string, reader *StreamBinaryReader) error {
 	samples := &indexheaderpb.Samples{}
-
-	samples.IndexVersion = int64(reader.indexVersion)
-	samples.Version = int64(reader.version)
 
 	samples.Symbols = reader.symbols.NewSymbolSample()
 	samples.PostingsOffsetTable = reader.postingsOffsetTable.NewPostingOffsetTableSample()
