@@ -19,6 +19,13 @@ The supported backends are:
 - [Azure Blob Storage](https://azure.microsoft.com/es-es/services/storage/blobs/)
 - [Swift (OpenStack Object Storage)](https://wiki.openstack.org/wiki/Swift)
 
+{{% admonition type="note" %}}
+Like Amazon S3, the chosen object storage implementation must not create directories.
+Grafana Mimir doesn't have any notion of object storage directories, and so will leave
+empty directories behind when removing blocks. For example, if you use Azure Blob Storage, you must disable
+[hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace).
+{{% /admonition %}}
+
 Additionally and for non-production testing purposes, you can use a file-system emulated [`filesystem`]({{< relref "../references/configuration-parameters#filesystem_storage_backend" >}}) object storage implementation.
 
 [Ruler and alertmanager support a `local` implementation]({{< relref "../references/architecture/components/ruler#local-storage" >}}),
@@ -103,12 +110,14 @@ ruler_storage:
 
 ### Azure Blob Storage
 
+You must disable [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace), otherwise Grafana Mimir will leave empty directories behind when deleting blocks.
+
 ```yaml
 common:
   storage:
     backend: azure
     azure:
-      account_key: "${SWIFT_ACCOUNT_KEY}" # This is a secret injected via an environment variable
+      account_key: "${AZURE_ACCOUNT_KEY}" # This is a secret injected via an environment variable
       account_name: mimir-prod
       endpoint_suffix: "blob.core.windows.net"
 

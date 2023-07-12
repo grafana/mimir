@@ -62,5 +62,8 @@ local consul = import 'consul/consul.libsonnet';
         '--no-consul.health-summary',
         '--consul.allow_stale',
       ]),
+
+    consul_pdb:
+      $.newMimirPdb($.consul.consul_deployment.metadata.name),
   },
 }

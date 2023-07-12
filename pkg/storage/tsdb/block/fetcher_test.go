@@ -284,7 +284,7 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 
 	// Create a fetcher and fetch block metas to populate the cache on disk.
 	reg1 := prometheus.NewPedanticRegistry()
-	fetcher1, err := NewMetaFetcher(logger, 10, objstore.BucketWithMetrics("test", bkt, reg1), fetcherDir, nil, nil)
+	fetcher1, err := NewMetaFetcher(logger, 10, objstore.BucketWithMetrics("test", bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg1)), fetcherDir, nil, nil)
 	require.NoError(t, err)
 	actualMetas, _, actualErr := fetcher1.Fetch(ctx)
 	require.NoError(t, actualErr)
@@ -306,7 +306,7 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 
 	// Create a new fetcher and fetch blocks again. This time we expect all meta.json to be loaded from cache.
 	reg2 := prometheus.NewPedanticRegistry()
-	fetcher2, err := NewMetaFetcher(logger, 10, objstore.BucketWithMetrics("test", bkt, reg2), fetcherDir, nil, nil)
+	fetcher2, err := NewMetaFetcher(logger, 10, objstore.BucketWithMetrics("test", bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg2)), fetcherDir, nil, nil)
 	require.NoError(t, err)
 	actualMetas, _, actualErr = fetcher2.Fetch(ctx)
 	require.NoError(t, actualErr)

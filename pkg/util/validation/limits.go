@@ -126,6 +126,8 @@ type Limits struct {
 	ResultsCacheTTL                        model.Duration `yaml:"results_cache_ttl" json:"results_cache_ttl" category:"experimental"`
 	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window" category:"experimental"`
 	ResultsCacheTTLForCardinalityQuery     model.Duration `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query" category:"experimental"`
+	ResultsCacheTTLForLabelsQuery          model.Duration `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query" category:"experimental"`
+	ResultsCacheForUnalignedQueryEnabled   bool           `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
 	MaxQueryExpressionSizeBytes            int            `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes" category:"experimental"`
 
 	// Cardinality
@@ -261,6 +263,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
 	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
 	f.Var(&l.ResultsCacheTTLForCardinalityQuery, "query-frontend.results-cache-ttl-for-cardinality-query", "Time to live duration for cached cardinality query results. The value 0 disables the cache.")
+	f.Var(&l.ResultsCacheTTLForLabelsQuery, "query-frontend.results-cache-ttl-for-labels-query", "Time to live duration for cached label names and label values query results. The value 0 disables the cache.")
+	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.IntVar(&l.MaxQueryExpressionSizeBytes, maxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
 
 	// Store-gateway.
@@ -834,6 +838,14 @@ func (o *Overrides) ResultsCacheTTLForCardinalityQuery(user string) time.Duratio
 	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForCardinalityQuery)
 }
 
+func (o *Overrides) ResultsCacheTTLForLabelsQuery(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForLabelsQuery)
+}
+
+func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).ResultsCacheForUnalignedQueryEnabled
+}
+
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
 	if o.tenantLimits != nil {
 		l := o.tenantLimits.ByUserID(userID)
@@ -842,6 +854,16 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 		}
 	}
 	return o.defaultLimits
+}
+
+// AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants
+func AllTrueBooleansPerTenant(tenantIDs []string, f func(string) bool) bool {
+	for _, tenantID := range tenantIDs {
+		if !f(tenantID) {
+			return false
+		}
+	}
+	return true
 }
 
 // SmallestPositiveIntPerTenant is returning the minimal positive value of the

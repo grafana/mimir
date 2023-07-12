@@ -1,0 +1,128 @@
+---
+# Source: mimir-distributed/templates/query-frontend/query-frontend-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enterprise-https-values-mimir-query-frontend
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: enterprise-https-values
+    app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: enterprise-https-values
+      app.kubernetes.io/component: query-frontend
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: enterprise-https-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: query-frontend
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: enterprise-https-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        []
+      containers:
+        - name: query-frontend
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=query-frontend"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+              
+            - mountPath: /certs
+              name: tls-certs
+              readOnly: true
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: license
+              mountPath: /license
+            - name: config
+              mountPath: /etc/mimir
+            - name: storage
+              mountPath: /data
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTPS
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: enterprise-https-values
+            app.kubernetes.io/component: query-frontend
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: config
+          configMap:
+            name: enterprise-https-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: license
+          secret:
+            secretName: gem-license
+        - name: runtime-config
+          configMap:
+            name: enterprise-https-values-mimir-runtime
+        - name: tls-certs
+          secret:
+            secretName: tls-certs
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

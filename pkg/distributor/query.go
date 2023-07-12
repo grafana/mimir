@@ -63,7 +63,7 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 }
 
 // QueryStream queries multiple ingesters via the streaming interface and returns a big ol' set of chunks.
-func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
+func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
 	var result ingester_client.CombinedQueryStreamResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		req, err := ingester_client.ToQueryRequest(from, to, matchers)
@@ -80,7 +80,7 @@ func (d *Distributor) QueryStream(ctx context.Context, from, to model.Time, matc
 			return err
 		}
 
-		result, err = d.queryIngesterStream(ctx, replicationSet, req)
+		result, err = d.queryIngesterStream(ctx, replicationSet, req, queryMetrics)
 		if err != nil {
 			return err
 		}
@@ -194,7 +194,7 @@ type ingesterQueryResult struct {
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
-func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest) (ingester_client.CombinedQueryStreamResponse, error) {
+func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
@@ -283,6 +283,11 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						return ingesterQueryResult{}, limitErr
 					}
 
+					// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.
+					if chunkLimitErr := queryLimiter.AddChunks(int(s.ChunkCount)); chunkLimitErr != nil {
+						return ingesterQueryResult{}, chunkLimitErr
+					}
+
 					labelsBatch = append(labelsBatch, mimirpb.FromLabelAdaptersToLabels(s.Labels))
 				}
 
@@ -326,8 +331,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	deduplicatedChunks := 0
 	totalChunks := 0
 	defer func() {
-		d.QueryMetrics.IngesterChunksDeduplicated.Add(float64(deduplicatedChunks))
-		d.QueryMetrics.IngesterChunksTotal.Add(float64(totalChunks))
+		queryMetrics.IngesterChunksDeduplicated.Add(float64(deduplicatedChunks))
+		queryMetrics.IngesterChunksTotal.Add(float64(totalChunks))
 	}()
 
 	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}

@@ -243,7 +243,7 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 		"query selects too many chunks": {
 			maxChunks:     2,
 			maxChunkBytes: 200,
-			expectedError: "the query exceeded the maximum number of chunks (limit: 2 chunks) (err-mimir-max-chunks-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunks-per-query, or contact your service administrator.",
+			expectedError: "", // The limit on the number of chunks is enforced earlier, in distributor.queryIngesterStream()
 		},
 		"query selects too many chunk bytes": {
 			maxChunks:     4,

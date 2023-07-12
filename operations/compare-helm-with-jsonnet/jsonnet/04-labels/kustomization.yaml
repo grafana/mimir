@@ -9,6 +9,13 @@ patches:
         path: /metadata/labels
 
   - target:
+      name: 'mimir-(chunks-cache|distributor|index-cache|metadata-cache|querier|query-frontend|query-scheduler|results-cache|ruler)'
+      kind: 'PodDisruptionBudget'
+    patch: |-
+      - op: remove
+        path: /metadata/labels
+
+  - target:
       kind: 'Service'
       name: 'mimir-(alertmanager-headless|ruler|query-frontend(-headless)?|query-scheduler(-headless)?|distributor(-headless)?|querier|(chunks|results|index|metadata)-cache)'
     patch: |-

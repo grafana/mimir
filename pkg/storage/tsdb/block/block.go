@@ -50,7 +50,7 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 		return errors.Wrap(err, "create dir")
 	}
 
-	if err := objstore.DownloadFile(ctx, logger, bucket, path.Join(id.String(), MetaFilename), path.Join(dst, MetaFilename)); err != nil {
+	if err := objstore.DownloadFile(ctx, logger, bucket, path.Join(id.String(), MetaFilename), filepath.Join(dst, MetaFilename)); err != nil {
 		return err
 	}
 
@@ -65,7 +65,6 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 		// This can happen if block is empty. We cannot easily upload empty directory, so create one here.
 		return os.Mkdir(chunksDir, os.ModePerm)
 	}
-
 	if err != nil {
 		return errors.Wrapf(err, "stat %s", chunksDir)
 	}

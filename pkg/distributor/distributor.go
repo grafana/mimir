@@ -43,7 +43,6 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -126,7 +125,6 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
-	QueryMetrics                     *stats.QueryMetrics
 
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
 	discardedSamplesRateLimited       *prometheus.CounterVec
@@ -179,8 +177,6 @@ type Config struct {
 	// and access the deserialized write requests before/after they are pushed.
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
-
-	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -194,7 +190,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
-	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -242,7 +237,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		queryQuorumConfig:     ring.DoUntilQuorumConfig{MinimizeRequests: cfg.MinimizeIngesterRequests, HedgingDelay: cfg.MinimiseIngesterRequestsHedgingDelay},
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
-		QueryMetrics:          stats.NewQueryMetrics(reg),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -1136,10 +1130,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
-	if d.cfg.WriteRequestsBufferPoolingEnabled {
-		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
-		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
-	}
+	slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
+	localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
 		var timeseriesCount, metadataCount int

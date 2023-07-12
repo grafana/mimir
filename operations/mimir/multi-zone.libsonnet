@@ -387,4 +387,7 @@
 
   rollout_operator_service_account: if !rollout_operator_enabled then null else
     serviceAccount.new('rollout-operator'),
+
+  rollout_operator_pdb: if !rollout_operator_enabled then null else
+    $.newMimirPdb('rollout-operator'),
 }

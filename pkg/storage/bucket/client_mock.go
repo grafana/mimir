@@ -145,6 +145,10 @@ func (m *ClientMock) IsObjNotFoundErr(err error) bool {
 	return errors.Is(err, ErrObjectDoesNotExist)
 }
 
+func (m *ClientMock) IsCustomerManagedKeyError(_ error) bool {
+	return false
+}
+
 // ObjectSize mocks objstore.Bucket.Attributes()
 func (m *ClientMock) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
 	args := m.Called(ctx, name)

@@ -121,28 +121,21 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				return
 			}
 
-			chunkCount := 0
 			chunkBytes := 0
 
 			for _, s := range msg.StreamingSeriesChunks {
-				chunkCount += len(s.Chunks)
+				totalChunks += len(s.Chunks)
 
 				for _, c := range s.Chunks {
 					chunkBytes += c.Size()
 				}
 			}
 
-			if err := s.queryLimiter.AddChunks(chunkCount); err != nil {
-				onError(err)
-				return
-			}
-
+			// The chunk count limit is enforced earlier, while we're reading series labels, so we don't need to do that here.
 			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
 				onError(err)
 				return
 			}
-
-			totalChunks += chunkCount
 
 			select {
 			case <-ctxDone:

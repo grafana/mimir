@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestReadWriteModeQueryingIngester(t *testing.T) {
@@ -55,11 +56,11 @@ func runQueryingIngester(t *testing.T, client *e2emimir.Client, seriesName strin
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// Verify we can retrieve the labels we just pushed.
-	labelValues, err := client.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
+	labelValues, err := client.LabelValues("foo", util.PrometheusMinTime, util.PrometheusMaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := client.LabelNames(prometheusMinTime, prometheusMaxTime)
+	labelNames, err := client.LabelNames(util.PrometheusMinTime, util.PrometheusMaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
@@ -108,11 +109,11 @@ func runQueryingStoreGateway(t *testing.T, client *e2emimir.Client, cluster read
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// Verify we can retrieve the labels we just pushed.
-	labelValues, err := client.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
+	labelValues, err := client.LabelValues("foo", util.PrometheusMinTime, util.PrometheusMaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := client.LabelNames(prometheusMinTime, prometheusMaxTime)
+	labelNames, err := client.LabelNames(util.PrometheusMinTime, util.PrometheusMaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
