@@ -221,19 +221,21 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	return &t, nil
 }
 
-func NewPostingOffsetTableFromSamples(factory *streamencoding.DecbufFactory, samples *indexheaderpb.Samples, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
+func NewPostingOffsetTableFromSamples(factory *streamencoding.DecbufFactory, postingsOffsetTable *indexheaderpb.PostingOffsetTable, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
-		postings:                    map[string]*postingValueOffsets{},
+		postings:                    make(map[string]*postingValueOffsets, len(postingsOffsetTable.Postings)),
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 	}
 
-	for sName, sOffsets := range samples.PostingsOffsetTable.Postings {
-		t.postings[sName] = &postingValueOffsets{}
+	for sName, sOffsets := range postingsOffsetTable.Postings {
+		t.postings[sName] = &postingValueOffsets{
+			offsets: make([]postingOffset, len(sOffsets.Offsets)),
+		}
 
-		for _, sPostingOff := range sOffsets.Offsets {
-			t.postings[sName].offsets = append(t.postings[sName].offsets, postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)})
+		for i, sPostingOff := range sOffsets.Offsets {
+			t.postings[sName].offsets[i] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
 		}
 
 		t.postings[sName].lastValOffset = sOffsets.LastValOffset
@@ -593,14 +595,17 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 
 func (t *PostingOffsetTableV2) NewPostingOffsetTableSample() (table *indexheaderpb.PostingOffsetTable) {
 	samples := &indexheaderpb.PostingOffsetTable{
-		Postings: map[string]*indexheaderpb.PostingValueOffsets{},
+		Postings: make(map[string]*indexheaderpb.PostingValueOffsets, len(t.postings)),
 	}
 
 	for name, offsets := range t.postings {
 		samples.Postings[name] = &indexheaderpb.PostingValueOffsets{}
-		for _, postingOff := range offsets.offsets {
-			samples.Postings[name].Offsets = append(samples.Postings[name].Offsets, &indexheaderpb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)})
+		postingOffsets := make([]*indexheaderpb.PostingOffset, len(offsets.offsets))
+
+		for i, postingOff := range offsets.offsets {
+			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)}
 		}
+		samples.Postings[name].Offsets = postingOffsets
 		samples.Postings[name].LastValOffset = offsets.lastValOffset
 	}
 

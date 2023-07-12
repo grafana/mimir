@@ -20,18 +20,22 @@ message Samples {
 
 message Symbols {
 	repeated int64 offsets = 1 [packed=true];
-	int64 seen = 2;
+	int64 symbolsCount = 2;
 }
 
 message PostingOffsetTable {
+	// Postings is a map of label names -> postingValueOffsets
 	map<string, postingValueOffsets> postings = 1;
 }
 
+// postingValueOffsets stores a list of the first, last, and every 32nd (config default) postingOffset for this label name.
 message postingValueOffsets {
 	repeated postingOffset offsets = 1;   
+	// LastValOffset is the offset of the last value for this label name relative to the start of the postings offset table.
 	int64 lastValOffset = 2;
 }
 
+// postingOffset stores the label value and its offset in the postings offset table relative to the start of the table.
 message postingOffset {
 	string value = 1;
 	int64 tableOff = 2;

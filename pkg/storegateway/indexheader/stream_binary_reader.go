@@ -85,7 +85,7 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	return newFileStreamBinaryReader(binfn, samplefn, postingOffsetsInMemSampling, logger, metrics, cfg)
 }
 
-// newFileStreamBinary loads index-header samples from disk or constructs it from the index-header if not available.
+// newFileStreamBinaryReader loads index-header samples from disk or constructs it from the index-header if not available.
 func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
 		factory: streamencoding.NewDecbufFactory(binpath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
@@ -131,7 +131,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 	// Unmarshal samples from disk.
 	sampleData, err := os.ReadFile(samplepath)
-	if err != nil {
+	if err != nil || r.indexVersion == index.FormatV1 {
 		// If samples are not on disk, construct samples and write to disk.
 		level.Debug(logger).Log("msg", "failed to read index-header samples from disk; recreating", "path", samplepath, "err", err)
 
@@ -162,12 +162,12 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 			return nil, fmt.Errorf("failed to decode index-header samples file: %w", err)
 		}
 
-		r.symbols, err = streamindex.NewSymbolsFromSamples(r.factory, samples, r.indexVersion, int(r.toc.Symbols))
+		r.symbols, err = streamindex.NewSymbolsFromSamples(r.factory, samples.Symbols, r.indexVersion, int(r.toc.Symbols))
 		if err != nil {
 			return nil, fmt.Errorf("cannot load symbols: %w", err)
 		}
 
-		r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSamples(r.factory, samples, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
+		r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSamples(r.factory, samples.PostingsOffsetTable, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
 		if err != nil {
 			return nil, err
 		}

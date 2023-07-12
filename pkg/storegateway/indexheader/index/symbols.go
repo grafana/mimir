@@ -41,21 +41,21 @@ type Symbols struct {
 
 const symbolFactor = 32
 
-// NewSymbolFromSample reads from sampled index header and returns a Symbols object for symbol lookups.
-func NewSymbolsFromSamples(factory *streamencoding.DecbufFactory, samples *indexheaderpb.Samples, version int, offset int) (s *Symbols, err error) {
+// NewSymbolsFromSamples reads from sampled index header and returns a Symbols object for symbol lookups.
+func NewSymbolsFromSamples(factory *streamencoding.DecbufFactory, symbols *indexheaderpb.Symbols, version int, offset int) (s *Symbols, err error) {
 	s = &Symbols{
 		factory:     factory,
 		version:     version,
 		tableOffset: offset,
 	}
 
-	s.offsets = make([]int, 0)
+	s.offsets = make([]int, len(symbols.Offsets))
 
-	for _, offset := range samples.Symbols.Offsets {
-		s.offsets = append(s.offsets, int(offset))
+	for i, offset := range symbols.Offsets {
+		s.offsets[i] = int(offset)
 	}
 
-	s.seen = int(samples.Symbols.Seen)
+	s.seen = int(symbols.SymbolsCount)
 
 	return s, nil
 }
@@ -63,14 +63,14 @@ func NewSymbolsFromSamples(factory *streamencoding.DecbufFactory, samples *index
 func (s *Symbols) NewSymbolSample() (samples *indexheaderpb.Symbols) {
 	sampleSymbols := &indexheaderpb.Symbols{}
 
-	offsets := make([]int64, 0)
+	offsets := make([]int64, len(s.offsets))
 
-	for _, offset := range s.offsets {
-		offsets = append(offsets, int64(offset))
+	for i, offset := range s.offsets {
+		offsets[i] = int64(offset)
 	}
 
 	sampleSymbols.Offsets = offsets
-	sampleSymbols.Seen = int64(s.seen)
+	sampleSymbols.SymbolsCount = int64(s.seen)
 
 	return sampleSymbols
 }
