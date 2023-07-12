@@ -41,8 +41,10 @@ If you have upgraded to Kubernetes 1.25 and see the following error containing P
 resource mapping not found for name: "mimir" namespace: "" from "":
 no matches for kind "PodSecurityPolicy" in version "policy/v1beta1" ensure CRDs are installed first
 ```
+This happens because helm stores the current release in a Secret in the namespace. If the current release contains removed resources the `helm` command fails to determine the current state of the release.
 
+To remove the PodSecurityPolicy from the Helm release history follow this procedure:
 1. Optionally follow the Kubernetes [Migrate from PodSecurityPolicy to the Built-In PodSecurity Admission Controller](https://kubernetes.io/docs/tasks/configure-pod-container/migrate-from-psp/) guide to replace PodSecurityPolicy.
 1. Set the `rbac.create` value to `false`.
 1. Remove PodSecurityPolicy from the Helm release history following the [Updating API Versions of a Release Manifest](https://helm.sh/docs/topics/kubernetes_apis/#updating-api-versions-of-a-release-manifest) Helm documentation in order to proceed with the upgrade.
-1. Upgrade the deployment. The chart will not install PodSecurityPolicy objects anymore.
+1. Upgrade the release. The upgrade should succeed now.
