@@ -221,7 +221,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	return &t, nil
 }
 
-func NewPostingOffsetTableFromSample(factory *streamencoding.DecbufFactory, sample *indexheaderpb.Samples, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
+func NewPostingOffsetTableFromSamples(factory *streamencoding.DecbufFactory, samples *indexheaderpb.Samples, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -229,7 +229,7 @@ func NewPostingOffsetTableFromSample(factory *streamencoding.DecbufFactory, samp
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 	}
 
-	for sName, sOffsets := range sample.PostingsOffsetTable.Postings {
+	for sName, sOffsets := range samples.PostingsOffsetTable.Postings {
 		t.postings[sName] = &postingValueOffsets{}
 
 		for _, sPostingOff := range sOffsets.Offsets {
@@ -592,19 +592,19 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 }
 
 func (t *PostingOffsetTableV2) NewPostingOffsetTableSample() (table *indexheaderpb.PostingOffsetTable) {
-	sample := &indexheaderpb.PostingOffsetTable{
+	samples := &indexheaderpb.PostingOffsetTable{
 		Postings: map[string]*indexheaderpb.PostingValueOffsets{},
 	}
 
 	for name, offsets := range t.postings {
-		sample.Postings[name] = &indexheaderpb.PostingValueOffsets{}
+		samples.Postings[name] = &indexheaderpb.PostingValueOffsets{}
 		for _, postingOff := range offsets.offsets {
-			sample.Postings[name].Offsets = append(sample.Postings[name].Offsets, &indexheaderpb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)})
+			samples.Postings[name].Offsets = append(samples.Postings[name].Offsets, &indexheaderpb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)})
 		}
-		sample.Postings[name].LastValOffset = offsets.lastValOffset
+		samples.Postings[name].LastValOffset = offsets.lastValOffset
 	}
 
-	return sample
+	return samples
 }
 
 func skipNAndName(d *streamencoding.Decbuf, buf *int) {

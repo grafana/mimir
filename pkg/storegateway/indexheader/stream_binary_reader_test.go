@@ -26,13 +26,13 @@ func (cl *CustomLogger) Log(keyvals ...interface{}) error {
 	return nil
 }
 
-// TestStreamBinaryReader_ShouldBuildSampleFromFile should accurately construct and
-// write sample on first build and read from disk on the second build.
-func TestStreamBinaryReader_ShouldBuildSampleFromFile(t *testing.T) {
+// TestStreamBinaryReader_ShouldBuildSamplesFromFile should accurately construct and
+// write samples on first build and read from disk on the second build.
+func TestStreamBinaryReader_ShouldBuildSamplesFromFile(t *testing.T) {
 	ctx := context.Background()
 	logger := &CustomLogger{}
 
-	tmpDir := filepath.Join(t.TempDir(), "test-sample")
+	tmpDir := filepath.Join(t.TempDir(), "test-samples")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
@@ -46,16 +46,16 @@ func TestStreamBinaryReader_ShouldBuildSampleFromFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
-	// Write sample to disk on first build.
+	// Write samples to disk on first build.
 	r1, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
-	// Read sample to disk on second build.
+	// Read samples to disk on second build.
 	r2, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 
-	// Check that last log confirms we read from index-header sample.
+	// Check that last log confirms we read from index-header samples.
 	logStr := strings.Split(logger.Logs[len(logger.Logs)-1], " filepath")[0]
-	require.Equal(t, logStr, "leveldebugmsgreading from index-header sample")
+	require.Equal(t, logStr, "leveldebugmsgreading from index-header samples")
 
 	// Check that the samples are the same.
 	require.Equal(t, r1.indexVersion, r2.indexVersion)

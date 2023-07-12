@@ -42,7 +42,7 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbolFromSample reads from sampled index header and returns a Symbols object for symbol lookups.
-func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *indexheaderpb.Samples, version int, offset int) (s *Symbols, err error) {
+func NewSymbolsFromSamples(factory *streamencoding.DecbufFactory, samples *indexheaderpb.Samples, version int, offset int) (s *Symbols, err error) {
 	s = &Symbols{
 		factory:     factory,
 		version:     version,
@@ -51,16 +51,16 @@ func NewSymbolsFromSample(factory *streamencoding.DecbufFactory, sample *indexhe
 
 	s.offsets = make([]int, 0)
 
-	for _, offset := range sample.Symbols.Offsets {
+	for _, offset := range samples.Symbols.Offsets {
 		s.offsets = append(s.offsets, int(offset))
 	}
 
-	s.seen = int(sample.Symbols.Seen)
+	s.seen = int(samples.Symbols.Seen)
 
 	return s, nil
 }
 
-func (s *Symbols) NewSymbolSample() (sample *indexheaderpb.Symbols) {
+func (s *Symbols) NewSymbolSample() (samples *indexheaderpb.Symbols) {
 	sampleSymbols := &indexheaderpb.Symbols{}
 
 	offsets := make([]int64, 0)
