@@ -109,11 +109,11 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	defer sampleFile.Close()
 
 	if err != nil {
-		// If sample is not on disk, write sample to disk.
+		// If sample is not on disk, construct sample and write to disk.
 		level.Debug(logger).Log("msg", "failed to read index-header sample from disk; recreating", "path", samplepath, "err", err)
 		br, err := constructSample(binpath, samplepath, postingOffsetsInMemSampling, logger, metrics, cfg)
 		if err != nil {
-			return nil, fmt.Errorf("cannot write index header sample: %w", err)
+			return nil, fmt.Errorf("cannot construct index header sample: %w", err)
 		}
 		level.Debug(logger).Log("msg", "built index-header sample file", "path", samplepath)
 		return br, err
