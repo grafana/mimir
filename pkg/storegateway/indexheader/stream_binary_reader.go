@@ -8,7 +8,6 @@ package indexheader
 import (
 	"context"
 	"fmt"
-	"io"
 
 	"os"
 
@@ -101,13 +100,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	}
 
 	// Unmarshal samples from disk.
-	sampleFile, err := os.Open(samplepath)
-	var data []byte
-	if err == nil {
-		data, err = io.ReadAll(sampleFile)
-	}
-	defer sampleFile.Close()
-
+	sampleData, err := os.ReadFile(samplepath)
 	if err != nil {
 		// If samples are not on disk, construct samples and write to disk.
 		level.Debug(logger).Log("msg", "failed to read index-header samples from disk; recreating", "path", samplepath, "err", err)
@@ -123,7 +116,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 	// Load persisted samples into memory.
 	samples := &indexheaderpb.Samples{}
-	if err := samples.Unmarshal(data); err != nil {
+	if err := samples.Unmarshal(sampleData); err != nil {
 		return nil, fmt.Errorf("failed to decode index-header samples file: %w", err)
 	}
 
@@ -237,7 +230,7 @@ func constructSamples(binpath string, samplepath string, postingOffsetsInMemSamp
 	}
 
 	// Write sampled index-header to disk; support only for v2.
-	if r.indexVersion == 2 {
+	if r.indexVersion == index.FormatV2 {
 		if err := writeSamplesToFile(samplepath, r); err != nil {
 			return nil, fmt.Errorf("cannot write samples to disk: %w", err)
 		}
@@ -261,14 +254,9 @@ func writeSamplesToFile(samplepath string, reader *StreamBinaryReader) error {
 		return fmt.Errorf("failed to encode index-header samples: %w", err)
 	}
 
-	file, err := os.Create(samplepath)
-	if err == nil {
-		_, err = file.Write(out)
-	}
-	if err != nil {
+	if err := os.WriteFile(samplepath, out, 0700); err != nil {
 		return fmt.Errorf("failed to write index-header samples file: %w", err)
 	}
-	defer file.Close()
 
 	return nil
 }
