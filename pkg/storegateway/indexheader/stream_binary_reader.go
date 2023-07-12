@@ -87,9 +87,8 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	return newFileStreamBinaryReader(binfn, samplefn, postingOffsetsInMemSampling, logger, metrics, cfg)
 }
 
+// newFileStreamBinary loads index-header sample from disk or constructs it from the index-header if not available.
 func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
-	// TODO: attempt to read sample from disk
-	// return error if sample is not on disk, should send NewStreamBinaryReader() to writeSample() which will construct and write sample to disk
 	r := &StreamBinaryReader{
 		factory: streamencoding.NewDecbufFactory(binpath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
 	}
@@ -122,12 +121,12 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 	level.Debug(logger).Log("msg", "reading from index-header sample file", "path", samplepath)
 
+	// Load persisted sample into memory
 	sample := &samplepb.Sample{}
 	if err := sample.Unmarshal(data); err != nil {
 		return nil, fmt.Errorf("failed to decode index-header sample file: %w", err)
 	}
 
-	// Load unmarshaled sample into memory
 	r.version = int(sample.Version)
 	r.indexVersion = int(sample.IndexVersion)
 
@@ -145,16 +144,14 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 	r.symbols, err = streamindex.NewSymbolsFromSample(r.factory, sample, r.indexVersion, int(r.toc.Symbols))
 	if err != nil {
-		return nil, fmt.Errorf("cannot load symbols: %w", err) // TODO: make better error check
+		return nil, fmt.Errorf("cannot load symbols: %w", err)
 	}
 
-	// TODO: construct postingoffsettable from sample
 	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSample(r.factory, sample, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO: construct nameSymbols from memory
 	labelNames, err := r.postingsOffsetTable.LabelNames()
 	if err != nil {
 		return nil, err
@@ -171,7 +168,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	return r, err
 }
 
-// Reads index-header, constructs an abbreviated sample, and write the sample to disk.
+// Reads entire index-header to constructs a sample in memory and writes the sample to disk.
 func constructSample(binpath string, samplepath string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
 		factory: streamencoding.NewDecbufFactory(binpath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
@@ -239,7 +236,7 @@ func constructSample(binpath string, samplepath string, postingOffsetsInMemSampl
 		return nil, err
 	}
 
-	// Write sampled index-header to disk.
+	// Write sampled index-header to disk; support only for v2.
 	if r.indexVersion == 2 {
 		if err := writeSampleToFile(samplepath, r); err != nil {
 			return nil, fmt.Errorf("cannot write sample to disk: %w", err)
@@ -249,6 +246,7 @@ func constructSample(binpath string, samplepath string, postingOffsetsInMemSampl
 	return r, err
 }
 
+// Uses protocol buffer to write StreamBinaryReader to disk at samplepath.
 func writeSampleToFile(samplepath string, reader *StreamBinaryReader) error {
 	sample := &samplepb.Sample{}
 
@@ -258,13 +256,11 @@ func writeSampleToFile(samplepath string, reader *StreamBinaryReader) error {
 	sample.Symbols = reader.symbols.NewSymbolSample()
 	sample.PostingsOffsetTable = reader.postingsOffsetTable.NewPostingOffsetTableSample()
 
-	// Write the new address book back to disk.
 	out, err := sample.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to encode index-header sample: %w", err)
 	}
 
-	// Open the file for writing
 	file, err := os.Create(samplepath)
 	if err == nil {
 		_, err = file.Write(out)

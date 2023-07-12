@@ -21,9 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-// CustomLogger is a custom implementation of log.Logger that captures the logs.
 type CustomLogger struct {
-	// Store the logs in a slice or any other suitable data structure
 	Logs []string
 }
 
@@ -33,14 +31,10 @@ func (cl *CustomLogger) Log(keyvals ...interface{}) error {
 	return nil
 }
 
-// Tests:
-// should fail if unable to load sample
-// sample should be what is expected
-// should rebuild corrupted sample
+// TestStreamBinaryReader_ShouldBuildSampleFromFile should accurately construct and
+// write sample on first build and read from disk on the second build.
 func TestStreamBinaryReader_ShouldBuildSampleFromFile(t *testing.T) {
 	ctx := context.Background()
-	// logger := log.NewNopLogger()
-	// logger := log.NewLogfmtLogger(os.Stderr)
 	logger := &CustomLogger{}
 
 	tmpDir := filepath.Join(t.TempDir(), "test-sample")
