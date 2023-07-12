@@ -168,7 +168,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	return r, err
 }
 
-// Reads entire index-header to constructs a sample in memory and writes the sample to disk.
+// constructSample reads entire index-header to constructs a sample in memory and writes the sample to disk.
 func constructSample(binpath string, samplepath string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
 		factory: streamencoding.NewDecbufFactory(binpath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
@@ -246,7 +246,7 @@ func constructSample(binpath string, samplepath string, postingOffsetsInMemSampl
 	return r, err
 }
 
-// Uses protocol buffer to write StreamBinaryReader to disk at samplepath.
+// writeSampleToFile uses protocol buffer to write StreamBinaryReader to disk at samplepath.
 func writeSampleToFile(samplepath string, reader *StreamBinaryReader) error {
 	sample := &samplepb.Sample{}
 
