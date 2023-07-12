@@ -16,13 +16,23 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-type CustomLogger struct {
-	Logs []string
+type inMemoryLogger struct {
+	logs []string
 }
 
-func (cl *CustomLogger) Log(keyvals ...interface{}) error {
-	str := fmt.Sprint(keyvals...)
-	cl.Logs = append(cl.Logs, str)
+func (ml *inMemoryLogger) Log(keyvals ...interface{}) error {
+	log := ""
+	for ix := 0; ix+1 < len(keyvals); ix += 2 {
+		k := keyvals[ix]
+		v := keyvals[ix+1]
+
+		// Only log level and msg fields for readability.
+		if k == "level" || k == "msg" {
+			log += fmt.Sprintf("%v=%v ", k, v)
+		}
+	}
+	log = strings.TrimSpace(log)
+	ml.logs = append(ml.logs, log)
 	return nil
 }
 
@@ -30,7 +40,10 @@ func (cl *CustomLogger) Log(keyvals ...interface{}) error {
 // write samples on first build and read from disk on the second build.
 func TestStreamBinaryReader_ShouldBuildSamplesFromFile(t *testing.T) {
 	ctx := context.Background()
-	logger := &CustomLogger{}
+
+	// logs := &concurrency.SyncBuffer{}
+	// logger := &componentLogger{component: "compactor", log: log.NewLogfmtLogger(logs)}
+	logger := &inMemoryLogger{}
 
 	tmpDir := filepath.Join(t.TempDir(), "test-samples")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
@@ -53,9 +66,14 @@ func TestStreamBinaryReader_ShouldBuildSamplesFromFile(t *testing.T) {
 	r2, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 
-	// Check that last log confirms we read from index-header samples.
-	logStr := strings.Split(logger.Logs[len(logger.Logs)-1], " filepath")[0]
-	require.Equal(t, "leveldebugmsgreading from index-header samples", logStr)
+	// Checks logs for order of operations: build index-header -> build sample -> read samples.
+	require.ElementsMatch(t, []string{
+		"level=debug msg=failed to read index-header from disk; recreating",
+		"level=debug msg=built index-header file",
+		"level=debug msg=failed to read index-header samples from disk; recreating",
+		"level=debug msg=built index-header samples file",
+		"level=debug msg=reading from index-header samples file",
+	}, logger.logs, "\n")
 
 	// Check that the samples are the same.
 	require.Equal(t, r1.indexVersion, r2.indexVersion)
