@@ -55,7 +55,7 @@ func TestStreamBinaryReader_ShouldBuildSamplesFromFile(t *testing.T) {
 
 	// Check that last log confirms we read from index-header samples.
 	logStr := strings.Split(logger.Logs[len(logger.Logs)-1], " filepath")[0]
-	require.Equal(t, logStr, "leveldebugmsgreading from index-header samples")
+	require.Equal(t, "leveldebugmsgreading from index-header samples", logStr)
 
 	// Check that the samples are the same.
 	require.Equal(t, r1.indexVersion, r2.indexVersion)

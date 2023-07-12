@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -99,82 +98,6 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
 	}
 
-	// Unmarshal samples from disk.
-	sampleData, err := os.ReadFile(samplepath)
-	if err != nil {
-		// If samples are not on disk, construct samples and write to disk.
-		level.Debug(logger).Log("msg", "failed to read index-header samples from disk; recreating", "path", samplepath, "err", err)
-		br, err := constructSamples(binpath, samplepath, postingOffsetsInMemSampling, logger, metrics, cfg)
-		if err != nil {
-			return nil, fmt.Errorf("cannot construct index header samples: %w", err)
-		}
-		level.Debug(logger).Log("msg", "built index-header samples file", "path", samplepath)
-		return br, err
-	}
-
-	level.Debug(logger).Log("msg", "reading from index-header samples file", "path", samplepath)
-
-	// Load persisted samples into memory.
-	samples := &indexheaderpb.Samples{}
-	if err := samples.Unmarshal(sampleData); err != nil {
-		return nil, fmt.Errorf("failed to decode index-header samples file: %w", err)
-	}
-
-	// Grab the full length of the index header before we read any of it. This is needed
-	// so that we can skip directly to the table of contents at the end of file.
-	indexHeaderSize := d.Len()
-	if magic := d.Be32(); magic != MagicIndex {
-		return nil, fmt.Errorf("invalid magic number %x", magic)
-	}
-
-	r.version = int(d.Byte())
-	r.indexVersion = int(d.Byte())
-
-	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
-	}
-
-	r.symbols, err = streamindex.NewSymbolsFromSamples(r.factory, samples, r.indexVersion, int(r.toc.Symbols))
-	if err != nil {
-		return nil, fmt.Errorf("cannot load symbols: %w", err)
-	}
-
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSamples(r.factory, samples, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
-	if err != nil {
-		return nil, err
-	}
-
-	labelNames, err := r.postingsOffsetTable.LabelNames()
-	if err != nil {
-		return nil, err
-	}
-
-	r.nameSymbols = make(map[uint32]string, len(labelNames))
-	if err = r.symbols.ForEachSymbol(labelNames, func(sym string, offset uint32) error {
-		r.nameSymbols[offset] = sym
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-
-	return r, err
-}
-
-// constructSamples reads entire index-header to constructs a samples in memory and writes the samples to disk.
-func constructSamples(binpath string, samplepath string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
-	r := &StreamBinaryReader{
-		factory: streamencoding.NewDecbufFactory(binpath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
-	}
-
-	// Create a new raw decoding buffer with access to the entire index-header file to
-	// read initial version information and the table of contents.
-	d := r.factory.NewRawDecbuf()
-	defer runutil.CloseWithErrCapture(&err, &d, "new file stream binary reader")
-	if err = d.Err(); err != nil {
-		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
-	}
-
 	// Grab the full length of the index header before we read any of it. This is needed
 	// so that we can skip directly to the table of contents at the end of file.
 	indexHeaderSize := d.Len()
@@ -206,14 +129,48 @@ func constructSamples(binpath string, samplepath string, postingOffsetsInMemSamp
 		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
 	}
 
-	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
+	// Unmarshal samples from disk.
+	sampleData, err := os.ReadFile(samplepath)
 	if err != nil {
-		return nil, fmt.Errorf("cannot load symbols: %w", err)
-	}
+		// If samples are not on disk, construct samples and write to disk.
+		level.Debug(logger).Log("msg", "failed to read index-header samples from disk; recreating", "path", samplepath, "err", err)
 
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
-	if err != nil {
-		return nil, err
+		r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
+		if err != nil {
+			return nil, fmt.Errorf("cannot load symbols: %w", err)
+		}
+
+		r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
+		if err != nil {
+			return nil, err
+		}
+
+		// Write sampled index-header to disk; support only for v2.
+		if r.indexVersion == index.FormatV2 {
+			if err := writeSamplesToFile(samplepath, r); err != nil {
+				return nil, fmt.Errorf("cannot write samples to disk: %w", err)
+			}
+		}
+
+		level.Debug(logger).Log("msg", "built index-header samples file", "path", samplepath)
+	} else {
+		// Otherwise, read persisted sample from disk to memory.
+		level.Debug(logger).Log("msg", "reading from index-header samples file", "path", samplepath)
+
+		samples := &indexheaderpb.Samples{}
+		if err := samples.Unmarshal(sampleData); err != nil {
+			return nil, fmt.Errorf("failed to decode index-header samples file: %w", err)
+		}
+
+		r.symbols, err = streamindex.NewSymbolsFromSamples(r.factory, samples, r.indexVersion, int(r.toc.Symbols))
+		if err != nil {
+			return nil, fmt.Errorf("cannot load symbols: %w", err)
+		}
+
+		r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSamples(r.factory, samples, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	labelNames, err := r.postingsOffsetTable.LabelNames()
@@ -227,13 +184,6 @@ func constructSamples(binpath string, samplepath string, postingOffsetsInMemSamp
 		return nil
 	}); err != nil {
 		return nil, err
-	}
-
-	// Write sampled index-header to disk; support only for v2.
-	if r.indexVersion == index.FormatV2 {
-		if err := writeSamplesToFile(samplepath, r); err != nil {
-			return nil, fmt.Errorf("cannot write samples to disk: %w", err)
-		}
 	}
 
 	return r, err
