@@ -1017,7 +1017,7 @@ github.com/uber/jaeger-client-go/utils
 ## explicit
 github.com/uber/jaeger-lib/metrics
 github.com/uber/jaeger-lib/metrics/prometheus
-# github.com/weaveworks/common v0.0.0-20230511094633-334485600903
+# github.com/weaveworks/common v0.0.0-20230713112559-0f07c31c16ef
 ## explicit; go 1.14
 github.com/weaveworks/common/errors
 github.com/weaveworks/common/grpc
