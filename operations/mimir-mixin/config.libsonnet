@@ -13,7 +13,7 @@
     // 1: Shared crosshair, the crosshair will appear on all panels but the
     // tooltip will  appear only on the panel under the cursor
     // 2: Shared Tooltip, both crosshair and tooltip will appear on all panels
-    graph_tooltip: 0,
+    graph_tooltip: 1,
 
     // Tags for dashboards.
     tags: ['mimir'],
