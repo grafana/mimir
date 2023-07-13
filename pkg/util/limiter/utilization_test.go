@@ -198,10 +198,106 @@ func TestUtilizationBasedLimiter_CPUUtilizationSensitivity(t *testing.T) {
 			maxCPUUtilization := float64(math.MinInt64)
 
 			for i, ts := 0, time.Now(); i < len(testData.instantCPUValues); i++ {
-				currCPUUtilization, _ := lim.compute(ts)
+				currCPUUtilization, _, _ := lim.compute(ts)
 				ts = ts.Add(time.Second)
 
-				// Keep track of the max CPU utilization as computed by the limiter.
+				// Keep track of the min/max CPU utilization as computed by the limiter.
+				if currCPUUtilization < minCPUUtilization {
+					minCPUUtilization = currCPUUtilization
+				}
+				if currCPUUtilization > maxCPUUtilization {
+					maxCPUUtilization = currCPUUtilization
+				}
+			}
+
+			assert.InDelta(t, 0, minCPUUtilization, 0.01) // The minimum should always be 0 because of the warmup period.
+			assert.InDelta(t, testData.expectedMaxCPUUtilization, maxCPUUtilization, 0.01)
+		})
+	}
+}
+
+func TestUtilizationBasedLimiter_CPUUtilizationSensitivity_VividCortex(t *testing.T) {
+	tests := map[string]struct {
+		instantCPUValues          []float64
+		expectedMaxCPUUtilization float64
+	}{
+		"2 minutes idle": {
+			instantCPUValues:          generateConstCPUUtilization(120, 0),
+			expectedMaxCPUUtilization: 0,
+		},
+		"2 minutes at constant utilization": {
+			instantCPUValues:          generateConstCPUUtilization(120, 2.00),
+			expectedMaxCPUUtilization: 2,
+		},
+		"1 minute idle + 10 seconds spike + 50 seconds idle": {
+			instantCPUValues: func() []float64 {
+				values := generateConstCPUUtilization(60, 0)
+				values = append(values, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+				values = append(values, generateConstCPUUtilization(50, 0)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 1.49,
+		},
+		"10 seconds spike + 110 seconds idle (moving average warms up the first 60 seconds)": {
+			instantCPUValues: func() []float64 {
+				values := []float64{10, 9, 8, 7, 6, 5, 4, 3, 2, 1}
+				values = append(values, generateConstCPUUtilization(110, 0)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 4.352459016393443,
+		},
+		"1 minute base utilization + 10 seconds spike + 50 seconds base utilization": {
+			instantCPUValues: func() []float64 {
+				values := generateConstCPUUtilization(60, 1.0)
+				values = append(values, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+				values = append(values, generateConstCPUUtilization(50, 1.0)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 2.25,
+		},
+		"1 minute base utilization + 10 seconds steady spike + 50 seconds base utilization": {
+			instantCPUValues: func() []float64 {
+				values := generateConstCPUUtilization(60, 1.0)
+				values = append(values, generateConstCPUUtilization(10, 10.0)...)
+				values = append(values, generateConstCPUUtilization(50, 1.0)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 3.55,
+		},
+		"1 minute base utilization + 30 seconds steady spike + 30 seconds base utilization": {
+			instantCPUValues: func() []float64 {
+				values := generateConstCPUUtilization(60, 1.0)
+				values = append(values, generateConstCPUUtilization(30, 10.0)...)
+				values = append(values, generateConstCPUUtilization(30, 1.0)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 6.69,
+		},
+		"linear increase and then linear decrease utilization": {
+			instantCPUValues: func() []float64 {
+				values := generateLinearStepCPUUtilization(60, 0, 0.1)
+				values = append(values, generateLinearStepCPUUtilization(60, 60*0.1, -0.1)...)
+				return values
+			}(),
+			expectedMaxCPUUtilization: 4.171279690464254,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			scanner := &preRecordedUtilizationScanner{instantCPUValues: testData.instantCPUValues}
+
+			lim := NewUtilizationBasedLimiter(1, 0, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			lim.utilizationScanner = scanner
+
+			minCPUUtilization := float64(math.MaxInt64)
+			maxCPUUtilization := float64(math.MinInt64)
+
+			for i, ts := 0, time.Now(); i < len(testData.instantCPUValues); i++ {
+				_, _, currCPUUtilization := lim.compute(ts)
+				ts = ts.Add(time.Second)
+
+				// Keep track of the min/max CPU utilization as computed by the limiter.
 				if currCPUUtilization < minCPUUtilization {
 					minCPUUtilization = currCPUUtilization
 				}

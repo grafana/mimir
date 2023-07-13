@@ -133,7 +133,7 @@ func (l *UtilizationBasedLimiter) update(_ context.Context) error {
 
 // compute and return the current CPU and memory utilization.
 // This function must be called at a regular interval (resourceUtilizationUpdateInterval) to get a predictable behaviour.
-func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, currMemoryUtil uint64) {
+func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, currMemoryUtil uint64, altCPUUtil float64) {
 	cpuTime, currMemoryUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "err", err.Error())
@@ -154,7 +154,7 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 	l.lastUpdate = now
 	l.lastCPUTime = cpuTime
 
-	altCPUUtil := l.altCPUMovingAvg.Value()
+	altCPUUtil = l.altCPUMovingAvg.Value()
 	l.altCurrCPUUtil.Store(altCPUUtil)
 
 	// The CPU utilization moving average requires a warmup period before getting
