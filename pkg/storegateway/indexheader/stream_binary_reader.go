@@ -67,28 +67,28 @@ type StreamBinaryReader struct {
 
 // NewStreamBinaryReader loads or builds new index-header if not present on disk.
 func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (*StreamBinaryReader, error) {
-	binfn := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-	samplefn := filepath.Join(dir, id.String(), block.SampleFilename)
-	br, err := newFileStreamBinaryReader(binfn, samplefn, postingOffsetsInMemSampling, logger, metrics, cfg)
+	binPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
+	samplesPath := filepath.Join(dir, id.String(), block.SampleFilename)
+	br, err := newFileStreamBinaryReader(binPath, samplesPath, postingOffsetsInMemSampling, logger, metrics, cfg)
 	if err == nil {
 		return br, nil
 	}
 
-	level.Debug(logger).Log("msg", "failed to read index-header from disk; recreating", "path", binfn, "err", err)
+	level.Debug(logger).Log("msg", "failed to read index-header from disk; recreating", "path", binPath, "err", err)
 
 	start := time.Now()
-	if err := WriteBinary(ctx, bkt, id, binfn); err != nil {
+	if err := WriteBinary(ctx, bkt, id, binPath); err != nil {
 		return nil, fmt.Errorf("cannot write index header: %w", err)
 	}
 
-	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
-	return newFileStreamBinaryReader(binfn, samplefn, postingOffsetsInMemSampling, logger, metrics, cfg)
+	level.Debug(logger).Log("msg", "built index-header file", "path", binPath, "elapsed", time.Since(start))
+	return newFileStreamBinaryReader(binPath, samplesPath, postingOffsetsInMemSampling, logger, metrics, cfg)
 }
 
 // newFileStreamBinaryReader loads index-header samples from disk or constructs it from the index-header if not available.
-func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+func newFileStreamBinaryReader(binPath string, samplesPath string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
-		factory: streamencoding.NewDecbufFactory(binpath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
+		factory: streamencoding.NewDecbufFactory(binPath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
 	}
 
 	// Create a new raw decoding buffer with access to the entire index-header file to
@@ -130,13 +130,13 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	}
 
 	// Unmarshal samples from disk.
-	sampleData, err := os.ReadFile(samplepath)
+	sampleData, err := os.ReadFile(samplesPath)
 	if err != nil && !os.IsNotExist(err) {
 		level.Warn(logger).Log("msg", "failed to read index-header samples from disk; recreating", "err", err)
 	}
 	if err != nil || r.indexVersion == index.FormatV1 {
 		// If samples are not on disk, construct samples and write to disk.
-		level.Debug(logger).Log("msg", "constructing index-header samples", "path", samplepath)
+		level.Debug(logger).Log("msg", "constructing index-header samples", "path", samplesPath)
 
 		r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
 		if err != nil {
@@ -150,15 +150,15 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 		// Write sampled index-header to disk; support only for v2.
 		if r.indexVersion == index.FormatV2 {
-			if err := writeSamplesToFile(samplepath, r); err != nil {
-				return nil, fmt.Errorf("cannot write samples to disk: %w", err)
+			if err := writeSamplesToFile(samplesPath, r); err != nil {
+				return nil, fmt.Errorf("cannot write index-header samples to disk: %w", err)
 			}
 		}
 
-		level.Debug(logger).Log("msg", "built index-header samples file", "path", samplepath)
+		level.Debug(logger).Log("msg", "built index-header samples file", "path", samplesPath)
 	} else {
-		// Otherwise, read persisted sample from disk to memory.
-		level.Debug(logger).Log("msg", "reading from index-header samples file", "path", samplepath)
+		// Otherwise, read persisted samples from disk to memory.
+		level.Debug(logger).Log("msg", "reading from index-header samples file", "path", samplesPath)
 
 		samples := &indexheaderpb.Samples{}
 		if err := samples.Unmarshal(sampleData); err != nil {
@@ -192,8 +192,8 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 	return r, err
 }
 
-// writeSamplesToFile uses protocol buffer to write StreamBinaryReader to disk at samplepath.
-func writeSamplesToFile(samplepath string, reader *StreamBinaryReader) error {
+// writeSamplesToFile uses protocol buffer to write StreamBinaryReader to disk at samplesPath.
+func writeSamplesToFile(samplesPath string, reader *StreamBinaryReader) error {
 	samples := &indexheaderpb.Samples{}
 
 	samples.Symbols = reader.symbols.NewSymbolSample()
@@ -204,7 +204,7 @@ func writeSamplesToFile(samplepath string, reader *StreamBinaryReader) error {
 		return fmt.Errorf("failed to encode index-header samples: %w", err)
 	}
 
-	if err := os.WriteFile(samplepath, out, 0700); err != nil {
+	if err := os.WriteFile(samplesPath, out, 0600); err != nil {
 		return fmt.Errorf("failed to write index-header samples file: %w", err)
 	}
 

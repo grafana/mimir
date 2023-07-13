@@ -60,6 +60,7 @@ func NewSymbolsFromSamples(factory *streamencoding.DecbufFactory, symbols *index
 	return s, nil
 }
 
+// NewSymbolSample loads all symbols data into an index-header sample to be persisted to disk
 func (s *Symbols) NewSymbolSample() (samples *indexheaderpb.Symbols) {
 	sampleSymbols := &indexheaderpb.Symbols{}
 

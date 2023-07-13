@@ -593,6 +593,7 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
+// NewPostingOffsetTableSample loads all postings offset table data into an index-header sample to be persisted to disk
 func (t *PostingOffsetTableV2) NewPostingOffsetTableSample() (table *indexheaderpb.PostingOffsetTable) {
 	samples := &indexheaderpb.PostingOffsetTable{
 		Postings: make(map[string]*indexheaderpb.PostingValueOffsets, len(t.postings)),

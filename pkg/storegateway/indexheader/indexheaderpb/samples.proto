@@ -14,8 +14,8 @@ option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 
 message Samples {
-	Symbols symbols = 3;
-	PostingOffsetTable postingsOffsetTable = 4;
+	Symbols symbols = 1;
+	PostingOffsetTable postingsOffsetTable = 2;
 }
 
 message Symbols {
