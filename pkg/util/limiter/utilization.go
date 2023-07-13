@@ -11,6 +11,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/procfs"
 	"go.uber.org/atomic"
 
@@ -64,10 +66,12 @@ type UtilizationBasedLimiter struct {
 	lastUpdate     time.Time
 	cpuMovingAvg   *math.EwmaRate
 	limitingReason atomic.String
+	currCPUUtil    atomic.Float64
+	currMemoryUtil atomic.Uint64
 }
 
 // NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
-func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log.Logger) *UtilizationBasedLimiter {
+func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log.Logger, reg prometheus.Registerer) *UtilizationBasedLimiter {
 	// Calculate alpha for a minute long window
 	// https://github.com/VividCortex/ewma#choosing-alpha
 	alpha := 2 / (resourceUtilizationSlidingWindow.Seconds()/resourceUtilizationUpdateInterval.Seconds() + 1)
@@ -79,6 +83,22 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log
 		cpuMovingAvg: math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
 	}
 	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.starting, l.update, nil)
+
+	if reg != nil {
+		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "utilization_limiter_current_cpu_load",
+			Help: "Current average CPU load calculated by utilization based limiter.",
+		}, func() float64 {
+			return l.currCPUUtil.Load()
+		})
+		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "utilization_limiter_current_memory_utilization",
+			Help: "Current memory utilization calculated by utilization based limiter.",
+		}, func() float64 {
+			return float64(l.currMemoryUtil.Load())
+		})
+	}
+
 	return l
 }
 
@@ -116,6 +136,8 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 		return
 	}
 
+	l.currMemoryUtil.Store(currMemoryUtil)
+
 	// Add the instant CPU utilization to the moving average. The instant CPU
 	// utilization can only be computed starting from the 2nd tick.
 	if prevUpdate, prevCPUTime := l.lastUpdate, l.lastCPUTime; !prevUpdate.IsZero() {
@@ -134,6 +156,7 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 		l.firstUpdate = now
 	} else if now.Sub(l.firstUpdate) >= resourceUtilizationSlidingWindow {
 		currCPUUtil = float64(l.cpuMovingAvg.Rate()) / 100
+		l.currCPUUtil.Store(currCPUUtil)
 	}
 
 	var reason string
