@@ -316,7 +316,7 @@ Requires [authentication](#authentication).
 POST /otlp/v1/metrics
 ```
 
-Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md#OTLP:~:text=gRPC%20is%204317.-,OTLP/HTTP,-OTLP/HTTP%20uses). Experimental.
+Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md). Experimental.
 
 This endpoint accepts an HTTP POST request with a body that contains a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and optionally compressed with [GZIP](https://www.gnu.org/software/gzip/).
 You can find the definition of the protobuf message in [metrics.proto](https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto).
