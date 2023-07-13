@@ -22,9 +22,7 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
 
 ## Deprecating the Existing Config Option
 
-1. Move the config option description JSON object from its previous location to the "limits" block of `cmd/mimir/config-descriptor.json`.
-
-2. Locate the actual config option in code and mark it as deprecated by renaming the variable and marking it as `hidden` and `deprecated`.
+1. Locate the config option struct field in code and mark it as deprecated by renaming the variable and marking it as `hidden` and `deprecated`.
 
    In the example PR, the existing config option was a field of the `querymiddleware.Config` struct, declared in `pkg/frontend/querymiddleware/roundtrip.go`.
 
@@ -40,7 +38,7 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
    DeprecatedCacheUnalignedRequests bool `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
    ```
 
-3. Remove the binding of the CLI flag from the deprecated config option.
+2. Remove the binding of the CLI flag from the deprecated config option.
    The same flag will be bound to the new config option in the next step.
 
    Binding CLI flags to the config option occurs in the respective config struct's `RegisterFlags` method.
@@ -75,10 +73,23 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
    f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
    ```
 
-3. Expose the tenant-specific overrides for the new config option
+3. Expose the tenant-specific overrides for the new config option.
 
-   First add the tenant-specific method and docstring to the _interface_ which uses the config option.
-   The interface definition - which may need to be created - should be named `Limits` and define all related per-tenant config options.
+   First add the user-specific override method to the `validation.Overrides` struct in `pkg/util/validation/limits.go`:
+
+   ```go
+   func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
+       return o.getOverridesForUser(user).ResultsCacheForUnalignedQueryEnabled
+   }
+   ```
+
+   Some codepaths will use the `validation.Overrides` struct methods directly - if this is the case, skip to step 4.
+
+   Other codepaths define a smaller, more specific interface closer to the callsite for the required per-tenant options.
+   These interfaces are designed to be implemented by the subset of methods on `validation.Overrides` which are actually relevant to the callsite.
+
+   The interface is usually just named `Limits` or prefixed to be more specific to the callsite, as in `BlocksStoreLimits` or `RulesLimits`.
+   Search for all interfaces implemented by `validation.Overrides` to see examples.
 
    In the example PR, the config option was used in `pkg/frontend/querymiddleware/limits.go`.
    Interface `querymiddleware.Limits` already existed, so we only needed to add a new interface method:
@@ -90,17 +101,9 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
 
    This interface method may also need to be added to test mocks.
 
-   Then add the implementation of the interface method to the `validation.Overrides` struct in `pkg/util/validation/limits.go`:
+4. Decide how to consume the option when multi-tenant paths have different limits. _(Multi-tenant codepaths only)_
 
-   ```go
-   func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
-       return o.getOverridesForUser(user).ResultsCacheForUnalignedQueryEnabled
-   }
-   ```
-
-   This ensures that the `Overrides` struct, which holds any tenant-specific runtime config, will implement the `Limits` interface needed for your codepath.
-
-4. Decide how to consume the option when multi-tenant paths have different limits.
+   Currently, only the read/query path has multi-tenant codepaths. If the limit being migrated is not in the read path, skip to the next section.
 
    Multi-tenant codepaths using limits can involve a mix of tenants using limits and tenants which have varying tenant-specific overrides.
    These codepaths may need to determine whether to take a largest, smallest, or other value from the varied tenant limits.
@@ -122,7 +125,7 @@ We will use the [Mimir PR #5312](https://github.com/grafana/mimir/pull/5312) as 
 
    Similar helper functions may already exist for similar purposes: `SmallestPositiveNonZeroIntPerTenant`, `LargestPositiveNonZeroDurationPerTenant`, etc.
 
-5. Consume the overrides with the multiple tenant limits.
+5. Consume the overrides with the multiple tenant limits. _(Multi-tenant codepaths only)_
 
    Combining our work from steps 4 and 5 allows us to actually use the limits & overrides wherever they are needed in a multi-tenant codepath:
 
