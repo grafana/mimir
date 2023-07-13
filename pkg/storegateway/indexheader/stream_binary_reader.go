@@ -136,43 +136,13 @@ func newFileStreamBinaryReader(binPath string, samplesPath string, postingOffset
 	}
 	if err != nil || r.indexVersion == index.FormatV1 {
 		// If samples are not on disk, construct samples and write to disk.
-		level.Debug(logger).Log("msg", "constructing index-header samples", "path", samplesPath)
-
-		r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
-		if err != nil {
-			return nil, fmt.Errorf("cannot load symbols: %w", err)
+		if err = r.sampleHeader(logger, samplesPath, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
+			return nil, fmt.Errorf("cannot sample index-header to disk: %w", err)
 		}
-
-		r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
-		if err != nil {
-			return nil, fmt.Errorf("cannot load postings offset table: %w", err)
-		}
-
-		// Write sampled index-header to disk; support only for v2.
-		if r.indexVersion == index.FormatV2 {
-			if err := writeSamplesToFile(samplesPath, r); err != nil {
-				return nil, fmt.Errorf("cannot write index-header samples to disk: %w", err)
-			}
-		}
-
-		level.Debug(logger).Log("msg", "built index-header samples file", "path", samplesPath)
 	} else {
 		// Otherwise, read persisted samples from disk to memory.
-		level.Debug(logger).Log("msg", "reading from index-header samples file", "path", samplesPath)
-
-		samples := &indexheaderpb.Samples{}
-		if err := samples.Unmarshal(sampleData); err != nil {
-			return nil, fmt.Errorf("failed to decode index-header samples file: %w", err)
-		}
-
-		r.symbols, err = streamindex.NewSymbolsFromSamples(r.factory, samples.Symbols, r.indexVersion, int(r.toc.Symbols))
-		if err != nil {
-			return nil, fmt.Errorf("cannot load symbols: %w", err)
-		}
-
-		r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSamples(r.factory, samples.PostingsOffsetTable, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
-		if err != nil {
-			return nil, fmt.Errorf("cannot load postings offset table: %w", err)
+		if err = r.restoreSampleFromHeader(logger, samplesPath, sampleData, postingOffsetsInMemSampling); err != nil {
+			return nil, fmt.Errorf("cannot load sampled index-header from disk: %w", err)
 		}
 	}
 
@@ -190,6 +160,54 @@ func newFileStreamBinaryReader(binPath string, samplesPath string, postingOffset
 	}
 
 	return r, err
+}
+
+// restoreSampleFromHeader loads in sampled index-header from disk.
+func (r *StreamBinaryReader) restoreSampleFromHeader(logger log.Logger, samplesPath string, sampleData []byte, postingOffsetsInMemSampling int) (err error) {
+	level.Debug(logger).Log("msg", "reading from index-header samples file", "path", samplesPath)
+
+	samples := &indexheaderpb.Samples{}
+	if err := samples.Unmarshal(sampleData); err != nil {
+		return fmt.Errorf("failed to decode index-header samples file: %w", err)
+	}
+
+	r.symbols, err = streamindex.NewSymbolsFromSamples(r.factory, samples.Symbols, r.indexVersion, int(r.toc.Symbols))
+	if err != nil {
+		return fmt.Errorf("cannot load symbols from sampled index-header: %w", err)
+	}
+
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSamples(r.factory, samples.PostingsOffsetTable, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
+	if err != nil {
+		return fmt.Errorf("cannot load postings offset table from sampled index-header: %w", err)
+	}
+
+	return nil
+}
+
+// sampleHeader samples index-header and writes to disk.
+func (r *StreamBinaryReader) sampleHeader(logger log.Logger, samplesPath string, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (err error) {
+	level.Debug(logger).Log("msg", "constructing index-header samples", "path", samplesPath)
+
+	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
+	if err != nil {
+		return fmt.Errorf("cannot load symbols from index-header: %w", err)
+	}
+
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
+	if err != nil {
+		return fmt.Errorf("cannot load postings offset table from index-header: %w", err)
+	}
+
+	// Write sampled index-header to disk; support only for v2.
+	if r.indexVersion == index.FormatV2 {
+		if err := writeSamplesToFile(samplesPath, r); err != nil {
+			return fmt.Errorf("cannot write index-header samples to disk: %w", err)
+		}
+	}
+
+	level.Debug(logger).Log("msg", "built index-header samples file", "path", samplesPath)
+
+	return nil
 }
 
 // writeSamplesToFile uses protocol buffer to write StreamBinaryReader to disk at samplesPath.
