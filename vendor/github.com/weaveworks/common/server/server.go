@@ -26,7 +26,6 @@ import (
 
 	"github.com/weaveworks/common/httpgrpc"
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
-	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/signals"
@@ -178,6 +177,14 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
 }
 
+func (cfg *Config) registererOrDefault() prometheus.Registerer {
+	// If user doesn't supply a Registerer/gatherer, use Prometheus' by default.
+	if cfg.Registerer != nil {
+		return cfg.Registerer
+	}
+	return prometheus.DefaultRegisterer
+}
+
 // Server wraps a HTTP and gRPC server, and some common initialization.
 //
 // Servers will be automatically instrumented for Prometheus metrics.
@@ -202,8 +209,20 @@ type Server struct {
 	Gatherer   prometheus.Gatherer
 }
 
-// New makes a new Server
+// New makes a new Server. It will panic if the metrics cannot be registered.
 func New(cfg Config) (*Server, error) {
+	metrics := NewServerMetrics(cfg)
+	metrics.MustRegister(cfg.registererOrDefault())
+	return newServer(cfg, metrics)
+}
+
+// NewWithMetrics makes a new Server using the provided Metrics. It will not attempt to register the metrics,
+// the user is responsible for doing so.
+func NewWithMetrics(cfg Config, metrics *Metrics) (*Server, error) {
+	return newServer(cfg, metrics)
+}
+
+func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	// If user doesn't supply a logging implementation, by default instantiate
 	// logrus.
 	log := cfg.Log
@@ -211,29 +230,10 @@ func New(cfg Config) (*Server, error) {
 		log = logging.NewLogrus(cfg.LogLevel)
 	}
 
-	// If user doesn't supply a registerer/gatherer, use Prometheus' by default.
-	reg := cfg.Registerer
-	if reg == nil {
-		reg = prometheus.DefaultRegisterer
-	}
 	gatherer := cfg.Gatherer
 	if gatherer == nil {
 		gatherer = prometheus.DefaultGatherer
 	}
-
-	tcpConnections := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: cfg.MetricsNamespace,
-		Name:      "tcp_connections",
-		Help:      "Current number of accepted TCP connections.",
-	}, []string{"protocol"})
-	reg.MustRegister(tcpConnections)
-
-	tcpConnectionsLimit := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: cfg.MetricsNamespace,
-		Name:      "tcp_connections_limit",
-		Help:      "The max number of TCP connections that can be accepted (0 means no limit).",
-	}, []string{"protocol"})
-	reg.MustRegister(tcpConnectionsLimit)
 
 	network := cfg.HTTPListenNetwork
 	if network == "" {
@@ -244,9 +244,9 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	httpListener = middleware.CountingListener(httpListener, tcpConnections.WithLabelValues("http"))
+	httpListener = middleware.CountingListener(httpListener, metrics.TcpConnections.WithLabelValues("http"))
 
-	tcpConnectionsLimit.WithLabelValues("http").Set(float64(cfg.HTTPConnLimit))
+	metrics.TcpConnectionsLimit.WithLabelValues("http").Set(float64(cfg.HTTPConnLimit))
 	if cfg.HTTPConnLimit > 0 {
 		httpListener = netutil.LimitListener(httpListener, cfg.HTTPConnLimit)
 	}
@@ -268,9 +268,9 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	grpcListener = middleware.CountingListener(grpcListener, tcpConnections.WithLabelValues("grpc"))
+	grpcListener = middleware.CountingListener(grpcListener, metrics.TcpConnections.WithLabelValues("grpc"))
 
-	tcpConnectionsLimit.WithLabelValues("grpc").Set(float64(cfg.GRPCConnLimit))
+	metrics.TcpConnectionsLimit.WithLabelValues("grpc").Set(float64(cfg.GRPCConnLimit))
 	if cfg.GRPCConnLimit > 0 {
 		grpcListener = netutil.LimitListener(grpcListener, cfg.GRPCConnLimit)
 	}
@@ -316,41 +316,6 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 
-	// Prometheus histograms for requests.
-	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:                       cfg.MetricsNamespace,
-		Name:                            "request_duration_seconds",
-		Help:                            "Time (in seconds) spent serving HTTP requests.",
-		Buckets:                         instrument.DefBuckets,
-		NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,
-		NativeHistogramMaxBucketNumber:  100,
-		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"method", "route", "status_code", "ws"})
-	reg.MustRegister(requestDuration)
-
-	receivedMessageSize := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: cfg.MetricsNamespace,
-		Name:      "request_message_bytes",
-		Help:      "Size (in bytes) of messages received in the request.",
-		Buckets:   middleware.BodySizeBuckets,
-	}, []string{"method", "route"})
-	reg.MustRegister(receivedMessageSize)
-
-	sentMessageSize := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: cfg.MetricsNamespace,
-		Name:      "response_message_bytes",
-		Help:      "Size (in bytes) of messages sent in response.",
-		Buckets:   middleware.BodySizeBuckets,
-	}, []string{"method", "route"})
-	reg.MustRegister(sentMessageSize)
-
-	inflightRequests := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: cfg.MetricsNamespace,
-		Name:      "inflight_requests",
-		Help:      "Current number of inflight requests.",
-	}, []string{"method", "route"})
-	reg.MustRegister(inflightRequests)
-
 	log.WithField("http", httpListener.Addr()).WithField("grpc", grpcListener.Addr()).Infof("server listening on addresses")
 
 	// Setup gRPC server
@@ -362,14 +327,14 @@ func New(cfg Config) (*Server, error) {
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,
 		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
-		middleware.UnaryServerInstrumentInterceptor(requestDuration),
+		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration),
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
 
 	grpcStreamMiddleware := []grpc.StreamServerInterceptor{
 		serverLog.StreamServerInterceptor,
 		otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer()),
-		middleware.StreamServerInstrumentInterceptor(requestDuration),
+		middleware.StreamServerInstrumentInterceptor(metrics.RequestDuration),
 	}
 	grpcStreamMiddleware = append(grpcStreamMiddleware, cfg.GRPCStreamMiddleware...)
 
@@ -394,7 +359,11 @@ func New(cfg Config) (*Server, error) {
 		grpc.MaxRecvMsgSize(cfg.GPRCServerMaxRecvMsgSize),
 		grpc.MaxSendMsgSize(cfg.GRPCServerMaxSendMsgSize),
 		grpc.MaxConcurrentStreams(uint32(cfg.GPRCServerMaxConcurrentStreams)),
-		grpc.StatsHandler(middleware.NewStatsHandler(receivedMessageSize, sentMessageSize, inflightRequests)),
+		grpc.StatsHandler(middleware.NewStatsHandler(
+			metrics.ReceivedMessageSize,
+			metrics.SentMessageSize,
+			metrics.InflightRequests,
+		)),
 	}
 	grpcOptions = append(grpcOptions, cfg.GRPCOptions...)
 	if grpcTLSConfig != nil {
@@ -428,18 +397,21 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 
+	defaultLogMiddleware := middleware.NewLogMiddleware(log, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, sourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
+	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
+
 	defaultHTTPMiddleware := []middleware.Interface{
 		middleware.Tracer{
 			RouteMatcher: router,
 			SourceIPs:    sourceIPs,
 		},
-		middleware.NewLogMiddleware(log, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, sourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ",")),
+		defaultLogMiddleware,
 		middleware.Instrument{
 			RouteMatcher:     router,
-			Duration:         requestDuration,
-			RequestBodySize:  receivedMessageSize,
-			ResponseBodySize: sentMessageSize,
-			InflightRequests: inflightRequests,
+			Duration:         metrics.RequestDuration,
+			RequestBodySize:  metrics.ReceivedMessageSize,
+			ResponseBodySize: metrics.SentMessageSize,
+			InflightRequests: metrics.InflightRequests,
 		},
 	}
 	var httpMiddleware []middleware.Interface
@@ -477,7 +449,7 @@ func New(cfg Config) (*Server, error) {
 		GRPC:             grpcServer,
 		GRPCOnHTTPServer: grpcOnHttpServer,
 		Log:              log,
-		Registerer:       reg,
+		Registerer:       cfg.registererOrDefault(),
 		Gatherer:         gatherer,
 	}, nil
 }

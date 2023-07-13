@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/middleware"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -681,7 +682,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	defer pushReq.CleanUp()
 
 	if err := i.checkRunning(); err != nil {
-		return nil, err
+		return nil, middleware.DoNotLogError{Err: err}
 	}
 
 	// We will report *this* request in the error too.
