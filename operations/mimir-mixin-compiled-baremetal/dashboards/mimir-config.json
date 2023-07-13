@@ -70,8 +70,7 @@
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "sha256:{{sha256}}",
-                        "legendLink": null,
-                        "step": 10
+                        "legendLink": null
                      }
                   ],
                   "thresholds": [ ],
@@ -158,8 +157,7 @@
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "sha256:{{sha256}}",
-                        "legendLink": null,
-                        "step": 10
+                        "legendLink": null
                      }
                   ],
                   "thresholds": [ ],

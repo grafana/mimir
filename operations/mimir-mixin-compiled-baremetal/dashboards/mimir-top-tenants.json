@@ -132,8 +132,7 @@
                         "instant": true,
                         "intervalFactor": 2,
                         "legendFormat": "",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      }
                   ],
                   "thresholds": [ ],
@@ -260,8 +259,7 @@
                         "instant": true,
                         "intervalFactor": 2,
                         "legendFormat": "",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      }
                   ],
                   "thresholds": [ ],
@@ -349,8 +347,7 @@
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ user }}",
-                        "legendLink": null,
-                        "step": 10
+                        "legendLink": null
                      }
                   ],
                   "thresholds": [ ],
@@ -476,8 +473,7 @@
                         "instant": true,
                         "intervalFactor": 2,
                         "legendFormat": "",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      }
                   ],
                   "thresholds": [ ],
@@ -565,8 +561,7 @@
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ user }}",
-                        "legendLink": null,
-                        "step": 10
+                        "legendLink": null
                      }
                   ],
                   "thresholds": [ ],
@@ -692,8 +687,7 @@
                         "instant": true,
                         "intervalFactor": 2,
                         "legendFormat": "",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      }
                   ],
                   "thresholds": [ ],
@@ -781,8 +775,7 @@
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ user }}",
-                        "legendLink": null,
-                        "step": 10
+                        "legendLink": null
                      }
                   ],
                   "thresholds": [ ],
@@ -908,8 +901,7 @@
                         "instant": true,
                         "intervalFactor": 2,
                         "legendFormat": "",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      }
                   ],
                   "thresholds": [ ],
@@ -1036,8 +1028,7 @@
                         "instant": true,
                         "intervalFactor": 2,
                         "legendFormat": "",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      }
                   ],
                   "thresholds": [ ],
@@ -1164,8 +1155,7 @@
                         "instant": true,
                         "intervalFactor": 2,
                         "legendFormat": "",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      }
                   ],
                   "thresholds": [ ],
@@ -1292,8 +1282,7 @@
                         "instant": true,
                         "intervalFactor": 2,
                         "legendFormat": "",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      }
                   ],
                   "thresholds": [ ],

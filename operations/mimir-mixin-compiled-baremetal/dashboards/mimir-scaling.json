@@ -206,8 +206,7 @@
                         "instant": true,
                         "intervalFactor": 2,
                         "legendFormat": "",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      }
                   ],
                   "thresholds": [ ],
