@@ -69,7 +69,7 @@ func TestStreamBinaryReader_ShouldBuildSamplesFromFileSimple(t *testing.T) {
 
 	// Checks logs for order of operations: build index-header -> build sample -> read samples.
 	t.Log(logger.logs)
-	require.ElementsMatch(t, []string{
+	require.Equal(t, []string{
 		"level=debug msg=failed to read index-header from disk; recreating",
 		"level=debug msg=built index-header file",
 		"level=debug msg=constructing index-header samples",
@@ -94,11 +94,14 @@ func TestStreamBinaryReader_CheckSamplesCorrectnessExtensive(t *testing.T) {
 
 			nameSymbols := generateSymbols("name", nameCount)
 			valueSymbols := generateSymbols("value", valueCount)
-			blockID, err := block.CreateBlock(ctx, tmpDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
-			require.NoError(t, err)
-			require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 			t.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(t *testing.T) {
+				t.Parallel()
+
+				blockID, err := block.CreateBlock(ctx, tmpDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+				require.NoError(t, err)
+				require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+
 				indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, blockID.String(), block.IndexFilename))
 				require.NoError(t, err)
 				requireCleanup(t, indexFile.Close)

@@ -145,7 +145,7 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 		r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot load postings offset table: %w", err)
 		}
 
 		// Write sampled index-header to disk; support only for v2.
@@ -172,13 +172,13 @@ func newFileStreamBinaryReader(binpath string, samplepath string, postingOffsets
 
 		r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSamples(r.factory, samples.PostingsOffsetTable, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot load postings offset table: %w", err)
 		}
 	}
 
 	labelNames, err := r.postingsOffsetTable.LabelNames()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot load label names from postings offset table: %w", err)
 	}
 
 	r.nameSymbols = make(map[uint32]string, len(labelNames))

@@ -2,7 +2,7 @@
 
 syntax = "proto3";
 
-package samples;
+package indexheaderpb;
 
 option go_package = "indexheaderpb";
 
