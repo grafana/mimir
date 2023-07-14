@@ -62,7 +62,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
                                 # HELP utilization_limiter_current_cpu_load Current average CPU load calculated by utilization based limiter.
                                 # TYPE utilization_limiter_current_cpu_load gauge
             	           	utilization_limiter_current_cpu_load 0.10803555562923002
-            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory utilization calculated by utilization based limiter.
+            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
             	           	utilization_limiter_current_memory_usage_bytes 0
 	`)))
@@ -87,7 +87,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
                                 # HELP utilization_limiter_current_cpu_load Current average CPU load calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_cpu_load gauge
             	           	utilization_limiter_current_cpu_load  0.12581711205891943
-            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory utilization calculated by utilization based limiter.
+            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
             	           	utilization_limiter_current_memory_usage_bytes 0
 		`)))
@@ -112,7 +112,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
                                 # HELP utilization_limiter_current_cpu_load Current average CPU load calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_cpu_load gauge
             	           	utilization_limiter_current_cpu_load 0
-            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory utilization calculated by utilization based limiter.
+            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
             	           	utilization_limiter_current_memory_usage_bytes 1.073741823e+09
 		`)))
@@ -133,7 +133,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
                                 # HELP utilization_limiter_current_cpu_load Current average CPU load calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_cpu_load gauge
             	           	utilization_limiter_current_cpu_load 0
-            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory utilization calculated by utilization based limiter.
+            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
             	           	utilization_limiter_current_memory_usage_bytes 1.073741824e+09
 		`)))

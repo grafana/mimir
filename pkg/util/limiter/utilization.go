@@ -93,7 +93,7 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log
 		})
 		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "utilization_limiter_current_memory_usage_bytes",
-			Help: "Current memory utilization calculated by utilization based limiter.",
+			Help: "Current memory usage calculated by utilization based limiter.",
 		}, func() float64 {
 			return float64(l.currMemoryUtil.Load())
 		})
