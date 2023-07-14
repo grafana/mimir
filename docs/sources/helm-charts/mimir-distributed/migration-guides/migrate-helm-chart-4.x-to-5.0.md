@@ -17,12 +17,13 @@ The `mimir-distributed` Helm chart version 5.0 and later does not install [PodSe
 
 1. If `rbac.create` is `false` or `rbac.type` is `scc`, then there is nothing to do, skip the whole procedure.
 1. Choose between the following options:
+   1. If you are on Kubernetes version 1.22 or later and already have [Pod Security Admission](https://kubernetes.io/docs/concepts/security/pod-security-admission/) set up, you don't need to do anything and can upgrade to Helm chart version 5.0.
+   1. If you are on Kubernetes version 1.22 or later but don't have [Pod Security Admission](https://kubernetes.io/docs/concepts/security/pod-security-admission/) set up and want to upgrade to Kubernetes version 1.25 after this procedure, then follow the [Migrate to Kubernetes version 1.25]({{< relref "./migrate-to-kubernetes-version-1.25.md" >}}) guide.
    1. If you are on Kubernetes version 1.24 and want to keep using PodSecurityPolicy, then merge the following setting into your custom values file:
       ```yaml
       rbac:
         forcePSPOnKubernetes124: true
       ```
-   1. If you have Kubernetes version 1.22 or later and want to upgrade to Kubernetes version 1.25 after this procedure then follow the [Migrate to Kubernetes version 1.25]({{< relref "./migrate-to-kubernetes-version-1.25.md" >}}) guide.
 
 {{% admonition type="warning" %}}
 Using `rbac.forcePSPOnKubernetes124` equal `true` value prevents you from upgrading to Kubernetes version 1.25.
