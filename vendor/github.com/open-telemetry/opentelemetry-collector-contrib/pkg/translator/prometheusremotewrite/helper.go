@@ -175,7 +175,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	}
 
 	// map ensures no duplicate label name
-	l := make(map[string]prompb.Label, maxLabelCount)
+	l := make(map[string]string, maxLabelCount)
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
@@ -189,13 +189,9 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	for _, label := range labels {
 		var finalKey = prometheustranslator.NormalizeLabel(label.Name)
 		if existingLabel, alreadyExists := l[finalKey]; alreadyExists {
-			existingLabel.Value = existingLabel.Value + ";" + label.Value
-			l[finalKey] = existingLabel
+			l[finalKey] = existingLabel + ";" + label.Value
 		} else {
-			l[finalKey] = prompb.Label{
-				Name:  finalKey,
-				Value: label.Value,
-			}
+			l[finalKey] = label.Value
 		}
 	}
 
@@ -205,17 +201,11 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 		if serviceNamespace, ok := resource.Attributes().Get(conventions.AttributeServiceNamespace); ok {
 			val = fmt.Sprintf("%s/%s", serviceNamespace.AsString(), val)
 		}
-		l[model.JobLabel] = prompb.Label{
-			Name:  model.JobLabel,
-			Value: val,
-		}
+		l[model.JobLabel] = val
 	}
 	// Map service.instance.id to instance
 	if haveInstanceID {
-		l[model.InstanceLabel] = prompb.Label{
-			Name:  model.InstanceLabel,
-			Value: instance.AsString(),
-		}
+		l[model.InstanceLabel] = instance.AsString()
 	}
 	for key, value := range externalLabels {
 		// External labels have already been sanitized
@@ -223,10 +213,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 			// Skip external labels if they are overridden by metric attributes
 			continue
 		}
-		l[key] = prompb.Label{
-			Name:  key,
-			Value: value,
-		}
+		l[key] = value
 	}
 
 	for i := 0; i < len(extras); i += 2 {
@@ -242,15 +229,12 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 		if !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
 			name = prometheustranslator.NormalizeLabel(name)
 		}
-		l[name] = prompb.Label{
-			Name:  name,
-			Value: extras[i+1],
-		}
+		l[name] = extras[i+1]
 	}
 
 	s := make([]prompb.Label, 0, len(l))
-	for _, lb := range l {
-		s = append(s, lb)
+	for k, v := range l {
+		s = append(s, prompb.Label{Name: k, Value: v})
 	}
 
 	return s
