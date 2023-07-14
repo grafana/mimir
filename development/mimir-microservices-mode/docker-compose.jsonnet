@@ -54,9 +54,9 @@ std.manifestYamlDoc({
   gateway:: {
     'gateway-1': {
       image: 'us.gcr.io/kubernetes-dev/cloud-backend-gateway:master-a08103ce-WIP',
-      command: ['/usr/bin/cloud-backend-gateway', '-server.http-listen-port=7999', '-auth.disabled', '-cortex.oauth.enabled=false', '-auditlogging.enabled=false', '-cortex.distributor.endpoint=dns:///distributor:9000'],
+      command: ['/usr/bin/cloud-backend-gateway', '-server.http-listen-port=7999', '-auth.disabled', '-cortex.oauth.enabled=false', '-auditlogging.enabled=false', '-cortex.distributor.endpoint=dns:///distributor:9000', '-instrumentation.server.port=7998'],
       entrypoint: '',
-      ports: ['7999:7999'],
+      ports: ['7998:7998', '7999:7999'],
     },
   },
 

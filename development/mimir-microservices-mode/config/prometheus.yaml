@@ -7,6 +7,7 @@ scrape_configs:
   - job_name: mimir-microservices
     static_configs:
       - targets:
+          - 'gateway-1:7998'
           - 'distributor-1:8000'
           - 'distributor-2:8001'
           - 'ingester-1:8002'
@@ -46,6 +47,10 @@ remote_write:
     send_exemplars: true
     headers:
       X-Scope-OrgID: anonymous
+    queue_config:
+      min_shards: 100
+      max_shards: 100
+      max_samples_per_send: 10
 
 rule_files:
   - '/etc/mixin/mimir-alerts.yaml'

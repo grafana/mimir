@@ -1066,6 +1066,8 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 	}
 }
 
+var inflightPushes = atomic.NewInt64(0)
+
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := push.NewParsedRequest(req)
@@ -1081,6 +1083,15 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 // push does not check limits like ingestion rate and inflight requests.
 // These limits are checked either by Push gRPC method (when invoked via gRPC) or limitsMiddleware (when invoked via HTTP)
 func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+	inflightPushes.Inc()
+	defer inflightPushes.Dec()
+
+	rs, _ := d.distributorsRing.Get(0, ring.Read, nil, nil, nil)
+	if rs.Includes(d.distributorsLifecycler.GetInstanceAddr()) {
+		level.Info(d.log).Log("msg", fmt.Sprintf("Push() delayed (current inflight requests: %d)", inflightPushes.Load()))
+		time.Sleep(10 * time.Second)
+	}
+
 	cleanupInDefer := true
 	defer func() {
 		if cleanupInDefer {
