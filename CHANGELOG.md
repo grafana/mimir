@@ -47,7 +47,7 @@
 * [ENHANCEMENT] Ingester: added `cortex_ingester_shipper_last_successful_upload_timestamp_seconds` metric tracking the last successful TSDB block uploaded to the bucket (unix timestamp in seconds). #5396
 * [ENHANCEMENT] Ingester: Add two metrics tracking resource utilization calculated by utilization based limiter: #5496
   * `cortex_ingester_utilization_limiter_current_cpu_load`: The current exponential weighted moving average of the ingester's CPU load
-  * `cortex_ingester_utilization_limiter_current_memory_utilization`: The current ingester memory utilization
+  * `cortex_ingester_utilization_limiter_current_memory_usage_bytes`: The current ingester memory utilization
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377
