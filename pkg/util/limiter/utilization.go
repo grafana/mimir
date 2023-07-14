@@ -68,15 +68,13 @@ type UtilizationBasedLimiter struct {
 
 // NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
 func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log.Logger) *UtilizationBasedLimiter {
-	// Calculate alpha for a minute long window
-	// https://github.com/VividCortex/ewma#choosing-alpha
-	alpha := 2 / (resourceUtilizationSlidingWindow.Seconds()/resourceUtilizationUpdateInterval.Seconds() + 1)
 	l := &UtilizationBasedLimiter{
 		logger:      logger,
 		cpuLimit:    cpuLimit,
 		memoryLimit: memoryLimit,
 		// Use a minute long window, each sample being a second apart
-		cpuMovingAvg: math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
+		cpuMovingAvg: math.NewEWMARateFromWindow(int(resourceUtilizationSlidingWindow.Seconds()),
+			resourceUtilizationUpdateInterval),
 	}
 	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.starting, l.update, nil)
 	return l
