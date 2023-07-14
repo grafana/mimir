@@ -31,6 +31,16 @@ func NewEWMARate(alpha float64, interval time.Duration) *EwmaRate {
 	}
 }
 
+// NewEWMARateFromWindow returns an EwmaRate with alpha computed from window size and for provided interval.
+func NewEWMARateFromWindow(window int, interval time.Duration) *EwmaRate {
+	// https://github.com/VividCortex/ewma#choosing-alpha
+	alpha := float64(2) / float64(window+1)
+	return &EwmaRate{
+		alpha:    alpha,
+		interval: interval,
+	}
+}
+
 // Rate returns the per-second rate.
 func (r *EwmaRate) Rate() float64 {
 	r.mutex.RLock()
