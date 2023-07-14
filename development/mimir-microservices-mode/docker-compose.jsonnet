@@ -32,7 +32,7 @@ std.manifestYamlDoc({
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
   services:
     self.gateway +
-    self.distributors(2) +
+    self.distributors(10) +
     self.ingesters +
     self.read_components +  // Querier, Frontend and query-scheduler, if enabled.
     self.store_gateways +
