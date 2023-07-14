@@ -5,6 +5,7 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -68,6 +69,8 @@ type UtilizationBasedLimiter struct {
 	limitingReason atomic.String
 	currCPUUtil    atomic.Float64
 	currMemoryUtil atomic.Uint64
+	// XXX: For debugging CPU load EWMA calculation only, keep window of source samples
+	cpuSamples []float64
 }
 
 // NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
@@ -81,6 +84,7 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logger log
 		memoryLimit: memoryLimit,
 		// Use a minute long window, each sample being a second apart
 		cpuMovingAvg: math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
+		cpuSamples:   make([]float64, int(resourceUtilizationSlidingWindow.Seconds())),
 	}
 	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.starting, l.update, nil)
 
@@ -150,6 +154,10 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 		cpuUtil := (cpuTime - prevCPUTime) / now.Sub(prevUpdate).Seconds()
 		l.cpuMovingAvg.Add(int64(cpuUtil * 100))
 		l.cpuMovingAvg.Tick()
+		for i := 1; i < len(l.cpuSamples); i++ {
+			l.cpuSamples[i-1] = l.cpuSamples[i]
+		}
+		l.cpuSamples[len(l.cpuSamples)-1] = cpuUtil
 	}
 
 	l.lastUpdate = now
@@ -180,9 +188,16 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 	}
 
 	if enable {
+		// For debugging, dump the CPU samples the CPU load EWMA is based on
+		var srcSamples []string
+		for _, s := range l.cpuSamples {
+			srcSamples = append(srcSamples, fmt.Sprintf("%.2f", s))
+		}
+		srcSamplesStr := strings.Join(srcSamples, ",")
 		level.Info(l.logger).Log("msg", "enabling resource utilization based limiting",
 			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
-			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil))
+			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil),
+			"source_samples", srcSamplesStr)
 	} else {
 		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
 			"memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
