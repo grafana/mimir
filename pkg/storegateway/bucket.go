@@ -556,17 +556,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		err = status.Error(code, err.Error())
 	}()
 
-	if s.queryGate != nil {
-		tracing.DoWithSpan(srv.Context(), "store_query_gate_ismyturn", func(ctx context.Context, _ tracing.Span) {
-			err = s.queryGate.Start(srv.Context())
-		})
-		if err != nil {
-			return errors.Wrapf(err, "failed to wait for turn")
-		}
-
-		defer s.queryGate.Done()
-	}
-
 	matchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
@@ -614,6 +603,16 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	if !req.SkipChunks {
 		readers = newChunkReaders(chunkReaders)
 	}
+
+	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
+	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
+	tracing.DoWithSpan(ctx, "store_query_gate_ismyturn", func(ctx context.Context, _ tracing.Span) {
+		err = s.queryGate.Start(ctx)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "failed to wait for turn")
+	}
+	defer s.queryGate.Done()
 
 	seriesSet, resHints, err := s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	if err != nil {
