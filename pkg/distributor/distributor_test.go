@@ -788,7 +788,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				if push.expectedError == nil {
 					assert.Nil(t, err)
 				} else {
-					assert.Equal(t, push.expectedError, err)
+					assert.ErrorIs(t, err, push.expectedError)
 				}
 
 				d.ingestionRate.Tick()
@@ -2711,7 +2711,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	// If we HA deduplication runs before instance limits check,
 	// then this would set replica for the cluster.
 	_, err := wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica1))
-	require.Equal(t, errMaxInflightRequestsReached, err)
+	require.ErrorIs(t, err, errMaxInflightRequestsReached)
 
 	// Simulate no other inflight request.
 	ds[0].inflightPushRequests.Dec()
