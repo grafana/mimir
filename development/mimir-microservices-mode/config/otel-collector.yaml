@@ -2,7 +2,7 @@ exporters:
   prometheus:
     endpoint: :8083
   otlphttp:
-    endpoint: http://distributor-1:8000/otlp
+    endpoint: http://gateway-1:7999/otlp
 
 
 processors:

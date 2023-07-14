@@ -41,9 +41,11 @@ scrape_configs:
     scrape_classic_histograms: true
 
 remote_write:
-  - url: http://distributor-1:8000/api/v1/push
+  - url: http://gateway-1:7999/api/v1/push
     send_native_histograms: true
     send_exemplars: true
+    headers:
+      X-Scope-OrgID: anonymous
 
 rule_files:
   - '/etc/mixin/mimir-alerts.yaml'

@@ -31,37 +31,50 @@ std.manifestYamlDoc({
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
   services:
-    self.distributor +
+    self.gateway +
+    self.distributors(2) +
     self.ingesters +
     self.read_components +  // Querier, Frontend and query-scheduler, if enabled.
     self.store_gateways +
     self.compactor +
-    self.rulers(2) +
-    self.alertmanagers(3) +
+    //    self.rulers(2) +
+    //    self.alertmanagers(3) +
     self.nginx +
     self.minio +
     (if $._config.enable_prometheus then self.prometheus else {}) +
     self.grafana +
-    (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
-    (if $._config.enable_otel_collector then self.otel_collector else {}) +
-    self.jaeger +
-    (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
+    //    (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
+    //    (if $._config.enable_otel_collector then self.otel_collector else {}) +
+    //    self.jaeger +
+    //    (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
     (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
-    (if $._config.enable_load_generator then self.load_generator else {}) +
+    //    (if $._config.enable_load_generator then self.load_generator else {}) +
     {},
 
-  distributor:: {
-    'distributor-1': mimirService({
-      name: 'distributor-1',
+  gateway:: {
+    'gateway-1': {
+      image: 'us.gcr.io/kubernetes-dev/cloud-backend-gateway:master-a08103ce-WIP',
+      command: ['/usr/bin/cloud-backend-gateway', '-server.http-listen-port=7999', '-auth.disabled', '-cortex.oauth.enabled=false', '-auditlogging.enabled=false', '-cortex.distributor.endpoint=dns:///distributor:9000'],
+      entrypoint: '',
+      ports: ['7999:7999'],
+    },
+  },
+
+  distributors(replicas):: {
+    distributor: mimirService({
+      name: 'distributor',
       target: 'distributor',
       httpPort: 8000,
-    }),
 
-    'distributor-2': mimirService({
-      name: 'distributor-2',
-      target: 'distributor',
-      httpPort: 8001,
-    }),
+      // Do not publish ports otherwise they will conflict with 2+ replicas.
+      httpPortPublished: false,
+      memberlistBindPortPublished: false,
+      debugPortPublished: false,
+    }) + {
+      deploy: {
+        replicas: replicas,
+      },
+    },
   },
 
   ingesters:: {
@@ -172,11 +185,13 @@ std.manifestYamlDoc({
       target: error 'missing target',
       jaegerApp: self.target,
       httpPort: error 'missing httpPort',
+      httpPortPublished: true,
       grpcPort: self.httpPort + 1000,
       debugPort: self.httpPort + 10000,
+      debugPortPublished: true,
       // Extra arguments passed to Mimir command line.
       extraArguments: '',
-      dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor-1'] else []),
+      dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor'] else []),
       env: {
         JAEGER_AGENT_HOST: 'jaeger',
         JAEGER_AGENT_PORT: 6831,
@@ -187,6 +202,7 @@ std.manifestYamlDoc({
       extraVolumes: [],
       memberlistNodeName: self.jaegerApp,
       memberlistBindPort: self.httpPort + 2000,
+      memberlistBindPortPublished: true,
     },
 
     local options = defaultOptions + serviceOptions,
@@ -217,11 +233,10 @@ std.manifestYamlDoc({
     ],
     hostname: options.name,
     // Only publish HTTP and debug port, but not gRPC one.
-    ports: ['%d:%d' % [options.httpPort, options.httpPort]] +
-           ['%d:%d' % [options.memberlistBindPort, options.memberlistBindPort]] +
-           if $._config.debug then [
-             '%d:%d' % [options.debugPort, options.debugPort],
-           ] else [],
+    ports:
+      (if options.httpPortPublished then ['%d:%d' % [options.httpPort, options.httpPort]] else []) +
+      (if options.memberlistBindPortPublished then ['%d:%d' % [options.memberlistBindPort, options.memberlistBindPort]] else []) +
+      (if $._config.debug && options.debugPortPublished then ['%d:%d' % [options.debugPort, options.debugPort]] else []),
     depends_on: options.dependsOn,
     volumes: ['./config:/mimir/config', './activity:/activity'] + options.extraVolumes,
   },
@@ -241,7 +256,7 @@ std.manifestYamlDoc({
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
-        'DISTRIBUTOR_HOST=distributor-1:8000',
+        'DISTRIBUTOR_HOST=gateway:7999',
         'ALERT_MANAGER_HOST=alertmanager-1:8031',
         'RULER_HOST=ruler-1:8021',
         'QUERY_FRONTEND_HOST=query-frontend:8007',
@@ -358,7 +373,7 @@ std.manifestYamlDoc({
     'load-generator': {
       image: 'pracucci/cortex-load-generator:add-query-support-8633d4e',
       command: [
-        '--remote-url=http://distributor-2:8001/api/v1/push',
+        '--remote-url=http://gateway:7999/api/v1/push',
         '--remote-write-concurrency=5',
         '--remote-write-interval=10s',
         '--series-count=1000',

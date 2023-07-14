@@ -47,4 +47,6 @@ prometheus:
               replacement: '${1}'
 
       remote_write:
-        - url: http://distributor-1:8000/api/v1/push
+        - url: http://gateway-1:7999/api/v1/push
+          headers:
+            X-Scope-OrgID: anonymous
