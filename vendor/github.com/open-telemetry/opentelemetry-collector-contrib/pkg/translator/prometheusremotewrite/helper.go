@@ -160,8 +160,22 @@ func timeSeriesSignature(datatype string, labels *[]prompb.Label) string {
 // Unpaired string value is ignored. String pairs overwrites OTLP labels if collision happens, and the overwrite is
 // logged. Resultant label names are sanitized.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externalLabels map[string]string, extras ...string) []prompb.Label {
+	serviceName, haveServiceName := resource.Attributes().Get(conventions.AttributeServiceName)
+	instance, haveInstanceID := resource.Attributes().Get(conventions.AttributeServiceInstanceID)
+
+	// Calculate the maximum possible number of labels we could return so we can preallocate l
+	maxLabelCount := attributes.Len() + len(externalLabels) + len(extras)/2
+
+	if haveServiceName {
+		maxLabelCount++
+	}
+
+	if haveInstanceID {
+		maxLabelCount++
+	}
+
 	// map ensures no duplicate label name
-	l := map[string]prompb.Label{}
+	l := make(map[string]prompb.Label, maxLabelCount)
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
@@ -186,7 +200,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	}
 
 	// Map service.name + service.namespace to job
-	if serviceName, ok := resource.Attributes().Get(conventions.AttributeServiceName); ok {
+	if haveServiceName {
 		val := serviceName.AsString()
 		if serviceNamespace, ok := resource.Attributes().Get(conventions.AttributeServiceNamespace); ok {
 			val = fmt.Sprintf("%s/%s", serviceNamespace.AsString(), val)
@@ -197,7 +211,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 		}
 	}
 	// Map service.instance.id to instance
-	if instance, ok := resource.Attributes().Get(conventions.AttributeServiceInstanceID); ok {
+	if haveInstanceID {
 		l[model.InstanceLabel] = prompb.Label{
 			Name:  model.InstanceLabel,
 			Value: instance.AsString(),
