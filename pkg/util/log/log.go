@@ -60,6 +60,10 @@ func newBasicLogger(format logging.Format, buffered bool, sync bool) log.Logger 
 		writer = bufferedLogger
 	}
 
+	if sync {
+		writer = log.NewSyncWriter(writer)
+	}
+
 	if format.String() == "json" {
 		logger = log.NewJSONLogger(writer)
 	} else {
