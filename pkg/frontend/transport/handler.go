@@ -178,6 +178,9 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Ensure to close the request body reader.
 	defer func() { _ = r.Body.Close() }()
 
+	// Limit the read body size.
+	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
+
 	params, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
