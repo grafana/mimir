@@ -126,7 +126,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 }
 
-func TestReaderPool_LoadedBlock(t *testing.T) {
+func TestReaderPool_LoadedBlocks(t *testing.T) {
 	usedAt := time.Now()
 	id, err := ulid.New(ulid.Now(), rand.Reader)
 	require.NoError(t, err)
