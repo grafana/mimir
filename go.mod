@@ -21,7 +21,7 @@ require (
 	github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
 	github.com/hashicorp/golang-lru v0.6.0
 	github.com/json-iterator/go v1.1.12
-	github.com/minio/minio-go/v7 v7.0.45
+	github.com/minio/minio-go/v7 v7.0.60
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/oklog/ulid v1.3.1
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
@@ -182,8 +182,8 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
-	github.com/klauspost/compress v1.15.15 // indirect
-	github.com/klauspost/cpuid/v2 v2.1.1 // indirect
+	github.com/klauspost/compress v1.16.5 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.4 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -191,7 +191,7 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/miekg/dns v1.1.54 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/minio/sha256-simd v1.0.0 // indirect
+	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -207,7 +207,7 @@ require (
 	github.com/prometheus/exporter-toolkit v0.10.0 // indirect
 	github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be // indirect
 	github.com/rs/cors v1.9.0 // indirect
-	github.com/rs/xid v1.4.0 // indirect
+	github.com/rs/xid v1.5.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/sercand/kuberesolver/v4 v4.0.0 // indirect
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
