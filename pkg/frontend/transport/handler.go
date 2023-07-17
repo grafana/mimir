@@ -365,11 +365,3 @@ func httpRequestActivity(request *http.Request, requestParams url.Values) string
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
 	return strings.Join([]string{tenantID, request.Method, request.URL.Path, params}, " ")
 }
-
-func copyValues(src url.Values) url.Values {
-	dst := make(url.Values, len(src))
-	for k, vs := range src {
-		dst[k] = append([]string(nil), vs...)
-	}
-	return dst
-}
