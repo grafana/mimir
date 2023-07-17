@@ -121,13 +121,13 @@ func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
 }
 
 func (l *UtilizationBasedLimiter) update(_ context.Context) error {
-	l.compute(time.Now())
+	l.compute(time.Now)
 	return nil
 }
 
 // compute and return the current CPU and memory utilization.
 // This function must be called at a regular interval (resourceUtilizationUpdateInterval) to get a predictable behaviour.
-func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, currMemoryUtil uint64) {
+func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil float64, currMemoryUtil uint64) {
 	cpuTime, currMemoryUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "err", err.Error())
@@ -136,6 +136,9 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 		return
 	}
 
+	// Get wall time after CPU time, in case there's a delay before CPU time is returned,
+	// which would cause us to compute too high of a CPU load
+	now := nowFn()
 	l.currMemoryUtil.Store(currMemoryUtil)
 
 	// Add the instant CPU utilization to the moving average. The instant CPU
@@ -155,7 +158,7 @@ func (l *UtilizationBasedLimiter) compute(now time.Time) (currCPUUtil float64, c
 	if l.firstUpdate.IsZero() {
 		l.firstUpdate = now
 	} else if now.Sub(l.firstUpdate) >= resourceUtilizationSlidingWindow {
-		currCPUUtil = float64(l.cpuMovingAvg.Rate()) / 100
+		currCPUUtil = l.cpuMovingAvg.Rate() / 100
 		l.currCPUUtil.Store(currCPUUtil)
 	}
 
