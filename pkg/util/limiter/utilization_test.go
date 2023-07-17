@@ -30,30 +30,33 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 	}
 
 	tim := time.Now()
+	nowFn := func() time.Time {
+		return tim
+	}
 
 	t.Run("CPU based limiting should be enabled if set to a value greater than 0", func(t *testing.T) {
 		lim, _, reg := setup(t, 0.11, gigabyte)
 
 		// Warmup the CPU utilization.
 		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
-			lim.compute(tim)
+			lim.compute(nowFn)
 			tim = tim.Add(time.Second)
 		}
 
 		// The fake utilization scanner linearly increases CPU usage for a minute
 		for i := 0; i < 59; i++ {
-			lim.compute(tim)
+			lim.compute(nowFn)
 			tim = tim.Add(time.Second)
 			require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
 		}
-		lim.compute(tim)
+		lim.compute(nowFn)
 		tim = tim.Add(time.Second)
 		require.Equal(t, "cpu", lim.LimitingReason(), "Limiting should be enabled due to CPU")
 
 		// The fake utilization scanner drops CPU usage again after a minute, so we expect
 		// limiting to be disabled shortly.
 		for i := 0; i < 5; i++ {
-			lim.compute(tim)
+			lim.compute(nowFn)
 			tim = tim.Add(time.Second)
 		}
 		require.Empty(t, lim.LimitingReason(), "Limiting should be disabled again")
@@ -73,12 +76,12 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 
 		// Warmup the CPU utilization.
 		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
-			lim.compute(tim)
+			lim.compute(nowFn)
 			tim = tim.Add(time.Second)
 		}
 
 		for i := 0; i < 60; i++ {
-			lim.compute(tim)
+			lim.compute(nowFn)
 			tim = tim.Add(time.Second)
 			require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
 		}
@@ -97,15 +100,15 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 		lim, fakeScanner, reg := setup(t, 0.11, gigabyte)
 
 		// Compute the utilization a first time to warm up the limiter.
-		lim.compute(tim)
+		lim.compute(nowFn)
 
 		fakeScanner.memoryUtilization = gigabyte
-		lim.compute(tim)
+		lim.compute(nowFn)
 		tim = tim.Add(time.Second)
 		require.Equal(t, "memory", lim.LimitingReason(), "Limiting should be enabled due to memory")
 
 		fakeScanner.memoryUtilization = gigabyte - 1
-		lim.compute(tim)
+		lim.compute(nowFn)
 		require.Empty(t, lim.LimitingReason(), "Limiting should be disabled again")
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -122,10 +125,10 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 		lim, fakeScanner, reg := setup(t, 0.11, 0)
 
 		// Compute the utilization a first time to warm up the limiter.
-		lim.compute(tim)
+		lim.compute(nowFn)
 
 		fakeScanner.memoryUtilization = gigabyte
-		lim.compute(tim)
+		lim.compute(nowFn)
 		tim = tim.Add(time.Second)
 		require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
 
@@ -244,7 +247,9 @@ func TestUtilizationBasedLimiter_CPUUtilizationSensitivity(t *testing.T) {
 			maxCPUUtilization := float64(math.MinInt64)
 
 			for i, ts := 0, time.Now(); i < len(testData.instantCPUValues); i++ {
-				currCPUUtilization, _ := lim.compute(ts)
+				currCPUUtilization, _ := lim.compute(func() time.Time {
+					return ts
+				})
 				ts = ts.Add(time.Second)
 
 				// Keep track of the max CPU utilization as computed by the limiter.
