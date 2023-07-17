@@ -178,6 +178,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 
 	var expected string
 	// we know that there is only one lazyReader, hence just use formatter to set the ULID and timestamp.
+	require.Equal(t, 1, len(pool.lazyReaders), "expecting only one lazyReaders")
 	for r := range pool.lazyReaders {
 		expected = fmt.Sprintf(`{"header_last_used_time":{"%s":%d},"user_id":"anonymous"}`, r.blockID, r.usedAt.Load()/int64(time.Millisecond))
 	}
