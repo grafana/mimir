@@ -89,6 +89,7 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 
 	// move the written file to the actual path
 	finalPath := filepath.Join(persistDir, lazyLoadedHeadersListFile)
+	// we rely on the atomicity of this on Unix systems for this method to behave correctly
 	return os.Rename(tmpPath, finalPath)
 }
 
