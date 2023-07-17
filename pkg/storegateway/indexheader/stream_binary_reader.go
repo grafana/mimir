@@ -105,6 +105,8 @@ func newFileStreamBinaryReader(binPath string, samplesPath string, postingOffset
 		return nil, fmt.Errorf("invalid magic number %x", magic)
 	}
 
+	level.Debug(logger).Log("msg", "index header file size", "bytes", indexHeaderSize)
+
 	r.version = int(d.Byte())
 	r.indexVersion = int(d.Byte())
 
@@ -200,7 +202,7 @@ func (r *StreamBinaryReader) sampleHeader(logger log.Logger, samplesPath string,
 
 	// Write sampled index-header to disk; support only for v2.
 	if r.indexVersion == index.FormatV2 {
-		if err := writeSamplesToFile(samplesPath, r); err != nil {
+		if err := writeSamplesToFile(samplesPath, r, logger); err != nil {
 			return fmt.Errorf("cannot write index-header samples to disk: %w", err)
 		}
 	}
@@ -211,7 +213,7 @@ func (r *StreamBinaryReader) sampleHeader(logger log.Logger, samplesPath string,
 }
 
 // writeSamplesToFile uses protocol buffer to write StreamBinaryReader to disk at samplesPath.
-func writeSamplesToFile(samplesPath string, reader *StreamBinaryReader) error {
+func writeSamplesToFile(samplesPath string, reader *StreamBinaryReader, logger log.Logger) error {
 	samples := &indexheaderpb.Samples{}
 
 	samples.Symbols = reader.symbols.NewSymbolSample()
@@ -221,6 +223,8 @@ func writeSamplesToFile(samplesPath string, reader *StreamBinaryReader) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode index-header samples: %w", err)
 	}
+
+	level.Debug(logger).Log("msg", "index header sample file size", "bytes", len(out))
 
 	if err := os.WriteFile(samplesPath, out, 0600); err != nil {
 		return fmt.Errorf("failed to write index-header samples file: %w", err)

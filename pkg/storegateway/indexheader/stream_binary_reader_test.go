@@ -29,6 +29,10 @@ func (ml *inMemoryLogger) Log(keyvals ...interface{}) error {
 		k := keyvals[ix]
 		v := keyvals[ix+1]
 
+		// Don't log file size logs for readability.
+		if k == "bytes" {
+			return nil
+		}
 		// Only log level and msg fields for readability.
 		if k == "level" || k == "msg" {
 			log += fmt.Sprintf("%v=%v ", k, v)
@@ -68,7 +72,6 @@ func TestStreamBinaryReader_ShouldBuildSamplesFromFileSimple(t *testing.T) {
 	require.NoError(t, err)
 
 	// Checks logs for order of operations: build index-header -> build sample -> read samples.
-	t.Log(logger.logs)
 	require.Equal(t, []string{
 		"level=debug msg=failed to read index-header from disk; recreating",
 		"level=debug msg=built index-header file",
