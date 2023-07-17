@@ -141,7 +141,14 @@ func addExemplar(tsMap map[string]*prompb.TimeSeries, bucketBounds []bucketBound
 // the label slice should not contain duplicate label names; this method sorts the slice by label name before creating
 // the signature.
 func timeSeriesSignature(datatype string, labels *[]prompb.Label) string {
+	length := len(datatype)
+
+	for _, lb := range *labels {
+		length += 2 + len(lb.GetName()) + len(lb.GetValue())
+	}
+
 	b := strings.Builder{}
+	b.Grow(length)
 	b.WriteString(datatype)
 
 	sort.Sort(ByLabelName(*labels))
