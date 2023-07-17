@@ -165,7 +165,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			for reqName, reqData := range requestTypes {
-				for _, reqMethod := range []string{ /*http.MethodGet ,*/ http.MethodPost} {
+				for _, reqMethod := range []string{http.MethodGet, http.MethodPost} {
 					t.Run(fmt.Sprintf("%s (%s)", reqName, reqMethod), func(t *testing.T) {
 						// Mock the limits.
 						limits := multiTenantMockLimits{
