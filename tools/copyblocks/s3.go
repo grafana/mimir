@@ -137,7 +137,13 @@ func (bkt *s3Bucket) ListPrefix(ctx context.Context, prefix string, recursive bo
 		if obj.Err != nil {
 			return nil, obj.Err
 		}
-		result = append(result, obj.Key)
+		key := obj.Key
+		if strings.HasPrefix(key, prefix) {
+			key = strings.TrimPrefix(key, prefix)
+		} else {
+			return nil, errors.Errorf("listPrefix: path has invalid prefix: %v, expected prefix: %v", key, prefix)
+		}
+		result = append(result, key)
 	}
 	return result, ctx.Err()
 }
