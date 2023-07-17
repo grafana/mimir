@@ -262,6 +262,21 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 	timestamp := convertTimeStamp(pt.Timestamp())
 	// sum, count, and buckets of the histogram should append suffix to baseName
 	baseName := prometheustranslator.BuildPromCompliantName(metric, settings.Namespace)
+	baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels)
+
+	createLabels := func(nameSuffix string, extras ...string) []prompb.Label {
+		extraLabelCount := len(extras) / 2
+		labels := make([]prompb.Label, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
+		copy(labels, baseLabels)
+
+		for extrasIdx := 0; extrasIdx < extraLabelCount; extrasIdx++ {
+			labels = append(labels, prompb.Label{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
+		}
+
+		labels = append(labels, prompb.Label{Name: nameStr, Value: baseName + nameSuffix})
+
+		return labels
+	}
 
 	// If the sum is unset, it indicates the _sum metric point should be
 	// omitted
@@ -275,7 +290,7 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 			sum.Value = math.Float64frombits(value.StaleNaN)
 		}
 
-		sumlabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels, nameStr, baseName+sumStr)
+		sumlabels := createLabels(sumStr)
 		addSample(tsMap, sum, sumlabels, metric.Type().String())
 
 	}
@@ -289,7 +304,7 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 		count.Value = math.Float64frombits(value.StaleNaN)
 	}
 
-	countlabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels, nameStr, baseName+countStr)
+	countlabels := createLabels(countStr)
 	addSample(tsMap, count, countlabels, metric.Type().String())
 
 	// cumulative count for conversion to cumulative histogram
@@ -311,7 +326,7 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 			bucket.Value = math.Float64frombits(value.StaleNaN)
 		}
 		boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
-		labels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels, nameStr, baseName+bucketStr, leStr, boundStr)
+		labels := createLabels(bucketStr, leStr, boundStr)
 		sig := addSample(tsMap, bucket, labels, metric.Type().String())
 
 		bucketBounds = append(bucketBounds, bucketBoundsData{sig: sig, bound: bound})
@@ -325,7 +340,7 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 	} else {
 		infBucket.Value = float64(pt.Count())
 	}
-	infLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels, nameStr, baseName+bucketStr, leStr, pInfStr)
+	infLabels := createLabels(bucketStr, leStr, pInfStr)
 	sig := addSample(tsMap, infBucket, infLabels, metric.Type().String())
 
 	bucketBounds = append(bucketBounds, bucketBoundsData{sig: sig, bound: math.Inf(1)})
@@ -334,14 +349,8 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 	// add _created time series if needed
 	startTimestamp := pt.StartTimestamp()
 	if settings.ExportCreatedMetric && startTimestamp != 0 {
-		createdLabels := createAttributes(
-			resource,
-			pt.Attributes(),
-			settings.ExternalLabels,
-			nameStr,
-			baseName+createdSuffix,
-		)
-		addCreatedTimeSeriesIfNeeded(tsMap, createdLabels, startTimestamp, metric.Type().String())
+		labels := createLabels(createdSuffix)
+		addCreatedTimeSeriesIfNeeded(tsMap, labels, startTimestamp, metric.Type().String())
 	}
 }
 
@@ -452,6 +461,22 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 	timestamp := convertTimeStamp(pt.Timestamp())
 	// sum and count of the summary should append suffix to baseName
 	baseName := prometheustranslator.BuildPromCompliantName(metric, settings.Namespace)
+	baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels)
+
+	createLabels := func(name string, extras ...string) []prompb.Label {
+		extraLabelCount := len(extras) / 2
+		labels := make([]prompb.Label, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
+		copy(labels, baseLabels)
+
+		for extrasIdx := 0; extrasIdx < extraLabelCount; extrasIdx++ {
+			labels = append(labels, prompb.Label{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
+		}
+
+		labels = append(labels, prompb.Label{Name: nameStr, Value: name})
+
+		return labels
+	}
+
 	// treat sum as a sample in an individual TimeSeries
 	sum := &prompb.Sample{
 		Value:     pt.Sum(),
@@ -460,7 +485,7 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 	if pt.Flags().NoRecordedValue() {
 		sum.Value = math.Float64frombits(value.StaleNaN)
 	}
-	sumlabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels, nameStr, baseName+sumStr)
+	sumlabels := createLabels(baseName + sumStr)
 	addSample(tsMap, sum, sumlabels, metric.Type().String())
 
 	// treat count as a sample in an individual TimeSeries
@@ -471,7 +496,7 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 	if pt.Flags().NoRecordedValue() {
 		count.Value = math.Float64frombits(value.StaleNaN)
 	}
-	countlabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels, nameStr, baseName+countStr)
+	countlabels := createLabels(baseName + countStr)
 	addSample(tsMap, count, countlabels, metric.Type().String())
 
 	// process each percentile/quantile
@@ -485,20 +510,14 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 			quantile.Value = math.Float64frombits(value.StaleNaN)
 		}
 		percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
-		qtlabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels, nameStr, baseName, quantileStr, percentileStr)
+		qtlabels := createLabels(baseName, quantileStr, percentileStr)
 		addSample(tsMap, quantile, qtlabels, metric.Type().String())
 	}
 
 	// add _created time series if needed
 	startTimestamp := pt.StartTimestamp()
 	if settings.ExportCreatedMetric && startTimestamp != 0 {
-		createdLabels := createAttributes(
-			resource,
-			pt.Attributes(),
-			settings.ExternalLabels,
-			nameStr,
-			baseName+createdSuffix,
-		)
+		createdLabels := createLabels(baseName + createdSuffix)
 		addCreatedTimeSeriesIfNeeded(tsMap, createdLabels, startTimestamp, metric.Type().String())
 	}
 }
