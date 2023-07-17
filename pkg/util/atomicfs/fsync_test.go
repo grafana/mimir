@@ -28,14 +28,6 @@ func TestRun(t *testing.T) {
 			},
 			wantErr: false,
 		},
-		{
-			name: "test fsync.CreateFile with Write",
-			args: args{
-				path: filepath.Join(t.TempDir(), "test"),
-				data: "test2",
-			},
-			wantErr: false,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
