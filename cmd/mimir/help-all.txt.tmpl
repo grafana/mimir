@@ -1353,6 +1353,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when "token-generation-strategy" is set to "spread-minimizing".
   -ingester.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -ingester.ring.token-generation-can-join-check-enabled
+    	[experimental] True if ingesters should perform the token generator's CanJoin check before joining the ring. This check is token generator's implementation-specific.
   -ingester.ring.token-generation-strategy string
     	[experimental] Specifies the strategy used for generating tokens for ingesters. Supported values are: random,spread-minimizing. (default "random")
   -ingester.ring.tokens-file-path string

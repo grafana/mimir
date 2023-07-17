@@ -2564,6 +2564,17 @@
             },
             {
               "kind": "field",
+              "name": "token_generation_can_join_check_enabled",
+              "required": false,
+              "desc": "True if ingesters should perform the token generator's CanJoin check before joining the ring. This check is token generator's implementation-specific.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.ring.token-generation-can-join-check-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "spread_minimizing_zones",
               "required": false,
               "desc": "Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when \"token-generation-strategy\" is set to \"spread-minimizing\".",

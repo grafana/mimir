@@ -917,6 +917,12 @@ ring:
   # CLI flag: -ingester.ring.token-generation-strategy
   [token_generation_strategy: <string> | default = "random"]
 
+  # (experimental) True if ingesters should perform the token generator's
+  # CanJoin check before joining the ring. This check is token generator's
+  # implementation-specific.
+  # CLI flag: -ingester.ring.token-generation-can-join-check-enabled
+  [token_generation_can_join_check_enabled: <boolean> | default = false]
+
   # (experimental) Comma-separated list of zones in which spread minimizing
   # strategy is used for token generation. This value must include all zones in
   # which ingesters are deployed, and must not change over time. This
