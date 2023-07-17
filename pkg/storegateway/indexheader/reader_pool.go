@@ -6,6 +6,7 @@
 package indexheader
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -82,7 +83,7 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 		return err
 	}
 
-	if err := atomicfs.CreateFile(tmpPath, string(data)); err != nil {
+	if err := atomicfs.CreateFile(tmpPath, bytes.NewReader(data)); err != nil {
 		return err
 	}
 	defer os.Remove(tmpPath)

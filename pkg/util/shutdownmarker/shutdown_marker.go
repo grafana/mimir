@@ -5,6 +5,7 @@ package shutdownmarker
 import (
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/grafana/dskit/multierror"
@@ -18,7 +19,7 @@ const shutdownMarkerFilename = "shutdown-requested.txt"
 // going to be scaled down in the future. The presence of this file means that a component
 // should perform some operations specified by the component itself before being shutdown.
 func Create(p string) error {
-	return atomicfs.CreateFile(p, time.Now().UTC().Format(time.RFC3339))
+	return atomicfs.CreateFile(p, strings.NewReader(time.Now().UTC().Format(time.RFC3339)))
 }
 
 // Remove removes the shutdown marker file on the given path if it exists.

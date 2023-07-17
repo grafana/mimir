@@ -5,6 +5,7 @@ package atomicfs
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,7 +22,7 @@ func TestRun(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "test fsync.CreateFile with WriteString",
+			name: "test fsync.CreateFile",
 			args: args{
 				path: filepath.Join(t.TempDir(), "test"),
 				data: "test1",
@@ -31,11 +32,12 @@ func TestRun(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := CreateFile(tt.args.path, tt.args.data); (err != nil) != tt.wantErr {
+			if err := CreateFile(tt.args.path, strings.NewReader(tt.args.data)); (err != nil) != tt.wantErr {
 				t.Errorf("CreateFile() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			data, err := os.ReadFile(tt.args.path)
 			require.NoError(t, err)
+
 			require.Equal(t, tt.args.data, string(data))
 		})
 	}

@@ -3,6 +3,8 @@
 package atomicfs
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path"
 
@@ -11,7 +13,7 @@ import (
 
 // CreateFile creates a file in the filePath, write the data into the file and then execute
 // fsync operation to make sure the file and its content are stored atomically.
-func CreateFile(filePath, data string) error {
+func CreateFile(filePath string, data io.Reader) error {
 	// Write the file, fsync it, then fsync the containing directory in order to guarantee
 	// it is persisted to disk. From https://man7.org/linux/man-pages/man2/fsync.2.html
 	//
@@ -25,7 +27,10 @@ func CreateFile(filePath, data string) error {
 	}
 
 	merr := multierror.New()
-	_, err = file.WriteString(data)
+	buf := new(bytes.Buffer)
+	_, err = buf.ReadFrom(data)
+	merr.Add(err)
+	_, err = file.Write(buf.Bytes())
 	merr.Add(err)
 	merr.Add(file.Sync())
 	merr.Add(file.Close())
