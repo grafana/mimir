@@ -85,6 +85,8 @@ type Config struct {
 	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics" category:"experimental"`
 
 	// This allows downstream projects to define their own metrics and expose them via the exporter.
+	// Donwstream projects should be responsible for enabling/disabling their own metrics,
+	// so these won't be checked against EnabledMetrics.
 	ExtraMetrics []ExportedMetric `yaml:"-"`
 }
 
@@ -254,11 +256,7 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	// Add extra exported metrics
-	for _, em := range oe.extraMetrics {
-		// Donwstream projects should be responsible for enabling/disabling their own metrics,
-		// so we don't check against enabledMetrics here.
-		exportedMetrics = append(exportedMetrics, em)
-	}
+	exportedMetrics = append(exportedMetrics, oe.extraMetrics...)
 
 	// default limits
 	for _, em := range exportedMetrics {
