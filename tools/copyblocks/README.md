@@ -1,6 +1,8 @@
 # Copyblocks
 
-This program can copy Mimir blocks between two buckets. By default the copy will be performed server-side if both buckets are on the same object storage service provider. If the buckets are on different object storage providers, or if `--client-side-copy` is passed, then the copy will be performed client side.
+This program can copy Mimir blocks between two buckets.
+
+By default, the copy will be attempted server-side if both buckets are on the same object storage service. If the buckets are on different object storage services, or if `--client-side-copy` is passed, then the copy will be performed client side.
 
 The currently supported services are Amazon Simple Storage Service (S3 and S3-compatible), Azure Blob Storage (ABS), and Google Cloud Storage (GCS).
 
@@ -43,7 +45,8 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 
 ### Example for Amazon Simple Storage Service
 
-The destination credentials are used to intiate the server-side copy which may require setting up additional permissions for the copy to have access the source bucket. Consider passing `--client-side-copy` if you would rather avoid that.
+The destination is called to intiate the server-side copy which may require setting up additional permissions for the copy to have access the source bucket.
+Consider passing `--client-side-copy` to avoid having to deal with that.
 
 ```bash
 ./copyblocks \
@@ -64,7 +67,6 @@ The destination credentials are used to intiate the server-side copy which may r
 ### Example for copying between different providers
 
 Combine the relavant source and destination configuration options using the above examples as a guide.
-
 For instance, to copy from S3 to ABS:
 
 ```bash
