@@ -1642,12 +1642,23 @@
         },
         {
           "kind": "field",
-          "name": "prefer_streaming_chunks",
+          "name": "prefer_streaming_chunks_from_ingesters",
           "required": false,
           "desc": "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "querier.prefer-streaming-chunks",
+          "fieldFlag": "querier.prefer-streaming-chunks-from-ingesters",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "prefer_streaming_chunks_from_store_gateways",
+          "required": false,
+          "desc": "Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.prefer-streaming-chunks-from-store-gateways",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -1659,6 +1670,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 256,
           "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "streaming_chunks_per_store_gateway_series_buffer_size",
+          "required": false,
+          "desc": "Number of series to buffer per store-gateway when streaming chunks from store-gateways.",
+          "fieldValue": null,
+          "fieldDefaultValue": 256,
+          "fieldFlag": "querier.streaming-chunks-per-store-gateway-buffer-size",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
