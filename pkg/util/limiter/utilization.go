@@ -144,6 +144,9 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 	// Add the instant CPU utilization to the moving average. The instant CPU
 	// utilization can only be computed starting from the 2nd tick.
 	if prevUpdate, prevCPUTime := l.lastUpdate, l.lastCPUTime; !prevUpdate.IsZero() {
+		// Provided that nowFn returns a Time with monotonic clock reading (like time.Now()), time.Sub is robust
+		// against wall clock changes, since it's based on the monotonic clock:
+		// https://pkg.go.dev/time#hdr-Monotonic_Clocks
 		cpuUtil := (cpuTime - prevCPUTime) / now.Sub(prevUpdate).Seconds()
 		l.cpuMovingAvg.Add(int64(cpuUtil * 100))
 		l.cpuMovingAvg.Tick()
