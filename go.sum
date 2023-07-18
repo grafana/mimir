@@ -1102,8 +1102,8 @@ github.com/open-telemetry/opentelemetry-collector-contrib/internal/common v0.81.
 github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal v0.81.0 h1:sPjCHuqjn5UYDJOai4FulMCfLP+7AbspjHfv0jAtmD0=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.81.0 h1:syUuhc/z2yIsTmL9jt2gmXkYUM/jgsQZoH6NAE6i54Q=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.81.0/go.mod h1:LRzHoUpI8xZN5KXulEglZnbkYBHyiqHgQXGudIqpTtk=
-github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.81.0 h1:0Wzd9nh8WFfcY769RKfJU1qnEVSwy7g6+nfyyuFNCeE=
-github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.81.0/go.mod h1:4R9zh1OOvN7JGaN6qLK3uvH0ZO6vZdUeFx4TK+yK258=
+github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717235037-3f2821e2c1b1 h1:+qLq78c38mU38gm1UCswt61NsM8O6NB0L2sFdLiwbbo=
+github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717235037-3f2821e2c1b1/go.mod h1:FLUCs/7YJX0pauUBlj+5cy2h0ckjVMno2YyXsO/j89k=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/image-spec v1.0.2 h1:9yCKha/T5XdGtO0q9Q9a6T5NUCsTn/DrBg0D7ufOcFM=
 github.com/opentracing-contrib/go-grpc v0.0.0-20180928155321-4b5a12d3ff02/go.mod h1:JNdpVEzCpXBgIiv4ds+TzhN1hrtxq6ClLrTlT9OQRSc=
