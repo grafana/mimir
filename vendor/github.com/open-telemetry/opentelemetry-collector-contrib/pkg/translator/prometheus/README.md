@@ -1,7 +1,8 @@
 # Prometheus Normalization
 
-[OpenTelemetry's metric semantic convention](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/semantic_conventions/README.md) is not compatible with [Prometheus' own metrics naming convention](https://prometheus.io/docs/practices/naming/). This module provides centralized functions to convert OpenTelemetry metrics to Prometheus-compliant metrics. These functions are used by the exporters for Prometheus:
+[OpenTelemetry's metric semantic convention](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/semantic_conventions/README.md) is not compatible with [Prometheus' own metrics naming convention](https://prometheus.io/docs/practices/naming/). This module provides centralized functions to convert OpenTelemetry metrics to Prometheus-compliant metrics. These functions are used by the following components for Prometheus:
 
+* [prometheusreceiver](../../../receiver/prometheusreceiver/)
 * [prometheusexporter](../../../exporter/prometheusexporter/)
 * [prometheusremotewriteexporter](../../../exporter/prometheusremotewriteexporter/)
 
@@ -11,25 +12,26 @@
 
 > **Warning**
 >
-> This feature must be enabled with [feature gate](https://github.com/open-telemetry/opentelemetry-collector/tree/main/featuregate) `pkg.translator.prometheus.NormalizeName`. It is disabled by default (alpha stage).
+> This feature can be enabled with [feature gate](https://github.com/open-telemetry/opentelemetry-collector/tree/main/featuregate) `pkg.translator.prometheus.NormalizeName`. It is disabled by default (alpha stage).
 >
 > ```shell-session
 > $ otelcol --config=config.yaml --feature-gates=pkg.translator.prometheus.NormalizeName
 > ```
 
-List of transformations performed on OpenTelemetry metrics names:
+#### List of transformations to convert OpenTelemetry metrics to Prometheus metrics
 
-| Case                                                     | Transformation                                                                                                                   | Example                                                                                     |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Unsupported characters and extraneous underscores        | Replace unsupported characters with underscores (`_`). Drop redundant, leading and trailing underscores.                          | `(lambda).function.executions(#)` ==> `lambda_function_executions`                          |
-| Standard unit                                            | Convert the unit from [Unified Code for Units of Measure](http://unitsofmeasure.org/ucum.html) to Prometheus standard and append | `system.filesystem.usage` with unit `By` ==> `system_filesystem_usage_bytes`                |
-| Non-standard unit (unit is surrounded with `{}`)         | Drop the unit                                                                                                                    | `system.network.dropped` with unit `{packets}` ==> `system_network_dropped`                 |
-| Non-standard unit (unit is **not** surrounded with `{}`) | Append the unit, if not already present, after sanitization (all non-alphanumeric chars are dropped)                             | `system.network.dropped` with unit `packets` ==> `system_network_dropped_packets`           |
-| Percentages (unit is `1`)                                | Append `_ratio` (for gauges only)                                                                                                | `system.memory.utilization` with unit `1` ==> `system_memory_utilization_ratio`             |
-| Percentages (unit is `%`)                                | Replace `%` with `percent` `_percent`                                                                                            | `storage.filesystem.utilization` with unit `%` ==> `storage_filesystem_utilization_percent` |
-| Rates (unit contains `/`)                                | Replace `/` with `per`                                                                                                           | `astro.light.speed` with unit `m/s` ==> `astro_light_speed_meters_per_second`               |
-| Dollars (unit is `$`)                                    | Replace `$` with `dollars`                                                                                                       | `crypto.dogecoin.value` with unit `$` ==> `crypto.dogecoin.value_dollars`                   |
-| Counter                                                  | Append `_total`                                                                                                                  | `system.processes.created` ==> `system_processes_created_total`                             |
+| Case                                                     | Transformation                                                                                                                   | Example                                                                                   |
+|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
+| Unsupported characters and extraneous underscores        | Replace unsupported characters with underscores (`_`). Drop redundant, leading and trailing underscores.                         | `(lambda).function.executions(#)` → `lambda_function_executions`                          |
+| Standard unit                                            | Convert the unit from [Unified Code for Units of Measure](http://unitsofmeasure.org/ucum.html) to Prometheus standard and append | `system.filesystem.usage` with unit `By` → `system_filesystem_usage_bytes`                |
+| Non-standard unit (unit is surrounded with `{}`)         | Drop the unit                                                                                                                    | `system.network.dropped` with unit `{packets}` → `system_network_dropped`                 |
+| Non-standard unit (unit is **not** surrounded with `{}`) | Append the unit, if not already present, after sanitization (all non-alphanumeric chars are dropped)                             | `system.network.dropped` with unit `packets` → `system_network_dropped_packets`           |
+| Percentages (unit is `1`)                                | Append `_ratio` (for gauges only)                                                                                                | `system.memory.utilization` with unit `1` → `system_memory_utilization_ratio`             |
+| Percentages (unit is `%`)                                | Replace `%` with `percent` `_percent`                                                                                            | `storage.filesystem.utilization` with unit `%` → `storage_filesystem_utilization_percent` |
+| Rates (unit contains `/`)                                | Replace `/` with `per`                                                                                                           | `astro.light.speed` with unit `m/s` → `astro_light_speed_meters_per_second`               |
+| Dollars (unit is `$`)                                    | Replace `$` with `dollars`                                                                                                       | `crypto.dogecoin.value` with unit `$` → `crypto_dogecoin_value_dollars`                   |
+| Counter                                                  | Append `_total`                                                                                                                  | `system.processes.created` → `system_processes_created_total`                             |
+
 List of standard OpenTelemetry units that will be translated to [Prometheus standard base units](https://prometheus.io/docs/practices/naming/#base-units):
 
 | OpenTelemetry Unit | Corresponding Prometheus Unit |
@@ -72,6 +74,13 @@ List of standard OpenTelemetry units that will be translated to [Prometheus stan
 
 > **Note**
 > Prometheus also recommends using base units (no kilobytes, or milliseconds, for example) but these functions will not attempt to convert non-base units to base units.
+
+#### List of transformations performed to convert Prometheus metrics to OpenTelemetry metrics
+
+| Case                               | Transformation                                                         | Example                                                                         |
+|------------------------------------|------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| UNIT defined in OpenMetrics format | Drop the unit suffix and set it in the OpenTelemetry metric unit field | `system_network_dropped_packets` → `system_network_dropped` with `packets` unit |
+| Counter                            | Drop `_total` suffix                                                   | `system_processes_created_total`→ `system_processes_created`                    |
 
 ### Simple normalization
 
