@@ -12,33 +12,13 @@ import (
 )
 
 func TestRun(t *testing.T) {
-	type args struct {
-		path string
-		data string
+	path := filepath.Join(t.TempDir(), "test")
+	wantData := "test1"
+	if err := CreateFile(path, strings.NewReader(wantData)); err != nil {
+		t.Errorf("CreateFile() error = %v, wantErr %v", err, false)
 	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-	}{
-		{
-			name: "test fsync.CreateFile",
-			args: args{
-				path: filepath.Join(t.TempDir(), "test"),
-				data: "test1",
-			},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := CreateFile(tt.args.path, strings.NewReader(tt.args.data)); (err != nil) != tt.wantErr {
-				t.Errorf("CreateFile() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			data, err := os.ReadFile(tt.args.path)
-			require.NoError(t, err)
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
 
-			require.Equal(t, tt.args.data, string(data))
-		})
-	}
+	require.Equal(t, wantData, string(data))
 }
