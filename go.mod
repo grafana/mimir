@@ -64,7 +64,7 @@ require (
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
-	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.81.0
+	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717235037-3f2821e2c1b1
 	github.com/prometheus/procfs v0.11.0
 	github.com/thanos-io/objstore v0.0.0-20230710163637-47c0118da0ca
 	github.com/xlab/treeprint v1.2.0
