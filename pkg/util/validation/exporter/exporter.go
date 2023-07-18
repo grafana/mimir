@@ -85,7 +85,8 @@ type Config struct {
 	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics" category:"experimental"`
 
 	// This allows downstream projects to define their own metrics and expose them via the exporter.
-	ExtraMetrics []ExportedMetric `yaml:"-"`
+	ExtraMetrics        []ExportedMetric       `yaml:"-"`
+	EnabledExtraMetrics flagext.StringSliceCSV `yaml:"-"`
 }
 
 type ExportedMetric struct {
@@ -170,7 +171,7 @@ func NewOverridesExporter(
 		}
 	}
 
-	exporter.enabledMetrics = util.NewAllowedTenants(config.EnabledMetrics, nil)
+	exporter.enabledMetrics = util.NewAllowedTenants(append(config.EnabledMetrics, config.EnabledExtraMetrics...), nil)
 
 	exporter.Service = services.NewBasicService(exporter.starting, exporter.running, exporter.stopping)
 	return exporter, nil
