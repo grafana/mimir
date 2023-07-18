@@ -6,7 +6,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -175,28 +174,17 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(ctx)
 	}
 
+	// Ensure to close the request body reader.
 	defer func() { _ = r.Body.Close() }()
 
-	// Store the body contents, so we can read it multiple times.
-	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	// Limit the read body size.
+	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
 
-	// Parse the form, as it's needed to build the activity for the activity-tracker.
-	if err := r.ParseForm(); err != nil {
+	params, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return
 	}
-
-	// Store a copy of the params and restore the request state.
-	// Restore the body, so it can be read again if it's used to forward the request through a roundtripper.
-	// Restore the Form and PostForm, to avoid subtle bugs in middlewares, as they were set by ParseForm.
-	params := copyValues(r.Form)
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-	r.Form, r.PostForm = nil, nil
 
 	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, params) })
 	defer f.at.Delete(activityIndex)
@@ -378,12 +366,4 @@ func httpRequestActivity(request *http.Request, requestParams url.Values) string
 
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
 	return strings.Join([]string{tenantID, request.Method, request.URL.Path, params}, " ")
-}
-
-func copyValues(src url.Values) url.Values {
-	dst := make(url.Values, len(src))
-	for k, vs := range src {
-		dst[k] = append([]string(nil), vs...)
-	}
-	return dst
 }
