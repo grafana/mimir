@@ -2,7 +2,7 @@
 
 This program can copy Mimir blocks between two buckets.
 
-By default, the copy will be attempted server-side if both buckets are on the same object storage service. If the buckets are on different object storage services, or if `--client-side-copy` is passed, then the copy will be performed client side.
+By default, the copy will be attempted server-side if both the source and destination specify the same object storage service. If the buckets are on different object storage services, or if `--client-side-copy` is passed, then the copy will be performed client side.
 
 The currently supported services are Amazon Simple Storage Service (S3 and S3-compatible), Azure Blob Storage (ABS), and Google Cloud Storage (GCS).
 
