@@ -255,9 +255,9 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 
 	// Add extra exported metrics
 	for _, em := range oe.extraMetrics {
-		if oe.enabledMetrics.IsAllowed(em.Name) {
-			exportedMetrics = append(exportedMetrics, em)
-		}
+		// Donwstream projects should be responsible for enabling/disabling their own metrics,
+		// so we don't check against enabledMetrics here.
+		exportedMetrics = append(exportedMetrics, em)
 	}
 
 	// default limits
