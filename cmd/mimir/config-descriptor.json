@@ -2729,6 +2729,17 @@
           "fieldFlag": "ingester.read-path-memory-utilization-limit",
           "fieldType": "int",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_utilization_based_limiter_cpu_samples",
+          "required": false,
+          "desc": "Enable logging of utilization based limiter CPU samples.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.log-utilization-based-limiter-cpu-samples",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

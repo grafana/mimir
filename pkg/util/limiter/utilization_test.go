@@ -18,11 +18,11 @@ import (
 func TestUtilizationBasedLimiter(t *testing.T) {
 	const gigabyte = 1024 * 1024 * 1024
 
-	setup := func(t *testing.T, cpuLimit float64, memoryLimit uint64) (*UtilizationBasedLimiter,
+	setup := func(t *testing.T, cpuLimit float64, memoryLimit uint64, enableLogging bool) (*UtilizationBasedLimiter,
 		*fakeUtilizationScanner, prometheus.Gatherer) {
 		fakeScanner := &fakeUtilizationScanner{}
 		reg := prometheus.NewPedanticRegistry()
-		lim := NewUtilizationBasedLimiter(cpuLimit, memoryLimit, log.NewNopLogger(), reg)
+		lim := NewUtilizationBasedLimiter(cpuLimit, memoryLimit, enableLogging, log.NewNopLogger(), reg)
 		lim.utilizationScanner = fakeScanner
 		require.Empty(t, lim.LimitingReason(), "Limiting should initially be disabled")
 
@@ -35,7 +35,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 	}
 
 	t.Run("CPU based limiting should be enabled if set to a value greater than 0", func(t *testing.T) {
-		lim, scanner, reg := setup(t, 0.11, gigabyte)
+		lim, scanner, reg := setup(t, 0.11, gigabyte, true)
 
 		var prevTotalTime float64
 		samples := make([]float64, 60)
@@ -93,7 +93,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 	})
 
 	t.Run("CPU based limiting should be disabled if set to 0", func(t *testing.T) {
-		lim, _, reg := setup(t, 0, gigabyte)
+		lim, _, reg := setup(t, 0, gigabyte, true)
 
 		// Warmup the CPU utilization.
 		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
@@ -118,7 +118,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 	})
 
 	t.Run("memory based limiting should be enabled if set to a value greater than 0", func(t *testing.T) {
-		lim, fakeScanner, reg := setup(t, 0.11, gigabyte)
+		lim, fakeScanner, reg := setup(t, 0.11, gigabyte, true)
 
 		// Compute the utilization a first time to warm up the limiter.
 		lim.compute(nowFn)
@@ -143,7 +143,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 	})
 
 	t.Run("memory based limiting should be disabled if set to 0", func(t *testing.T) {
-		lim, fakeScanner, reg := setup(t, 0.11, 0)
+		lim, fakeScanner, reg := setup(t, 0.11, 0, true)
 
 		// Compute the utilization a first time to warm up the limiter.
 		lim.compute(nowFn)
@@ -161,6 +161,27 @@ func TestUtilizationBasedLimiter(t *testing.T) {
             	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
             	           	utilization_limiter_current_memory_usage_bytes 1.073741824e+09
 		`)))
+	})
+
+	t.Run("limiting should work without CPU samples logging", func(t *testing.T) {
+		lim, _, _ := setup(t, 0.11, gigabyte, false)
+
+		// Warmup the CPU utilization.
+		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
+			lim.compute(nowFn)
+			tim = tim.Add(time.Second)
+		}
+
+		// The fake utilization scanner linearly increases CPU usage for a minute
+		for i := 0; i < 59; i++ {
+			lim.compute(nowFn)
+			tim = tim.Add(time.Second)
+			require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
+		}
+		lim.compute(nowFn)
+		tim = tim.Add(time.Second)
+		require.Equal(t, "cpu", lim.LimitingReason(), "Limiting should be enabled due to CPU")
+		require.Nil(t, lim.cpuSamples)
 	})
 }
 
@@ -261,7 +282,7 @@ func TestUtilizationBasedLimiter_CPUUtilizationSensitivity(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			scanner := &preRecordedUtilizationScanner{instantCPUValues: testData.instantCPUValues}
 
-			lim := NewUtilizationBasedLimiter(1, 0, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			lim := NewUtilizationBasedLimiter(1, 0, true, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			lim.utilizationScanner = scanner
 
 			minCPUUtilization := float64(math.MaxInt64)
