@@ -12,7 +12,6 @@ import (
 	"syscall"
 
 	golog "github.com/go-kit/log"
-
 	"github.com/prometheus/prometheus/tsdb"
 )
 

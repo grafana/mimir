@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -50,8 +51,6 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -338,6 +337,12 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		cfg.IngesterRing.ReplicationFactor,
 		cfg.IngesterRing.ZoneAwarenessEnabled)
 
+	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
+		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cfg.ReadPathCPUUtilizationLimit,
+			cfg.ReadPathMemoryUtilizationLimit, log.WithPrefix(logger, "context", "read path"),
+			prometheus.WrapRegistererWithPrefix("cortex_ingester_", registerer))
+	}
+
 	i.shipperIngesterID = i.lifecycler.ID
 
 	// Apply positive jitter only to ensure that the minimum timeout is adhered to.
@@ -414,9 +419,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	if i.cfg.ReadPathCPUUtilizationLimit > 0 || i.cfg.ReadPathMemoryUtilizationLimit > 0 {
-		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(i.cfg.ReadPathCPUUtilizationLimit,
-			i.cfg.ReadPathMemoryUtilizationLimit, log.WithPrefix(i.logger, "context", "read path"))
+	if i.utilizationBasedLimiter != nil {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 

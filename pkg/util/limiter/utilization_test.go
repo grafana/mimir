@@ -3,11 +3,14 @@
 package limiter
 
 import (
+	"bytes"
 	"math"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,81 +18,128 @@ import (
 func TestUtilizationBasedLimiter(t *testing.T) {
 	const gigabyte = 1024 * 1024 * 1024
 
-	setup := func(t *testing.T, cpuLimit float64, memoryLimit uint64) (*UtilizationBasedLimiter, *fakeUtilizationScanner) {
+	setup := func(t *testing.T, cpuLimit float64, memoryLimit uint64) (*UtilizationBasedLimiter,
+		*fakeUtilizationScanner, prometheus.Gatherer) {
 		fakeScanner := &fakeUtilizationScanner{}
-		lim := NewUtilizationBasedLimiter(cpuLimit, memoryLimit, log.NewNopLogger())
+		reg := prometheus.NewPedanticRegistry()
+		lim := NewUtilizationBasedLimiter(cpuLimit, memoryLimit, log.NewNopLogger(), reg)
 		lim.utilizationScanner = fakeScanner
 		require.Empty(t, lim.LimitingReason(), "Limiting should initially be disabled")
 
-		return lim, fakeScanner
+		return lim, fakeScanner, reg
 	}
 
 	tim := time.Now()
+	nowFn := func() time.Time {
+		return tim
+	}
 
 	t.Run("CPU based limiting should be enabled if set to a value greater than 0", func(t *testing.T) {
-		lim, _ := setup(t, 0.11, gigabyte)
+		lim, _, reg := setup(t, 0.11, gigabyte)
 
 		// Warmup the CPU utilization.
 		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
-			lim.compute(tim)
+			lim.compute(nowFn)
 			tim = tim.Add(time.Second)
 		}
 
 		// The fake utilization scanner linearly increases CPU usage for a minute
 		for i := 0; i < 59; i++ {
-			lim.compute(tim)
+			lim.compute(nowFn)
 			tim = tim.Add(time.Second)
 			require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
 		}
-		lim.compute(tim)
+		lim.compute(nowFn)
 		tim = tim.Add(time.Second)
 		require.Equal(t, "cpu", lim.LimitingReason(), "Limiting should be enabled due to CPU")
 
 		// The fake utilization scanner drops CPU usage again after a minute, so we expect
 		// limiting to be disabled shortly.
 		for i := 0; i < 5; i++ {
-			lim.compute(tim)
+			lim.compute(nowFn)
 			tim = tim.Add(time.Second)
 		}
 		require.Empty(t, lim.LimitingReason(), "Limiting should be disabled again")
+
+		assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+                                # HELP utilization_limiter_current_cpu_load Current average CPU load calculated by utilization based limiter.
+                                # TYPE utilization_limiter_current_cpu_load gauge
+            	           	utilization_limiter_current_cpu_load 0.10803555562923002
+            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
+            	           	utilization_limiter_current_memory_usage_bytes 0
+	`)))
 	})
 
 	t.Run("CPU based limiting should be disabled if set to 0", func(t *testing.T) {
-		lim, _ := setup(t, 0, gigabyte)
+		lim, _, reg := setup(t, 0, gigabyte)
+
+		// Warmup the CPU utilization.
+		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
+			lim.compute(nowFn)
+			tim = tim.Add(time.Second)
+		}
 
 		for i := 0; i < 60; i++ {
-			lim.compute(tim)
+			lim.compute(nowFn)
 			tim = tim.Add(time.Second)
 			require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
 		}
+
+		assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+                                # HELP utilization_limiter_current_cpu_load Current average CPU load calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_current_cpu_load gauge
+            	           	utilization_limiter_current_cpu_load  0.12581711205891943
+            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
+            	           	utilization_limiter_current_memory_usage_bytes 0
+		`)))
 	})
 
 	t.Run("memory based limiting should be enabled if set to a value greater than 0", func(t *testing.T) {
-		lim, fakeScanner := setup(t, 0.11, gigabyte)
+		lim, fakeScanner, reg := setup(t, 0.11, gigabyte)
 
 		// Compute the utilization a first time to warm up the limiter.
-		lim.compute(tim)
+		lim.compute(nowFn)
 
 		fakeScanner.memoryUtilization = gigabyte
-		lim.compute(tim)
+		lim.compute(nowFn)
 		tim = tim.Add(time.Second)
 		require.Equal(t, "memory", lim.LimitingReason(), "Limiting should be enabled due to memory")
 
 		fakeScanner.memoryUtilization = gigabyte - 1
-		lim.compute(tim)
+		lim.compute(nowFn)
 		require.Empty(t, lim.LimitingReason(), "Limiting should be disabled again")
+
+		assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+                                # HELP utilization_limiter_current_cpu_load Current average CPU load calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_current_cpu_load gauge
+            	           	utilization_limiter_current_cpu_load 0
+            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
+            	           	utilization_limiter_current_memory_usage_bytes 1.073741823e+09
+		`)))
 	})
 
 	t.Run("memory based limiting should be disabled if set to 0", func(t *testing.T) {
-		lim, fakeScanner := setup(t, 0.11, 0)
+		lim, fakeScanner, reg := setup(t, 0.11, 0)
 
 		// Compute the utilization a first time to warm up the limiter.
-		lim.compute(tim)
+		lim.compute(nowFn)
 
 		fakeScanner.memoryUtilization = gigabyte
-		lim.compute(tim)
+		lim.compute(nowFn)
 		tim = tim.Add(time.Second)
 		require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
+
+		assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+                                # HELP utilization_limiter_current_cpu_load Current average CPU load calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_current_cpu_load gauge
+            	           	utilization_limiter_current_cpu_load 0
+            	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
+            	           	utilization_limiter_current_memory_usage_bytes 1.073741824e+09
+		`)))
 	})
 }
 
@@ -190,14 +240,16 @@ func TestUtilizationBasedLimiter_CPUUtilizationSensitivity(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			scanner := &preRecordedUtilizationScanner{instantCPUValues: testData.instantCPUValues}
 
-			lim := NewUtilizationBasedLimiter(1, 0, log.NewNopLogger())
+			lim := NewUtilizationBasedLimiter(1, 0, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			lim.utilizationScanner = scanner
 
 			minCPUUtilization := float64(math.MaxInt64)
 			maxCPUUtilization := float64(math.MinInt64)
 
 			for i, ts := 0, time.Now(); i < len(testData.instantCPUValues); i++ {
-				currCPUUtilization, _ := lim.compute(ts)
+				currCPUUtilization, _ := lim.compute(func() time.Time {
+					return ts
+				})
 				ts = ts.Add(time.Second)
 
 				// Keep track of the max CPU utilization as computed by the limiter.

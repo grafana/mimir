@@ -7,10 +7,9 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/weaveworks/common/httpgrpc"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"

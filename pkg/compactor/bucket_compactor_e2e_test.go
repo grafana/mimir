@@ -35,11 +35,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )

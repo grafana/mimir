@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/prometheus/common/model"
@@ -24,8 +25,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/exp/slices"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/spanlogger"

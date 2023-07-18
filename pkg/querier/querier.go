@@ -15,14 +15,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/engine"
