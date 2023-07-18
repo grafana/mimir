@@ -85,6 +85,8 @@ type Config struct {
 	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics" category:"experimental"`
 
 	// This allows downstream projects to define their own metrics and expose them via the exporter.
+	// Donwstream projects should be responsible for enabling/disabling their own metrics,
+	// so these won't be checked against EnabledMetrics.
 	ExtraMetrics []ExportedMetric `yaml:"-"`
 }
 
@@ -242,11 +244,7 @@ func setupExportedMetrics(enabledMetrics *util.AllowedTenants, extraMetrics []Ex
 	}
 
 	// Add extra exported metrics
-	for _, em := range extraMetrics {
-		if enabledMetrics.IsAllowed(em.Name) {
-			exportedMetrics = append(exportedMetrics, em)
-		}
-	}
+	exportedMetrics = append(exportedMetrics, extraMetrics...)
 
 	return exportedMetrics
 }

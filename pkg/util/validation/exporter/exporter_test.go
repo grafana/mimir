@@ -201,14 +201,17 @@ func TestOverridesExporter_withExtraMetrics(t *testing.T) {
 		},
 	}
 
-	config := Config{EnabledMetrics: append(defaultEnabledMetricNames, "custom_extra_limit"), ExtraMetrics: []ExportedMetric{
-		{
-			Name: "custom_extra_limit",
-			Get: func(_ *validation.Limits) float64 {
-				return 1234.0
+	config := Config{
+		EnabledMetrics: defaultEnabledMetricNames,
+		ExtraMetrics: []ExportedMetric{
+			{
+				Name: "custom_extra_limit",
+				Get: func(_ *validation.Limits) float64 {
+					return 1234.0
+				},
 			},
 		},
-	}}
+	}
 
 	exporter, err := NewOverridesExporter(config, &validation.Limits{
 		IngestionRate:                22,
