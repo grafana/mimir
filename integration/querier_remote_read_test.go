@@ -27,10 +27,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
-
-	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestQuerierRemoteRead(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-kit/log"
@@ -14,6 +15,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -28,8 +30,8 @@ type genericQueryRequest struct {
 }
 
 type genericQueryDelegate interface {
-	// parseRequest parses the input req and returns a genericQueryRequest, or an error if parsing fails.
-	parseRequest(req *http.Request) (*genericQueryRequest, error)
+	// parseRequest parses the input request and returns a genericQueryRequest, or an error if parsing fails.
+	parseRequest(path string, values url.Values) (*genericQueryRequest, error)
 
 	// getTTL returns the cache TTL for the input userID.
 	getTTL(userID string) time.Duration
@@ -80,7 +82,14 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 	}
 
 	// Decode the request.
-	queryReq, err := c.delegate.parseRequest(req)
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(req)
+	if err != nil {
+		// This is considered a non-recoverable error, so we return error instead of passing
+		// the request to the downstream.
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	queryReq, err := c.delegate.parseRequest(req.URL.Path, reqValues)
 	if err != nil {
 		// Logging as info because it's not an actionable error here.
 		// We defer it to the downstream.

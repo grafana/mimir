@@ -6,9 +6,8 @@ import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/pkg/errors"
-
 	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 )
 
 const gobCodecPrefix = "gob:"

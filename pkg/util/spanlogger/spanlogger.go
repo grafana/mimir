@@ -7,7 +7,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/spanlogger"
-
 	"github.com/grafana/dskit/tenant"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"

@@ -13,6 +13,7 @@
     autoscaling_distributor_enabled: false,
     autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
     autoscaling_distributor_max_replicas: error 'you must set autoscaling_distributor_max_replicas in the _config',
+    autoscaling_distributor_cpu_target_utilization: 1,
 
     autoscaling_ruler_enabled: false,
     autoscaling_ruler_min_replicas: error 'you must set autoscaling_ruler_min_replicas in the _config',
@@ -329,7 +330,7 @@
   // Distributors
   //
 
-  newDistributorScaledObject(name, distributor_cpu_requests, distributor_memory_requests, min_replicas, max_replicas):: self.newScaledObject(name, $._config.namespace, {
+  newDistributorScaledObject(name, distributor_cpu_requests, distributor_memory_requests, min_replicas, max_replicas, cpu_target_utilization):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
 
@@ -343,7 +344,7 @@
         query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
 
         // threshold is expected to be a string.
-        threshold: std.toString(cpuToMilliCPUInt(distributor_cpu_requests)),
+        threshold: std.toString(cpuToMilliCPUInt(distributor_cpu_requests) * cpu_target_utilization),
       },
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -364,6 +365,7 @@
       distributor_memory_requests=$.distributor_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_distributor_min_replicas,
       max_replicas=$._config.autoscaling_distributor_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_distributor_cpu_target_utilization,
     ),
 
   distributor_deployment: overrideSuperIfExists(

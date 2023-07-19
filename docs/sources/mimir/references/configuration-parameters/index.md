@@ -988,6 +988,10 @@ instance_limits:
 # request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
+
+# (experimental) Enable logging of utilization based limiter CPU samples.
+# CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
+[log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
 ```
 
 ### querier
@@ -1096,13 +1100,24 @@ store_gateway_client:
 # (experimental) Request ingesters stream chunks. Ingesters will only respond
 # with a stream of chunks if the target ingester supports this, and this
 # preference will be ignored by ingesters that do not support this.
-# CLI flag: -querier.prefer-streaming-chunks
-[prefer_streaming_chunks: <boolean> | default = false]
+# CLI flag: -querier.prefer-streaming-chunks-from-ingesters
+[prefer_streaming_chunks_from_ingesters: <boolean> | default = false]
+
+# (experimental) Request store-gateways stream chunks. Store-gateways will only
+# respond with a stream of chunks if the target store-gateway supports this, and
+# this preference will be ignored by store-gateways that do not support this.
+# CLI flag: -querier.prefer-streaming-chunks-from-store-gateways
+[prefer_streaming_chunks_from_store_gateways: <boolean> | default = false]
 
 # (experimental) Number of series to buffer per ingester when streaming chunks
 # from ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
 [streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
+
+# (experimental) Number of series to buffer per store-gateway when streaming
+# chunks from store-gateways.
+# CLI flag: -querier.streaming-chunks-per-store-gateway-buffer-size
+[streaming_chunks_per_store_gateway_series_buffer_size: <int> | default = 256]
 
 # (experimental) If true, when querying ingesters, only the minimum required
 # ingesters required to reach quorum will be queried initially, with other

@@ -26,7 +26,8 @@ import (
 type newGenericQueryCacheFunc func(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
 
 type testGenericQueryCacheRequestType struct {
-	url            *url.URL
+	reqPath        string
+	reqData        url.Values
 	cacheKey       string
 	hashedCacheKey string
 }
@@ -164,81 +165,114 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			for reqName, reqData := range requestTypes {
-				t.Run(reqName, func(t *testing.T) {
-					// Mock the limits.
-					limits := multiTenantMockLimits{
-						byTenant: map[string]mockLimits{
-							userID: {
-								resultsCacheTTLForCardinalityQuery: testData.cacheTTL,
-								resultsCacheTTLForLabelsQuery:      testData.cacheTTL,
+				for _, reqMethod := range []string{http.MethodGet, http.MethodPost} {
+					t.Run(fmt.Sprintf("%s (%s)", reqName, reqMethod), func(t *testing.T) {
+						// Mock the limits.
+						limits := multiTenantMockLimits{
+							byTenant: map[string]mockLimits{
+								userID: {
+									resultsCacheTTLForCardinalityQuery: testData.cacheTTL,
+									resultsCacheTTLForLabelsQuery:      testData.cacheTTL,
+								},
 							},
-						},
-					}
-
-					// Mock the downstream.
-					downstreamCalled := false
-					downstream := RoundTripFunc(func(request *http.Request) (*http.Response, error) {
-						downstreamCalled = true
-						return testData.downstreamRes(), testData.downstreamErr
-					})
-
-					// Create the request.
-					req := &http.Request{URL: reqData.url, Header: testData.reqHeader}
-					req = req.WithContext(user.InjectOrgID(context.Background(), userID))
-
-					// Init the cache.
-					cacheBackend := cache.NewInstrumentedMockCache()
-					if testData.init != nil {
-						testData.init(t, cacheBackend, reqData.cacheKey, reqData.hashedCacheKey)
-					}
-					initialStoreCallsCount := cacheBackend.CountStoreCalls()
-
-					reg := prometheus.NewPedanticRegistry()
-					rt := newRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t), reg)
-					res, err := rt.RoundTrip(req)
-					require.NoError(t, err)
-
-					// Assert on the downstream.
-					assert.Equal(t, testData.expectedDownstreamCalled, downstreamCalled)
-
-					// Assert on the response received.
-					assert.Equal(t, testData.expectedStatusCode, res.StatusCode)
-					assert.Equal(t, testData.expectedHeader, res.Header)
-
-					actualBody, err := io.ReadAll(res.Body)
-					require.NoError(t, err)
-					assert.Equal(t, testData.expectedBody, actualBody)
-
-					// Assert on the state of the cache.
-					if testData.expectedStoredToCache {
-						assert.Equal(t, initialStoreCallsCount+1, cacheBackend.CountStoreCalls())
-
-						items := cacheBackend.GetItems()
-						require.Len(t, items, 1)
-						require.NotZero(t, items[reqData.hashedCacheKey])
-
-						cached := CachedHTTPResponse{}
-						require.NoError(t, cached.Unmarshal(items[reqData.hashedCacheKey].Data))
-						assert.Equal(t, testData.expectedStatusCode, int(cached.StatusCode))
-						assert.Equal(t, testData.expectedHeader, DecodeCachedHTTPResponse(&cached).Header)
-						assert.Equal(t, testData.expectedBody, cached.Body)
-						assert.Equal(t, reqData.cacheKey, cached.CacheKey)
-						assert.WithinDuration(t, time.Now().Add(testData.cacheTTL), items[reqData.hashedCacheKey].ExpiresAt, 5*time.Second)
-					} else {
-						assert.Equal(t, initialStoreCallsCount, cacheBackend.CountStoreCalls())
-					}
-
-					// Assert on metrics.
-					expectedRequestsCount := 0
-					expectedHitsCount := 0
-					if testData.expectedLookupFromCache {
-						expectedRequestsCount = 1
-						if !testData.expectedDownstreamCalled {
-							expectedHitsCount = 1
 						}
-					}
 
-					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+						var (
+							req                 *http.Request
+							downstreamCalled    = false
+							downstreamReqParams url.Values
+							err                 error
+						)
+
+						// Mock the downstream and capture the request.
+						downstream := RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+							downstreamCalled = true
+
+							// Parse the request body.
+							require.NoError(t, req.ParseForm())
+							downstreamReqParams = req.Form
+
+							return testData.downstreamRes(), testData.downstreamErr
+						})
+
+						// Create the request.
+						switch reqMethod {
+						case http.MethodGet:
+							req, err = http.NewRequest(reqMethod, reqData.reqPath+"?"+reqData.reqData.Encode(), nil)
+							require.NoError(t, err)
+						case http.MethodPost:
+							req, err = http.NewRequest(reqMethod, reqData.reqPath, strings.NewReader(reqData.reqData.Encode()))
+							req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+							require.NoError(t, err)
+						default:
+							t.Fatalf("unsupported HTTP method %q", reqMethod)
+						}
+
+						for name, values := range testData.reqHeader {
+							for _, value := range values {
+								req.Header.Set(name, value)
+							}
+						}
+
+						// Inject the tenant ID in the request.
+						req = req.WithContext(user.InjectOrgID(context.Background(), userID))
+
+						// Init the cache.
+						cacheBackend := cache.NewInstrumentedMockCache()
+						if testData.init != nil {
+							testData.init(t, cacheBackend, reqData.cacheKey, reqData.hashedCacheKey)
+						}
+						initialStoreCallsCount := cacheBackend.CountStoreCalls()
+
+						reg := prometheus.NewPedanticRegistry()
+						rt := newRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t), reg)
+						res, err := rt.RoundTrip(req)
+						require.NoError(t, err)
+
+						// Assert on the downstream.
+						assert.Equal(t, testData.expectedDownstreamCalled, downstreamCalled)
+						if testData.expectedDownstreamCalled {
+							assert.Equal(t, reqData.reqData, downstreamReqParams)
+						}
+
+						// Assert on the response received.
+						assert.Equal(t, testData.expectedStatusCode, res.StatusCode)
+						assert.Equal(t, testData.expectedHeader, res.Header)
+
+						actualBody, err := io.ReadAll(res.Body)
+						require.NoError(t, err)
+						assert.Equal(t, testData.expectedBody, actualBody)
+
+						// Assert on the state of the cache.
+						if testData.expectedStoredToCache {
+							assert.Equal(t, initialStoreCallsCount+1, cacheBackend.CountStoreCalls())
+
+							items := cacheBackend.GetItems()
+							require.Len(t, items, 1)
+							require.NotZero(t, items[reqData.hashedCacheKey])
+
+							cached := CachedHTTPResponse{}
+							require.NoError(t, cached.Unmarshal(items[reqData.hashedCacheKey].Data))
+							assert.Equal(t, testData.expectedStatusCode, int(cached.StatusCode))
+							assert.Equal(t, testData.expectedHeader, DecodeCachedHTTPResponse(&cached).Header)
+							assert.Equal(t, testData.expectedBody, cached.Body)
+							assert.Equal(t, reqData.cacheKey, cached.CacheKey)
+							assert.WithinDuration(t, time.Now().Add(testData.cacheTTL), items[reqData.hashedCacheKey].ExpiresAt, 5*time.Second)
+						} else {
+							assert.Equal(t, initialStoreCallsCount, cacheBackend.CountStoreCalls())
+						}
+
+						// Assert on metrics.
+						expectedRequestsCount := 0
+						expectedHitsCount := 0
+						if testData.expectedLookupFromCache {
+							expectedRequestsCount = 1
+							if !testData.expectedDownstreamCalled {
+								expectedHitsCount = 1
+							}
+						}
+
+						assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
                         # HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
                         # TYPE cortex_frontend_query_result_cache_requests_total counter
                         cortex_frontend_query_result_cache_requests_total{request_type="%s"} %d
@@ -247,10 +281,11 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
                         # TYPE cortex_frontend_query_result_cache_hits_total counter
                         cortex_frontend_query_result_cache_hits_total{request_type="%s"} %d
 					`, requestTypeLabelValue, expectedRequestsCount, requestTypeLabelValue, expectedHitsCount)),
-						"cortex_frontend_query_result_cache_requests_total",
-						"cortex_frontend_query_result_cache_hits_total",
-					))
-				})
+							"cortex_frontend_query_result_cache_requests_total",
+							"cortex_frontend_query_result_cache_hits_total",
+						))
+					})
+				}
 			}
 		})
 	}
