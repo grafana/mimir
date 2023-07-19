@@ -150,8 +150,48 @@ func OTLPHandler(
 		)
 
 		req.Timeseries = metrics
+
+		metadata, err := otelMetricsToMetadata(logger, otlpReq.Metrics())
+
+		// TODO decide what to to if the translation fails
+		if err != nil {
+			return body, err
+		}
+
+		req.Metadata = metadata
+
 		return body, nil
 	})
+}
+
+func otelMetricsToMetadata(logger kitlog.Logger, md pmetric.Metrics) ([]*mimirpb.MetricMetadata, error) {
+	var metadata []*mimirpb.MetricMetadata
+
+	// TODO check for empty metadata & log it
+	// TODO missing error handling??
+
+	resourceMetricsSlice := md.ResourceMetrics()
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		resourceMetrics := resourceMetricsSlice.At(i)
+		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
+
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			scopeMetrics := scopeMetricsSlice.At(j)
+			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
+				level.Info(logger).Log("metadata", "help", "metricName", scopeMetrics.Metrics().At(k).Name(), "description", scopeMetrics.Metrics().At(k).Description())
+				entry := mimirpb.MetricMetadata{
+					Type:             mimirpb.MetricMetadata_MetricType(scopeMetrics.Metrics().At(k).Type()),
+					MetricFamilyName: scopeMetrics.Metrics().At(k).Name(),
+					Help:             scopeMetrics.Metrics().At(k).Description(),
+					Unit:             scopeMetrics.Metrics().At(k).Unit(),
+				}
+				metadata = append(metadata, &entry)
+			}
+		}
+	}
+
+	return metadata, nil
+
 }
 
 func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
