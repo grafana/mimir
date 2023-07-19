@@ -86,7 +86,7 @@ func (c *config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&c.copyPeriod, "copy-period", 0, "How often to repeat the copy. If set to 0, copy is done once, and the program stops. Otherwise, the program keeps running and copying blocks until it is terminated.")
 	f.Var(&c.enabledUsers, "enabled-users", "If not empty, only blocks for these users are copied.")
 	f.Var(&c.disabledUsers, "disabled-users", "If not empty, blocks for these users are not copied.")
-	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform copy; only log what would happen.")
+	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform any copy; only log what would happen.")
 	f.BoolVar(&c.clientSideCopy, "client-side-copy", false, "Use client side copying. This option is only respected if copying between two buckets of the same service. Client side copying is always used when copying between different services.")
 	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
 	c.azureConfig.RegisterFlags(f)
@@ -169,11 +169,17 @@ func main() {
 }
 
 func initializeBuckets(ctx context.Context, cfg config) (sourceBucket bucket, destBucket bucket, err error) {
-	if cfg.sourceService == "" || cfg.destinationService == "" {
-		return nil, nil, errors.New("--source-service or --destination-service is missing")
+	if cfg.sourceService == "" {
+		return nil, nil, errors.New("--source-service is missing")
 	}
-	if cfg.sourceBucket == "" || cfg.destBucket == "" {
-		return nil, nil, errors.New("--source-bucket or --destination-bucket is missing")
+	if cfg.destinationService == "" {
+		return nil, nil, errors.New("--destination-service is missing")
+	}
+	if cfg.sourceBucket == "" {
+		return nil, nil, errors.New("--source-bucket is missing")
+	}
+	if cfg.destBucket == "" {
+		return nil, nil, errors.New("--destination-bucket is missing")
 	}
 	if cfg.sourceBucket == cfg.destBucket {
 		return nil, nil, errors.New("--source-bucket and --destination-bucket can not be the same")

@@ -51,16 +51,16 @@ type azureClientConfig struct {
 }
 
 func (c *azureClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
-	f.StringVar(&c.accountName, prefix+"account-name", "", "Account name for the azure bucket.")
-	f.StringVar(&c.accountKey, prefix+"account-key", "", "Account key for the azure bucket.")
+	f.StringVar(&c.accountName, prefix+"account-name", "", "Account name for the Azure bucket.")
+	f.StringVar(&c.accountKey, prefix+"account-key", "", "Account key for the Azure bucket.")
 }
 
 func (c *azureClientConfig) validate(prefix string) error {
 	if c.accountName == "" {
-		return fmt.Errorf("the azure bucket's account name (%s) is required", prefix+"account-name")
+		return fmt.Errorf("the Azure bucket's account name (%s) is required", prefix+"account-name")
 	}
 	if c.accountKey == "" {
-		return fmt.Errorf("the azure bucket's account key (%s) is required", prefix+"account-key")
+		return fmt.Errorf("the Azure bucket's account key (%s) is required", prefix+"account-key")
 	}
 	return nil
 }
@@ -79,15 +79,15 @@ func newAzureBucketClient(cfg azureClientConfig, containerURL string, backoffCfg
 	}
 	containerName := urlParts.ContainerName
 	if containerName == "" {
-		return nil, errors.New("container name missing from azure bucket URL")
+		return nil, errors.New("container name missing from Azure bucket URL")
 	}
 	serviceURL, found := strings.CutSuffix(containerURL, containerName)
 	if !found {
-		return nil, errors.New("malformed or unexpected azure bucket URL")
+		return nil, errors.New("malformed or unexpected Azure bucket URL")
 	}
 	keyCred, err := azblob.NewSharedKeyCredential(cfg.accountName, cfg.accountKey)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get azure shared key credential")
+		return nil, errors.Wrapf(err, "failed to get Azure shared key credential")
 	}
 	client, err := azblob.NewClientWithSharedKeyCredential(serviceURL, keyCred, nil)
 	if err != nil {
@@ -118,7 +118,7 @@ func (bkt *azureBucket) ServerSideCopy(ctx context.Context, objectName string, d
 	sourceClient := bkt.containerClient.NewBlobClient(objectName)
 	d, ok := dstBucket.(*azureBucket)
 	if !ok {
-		return errors.New("destination bucket wasn't a blob storage bucket")
+		return errors.New("destination bucket wasn't an Azure bucket")
 	}
 	dstClient := d.containerClient.NewBlobClient(objectName)
 
@@ -197,17 +197,17 @@ func (bkt *azureBucket) ClientSideCopy(ctx context.Context, objectName string, d
 	sourceClient := bkt.containerClient.NewBlobClient(objectName)
 	response, err := sourceClient.DownloadStream(ctx, nil)
 	if err != nil {
-		return errors.Wrap(err, "failed while getting source object from azure")
+		return errors.Wrap(err, "failed while getting source object from Azure")
 	}
 	if response.ContentLength == nil {
-		return errors.New("source object from azure did not contain a content length")
+		return errors.New("source object from Azure did not contain a content length")
 	}
 	body := response.DownloadResponse.Body
 	if err := dstBucket.Upload(ctx, objectName, body, *response.ContentLength); err != nil {
 		_ = body.Close()
-		return errors.New("failed uploading source object from azure to destination")
+		return errors.New("failed uploading source object from Azure to destination")
 	}
-	return errors.Wrap(body.Close(), "failed closing azure source object reader")
+	return errors.Wrap(body.Close(), "failed closing Azure source object reader")
 }
 
 func (bkt *azureBucket) ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error) {

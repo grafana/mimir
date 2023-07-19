@@ -36,7 +36,7 @@ func (bkt *gcsBucket) Get(ctx context.Context, objectName string) (io.ReadCloser
 func (bkt *gcsBucket) ServerSideCopy(ctx context.Context, objectName string, dstBucket bucket) error {
 	d, ok := dstBucket.(*gcsBucket)
 	if !ok {
-		return errors.New("destination bucket wasn't a gcs bucket")
+		return errors.New("destination bucket wasn't a GCS bucket")
 	}
 	srcObj := bkt.Object(objectName)
 	dstObject := d.BucketHandle.Object(objectName)
@@ -49,13 +49,13 @@ func (bkt *gcsBucket) ClientSideCopy(ctx context.Context, objectName string, dst
 	srcObj := bkt.Object(objectName)
 	reader, err := srcObj.NewReader(ctx)
 	if err != nil {
-		return errors.Wrap(err, "failed to get gcs source object reader")
+		return errors.Wrap(err, "failed to get GCS source object reader")
 	}
 	if err := dstBucket.Upload(ctx, objectName, reader, reader.Attrs.Size); err != nil {
 		_ = reader.Close()
-		return errors.Wrap(err, "failed to upload gcs source object to destination")
+		return errors.Wrap(err, "failed to upload GCS source object to destination")
 	}
-	return errors.Wrap(reader.Close(), "failed closing gcs source object reader")
+	return errors.Wrap(reader.Close(), "failed closing GCS source object reader")
 }
 
 func (bkt *gcsBucket) ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error) {

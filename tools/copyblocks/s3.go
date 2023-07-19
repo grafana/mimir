@@ -44,8 +44,8 @@ type s3ClientConfig struct {
 
 func (c *s3ClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
 	f.StringVar(&c.endpoint, prefix+"endpoint", "", "The endpoint to contact when accessing the bucket.")
-	f.StringVar(&c.accessKey, prefix+"access-key", "", "The access key used in AWSV4 Authorization.")
-	f.StringVar(&c.secretKey, prefix+"secret-key", "", "The secret key used in AWSV4 Authorization.")
+	f.StringVar(&c.accessKey, prefix+"access-key", "", "The access key used in AWS Signature Version 4 authentication.")
+	f.StringVar(&c.secretKey, prefix+"secret-key", "", "The secret key used in AWS Signature Version 4 authentication.")
 	f.BoolVar(&c.secure, prefix+"secure", true, "If true (default), use HTTPS when connecting to the bucket. If false, insecure HTTP is used.")
 }
 
@@ -92,7 +92,7 @@ func (bkt *s3Bucket) Get(ctx context.Context, objectName string) (io.ReadCloser,
 func (bkt *s3Bucket) ServerSideCopy(ctx context.Context, objectName string, dstBucket bucket) error {
 	d, ok := dstBucket.(*s3Bucket)
 	if !ok {
-		return errors.New("destination bucket wasn't an s3 bucket")
+		return errors.New("destination bucket wasn't an S3 bucket")
 	}
 	_, err := d.CopyObject(ctx,
 		minio.CopyDestOptions{
@@ -110,17 +110,17 @@ func (bkt *s3Bucket) ServerSideCopy(ctx context.Context, objectName string, dstB
 func (bkt *s3Bucket) ClientSideCopy(ctx context.Context, objectName string, dstBucket bucket) error {
 	obj, err := bkt.GetObject(ctx, bkt.bucketName, objectName, minio.GetObjectOptions{})
 	if err != nil {
-		return errors.Wrap(err, "failed to get source object from s3")
+		return errors.Wrap(err, "failed to get source object from S3")
 	}
 	objInfo, err := obj.Stat()
 	if err != nil {
-		return errors.Wrap(err, "failed to get source object information from s3")
+		return errors.Wrap(err, "failed to get source object information from S3")
 	}
 	if err := dstBucket.Upload(ctx, objectName, obj, objInfo.Size); err != nil {
 		_ = obj.Close()
-		return errors.Wrap(err, "failed to upload source object from s3 to destination")
+		return errors.Wrap(err, "failed to upload source object from S3 to destination")
 	}
-	return errors.Wrap(obj.Close(), "failed to close source object reader from s3")
+	return errors.Wrap(obj.Close(), "failed to close source object reader from S3")
 }
 
 func (bkt *s3Bucket) ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error) {
