@@ -70,7 +70,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	cfg.ListenPort = 10
 	cfg.TokenGenerationStrategy = spreadMinimizingTokenGeneration
 	cfg.SpreadMinimizingZones = []string{"zone-a", "zone-b", "zone-c"}
-	cfg.TokenGenerationCanJoinEnabled = true
+	cfg.SpreadMinimizingJoinRingInOrder = true
 
 	// The lifecycler config should be generated based upon the ingester ring config
 	expected.RingConfig.KVStore.Store = "memberlist"
@@ -103,7 +103,7 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	expected.ListenPort = cfg.ListenPort
 
 	logger := log.NewNopLogger()
-	tokenGenerator, err := ring.NewSpreadMinimizingTokenGenerator(expected.ID, expected.Zone, cfg.SpreadMinimizingZones, cfg.TokenGenerationCanJoinEnabled, logger)
+	tokenGenerator, err := ring.NewSpreadMinimizingTokenGenerator(expected.ID, expected.Zone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder, logger)
 	require.NoError(t, err)
 	expected.RingTokenGenerator = tokenGenerator
 
@@ -112,12 +112,12 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 
 func TestRingConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
-		zone                          string
-		tokenGenerationStrategy       string
-		tokenGenerationCanJoinEnabled bool
-		spreadMinimizingZones         []string
-		expectedError                 error
-		tokensFilePath                string
+		zone                            string
+		tokenGenerationStrategy         string
+		spreadMinimizingJoinRingInOrder bool
+		spreadMinimizingZones           []string
+		expectedError                   error
+		tokensFilePath                  string
 	}{
 		"spread-minimizing and correct zones pass validation": {
 			zone:                    instanceZone,
@@ -142,11 +142,11 @@ func TestRingConfig_Validate(t *testing.T) {
 			tokensFilePath:          "/path/tokens",
 			expectedError:           fmt.Errorf("%q token generation strategy requires %q to be empty", spreadMinimizingTokenGeneration, tokensFilePathFlag),
 		},
-		"spread-minimizing and token-generation-can-join-check-enabled pass validation": {
-			zone:                          instanceZone,
-			tokenGenerationStrategy:       spreadMinimizingTokenGeneration,
-			spreadMinimizingZones:         spreadMinimizingZones,
-			tokenGenerationCanJoinEnabled: true,
+		"spread-minimizing and spread-minimizing-join-ring-in-order pass validation": {
+			zone:                            instanceZone,
+			tokenGenerationStrategy:         spreadMinimizingTokenGeneration,
+			spreadMinimizingZones:           spreadMinimizingZones,
+			spreadMinimizingJoinRingInOrder: true,
 		},
 		"random passes validation": {
 			zone:                    instanceZone,
@@ -157,11 +157,11 @@ func TestRingConfig_Validate(t *testing.T) {
 			tokenGenerationStrategy: randomTokenGeneration,
 			tokensFilePath:          "/path/tokens",
 		},
-		"random and token-generation-can-join-check-enabled don't pass validation": {
-			zone:                          instanceZone,
-			tokenGenerationStrategy:       randomTokenGeneration,
-			tokenGenerationCanJoinEnabled: true,
-			expectedError:                 fmt.Errorf("%q must be false in %q token generation strategy", tokenGenerationCanJoinEnabledFlag, randomTokenGeneration),
+		"random and spread-minimizing-join-ring-in-order don't pass validation": {
+			zone:                            instanceZone,
+			tokenGenerationStrategy:         randomTokenGeneration,
+			spreadMinimizingJoinRingInOrder: true,
+			expectedError:                   fmt.Errorf("%q must be false when using %q token generation strategy", spreadMinimizingJoinRingInOrderFlag, randomTokenGeneration),
 		},
 		"unknown token generation doesn't pass validation": {
 			zone:                    instanceZone,
@@ -175,7 +175,7 @@ func TestRingConfig_Validate(t *testing.T) {
 		cfg.InstanceID = instanceID
 		cfg.InstanceZone = testData.zone
 		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
-		cfg.TokenGenerationCanJoinEnabled = testData.tokenGenerationCanJoinEnabled
+		cfg.SpreadMinimizingJoinRingInOrder = testData.spreadMinimizingJoinRingInOrder
 		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
 		cfg.TokensFilePath = testData.tokensFilePath
 		err := cfg.Validate()
@@ -229,24 +229,24 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 	}
 }
 
-func TestRingConfig_TokenGenerationCanJoinCheckEnabled(t *testing.T) {
+func TestRingConfig_SpreadMinimizingJoinRingInOrder(t *testing.T) {
 	tests := map[string]struct {
-		zone                          string
-		tokenGenerationStrategy       string
-		tokenGenerationCanJoinEnabled bool
-		expectedCanJoinEnabled        bool
+		zone                            string
+		tokenGenerationStrategy         string
+		spreadMinimizingJoinRingInOrder bool
+		expectedCanJoinEnabled          bool
 	}{
-		"spread-minimizing and token-generation-can-join-check-enabled allow can join": {
-			zone:                          instanceZone,
-			tokenGenerationStrategy:       spreadMinimizingTokenGeneration,
-			tokenGenerationCanJoinEnabled: true,
-			expectedCanJoinEnabled:        true,
+		"spread-minimizing and spread-minimizing-join-ring-in-order allow can join": {
+			zone:                            instanceZone,
+			tokenGenerationStrategy:         spreadMinimizingTokenGeneration,
+			spreadMinimizingJoinRingInOrder: true,
+			expectedCanJoinEnabled:          true,
 		},
-		"spread-minimizing without token-generation-can-join-check-enabled doesn't allow can join": {
-			zone:                          instanceZone,
-			tokenGenerationStrategy:       spreadMinimizingTokenGeneration,
-			tokenGenerationCanJoinEnabled: false,
-			expectedCanJoinEnabled:        false,
+		"spread-minimizing without spread-minimizing-join-ring-in-order doesn't allow can join": {
+			zone:                            instanceZone,
+			tokenGenerationStrategy:         spreadMinimizingTokenGeneration,
+			spreadMinimizingJoinRingInOrder: false,
+			expectedCanJoinEnabled:          false,
 		},
 		"random doesn't allow can join": {
 			zone:                    instanceZone,
@@ -260,11 +260,11 @@ func TestRingConfig_TokenGenerationCanJoinCheckEnabled(t *testing.T) {
 		cfg.InstanceID = instanceID
 		cfg.InstanceZone = instanceZone
 		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
-		cfg.TokenGenerationCanJoinEnabled = testData.tokenGenerationCanJoinEnabled
+		cfg.SpreadMinimizingJoinRingInOrder = testData.spreadMinimizingJoinRingInOrder
 		cfg.SpreadMinimizingZones = spreadMinimizingZones
 		lifecyclerConfig := cfg.ToLifecyclerConfig(log.NewNopLogger())
 		tokenGenerator := lifecyclerConfig.RingTokenGenerator
 		assert.NotNil(t, tokenGenerator)
-		assert.Equal(t, testData.tokenGenerationCanJoinEnabled, tokenGenerator.CanJoinEnabled())
+		assert.Equal(t, testData.spreadMinimizingJoinRingInOrder, tokenGenerator.CanJoinEnabled())
 	}
 }

@@ -2564,12 +2564,12 @@
             },
             {
               "kind": "field",
-              "name": "token_generation_can_join_check_enabled",
+              "name": "spread_minimizing_join_ring_in_order",
               "required": false,
-              "desc": "True if ingesters should perform the token generator's CanJoin check before joining the ring. This check is token generator's implementation-specific.",
+              "desc": "True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to \"spread-minimizing\".",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ingester.ring.token-generation-can-join-check-enabled",
+              "fieldFlag": "ingester.ring.spread-minimizing-join-ring-in-order",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
