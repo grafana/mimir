@@ -2564,6 +2564,17 @@
             },
             {
               "kind": "field",
+              "name": "spread_minimizing_join_ring_in_order",
+              "required": false,
+              "desc": "True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to \"spread-minimizing\".",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.ring.spread-minimizing-join-ring-in-order",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "spread_minimizing_zones",
               "required": false,
               "desc": "Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when \"token-generation-strategy\" is set to \"spread-minimizing\".",
