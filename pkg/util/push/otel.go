@@ -131,6 +131,7 @@ func OTLPHandler(
 			return body, err
 		}
 
+<<<<<<< HEAD
 		metricCount := len(metrics)
 		sampleCount := 0
 		histogramCount := 0
@@ -158,6 +159,9 @@ func OTLPHandler(
 		if err != nil {
 			return body, err
 		}
+=======
+		metadata := otelMetricsToMetadata(otlpReq.Metrics())
+>>>>>>> 2f307623c (chore: remove TODOs and and unused code)
 
 		req.Metadata = metadata
 
@@ -165,11 +169,8 @@ func OTLPHandler(
 	})
 }
 
-func otelMetricsToMetadata(logger kitlog.Logger, md pmetric.Metrics) ([]*mimirpb.MetricMetadata, error) {
+func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 	var metadata []*mimirpb.MetricMetadata
-
-	// TODO check for empty metadata & log it
-	// TODO missing error handling??
 
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
@@ -179,7 +180,6 @@ func otelMetricsToMetadata(logger kitlog.Logger, md pmetric.Metrics) ([]*mimirpb
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
 			scopeMetrics := scopeMetricsSlice.At(j)
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
-				level.Info(logger).Log("metadata", "help", "metricName", scopeMetrics.Metrics().At(k).Name(), "description", scopeMetrics.Metrics().At(k).Description())
 				entry := mimirpb.MetricMetadata{
 					Type:             mimirpb.MetricMetadata_MetricType(scopeMetrics.Metrics().At(k).Type()),
 					MetricFamilyName: strings.ReplaceAll(scopeMetrics.Metrics().At(k).Name(), ".", "_"),
@@ -191,7 +191,7 @@ func otelMetricsToMetadata(logger kitlog.Logger, md pmetric.Metrics) ([]*mimirpb
 		}
 	}
 
-	return metadata, nil
+	return metadata
 
 }
 
