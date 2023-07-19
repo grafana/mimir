@@ -3026,7 +3026,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DefaultLimits.MaxInflightPushRequestsBytes = cfg.maxInflightRequestsBytes
 		distributorCfg.DefaultLimits.MaxIngestionRate = cfg.maxIngestionRate
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
-		distributorCfg.PreferStreamingChunks = cfg.preferStreamingChunks
+		distributorCfg.PreferStreamingChunksFromIngesters = cfg.preferStreamingChunks
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
 
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize

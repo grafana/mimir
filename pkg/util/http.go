@@ -14,6 +14,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-kit/log"
@@ -295,4 +296,49 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 		return fmt.Errorf("error sending proto response: %v", err)
 	}
 	return nil
+}
+
+// ParseRequestFormWithoutConsumingBody parsed and returns the request parameters (query string and/or request body)
+// from the input http.Request. If the request has a Body, the request's Body is replaces so that it can be consumed again.
+func ParseRequestFormWithoutConsumingBody(r *http.Request) (url.Values, error) {
+	if r.Body == nil {
+		if err := r.ParseForm(); err != nil {
+			return nil, err
+		}
+
+		return r.Form, nil
+	}
+
+	// Close the original body reader. It's going to be replaced later in this function.
+	origBody := r.Body
+	defer func() { _ = origBody.Close() }()
+
+	// Store the body contents, so we can read it multiple times.
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	// Parse the request data.
+	if err := r.ParseForm(); err != nil {
+		return nil, err
+	}
+
+	// Store a copy of the params and restore the request state.
+	// Restore the body, so it can be read again if it's used to forward the request through a roundtripper.
+	// Restore the Form and PostForm, to avoid subtle bugs in middlewares, as they were set by ParseForm.
+	params := copyValues(r.Form)
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	r.Form, r.PostForm = nil, nil
+
+	return params, nil
+}
+
+func copyValues(src url.Values) url.Values {
+	dst := make(url.Values, len(src))
+	for k, vs := range src {
+		dst[k] = append([]string(nil), vs...)
+	}
+	return dst
 }

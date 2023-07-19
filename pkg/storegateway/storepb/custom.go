@@ -39,6 +39,22 @@ func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
 	}
 }
 
+func NewStreamingSeriesResponse(series *StreamingSeriesBatch) *SeriesResponse {
+	return &SeriesResponse{
+		Result: &SeriesResponse_StreamingSeries{
+			StreamingSeries: series,
+		},
+	}
+}
+
+func NewStreamingChunksResponse(series *StreamingChunksBatch) *SeriesResponse {
+	return &SeriesResponse{
+		Result: &SeriesResponse_StreamingChunks{
+			StreamingChunks: series,
+		},
+	}
+}
+
 type emptySeriesSet struct{}
 
 func (emptySeriesSet) Next() bool                       { return false }

@@ -22,14 +22,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-
-	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 )
 
 func TestAMConfigValidationAPI(t *testing.T) {

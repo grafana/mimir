@@ -145,7 +145,7 @@ github.com/armon/go-metrics/prometheus
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
-# github.com/aws/aws-sdk-go v1.44.298
+# github.com/aws/aws-sdk-go v1.44.300
 ## explicit; go 1.11
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
@@ -555,7 +555,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230629144239-f335545f8ba3
+# github.com/grafana/dskit v0.0.0-20230718115325-c30720760c5d
 ## explicit; go 1.18
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -691,10 +691,10 @@ github.com/json-iterator/go
 # github.com/julienschmidt/httprouter v1.3.0
 ## explicit; go 1.7
 github.com/julienschmidt/httprouter
-# github.com/klauspost/compress v1.15.15
-## explicit; go 1.17
+# github.com/klauspost/compress v1.16.5
+## explicit; go 1.18
 github.com/klauspost/compress/s2
-# github.com/klauspost/cpuid/v2 v2.1.1
+# github.com/klauspost/cpuid/v2 v2.2.4
 ## explicit; go 1.15
 github.com/klauspost/cpuid/v2
 # github.com/kylelemons/godebug v1.1.0
@@ -721,7 +721,7 @@ github.com/miekg/dns
 # github.com/minio/md5-simd v1.1.2
 ## explicit; go 1.14
 github.com/minio/md5-simd
-# github.com/minio/minio-go/v7 v7.0.45
+# github.com/minio/minio-go/v7 v7.0.60
 ## explicit; go 1.17
 github.com/minio/minio-go/v7
 github.com/minio/minio-go/v7/pkg/credentials
@@ -734,8 +734,8 @@ github.com/minio/minio-go/v7/pkg/set
 github.com/minio/minio-go/v7/pkg/signer
 github.com/minio/minio-go/v7/pkg/sse
 github.com/minio/minio-go/v7/pkg/tags
-# github.com/minio/sha256-simd v1.0.0
-## explicit; go 1.13
+# github.com/minio/sha256-simd v1.0.1
+## explicit; go 1.17
 github.com/minio/sha256-simd
 # github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 ## explicit
@@ -743,8 +743,8 @@ github.com/mitchellh/colorstring
 # github.com/mitchellh/go-homedir v1.1.0
 ## explicit
 github.com/mitchellh/go-homedir
-# github.com/mitchellh/go-wordwrap v1.0.0
-## explicit
+# github.com/mitchellh/go-wordwrap v1.0.1
+## explicit; go 1.14
 github.com/mitchellh/go-wordwrap
 # github.com/mitchellh/mapstructure v1.5.0
 ## explicit; go 1.14
@@ -773,10 +773,10 @@ github.com/oklog/run
 # github.com/oklog/ulid v1.3.1
 ## explicit
 github.com/oklog/ulid
-# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.73.0
+# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.81.0
 ## explicit; go 1.19
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus
-# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.73.0
+# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717235037-3f2821e2c1b1
 ## explicit; go 1.19
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite
 # github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
@@ -874,7 +874,7 @@ github.com/prometheus/common/sigv4
 # github.com/prometheus/exporter-toolkit v0.10.0
 ## explicit; go 1.18
 github.com/prometheus/exporter-toolkit/web
-# github.com/prometheus/procfs v0.10.1
+# github.com/prometheus/procfs v0.11.0
 ## explicit; go 1.19
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
@@ -936,7 +936,7 @@ github.com/rainycape/unidecode
 # github.com/rs/cors v1.9.0
 ## explicit; go 1.13
 github.com/rs/cors
-# github.com/rs/xid v1.4.0
+# github.com/rs/xid v1.5.0
 ## explicit; go 1.12
 github.com/rs/xid
 # github.com/ryanuber/go-glob v1.0.0
@@ -1090,7 +1090,7 @@ go.opencensus.io/trace
 go.opencensus.io/trace/internal
 go.opencensus.io/trace/propagation
 go.opencensus.io/trace/tracestate
-# go.opentelemetry.io/collector/featuregate v0.73.0
+# go.opentelemetry.io/collector/featuregate v1.0.0-rcv0013
 ## explicit; go 1.19
 go.opentelemetry.io/collector/featuregate
 # go.opentelemetry.io/collector/pdata v1.0.0-rcv0013
@@ -1110,7 +1110,7 @@ go.opentelemetry.io/collector/pdata/internal/otlp
 go.opentelemetry.io/collector/pdata/pcommon
 go.opentelemetry.io/collector/pdata/pmetric
 go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp
-# go.opentelemetry.io/collector/semconv v0.73.0
+# go.opentelemetry.io/collector/semconv v0.81.0
 ## explicit; go 1.19
 go.opentelemetry.io/collector/semconv/v1.6.1
 # go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0

@@ -1247,6 +1247,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.log-utilization-based-limiter-cpu-samples
+    	[experimental] Enable logging of utilization based limiter CPU samples.
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
@@ -1349,6 +1351,8 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ingester.ring.replication-factor int
     	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 3)
+  -ingester.ring.spread-minimizing-join-ring-in-order
+    	[experimental] True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to "spread-minimizing".
   -ingester.ring.spread-minimizing-zones comma-separated-list-of-strings
     	[experimental] Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when "token-generation-strategy" is set to "spread-minimizing".
   -ingester.ring.store string
@@ -1365,6 +1369,8 @@ Usage of ./cmd/mimir/mimir:
     	Stream chunks from ingesters to queriers. (default true)
   -ingester.tsdb-config-update-period duration
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
+  -log.buffered
+    	Use a buffered logger to reduce write contention.
   -log.format value
     	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
   -log.level value
@@ -1611,8 +1617,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.
   -querier.minimize-ingester-requests-hedging-delay duration
     	[experimental] Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
-  -querier.prefer-streaming-chunks
+  -querier.prefer-streaming-chunks-from-ingesters
     	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.
+  -querier.prefer-streaming-chunks-from-store-gateways
+    	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
   -querier.query-ingesters-within duration
     	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h)
   -querier.query-store-after duration
@@ -1639,6 +1647,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.streaming-chunks-per-ingester-buffer-size uint
     	[experimental] Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
+  -querier.streaming-chunks-per-store-gateway-buffer-size uint
+    	[experimental] Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-queries-with-step

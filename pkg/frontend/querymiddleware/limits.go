@@ -13,11 +13,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"

@@ -13,7 +13,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"

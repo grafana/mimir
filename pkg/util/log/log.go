@@ -7,7 +7,9 @@ package log
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -19,13 +21,14 @@ var (
 	// Logger is a shared go-kit logger.
 	// TODO: Change all components to take a non-global logger via their constructors.
 	// Prefer accepting a non-global logger as an argument.
-	Logger = log.NewNopLogger()
+	Logger         = log.NewNopLogger()
+	bufferedLogger *LineBufferedLogger
 )
 
 // InitLogger initialises the global gokit logger (util_log.Logger) and overrides the
 // default logger for the server.
-func InitLogger(cfg *server.Config) {
-	l := newBasicLogger(cfg.LogFormat)
+func InitLogger(cfg *server.Config, buffered bool, sync bool) {
+	l := newBasicLogger(cfg.LogFormat, buffered, sync)
 
 	// when using util_log.Logger, skip 5 stack frames.
 	logger := log.With(l, "caller", log.Caller(5))
@@ -36,12 +39,35 @@ func InitLogger(cfg *server.Config) {
 	cfg.Log = logging.GoKit(level.NewFilter(log.With(l, "caller", log.Caller(6)), cfg.LogLevel.Gokit))
 }
 
-func newBasicLogger(format logging.Format) log.Logger {
+func newBasicLogger(format logging.Format, buffered bool, sync bool) log.Logger {
 	var logger log.Logger
+	var writer io.Writer = os.Stderr
+
+	if buffered {
+		var (
+			logEntries    uint32 = 256                    // buffer up to 256 log lines in memory before flushing to a write(2) syscall
+			logBufferSize uint32 = 10e6                   // 10MB
+			flushTimeout         = 100 * time.Millisecond // flush the buffer after 100ms regardless of how full it is, to prevent losing many logs in case of ungraceful termination
+		)
+
+		// retain a reference to this logger because it doesn't conform to the standard Logger interface,
+		// and we can't unwrap it to get the underlying logger when we flush on shutdown
+		bufferedLogger = NewLineBufferedLogger(writer, logEntries,
+			WithFlushPeriod(flushTimeout),
+			WithPrellocatedBuffer(logBufferSize),
+		)
+
+		writer = bufferedLogger
+	}
+
+	if sync {
+		writer = log.NewSyncWriter(writer)
+	}
+
 	if format.String() == "json" {
-		logger = log.NewJSONLogger(log.NewSyncWriter(os.Stderr))
+		logger = log.NewJSONLogger(writer)
 	} else {
-		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+		logger = log.NewLogfmtLogger(writer)
 	}
 
 	// return a Logger without filter or caller information, shouldn't use directly
@@ -50,7 +76,7 @@ func newBasicLogger(format logging.Format) log.Logger {
 
 // NewDefaultLogger creates a new gokit logger with the configured level and format
 func NewDefaultLogger(l logging.Level, format logging.Format) log.Logger {
-	logger := newBasicLogger(format)
+	logger := newBasicLogger(format, false, true)
 	return level.NewFilter(log.With(logger, "ts", log.DefaultTimestampUTC), l.Gokit)
 }
 
@@ -63,6 +89,20 @@ func CheckFatal(location string, err error) {
 		}
 		// %+v gets the stack trace from errors using github.com/pkg/errors
 		logger.Log("err", fmt.Sprintf("%+v", err))
+
+		if err = Flush(); err != nil {
+			fmt.Fprintln(os.Stderr, "Could not flush logger", err)
+		}
 		os.Exit(1)
 	}
+}
+
+// Flush forces the buffered logger, if configured, to flush to the underlying writer
+// This is typically only called when the application is shutting down.
+func Flush() error {
+	if bufferedLogger != nil {
+		return bufferedLogger.Flush()
+	}
+
+	return nil
 }

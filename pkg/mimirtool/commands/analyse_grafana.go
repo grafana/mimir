@@ -14,10 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana-tools/sdk"
 	"github.com/prometheus/common/model"
 	"golang.org/x/exp/slices"
-
-	"github.com/grafana-tools/sdk"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"

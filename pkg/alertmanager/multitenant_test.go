@@ -33,6 +33,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
+	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/alertmanager/types"
@@ -47,8 +48,6 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
-
-	amconfig "github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
