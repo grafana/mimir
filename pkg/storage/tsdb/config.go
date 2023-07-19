@@ -202,6 +202,7 @@ type TSDBConfig struct {
 	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
 	StripeSize                int           `yaml:"stripe_size" category:"advanced"`
 	WALCompressionEnabled     bool          `yaml:"wal_compression_enabled" category:"advanced"`
+	WALCompressionType        wlog.CompressionType
 	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes" category:"advanced"`
 	WALReplayConcurrency      int           `yaml:"wal_replay_concurrency" category:"advanced"`
 	FlushBlocksOnShutdown     bool          `yaml:"flush_blocks_on_shutdown" category:"advanced"`
@@ -292,6 +293,12 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 10, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
+
+	if cfg.WALCompressionEnabled {
+		cfg.WALCompressionType = wlog.CompressionSnappy
+	} else {
+		cfg.WALCompressionType = wlog.CompressionNone
+	}
 }
 
 // Validate the config.

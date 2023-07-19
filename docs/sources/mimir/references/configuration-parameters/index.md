@@ -3507,6 +3507,8 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.wal-compression-enabled
   [wal_compression_enabled: <boolean> | default = false]
 
+  [walcompressiontype: <string> | default = ""]
+
   # (advanced) TSDB WAL segments files max size (bytes).
   # CLI flag: -blocks-storage.tsdb.wal-segment-size-bytes
   [wal_segment_size_bytes: <int> | default = 134217728]

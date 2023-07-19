@@ -7690,6 +7690,15 @@
             },
             {
               "kind": "field",
+              "name": "walcompressiontype",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "wal_segment_size_bytes",
               "required": false,
               "desc": "TSDB WAL segments files max size (bytes).",
