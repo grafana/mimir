@@ -60,7 +60,8 @@ type ingesterMetrics struct {
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
 
-	discarded *discardedMetrics
+	discarded         *discardedMetrics
+	discardedInstance *prometheus.CounterVec
 
 	// Discarded metadata
 	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
@@ -310,6 +311,10 @@ func newIngesterMetrics(
 		}),
 
 		discarded: newDiscardedMetrics(r),
+		discardedInstance: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_instance_discarded_requests_total",
+			Help: "Requests discarded for hitting per-instance limits",
+		}, []string{"reason"}),
 
 		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
 		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),

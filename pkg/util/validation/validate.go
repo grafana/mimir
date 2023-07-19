@@ -56,6 +56,15 @@ var (
 
 	// ReasonTooManyHAClusters is one of the reasons for discarding samples.
 	ReasonTooManyHAClusters = "too_many_ha_clusters"
+
+	ReasonDistributorMaxIngestionRate             = metricReasonFromErrorID(globalerror.DistributorMaxIngestionRate)
+	ReasonDistributorMaxInflightPushRequests      = metricReasonFromErrorID(globalerror.DistributorMaxInflightPushRequests)
+	ReasonDistributorMaxInflightPushRequestsBytes = metricReasonFromErrorID(globalerror.DistributorMaxInflightPushRequestsBytes)
+
+	ReasonIngesterMaxIngestionRate        = metricReasonFromErrorID(globalerror.IngesterMaxIngestionRate)
+	ReasonIngesterMaxTenants              = metricReasonFromErrorID(globalerror.IngesterMaxTenants)
+	ReasonIngesterMaxInMemorySeries       = metricReasonFromErrorID(globalerror.IngesterMaxInMemorySeries)
+	ReasonIngesterMaxInflightPushRequests = metricReasonFromErrorID(globalerror.IngesterMaxInflightPushRequests)
 )
 
 func metricReasonFromErrorID(id globalerror.ID) string {

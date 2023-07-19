@@ -126,11 +126,15 @@ type Distributor struct {
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
 
+	// Metrics for data rejected for hitting per-tenant limits
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
 	discardedSamplesRateLimited       *prometheus.CounterVec
 	discardedRequestsRateLimited      *prometheus.CounterVec
 	discardedExemplarsRateLimited     *prometheus.CounterVec
 	discardedMetadataRateLimited      *prometheus.CounterVec
+
+	// Metrics for data rejected for hitting per-instance limits
+	discardedInstanceRequests *prometheus.CounterVec
 
 	sampleValidationMetrics   *validation.SampleValidationMetrics
 	exemplarValidationMetrics *validation.ExemplarValidationMetrics
@@ -325,8 +329,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:      "The configured replication factor.",
 		}),
 		latestSeenSampleTimestampPerUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
-			Help: "Unix timestamp of latest received sample per user.",
+			Namespace: "cortex",
+			Name:      "distributor_latest_seen_sample_timestamp_seconds",
+			Help:      "Unix timestamp of latest received sample per user.",
 		}, []string{"user"}),
 
 		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, validation.ReasonTooManyHAClusters),
@@ -334,6 +339,12 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		discardedRequestsRateLimited:      validation.DiscardedRequestsCounter(reg, validation.ReasonRateLimited),
 		discardedExemplarsRateLimited:     validation.DiscardedExemplarsCounter(reg, validation.ReasonRateLimited),
 		discardedMetadataRateLimited:      validation.DiscardedMetadataCounter(reg, validation.ReasonRateLimited),
+
+		discardedInstanceRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_instance_discarded_requests_total",
+			Help:      "Requests discarded for hitting per-instance limits",
+		}, []string{"reason"}),
 
 		sampleValidationMetrics:   validation.NewSampleValidationMetrics(reg),
 		exemplarValidationMetrics: validation.NewExemplarValidationMetrics(reg),
@@ -1014,11 +1025,13 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		il := d.getInstanceLimits()
 		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
+			d.discardedInstanceRequests.WithLabelValues(validation.ReasonDistributorMaxInflightPushRequests).Inc()
 			return nil, middleware.DoNotLogError{Err: errMaxInflightRequestsReached}
 		}
 
 		if il.MaxIngestionRate > 0 {
 			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+				d.discardedInstanceRequests.WithLabelValues(validation.ReasonDistributorMaxIngestionRate).Inc()
 				return nil, errMaxIngestionRateReached
 			}
 		}
@@ -1049,6 +1062,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		})
 
 		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
+			d.discardedInstanceRequests.WithLabelValues(validation.ReasonDistributorMaxInflightPushRequestsBytes).Inc()
 			return nil, errMaxInflightRequestsBytesReached
 		}
 
