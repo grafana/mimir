@@ -47,13 +47,11 @@ func (l *LineBufferedLogger) Write(p []byte) (n int, err error) {
 
 // Flush forces the buffer to be written to the underlying writer.
 func (l *LineBufferedLogger) Flush() error {
-	sz := l.Size()
+	// reset the counter
+	sz := l.entries.Swap(0)
 	if sz <= 0 {
 		return nil
 	}
-
-	// reset the counter
-	l.entries.Store(0)
 
 	// WriteTo() calls Reset() on the underlying buffer, so it's not needed here
 	_, err := l.buf.WriteTo(l.w)

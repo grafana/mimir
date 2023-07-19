@@ -97,10 +97,6 @@ func CheckFatal(location string, err error) {
 	}
 }
 
-type Flusher interface {
-	Flush() error
-}
-
 // Flush forces the buffered logger, if configured, to flush to the underlying writer
 // This is typically only called when the application is shutting down.
 func Flush() error {
