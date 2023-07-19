@@ -15,9 +15,10 @@
   * `cortex_frontend_query_result_cache_requests_total{request_type="query_range|cardinality|label_names_and_values"}`
   * `cortex_frontend_query_result_cache_hits_total{request_type="query_range|cardinality|label_names_and_values"}`
 * [FEATURE] Added `-<prefix>.s3.list-objects-version` flag to configure the S3 list objects version.
-* [FEATURE] Ingester: Add optional CPU/memory utilization based read request limiting, considered experimental. Disabled by default, enable by configuring limits via both of the following flags: #5012 #5392 #5394 #5526
+* [FEATURE] Ingester: Add optional CPU/memory utilization based read request limiting, considered experimental. Disabled by default, enable by configuring limits via both of the following flags: #5012 #5392 #5394 #5526 #5508
   * `-ingester.read-path-cpu-utilization-limit`
   * `-ingester.read-path-memory-utilization-limit`
+  * `-ingester.log-utilization-based-limiter-cpu-samples`
 * [FEATURE] Ruler: Support filtering results from rule status endpoint by `file`, `rule_group` and `rule_name`. #5291
 * [FEATURE] Ingester: add experimental support for creating tokens by using spread minimizing strategy. This can be enabled with `-ingester.ring.token-generation-strategy: spread-minimizing` and `-ingester.ring.spread-minimizing-zones: <all available zones>`. In that case `-ingester.ring.tokens-file-path` must be empty. #5308 #5324
 * [FEATURE] Ingester: add experimental support to compact the TSDB Head when the number of in-memory series is equal or greater than `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`, and the ingester estimates that the per-tenant TSDB Head compaction will reduce in-memory series by at least `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`. #5371

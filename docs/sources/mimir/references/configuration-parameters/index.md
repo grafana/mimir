@@ -988,6 +988,10 @@ instance_limits:
 # request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
+
+# (experimental) Enable logging of utilization based limiter CPU samples.
+# CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
+[log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
 ```
 
 ### querier
