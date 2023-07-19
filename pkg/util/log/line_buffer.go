@@ -120,7 +120,7 @@ type threadsafeBuffer struct {
 	buf *bytes.Buffer
 }
 
-// Read returns the contents of the buffer.
+// Read reads up to len(p) bytes into p. It returns the number of bytes read (0 <= n <= len(p)) and any error encountered.
 func (t *threadsafeBuffer) Read(p []byte) (n int, err error) {
 	t.RLock()
 	defer t.RUnlock()

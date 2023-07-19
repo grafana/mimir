@@ -24,7 +24,6 @@ const (
 
 // BenchmarkLineBuffered creates line-buffered loggers of various capacities to see which perform best.
 func BenchmarkLineBuffered(b *testing.B) {
-
 	for i := 1; i <= 2048; i *= 2 {
 		f := outFile(b)
 		defer os.RemoveAll(f.Name())
@@ -136,7 +135,7 @@ func outFile(b *testing.B) *os.File {
 }
 
 // Copied from go-kit/log
-// These test are designed to be run with the race detector.
+// These tests are designed to be run with the race detector.
 
 func testConcurrency(t *testing.T, logger log.Logger, total int) {
 	n := int(math.Sqrt(float64(total)))
