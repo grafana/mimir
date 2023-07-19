@@ -46,7 +46,7 @@ func (c *s3ClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
 	f.StringVar(&c.endpoint, prefix+"endpoint", "", "The endpoint to contact when accessing the bucket.")
 	f.StringVar(&c.accessKey, prefix+"access-key", "", "The access key used in AWSV4 Authorization.")
 	f.StringVar(&c.secretKey, prefix+"secret-key", "", "The secret key used in AWSV4 Authorization.")
-	f.BoolVar(&c.secure, prefix+"secure", true, "The default value true corresponds to using https, otherwise uses http.")
+	f.BoolVar(&c.secure, prefix+"secure", true, "If true (default), use HTTPS when connecting to the bucket. If false, insecure HTTP is used.")
 }
 
 func (c *s3ClientConfig) validate(prefix string) error {

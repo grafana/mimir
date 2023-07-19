@@ -74,7 +74,7 @@ type config struct {
 
 func (c *config) RegisterFlags(f *flag.FlagSet) {
 	acceptedServices := fmt.Sprintf(" Accepted values: %s, %s or %s.", serviceABS, serviceGCS, serviceS3)
-	f.StringVar(&c.sourceService, "source-service", "", "Service that the source buckets is on."+acceptedServices)
+	f.StringVar(&c.sourceService, "source-service", "", "Service that the source bucket is on."+acceptedServices)
 	f.StringVar(&c.destinationService, "destination-service", "", "Service that the destination bucket is on."+acceptedServices)
 	f.StringVar(&c.sourceBucket, "source-bucket", "", "Source bucket with blocks.")
 	f.StringVar(&c.destBucket, "destination-bucket", "", "Destination bucket with blocks.")
@@ -87,7 +87,7 @@ func (c *config) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&c.enabledUsers, "enabled-users", "If not empty, only blocks for these users are copied.")
 	f.Var(&c.disabledUsers, "disabled-users", "If not empty, blocks for these users are not copied.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform copy; only log what would happen.")
-	f.BoolVar(&c.clientSideCopy, "client-side-copy", false, "Use client side copying. This option is only respected if copying between two buckets of the same service, otherwise it is assumed to be true.")
+	f.BoolVar(&c.clientSideCopy, "client-side-copy", false, "Use client side copying. This option is only respected if copying between two buckets of the same service. Client side copying is always used when copying between different services.")
 	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
 	c.azureConfig.RegisterFlags(f)
 	c.s3Config.RegisterFlags(f)
