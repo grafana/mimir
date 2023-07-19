@@ -4,7 +4,9 @@ package limiter
 
 import (
 	"bytes"
+	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,7 +181,12 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 			ts = ts.Add(time.Second)
 		}
 
-		assert.Equal(t, instValues[2:62], lim.cpuSamples)
+		var sampleStrs []string
+		for i := 2; i < 62; i++ {
+			sampleStrs = append(sampleStrs, fmt.Sprintf("%.2f", instValues[i]))
+		}
+		exp := strings.Join(sampleStrs, ",")
+		assert.Equal(t, exp, lim.cpuSamples.String())
 	})
 }
 

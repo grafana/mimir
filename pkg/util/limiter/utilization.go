@@ -70,7 +70,7 @@ type UtilizationBasedLimiter struct {
 	currCPUUtil    atomic.Float64
 	currMemoryUtil atomic.Uint64
 	// For logging of input to CPU load EWMA calculation, keep window of source samples
-	cpuSamples []float64
+	cpuSamples *cpuSampleBuffer
 }
 
 // NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
@@ -79,9 +79,9 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logCPUSamp
 	// Calculate alpha for a minute long window
 	// https://github.com/VividCortex/ewma#choosing-alpha
 	alpha := 2 / (resourceUtilizationSlidingWindow.Seconds()/resourceUtilizationUpdateInterval.Seconds() + 1)
-	var cpuSamples []float64
+	var cpuSamples *cpuSampleBuffer
 	if logCPUSamples {
-		cpuSamples = make([]float64, int(resourceUtilizationSlidingWindow.Seconds()))
+		cpuSamples = newCPUSampleBuffer(int(resourceUtilizationSlidingWindow.Seconds()))
 	}
 	l := &UtilizationBasedLimiter{
 		logger:      logger,
@@ -159,11 +159,8 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 		cpuUtil := (cpuTime - prevCPUTime) / now.Sub(prevUpdate).Seconds()
 		l.cpuMovingAvg.Add(int64(cpuUtil * 100))
 		l.cpuMovingAvg.Tick()
-		if len(l.cpuSamples) > 0 {
-			for i := 1; i < len(l.cpuSamples); i++ {
-				l.cpuSamples[i-1] = l.cpuSamples[i]
-			}
-			l.cpuSamples[len(l.cpuSamples)-1] = cpuUtil
+		if l.cpuSamples != nil {
+			l.cpuSamples.Add(cpuUtil)
 		}
 	}
 
@@ -196,14 +193,9 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 
 	if enable {
 		logger := l.logger
-		if len(l.cpuSamples) > 0 {
+		if l.cpuSamples != nil {
 			// Log also the CPU samples the CPU load EWMA is based on
-			var srcSamples []string
-			for _, s := range l.cpuSamples {
-				srcSamples = append(srcSamples, fmt.Sprintf("%.2f", s))
-			}
-			srcSamplesStr := strings.Join(srcSamples, ",")
-			logger = log.WithSuffix(logger, "source_samples", srcSamplesStr)
+			logger = log.WithSuffix(logger, "source_samples", l.cpuSamples.String())
 		}
 		level.Info(logger).Log("msg", "enabling resource utilization based limiting",
 			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
@@ -240,4 +232,36 @@ func formatMemoryLimit(limit uint64) string {
 		return "disabled"
 	}
 	return formatMemory(limit)
+}
+
+// cpuSampleBuffer is a circular buffer of CPU samples.
+type cpuSampleBuffer struct {
+	samples []float64
+	head    int
+}
+
+func newCPUSampleBuffer(size int) *cpuSampleBuffer {
+	return &cpuSampleBuffer{
+		samples: make([]float64, size),
+	}
+}
+
+// Add adds a sample to the buffer.
+func (b *cpuSampleBuffer) Add(sample float64) {
+	b.samples[b.head] = sample
+	b.head = (b.head + 1) % len(b.samples)
+}
+
+// String returns a comma-separated string representation of the buffer.
+func (b *cpuSampleBuffer) String() string {
+	var sb strings.Builder
+	for i := range b.samples {
+		s := b.samples[(b.head+i)%len(b.samples)]
+		sb.WriteString(fmt.Sprintf("%.2f", s))
+		if i < len(b.samples)-1 {
+			sb.WriteByte(',')
+		}
+	}
+
+	return sb.String()
 }
