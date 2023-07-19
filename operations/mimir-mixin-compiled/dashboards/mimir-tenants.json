@@ -255,7 +255,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Native histogram buckets\nNumber of active native histogram buckets per user, and active native histogram buckets matching custom trackers (in parenthesis).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
+                  "description": "### Total number of buckets used by native histogram series\nTotal number of buckets in active native histogram series per user, and total active native histogram buckets matching custom trackers (in parenthesis).\n\n",
                   "fill": 1,
                   "id": 4,
                   "legend": {
@@ -305,7 +305,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Native histogram buckets",
+                  "title": "Total number of buckets used by native histogram series",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,

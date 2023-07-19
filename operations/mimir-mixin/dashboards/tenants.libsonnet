@@ -139,7 +139,7 @@ local filename = 'mimir-tenants.json';
         ),
       )
       .addPanel(
-        local title = 'Native histogram buckets';
+        local title = 'Total number of buckets used by native histogram series';
         $.panel(title) +
         $.queryPanel(
           [
@@ -175,8 +175,7 @@ local filename = 'mimir-tenants.json';
         $.panelDescription(
           title,
           |||
-            Number of active native histogram buckets per user, and active native histogram buckets matching custom trackers (in parenthesis).
-            Note that active series matching custom trackers are included in the total active series count.
+            Total number of buckets in active native histogram series per user, and total active native histogram buckets matching custom trackers (in parenthesis).
           |||
         ),
       )
