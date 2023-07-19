@@ -317,7 +317,7 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 		require.NoError(b, bkt.Close())
 	})
 
-	for _, nameCount := range []int{1, 20, 50, 100, 200} {
+	for _, nameCount := range []int{20, 50, 100, 200} {
 		for _, valueCount := range []int{1, 10, 100, 500, 1000, 5000} {
 			nameSymbols := generateSymbols("name", nameCount)
 			valueSymbols := generateSymbols("value", valueCount)
