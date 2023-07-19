@@ -7,6 +7,7 @@ package validation
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"reflect"
 	"strings"
@@ -719,6 +720,34 @@ func TestExtensions(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(`{}`), &limits), "parsing overrides")
 		require.Equal(t, structExtension{Foo: 42}, getExtensionStruct(&limits))
 		require.Equal(t, stringExtension("default string extension value"), getExtensionString(&limits))
+	})
+
+	t.Run("default value from registered flags", func(t *testing.T) {
+		var limits Limits
+
+		limits.RegisterFlags(&flag.FlagSet{})
+
+		require.Equal(t, structExtension{Foo: 42}, getExtensionStruct(&limits))
+		require.Equal(t, stringExtension("default string extension value"), getExtensionString(&limits))
+	})
+
+	t.Run("default value from empty yaml", func(t *testing.T) {
+		t.Cleanup(func() {
+			defaultLimits = nil
+		})
+		SetDefaultLimitsForYAMLUnmarshalling(Limits{
+			RequestRate: 100,
+		})
+		var limits map[string]Limits
+
+		require.NoError(t, yaml.Unmarshal([]byte(`foo:`), &limits), "parsing overrides")
+
+		fooLimits, ok := limits["foo"]
+		require.True(t, ok, "foo limits should be present")
+		require.Equal(t, float64(0), fooLimits.RequestRate)
+
+		require.Equal(t, structExtension{}, getExtensionStruct(&fooLimits))
+		require.Equal(t, stringExtension(""), getExtensionString(&fooLimits))
 	})
 
 	t.Run("default limits does not interfere with tenants extensions", func(t *testing.T) {
