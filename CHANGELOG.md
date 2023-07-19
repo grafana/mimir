@@ -84,7 +84,7 @@
 
 ### Tools
 
-* [CHANGE] copyblocks: support for S3 was added as well as the ability to client-side copy between the same or different object storage services. Due to this, the tool now requires `-source-service` and `-destination-service` instead of `-service`. #5486
+* [CHANGE] copyblocks: add support for S3, as well as the ability to copy between the same or different object storage services. Due to this, the `-source-service` and `-destination-service` flags are now required and the `-service` flag has been removed. #5486
 * [BUGFIX] Stop tools from panicking when `-help` flag is passed. #5412
 * [BUGFIX] Remove github.com/golang/glog command line flags from tools. #5413
 
