@@ -35,44 +35,23 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 	}
 
 	t.Run("CPU based limiting should be enabled if set to a value greater than 0", func(t *testing.T) {
-		lim, scanner, reg := setup(t, 0.11, gigabyte, true)
-
-		var prevTotalTime float64
-		samples := make([]float64, 60)
+		lim, _, reg := setup(t, 0.11, gigabyte, true)
 
 		// Warmup the CPU utilization.
 		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
 			lim.compute(nowFn)
 			tim = tim.Add(time.Second)
-			for i := 1; i < len(samples); i++ {
-				samples[i-1] = samples[i]
-			}
-			s := scanner.totalTime - prevTotalTime
-			samples[len(samples)-1] = s
-			prevTotalTime = scanner.totalTime
 		}
 
 		// The fake utilization scanner linearly increases CPU usage for a minute
 		for i := 0; i < 59; i++ {
 			lim.compute(nowFn)
-			for i := 1; i < len(samples); i++ {
-				samples[i-1] = samples[i]
-			}
-			s := scanner.totalTime - prevTotalTime
-			samples[len(samples)-1] = s
-			prevTotalTime = scanner.totalTime
 			tim = tim.Add(time.Second)
 			require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
 		}
 		lim.compute(nowFn)
-		for i := 1; i < len(samples); i++ {
-			samples[i-1] = samples[i]
-		}
-		s := scanner.totalTime - prevTotalTime
-		samples[len(samples)-1] = s
 		tim = tim.Add(time.Second)
 		require.Equal(t, "cpu", lim.LimitingReason(), "Limiting should be enabled due to CPU")
-		require.Equal(t, samples, lim.cpuSamples)
 
 		// The fake utilization scanner drops CPU usage again after a minute, so we expect
 		// limiting to be disabled shortly.
@@ -182,6 +161,25 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 		tim = tim.Add(time.Second)
 		require.Equal(t, "cpu", lim.LimitingReason(), "Limiting should be enabled due to CPU")
 		require.Nil(t, lim.cpuSamples)
+	})
+
+	t.Run("the limiter should collect the last 60 CPU samples", func(t *testing.T) {
+		var instValues []float64
+		for i := 1; i <= 62; i++ {
+			instValues = append(instValues, float64(i))
+		}
+		scanner := &preRecordedUtilizationScanner{instantCPUValues: instValues}
+		lim := NewUtilizationBasedLimiter(1, 0, true, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		lim.utilizationScanner = scanner
+
+		for i, ts := 0, time.Now(); i < len(instValues); i++ {
+			lim.compute(func() time.Time {
+				return ts
+			})
+			ts = ts.Add(time.Second)
+		}
+
+		assert.Equal(t, instValues[2:62], lim.cpuSamples)
 	})
 }
 
