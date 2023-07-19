@@ -16,6 +16,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/exporter-toolkit/web"
 	"github.com/soheilhy/cmux"
 	"golang.org/x/net/context"
@@ -52,10 +53,13 @@ type SignalHandler interface {
 
 // TLSConfig contains TLS parameters for Config.
 type TLSConfig struct {
-	TLSCertPath string `yaml:"cert_file"`
-	TLSKeyPath  string `yaml:"key_file"`
-	ClientAuth  string `yaml:"client_auth_type"`
-	ClientCAs   string `yaml:"client_ca_file"`
+	TLSCert       string `yaml:"cert"`
+	TLSKey        string `yaml:"key"`
+	ClientCAsText string `yaml:"client_ca"`
+	TLSCertPath   string `yaml:"cert_file"`
+	TLSKeyPath    string `yaml:"key_file"`
+	ClientAuth    string `yaml:"client_auth_type"`
+	ClientCAs     string `yaml:"client_ca_file"`
 }
 
 // Config for a Server
@@ -137,10 +141,16 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.HTTPListenNetwork, "server.http-listen-network", DefaultNetwork, "HTTP server listen network, default tcp")
 	f.StringVar(&cfg.CipherSuites, "server.tls-cipher-suites", "", "Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.")
 	f.StringVar(&cfg.MinVersion, "server.tls-min-version", "", "Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.")
+	f.StringVar(&cfg.HTTPTLSConfig.TLSCert, "server.http-tls-cert", "", "HTTP TLS server cert.")
+	f.StringVar(&cfg.HTTPTLSConfig.TLSKey, "server.http-tls-key", "", "HTTP TLS server key.")
+	f.StringVar(&cfg.HTTPTLSConfig.ClientCAsText, "server.http-tls-ca", "", "HTTP TLS Client CA.")
 	f.StringVar(&cfg.HTTPTLSConfig.TLSCertPath, "server.http-tls-cert-path", "", "HTTP server cert path.")
 	f.StringVar(&cfg.HTTPTLSConfig.TLSKeyPath, "server.http-tls-key-path", "", "HTTP server key path.")
 	f.StringVar(&cfg.HTTPTLSConfig.ClientAuth, "server.http-tls-client-auth", "", "HTTP TLS Client Auth type.")
 	f.StringVar(&cfg.HTTPTLSConfig.ClientCAs, "server.http-tls-ca-path", "", "HTTP TLS Client CA path.")
+	f.StringVar(&cfg.GRPCTLSConfig.TLSCert, "server.grpc-tls-cert", "", "GRPC TLS server cert.")
+	f.StringVar(&cfg.GRPCTLSConfig.TLSKey, "server.grpc-tls-key", "", "GRPC TLS server key.")
+	f.StringVar(&cfg.GRPCTLSConfig.ClientCAsText, "server.grpc-tls-ca", "", "GRPC TLS Client CA.")
 	f.StringVar(&cfg.GRPCTLSConfig.TLSCertPath, "server.grpc-tls-cert-path", "", "GRPC TLS server cert path.")
 	f.StringVar(&cfg.GRPCTLSConfig.TLSKeyPath, "server.grpc-tls-key-path", "", "GRPC TLS server key path.")
 	f.StringVar(&cfg.GRPCTLSConfig.ClientAuth, "server.grpc-tls-client-auth", "", "GRPC TLS Client Auth type.")
@@ -286,30 +296,38 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 
 	// Setup TLS
 	var httpTLSConfig *tls.Config
-	if len(cfg.HTTPTLSConfig.TLSCertPath) > 0 && len(cfg.HTTPTLSConfig.TLSKeyPath) > 0 {
+	if (len(cfg.HTTPTLSConfig.TLSCertPath) > 0 || len(cfg.HTTPTLSConfig.TLSCert) > 0) &&
+		(len(cfg.HTTPTLSConfig.TLSKeyPath) > 0 || len(cfg.HTTPTLSConfig.TLSKey) > 0) {
 		// Note: ConfigToTLSConfig from prometheus/exporter-toolkit is awaiting security review.
 		httpTLSConfig, err = web.ConfigToTLSConfig(&web.TLSConfig{
-			TLSCertPath:  cfg.HTTPTLSConfig.TLSCertPath,
-			TLSKeyPath:   cfg.HTTPTLSConfig.TLSKeyPath,
-			ClientAuth:   cfg.HTTPTLSConfig.ClientAuth,
-			ClientCAs:    cfg.HTTPTLSConfig.ClientCAs,
-			CipherSuites: cipherSuites,
-			MinVersion:   minVersion,
+			TLSCert:       cfg.HTTPTLSConfig.TLSCert,
+			TLSKey:        config.Secret(cfg.HTTPTLSConfig.TLSKey),
+			ClientCAsText: cfg.HTTPTLSConfig.ClientCAsText,
+			TLSCertPath:   cfg.HTTPTLSConfig.TLSCertPath,
+			TLSKeyPath:    cfg.HTTPTLSConfig.TLSKeyPath,
+			ClientAuth:    cfg.HTTPTLSConfig.ClientAuth,
+			ClientCAs:     cfg.HTTPTLSConfig.ClientCAs,
+			CipherSuites:  cipherSuites,
+			MinVersion:    minVersion,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error generating http tls config: %v", err)
 		}
 	}
 	var grpcTLSConfig *tls.Config
-	if len(cfg.GRPCTLSConfig.TLSCertPath) > 0 && len(cfg.GRPCTLSConfig.TLSKeyPath) > 0 {
+	if (len(cfg.GRPCTLSConfig.TLSCertPath) > 0 || len(cfg.GRPCTLSConfig.TLSCert) > 0) &&
+		(len(cfg.GRPCTLSConfig.TLSKeyPath) > 0 || len(cfg.GRPCTLSConfig.TLSKey) > 0) {
 		// Note: ConfigToTLSConfig from prometheus/exporter-toolkit is awaiting security review.
 		grpcTLSConfig, err = web.ConfigToTLSConfig(&web.TLSConfig{
-			TLSCertPath:  cfg.GRPCTLSConfig.TLSCertPath,
-			TLSKeyPath:   cfg.GRPCTLSConfig.TLSKeyPath,
-			ClientAuth:   cfg.GRPCTLSConfig.ClientAuth,
-			ClientCAs:    cfg.GRPCTLSConfig.ClientCAs,
-			CipherSuites: cipherSuites,
-			MinVersion:   minVersion,
+			TLSCert:       cfg.GRPCTLSConfig.TLSCert,
+			TLSKey:        config.Secret(cfg.GRPCTLSConfig.TLSKey),
+			ClientCAsText: cfg.GRPCTLSConfig.ClientCAsText,
+			TLSCertPath:   cfg.GRPCTLSConfig.TLSCertPath,
+			TLSKeyPath:    cfg.GRPCTLSConfig.TLSKeyPath,
+			ClientAuth:    cfg.GRPCTLSConfig.ClientAuth,
+			ClientCAs:     cfg.GRPCTLSConfig.ClientCAs,
+			CipherSuites:  cipherSuites,
+			MinVersion:    minVersion,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error generating grpc tls config: %v", err)

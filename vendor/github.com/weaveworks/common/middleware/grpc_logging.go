@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"errors"
 	"time"
 
 	"golang.org/x/net/context"
@@ -31,9 +30,6 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 	resp, err := handler(ctx, req)
 	if err == nil && s.DisableRequestSuccessLog {
 		return resp, nil
-	}
-	if errors.Is(err, DoNotLogError{}) {
-		return resp, err
 	}
 
 	entry := user.LogWith(ctx, s.Log).WithFields(logging.Fields{"method": info.FullMethod, "duration": time.Since(begin)})
