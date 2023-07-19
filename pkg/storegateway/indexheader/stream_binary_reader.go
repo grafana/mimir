@@ -6,8 +6,11 @@
 package indexheader
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io/ioutil"
 
 	"os"
 
@@ -169,6 +172,18 @@ func (r *StreamBinaryReader) restoreSampleFromHeader(logger log.Logger, samplesP
 	level.Debug(logger).Log("msg", "reading from index-header samples file", "path", samplesPath)
 
 	samples := &indexheaderpb.Samples{}
+
+	gzipped := bytes.NewReader(sampleData)
+	gzipReader, err := gzip.NewReader(gzipped)
+	if err != nil {
+		return fmt.Errorf("failed to create index-header samples reader: %w", err)
+	}
+
+	sampleData, err = ioutil.ReadAll(gzipReader)
+	if err != nil {
+		return fmt.Errorf("failed to read index-header samples: %w", err)
+	}
+
 	if err := samples.Unmarshal(sampleData); err != nil {
 		return fmt.Errorf("failed to decode index-header samples file: %w", err)
 	}
@@ -224,9 +239,17 @@ func writeSamplesToFile(samplesPath string, reader *StreamBinaryReader, logger l
 		return fmt.Errorf("failed to encode index-header samples: %w", err)
 	}
 
-	level.Debug(logger).Log("msg", "index header sample file size", "bytes", len(out))
+	var gzipped bytes.Buffer
+	gzipWriter := gzip.NewWriter(&gzipped)
 
-	if err := os.WriteFile(samplesPath, out, 0600); err != nil {
+	if _, err := gzipWriter.Write(out); err != nil {
+		return fmt.Errorf("gzip bucket index: %w", err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return fmt.Errorf("close gzip bucket index: %w", err)
+	}
+
+	if err := os.WriteFile(samplesPath, gzipped.Bytes(), 0600); err != nil {
 		return fmt.Errorf("failed to write index-header samples file: %w", err)
 	}
 
