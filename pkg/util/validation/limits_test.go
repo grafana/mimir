@@ -731,7 +731,7 @@ func TestExtensions(t *testing.T) {
 		require.Equal(t, stringExtension("default string extension value"), getExtensionString(&limits))
 	})
 
-	t.Run("default value from empty yaml", func(t *testing.T) {
+	t.Run("empty value from empty yaml", func(t *testing.T) {
 		t.Cleanup(func() {
 			defaultLimits = nil
 		})
