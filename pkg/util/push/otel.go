@@ -123,7 +123,7 @@ func OTLPHandler(
 			return body, err
 		}
 
-		level.Debug(log).Log("msg", "decoding complete")
+		level.Debug(log).Log("msg", "decoding complete, starting conversion")
 
 		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
