@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	kitlog "github.com/go-kit/log"
@@ -181,7 +182,7 @@ func otelMetricsToMetadata(logger kitlog.Logger, md pmetric.Metrics) ([]*mimirpb
 				level.Info(logger).Log("metadata", "help", "metricName", scopeMetrics.Metrics().At(k).Name(), "description", scopeMetrics.Metrics().At(k).Description())
 				entry := mimirpb.MetricMetadata{
 					Type:             mimirpb.MetricMetadata_MetricType(scopeMetrics.Metrics().At(k).Type()),
-					MetricFamilyName: scopeMetrics.Metrics().At(k).Name(),
+					MetricFamilyName: strings.ReplaceAll(scopeMetrics.Metrics().At(k).Name(), ".", "_"),
 					Help:             scopeMetrics.Metrics().At(k).Description(),
 					Unit:             scopeMetrics.Metrics().At(k).Unit(),
 				}
