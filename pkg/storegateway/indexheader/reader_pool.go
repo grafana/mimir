@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -67,9 +66,9 @@ type LazyLoadedHeadersSnapshotConfig struct {
 }
 
 type lazyLoadedHeadersSnapshot struct {
-	// HeaderLastUsedTime is map of index header ulid.ULID to timestamp in millisecond.
-	HeaderLastUsedTime map[ulid.ULID]int64 `json:"header_last_used_time"`
-	UserID             string              `json:"user_id"`
+	// IndexHeaderLastUsedTime is map of index header ulid.ULID to timestamp in millisecond.
+	IndexHeaderLastUsedTime map[ulid.ULID]int64 `json:"index_header_last_used_time"`
+	UserID                  string              `json:"user_id"`
 }
 
 // persist atomically writes this snapshot to persistDir.
@@ -77,21 +76,15 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 	// Create temporary path for fsync.
 	// We don't use temporary folder because the process might not have access to the temporary folder.
 	tmpPath := filepath.Join(persistDir, strings.Join([]string{"tmp", lazyLoadedHeadersListFile}, "-"))
+	// the actual path we want to store the file in
+	finalPath := filepath.Join(persistDir, lazyLoadedHeadersListFile)
 
 	data, err := json.Marshal(l)
 	if err != nil {
 		return err
 	}
 
-	if err := atomicfs.CreateFile(tmpPath, bytes.NewReader(data)); err != nil {
-		return err
-	}
-	defer os.Remove(tmpPath)
-
-	// move the written file to the actual path
-	finalPath := filepath.Join(persistDir, lazyLoadedHeadersListFile)
-	// we rely on the atomicity of this on Unix systems for this method to behave correctly
-	return os.Rename(tmpPath, finalPath)
+	return atomicfs.CreateFileAndMove(tmpPath, finalPath, bytes.NewReader(data))
 }
 
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
@@ -103,8 +96,8 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		checkFreq := p.lazyReaderIdleTimeout / 10
 
 		go func() {
-			tickerLazyLoad := time.NewTicker(time.Minute)
-			defer tickerLazyLoad.Stop()
+			tickerLazyLoadPersist := time.NewTicker(time.Minute)
+			defer tickerLazyLoadPersist.Stop()
 
 			tickerIdleReader := time.NewTicker(checkFreq)
 			defer tickerIdleReader.Stop()
@@ -115,10 +108,10 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 					return
 				case <-tickerIdleReader.C:
 					p.closeIdleReaders()
-				case <-tickerLazyLoad.C:
+				case <-tickerLazyLoadPersist.C:
 					snapshot := lazyLoadedHeadersSnapshot{
-						HeaderLastUsedTime: p.LoadedBlocks(),
-						UserID:             lazyLoadedSnapshotConfig.UserID,
+						IndexHeaderLastUsedTime: p.LoadedBlocks(),
+						UserID:                  lazyLoadedSnapshotConfig.UserID,
 					}
 
 					if err := snapshot.persist(lazyLoadedSnapshotConfig.Path); err != nil {

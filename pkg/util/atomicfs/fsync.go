@@ -48,3 +48,16 @@ func CreateFile(filePath string, data io.Reader) error {
 	merr.Add(dir.Close())
 	return merr.Err()
 }
+
+// CreateFileAndMove creates a file in the tmpPath, write the data into the file and then execute
+// fsync operation to make sure the file and its content are stored atomically. After that it will move
+// file to the finalPath to make sure if there is a failure in writing to the tmpPath, we can retry and
+// ensure integrity of the file in the finalPath.
+func CreateFileAndMove(tmpPath, finalPath string, data io.Reader) error {
+	if err := CreateFile(tmpPath, data); err != nil {
+		return err
+	}
+	defer os.Remove(tmpPath)
+	// we rely on the atomicity of this on Unix systems for this method to behave correctly
+	return os.Rename(tmpPath, finalPath)
+}

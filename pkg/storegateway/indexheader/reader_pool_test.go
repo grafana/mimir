@@ -165,8 +165,8 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
 	snapshot := lazyLoadedHeadersSnapshot{
-		HeaderLastUsedTime: pool.LoadedBlocks(),
-		UserID:             "anonymous",
+		IndexHeaderLastUsedTime: pool.LoadedBlocks(),
+		UserID:                  "anonymous",
 	}
 
 	err = snapshot.persist(tmpDir)
@@ -188,9 +188,9 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	time.Sleep(idleTimeout * 2)
 	pool.closeIdleReaders()
 
-	// LoadedBlocks will update the HeaderLastUsedTime map with the removal of
+	// LoadedBlocks will update the IndexHeaderLastUsedTime map with the removal of
 	// idle blocks.
-	snapshot.HeaderLastUsedTime = pool.LoadedBlocks()
+	snapshot.IndexHeaderLastUsedTime = pool.LoadedBlocks()
 	err = snapshot.persist(tmpDir)
 	require.NoError(t, err)
 
