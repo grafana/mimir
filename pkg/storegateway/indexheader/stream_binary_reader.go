@@ -243,13 +243,11 @@ func writeSamplesToFile(samplesPath string, reader *StreamBinaryReader, logger l
 	gzipWriter := gzip.NewWriter(&gzipped)
 
 	if _, err := gzipWriter.Write(out); err != nil {
-		return fmt.Errorf("gzip bucket index: %w", err)
+		return fmt.Errorf("failed to gzip sampled index-header: %w", err)
 	}
 	if err := gzipWriter.Close(); err != nil {
-		return fmt.Errorf("close gzip bucket index: %w", err)
+		return fmt.Errorf("failed to close gzip sampled index-header: %w", err)
 	}
-
-	fmt.Printf("protobuf: %v, gzipped: %v", len(out), len(gzipped.Bytes()))
 
 	if err := os.WriteFile(samplesPath, gzipped.Bytes(), 0600); err != nil {
 		return fmt.Errorf("failed to write index-header samples file: %w", err)
