@@ -7,7 +7,6 @@ package validation
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"reflect"
 	"strings"
@@ -722,10 +721,10 @@ func TestExtensions(t *testing.T) {
 		require.Equal(t, stringExtension("default string extension value"), getExtensionString(&limits))
 	})
 
-	t.Run("default value from registered flags", func(t *testing.T) {
+	t.Run("default value after registering extension defaults", func(t *testing.T) {
 		var limits Limits
 
-		limits.RegisterFlags(&flag.FlagSet{})
+		limits.RegisterExtensionsDefaults()
 
 		require.Equal(t, structExtension{Foo: 42}, getExtensionStruct(&limits))
 		require.Equal(t, stringExtension("default string extension value"), getExtensionString(&limits))
