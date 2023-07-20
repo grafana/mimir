@@ -38,7 +38,7 @@ require (
 	github.com/spf13/afero v1.9.5
 	github.com/stretchr/testify v1.8.4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	github.com/weaveworks/common v0.0.0-20230511094633-334485600903
+	github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.2.1
 	golang.org/x/crypto v0.11.0
@@ -271,3 +271,6 @@ replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentraci
 
 // Replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite with a fork until https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/24288 is merged.
 replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite => github.com/charleskorn/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717033559-beffb82bb827
+
+// Use a fork of weaveworks/common while we work out if there is a better design for https://github.com/weaveworks/common/pull/293
+replace github.com/weaveworks/common => github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce

@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/instrument"
+	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
@@ -1013,7 +1014,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		il := d.getInstanceLimits()
 		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
-			return nil, errMaxInflightRequestsReached
+			return nil, middleware.DoNotLogError{Err: errMaxInflightRequestsReached}
 		}
 
 		if il.MaxIngestionRate > 0 {
