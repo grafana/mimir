@@ -280,7 +280,6 @@ func filterPostingsByCachedShardHash(ps []storage.SeriesRef, shard *sharding.Sha
 
 	// Shrink the size.
 	ps = ps[:writeIdx]
-
 	return ps
 }
 

@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -42,11 +43,7 @@ func (c *labelsQueryCache) getTTL(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForLabelsQuery(userID)
 }
 
-func (c *labelsQueryCache) parseRequest(req *http.Request) (*genericQueryRequest, error) {
-	if err := req.ParseForm(); err != nil {
-		return nil, err
-	}
-
+func (c *labelsQueryCache) parseRequest(path string, values url.Values) (*genericQueryRequest, error) {
 	var (
 		cacheKeyPrefix string
 		labelName      string
@@ -54,28 +51,28 @@ func (c *labelsQueryCache) parseRequest(req *http.Request) (*genericQueryRequest
 
 	// Detect the request type
 	switch {
-	case strings.HasSuffix(req.URL.Path, labelNamesPathSuffix):
+	case strings.HasSuffix(path, labelNamesPathSuffix):
 		cacheKeyPrefix = labelNamesQueryCachePrefix
-	case labelValuesPathSuffix.MatchString(req.URL.Path):
+	case labelValuesPathSuffix.MatchString(path):
 		cacheKeyPrefix = labelValuesQueryCachePrefix
-		labelName = labelValuesPathSuffix.FindStringSubmatch(req.URL.Path)[1]
+		labelName = labelValuesPathSuffix.FindStringSubmatch(path)[1]
 	default:
 		return nil, errors.New("unknown labels API endpoint")
 	}
 
 	// Both the label names and label values API endpoints support the same exact parameters (with the same defaults),
 	// so in this function there's no distinction between the two.
-	startTime, err := parseRequestTimeParam(req, "start", util.PrometheusMinTime.UnixMilli())
+	startTime, err := parseRequestTimeParam(values, "start", util.PrometheusMinTime.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
 
-	endTime, err := parseRequestTimeParam(req, "end", util.PrometheusMaxTime.UnixMilli())
+	endTime, err := parseRequestTimeParam(values, "end", util.PrometheusMaxTime.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
 
-	matcherSets, err := parseRequestMatchersParam(req, "match[]")
+	matcherSets, err := parseRequestMatchersParam(values, "match[]")
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +121,12 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	return b.String()
 }
 
-func parseRequestTimeParam(req *http.Request, paramName string, defaultValue int64) (int64, error) {
-	value := req.FormValue(paramName)
+func parseRequestTimeParam(values url.Values, paramName string, defaultValue int64) (int64, error) {
+	var value string
+	if len(values[paramName]) > 0 {
+		value = values[paramName][0]
+	}
+
 	if value == "" {
 		return defaultValue, nil
 	}
@@ -138,10 +139,10 @@ func parseRequestTimeParam(req *http.Request, paramName string, defaultValue int
 	return parsed, nil
 }
 
-func parseRequestMatchersParam(req *http.Request, paramName string) ([][]*labels.Matcher, error) {
-	matcherSets := make([][]*labels.Matcher, 0, len(req.Form[paramName]))
+func parseRequestMatchersParam(values url.Values, paramName string) ([][]*labels.Matcher, error) {
+	matcherSets := make([][]*labels.Matcher, 0, len(values[paramName]))
 
-	for _, value := range req.Form[paramName] {
+	for _, value := range values[paramName] {
 
 		matchers, err := parser.ParseMetricSelector(value)
 		if err != nil {

@@ -138,10 +138,10 @@ func searchToken(tokens []uint32, key uint32) int {
 
 // tokenDistance returns the distance between the given tokens from and to.
 // The distance between a token and itself is the whole ring, i.e., math.MaxUint32 + 1.
-func tokenDistance(from, to uint32) int {
+func tokenDistance(from, to uint32) int64 {
 	if from < to {
-		return int(to - from)
+		return int64(to - from)
 	}
 	// the trailing +1 is needed to ensure that token 0 is counted
-	return math.MaxUint32 - int(from) + int(to) + 1
+	return math.MaxUint32 - int64(from) + int64(to) + 1
 }

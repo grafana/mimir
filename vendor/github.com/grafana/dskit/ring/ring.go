@@ -238,16 +238,19 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		numMembersGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_members",
 			Help:        "Number of members in the ring",
-			ConstLabels: map[string]string{"name": name}},
+			ConstLabels: map[string]string{"name": name},
+		},
 			[]string{"state"}),
 		totalTokensGauge: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name:        "ring_tokens_total",
 			Help:        "Number of tokens in the ring",
-			ConstLabels: map[string]string{"name": name}}),
+			ConstLabels: map[string]string{"name": name},
+		}),
 		oldestTimestampGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_oldest_member_timestamp",
 			Help:        "Timestamp of the oldest member in the ring.",
-			ConstLabels: map[string]string{"name": name}},
+			ConstLabels: map[string]string{"name": name},
+		},
 			[]string{"state"}),
 		logger: logger,
 	}
@@ -525,9 +528,9 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 // In case of zone-awareness, this method takes into account only tokens of
 // the same zone. More precisely, for each instance only the distance between
 // its tokens and tokens of the instances from the same zone will be considered.
-func (r *Desc) CountTokens() map[string]int {
+func (r *Desc) CountTokens() map[string]int64 {
 	var (
-		owned               = make(map[string]int, len(r.Ingesters))
+		owned               = make(map[string]int64, len(r.Ingesters))
 		ringTokensByZone    = r.getTokensByZone()
 		ringInstanceByToken = r.getTokensInfo()
 	)

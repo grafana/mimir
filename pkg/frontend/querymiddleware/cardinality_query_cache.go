@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -36,10 +37,10 @@ func (c *cardinalityQueryCache) getTTL(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForCardinalityQuery(userID)
 }
 
-func (c *cardinalityQueryCache) parseRequest(req *http.Request) (*genericQueryRequest, error) {
+func (c *cardinalityQueryCache) parseRequest(path string, values url.Values) (*genericQueryRequest, error) {
 	switch {
-	case strings.HasSuffix(req.URL.Path, cardinalityLabelNamesPathSuffix):
-		parsed, err := cardinality.DecodeLabelNamesRequest(req)
+	case strings.HasSuffix(path, cardinalityLabelNamesPathSuffix):
+		parsed, err := cardinality.DecodeLabelNamesRequestFromValues(values)
 		if err != nil {
 			return nil, err
 		}
@@ -48,8 +49,8 @@ func (c *cardinalityQueryCache) parseRequest(req *http.Request) (*genericQueryRe
 			cacheKey:       parsed.String(),
 			cacheKeyPrefix: cardinalityLabelNamesQueryCachePrefix,
 		}, nil
-	case strings.HasSuffix(req.URL.Path, cardinalityLabelValuesPathSuffix):
-		parsed, err := cardinality.DecodeLabelValuesRequest(req)
+	case strings.HasSuffix(path, cardinalityLabelValuesPathSuffix):
+		parsed, err := cardinality.DecodeLabelValuesRequestFromValues(values)
 		if err != nil {
 			return nil, err
 		}

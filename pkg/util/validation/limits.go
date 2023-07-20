@@ -286,6 +286,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxDispatcherAggregationGroups, "alertmanager.max-dispatcher-aggregation-groups", 0, "Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsCount, "alertmanager.max-alerts-count", 0, "Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
+
+	l.setExtensionsDefaults()
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -323,6 +325,11 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	l.extensions = getExtensions()
 
 	return l.validate()
+}
+
+func (l *Limits) setExtensionsDefaults() {
+	_, getExtensions := newLimitsWithExtensions((*plainLimits)(l))
+	l.extensions = getExtensions()
 }
 
 func (l *Limits) MarshalJSON() ([]byte, error) {
@@ -1000,6 +1007,9 @@ func MustRegisterExtension[E interface{ Default() E }](name string) func(*Limits
 			// Call e.Default() here every time instead of storing it when the extension is being registered, as it might change over time.
 			// Especially when the default values are initialized after package initialization phase, where this is registered.
 			return e.Default()
+		}
+		if l.extensions[name] == nil {
+			return zeroE
 		}
 		return l.extensions[name].(E)
 	}
