@@ -268,3 +268,6 @@ replace github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-
 
 // Replace opentracing-contrib/go-stdlib with a fork until https://github.com/opentracing-contrib/go-stdlib/pull/68 is merged.
 replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
+
+// Replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite with a fork until https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/24288 is merged.
+replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite => github.com/charleskorn/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717033559-beffb82bb827
