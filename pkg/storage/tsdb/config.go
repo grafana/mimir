@@ -190,24 +190,25 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, lo
 //
 //nolint:revive
 type TSDBConfig struct {
-	Dir                       string        `yaml:"dir"`
-	BlockRanges               DurationList  `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
-	Retention                 time.Duration `yaml:"retention_period"`
-	ShipInterval              time.Duration `yaml:"ship_interval" category:"advanced"`
-	ShipConcurrency           int           `yaml:"ship_concurrency" category:"advanced"`
-	HeadCompactionInterval    time.Duration `yaml:"head_compaction_interval" category:"advanced"`
-	HeadCompactionConcurrency int           `yaml:"head_compaction_concurrency" category:"advanced"`
-	HeadCompactionIdleTimeout time.Duration `yaml:"head_compaction_idle_timeout" category:"advanced"`
-	HeadChunksWriteBufferSize int           `yaml:"head_chunks_write_buffer_size_bytes" category:"advanced"`
-	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
-	StripeSize                int           `yaml:"stripe_size" category:"advanced"`
-	WALCompressionEnabled     bool          `yaml:"wal_compression_enabled" category:"advanced"`
-	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes" category:"advanced"`
-	WALReplayConcurrency      int           `yaml:"wal_replay_concurrency" category:"advanced"`
-	FlushBlocksOnShutdown     bool          `yaml:"flush_blocks_on_shutdown" category:"advanced"`
-	CloseIdleTSDBTimeout      time.Duration `yaml:"close_idle_tsdb_timeout" category:"advanced"`
-	MemorySnapshotOnShutdown  bool          `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
-	HeadChunksWriteQueueSize  int           `yaml:"head_chunks_write_queue_size" category:"advanced"`
+	Dir                       string               `yaml:"dir"`
+	BlockRanges               DurationList         `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
+	Retention                 time.Duration        `yaml:"retention_period"`
+	ShipInterval              time.Duration        `yaml:"ship_interval" category:"advanced"`
+	ShipConcurrency           int                  `yaml:"ship_concurrency" category:"advanced"`
+	HeadCompactionInterval    time.Duration        `yaml:"head_compaction_interval" category:"advanced"`
+	HeadCompactionConcurrency int                  `yaml:"head_compaction_concurrency" category:"advanced"`
+	HeadCompactionIdleTimeout time.Duration        `yaml:"head_compaction_idle_timeout" category:"advanced"`
+	HeadChunksWriteBufferSize int                  `yaml:"head_chunks_write_buffer_size_bytes" category:"advanced"`
+	HeadChunksEndTimeVariance float64              `yaml:"head_chunks_end_time_variance" category:"experimental"`
+	StripeSize                int                  `yaml:"stripe_size" category:"advanced"`
+	WALCompressionEnabled     bool                 `yaml:"wal_compression_enabled" category:"advanced"`
+	WALCompressionType        wlog.CompressionType `yaml:"-"`
+	WALSegmentSizeBytes       int                  `yaml:"wal_segment_size_bytes" category:"advanced"`
+	WALReplayConcurrency      int                  `yaml:"wal_replay_concurrency" category:"advanced"`
+	FlushBlocksOnShutdown     bool                 `yaml:"flush_blocks_on_shutdown" category:"advanced"`
+	CloseIdleTSDBTimeout      time.Duration        `yaml:"close_idle_tsdb_timeout" category:"advanced"`
+	MemorySnapshotOnShutdown  bool                 `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
+	HeadChunksWriteQueueSize  int                  `yaml:"head_chunks_write_queue_size" category:"advanced"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
@@ -292,6 +293,12 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 10, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
+
+	if cfg.WALCompressionEnabled {
+		cfg.WALCompressionType = wlog.CompressionSnappy
+	} else {
+		cfg.WALCompressionType = wlog.CompressionNone
+	}
 }
 
 // Validate the config.
