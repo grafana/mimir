@@ -15,11 +15,13 @@
   * `cortex_frontend_query_result_cache_requests_total{request_type="query_range|cardinality|label_names_and_values"}`
   * `cortex_frontend_query_result_cache_hits_total{request_type="query_range|cardinality|label_names_and_values"}`
 * [FEATURE] Added `-<prefix>.s3.list-objects-version` flag to configure the S3 list objects version.
-* [FEATURE] Ingester: Add optional CPU/memory utilization based read request limiting, considered experimental. Disabled by default, enable by configuring limits via both of the following flags: #5012 #5392 #5394 #5526
+* [FEATURE] Ingester: Add optional CPU/memory utilization based read request limiting, considered experimental. Disabled by default, enable by configuring limits via both of the following flags: #5012 #5392 #5394 #5526 #5508
   * `-ingester.read-path-cpu-utilization-limit`
   * `-ingester.read-path-memory-utilization-limit`
+  * `-ingester.log-utilization-based-limiter-cpu-samples`
 * [FEATURE] Ruler: Support filtering results from rule status endpoint by `file`, `rule_group` and `rule_name`. #5291
 * [FEATURE] Ingester: add experimental support for creating tokens by using spread minimizing strategy. This can be enabled with `-ingester.ring.token-generation-strategy: spread-minimizing` and `-ingester.ring.spread-minimizing-zones: <all available zones>`. In that case `-ingester.ring.tokens-file-path` must be empty. #5308 #5324
+* [FEATURE] Ingester: add experimental CLI flag `-ingester.ring.spread-minimizing-join-ring-in-order` that allows an ingester to register tokens in the ring only after all previous ingesters (with ID lower than its own ID) have already been registered. #5541
 * [FEATURE] Ingester: add experimental support to compact the TSDB Head when the number of in-memory series is equal or greater than `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`, and the ingester estimates that the per-tenant TSDB Head compaction will reduce in-memory series by at least `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`. #5371
 * [FEATURE] Ingester: add new metrics for tracking native histograms in active series: `cortex_ingester_active_native_histogram_series`, `cortex_ingester_active_native_histogram_series_custom_tracker`, `cortex_ingester_active_native_histogram_buckets`, `cortex_ingester_active_native_histogram_buckets_custom_tracker`. The first 2 are the subsets of the existing and unmodified `cortex_ingester_active_series` and `cortex_ingester_active_series_custom_tracker` respectively, only tracking native histogram series, and the last 2 are the equivalents for tracking the number of buckets in native histogram series. #5318
 * [ENHANCEMENT] Overrides-exporter: Add new metrics for write path and alertmanager (`max_global_metadata_per_user`, `max_global_metadata_per_metric`, `request_rate`, `request_burst_size`, `alertmanager_notification_rate_limit`, `alertmanager_max_dispatcher_aggregation_groups`, `alertmanager_max_alerts_count`, `alertmanager_max_alerts_size_bytes`) and added flag `-overrides-exporter.enabled-metrics` to explicitly configure desired metrics, e.g. `-overrides-exporter.enabled-metrics=request_rate,ingestion_rate`. Default value for this flag is: `ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant`. #5376
@@ -51,6 +53,8 @@
   * `cortex_ingester_utilization_limiter_current_cpu_load`: The current exponential weighted moving average of the ingester's CPU load
   * `cortex_ingester_utilization_limiter_current_memory_usage_bytes`: The current ingester memory utilization
 * [ENHANCEMENT] Distributor: add support for ingesting exponential histograms that are over the native histogram scale limit of 8 in OpenTelemetry format by downscaling them. #5532
+* [ENHANCEMENT] General: buffered logging: #5506
+  * `-log.buffered`: Enable buffered logging
 * [ENHANCEMENT] Distributor: add more detailed information to traces generated while processing OTLP write requests. #5539
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
@@ -101,6 +105,7 @@
 
 ### Tools
 
+* [CHANGE] copyblocks: add support for S3 and the ability to copy between different object storage services. Due to this, the `-source-service` and `-destination-service` flags are now required and the `-service` flag has been removed. #5486
 * [BUGFIX] Stop tools from panicking when `-help` flag is passed. #5412
 * [BUGFIX] Remove github.com/golang/glog command line flags from tools. #5413
 

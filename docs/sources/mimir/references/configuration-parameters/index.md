@@ -917,6 +917,13 @@ ring:
   # CLI flag: -ingester.ring.token-generation-strategy
   [token_generation_strategy: <string> | default = "random"]
 
+  # (experimental) True to allow this ingester registering tokens in the ring
+  # only after all previous ingesters (with ID lower than the current one) have
+  # already been registered. This configuration option is supported only when
+  # the token generation strategy is set to "spread-minimizing".
+  # CLI flag: -ingester.ring.spread-minimizing-join-ring-in-order
+  [spread_minimizing_join_ring_in_order: <boolean> | default = false]
+
   # (experimental) Comma-separated list of zones in which spread minimizing
   # strategy is used for token generation. This value must include all zones in
   # which ingesters are deployed, and must not change over time. This
@@ -988,6 +995,10 @@ instance_limits:
 # request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
+
+# (experimental) Enable logging of utilization based limiter CPU samples.
+# CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
+[log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
 ```
 
 ### querier
