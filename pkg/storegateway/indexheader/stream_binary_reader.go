@@ -10,8 +10,7 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"io/ioutil"
-
+	"io"
 	"os"
 
 	"path/filepath"
@@ -179,7 +178,7 @@ func (r *StreamBinaryReader) restoreSampleFromHeader(logger log.Logger, samplesP
 		return fmt.Errorf("failed to create index-header samples reader: %w", err)
 	}
 
-	sampleData, err = ioutil.ReadAll(gzipReader)
+	sampleData, err = io.ReadAll(gzipReader)
 	if err != nil {
 		return fmt.Errorf("failed to read index-header samples: %w", err)
 	}
@@ -217,7 +216,7 @@ func (r *StreamBinaryReader) sampleHeader(logger log.Logger, samplesPath string,
 
 	// Write sampled index-header to disk; support only for v2.
 	if r.indexVersion == index.FormatV2 {
-		if err := writeSamplesToFile(samplesPath, r, logger); err != nil {
+		if err := writeSamplesToFile(samplesPath, r); err != nil {
 			return fmt.Errorf("cannot write index-header samples to disk: %w", err)
 		}
 	}
@@ -228,7 +227,7 @@ func (r *StreamBinaryReader) sampleHeader(logger log.Logger, samplesPath string,
 }
 
 // writeSamplesToFile uses protocol buffer to write StreamBinaryReader to disk at samplesPath.
-func writeSamplesToFile(samplesPath string, reader *StreamBinaryReader, logger log.Logger) error {
+func writeSamplesToFile(samplesPath string, reader *StreamBinaryReader) error {
 	samples := &indexheaderpb.Samples{}
 
 	samples.Symbols = reader.symbols.NewSymbolSample()
