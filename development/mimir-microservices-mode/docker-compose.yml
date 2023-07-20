@@ -57,8 +57,9 @@
       - "-auditlogging.enabled=false"
       - "-cortex.distributor.endpoint=dns:///distributor:9000"
       - "-instrumentation.server.port=7998"
+      - "-gateway.grpc-load-balancing-policy=bounded_load"
     "entrypoint": ""
-    "image": "us.gcr.io/kubernetes-dev/cloud-backend-gateway:master-a08103ce-WIP"
+    "image": "us.gcr.io/kubernetes-dev/cortex-gateway:experiment-with-grpc-bounded-load-balancing-f3ae366d"
     "ports":
       - "7998:7998"
       - "7999:7999"
