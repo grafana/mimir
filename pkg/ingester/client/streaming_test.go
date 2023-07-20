@@ -77,7 +77,7 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 			mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: testCase.batches}
 			cleanedUp := atomic.NewBool(false)
 			cleanup := func() { cleanedUp.Store(true) }
-			reader := NewSeriesChunksStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+			reader := NewSeriesChunksStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 
 			for i, expected := range [][]Chunk{series0, series1, series2, series3, series4} {
@@ -117,7 +117,7 @@ func TestSeriesChunksStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 	cleanedUp := atomic.NewBool(false)
 	cleanup := func() { cleanedUp.Store(true) }
 
-	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	cancel()
 	reader.StartBuffering()
 
@@ -148,7 +148,7 @@ func TestSeriesChunksStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
 	cleanup := func() {}
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(1)
@@ -166,7 +166,7 @@ func TestSeriesChunksStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 
 	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
 	cleanup := func() {}
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -190,7 +190,7 @@ func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 	cleanedUp := atomic.NewBool(false)
 	cleanup := func() { cleanedUp.Store(true) }
 
-	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -218,7 +218,7 @@ func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 	cleanedUp := atomic.NewBool(false)
 	cleanup := func() { cleanedUp.Store(true) }
 
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -264,7 +264,7 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 			cleanedUp := atomic.NewBool(false)
 			cleanup := func() { cleanedUp.Store(true) }
 			queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
-			reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, queryMetrics), cleanup, log.NewNopLogger())
+			reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, 0, queryMetrics), cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 
 			_, err := reader.GetChunks(0)

@@ -41,32 +41,40 @@ var (
 		cardinalityStrategy,
 		validation.MaxChunksPerQueryFlag,
 	)
+	MaxEstimatedChunksPerQueryLimitMsgFormat = globalerror.MaxEstimatedChunksPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
+		"the estimated number of chunks for the query exceeded the maximum allowed (limit: %d chunks)",
+		cardinalityStrategy,
+		validation.MaxEstimatedChunksPerQueryFlag,
+	)
 )
 
 type QueryLimiter struct {
 	uniqueSeriesMx sync.Mutex
 	uniqueSeries   map[uint64]struct{}
 
-	chunkBytesCount atomic.Int64
-	chunkCount      atomic.Int64
+	chunkBytesCount     atomic.Int64
+	chunkCount          atomic.Int64
+	estimatedChunkCount atomic.Int64
 
-	maxSeriesPerQuery     int
-	maxChunkBytesPerQuery int
-	maxChunksPerQuery     int
+	maxSeriesPerQuery          int
+	maxChunkBytesPerQuery      int
+	maxChunksPerQuery          int
+	maxEstimatedChunksPerQuery int
 
 	queryMetrics *stats.QueryMetrics
 }
 
 // NewQueryLimiter makes a new per-query limiter. Each query limiter is configured using the
-// `maxSeriesPerQuery`, `maxChunkBytesPerQuery`, and `maxChunksPerQuery` limits.
-func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery int, queryMetrics *stats.QueryMetrics) *QueryLimiter {
+// maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery and maxEstimatedChunksPerQuery limits.
+func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery int, maxEstimatedChunksPerQuery int, queryMetrics *stats.QueryMetrics) *QueryLimiter {
 	return &QueryLimiter{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   map[uint64]struct{}{},
 
-		maxSeriesPerQuery:     maxSeriesPerQuery,
-		maxChunkBytesPerQuery: maxChunkBytesPerQuery,
-		maxChunksPerQuery:     maxChunksPerQuery,
+		maxSeriesPerQuery:          maxSeriesPerQuery,
+		maxChunkBytesPerQuery:      maxChunkBytesPerQuery,
+		maxChunksPerQuery:          maxChunksPerQuery,
+		maxEstimatedChunksPerQuery: maxEstimatedChunksPerQuery,
 
 		queryMetrics: queryMetrics,
 	}
@@ -82,7 +90,7 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 	ql, ok := ctx.Value(ctxKey).(*QueryLimiter)
 	if !ok {
 		// If there's no limiter return a new unlimited limiter as a fallback
-		ql = NewQueryLimiter(0, 0, 0, nil)
+		ql = NewQueryLimiter(0, 0, 0, 0, nil)
 	}
 	return ql
 }
@@ -140,19 +148,41 @@ func (ql *QueryLimiter) AddChunkBytes(chunkSizeInBytes int) error {
 }
 
 func (ql *QueryLimiter) AddChunks(count int) error {
-	if ql.maxChunksPerQuery == 0 {
+	return ql.incrementAndCheckChunksLimits(count, 0)
+}
+
+func (ql *QueryLimiter) AddEstimatedChunks(count int) error {
+	if ql.maxEstimatedChunksPerQuery == 0 {
 		return nil
 	}
 
-	totalChunks := ql.chunkCount.Add(int64(count))
+	return ql.incrementAndCheckChunksLimits(count, 0)
+}
 
-	if totalChunks > int64(ql.maxChunksPerQuery) {
-		if totalChunks-int64(count) <= int64(ql.maxChunksPerQuery) {
+func (ql *QueryLimiter) incrementAndCheckChunksLimits(newChunks int, newEstimatedChunks int) error {
+	totalChunks := ql.chunkCount.Add(int64(newChunks))
+	totalEstimatedChunks := ql.estimatedChunkCount.Add(int64(newEstimatedChunks))
+
+	if totalChunks > int64(ql.maxChunksPerQuery) && ql.maxChunksPerQuery != 0 {
+		if totalChunks-int64(newChunks) <= int64(ql.maxChunksPerQuery) && newChunks > 0 {
 			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
 			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxChunks).Inc()
 		}
 
 		return validation.LimitError(fmt.Sprintf(MaxChunksPerQueryLimitMsgFormat, ql.maxChunksPerQuery))
 	}
+
+	totalIncludingEstimated := totalChunks + totalEstimatedChunks
+	newIncludingEstimated := newChunks + newEstimatedChunks
+
+	if totalIncludingEstimated > int64(ql.maxEstimatedChunksPerQuery) && ql.maxEstimatedChunksPerQuery != 0 {
+		if totalIncludingEstimated-int64(newIncludingEstimated) <= int64(ql.maxEstimatedChunksPerQuery) && (newIncludingEstimated) > 0 {
+			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
+			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedChunks).Inc()
+		}
+
+		return validation.LimitError(fmt.Sprintf(MaxEstimatedChunksPerQueryLimitMsgFormat, ql.maxEstimatedChunksPerQuery))
+	}
+
 	return nil
 }

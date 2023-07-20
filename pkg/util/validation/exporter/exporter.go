@@ -67,6 +67,7 @@ const (
 	maxChunksPerQuery                          = "max_fetched_chunks_per_query"
 	maxFetchedSeriesPerQuery                   = "max_fetched_series_per_query"
 	maxFetchedChunkBytesPerQuery               = "max_fetched_chunk_bytes_per_query"
+	maxEstimatedChunksPerQuery                 = "max_estimated_fetched_chunks_per_query"
 	rulerMaxRulesPerRuleGroup                  = "ruler_max_rules_per_rule_group"
 	rulerMaxRuleGroupsPerTenant                = "ruler_max_rule_groups_per_tenant"
 	maxGlobalMetricsWithMetadataPerUser        = "max_global_metadata_per_user"
@@ -217,6 +218,9 @@ func setupExportedMetrics(enabledMetrics *util.AllowedTenants, extraMetrics []Ex
 	}
 	if enabledMetrics.IsAllowed(maxFetchedChunkBytesPerQuery) {
 		exportedMetrics = append(exportedMetrics, ExportedMetric{maxFetchedChunkBytesPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxFetchedChunkBytesPerQuery) }})
+	}
+	if enabledMetrics.IsAllowed(maxEstimatedChunksPerQuery) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{maxEstimatedChunksPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxEstimatedChunksPerQuery) }})
 	}
 
 	// Ruler limits

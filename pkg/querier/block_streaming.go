@@ -129,9 +129,10 @@ type storeGatewayStreamReader struct {
 	stats               *stats.Stats
 	log                 log.Logger
 
-	seriesChunksChan chan *storepb.StreamingChunksBatch
-	chunksBatch      []*storepb.StreamingChunks
-	errorChan        chan error
+	chunkCountEstimateChan chan int
+	seriesChunksChan       chan *storepb.StreamingChunksBatch
+	chunksBatch            []*storepb.StreamingChunks
+	errorChan              chan error
 }
 
 func newStoreGatewayStreamReader(client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *storeGatewayStreamReader {
@@ -161,6 +162,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
 	s.seriesChunksChan = make(chan *storepb.StreamingChunksBatch, 1)
+	s.chunkCountEstimateChan = make(chan int, 1)
 
 	ctxDone := s.client.Context().Done()
 	go func() {
@@ -168,6 +170,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 
 		defer func() {
 			s.Close()
+			close(s.chunkCountEstimateChan)
 			close(s.seriesChunksChan)
 			close(s.errorChan)
 			log.Finish()
@@ -197,9 +200,21 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 				return
 			}
 
+			if c := msg.GetStreamingChunksEstimate(); c != nil {
+				select {
+				case <-ctxDone:
+					onError(s.client.Context().Err())
+					return
+				case s.chunkCountEstimateChan <- int(c.EstimatedChunkCount):
+					// Nothing else to do.
+				}
+
+				continue
+			}
+
 			c := msg.GetStreamingChunks()
 			if c == nil {
-				onError(fmt.Errorf("expected to receive StreamingSeriesChunks, but got something else"))
+				onError(fmt.Errorf("expected to receive StreamingChunks or StreamingChunksEstimate, but got something else"))
 				return
 			}
 
@@ -289,4 +304,11 @@ func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) ([]storepb.Aggr
 	}
 
 	return chks.Chunks, nil
+}
+
+// EstimateChunkCount returns an estimate of the number of chunks this stream reader will return.
+// If the stream fails before an estimate is received from the store-gateway, this method returns 0.
+// This method should only be called after calling StartBuffering. If this method is called multiple times, it may block.
+func (s *storeGatewayStreamReader) EstimateChunkCount() int {
+	return <-s.chunkCountEstimateChan
 }

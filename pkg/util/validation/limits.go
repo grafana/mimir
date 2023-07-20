@@ -33,6 +33,7 @@ const (
 	MaxChunksPerQueryFlag                  = "querier.max-fetched-chunks-per-query"
 	MaxChunkBytesPerQueryFlag              = "querier.max-fetched-chunk-bytes-per-query"
 	MaxSeriesPerQueryFlag                  = "querier.max-fetched-series-per-query"
+	MaxEstimatedChunksPerQueryFlag         = "querier.max-estimated-fetched-chunks-per-query"
 	maxLabelNamesPerSeriesFlag             = "validation.max-label-names-per-series"
 	maxLabelNameLengthFlag                 = "validation.max-length-label-name"
 	maxLabelValueLengthFlag                = "validation.max-length-label-value"
@@ -107,6 +108,7 @@ type Limits struct {
 
 	// Querier enforced limits.
 	MaxChunksPerQuery               int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
+	MaxEstimatedChunksPerQuery      int            `yaml:"max_estimated_fetched_chunks_per_query" json:"max_estimated_fetched_chunks_per_query"`
 	MaxFetchedSeriesPerQuery        int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
 	MaxFetchedChunkBytesPerQuery    int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
 	MaxQueryLookback                model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
@@ -216,6 +218,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
+	f.IntVar(&l.MaxEstimatedChunksPerQuery, MaxEstimatedChunksPerQueryFlag, 2*2e6, "Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
 	f.Var(&l.MaxPartialQueryLength, maxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
@@ -496,6 +499,10 @@ func (o *Overrides) MaxGlobalSeriesPerMetric(userID string) int {
 
 func (o *Overrides) MaxChunksPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxChunksPerQuery
+}
+
+func (o *Overrides) MaxEstimatedChunksPerQuery(userID string) int {
+	return o.getOverridesForUser(userID).MaxEstimatedChunksPerQuery
 }
 
 // MaxFetchedSeriesPerQuery returns the maximum number of series allowed per query when fetching

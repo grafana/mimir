@@ -310,7 +310,7 @@ func TestStoreGatewayStreamReader_HappyPaths(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: testCase.batches}
-			reader := newStoreGatewayStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+			reader := newStoreGatewayStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 			reader.StartBuffering()
 
 			for i, expected := range [][]storepb.AggrChunk{series0, series1, series2, series3, series4} {
@@ -340,7 +340,7 @@ func TestStoreGatewayStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, batches: batches}
 
-	reader := newStoreGatewayStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+	reader := newStoreGatewayStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	cancel()
 	reader.StartBuffering()
 
@@ -367,7 +367,7 @@ func TestStoreGatewayStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 	}
 
 	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(1)
@@ -382,7 +382,7 @@ func TestStoreGatewayStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 	}
 
 	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -401,7 +401,7 @@ func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 	}
 
 	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := newStoreGatewayStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+	reader := newStoreGatewayStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -426,7 +426,7 @@ func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 		},
 	}
 	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: batches}
-	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -471,7 +471,8 @@ func TestStoreGatewayStreamReader_ChunksLimits(t *testing.T) {
 
 			mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: batches}
 			queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
-			reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, queryMetrics), &stats.Stats{}, log.NewNopLogger())
+			// TODO: test case for estimated limit
+			reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, 0, queryMetrics), &stats.Stats{}, log.NewNopLogger())
 			reader.StartBuffering()
 
 			_, err := reader.GetChunks(0)

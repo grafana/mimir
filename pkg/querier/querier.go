@@ -201,7 +201,7 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 			return nil, err
 		}
 
-		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID), queryMetrics))
+		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID), limits.MaxEstimatedChunksPerQuery(userID), queryMetrics))
 
 		mint, maxt, err = validateQueryTimeRange(ctx, userID, mint, maxt, limits, cfg.MaxQueryIntoFuture, logger)
 		if errors.Is(err, errEmptyTimeRange) {

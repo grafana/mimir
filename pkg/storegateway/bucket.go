@@ -636,6 +636,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	if err := s.sendHints(srv, resHints); err != nil {
 		return err
 	}
+
+	streamingSeriesCount := 0
 	if req.StreamingChunksBatchSize > 0 {
 		var (
 			seriesSet       storepb.SeriesSet
@@ -649,17 +651,17 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return err
 		}
 
-		numSeries, err := s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
+		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
 		if err != nil {
 			return err
 		}
 		level.Debug(spanLogger).Log(
 			"msg", "sent streaming series",
-			"num_series", numSeries,
+			"num_series", streamingSeriesCount,
 			"duration", time.Since(seriesLoadStart),
 		)
 
-		if numSeries == 0 {
+		if streamingSeriesCount == 0 {
 			// There is no series to send chunks for.
 			return nil
 		}
@@ -677,7 +679,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		if err != nil {
 			return err
 		}
-		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats)
+		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
 	} else {
 		var seriesSet storepb.SeriesSet
 		seriesSet, err = s.nonStreamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
@@ -783,6 +785,7 @@ func (s *BucketStore) sendStreamingChunks(
 	srv storepb.Store_SeriesServer,
 	it seriesChunksSetIterator,
 	stats *safeQueryStats,
+	totalSeriesCount int,
 ) error {
 	var (
 		encodeDuration           time.Duration
@@ -812,6 +815,7 @@ func (s *BucketStore) sendStreamingChunks(
 	for i := range chunksBuffer {
 		chunksBuffer[i] = &storepb.StreamingChunks{}
 	}
+	haveSentEstimatedChunks := false
 	chunksBatch := &storepb.StreamingChunksBatch{Series: chunksBuffer[:0]}
 	for it.Next() {
 		set := it.At()
@@ -847,6 +851,17 @@ func (s *BucketStore) sendStreamingChunks(
 			}
 			chunksBatch.Series = chunksBatch.Series[:0]
 			batchSizeBytes = 0
+		}
+
+		if !haveSentEstimatedChunks {
+			// TODO: do we need to handle the case where we've sent no chunks so far? Is that possible?
+			estimate := uint64(totalSeriesCount * chunksCount / seriesCount)
+			err := s.sendMessage("streaming chunks estimate", srv, storepb.NewStreamingChunksEstimate(estimate), &encodeDuration, &sendDuration)
+			if err != nil {
+				return err
+			}
+
+			haveSentEstimatedChunks = true
 		}
 
 		set.release()

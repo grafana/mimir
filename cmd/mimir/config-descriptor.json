@@ -3138,6 +3138,16 @@
         },
         {
           "kind": "field",
+          "name": "max_estimated_fetched_chunks_per_query",
+          "required": false,
+          "desc": "Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 4000000,
+          "fieldFlag": "querier.max-estimated-fetched-chunks-per-query",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "max_fetched_series_per_query",
           "required": false,
           "desc": "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable",
