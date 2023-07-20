@@ -167,8 +167,8 @@ local filename = 'mimir-tenants.json';
             },
           ],
           [
-            'active',
-            'active ({{ name }})',
+            'buckets',
+            'buckets ({{ name }})',
           ],
         ) +
         { seriesOverrides: [limit_style] } +

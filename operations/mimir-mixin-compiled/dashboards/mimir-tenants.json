@@ -291,14 +291,14 @@
                         "expr": "sum(\n  cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "active",
+                        "legendFormat": "buckets",
                         "legendLink": null
                      },
                      {
                         "expr": "sum by (name) (\n  cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})\n) > 0\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "active ({{ name }})",
+                        "legendFormat": "buckets ({{ name }})",
                         "legendLink": null
                      }
                   ],
