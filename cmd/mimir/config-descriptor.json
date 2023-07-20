@@ -229,6 +229,33 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "cert",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "key",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_ca",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "cert_file",
               "required": false,
               "desc": "HTTP server cert path.",
@@ -281,6 +308,33 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "cert",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "key",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_ca",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
             {
               "kind": "field",
               "name": "cert_file",

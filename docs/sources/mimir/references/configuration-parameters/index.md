@@ -453,6 +453,12 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 [tls_min_version: <string> | default = ""]
 
 http_tls_config:
+  [cert: <string> | default = ""]
+
+  [key: <string> | default = ""]
+
+  [client_ca: <string> | default = ""]
+
   # (advanced) HTTP server cert path.
   # CLI flag: -server.http-tls-cert-path
   [cert_file: <string> | default = ""]
@@ -470,6 +476,12 @@ http_tls_config:
   [client_ca_file: <string> | default = ""]
 
 grpc_tls_config:
+  [cert: <string> | default = ""]
+
+  [key: <string> | default = ""]
+
+  [client_ca: <string> | default = ""]
+
   # (advanced) GRPC TLS server cert path.
   # CLI flag: -server.grpc-tls-cert-path
   [cert_file: <string> | default = ""]
