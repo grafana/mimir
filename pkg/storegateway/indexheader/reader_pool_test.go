@@ -180,7 +180,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	// we know that there is only one lazyReader, hence just use formatter to set the ULID and timestamp.
 	require.Equal(t, 1, len(pool.lazyReaders), "expecting only one lazyReaders")
 	for r := range pool.lazyReaders {
-		expected = fmt.Sprintf(`{"header_last_used_time":{"%s":%d},"user_id":"anonymous"}`, r.blockID, r.usedAt.Load()/int64(time.Millisecond))
+		expected = fmt.Sprintf(`{"index_header_last_used_time":{"%s":%d},"user_id":"anonymous"}`, r.blockID, r.usedAt.Load()/int64(time.Millisecond))
 	}
 	require.JSONEq(t, expected, string(persistedData))
 
@@ -197,7 +197,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	persistedData, err = os.ReadFile(persistedFile)
 	require.NoError(t, err)
 
-	require.JSONEq(t, `{"header_last_used_time":{},"user_id":"anonymous"}`, string(persistedData), "header_last_used_time should be cleared")
+	require.JSONEq(t, `{"index_header_last_used_time":{},"user_id":"anonymous"}`, string(persistedData), "header_last_used_time should be cleared")
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
