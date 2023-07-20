@@ -273,4 +273,4 @@ replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentraci
 replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite => github.com/charleskorn/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717033559-beffb82bb827
 
 // REMOVE: For Testing Only
-replace github.com/weaveworks/common => github.com/fayzal-g/ww-common v0.0.0-20230720093420-a70f2727c763
+replace github.com/weaveworks/common => github.com/fayzal-g/ww-common v0.0.0-20230720111559-5c33435eeae0
