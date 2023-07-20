@@ -60,8 +60,8 @@ type ingesterMetrics struct {
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
 
-	discarded         *discardedMetrics
-	discardedInstance *prometheus.CounterVec
+	discarded *discardedMetrics
+	rejected  *prometheus.CounterVec
 
 	// Discarded metadata
 	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
@@ -311,9 +311,9 @@ func newIngesterMetrics(
 		}),
 
 		discarded: newDiscardedMetrics(r),
-		discardedInstance: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_instance_discarded_requests_total",
-			Help: "Requests discarded for hitting per-instance limits",
+		rejected: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_instance_rejected_requests_total",
+			Help: "Requests rejected for hitting per-instance limits",
 		}, []string{"reason"}),
 
 		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
@@ -324,6 +324,12 @@ func newIngesterMetrics(
 			Help: "If the ingester has been requested to prepare for shutdown via endpoint or marker file.",
 		}),
 	}
+
+	// Initialize expected rejected request labels
+	m.rejected.WithLabelValues(reasonIngesterMaxIngestionRate)
+	m.rejected.WithLabelValues(reasonIngesterMaxTenants)
+	m.rejected.WithLabelValues(reasonIngesterMaxInMemorySeries)
+	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
 
 	return m
 }

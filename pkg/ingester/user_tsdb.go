@@ -23,7 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/util/extract"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type tsdbState int
@@ -267,7 +266,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	gl := u.instanceLimitsFn()
 	if gl != nil && gl.MaxInMemorySeries > 0 {
 		if series := u.instanceSeriesCount.Load(); series >= gl.MaxInMemorySeries {
-			u.instanceErrors.WithLabelValues(validation.ReasonIngesterMaxInMemorySeries).Inc()
+			u.instanceErrors.WithLabelValues(reasonIngesterMaxInMemorySeries).Inc()
 			return errMaxInMemorySeriesReached
 		}
 	}
