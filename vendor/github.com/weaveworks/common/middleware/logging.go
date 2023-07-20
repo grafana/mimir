@@ -46,6 +46,14 @@ func NewLogMiddleware(log logging.Interface, logRequestHeaders bool, logRequestA
 	}
 }
 
+// This can be used with `errors.Is` to see if the error marked itself as not to be logged.
+// E.g. if the error is caused by overload, then we don't want to log it because that uses more resource.
+type DoNotLogError struct{ Err error }
+
+func (i DoNotLogError) Error() string        { return i.Err.Error() }
+func (i DoNotLogError) Unwrap() error        { return i.Err }
+func (i DoNotLogError) Is(target error) bool { _, ok := target.(DoNotLogError); return ok }
+
 // logWithRequest information from the request and context as fields.
 func (l Log) logWithRequest(r *http.Request) logging.Interface {
 	localLog := l.Log
@@ -83,6 +91,9 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		statusCode, writeErr := wrapped.getStatusCode(), wrapped.getWriteError()
 
 		if writeErr != nil {
+			if errors.Is(writeErr, DoNotLogError{}) {
+				return
+			}
 			if errors.Is(writeErr, context.Canceled) {
 				if l.LogRequestAtInfoLevel {
 					requestLog.Infof("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers)

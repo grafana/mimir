@@ -602,8 +602,8 @@ github.com/fatih/color v1.10.0/go.mod h1:ELkj/draVOlAH/xkhN6mQ50Qd0MPOk5AAr3maGE
 github.com/fatih/color v1.13.0/go.mod h1:kLAiJbzzSOZDVNGyDpeOxJ47H46qBXwg5ILebYFFOfk=
 github.com/fatih/color v1.15.0 h1:kOqh6YHBtK8aywxGerMG2Eq3H6Qgoqeo13Bk2Mv/nBs=
 github.com/fatih/color v1.15.0/go.mod h1:0h5ZqXfHYED7Bhv2ZJamyIOUej9KtShiJESRwBDUSsw=
-github.com/fayzal-g/ww-common v0.0.0-20230717132027-465a3b0ab589 h1:5CL1qhiWBBSNvYHw8uvVafQwzjFA/FXrf1MOeBROdZ0=
-github.com/fayzal-g/ww-common v0.0.0-20230717132027-465a3b0ab589/go.mod h1:+SVcRW2U01e5luOTNG6qWxOsxyaYOf3xxwO9cfZaCpg=
+github.com/fayzal-g/ww-common v0.0.0-20230720093420-a70f2727c763 h1:IVbRaoTNwfkCFveaJft9oC0oq2uX36qzGfTUCxWwRC4=
+github.com/fayzal-g/ww-common v0.0.0-20230720093420-a70f2727c763/go.mod h1:+SVcRW2U01e5luOTNG6qWxOsxyaYOf3xxwO9cfZaCpg=
 github.com/felixge/fgprof v0.9.3 h1:VvyZxILNuCiUCSXtPtYmmtGvb65nqXh2QFWc0Wpf2/g=
 github.com/felixge/fgprof v0.9.3/go.mod h1:RdbpDgzqYVh/T9fPELJyV7EYJuHB55UTEULNun8eiPw=
 github.com/felixge/httpsnoop v1.0.3 h1:s/nj+GCswXYzN5v2DpNMuMQYe+0DDwt5WVCU6CWBdXk=

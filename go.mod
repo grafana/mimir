@@ -276,4 +276,4 @@ replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator
 // replace github.com/weaveworks/common => github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce
 
 // REMOVE: For Testing Only
-replace github.com/weaveworks/common => github.com/fayzal-g/ww-common v0.0.0-20230717132027-465a3b0ab589
+replace github.com/weaveworks/common => github.com/fayzal-g/ww-common v0.0.0-20230720093420-a70f2727c763
