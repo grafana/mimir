@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRun(t *testing.T) {
+func TestCreateFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test")
 	wantData := "test1"
 	if err := CreateFile(path, strings.NewReader(wantData)); err != nil {
