@@ -119,6 +119,13 @@ const (
 	maxTSDBOpenWithoutConcurrency = 10
 )
 
+var (
+	reasonIngesterMaxIngestionRate        = globalerror.IngesterMaxIngestionRate.LabelValue()
+	reasonIngesterMaxTenants              = globalerror.IngesterMaxTenants.LabelValue()
+	reasonIngesterMaxInMemorySeries       = globalerror.IngesterMaxInMemorySeries.LabelValue()
+	reasonIngesterMaxInflightPushRequests = globalerror.IngesterMaxInflightPushRequests.LabelValue()
+)
+
 // BlocksUploader interface is used to have an easy way to mock it in tests.
 type BlocksUploader interface {
 	Sync(ctx context.Context) (uploaded int, err error)
@@ -718,6 +725,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	il := i.getInstanceLimits()
 	if il != nil && il.MaxInflightPushRequests > 0 {
 		if inflight > il.MaxInflightPushRequests {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
 			return nil, errMaxInflightRequestsReached
 		}
 	}
@@ -729,6 +737,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	if il != nil && il.MaxIngestionRate > 0 {
 		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
 			return nil, errMaxIngestionRateReached
 		}
 	}
@@ -2024,6 +2033,7 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 	gl := i.getInstanceLimits()
 	if gl != nil && gl.MaxInMemoryTenants > 0 {
 		if users := int64(len(i.tsdbs)); users >= gl.MaxInMemoryTenants {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxTenants).Inc()
 			return nil, errMaxTenantsReached
 		}
 	}
@@ -2058,6 +2068,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		instanceLimitsFn:    i.getInstanceLimits,
 		instanceSeriesCount: &i.seriesCount,
+		instanceErrors:      i.metrics.rejected,
 		blockMinRetention:   i.cfg.BlocksStorageConfig.TSDB.Retention,
 	}
 
