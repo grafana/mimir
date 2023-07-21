@@ -75,7 +75,7 @@ type lazyLoadedHeadersSnapshot struct {
 func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 	// Create temporary path for fsync.
 	// We don't use temporary folder because the process might not have access to the temporary folder.
-	tmpPath := filepath.Join(persistDir, strings.Join([]string{"tmp", lazyLoadedHeadersListFile}, "-"))
+	tmpPath := filepath.Join(persistDir, "tmp-"+lazyLoadedHeadersListFile)
 	// the actual path we want to store the file in
 	finalPath := filepath.Join(persistDir, lazyLoadedHeadersListFile)
 
