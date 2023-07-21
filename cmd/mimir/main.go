@@ -166,7 +166,7 @@ func main() {
 		runtime.SetBlockProfileRate(mainFlags.blockProfileRate)
 	}
 
-	util_log.InitLogger(&cfg.Server, mainFlags.useBufferedLogger, !mainFlags.useBufferedLogger)
+	util_log.InitLogger(&cfg.Server, mainFlags.useBufferedLogger)
 
 	// Allocate a block of memory to alter GC behaviour. See https://github.com/golang/go/issues/23044
 	ballast := make([]byte, mainFlags.ballastBytes)

@@ -236,7 +236,7 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
 	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
 
-	util_log.InitLogger(&cfg.Server, false, true)
+	util_log.InitLogger(&cfg.Server, false)
 
 	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
