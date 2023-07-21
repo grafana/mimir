@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package util
 
 // AllocateBallast allocates ballast of given size, to alter GC behaviour. See https://github.com/golang/go/issues/23044
