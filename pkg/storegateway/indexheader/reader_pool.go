@@ -6,7 +6,10 @@
 package indexheader
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,7 +20,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
+
+var lazyLoadedHeadersListFile = "lazy-loaded.json"
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
 type ReaderPoolMetrics struct {
@@ -55,8 +62,36 @@ type ReaderPool struct {
 	lazyReaders   map[*LazyBinaryReader]struct{}
 }
 
-// NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers if enabled.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
+// LazyLoadedHeadersSnapshotConfig stores information needed to track lazy loaded index headers.
+type LazyLoadedHeadersSnapshotConfig struct {
+	Path   string
+	UserID string
+}
+
+type lazyLoadedHeadersSnapshot struct {
+	// IndexHeaderLastUsedTime is map of index header ulid.ULID to timestamp in millisecond.
+	IndexHeaderLastUsedTime map[ulid.ULID]int64 `json:"index_header_last_used_time"`
+	UserID                  string              `json:"user_id"`
+}
+
+// persist atomically writes this snapshot to persistDir.
+func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
+	// Create temporary path for fsync.
+	// We don't use temporary folder because the process might not have access to the temporary folder.
+	tmpPath := filepath.Join(persistDir, "tmp-"+lazyLoadedHeadersListFile)
+	// the actual path we want to store the file in
+	finalPath := filepath.Join(persistDir, lazyLoadedHeadersListFile)
+
+	data, err := json.Marshal(l)
+	if err != nil {
+		return err
+	}
+
+	return atomicfs.CreateFileAndMove(tmpPath, finalPath, bytes.NewReader(data))
+}
+
+// NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
 	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, sparsePersistenceEnabled, lazyLoadingGate, metrics)
 
 	// Start a goroutine to close idle readers (only if required).
@@ -64,12 +99,27 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		checkFreq := p.lazyReaderIdleTimeout / 10
 
 		go func() {
+			tickerLazyLoadPersist := time.NewTicker(time.Minute)
+			defer tickerLazyLoadPersist.Stop()
+
+			tickerIdleReader := time.NewTicker(checkFreq)
+			defer tickerIdleReader.Stop()
+
 			for {
 				select {
 				case <-p.close:
 					return
-				case <-time.After(checkFreq):
+				case <-tickerIdleReader.C:
 					p.closeIdleReaders()
+				case <-tickerLazyLoadPersist.C:
+					snapshot := lazyLoadedHeadersSnapshot{
+						IndexHeaderLastUsedTime: p.LoadedBlocks(),
+						UserID:                  lazyLoadedSnapshotConfig.UserID,
+					}
+
+					if err := snapshot.persist(lazyLoadedSnapshotConfig.Path); err != nil {
+						level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
+					}
 				}
 			}
 		}()
@@ -170,4 +220,19 @@ func (p *ReaderPool) onLazyReaderClosed(r *LazyBinaryReader) {
 	// but because the consumer closed it. By contract, a reader closed by the consumer can't
 	// be used anymore, so we can automatically remove it from the pool.
 	delete(p.lazyReaders, r)
+}
+
+// LoadedBlocks returns a new map of lazy-loaded block IDs and the last time they were used in milliseconds.
+func (p *ReaderPool) LoadedBlocks() map[ulid.ULID]int64 {
+	p.lazyReadersMx.Lock()
+	defer p.lazyReadersMx.Unlock()
+
+	blocks := make(map[ulid.ULID]int64, len(p.lazyReaders))
+	for r := range p.lazyReaders {
+		if r.reader != nil {
+			blocks[r.blockID] = r.usedAt.Load() / int64(time.Millisecond)
+		}
+	}
+
+	return blocks
 }

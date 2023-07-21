@@ -85,6 +85,8 @@ type LazyBinaryReader struct {
 
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
+
+	blockID ulid.ULID
 }
 
 // NewLazyBinaryReader makes a new LazyBinaryReader. If the index-header does not exist
@@ -121,12 +123,13 @@ func NewLazyBinaryReader(
 	}
 
 	return &LazyBinaryReader{
-		logger:          logger,
-		filepath:        path,
-		metrics:         metrics,
-		usedAt:          atomic.NewInt64(time.Now().UnixNano()),
-		onClosed:        onClosed,
-		readerFactory:   readerFactory,
+		logger:        logger,
+		filepath:      path,
+		metrics:       metrics,
+		usedAt:        atomic.NewInt64(time.Now().UnixNano()),
+		onClosed:      onClosed,
+		readerFactory: readerFactory,
+		blockID:       id,
 		lazyLoadingGate: lazyLoadingGate,
 		ctx:             ctx,
 	}, nil
