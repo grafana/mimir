@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -39,6 +40,11 @@ const (
 	// sharedOptionWithRingClient is a message appended to all config options that should be also
 	// set on the components running the store-gateway ring client.
 	sharedOptionWithRingClient = " This option needs be set both on the store-gateway, querier and ruler when running in microservices mode."
+
+	tokenGenerationStrategyFlag         = "token-generation-strategy"
+	randomTokenGeneration               = "random"
+	spreadMinimizingTokenGeneration     = "spread-minimizing"
+	spreadMinimizingJoinRingInOrderFlag = "spread-minimizing-join-ring-in-order"
 )
 
 var (
@@ -90,6 +96,28 @@ type RingConfig struct {
 	// Injected internally
 	ListenPort      int           `yaml:"-"`
 	RingCheckPeriod time.Duration `yaml:"-"`
+
+	TokenGenerationStrategy         string                 `yaml:"token_generation_strategy" category:"experimental"`
+	SpreadMinimizingJoinRingInOrder bool                   `yaml:"spread_minimizing_join_ring_in_order" category:"experimental"`
+	SpreadMinimizingZones           flagext.StringSliceCSV `yaml:"spread_minimizing_zones" category:"experimental"`
+}
+
+func (cfg *RingConfig) Validate() error {
+	if cfg.TokenGenerationStrategy != randomTokenGeneration && cfg.TokenGenerationStrategy != spreadMinimizingTokenGeneration {
+		return fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", cfg.TokenGenerationStrategy, tokenGenerationStrategyFlag)
+	}
+
+	if cfg.TokenGenerationStrategy == spreadMinimizingTokenGeneration {
+		_, err := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder, nil)
+		return err
+	}
+
+	// at this point cfg.TokenGenerationStrategy is not spreadMinimizingTokenGeneration
+	if cfg.SpreadMinimizingJoinRingInOrder {
+		return fmt.Errorf("%q must be false when using %q token generation strategy", spreadMinimizingJoinRingInOrderFlag, cfg.TokenGenerationStrategy)
+	}
+
+	return nil
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -128,6 +156,11 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	// Defaults for internal settings.
 	cfg.RingCheckPeriod = 5 * time.Second
+
+	// TokenGenerator
+	f.StringVar(&cfg.TokenGenerationStrategy, ringFlagsPrefix+tokenGenerationStrategyFlag, randomTokenGeneration, fmt.Sprintf("Specifies the strategy used for generating tokens for store-gateways. Supported values are: %s.", strings.Join([]string{randomTokenGeneration, spreadMinimizingTokenGeneration}, ",")))
+	f.BoolVar(&cfg.SpreadMinimizingJoinRingInOrder, ringFlagsPrefix+spreadMinimizingJoinRingInOrderFlag, false, fmt.Sprintf("True to allow this store-gateway registering tokens in the ring only after all previous store-gateways (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to %q.", spreadMinimizingTokenGeneration))
+	f.Var(&cfg.SpreadMinimizingZones, ringFlagsPrefix+"spread-minimizing-zones", fmt.Sprintf("Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which store-gateways are deployed, and must not change over time. This configuration is used only when %q is set to %q.", tokenGenerationStrategyFlag, spreadMinimizingTokenGeneration))
 }
 
 func (cfg *RingConfig) ToRingConfig() ring.Config {
@@ -160,5 +193,23 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 		TokensObservePeriod:             0,
 		NumTokens:                       RingNumTokens,
 		KeepInstanceInTheRingOnShutdown: !cfg.UnregisterOnShutdown,
+		RingTokenGenerator:              cfg.customTokenGenerator(logger),
 	}, nil
+}
+
+// customTokenGenerator returns a token generator, which is an implementation of ring.TokenGenerator,
+// according to this RingConfig's configuration. If "spread-minimizing" token generation strategy is
+// set, customTokenGenerator tries to build and return an instance of ring.SpreadMinimizingTokenGenerator.
+// If it was impossible, or if "random" token generation strategy is set, customTokenGenerator returns
+// an instance of ring.RandomTokenGenerator. Otherwise, nil is returned.
+func (cfg *RingConfig) customTokenGenerator(logger log.Logger) ring.TokenGenerator {
+	switch cfg.TokenGenerationStrategy {
+	case spreadMinimizingTokenGeneration:
+		tokenGenerator, _ := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder, logger)
+		return tokenGenerator
+	case randomTokenGeneration:
+		return ring.NewRandomTokenGenerator()
+	default:
+		return nil
+	}
 }

@@ -62,7 +62,7 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInvalidTenantShardSize
 	}
 
-	return nil
+	return cfg.ShardingRing.Validate()
 }
 
 // StoreGateway is the Mimir service responsible to expose an API over the bucket

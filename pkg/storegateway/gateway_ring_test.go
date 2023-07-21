@@ -6,6 +6,7 @@
 package storegateway
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,6 +14,16 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	instanceID   = "instance-10"
+	instanceZone = "zone-a"
+	wrongZone    = "zone-d"
+)
+
+var (
+	spreadMinimizingZones = []string{"zone-a", "zone-b", "zone-c"}
 )
 
 func TestIsHealthyForStoreGatewayOperations(t *testing.T) {
@@ -92,5 +103,152 @@ func TestUnregisterOnShutdownFlag(t *testing.T) {
 		lcCfg, err := cfg.ToLifecyclerConfig(logger)
 		require.NoError(t, err)
 		assert.True(t, lcCfg.KeepInstanceInTheRingOnShutdown)
+	}
+}
+
+func TestRingConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		zone                            string
+		tokenGenerationStrategy         string
+		spreadMinimizingJoinRingInOrder bool
+		spreadMinimizingZones           []string
+		expectedError                   error
+	}{
+		"spread-minimizing and correct zones pass validation": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			spreadMinimizingZones:   spreadMinimizingZones,
+		},
+		"spread-minimizing and no spread-minimizing-zones zone don't pass validation": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			expectedError:           fmt.Errorf("number of zones 0 is not correct: it must be greater than 0 and less or equal than 8"),
+		},
+		"spread-minimizing and a wrong zone don't pass validation": {
+			zone:                    wrongZone,
+			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			spreadMinimizingZones:   spreadMinimizingZones,
+			expectedError:           fmt.Errorf("zone %s is not valid", wrongZone),
+		},
+		"spread-minimizing and spread-minimizing-join-ring-in-order pass validation": {
+			zone:                            instanceZone,
+			tokenGenerationStrategy:         spreadMinimizingTokenGeneration,
+			spreadMinimizingZones:           spreadMinimizingZones,
+			spreadMinimizingJoinRingInOrder: true,
+		},
+		"random passes validation": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: randomTokenGeneration,
+		},
+		"random and spread-minimizing-join-ring-in-order don't pass validation": {
+			zone:                            instanceZone,
+			tokenGenerationStrategy:         randomTokenGeneration,
+			spreadMinimizingJoinRingInOrder: true,
+			expectedError:                   fmt.Errorf("%q must be false when using %q token generation strategy", spreadMinimizingJoinRingInOrderFlag, randomTokenGeneration),
+		},
+		"unknown token generation doesn't pass validation": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: "bla-bla-tokens",
+			expectedError:           fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", "bla-bla-tokens", tokenGenerationStrategyFlag),
+		},
+	}
+
+	for _, testData := range tests {
+		cfg := RingConfig{}
+		cfg.InstanceID = instanceID
+		cfg.InstanceZone = testData.zone
+		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
+		cfg.SpreadMinimizingJoinRingInOrder = testData.spreadMinimizingJoinRingInOrder
+		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
+		err := cfg.Validate()
+		if testData.expectedError == nil {
+			require.NoError(t, err)
+		} else {
+			require.Error(t, err)
+			require.Equal(t, testData.expectedError, err)
+		}
+	}
+}
+
+func TestRingConfig_CustomTokenGenerator(t *testing.T) {
+	tests := map[string]struct {
+		zone                    string
+		tokenGenerationStrategy string
+		spreadMinimizingZones   []string
+		expectedResultStrategy  string
+	}{
+		"spread-minimizing and correct zones give a SpreadMinimizingTokenGenerator": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: spreadMinimizingTokenGeneration,
+			spreadMinimizingZones:   spreadMinimizingZones,
+			expectedResultStrategy:  spreadMinimizingTokenGeneration,
+		},
+		"random gives a RandomTokenGenerator": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: randomTokenGeneration,
+			expectedResultStrategy:  randomTokenGeneration,
+		},
+	}
+
+	for _, testData := range tests {
+		cfg := RingConfig{}
+		cfg.InstanceID = instanceID
+		cfg.InstanceZone = testData.zone
+		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
+		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
+		lifecyclerConfig, err := cfg.ToLifecyclerConfig(log.NewNopLogger())
+		require.NoError(t, err)
+		if testData.expectedResultStrategy == randomTokenGeneration {
+			tokenGenerator, ok := lifecyclerConfig.RingTokenGenerator.(*ring.RandomTokenGenerator)
+			assert.True(t, ok)
+			assert.NotNil(t, tokenGenerator)
+		} else if testData.expectedResultStrategy == spreadMinimizingTokenGeneration {
+			tokenGenerator, ok := lifecyclerConfig.RingTokenGenerator.(*ring.SpreadMinimizingTokenGenerator)
+			assert.True(t, ok)
+			assert.NotNil(t, tokenGenerator)
+		} else {
+			assert.Nil(t, lifecyclerConfig.RingTokenGenerator)
+		}
+	}
+}
+
+func TestRingConfig_SpreadMinimizingJoinRingInOrder(t *testing.T) {
+	tests := map[string]struct {
+		zone                            string
+		tokenGenerationStrategy         string
+		spreadMinimizingJoinRingInOrder bool
+		expectedCanJoinEnabled          bool
+	}{
+		"spread-minimizing and spread-minimizing-join-ring-in-order allow can join": {
+			zone:                            instanceZone,
+			tokenGenerationStrategy:         spreadMinimizingTokenGeneration,
+			spreadMinimizingJoinRingInOrder: true,
+			expectedCanJoinEnabled:          true,
+		},
+		"spread-minimizing without spread-minimizing-join-ring-in-order doesn't allow can join": {
+			zone:                            instanceZone,
+			tokenGenerationStrategy:         spreadMinimizingTokenGeneration,
+			spreadMinimizingJoinRingInOrder: false,
+			expectedCanJoinEnabled:          false,
+		},
+		"random doesn't allow can join": {
+			zone:                    instanceZone,
+			tokenGenerationStrategy: randomTokenGeneration,
+			expectedCanJoinEnabled:  false,
+		},
+	}
+
+	for _, testData := range tests {
+		cfg := RingConfig{}
+		cfg.InstanceID = instanceID
+		cfg.InstanceZone = instanceZone
+		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
+		cfg.SpreadMinimizingJoinRingInOrder = testData.spreadMinimizingJoinRingInOrder
+		cfg.SpreadMinimizingZones = spreadMinimizingZones
+		lifecyclerConfig, err := cfg.ToLifecyclerConfig(log.NewNopLogger())
+		require.NoError(t, err)
+		tokenGenerator := lifecyclerConfig.RingTokenGenerator
+		assert.NotNil(t, tokenGenerator)
+		assert.Equal(t, testData.spreadMinimizingJoinRingInOrder, tokenGenerator.CanJoinEnabled())
 	}
 }
