@@ -27,9 +27,8 @@ func TestCreateFileAndMove(t *testing.T) {
 	tmpPath := filepath.Join(t.TempDir(), "test")
 	finalPath := filepath.Join(t.TempDir(), "testFinal")
 	wantData := "test1"
-	if err := CreateFileAndMove(tmpPath, finalPath, strings.NewReader(wantData)); err != nil {
-		t.Errorf("CreateFileAndMove() error = %v, wantErr %v", err, false)
-	}
+	err := CreateFileAndMove(tmpPath, finalPath, strings.NewReader(wantData))
+	require.NoError(t, err)
 	_, err := os.ReadFile(tmpPath)
 	require.Error(t, err, "we expect error because the file in tmpPath should already been removed")
 
