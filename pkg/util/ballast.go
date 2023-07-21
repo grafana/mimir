@@ -3,7 +3,8 @@ package util
 // AllocateBallast allocates ballast of given size. to alter GC behaviour. See https://github.com/golang/go/issues/23044
 // Instead of allocating one big slice, we allocate many small ones to avoid keeping too much data in memory when Go runtime
 // decides that it needs to zero the slice.
-func AllocateBallast(ballastSize int) interface{} {
+// Returned value should not be used.
+func AllocateBallast(ballastSize int) any {
 	if ballastSize <= 0 {
 		return nil
 	}
@@ -14,7 +15,7 @@ func AllocateBallast(ballastSize int) interface{} {
 	for ballastSize > 0 {
 		sz := ballastSliceSize
 		if ballastSize < ballastSliceSize {
-			sz = ballastSliceSize
+			sz = ballastSize
 		}
 		result = append(result, make([]byte, sz))
 		ballastSize -= sz
