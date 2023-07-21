@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: AGPL-3.0-only
 // Provenance-includes-location: https://github.com/grafana/loki/blob/7c78d7ea44afb420847255f9f5a4f677ad0f47bf/pkg/util/log/line_buffer.go
+// Provenance-includes-location: https://github.com/grafana/mimir/blob/c8b24a462f7e224950409e7e0a4e0a58f3a79599/pkg/util/log/line_buffer.go
 // Provenance-includes-copyright: Grafana Labs
 package log
 
@@ -12,9 +12,9 @@ import (
 	"go.uber.org/atomic"
 )
 
-// LineBufferedLogger buffers log lines to be flushed periodically. Without a line buffer, Log() will call the write
+// BufferedLogger buffers log lines to be flushed periodically. Without a line buffer, Log() will call the write
 // syscall for every log line which is expensive if logging thousands of lines per second.
-type LineBufferedLogger struct {
+type BufferedLogger struct {
 	buf     *threadsafeBuffer
 	entries atomic.Uint32
 	cap     uint32
@@ -24,13 +24,13 @@ type LineBufferedLogger struct {
 }
 
 // Size returns the number of entries in the buffer.
-func (l *LineBufferedLogger) Size() uint32 {
+func (l *BufferedLogger) Size() uint32 {
 	return l.entries.Load()
 }
 
 // Write writes the given bytes to the line buffer, and increments the entries counter.
 // If the buffer is full (entries == cap), it will be flushed, and the entries counter reset.
-func (l *LineBufferedLogger) Write(p []byte) (n int, err error) {
+func (l *BufferedLogger) Write(p []byte) (n int, err error) {
 	// when we've filled the buffer, flush it
 	if l.Size() >= l.cap {
 		// Flush resets the size to 0
@@ -46,7 +46,7 @@ func (l *LineBufferedLogger) Write(p []byte) (n int, err error) {
 }
 
 // Flush forces the buffer to be written to the underlying writer.
-func (l *LineBufferedLogger) Flush() error {
+func (l *BufferedLogger) Flush() error {
 	// reset the counter
 	sz := l.entries.Swap(0)
 	if sz <= 0 {
@@ -64,11 +64,11 @@ func (l *LineBufferedLogger) Flush() error {
 	return err
 }
 
-type LineBufferedLoggerOption func(*LineBufferedLogger)
+type BufferedLoggerOption func(*BufferedLogger)
 
-// WithFlushPeriod creates a new LineBufferedLoggerOption that sets the flush period for the LineBufferedLogger.
-func WithFlushPeriod(d time.Duration) LineBufferedLoggerOption {
-	return func(l *LineBufferedLogger) {
+// WithFlushPeriod creates a new BufferedLoggerOption that sets the flush period for the BufferedLogger.
+func WithFlushPeriod(d time.Duration) BufferedLoggerOption {
+	return func(l *BufferedLogger) {
 		go func() {
 			tick := time.NewTicker(d)
 			defer tick.Stop()
@@ -82,23 +82,23 @@ func WithFlushPeriod(d time.Duration) LineBufferedLoggerOption {
 
 // WithFlushCallback allows for a callback function to be executed when Flush() is called.
 // The length of the buffer at the time of the Flush() will be passed to the function.
-func WithFlushCallback(fn func(entries uint32)) LineBufferedLoggerOption {
-	return func(l *LineBufferedLogger) {
+func WithFlushCallback(fn func(entries uint32)) BufferedLoggerOption {
+	return func(l *BufferedLogger) {
 		l.onFlush = fn
 	}
 }
 
 // WithPrellocatedBuffer preallocates a buffer to reduce GC cycles and slice resizing.
-func WithPrellocatedBuffer(size uint32) LineBufferedLoggerOption {
-	return func(l *LineBufferedLogger) {
+func WithPrellocatedBuffer(size uint32) BufferedLoggerOption {
+	return func(l *BufferedLogger) {
 		l.buf = newThreadsafeBuffer(bytes.NewBuffer(make([]byte, 0, size)))
 	}
 }
 
-// NewLineBufferedLogger creates a new LineBufferedLogger with a configured capacity.
+// NewBufferedLogger creates a new BufferedLogger with a configured capacity.
 // Lines are flushed when the context is done, the buffer is full, or the flush period is reached.
-func NewLineBufferedLogger(w io.Writer, cap uint32, opts ...LineBufferedLoggerOption) *LineBufferedLogger {
-	l := &LineBufferedLogger{
+func NewBufferedLogger(w io.Writer, cap uint32, opts ...BufferedLoggerOption) *BufferedLogger {
+	l := &BufferedLogger{
 		w:   w,
 		buf: newThreadsafeBuffer(bytes.NewBuffer([]byte{})),
 		cap: cap,
