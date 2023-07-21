@@ -116,7 +116,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.alertmanager-client.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -alertmanager.alertmanager-client.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -alertmanager.alertmanager-client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -alertmanager.alertmanager-client.grpc-client-rate-limit-burst int
@@ -1206,7 +1206,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -ingester.client.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -ingester.client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ingester.client.grpc-client-rate-limit-burst int
@@ -1552,7 +1552,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -querier.frontend-client.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -querier.frontend-client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -querier.frontend-client.grpc-client-rate-limit-burst int
@@ -1672,7 +1672,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.grpc-client-config.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -query-frontend.grpc-client-config.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -query-frontend.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
@@ -1862,7 +1862,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -query-scheduler.grpc-client-config.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -query-scheduler.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -query-scheduler.grpc-client-config.grpc-client-rate-limit-burst int
@@ -2194,7 +2194,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -ruler.client.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -ruler.client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ruler.client.grpc-client-rate-limit-burst int
@@ -2266,7 +2266,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-frontend.grpc-client-config.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -ruler.query-frontend.grpc-client-config.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
