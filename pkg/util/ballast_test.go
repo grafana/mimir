@@ -8,7 +8,9 @@ import (
 )
 
 func TestAllocateBallast(t *testing.T) {
-	for i := 0; i < 20; i++ {
+	require.Nil(t, AllocateBallast(0))
+
+	for i := 1; i < 20; i++ {
 		size := i * 1024 * 1024
 
 		b := AllocateBallast(size).([][]byte)
