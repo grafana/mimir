@@ -29,7 +29,7 @@ func TestCreateFileAndMove(t *testing.T) {
 	wantData := "test1"
 	err := CreateFileAndMove(tmpPath, finalPath, strings.NewReader(wantData))
 	require.NoError(t, err)
-	_, err := os.ReadFile(tmpPath)
+	_, err = os.ReadFile(tmpPath)
 	require.Error(t, err, "we expect error because the file in tmpPath should already been removed")
 
 	data, err := os.ReadFile(finalPath)
