@@ -1,6 +1,6 @@
 package util
 
-// AllocateBallast allocates ballast of given size. to alter GC behaviour. See https://github.com/golang/go/issues/23044
+// AllocateBallast allocates ballast of given size, to alter GC behaviour. See https://github.com/golang/go/issues/23044
 // Instead of allocating one big slice, we allocate many small ones to avoid keeping too much data in memory when Go runtime
 // decides that it needs to zero the slice.
 // Returned value should not be used.
