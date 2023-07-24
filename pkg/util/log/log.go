@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	dslog "github.com/grafana/dskit/log"
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/server"
 )
@@ -22,13 +23,13 @@ var (
 	// TODO: Change all components to take a non-global logger via their constructors.
 	// Prefer accepting a non-global logger as an argument.
 	Logger         = log.NewNopLogger()
-	bufferedLogger *LineBufferedLogger
+	bufferedLogger *dslog.BufferedLogger
 )
 
 // InitLogger initialises the global gokit logger (util_log.Logger) and overrides the
 // default logger for the server.
-func InitLogger(cfg *server.Config, buffered bool, sync bool) {
-	l := newBasicLogger(cfg.LogFormat, buffered, sync)
+func InitLogger(cfg *server.Config, buffered bool) {
+	l := newBasicLogger(cfg.LogFormat, buffered)
 
 	// when using util_log.Logger, skip 5 stack frames.
 	logger := log.With(l, "caller", log.Caller(5))
@@ -39,7 +40,7 @@ func InitLogger(cfg *server.Config, buffered bool, sync bool) {
 	cfg.Log = logging.GoKit(level.NewFilter(log.With(l, "caller", log.Caller(6)), cfg.LogLevel.Gokit))
 }
 
-func newBasicLogger(format logging.Format, buffered bool, sync bool) log.Logger {
+func newBasicLogger(format logging.Format, buffered bool) log.Logger {
 	var logger log.Logger
 	var writer io.Writer = os.Stderr
 
@@ -52,15 +53,13 @@ func newBasicLogger(format logging.Format, buffered bool, sync bool) log.Logger 
 
 		// retain a reference to this logger because it doesn't conform to the standard Logger interface,
 		// and we can't unwrap it to get the underlying logger when we flush on shutdown
-		bufferedLogger = NewLineBufferedLogger(writer, logEntries,
-			WithFlushPeriod(flushTimeout),
-			WithPrellocatedBuffer(logBufferSize),
+		bufferedLogger = dslog.NewBufferedLogger(writer, logEntries,
+			dslog.WithFlushPeriod(flushTimeout),
+			dslog.WithPrellocatedBuffer(logBufferSize),
 		)
 
 		writer = bufferedLogger
-	}
-
-	if sync {
+	} else {
 		writer = log.NewSyncWriter(writer)
 	}
 
@@ -76,7 +75,7 @@ func newBasicLogger(format logging.Format, buffered bool, sync bool) log.Logger 
 
 // NewDefaultLogger creates a new gokit logger with the configured level and format
 func NewDefaultLogger(l logging.Level, format logging.Format) log.Logger {
-	logger := newBasicLogger(format, false, true)
+	logger := newBasicLogger(format, false)
 	return level.NewFilter(log.With(logger, "ts", log.DefaultTimestampUTC), l.Gokit)
 }
 

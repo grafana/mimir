@@ -6,7 +6,6 @@
 package validation
 
 import (
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -29,26 +28,26 @@ const (
 
 var (
 	// Discarded series / samples reasons.
-	reasonMissingMetricName         = metricReasonFromErrorID(globalerror.MissingMetricName)
-	reasonInvalidMetricName         = metricReasonFromErrorID(globalerror.InvalidMetricName)
-	reasonMaxLabelNamesPerSeries    = metricReasonFromErrorID(globalerror.MaxLabelNamesPerSeries)
-	reasonInvalidLabel              = metricReasonFromErrorID(globalerror.SeriesInvalidLabel)
-	reasonLabelNameTooLong          = metricReasonFromErrorID(globalerror.SeriesLabelNameTooLong)
-	reasonLabelValueTooLong         = metricReasonFromErrorID(globalerror.SeriesLabelValueTooLong)
-	reasonMaxNativeHistogramBuckets = metricReasonFromErrorID(globalerror.MaxNativeHistogramBuckets)
-	reasonDuplicateLabelNames       = metricReasonFromErrorID(globalerror.SeriesWithDuplicateLabelNames)
-	reasonTooFarInFuture            = metricReasonFromErrorID(globalerror.SampleTooFarInFuture)
+	reasonMissingMetricName         = globalerror.MissingMetricName.LabelValue()
+	reasonInvalidMetricName         = globalerror.InvalidMetricName.LabelValue()
+	reasonMaxLabelNamesPerSeries    = globalerror.MaxLabelNamesPerSeries.LabelValue()
+	reasonInvalidLabel              = globalerror.SeriesInvalidLabel.LabelValue()
+	reasonLabelNameTooLong          = globalerror.SeriesLabelNameTooLong.LabelValue()
+	reasonLabelValueTooLong         = globalerror.SeriesLabelValueTooLong.LabelValue()
+	reasonMaxNativeHistogramBuckets = globalerror.MaxNativeHistogramBuckets.LabelValue()
+	reasonDuplicateLabelNames       = globalerror.SeriesWithDuplicateLabelNames.LabelValue()
+	reasonTooFarInFuture            = globalerror.SampleTooFarInFuture.LabelValue()
 
 	// Discarded exemplars reasons.
-	reasonExemplarLabelsMissing    = metricReasonFromErrorID(globalerror.ExemplarLabelsMissing)
-	reasonExemplarLabelsTooLong    = metricReasonFromErrorID(globalerror.ExemplarLabelsTooLong)
-	reasonExemplarTimestampInvalid = metricReasonFromErrorID(globalerror.ExemplarTimestampInvalid)
+	reasonExemplarLabelsMissing    = globalerror.ExemplarLabelsMissing.LabelValue()
+	reasonExemplarLabelsTooLong    = globalerror.ExemplarLabelsTooLong.LabelValue()
+	reasonExemplarTimestampInvalid = globalerror.ExemplarTimestampInvalid.LabelValue()
 	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
 	reasonExemplarTooOld           = "exemplar_too_old"
 
 	// Discarded metadata reasons.
-	reasonMetadataMetricNameTooLong = metricReasonFromErrorID(globalerror.MetricMetadataMetricNameTooLong)
-	reasonMetadataUnitTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataUnitTooLong)
+	reasonMetadataMetricNameTooLong = globalerror.MetricMetadataMetricNameTooLong.LabelValue()
+	reasonMetadataUnitTooLong       = globalerror.MetricMetadataUnitTooLong.LabelValue()
 
 	// ReasonRateLimited is one of the values for the reason to discard samples.
 	// Declared here to avoid duplication in ingester and distributor.
@@ -57,10 +56,6 @@ var (
 	// ReasonTooManyHAClusters is one of the reasons for discarding samples.
 	ReasonTooManyHAClusters = "too_many_ha_clusters"
 )
-
-func metricReasonFromErrorID(id globalerror.ID) string {
-	return strings.ReplaceAll(string(id), "-", "_")
-}
 
 // DiscardedRequestsCounter creates per-user counter vector for requests discarded for a given reason.
 func DiscardedRequestsCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {

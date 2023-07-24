@@ -2007,9 +2007,9 @@ alertmanager_client:
   [tls_min_version: <string> | default = ""]
 
   # (advanced) The maximum amount of time to establish a connection. A value of
-  # 0 means default gRPC connect timeout and backoff.
+  # 0 means default gRPC client connect timeout and backoff.
   # CLI flag: -alertmanager.alertmanager-client.connect-timeout
-  [connect_timeout: <duration> | default = 0s]
+  [connect_timeout: <duration> | default = 5s]
 
   # (advanced) Initial backoff delay after first connection failure. Only
   # relevant if ConnectTimeout > 0.
@@ -2238,9 +2238,9 @@ backoff_config:
 [tls_min_version: <string> | default = ""]
 
 # (advanced) The maximum amount of time to establish a connection. A value of 0
-# means default gRPC connect timeout and backoff.
+# means default gRPC client connect timeout and backoff.
 # CLI flag: -<prefix>.connect-timeout
-[connect_timeout: <duration> | default = 0s]
+[connect_timeout: <duration> | default = 5s]
 
 # (advanced) Initial backoff delay after first connection failure. Only relevant
 # if ConnectTimeout > 0.

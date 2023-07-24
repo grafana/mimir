@@ -13,9 +13,9 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
 func TestLabelAdapter_Marshal(t *testing.T) {
@@ -409,18 +409,19 @@ func TestPreallocTimeseries_SetLabels(t *testing.T) {
 		},
 		marshalledData: []byte{1, 2, 3},
 	}
-	p.SetLabels(FromLabelsToLabelAdapters(labels.FromStrings("__name__", "hello", "lbl", "world")))
+	expected := []LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}
+	p.SetLabels(expected)
 
-	require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}, p.Labels)
+	require.Equal(t, expected, p.Labels)
 	require.Nil(t, p.marshalledData)
 }
 
 func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
-	bcs := []int{10, 100, 1_000, 10_000, 100_000, 1_000_000}
+	bcs := []int{10, 40, 100}
 
 	for _, lbCount := range bcs {
 		b.Run(fmt.Sprintf("num_labels=%d", lbCount), func(b *testing.B) {
-			// Generate unordered labels set.
+			// Generate labels set in reverse order for worst case.
 			unorderedLabels := make([]LabelAdapter, 0, lbCount)
 			for i := 0; i < lbCount; i++ {
 				lbName := fmt.Sprintf("lbl_%d", lbCount-i)
@@ -428,27 +429,33 @@ func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
 				unorderedLabels = append(unorderedLabels, LabelAdapter{Name: lbName, Value: lbValue})
 			}
 
-			p := PreallocTimeseries{
-				TimeSeries: &TimeSeries{},
-			}
+			b.Run("unordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 
-			// Copy unordered labels set for each benchmark iteration.
-			benchmarkUnorderedLabels := make([][]LabelAdapter, b.N)
-			for i := 0; i < b.N; i++ {
-				benchmarkLabels := make([]LabelAdapter, len(unorderedLabels))
-				copy(benchmarkLabels, unorderedLabels)
-				benchmarkUnorderedLabels[i] = benchmarkLabels
-			}
-
-			// Warmup.
-			b.ResetTimer()
-			b.ReportAllocs()
-
-			// Run benchmark.
-			for i := 0; i < b.N; i++ {
-				p.SetLabels(benchmarkUnorderedLabels[i])
-				p.SortLabelsIfNeeded()
-			}
+			slices.SortFunc(unorderedLabels, func(a, b LabelAdapter) bool { return a.Name < b.Name })
+			b.Run("ordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 		})
+	}
+}
+
+func benchmarkSortLabelsIfNeeded(inputLabels []LabelAdapter) func(b *testing.B) {
+	return func(b *testing.B) {
+		// Copy unordered labels set for each benchmark iteration.
+		benchmarkUnorderedLabels := make([][]LabelAdapter, b.N)
+		for i := 0; i < b.N; i++ {
+			benchmarkLabels := make([]LabelAdapter, len(inputLabels))
+			copy(benchmarkLabels, inputLabels)
+			benchmarkUnorderedLabels[i] = benchmarkLabels
+		}
+
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{},
+		}
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			p.SetLabels(benchmarkUnorderedLabels[i])
+			p.SortLabelsIfNeeded()
+		}
 	}
 }

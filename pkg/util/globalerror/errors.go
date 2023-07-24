@@ -96,6 +96,11 @@ func (id ID) MessageWithStrategyAndPerTenantLimitConfig(msg, strategy, flag stri
 		msg, errPrefix, id, strategy, plural, flagsList)
 }
 
+// LabelValue returns the error ID converted to a form suitable for use as a Prometheus label value.
+func (id ID) LabelValue() string {
+	return strings.ReplaceAll(string(id), "-", "_")
+}
+
 func buildFlagsList(flag string, addFlags ...string) (string, string) {
 	var sb strings.Builder
 	sb.WriteString("-")

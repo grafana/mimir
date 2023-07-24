@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/middleware"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -116,6 +117,13 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
+)
+
+var (
+	reasonIngesterMaxIngestionRate        = globalerror.IngesterMaxIngestionRate.LabelValue()
+	reasonIngesterMaxTenants              = globalerror.IngesterMaxTenants.LabelValue()
+	reasonIngesterMaxInMemorySeries       = globalerror.IngesterMaxInMemorySeries.LabelValue()
+	reasonIngesterMaxInflightPushRequests = globalerror.IngesterMaxInflightPushRequests.LabelValue()
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -707,7 +715,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	defer pushReq.CleanUp()
 
 	if err := i.checkRunning(); err != nil {
-		return nil, err
+		return nil, middleware.DoNotLogError{Err: err}
 	}
 
 	// We will report *this* request in the error too.
@@ -717,6 +725,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	il := i.getInstanceLimits()
 	if il != nil && il.MaxInflightPushRequests > 0 {
 		if inflight > il.MaxInflightPushRequests {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
 			return nil, errMaxInflightRequestsReached
 		}
 	}
@@ -728,6 +737,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	if il != nil && il.MaxIngestionRate > 0 {
 		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
 			return nil, errMaxIngestionRateReached
 		}
 	}
@@ -2023,6 +2033,7 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 	gl := i.getInstanceLimits()
 	if gl != nil && gl.MaxInMemoryTenants > 0 {
 		if users := int64(len(i.tsdbs)); users >= gl.MaxInMemoryTenants {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxTenants).Inc()
 			return nil, errMaxTenantsReached
 		}
 	}
@@ -2057,6 +2068,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		instanceLimitsFn:    i.getInstanceLimits,
 		instanceSeriesCount: &i.seriesCount,
+		instanceErrors:      i.metrics.rejected,
 		blockMinRetention:   i.cfg.BlocksStorageConfig.TSDB.Retention,
 	}
 
@@ -2071,7 +2083,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		StripeSize:                         i.cfg.BlocksStorageConfig.TSDB.StripeSize,
 		HeadChunksWriteBufferSize:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
 		HeadChunksEndTimeVariance:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		WALCompression:                     i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
+		WALCompression:                     i.cfg.BlocksStorageConfig.TSDB.WALCompressionType,
 		WALSegmentSize:                     i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:               walReplayConcurrency,
 		SeriesLifecycleCallback:            userDB,

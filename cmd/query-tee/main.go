@@ -38,7 +38,7 @@ func main() {
 
 	util_log.InitLogger(&server.Config{
 		LogLevel: cfg.LogLevel,
-	}, false, true)
+	}, false)
 
 	// Run the instrumentation server.
 	registry := prometheus.NewRegistry()

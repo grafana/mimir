@@ -14,6 +14,7 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -88,6 +89,7 @@ type userTSDB struct {
 
 	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
 	instanceLimitsFn    func() *InstanceLimits
+	instanceErrors      *prometheus.CounterVec
 
 	stateMtx                                     sync.RWMutex
 	state                                        tsdbState
@@ -264,6 +266,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	gl := u.instanceLimitsFn()
 	if gl != nil && gl.MaxInMemorySeries > 0 {
 		if series := u.instanceSeriesCount.Load(); series >= gl.MaxInMemorySeries {
+			u.instanceErrors.WithLabelValues(reasonIngesterMaxInMemorySeries).Inc()
 			return errMaxInMemorySeriesReached
 		}
 	}
