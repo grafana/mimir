@@ -286,8 +286,8 @@ func (c *Client) copyObjectDo(ctx context.Context, srcBucket, srcObject, destBuc
 	return objInfo, nil
 }
 
-func (c *Client) copyObjectPartDo(ctx context.Context, srcBucket, srcObject, destBucket, destObject string, uploadID string,
-	partID int, startOffset int64, length int64, metadata map[string]string,
+func (c *Client) copyObjectPartDo(ctx context.Context, srcBucket, srcObject, destBucket, destObject, uploadID string,
+	partID int, startOffset, length int64, metadata map[string]string,
 ) (p CompletePart, err error) {
 	headers := make(http.Header)
 
