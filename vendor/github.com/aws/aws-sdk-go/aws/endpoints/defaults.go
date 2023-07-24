@@ -32598,11 +32598,18 @@ var awscnPartition = partition{
 			},
 		},
 		"savingsplans": service{
-			PartitionEndpoint: "aws-cn",
-			IsRegionalized:    boxedFalse,
+			IsRegionalized: boxedTrue,
 			Endpoints: serviceEndpoints{
 				endpointKey{
-					Region: "aws-cn",
+					Region: "cn-north-1",
+				}: endpoint{
+					Hostname: "savingsplans.cn-north-1.amazonaws.com.cn",
+					CredentialScope: credentialScope{
+						Region: "cn-north-1",
+					},
+				},
+				endpointKey{
+					Region: "cn-northwest-1",
 				}: endpoint{
 					Hostname: "savingsplans.cn-northwest-1.amazonaws.com.cn",
 					CredentialScope: credentialScope{
@@ -37846,20 +37853,6 @@ var awsusgovPartition = partition{
 					Region:  "us-gov-west-1",
 					Variant: fipsVariant,
 				}: endpoint{},
-			},
-		},
-		"savingsplans": service{
-			PartitionEndpoint: "aws-us-gov-global",
-			IsRegionalized:    boxedFalse,
-			Endpoints: serviceEndpoints{
-				endpointKey{
-					Region: "aws-us-gov-global",
-				}: endpoint{
-					Hostname: "savingsplans.amazonaws.com",
-					CredentialScope: credentialScope{
-						Region: "us-gov-west-1",
-					},
-				},
 			},
 		},
 		"secretsmanager": service{
