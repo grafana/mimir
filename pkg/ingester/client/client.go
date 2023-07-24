@@ -7,6 +7,7 @@ package client
 
 import (
 	"flag"
+	"time"
 
 	"github.com/grafana/dskit/grpcclient"
 	"google.golang.org/grpc"
@@ -30,7 +31,12 @@ type closableHealthAndIngesterClient struct {
 
 // MakeIngesterClient makes a new IngesterClient
 func MakeIngesterClient(addr string, cfg Config, metrics *Metrics) (HealthAndIngesterClient, error) {
-	dialOpts, err := cfg.GRPCClientConfig.DialOption(grpcclient.Instrument(metrics.RequestDuration))
+	unary, stream := grpcclient.Instrument(metrics.requestDuration)
+	if cfg.CircuitBreaker.Enabled {
+		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(addr, cfg.CircuitBreaker, metrics)}, unary...)
+	}
+
+	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
 	}
@@ -55,16 +61,42 @@ func (c *closableHealthAndIngesterClient) Close() error {
 
 // Config is the configuration struct for the ingester client
 type Config struct {
-	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
+	GRPCClientConfig grpcclient.Config    `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
+	CircuitBreaker   CircuitBreakerConfig `yaml:"circuit_breaker"`
 }
 
 // RegisterFlags registers configuration settings used by the ingester client config.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
+	cfg.CircuitBreaker.RegisterFlagsWithPrefix("ingester.client", f)
 }
 
 func (cfg *Config) Validate() error {
-	return cfg.GRPCClientConfig.Validate()
+	if err := cfg.GRPCClientConfig.Validate(); err != nil {
+		return err
+	}
+
+	return cfg.CircuitBreaker.Validate()
+}
+
+type CircuitBreakerConfig struct {
+	Enabled                bool          `yaml:"enabled" category:"experimental"`
+	MaxHalfOpenRequests    uint64        `yaml:"max_half_open_requests" category:"experimental"`
+	MaxConsecutiveFailures uint64        `yaml:"max_consecutive_failures" category:"experimental"`
+	OpenTimeout            time.Duration `yaml:"open_timeout" category:"experimental"`
+	ClosedInterval         time.Duration `yaml:"closed_interval" category:"experimental"`
+}
+
+func (cfg *CircuitBreakerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enabled, prefix+".circuit-breaker-enabled", false, "Enable circuit breaking when making requests to ingesters")
+	f.Uint64Var(&cfg.MaxHalfOpenRequests, prefix+".circuit-breaker-max-half-open-requests", 10, "Max number of requests allowed when the circuit breaker is in the half-open state")
+	f.Uint64Var(&cfg.MaxConsecutiveFailures, prefix+".circuit-breaker-max-consecutive-failures", 10, "Max number of requests that can fail in a row before the circuit breaker opens")
+	f.DurationVar(&cfg.OpenTimeout, prefix+".circuit-breaker-open-timeout", 10*time.Second, "How long the circuit breaker will stay in the open state before allowing some requests")
+	f.DurationVar(&cfg.ClosedInterval, prefix+".circuit-breaker-closed-interval", 10*time.Second, "How often request counts are reset when in the closed state")
+}
+
+func (cfg *CircuitBreakerConfig) Validate() error {
+	return nil
 }
 
 type CombinedQueryStreamResponse struct {

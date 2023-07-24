@@ -2131,6 +2131,30 @@ The `ingester_client` block configures how the distributors connect to the inges
 # distributors, queriers and rulers.
 # The CLI flags prefix for this block configuration is: ingester.client
 [grpc_client_config: <grpc_client>]
+
+circuit_breaker:
+  # (experimental) Enable circuit breaking when making requests to ingesters
+  # CLI flag: -ingester.client.circuit-breaker-enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Max number of requests allowed when the circuit breaker is in
+  # the half-open state
+  # CLI flag: -ingester.client.circuit-breaker-max-half-open-requests
+  [max_half_open_requests: <int> | default = 10]
+
+  # (experimental) Max number of requests that can fail in a row before the
+  # circuit breaker opens
+  # CLI flag: -ingester.client.circuit-breaker-max-consecutive-failures
+  [max_consecutive_failures: <int> | default = 10]
+
+  # (experimental) How long the circuit breaker will stay in the open state
+  # before allowing some requests
+  # CLI flag: -ingester.client.circuit-breaker-open-timeout
+  [open_timeout: <duration> | default = 10s]
+
+  # (experimental) How often request counts are reset when in the closed state
+  # CLI flag: -ingester.client.circuit-breaker-closed-interval
+  [closed_interval: <duration> | default = 10s]
 ```
 
 ### grpc_client

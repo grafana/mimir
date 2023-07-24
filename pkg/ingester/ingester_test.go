@@ -5642,7 +5642,6 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-
 			expectedErr: errMaxInMemorySeriesReached,
 		},
 
