@@ -37,6 +37,8 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
+const maxNotifyFrontendRetries = 5
+
 func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
 		log:            log,
@@ -213,7 +215,9 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			Body: []byte(errMsg),
 		}
 	}
+	retries := 0
 
+retry:
 	c, err := sp.frontendPool.GetClientFor(frontendAddress)
 	if err == nil {
 		// Response is empty and uninteresting.
@@ -222,6 +226,13 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			HttpResponse: response,
 			Stats:        stats,
 		})
+		// If the used connection is closed, remove it from the pool and retry.
+		if isClosedConnError(err) && retries <= maxNotifyFrontendRetries {
+			sp.frontendPool.RemoveClientFor(frontendAddress)
+			retries++
+
+			goto retry
+		}
 	}
 	if err != nil {
 		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress)
@@ -259,4 +270,14 @@ type frontendClient struct {
 
 func (fc *frontendClient) Close() error {
 	return fc.conn.Close()
+}
+
+// isClosedConnError reports whether err is an error from use of a closed
+// network connection.
+func isClosedConnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// It is not exported in a more reasonable way. See https://github.com/golang/go/issues/4373.
+	return strings.Contains(err.Error(), "use of closed network connection")
 }
