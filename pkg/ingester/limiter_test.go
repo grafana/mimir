@@ -307,7 +307,7 @@ func runLimiterMaxFunctionTest(
 	}
 }
 
-func TestLimiter_ShardsPerTenantTable(t *testing.T){
+func TestLimiter_ShardsPerTenantTable(t *testing.T) {
 	// Mock the ring
 	ring := &ringCountMock{}
 	ring.On("InstancesCount").Return(9)

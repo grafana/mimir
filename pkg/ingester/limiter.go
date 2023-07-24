@@ -36,10 +36,10 @@ type RingCount interface {
 // Limiter implements primitives to get the maximum number of series
 // an ingester can handle for a specific tenant
 type Limiter struct {
-	limits               *validation.Overrides
-	ring                 RingCount
-	replicationFactor    int
-	zoneAwarenessEnabled bool
+	limits                   *validation.Overrides
+	ring                     RingCount
+	replicationFactor        int
+	zoneAwarenessEnabled     bool
 	ingestionShardsForTenant map[string]int
 }
 
@@ -51,10 +51,10 @@ func NewLimiter(
 	zoneAwarenessEnabled bool,
 ) *Limiter {
 	return &Limiter{
-		limits:               limits,
-		ring:                 ring,
-		replicationFactor:    replicationFactor,
-		zoneAwarenessEnabled: zoneAwarenessEnabled,
+		limits:                   limits,
+		ring:                     ring,
+		replicationFactor:        replicationFactor,
+		zoneAwarenessEnabled:     zoneAwarenessEnabled,
 		ingestionShardsForTenant: make(map[string]int),
 	}
 }
@@ -220,13 +220,13 @@ func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int 
 }
 
 func (l *Limiter) getShardSize(userID string) int {
-	if shards, ok := l.ingestionShardsForTenant[userID] ; ok {
+	if shards, ok := l.ingestionShardsForTenant[userID]; ok {
 		return shards
-	} else {
-		configShards := l.limits.IngestionTenantShardSize(userID)
-		l.ingestionShardsForTenant[userID] = configShards
-		return configShards
 	}
+	configShards := l.limits.IngestionTenantShardSize(userID)
+	l.ingestionShardsForTenant[userID] = configShards
+	return configShards
+
 }
 
 func (l *Limiter) getZonesCount() int {
@@ -236,6 +236,6 @@ func (l *Limiter) getZonesCount() int {
 	return 1
 }
 
-func (l *Limiter) ClearShardsForTenant(){
+func (l *Limiter) ClearShardsForTenant() {
 	l.ingestionShardsForTenant = make(map[string]int)
 }
