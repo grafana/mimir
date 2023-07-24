@@ -40,6 +40,7 @@ type Limiter struct {
 	ring                 RingCount
 	replicationFactor    int
 	zoneAwarenessEnabled bool
+	ingestionShardsForTenant map[string]int
 }
 
 // NewLimiter makes a new in-memory series limiter
@@ -54,6 +55,7 @@ func NewLimiter(
 		ring:                 ring,
 		replicationFactor:    replicationFactor,
 		zoneAwarenessEnabled: zoneAwarenessEnabled,
+		ingestionShardsForTenant: make(map[string]int),
 	}
 }
 
@@ -218,7 +220,13 @@ func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int 
 }
 
 func (l *Limiter) getShardSize(userID string) int {
-	return l.limits.IngestionTenantShardSize(userID)
+	if shards, ok := l.ingestionShardsForTenant[userID] ; ok {
+		return shards
+	} else {
+		configShards := l.limits.IngestionTenantShardSize(userID)
+		l.ingestionShardsForTenant[userID] = configShards
+		return configShards
+	}
 }
 
 func (l *Limiter) getZonesCount() int {
@@ -226,4 +234,8 @@ func (l *Limiter) getZonesCount() int {
 		return util_math.Max(l.ring.ZonesCount(), 1)
 	}
 	return 1
+}
+
+func (l *Limiter) ClearShardsForTenant(){
+	l.ingestionShardsForTenant = make(map[string]int)
 }

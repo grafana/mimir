@@ -2443,7 +2443,8 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 				level.Error(i.logger).Log("msg", "failed to update cached shipped blocks after shipper synchronisation", "user", userID, "err", err)
 			}
 		}
-
+		// reset shards for tenant table
+		i.limiter.ClearShardsForTenant()
 		return nil
 	})
 }

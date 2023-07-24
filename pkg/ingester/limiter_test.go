@@ -307,6 +307,36 @@ func runLimiterMaxFunctionTest(
 	}
 }
 
+func TestLimiter_ShardsPerTenantTable(t *testing.T){
+	// Mock the ring
+	ring := &ringCountMock{}
+	ring.On("InstancesCount").Return(9)
+	ring.On("InstancesInZoneCount").Return(3)
+	ring.On("ZonesCount").Return(3)
+
+	// Mock limits
+	limits := validation.Limits{IngestionTenantShardSize: 3, MaxGlobalSeriesPerUser: 300}
+	var overrides *validation.Overrides
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
+
+	limiter := NewLimiter(overrides, ring, 1, true)
+	// We expect 100 series per ingester per user
+	assert.Equal(t, 100, limiter.maxSeriesPerUser("test"))
+
+	// increase shard count and update the overrides
+	limitsUpdated := validation.Limits{IngestionTenantShardSize: 6, MaxGlobalSeriesPerUser: 300}
+	limiter.limits, _ = validation.NewOverrides(limitsUpdated, nil)
+
+	// This should be un-changed because it's cached
+	assert.Equal(t, 6, limiter.limits.IngestionTenantShardSize("test"))
+	assert.Equal(t, 100, limiter.maxSeriesPerUser("test"))
+
+	// Clear the map like we would for a head compaction
+	limiter.ClearShardsForTenant()
+	assert.Equal(t, 50, limiter.maxSeriesPerUser("test"))
+}
+
 func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalSeriesPerMetric int
