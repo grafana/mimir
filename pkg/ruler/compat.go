@@ -295,7 +295,7 @@ func DefaultTenantManagerFactory(
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,
 			NotifyFunc:                 rules.SendAlerts(notifier, cfg.ExternalURL.String()),
-			Logger:                     log.With(logger, "user", userID),
+			Logger:                     log.With(logger, "component", "ruler", "insight", true, "user", userID),
 			Registerer:                 reg,
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,

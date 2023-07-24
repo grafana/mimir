@@ -53,6 +53,7 @@
 * [ENHANCEMENT] Ingester: Add two metrics tracking resource utilization calculated by utilization based limiter: #5496
   * `cortex_ingester_utilization_limiter_current_cpu_load`: The current exponential weighted moving average of the ingester's CPU load
   * `cortex_ingester_utilization_limiter_current_memory_usage_bytes`: The current ingester memory utilization
+* [ENHANCEMENT] Ruler: added `insight=true` field to ruler's prometheus component for rule evaluation logs. #5510
 * [ENHANCEMENT] Distributor Ingester: Add metrics to count the number of requests rejected for hitting per-instance limits, `cortex_distributor_instance_rejected_requests_total` and `cortex_ingester_instance_rejected_requests_total` respectively. #5551
 * [ENHANCEMENT] Distributor: add support for ingesting exponential histograms that are over the native histogram scale limit of 8 in OpenTelemetry format by downscaling them. #5532
 * [ENHANCEMENT] General: buffered logging: #5506
