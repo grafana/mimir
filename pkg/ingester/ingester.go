@@ -379,6 +379,14 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	// This ingester will not start any subservices (lifecycler, compaction, shipping),
 	// and will only open TSDBs, wait for Flush to be called, and then close TSDBs again.
 	i.BasicService = services.NewIdleService(i.startingForFlusher, i.stoppingForFlusher)
+
+	// Init the limiter and instantiate the shard map referenced in the flush function
+	i.limiter = NewLimiter(
+		limits,
+		i.lifecycler,
+		cfg.IngesterRing.ReplicationFactor,
+		cfg.IngesterRing.ZoneAwarenessEnabled)
+
 	return i, nil
 }
 
@@ -2383,6 +2391,8 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 			return
 		}
 	}
+	// After blocks have been shipped we want to clear the tenant shard count map.
+	defer i.limiter.ClearShardsForTenant()
 
 	// Number of concurrent workers is limited in order to avoid to concurrently sync a lot
 	// of tenants in a large cluster.
@@ -2443,8 +2453,6 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 				level.Error(i.logger).Log("msg", "failed to update cached shipped blocks after shipper synchronisation", "user", userID, "err", err)
 			}
 		}
-		// reset shards for tenant table
-		i.limiter.ClearShardsForTenant()
 		return nil
 	})
 }
