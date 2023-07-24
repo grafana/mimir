@@ -63,7 +63,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -5461,7 +5460,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 				},
 			},
 
-			expectedErr: wrapWithUser(errMaxInMemorySeriesReached, "test"),
+			expectedErr: errMaxInMemorySeriesReached,
 		},
 
 		"should fail creating two users": {
@@ -5488,7 +5487,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: wrapWithUser(errMaxTenantsReached, "user2"),
+			expectedErr: errMaxTenantsReached,
 		},
 
 		"should fail pushing samples in two requests due to rate limit": {
@@ -5687,10 +5686,12 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 		time.Sleep(10 * time.Millisecond) // Give first goroutine a chance to start pushing...
 		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+		var optional middleware.OptionalLogging
 
 		_, err := i.Push(ctx, req)
-		require.Equal(t, errMaxInflightRequestsReached, err)
-		require.ErrorAs(t, err, &util_log.DoNotLogError{})
+		require.ErrorIs(t, err, errMaxInflightRequestsReached)
+		require.ErrorAs(t, err, &optional)
+		require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
 		return nil
 	})
 
