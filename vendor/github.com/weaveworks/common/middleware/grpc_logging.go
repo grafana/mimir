@@ -17,6 +17,11 @@ const (
 	errorKey = "err"
 )
 
+// An error can implement ShouldLog() to control whether GRPCServerLog will log.
+type OptionalLogging interface {
+	ShouldLog(ctx context.Context, duration time.Duration) bool
+}
+
 // GRPCServerLog logs grpc requests, errors, and latency.
 type GRPCServerLog struct {
 	Log logging.Interface
@@ -32,7 +37,8 @@ func (s GRPCServerLog) UnaryServerInterceptor(ctx context.Context, req interface
 	if err == nil && s.DisableRequestSuccessLog {
 		return resp, nil
 	}
-	if errors.Is(err, DoNotLogError{}) {
+	var optional OptionalLogging
+	if errors.As(err, &optional) && !optional.ShouldLog(ctx, time.Since(begin)) {
 		return resp, err
 	}
 
