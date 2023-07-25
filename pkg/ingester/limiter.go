@@ -11,6 +11,8 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -36,6 +38,7 @@ type Limiter struct {
 	ring                 RingCount
 	replicationFactor    int
 	zoneAwarenessEnabled bool
+	sampler              *log.Sampler
 }
 
 // NewLimiter makes a new in-memory series limiter
@@ -44,12 +47,14 @@ func NewLimiter(
 	ring RingCount,
 	replicationFactor int,
 	zoneAwarenessEnabled bool,
+	errorSampleRate int64,
 ) *Limiter {
 	return &Limiter{
 		limits:               limits,
 		ring:                 ring,
 		replicationFactor:    replicationFactor,
 		zoneAwarenessEnabled: zoneAwarenessEnabled,
+		sampler:              log.NewSampler(errorSampleRate),
 	}
 }
 

@@ -172,6 +172,8 @@ type Config struct {
 	LogUtilizationBasedLimiterCPUSamples bool    `yaml:"log_utilization_based_limiter_cpu_samples" category:"experimental"`
 
 	LimitInflightRequestsUsingGrpcTapHandle bool `yaml:"limit_inflight_requests_using_grpc_tap_handle" category:"experimental"`
+
+	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -189,6 +191,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcTapHandle, "ingester.limit-inflight-requests-using-grpc-handlers", false, "Use experimental method of limiting push requests")
+	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 10, "Log a subset of errors once in this many times. 0 = log all of them.")
 }
 
 func (cfg *Config) Validate() error {
@@ -357,7 +360,8 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		limits,
 		i.lifecycler,
 		cfg.IngesterRing.ReplicationFactor,
-		cfg.IngesterRing.ZoneAwarenessEnabled)
+		cfg.IngesterRing.ZoneAwarenessEnabled,
+		cfg.ErrorSampleRate)
 
 	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
 		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cfg.ReadPathCPUUtilizationLimit,
