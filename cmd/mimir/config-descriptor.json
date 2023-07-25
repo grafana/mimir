@@ -7420,6 +7420,17 @@
             },
             {
               "kind": "field",
+              "name": "index_header_sparse_persistence_concurrency",
+              "required": false,
+              "desc": "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "blocks-storage.bucket-store.index-header-sparse-persistence-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "partitioner_max_gap_bytes",
               "required": false,
               "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.",
