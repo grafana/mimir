@@ -37,7 +37,7 @@ type PostingOffsetTable interface {
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
 
-	NewPostingOffsetTableSample() (table *indexheaderpb.PostingOffsetTable)
+	NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable)
 }
 
 // PostingListOffset contains the start and end offset of a posting list.
@@ -221,7 +221,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	return &t, nil
 }
 
-func NewPostingOffsetTableFromSamples(factory *streamencoding.DecbufFactory, postingsOffsetTable *indexheaderpb.PostingOffsetTable, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
+func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory, postingsOffsetTable *indexheaderpb.PostingOffsetTable, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -320,7 +320,7 @@ func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-func (t *PostingOffsetTableV1) NewPostingOffsetTableSample() (table *indexheaderpb.PostingOffsetTable) {
+func (t *PostingOffsetTableV1) NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
 	return &indexheaderpb.PostingOffsetTable{}
 }
 
@@ -593,24 +593,24 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-// NewPostingOffsetTableSample loads all postings offset table data into an index-header sample to be persisted to disk
-func (t *PostingOffsetTableV2) NewPostingOffsetTableSample() (table *indexheaderpb.PostingOffsetTable) {
-	samples := &indexheaderpb.PostingOffsetTable{
+// NewSparsePostingOffsetTable loads all postings offset table data into a sparse index-header to be persisted to disk
+func (t *PostingOffsetTableV2) NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
+	sparseHeaders := &indexheaderpb.PostingOffsetTable{
 		Postings: make(map[string]*indexheaderpb.PostingValueOffsets, len(t.postings)),
 	}
 
 	for name, offsets := range t.postings {
-		samples.Postings[name] = &indexheaderpb.PostingValueOffsets{}
+		sparseHeaders.Postings[name] = &indexheaderpb.PostingValueOffsets{}
 		postingOffsets := make([]*indexheaderpb.PostingOffset, len(offsets.offsets))
 
 		for i, postingOff := range offsets.offsets {
 			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)}
 		}
-		samples.Postings[name].Offsets = postingOffsets
-		samples.Postings[name].LastValOffset = offsets.lastValOffset
+		sparseHeaders.Postings[name].Offsets = postingOffsets
+		sparseHeaders.Postings[name].LastValOffset = offsets.lastValOffset
 	}
 
-	return samples
+	return sparseHeaders
 }
 
 func skipNAndName(d *streamencoding.Decbuf, buf *int) {

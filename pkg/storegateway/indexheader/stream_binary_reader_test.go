@@ -43,14 +43,14 @@ func (ml *inMemoryLogger) Log(keyvals ...interface{}) error {
 	return nil
 }
 
-// TestStreamBinaryReader_ShouldBuildSamplesFromFile tests if StreamBinaryReady constructs
-// and writes samples on first build and reads from disk on the second build.
-func TestStreamBinaryReader_ShouldBuildSamplesFromFileSimple(t *testing.T) {
+// TestStreamBinaryReader_ShouldBuildSparseHeadersFromFile tests if StreamBinaryReady constructs
+// and writes sparse index headers on first build and reads from disk on the second build.
+func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T) {
 	ctx := context.Background()
 
 	logger := &inMemoryLogger{}
 
-	tmpDir := filepath.Join(t.TempDir(), "test-samples")
+	tmpDir := filepath.Join(t.TempDir(), "test-sparse index headers")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
@@ -64,29 +64,29 @@ func TestStreamBinaryReader_ShouldBuildSamplesFromFileSimple(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
-	// Write samples to disk on first build.
+	// Write sparse index headers to disk on first build.
 	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
-	// Read samples to disk on second build.
+	// Read sparse index headers to disk on second build.
 	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 
-	// Checks logs for order of operations: build index-header -> build sample -> read samples.
+	// Checks logs for order of operations: build index-header -> build spare index header -> read sparse index headers.
 	require.Equal(t, []string{
 		"level=debug msg=failed to read index-header from disk; recreating",
 		"level=debug msg=built index-header file",
-		"level=debug msg=constructing index-header samples",
-		"level=debug msg=built index-header samples file",
-		"level=debug msg=reading from index-header samples file",
+		"level=debug msg=constructing index-header sparse index headers",
+		"level=debug msg=built index-header sparse index headers file",
+		"level=debug msg=reading from index-header sparse index headers file",
 	}, logger.logs, "\n")
 }
 
-// TestStreamBinaryReader_CheckSamplesCorrectnessExtensive tests if StreamBinaryReader
-// reads and writes samples accurately for a variety of index-headers.
-func TestStreamBinaryReader_CheckSamplesCorrectnessExtensive(t *testing.T) {
+// TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive tests if StreamBinaryReader
+// reads and writes sparse index headers accurately for a variety of index-headers.
+func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir := filepath.Join(t.TempDir(), "test-samples")
+	tmpDir := filepath.Join(t.TempDir(), "test-sparse index headers")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
@@ -111,14 +111,14 @@ func TestStreamBinaryReader_CheckSamplesCorrectnessExtensive(t *testing.T) {
 
 				b := realByteSlice(indexFile.Bytes())
 
-				// Write samples to disk on first build.
+				// Write sparse index headers to disk on first build.
 				_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 				require.NoError(t, err)
-				// Read samples to disk on second build.
+				// Read sparse index headers to disk on second build.
 				r2, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 				require.NoError(t, err)
 
-				// Check correctness of samples.
+				// Check correctness of sparse index headers.
 				compareIndexToHeader(t, b, r2)
 			})
 		}

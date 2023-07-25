@@ -41,8 +41,8 @@ type Symbols struct {
 
 const symbolFactor = 32
 
-// NewSymbolsFromSamples reads from sampled index header and returns a Symbols object for symbol lookups.
-func NewSymbolsFromSamples(factory *streamencoding.DecbufFactory, symbols *indexheaderpb.Symbols, version int, offset int) (s *Symbols, err error) {
+// NewSymbolsFromSparseHeader reads from sparse index header and returns a Symbols object for symbol lookups.
+func NewSymbolsFromSparseHeader(factory *streamencoding.DecbufFactory, symbols *indexheaderpb.Symbols, version int, offset int) (s *Symbols, err error) {
 	s = &Symbols{
 		factory:     factory,
 		version:     version,
@@ -60,9 +60,9 @@ func NewSymbolsFromSamples(factory *streamencoding.DecbufFactory, symbols *index
 	return s, nil
 }
 
-// NewSymbolSample loads all symbols data into an index-header sample to be persisted to disk
-func (s *Symbols) NewSymbolSample() (samples *indexheaderpb.Symbols) {
-	sampleSymbols := &indexheaderpb.Symbols{}
+// NewSparseSymbol loads all symbols data into an index-header sparse to be persisted to disk
+func (s *Symbols) NewSparseSymbol() (sparse *indexheaderpb.Symbols) {
+	sparseSymbols := &indexheaderpb.Symbols{}
 
 	offsets := make([]int64, len(s.offsets))
 
@@ -70,10 +70,10 @@ func (s *Symbols) NewSymbolSample() (samples *indexheaderpb.Symbols) {
 		offsets[i] = int64(offset)
 	}
 
-	sampleSymbols.Offsets = offsets
-	sampleSymbols.SymbolsCount = int64(s.seen)
+	sparseSymbols.Offsets = offsets
+	sparseSymbols.SymbolsCount = int64(s.seen)
 
-	return sampleSymbols
+	return sparseSymbols
 }
 
 // NewSymbols returns a Symbols object for symbol lookups.
