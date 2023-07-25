@@ -1599,7 +1599,6 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 
 					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
 					assert.NoError(t, err)
-          
 					// Create the bucket store.
 					store, err := NewBucketStore(
 						"test-user",
@@ -1617,7 +1616,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 						indexheader.Config{},
 						false, // Lazy index-header loading disabled.
 						0,
-            true,  // Sparse index-header persistence enabled.
+						true, // Sparse index-header persistence enabled.
 						hashcache.NewSeriesHashCache(1024*1024),
 						NewBucketStoreMetrics(nil),
 						WithLogger(logger),
