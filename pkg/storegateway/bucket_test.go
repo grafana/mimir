@@ -1008,7 +1008,7 @@ func prepareTestBucket(tb test.TB, dataSetup ...func(tb testing.TB, appender sto
 func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
 	bkt, tmpDir, id, minT, maxT := prepareTestBucket(tb, dataSetup...)
 
-	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, true, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 	require.NoError(tb, err)
 
 	return func() *bucketBlock {
@@ -1482,6 +1482,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			indexheader.Config{},
 			false,
 			0,
+			true,
 			hashcache.NewSeriesHashCache(1024*1024),
 			NewBucketStoreMetrics(reg),
 			testData.options...,
@@ -1605,6 +1606,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 				indexheader.Config{},
 				false, // Lazy index-header loading disabled.
 				0,
+				true,
 				hashcache.NewSeriesHashCache(1024*1024),
 				NewBucketStoreMetrics(nil),
 				WithLogger(logger),
@@ -1702,7 +1704,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, true, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
 	}
 
@@ -1740,7 +1742,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, true, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
 	}
 
@@ -1750,7 +1752,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		logger:          logger,
 		indexCache:      indexCache,
 		chunksCache:     chunkscache.NoopCache{},
-		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), false, 0, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil)),
+		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), false, 0, true, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil)),
 		metrics:         NewBucketStoreMetrics(nil),
 		blockSet:        &bucketBlockSet{blocks: []*bucketBlock{b1, b2}},
 		blocks: map[ulid.ULID]*bucketBlock{
@@ -1918,6 +1920,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		indexheader.Config{},
 		false,
 		0,
+		true,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -1973,6 +1976,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 		indexheader.Config{},
 		false,
 		0,
+		true,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -2028,6 +2032,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 		indexheader.Config{},
 		false,
 		0,
+		true,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -2149,6 +2154,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 		indexheader.Config{},
 		false,
 		0,
+		true,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -2306,6 +2312,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 						indexheader.Config{},
 						false,
 						0,
+						true,
 						hashcache.NewSeriesHashCache(1024*1024),
 						NewBucketStoreMetrics(nil),
 					)
@@ -2416,6 +2423,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 		indexheader.Config{},
 		false,
 		0,
+		true,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		opts...,

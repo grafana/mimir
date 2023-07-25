@@ -236,6 +236,7 @@ func NewBucketStore(
 	indexHeaderCfg indexheader.Config,
 	lazyIndexReaderEnabled bool,
 	lazyIndexReaderIdleTimeout time.Duration,
+	sparsePersistenceEnabled bool,
 	seriesHashCache *hashcache.SeriesHashCache,
 	metrics *BucketStoreMetrics,
 	options ...BucketStoreOption,
@@ -270,7 +271,7 @@ func NewBucketStore(
 	}
 
 	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, sparsePersistenceEnabled, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")

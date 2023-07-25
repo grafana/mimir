@@ -61,7 +61,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, gate.NewNoop(), NewReaderPoolMetrics(nil))
+			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, true, gate.NewNoop(), NewReaderPoolMetrics(nil))
 			defer pool.Close()
 
 			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
@@ -101,7 +101,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	metrics := NewReaderPoolMetrics(nil)
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
-	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, gate.NewNoop(), metrics)
+	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, true, gate.NewNoop(), metrics)
 	defer pool.Close()
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
