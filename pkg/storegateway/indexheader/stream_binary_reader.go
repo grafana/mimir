@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
 	"path/filepath"
 	"sync"
 	"time"
