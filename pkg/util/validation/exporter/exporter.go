@@ -83,11 +83,16 @@ const (
 type Config struct {
 	Ring           RingConfig             `yaml:"ring"`
 	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics" category:"experimental"`
+
+	// This allows downstream projects to define their own metrics and expose them via the exporter.
+	// Donwstream projects should be responsible for enabling/disabling their own metrics,
+	// so these won't be checked against EnabledMetrics.
+	ExtraMetrics []ExportedMetric `yaml:"-"`
 }
 
-type exportedMetric struct {
-	name string
-	get  func(limits *validation.Limits) float64
+type ExportedMetric struct {
+	Name string
+	Get  func(limits *validation.Limits) float64
 }
 
 // RegisterFlags configs this instance to the given FlagSet
@@ -118,6 +123,7 @@ type OverridesExporter struct {
 
 	defaultLimits       *validation.Limits
 	tenantLimits        validation.TenantLimits
+	exportedMetrics     []ExportedMetric
 	overrideDescription *prometheus.Desc
 	defaultsDescription *prometheus.Desc
 	logger              log.Logger
@@ -125,8 +131,6 @@ type OverridesExporter struct {
 	// OverridesExporter can optionally use a ring to uniquely shard tenants to
 	// instances and avoid export of duplicate metrics.
 	ring *overridesExporterRing
-
-	enabledMetrics *util.AllowedTenants
 }
 
 // NewOverridesExporter creates an OverridesExporter that reads updates to per-tenant
@@ -138,6 +142,8 @@ func NewOverridesExporter(
 	log log.Logger,
 	registerer prometheus.Registerer,
 ) (*OverridesExporter, error) {
+	enabledMetrics := util.NewAllowedTenants(config.EnabledMetrics, nil)
+
 	exporter := &OverridesExporter{
 		defaultLimits: defaultLimits,
 		tenantLimits:  tenantLimits,
@@ -153,7 +159,8 @@ func NewOverridesExporter(
 			[]string{"limit_name"},
 			nil,
 		),
-		logger: log,
+		exportedMetrics: setupExportedMetrics(enabledMetrics, config.ExtraMetrics),
+		logger:          log,
 	}
 
 	if config.Ring.Enabled {
@@ -165,10 +172,81 @@ func NewOverridesExporter(
 		}
 	}
 
-	exporter.enabledMetrics = util.NewAllowedTenants(config.EnabledMetrics, nil)
-
 	exporter.Service = services.NewBasicService(exporter.starting, exporter.running, exporter.stopping)
 	return exporter, nil
+}
+
+func setupExportedMetrics(enabledMetrics *util.AllowedTenants, extraMetrics []ExportedMetric) []ExportedMetric {
+	var exportedMetrics []ExportedMetric
+
+	// Write path limits
+	if enabledMetrics.IsAllowed(ingestionRate) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{ingestionRate, func(limits *validation.Limits) float64 { return limits.IngestionRate }})
+	}
+	if enabledMetrics.IsAllowed(ingestionBurstSize) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{ingestionBurstSize, func(limits *validation.Limits) float64 { return float64(limits.IngestionBurstSize) }})
+	}
+	if enabledMetrics.IsAllowed(maxGlobalSeriesPerUser) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalSeriesPerUser, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalSeriesPerUser) }})
+	}
+	if enabledMetrics.IsAllowed(maxGlobalSeriesPerMetric) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalSeriesPerMetric, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalSeriesPerMetric) }})
+	}
+	if enabledMetrics.IsAllowed(maxGlobalExemplarsPerUser) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalExemplarsPerUser, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalExemplarsPerUser) }})
+	}
+	if enabledMetrics.IsAllowed(maxGlobalMetricsWithMetadataPerUser) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalMetricsWithMetadataPerUser, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalMetricsWithMetadataPerUser) }})
+	}
+	if enabledMetrics.IsAllowed(maxGlobalMetadataPerMetric) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalMetadataPerMetric, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalMetadataPerMetric) }})
+	}
+	if enabledMetrics.IsAllowed(requestRate) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{requestRate, func(limits *validation.Limits) float64 { return limits.RequestRate }})
+	}
+	if enabledMetrics.IsAllowed(requestBurstSize) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{requestBurstSize, func(limits *validation.Limits) float64 { return float64(limits.RequestBurstSize) }})
+	}
+
+	// Read path limits
+	if enabledMetrics.IsAllowed(maxChunksPerQuery) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{maxChunksPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxChunksPerQuery) }})
+	}
+	if enabledMetrics.IsAllowed(maxFetchedSeriesPerQuery) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{maxFetchedSeriesPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxFetchedSeriesPerQuery) }})
+	}
+	if enabledMetrics.IsAllowed(maxFetchedChunkBytesPerQuery) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{maxFetchedChunkBytesPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxFetchedChunkBytesPerQuery) }})
+	}
+
+	// Ruler limits
+	if enabledMetrics.IsAllowed(rulerMaxRulesPerRuleGroup) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{rulerMaxRulesPerRuleGroup, func(limits *validation.Limits) float64 { return float64(limits.RulerMaxRulesPerRuleGroup) }})
+	}
+	if enabledMetrics.IsAllowed(rulerMaxRuleGroupsPerTenant) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{rulerMaxRuleGroupsPerTenant, func(limits *validation.Limits) float64 { return float64(limits.RulerMaxRuleGroupsPerTenant) }})
+	}
+
+	// Alertmanager limits
+	if enabledMetrics.IsAllowed(notificationRateLimit) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{notificationRateLimit, func(limits *validation.Limits) float64 { return limits.NotificationRateLimit }})
+	}
+	if enabledMetrics.IsAllowed(alertmanagerMaxDispatcherAggregationGroups) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{alertmanagerMaxDispatcherAggregationGroups, func(limits *validation.Limits) float64 {
+			return float64(limits.AlertmanagerMaxDispatcherAggregationGroups)
+		}})
+	}
+	if enabledMetrics.IsAllowed(alertmanagerMaxAlertsCount) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{alertmanagerMaxAlertsCount, func(limits *validation.Limits) float64 { return float64(limits.AlertmanagerMaxAlertsCount) }})
+	}
+	if enabledMetrics.IsAllowed(alertmanagerMaxAlertsSizeBytes) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{alertmanagerMaxAlertsSizeBytes, func(limits *validation.Limits) float64 { return float64(limits.AlertmanagerMaxAlertsSizeBytes) }})
+	}
+
+	// Add extra exported metrics
+	exportedMetrics = append(exportedMetrics, extraMetrics...)
+
+	return exportedMetrics
 }
 
 func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
@@ -182,75 +260,9 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	var exportedMetrics []exportedMetric
-
-	// Write path limits
-	if oe.enabledMetrics.IsAllowed(ingestionRate) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{ingestionRate, func(limits *validation.Limits) float64 { return limits.IngestionRate }})
-	}
-	if oe.enabledMetrics.IsAllowed(ingestionBurstSize) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{ingestionBurstSize, func(limits *validation.Limits) float64 { return float64(limits.IngestionBurstSize) }})
-	}
-	if oe.enabledMetrics.IsAllowed(maxGlobalSeriesPerUser) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{maxGlobalSeriesPerUser, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalSeriesPerUser) }})
-	}
-	if oe.enabledMetrics.IsAllowed(maxGlobalSeriesPerMetric) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{maxGlobalSeriesPerMetric, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalSeriesPerMetric) }})
-	}
-	if oe.enabledMetrics.IsAllowed(maxGlobalExemplarsPerUser) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{maxGlobalExemplarsPerUser, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalExemplarsPerUser) }})
-	}
-	if oe.enabledMetrics.IsAllowed(maxGlobalMetricsWithMetadataPerUser) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{maxGlobalMetricsWithMetadataPerUser, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalMetricsWithMetadataPerUser) }})
-	}
-	if oe.enabledMetrics.IsAllowed(maxGlobalMetadataPerMetric) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{maxGlobalMetadataPerMetric, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalMetadataPerMetric) }})
-	}
-	if oe.enabledMetrics.IsAllowed(requestRate) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{requestRate, func(limits *validation.Limits) float64 { return limits.RequestRate }})
-	}
-	if oe.enabledMetrics.IsAllowed(requestBurstSize) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{requestBurstSize, func(limits *validation.Limits) float64 { return float64(limits.RequestBurstSize) }})
-	}
-
-	// Read path limits
-	if oe.enabledMetrics.IsAllowed(maxChunksPerQuery) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{maxChunksPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxChunksPerQuery) }})
-	}
-	if oe.enabledMetrics.IsAllowed(maxFetchedSeriesPerQuery) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{maxFetchedSeriesPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxFetchedSeriesPerQuery) }})
-	}
-	if oe.enabledMetrics.IsAllowed(maxFetchedChunkBytesPerQuery) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{maxFetchedChunkBytesPerQuery, func(limits *validation.Limits) float64 { return float64(limits.MaxFetchedChunkBytesPerQuery) }})
-	}
-
-	// Ruler limits
-	if oe.enabledMetrics.IsAllowed(rulerMaxRulesPerRuleGroup) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{rulerMaxRulesPerRuleGroup, func(limits *validation.Limits) float64 { return float64(limits.RulerMaxRulesPerRuleGroup) }})
-	}
-	if oe.enabledMetrics.IsAllowed(rulerMaxRuleGroupsPerTenant) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{rulerMaxRuleGroupsPerTenant, func(limits *validation.Limits) float64 { return float64(limits.RulerMaxRuleGroupsPerTenant) }})
-	}
-
-	// Alertmanager limits
-	if oe.enabledMetrics.IsAllowed(notificationRateLimit) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{notificationRateLimit, func(limits *validation.Limits) float64 { return limits.NotificationRateLimit }})
-	}
-	if oe.enabledMetrics.IsAllowed(alertmanagerMaxDispatcherAggregationGroups) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{alertmanagerMaxDispatcherAggregationGroups, func(limits *validation.Limits) float64 {
-			return float64(limits.AlertmanagerMaxDispatcherAggregationGroups)
-		}})
-	}
-	if oe.enabledMetrics.IsAllowed(alertmanagerMaxAlertsCount) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{alertmanagerMaxAlertsCount, func(limits *validation.Limits) float64 { return float64(limits.AlertmanagerMaxAlertsCount) }})
-	}
-	if oe.enabledMetrics.IsAllowed(alertmanagerMaxAlertsSizeBytes) {
-		exportedMetrics = append(exportedMetrics, exportedMetric{alertmanagerMaxAlertsSizeBytes, func(limits *validation.Limits) float64 { return float64(limits.AlertmanagerMaxAlertsSizeBytes) }})
-	}
-
 	// default limits
-	for _, em := range exportedMetrics {
-		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, em.get(oe.defaultLimits), em.name)
+	for _, em := range oe.exportedMetrics {
+		ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, em.Get(oe.defaultLimits), em.Name)
 	}
 
 	// Do not export per-tenant limits if they've not been configured at all.
@@ -260,13 +272,13 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
-		for _, em := range exportedMetrics {
-			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, em.get(limits), em.name, tenant)
+		for _, em := range oe.exportedMetrics {
+			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, em.Get(limits), em.Name, tenant)
 		}
 	}
 }
 
-// RingHandler is an http.Handler that serves requests for the overrides-exporter ring status page
+// RingHandler is a http.Handler that serves requests for the overrides-exporter ring status page
 func (oe *OverridesExporter) RingHandler(w http.ResponseWriter, req *http.Request) {
 	if oe.ring != nil {
 		oe.ring.lifecycler.ServeHTTP(w, req)

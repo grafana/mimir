@@ -1642,12 +1642,23 @@
         },
         {
           "kind": "field",
-          "name": "prefer_streaming_chunks",
+          "name": "prefer_streaming_chunks_from_ingesters",
           "required": false,
           "desc": "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "querier.prefer-streaming-chunks",
+          "fieldFlag": "querier.prefer-streaming-chunks-from-ingesters",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "prefer_streaming_chunks_from_store_gateways",
+          "required": false,
+          "desc": "Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.prefer-streaming-chunks-from-store-gateways",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -1659,6 +1670,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 256,
           "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "streaming_chunks_per_store_gateway_series_buffer_size",
+          "required": false,
+          "desc": "Number of series to buffer per store-gateway when streaming chunks from store-gateways.",
+          "fieldValue": null,
+          "fieldDefaultValue": 256,
+          "fieldFlag": "querier.streaming-chunks-per-store-gateway-buffer-size",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
@@ -1975,9 +1997,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "ingester.client.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -2542,6 +2564,17 @@
             },
             {
               "kind": "field",
+              "name": "spread_minimizing_join_ring_in_order",
+              "required": false,
+              "desc": "True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to \"spread-minimizing\".",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.ring.spread-minimizing-join-ring-in-order",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "spread_minimizing_zones",
               "required": false,
               "desc": "Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when \"token-generation-strategy\" is set to \"spread-minimizing\".",
@@ -2706,6 +2739,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.read-path-memory-utilization-limit",
           "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_utilization_based_limiter_cpu_samples",
+          "required": false,
+          "desc": "Enable logging of utilization based limiter CPU samples.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.log-utilization-based-limiter-cpu-samples",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
       ],
@@ -3859,9 +3903,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "querier.frontend-client.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -4228,9 +4272,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "query-frontend.grpc-client-config.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -9369,9 +9413,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "ruler.client.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -10334,9 +10378,9 @@
                   "kind": "field",
                   "name": "connect_timeout",
                   "required": false,
-                  "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+                  "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 0,
+                  "fieldDefaultValue": 5000000000,
                   "fieldFlag": "ruler.query-frontend.grpc-client-config.connect-timeout",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
@@ -12312,9 +12356,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "alertmanager.alertmanager-client.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -13654,9 +13698,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "query-scheduler.grpc-client-config.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"

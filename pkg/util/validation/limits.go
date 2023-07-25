@@ -325,6 +325,15 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	return l.validate()
 }
 
+// RegisterExtensionsDefaults registers the default values for extensions into l.
+// This is especially handy for those downstream projects that wish to have control
+// over the exact moment in which the registration happens (e.g. during service
+// dependency initialization).
+func (l *Limits) RegisterExtensionsDefaults() {
+	_, getExtensions := newLimitsWithExtensions((*plainLimits)(l))
+	l.extensions = getExtensions()
+}
+
 func (l *Limits) MarshalJSON() ([]byte, error) {
 	return json.Marshal(limitsToStructWithExtensionFields(l))
 }
@@ -1000,6 +1009,9 @@ func MustRegisterExtension[E interface{ Default() E }](name string) func(*Limits
 			// Call e.Default() here every time instead of storing it when the extension is being registered, as it might change over time.
 			// Especially when the default values are initialized after package initialization phase, where this is registered.
 			return e.Default()
+		}
+		if l.extensions[name] == nil {
+			return zeroE
 		}
 		return l.extensions[name].(E)
 	}

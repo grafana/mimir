@@ -19,7 +19,7 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 		params = url.Values{
 			"selector": []string{`{second!="2",first="1"}`},
 			"limit":    []string{"100"},
-		}.Encode()
+		}
 
 		expected = &LabelNamesRequest{
 			Matchers: []*labels.Matcher{
@@ -30,8 +30,8 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 		}
 	)
 
-	t.Run("GET request", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "http://localhost?"+params, nil)
+	t.Run("DecodeLabelNamesRequest() with GET request", func(t *testing.T) {
+		req, err := http.NewRequest("GET", "http://localhost?"+params.Encode(), nil)
 		require.NoError(t, err)
 
 		actual, err := DecodeLabelNamesRequest(req)
@@ -40,12 +40,19 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 		assert.Equal(t, expected, actual)
 	})
 
-	t.Run("POST request", func(t *testing.T) {
-		req, err := http.NewRequest("POST", "http://localhost/", strings.NewReader(params))
+	t.Run("DecodeLabelNamesRequest() with POST request", func(t *testing.T) {
+		req, err := http.NewRequest("POST", "http://localhost/", strings.NewReader(params.Encode()))
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		actual, err := DecodeLabelNamesRequest(req)
+		require.NoError(t, err)
+
+		assert.Equal(t, expected, actual)
+	})
+
+	t.Run("DecodeLabelNamesRequestFromValues()", func(t *testing.T) {
+		actual, err := DecodeLabelNamesRequestFromValues(params)
 		require.NoError(t, err)
 
 		assert.Equal(t, expected, actual)
@@ -71,7 +78,7 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 			"label_names[]": []string{"metric_2", "metric_1"},
 			"count_method":  []string{"active"},
 			"limit":         []string{"100"},
-		}.Encode()
+		}
 
 		expected = &LabelValuesRequest{
 			LabelNames: []model.LabelName{"metric_1", "metric_2"},
@@ -84,9 +91,8 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 		}
 	)
 
-	t.Run("GET request", func(t *testing.T) {
-
-		req, err := http.NewRequest("GET", "http://localhost?"+params, nil)
+	t.Run("DecodeLabelValuesRequest() GET request", func(t *testing.T) {
+		req, err := http.NewRequest("GET", "http://localhost?"+params.Encode(), nil)
 		require.NoError(t, err)
 
 		actual, err := DecodeLabelValuesRequest(req)
@@ -95,12 +101,19 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 		assert.Equal(t, expected, actual)
 	})
 
-	t.Run("POST request", func(t *testing.T) {
-		req, err := http.NewRequest("POST", "http://localhost/", strings.NewReader(params))
+	t.Run("DecodeLabelValuesRequest() POST request", func(t *testing.T) {
+		req, err := http.NewRequest("POST", "http://localhost/", strings.NewReader(params.Encode()))
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		actual, err := DecodeLabelValuesRequest(req)
+		require.NoError(t, err)
+
+		assert.Equal(t, expected, actual)
+	})
+
+	t.Run("DecodeLabelValuesRequestFromValues() GET request", func(t *testing.T) {
+		actual, err := DecodeLabelValuesRequestFromValues(params)
 		require.NoError(t, err)
 
 		assert.Equal(t, expected, actual)

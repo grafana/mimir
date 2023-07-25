@@ -46,8 +46,7 @@ func convertMatchersToLabelMatcher(matchers []*labels.Matcher) []storepb.LabelMa
 
 // Implementation of storage.SeriesSet, based on individual responses from store client.
 type blockQuerierSeriesSet struct {
-	series   []*storepb.Series
-	warnings storage.Warnings
+	series []*storepb.Series
 
 	// next response to process
 	next int
@@ -88,7 +87,7 @@ func (bqss *blockQuerierSeriesSet) Err() error {
 }
 
 func (bqss *blockQuerierSeriesSet) Warnings() storage.Warnings {
-	return bqss.warnings
+	return nil
 }
 
 // newBlockQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
@@ -109,15 +108,37 @@ func (bqs *blockQuerierSeries) Labels() labels.Labels {
 	return bqs.labels
 }
 
-func (bqs *blockQuerierSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
+func (bqs *blockQuerierSeries) Iterator(reuse chunkenc.Iterator) chunkenc.Iterator {
 	if len(bqs.chunks) == 0 {
 		// should not happen in practice, but we have a unit test for it
 		return series.NewErrIterator(errors.New("no chunks"))
 	}
 
-	its := make([]iteratorWithMaxTime, 0, len(bqs.chunks))
+	it, err := newBlockQuerierSeriesIterator(reuse, bqs.Labels(), bqs.chunks)
+	if err != nil {
+		return series.NewErrIterator(err)
+	}
 
-	for _, c := range bqs.chunks {
+	return it
+}
+
+func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, chunks []storepb.AggrChunk) (*blockQuerierSeriesIterator, error) {
+	var it *blockQuerierSeriesIterator
+	r, ok := reuse.(*blockQuerierSeriesIterator)
+	if ok {
+		it = r
+		it.i = 0
+	} else {
+		it = &blockQuerierSeriesIterator{}
+	}
+	if cap(it.iterators) < len(chunks) {
+		it.iterators = make([]iteratorWithMaxTime, len(chunks))
+	}
+	it.iterators = it.iterators[:len(chunks)]
+	it.labels = lbls
+	it.lastT = math.MinInt64
+
+	for i, c := range chunks {
 		var (
 			ch  chunkenc.Chunk
 			err error
@@ -130,22 +151,18 @@ func (bqs *blockQuerierSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 		case storepb.Chunk_FloatHistogram:
 			ch, err = chunkenc.FromData(chunkenc.EncFloatHistogram, c.Raw.Data)
 		default:
-			return series.NewErrIterator(errors.Wrapf(err, "failed to initialize chunk from unknown type (%v) encoded raw data (series: %v min time: %d max time: %d)", c.Raw.Type, bqs.Labels(), c.MinTime, c.MaxTime))
+			return nil, errors.Wrapf(err, "failed to initialize chunk from unknown type (%v) encoded raw data (series: %v min time: %d max time: %d)", c.Raw.Type, lbls, c.MinTime, c.MaxTime)
 		}
 
 		if err != nil {
-			return series.NewErrIterator(errors.Wrapf(err, "failed to initialize chunk from %v type encoded raw data (series: %v min time: %d max time: %d)", c.Raw.Type, bqs.Labels(), c.MinTime, c.MaxTime))
+			return nil, errors.Wrapf(err, "failed to initialize chunk from %v type encoded raw data (series: %v min time: %d max time: %d)", c.Raw.Type, lbls, c.MinTime, c.MaxTime)
 		}
 
-		it := ch.Iterator(nil)
-		its = append(its, iteratorWithMaxTime{it, c.MaxTime})
+		it.iterators[i].Iterator = ch.Iterator(it.iterators[i].Iterator)
+		it.iterators[i].maxT = c.MaxTime
 	}
 
-	return newBlockQuerierSeriesIterator(bqs.Labels(), its)
-}
-
-func newBlockQuerierSeriesIterator(labels labels.Labels, its []iteratorWithMaxTime) *blockQuerierSeriesIterator {
-	return &blockQuerierSeriesIterator{labels: labels, iterators: its, lastT: math.MinInt64}
+	return it, nil
 }
 
 // iteratorWithMaxTime is an iterator which is aware of the maxT of its embedded iterator.
