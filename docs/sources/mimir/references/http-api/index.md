@@ -485,6 +485,10 @@ For more information, refer to Prometheus [get label names](https://prometheus.i
 
 Requires [authentication](#authentication).
 
+#### Caching
+
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-labels-query` set to a value greater than `0`.
+
 ### Get label values
 
 ```
@@ -494,6 +498,10 @@ GET <prometheus-http-prefix>/api/v1/label/{name}/values
 For more information, refer to Prometheus [get label values](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values).
 
 Requires [authentication](#authentication).
+
+#### Caching
+
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-labels-query` set to a value greater than `0`.
 
 ### Get metric metadata
 
