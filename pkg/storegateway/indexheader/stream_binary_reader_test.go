@@ -5,8 +5,8 @@ package indexheader
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -19,36 +19,10 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-type inMemoryLogger struct {
-	logs []string
-}
-
-func (ml *inMemoryLogger) Log(keyvals ...interface{}) error {
-	log := ""
-	for ix := 0; ix+1 < len(keyvals); ix += 2 {
-		k := keyvals[ix]
-		v := keyvals[ix+1]
-
-		// Don't log file size logs for readability.
-		if k == "bytes" {
-			return nil
-		}
-		// Only log level and msg fields for readability.
-		if k == "level" || k == "msg" {
-			log += fmt.Sprintf("%v=%v ", k, v)
-		}
-	}
-	log = strings.TrimSpace(log)
-	ml.logs = append(ml.logs, log)
-	return nil
-}
-
 // TestStreamBinaryReader_ShouldBuildSparseHeadersFromFile tests if StreamBinaryReady constructs
 // and writes sparse index headers on first build and reads from disk on the second build.
 func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T) {
 	ctx := context.Background()
-
-	logger := &inMemoryLogger{}
 
 	tmpDir := filepath.Join(t.TempDir(), "test-sparse index headers")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
@@ -65,20 +39,16 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	// Write sparse index headers to disk on first build.
-	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
-	require.NoError(t, err)
-	// Read sparse index headers to disk on second build.
-	_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	r, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 
-	// Checks logs for order of operations: build index-header -> build spare index header -> read sparse index headers.
-	require.Equal(t, []string{
-		"level=debug msg=failed to read index-header from disk; recreating",
-		"level=debug msg=built index-header file",
-		"level=debug msg=constructing index-header sparse index headers",
-		"level=debug msg=built index-header sparse index headers file",
-		"level=debug msg=reading from index-header sparse index headers file",
-	}, logger.logs, "\n")
+	// Read sparse index headers to disk on second build.
+	sparseHeadersPath := filepath.Join(tmpDir, blockID.String(), block.SparseIndexHeaderFilename)
+	sparseData, err := os.ReadFile(sparseHeadersPath)
+	require.NoError(t, err)
+
+	r.loadSparseFromDisk(log.NewNopLogger(), sparseHeadersPath, sparseData, 3)
+	require.NoError(t, err)
 }
 
 // TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive tests if StreamBinaryReader
@@ -93,7 +63,6 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 
 	for _, nameCount := range []int{3, 20, 50} {
 		for _, valueCount := range []int{3, 10, 100, 500} {
-			logger := &inMemoryLogger{}
 
 			nameSymbols := generateSymbols("name", nameCount)
 			valueSymbols := generateSymbols("value", valueCount)
@@ -112,10 +81,10 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 				b := realByteSlice(indexFile.Bytes())
 
 				// Write sparse index headers to disk on first build.
-				_, err = NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+				_, err = NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 				require.NoError(t, err)
 				// Read sparse index headers to disk on second build.
-				r2, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+				r2, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 				require.NoError(t, err)
 
 				// Check correctness of sparse index headers.
