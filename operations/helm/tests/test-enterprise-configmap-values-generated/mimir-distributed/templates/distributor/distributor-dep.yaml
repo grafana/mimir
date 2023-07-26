@@ -91,6 +91,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "8"
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

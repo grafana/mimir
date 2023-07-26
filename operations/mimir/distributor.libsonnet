@@ -32,7 +32,17 @@
 
   distributor_ports:: $.util.defaultPorts,
 
-  distributor_env_map:: {},
+  distributor_env_map:: {
+    // Dynamically set GOMAXPROCS based on CPU request.
+    GOMAXPROCS: std.toString(
+      std.ceil(
+        std.max(
+          8,  // Always run on at least 8 gothreads, so that at least 2 of them (25%) are dedicated to GC.
+          $.util.parseCPU($.distributor_container.resources.requests.cpu) * 2
+        ),
+      )
+    ),
+  },
 
   distributor_container::
     container.new('distributor', $._images.distributor) +
