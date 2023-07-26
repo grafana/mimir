@@ -996,6 +996,7 @@ spec:
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///ruler-query-frontend.default.svc.cluster.local:9095
+        - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1179,6 +1180,7 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=104857600
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
