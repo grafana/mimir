@@ -67,6 +67,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil/middleware"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
@@ -750,6 +751,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	mimir.setupObjstoreTracing()
 	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
+	middleware.InitGRPCMiddleware(&cfg.Server)
 
 	if err := mimir.setupModuleManager(); err != nil {
 		return nil, err
