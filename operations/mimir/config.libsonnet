@@ -145,6 +145,9 @@
     memcached_server_key_path: '/var/secrets/memcached-server-key/',
     memcached_server_cert_path: '/var/secrets/memcached-server-cert/',
 
+    // Number of etcd replicas.
+    etcd_replicas: 3,
+
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
     // (comparing performances).
