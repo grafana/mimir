@@ -226,8 +226,8 @@ retry:
 			HttpResponse: response,
 			Stats:        stats,
 		})
-		// If the used connection is closed, remove it from the pool and retry.
-		if isClosedConnError(err) && retries <= maxNotifyFrontendRetries {
+		// If the used connection returned and error, remove it from the pool and retry.
+		if err != nil && retries <= maxNotifyFrontendRetries {
 			sp.frontendPool.RemoveClientFor(frontendAddress)
 			retries++
 
@@ -270,14 +270,4 @@ type frontendClient struct {
 
 func (fc *frontendClient) Close() error {
 	return fc.conn.Close()
-}
-
-// isClosedConnError reports whether err is an error from use of a closed
-// network connection.
-func isClosedConnError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// It is not exported in a more reasonable way. See https://github.com/golang/go/issues/4373.
-	return strings.Contains(err.Error(), "use of closed network connection")
 }

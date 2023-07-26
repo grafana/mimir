@@ -66,7 +66,7 @@
 * [BUGFIX] Querier: Pass on HTTP 503 query response code. #5364
 * [BUGFIX] Store-gateway: Fix issue where stopping a store-gateway could cause all store-gateways to unload all blocks. #5464
 * [BUGFIX] Allocate ballast in smaller blocks to avoid problem when entire ballast was kept in memory working set. #5565
-* [BUGFIX] Querier: Retry frontend result notification when closed connection is detected. #5591
+* [BUGFIX] Querier: Retry frontend result notification when an error is returned. #5591
 
 ### Mixin
 
