@@ -539,24 +539,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       name: 'mimir-provisioning',
       rules: [
         {
-          alert: $.alertName('ProvisioningTooManyActiveSeries'),
-          // We target each ingester to 1.5M in-memory series. This alert fires if the average
-          // number of series / ingester in a Mimir cluster is > 1.6M for 2h (we compact
-          // the TSDB head every 2h).
-          expr: |||
-            avg by (%s) (cortex_ingester_memory_series) > 1.6e6
-          ||| % [$._config.alert_aggregation_labels],
-          'for': '2h',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              The number of in-memory series per ingester in %(alert_aggregation_variables)s is too high.
-            ||| % $._config,
-          },
-        },
-        {
           alert: $.alertName('ProvisioningTooManyWrites'),
           // 80k writes / s per ingester max.
           expr: |||

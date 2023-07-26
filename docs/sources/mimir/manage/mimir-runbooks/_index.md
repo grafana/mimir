@@ -204,7 +204,7 @@ How to **investigate**:
   - **`ingester`**
     - Typically, ingester p99 latency is in the range 5-50ms. If the ingester latency is higher than this, you should investigate the root cause before scaling up ingesters.
     - Check out the following alerts and fix them if firing:
-      - `MimirProvisioningTooManyActiveSeries`
+      - `MimirIngesterReachingSeriesLimit`
       - `MimirProvisioningTooManyWrites`
 
 #### Read Latency
@@ -775,20 +775,6 @@ How to **investigate**:
     - Fixing this will require changes to the application code
   - `other`
     - Check both Mimir and cache logs to find more details
-
-### MimirProvisioningTooManyActiveSeries
-
-This alert fires if the average number of in-memory series per ingester is above our target (1.5M).
-
-How to **fix** it:
-
-- Scale up ingesters
-  - To find out the Mimir clusters where ingesters should be scaled up and how many minimum replicas are expected:
-    ```
-    ceil(sum by(cluster, namespace) (cortex_ingester_memory_series) / 1.5e6) >
-    count by(cluster, namespace) (cortex_ingester_memory_series)
-    ```
-- After the scale up, the in-memory series are expected to be reduced at the next TSDB head compaction (occurring every 2h)
 
 ### MimirProvisioningTooManyWrites
 
