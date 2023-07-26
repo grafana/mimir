@@ -86,7 +86,7 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	return newFileStreamBinaryReader(binPath, sparseHeadersPath, sparsePersistenceEnabled, postingOffsetsInMemSampling, logger, metrics, cfg)
 }
 
-// newFileStreamBinaryReader loads index-header sparseHeaders from disk or constructs it from the index-header if not available.
+// newFileStreamBinaryReader loads sparse index-headers from disk or constructs it from the index-header if not available.
 func newFileStreamBinaryReader(binPath string, sparseHeadersPath string, sparsePersistenceEnabled bool, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
 		factory: streamencoding.NewDecbufFactory(binPath, cfg.MaxIdleFileHandles, logger, metrics.decbufFactory),
@@ -136,15 +136,15 @@ func newFileStreamBinaryReader(binPath string, sparseHeadersPath string, sparseP
 	if sparsePersistenceEnabled && r.indexVersion == index.FormatV2 {
 		sparseData, err := os.ReadFile(sparseHeadersPath)
 		if err != nil && !os.IsNotExist(err) {
-			level.Warn(logger).Log("msg", "failed to read index-header sparseHeaders from disk; recreating", "err", err)
+			level.Warn(logger).Log("msg", "failed to read sparse index-headers from disk; recreating", "err", err)
 		}
 
 		// If sparseHeaders are not on disk, construct sparseHeaders and write to disk.
 		if err != nil {
-			if err = r.loadSparseFromIndexHeader(logger, sparseHeadersPath, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
+			if err = r.loadSparseFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
 				return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
 			}
-			if err := writeSparseHeadersToFile(sparseHeadersPath, r); err != nil {
+			if err := writeSparseHeadersToFile(logger, sparseHeadersPath, r); err != nil {
 				return nil, fmt.Errorf("cannot write sparse index-header to disk: %w", err)
 			}
 
@@ -156,7 +156,7 @@ func newFileStreamBinaryReader(binPath string, sparseHeadersPath string, sparseP
 			}
 		}
 	} else {
-		if err = r.loadSparseFromIndexHeader(logger, sparseHeadersPath, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
+		if err = r.loadSparseFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
 			return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
 		}
 	}
@@ -179,23 +179,23 @@ func newFileStreamBinaryReader(binPath string, sparseHeadersPath string, sparseP
 
 // loadSparseFromDisk loads in sparse index-header from disk.
 func (r *StreamBinaryReader) loadSparseFromDisk(logger log.Logger, sparseHeadersPath string, sparseData []byte, postingOffsetsInMemSampling int) (err error) {
-	level.Debug(logger).Log("msg", "reading from index-header sparseHeaders file", "path", sparseHeadersPath)
+	level.Debug(logger).Log("msg", "reading from sparse index-header file", "path", sparseHeadersPath)
 
 	sparseHeaders := &indexheaderpb.Sparse{}
 
 	gzipped := bytes.NewReader(sparseData)
 	gzipReader, err := gzip.NewReader(gzipped)
 	if err != nil {
-		return fmt.Errorf("failed to create index-header sparseHeaders reader: %w", err)
+		return fmt.Errorf("failed to create sparse index-header reader: %w", err)
 	}
 
 	sparseData, err = io.ReadAll(gzipReader)
 	if err != nil {
-		return fmt.Errorf("failed to read index-header sparseHeaders: %w", err)
+		return fmt.Errorf("failed to read sparse index-header: %w", err)
 	}
 
 	if err := sparseHeaders.Unmarshal(sparseData); err != nil {
-		return fmt.Errorf("failed to decode index-header sparseHeaders file: %w", err)
+		return fmt.Errorf("failed to decode sparse index-header file: %w", err)
 	}
 
 	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, r.indexVersion, int(r.toc.Symbols))
@@ -212,8 +212,8 @@ func (r *StreamBinaryReader) loadSparseFromDisk(logger log.Logger, sparseHeaders
 }
 
 // loadSparseFromIndexHeader loads in symbols and postings offset table from the index-header and stores a sparse version.
-func (r *StreamBinaryReader) loadSparseFromIndexHeader(logger log.Logger, sparseHeadersPath string, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (err error) {
-	level.Debug(logger).Log("msg", "constructing index-header sparseHeaders", "path", sparseHeadersPath)
+func (r *StreamBinaryReader) loadSparseFromIndexHeader(logger log.Logger, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (err error) {
+	level.Debug(logger).Log("msg", "constructing sparse index-header")
 
 	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
 	if err != nil {
@@ -229,7 +229,9 @@ func (r *StreamBinaryReader) loadSparseFromIndexHeader(logger log.Logger, sparse
 }
 
 // writeSparseHeadersToFile uses protocol buffer to write StreamBinaryReader to disk at sparseHeadersPath.
-func writeSparseHeadersToFile(sparseHeadersPath string, reader *StreamBinaryReader) error {
+func writeSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, reader *StreamBinaryReader) error {
+	level.Debug(logger).Log("msg", "writing sparse index-header to disk", "path", sparseHeadersPath)
+
 	sparseHeaders := &indexheaderpb.Sparse{}
 
 	sparseHeaders.Symbols = reader.symbols.NewSparseSymbol()
@@ -237,7 +239,7 @@ func writeSparseHeadersToFile(sparseHeadersPath string, reader *StreamBinaryRead
 
 	out, err := sparseHeaders.Marshal()
 	if err != nil {
-		return fmt.Errorf("failed to encode index-header sparseHeaders: %w", err)
+		return fmt.Errorf("failed to encode sparse index-header: %w", err)
 	}
 
 	var gzipped bytes.Buffer
@@ -251,7 +253,7 @@ func writeSparseHeadersToFile(sparseHeadersPath string, reader *StreamBinaryRead
 	}
 
 	if err := os.WriteFile(sparseHeadersPath, gzipped.Bytes(), 0600); err != nil {
-		return fmt.Errorf("failed to write index-header sparseHeaders file: %w", err)
+		return fmt.Errorf("failed to write sparse index-header file: %w", err)
 	}
 
 	return nil
