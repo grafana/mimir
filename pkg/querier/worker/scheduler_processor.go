@@ -227,7 +227,9 @@ retry:
 			Stats:        stats,
 		})
 		// If the used connection returned and error, remove it from the pool and retry.
-		if err != nil && retries <= maxNotifyFrontendRetries {
+		if err != nil && retries < maxNotifyFrontendRetries {
+			level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress)
+
 			sp.frontendPool.RemoveClientFor(frontendAddress)
 			retries++
 
