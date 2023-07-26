@@ -99,7 +99,7 @@ diff -c -r step0/mimir-distributed/templates/store-gateway/store-gateway-statefu
 +     rollout-group: store-gateway
 +     zone: zone-a
 +   annotations:
-+     rollout-max-unavailable: "10"
++     rollout-max-unavailable: "50"
 +   namespace: "default"
 + spec:
 +   replicas: 1
@@ -223,7 +223,7 @@ diff -c -r step0/mimir-distributed/templates/store-gateway/store-gateway-statefu
 +     rollout-group: store-gateway
 +     zone: zone-b
 +   annotations:
-+     rollout-max-unavailable: "10"
++     rollout-max-unavailable: "50"
 +   namespace: "default"
 + spec:
 +   replicas: 1
@@ -347,7 +347,7 @@ diff -c -r step0/mimir-distributed/templates/store-gateway/store-gateway-statefu
 +     rollout-group: store-gateway
 +     zone: zone-c
 +   annotations:
-+     rollout-max-unavailable: "10"
++     rollout-max-unavailable: "50"
 +   namespace: "default"
 + spec:
 +   replicas: 1

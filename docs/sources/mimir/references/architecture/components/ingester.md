@@ -1,21 +1,21 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/ingester/
-title: "Grafana Mimir ingester"
-menuTitle: "Ingester"
-description: "The ingester writes incoming series to long-term storage."
+description: The ingester writes incoming series to long-term storage.
+menuTitle: Ingester
+title: Grafana Mimir ingester
 weight: 30
 ---
 
 # Grafana Mimir ingester
 
-The ingester is a stateful component that writes incoming series to [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture/index.md#long-term-storage" >}}) on the write path and returns series samples for queries on the read path.
+The ingester is a stateful component that writes incoming series to [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture#long-term-storage" >}}) on the write path and returns series samples for queries on the read path.
 
 Incoming time series data from [distributors]({{< relref "./distributor" >}}) are temporarily stored in the ingester's memory or offloaded to disk before being written to long-term storage.
 Eventually, all series are written to disk and periodically uploaded (by default every two hours) to the long-term storage.
 For this reason, the [queriers]({{< relref "./querier" >}}) might need to fetch samples from both ingesters and long-term storage while executing a query on the read path.
 
-Any Grafana Mimir component that calls the ingesters starts by first looking up ingesters registered in the [hash ring]({{< relref "../hash-ring/index.md" >}}) to determine which ingesters are available.
+Any Grafana Mimir component that calls the ingesters starts by first looking up ingesters registered in the [hash ring]({{< relref "../hash-ring" >}}) to determine which ingesters are available.
 Each ingester could be in one of the following states:
 
 - `PENDING`<br />
@@ -31,7 +31,7 @@ Each ingester could be in one of the following states:
 - `UNHEALTHY`<br />
   The ingester has failed to heartbeat to the hash ring. While in this state, distributors bypass the ingester, which means that the ingester does not receive write or read requests.
 
-To configure the ingesters' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings.md" >}}).
+To configure the ingesters' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings" >}}).
 
 ## Ingesters write de-amplification
 
@@ -82,16 +82,16 @@ Zone aware replication ensures that the ingester replicas for a given time serie
 Zones can represent logical or physical failure domains, for example, different data centers.
 Dividing replicas across multiple zones prevents data loss and service interruptions when there is a zone-wide outage.
 
-To set up multi-zone replication, refer to [Configuring zone-aware replication]({{< relref "../../../configure/configure-zone-aware-replication.md" >}}).
+To set up multi-zone replication, refer to [Configuring zone-aware replication]({{< relref "../../../configure/configure-zone-aware-replication" >}}).
 
 ## Shuffle sharding
 
 Shuffle sharding can be used to reduce the effect that multiple tenants can have on each other.
 
-For more information on shuffle sharding, refer to [Configuring shuffle sharding]({{< relref "../../../configure/configure-shuffle-sharding/index.md" >}}).
+For more information on shuffle sharding, refer to [Configuring shuffle sharding]({{< relref "../../../configure/configure-shuffle-sharding" >}}).
 
 ## Out-of-order samples ingestion
 
 Out-of-order samples are discarded by default. If the system writing samples to Mimir produces out-of-order samples, you can enable ingestion of such samples.
 
-For more information about out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../../configure/configure-out-of-order-samples-ingestion.md" >}}).
+For more information about out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../../configure/configure-out-of-order-samples-ingestion" >}}).

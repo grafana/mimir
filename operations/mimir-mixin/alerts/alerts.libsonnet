@@ -187,8 +187,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('IngesterRestarts'),
           expr: |||
-            changes(process_start_time_seconds{%s}[30m]) >= 2
-          ||| % $.jobMatcher($._config.job_names.ingester),
+            (
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                increase(kube_pod_container_status_restarts_total{container=~"(%(ingester)s|%(mimir_write)s)"}[30m])
+              )
+              >= 2
+            )
+            and
+            (
+              count by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_build_info) > 0
+            )
+          ||| % $._config {
+            ingester: $._config.container_names.ingester,
+            mimir_write: $._config.container_names.mimir_write,
+          },
           labels: {
             // This alert is on a cause not symptom. A couple of ingesters restarts may be suspicious but
             // not necessarily an issue (eg. may happen because of the K8S node autoscaler), so we're
@@ -196,7 +208,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'warning',
           },
           annotations: {
-            message: '{{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
+            message: '%(product)s %(alert_instance_variable)s in %(alert_aggregation_variables)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
           },
         },
         {

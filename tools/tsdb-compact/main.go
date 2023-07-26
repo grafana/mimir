@@ -12,11 +12,13 @@ import (
 	"syscall"
 
 	golog "github.com/go-kit/log"
-
 	"github.com/prometheus/prometheus/tsdb"
 )
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	var (
 		outputDir     string
 		shardCount    int

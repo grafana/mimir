@@ -40,6 +40,7 @@ func main() {
 	alertCommand.Register(app, envVars, prometheus.DefaultRegisterer)
 	alertmanagerCommand.Register(app, envVars)
 	analyzeCommand.Register(app, envVars)
+	backfillCommand.Register(app, envVars)
 	bucketValidateCommand.Register(app, envVars)
 	configCommand.Register(app, envVars)
 	loadgenCommand.Register(app, envVars, prometheus.DefaultRegisterer)
@@ -47,7 +48,6 @@ func main() {
 	pushGateway.Register(app, envVars)
 	remoteReadCommand.Register(app, envVars)
 	ruleCommand.Register(app, envVars, prometheus.DefaultRegisterer)
-	backfillCommand.Register(app, envVars)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(k *kingpin.ParseContext) error {
 		fmt.Fprintln(os.Stdout, mimirversion.Print("Mimirtool"))

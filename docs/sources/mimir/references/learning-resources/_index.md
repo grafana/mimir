@@ -1,12 +1,12 @@
 ---
 aliases:
   - ../operators-guide/reference-learning-resources/
-title: "Learning resources for Grafana Mimir"
-menuTitle: "Learning resources"
-description: "Learn more about Grafana Mimir via blog posts, podcasts, and videos."
-weight: 130
+description: Learn more about Grafana Mimir via blog posts, podcasts, and videos.
 keywords:
   - Grafana Mimir blog posts, podcasts, and videos
+menuTitle: Learning resources
+title: Learning resources for Grafana Mimir
+weight: 130
 ---
 
 # Learning resources for Grafana Mimir

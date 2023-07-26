@@ -31,7 +31,8 @@ local k = import 'ksonnet-util/kausal.libsonnet';
     $.jaeger_mixin,
 
   continuous_test_deployment: if !$._config.continuous_test_enabled then null else
-    deployment.new('continuous-test', 1, [
-      $.continuous_test_container,
-    ]),
+    deployment.new('continuous-test', 1, [$.continuous_test_container]),
+
+  continuous_test_pdb: if !$._config.continuous_test_enabled then null else
+    $.newMimirPdb('continuous-test'),
 }

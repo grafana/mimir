@@ -7,6 +7,32 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: compactor
+  name: compactor
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: compactor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: distributor
+  name: distributor
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: distributor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: ingester
   name: ingester
   namespace: default
@@ -15,6 +41,84 @@ spec:
   selector:
     matchLabels:
       name: ingester
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached
+  name: memcached
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-frontend
+  name: memcached-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-index-queries
+  name: memcached-index-queries
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-index-queries
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-metadata
+  name: memcached-metadata
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: querier
+  name: querier
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: querier
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-frontend
+  name: query-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-frontend
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -324,7 +428,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -417,7 +521,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -492,7 +596,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -576,7 +680,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -681,7 +785,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -759,6 +863,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -812,6 +917,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -865,6 +971,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -918,6 +1025,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1015,7 +1123,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.8.0
+        image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

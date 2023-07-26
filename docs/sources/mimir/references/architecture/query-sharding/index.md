@@ -1,9 +1,9 @@
 ---
 aliases:
   - ../../operators-guide/architecture/query-sharding/
-title: "Grafana Mimir query sharding"
-menuTitle: "Query sharding"
-description: "Query sharding parallelizes query execution."
+description: Query sharding parallelizes query execution.
+menuTitle: Query sharding
+title: Grafana Mimir query sharding
 weight: 90
 ---
 
@@ -16,8 +16,8 @@ partial queries are distributed by the query-frontend to run on different
 queriers in parallel. The results of those partial queries are aggregated by the
 query-frontend to return the full query result.
 
-Query sharding is applied on the [`query`]({{< relref "../../http-api/index.md#instant-query" >}})
-and [`query_range`]({{< relref "../../http-api/index.md#range-query" >}}) APIs only.
+Query sharding is applied on the [`query`]({{< relref "../../http-api#instant-query" >}})
+and [`query_range`]({{< relref "../../http-api#range-query" >}}) APIs only.
 
 ## Query sharding at glance
 

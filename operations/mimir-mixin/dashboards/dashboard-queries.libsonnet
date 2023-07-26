@@ -22,6 +22,7 @@
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
     write_grpc_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',
+    query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
     gateway: {
       writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}' % variables,

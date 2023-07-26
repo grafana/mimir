@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/batch"
@@ -87,7 +88,7 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 		t.Run(testName, func(t *testing.T) {
 			distributor := &mockDistributor{}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
 			userID := "test"
@@ -110,10 +111,14 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 
 			if testData.expectedMinT == 0 && testData.expectedMaxT == 0 {
 				assert.Len(t, distributor.Calls, 0)
-			} else {
+			} else if testData.querySeries {
 				require.Len(t, distributor.Calls, 1)
 				assert.InDelta(t, testData.expectedMinT, int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), float64(5*time.Second.Milliseconds()))
 				assert.Equal(t, testData.expectedMaxT, int64(distributor.Calls[0].Arguments.Get(2).(model.Time)))
+			} else {
+				require.Len(t, distributor.Calls, 1)
+				assert.InDelta(t, testData.expectedMinT, int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), float64(5*time.Second.Milliseconds()))
+				assert.Equal(t, testData.expectedMaxT, int64(distributor.Calls[0].Arguments.Get(3).(model.Time)))
 			}
 		})
 	}
@@ -191,7 +196,7 @@ func TestDistributorQuerier_Select(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			d := &mockDistributor{}
-			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
+			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "0")
 			queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
@@ -261,7 +266,7 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 	})
 
 	d := &mockDistributor{}
-	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
@@ -303,7 +308,7 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), stats.NewQueryChunkMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -365,7 +370,7 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 	}
 
 	d := &mockDistributor{}
-	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
@@ -457,7 +462,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 	}
 
 	d := &mockDistributor{}
-	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
@@ -570,7 +575,7 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	}
 
 	d := &mockDistributor{}
-	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
+	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := newDistributorQueryable(d, batch.NewChunkMergeIterator, newMockConfigProvider(0), nil, log.NewNopLogger())
@@ -689,8 +694,8 @@ func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Tim
 	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).(*client.ExemplarQueryResponse), args.Error(1)
 }
-func (m *mockDistributor) QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
-	args := m.Called(ctx, from, to, matchers)
+func (m *mockDistributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
+	args := m.Called(ctx, queryMetrics, from, to, matchers)
 	return args.Get(0).(client.CombinedQueryStreamResponse), args.Error(1)
 }
 func (m *mockDistributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, lbl model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
@@ -716,8 +721,8 @@ func (m *mockDistributor) LabelNamesAndValues(ctx context.Context, matchers []*l
 	return args.Get(0).(*client.LabelNamesAndValuesResponse), args.Error(1)
 }
 
-func (m *mockDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
-	args := m.Called(ctx, labelNames, matchers)
+func (m *mockDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
+	args := m.Called(ctx, labelNames, matchers, countMethod)
 	return args.Get(0).(uint64), args.Get(1).(*client.LabelValuesCardinalityResponse), args.Error(2)
 }
 

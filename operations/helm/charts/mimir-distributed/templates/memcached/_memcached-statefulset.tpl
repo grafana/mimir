@@ -58,6 +58,10 @@ spec:
         - name: {{ . }}
       {{- end }}
       {{- end }}
+      {{- if .extraVolumes }}
+      volumes:
+        {{- toYaml .extraVolumes | nindent 8 }}
+      {{- end }}
       containers:
         {{- if .extraContainers }}
         {{ toYaml .extraContainers | nindent 8 }}
@@ -84,8 +88,7 @@ spec:
               name: client
           args:
             - -m {{ .allocatedMemory }}
-            - -o
-            - modern
+            - --extended=modern,track_sizes{{ with .extraExtendedOptions }},{{ . }}{{ end }}
             - -I {{ .maxItemMemory }}m
             - -c 16384
             - -v
@@ -103,6 +106,10 @@ spec:
             {{- end }}
           securityContext:
             {{- toYaml $.ctx.Values.memcached.containerSecurityContext | nindent 12 }}
+          {{- if .extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml .extraVolumeMounts | nindent 12 }}
+          {{- end }}
 
       {{- if $.ctx.Values.memcachedExporter.enabled }}
         - name: exporter
@@ -116,10 +123,17 @@ spec:
           args:
             - "--memcached.address=localhost:{{ .port }}"
             - "--web.listen-address=0.0.0.0:9150"
+            {{- range $key, $value := $.ctx.Values.memcachedExporter.extraArgs }}
+            - "--{{ $key }}{{ if $value }}={{ $value }}{{ end }}"
+            {{- end }}
           resources:
             {{- toYaml $.ctx.Values.memcachedExporter.resources | nindent 12 }}
           securityContext:
             {{- toYaml $.ctx.Values.memcachedExporter.containerSecurityContext | nindent 12 }}
+          {{- if .extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml .extraVolumeMounts | nindent 12 }}
+          {{- end }}
       {{- end }}
 {{- end -}}
 {{- end -}}

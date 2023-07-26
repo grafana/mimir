@@ -41,8 +41,8 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 	f.StringVar(&cfg.DownstreamURL, "query-frontend.downstream-url", "", "URL of downstream Prometheus.")
 }
 
-func (cfg *CombinedFrontendConfig) Validate(log log.Logger) error {
-	if err := cfg.FrontendV2.Validate(log); err != nil {
+func (cfg *CombinedFrontendConfig) Validate() error {
+	if err := cfg.FrontendV2.Validate(); err != nil {
 		return err
 	}
 	if err := cfg.QueryMiddleware.Validate(); err != nil {
@@ -65,7 +65,7 @@ func InitFrontend(cfg CombinedFrontendConfig, limits v1.Limits, grpcListenPort i
 		return rt, nil, nil, err
 
 	case cfg.FrontendV2.SchedulerAddress != "" || cfg.FrontendV2.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
-		// Query-scheduler is enabled when its addressed is configured or is configured to use ring-based service discovery.
+		// Query-scheduler is enabled when its address is configured or ring-based service discovery is configured.
 		if cfg.FrontendV2.Addr == "" {
 			addr, err := util.GetFirstAddressOf(cfg.FrontendV2.InfNames)
 			if err != nil {

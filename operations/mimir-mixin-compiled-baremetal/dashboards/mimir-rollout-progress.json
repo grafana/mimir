@@ -12,7 +12,7 @@
       },
       "editable": true,
       "gnetId": null,
-      "graphTooltip": 0,
+      "graphTooltip": 1,
       "hideControls": false,
       "links": [
          {
@@ -30,133 +30,159 @@
       ],
       "panels": [
          {
-            "aliasColors": { },
-            "bars": false,
-            "dashLength": 10,
-            "dashes": false,
             "datasource": "$datasource",
             "fieldConfig": {
                "defaults": {
                   "color": {
                      "mode": "thresholds"
                   },
+                  "custom": {
+                     "axisCenteredZero": false,
+                     "axisColorMode": "text",
+                     "axisLabel": "",
+                     "axisPlacement": "auto",
+                     "fillOpacity": 80,
+                     "gradientMode": "none",
+                     "hideFrom": {
+                        "legend": false,
+                        "tooltip": false,
+                        "viz": false
+                     },
+                     "lineWidth": 1,
+                     "scaleDistribution": {
+                        "type": "linear"
+                     },
+                     "thresholdsStyle": {
+                        "mode": "off"
+                     }
+                  },
                   "mappings": [ ],
                   "max": 1,
                   "min": 0,
                   "thresholds": {
                      "mode": "absolute",
-                     "steps": [
+                     "steps": [ ]
+                  },
+                  "unit": "percentunit"
+               },
+               "overrides": [
+                  {
+                     "matcher": {
+                        "id": "byName",
+                        "options": "Ready"
+                     },
+                     "properties": [
                         {
-                           "color": "yellow",
-                           "value": null
-                        },
-                        {
-                           "color": "yellow",
-                           "value": 0.999
-                        },
-                        {
-                           "color": "green",
-                           "value": 1
+                           "id": "color",
+                           "value": {
+                              "fixedColor": "green",
+                              "mode": "fixed"
+                           }
                         }
                      ]
                   },
-                  "unit": "percentunit"
-               }
+                  {
+                     "matcher": {
+                        "id": "byName",
+                        "options": "Updated"
+                     },
+                     "properties": [
+                        {
+                           "id": "color",
+                           "value": {
+                              "fixedColor": "blue",
+                              "mode": "fixed"
+                           }
+                        }
+                     ]
+                  }
+               ]
             },
-            "fill": 1,
             "gridPos": {
-               "h": 8,
+               "h": 13,
                "w": 10,
                "x": 0,
                "y": 0
             },
             "id": 1,
-            "legend": {
-               "avg": false,
-               "current": false,
-               "max": false,
-               "min": false,
-               "show": true,
-               "total": false,
-               "values": false
-            },
-            "lines": true,
-            "linewidth": 1,
             "links": [ ],
-            "nullPointMode": "null as zero",
             "options": {
-               "displayMode": "basic",
+               "barRadius": 0,
+               "barWidth": 0.96999999999999997,
+               "fullHighlight": false,
+               "groupWidth": 0.69999999999999996,
+               "legend": {
+                  "calcs": [ ],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+               },
                "orientation": "horizontal",
-               "reduceOptions": {
-                  "calcs": [
-                     "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-               }
+               "showValue": "auto",
+               "stacking": "none",
+               "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+               },
+               "xField": "Workload",
+               "xTickLabelRotation": 0,
+               "xTickLabelSpacing": 0
             },
-            "percentage": false,
-            "pointradius": 5,
-            "points": false,
-            "renderer": "flot",
-            "seriesOverrides": [ ],
-            "spaceLength": 10,
-            "span": 6,
-            "stack": false,
-            "steppedLine": false,
             "targets": [
                {
-                  "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      kube_statefulset_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\",statefulset=~\".*(cortex-gw|distributor|ingester|query-frontend|query-scheduler|querier|compactor|store-gateway|ruler|alertmanager|overrides-exporter|cortex|mimir).*\"},\n      \"cortex_service\", \"$1\", \"statefulset\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      kube_statefulset_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"statefulset\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      kube_statefulset_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"statefulset\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
-                  "format": null,
+                  "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas_updated\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
+                  "format": "table",
+                  "instant": true,
                   "intervalFactor": null,
-                  "legendFormat": "{{cortex_service}}",
+                  "legendFormat": "__auto",
                   "legendLink": null,
                   "step": null
                },
                {
-                  "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      kube_deployment_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\",deployment=~\".*(cortex-gw|distributor|ingester|query-frontend|query-scheduler|querier|compactor|store-gateway|ruler|alertmanager|overrides-exporter|cortex|mimir).*\"},\n      \"cortex_service\", \"$1\", \"deployment\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      kube_deployment_spec_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"deployment\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      kube_deployment_spec_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"deployment\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
-                  "format": null,
+                  "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas_ready\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
+                  "format": "table",
+                  "instant": true,
                   "intervalFactor": null,
-                  "legendFormat": "{{cortex_service}}",
+                  "legendFormat": "__auto",
                   "legendLink": null,
                   "step": null
                }
             ],
-            "thresholds": [ ],
-            "timeFrom": null,
-            "timeShift": null,
             "title": "Rollout progress",
-            "tooltip": {
-               "shared": false,
-               "sort": 0,
-               "value_type": "individual"
-            },
-            "type": "bargauge",
-            "xaxis": {
-               "buckets": null,
-               "mode": "time",
-               "name": null,
-               "show": true,
-               "values": [ ]
-            },
-            "yaxes": [
+            "transformations": [
                {
-                  "format": "short",
-                  "label": null,
-                  "logBase": 1,
-                  "max": null,
-                  "min": 0,
-                  "show": true
+                  "id": "joinByField",
+                  "options": {
+                     "byField": "cortex_service",
+                     "mode": "outer"
+                  }
                },
                {
-                  "format": "short",
-                  "label": null,
-                  "logBase": 1,
-                  "max": null,
-                  "min": null,
-                  "show": false
+                  "id": "organize",
+                  "options": {
+                     "excludeByName": {
+                        "Time 1": true,
+                        "Time 2": true
+                     },
+                     "renameByName": {
+                        "Value #A": "Updated",
+                        "Value #B": "Ready",
+                        "cortex_service": "Workload"
+                     }
+                  }
+               },
+               {
+                  "id": "sortBy",
+                  "options": {
+                     "sort": [
+                        {
+                           "field": "Workload"
+                        }
+                     ]
+                  }
                }
-            ]
+            ],
+            "type": "barchart"
          },
          {
             "aliasColors": { },
@@ -1066,10 +1092,10 @@
             },
             "fill": 1,
             "gridPos": {
-               "h": 8,
+               "h": 3,
                "w": 10,
                "x": 0,
-               "y": 8
+               "y": 13
             },
             "id": 10,
             "legend": {
@@ -1089,7 +1115,8 @@
                "text": {
                   "titleSize": 14,
                   "valueSize": 14
-               }
+               },
+               "textMode": "value_and_name"
             },
             "percentage": false,
             "pointradius": 5,
@@ -1102,7 +1129,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "kube_deployment_status_replicas_unavailable{cluster=~\"$cluster\", namespace=~\"$namespace\", deployment=~\".*(cortex-gw|distributor|ingester|query-frontend|query-scheduler|querier|compactor|store-gateway|ruler|alertmanager|overrides-exporter|cortex|mimir).*\"}\n> 0\n",
+                  "expr": "kube_deployment_status_replicas_unavailable{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n> 0\n",
                   "format": null,
                   "instant": true,
                   "interval": "",
@@ -1112,7 +1139,7 @@
                   "step": null
                },
                {
-                  "expr": "kube_statefulset_status_replicas_current{cluster=~\"$cluster\", namespace=~\"$namespace\", statefulset=~\".*(cortex-gw|distributor|ingester|query-frontend|query-scheduler|querier|compactor|store-gateway|ruler|alertmanager|overrides-exporter|cortex|mimir).*\"} -\nkube_statefulset_status_replicas_ready {cluster=~\"$cluster\", namespace=~\"$namespace\", statefulset=~\".*(cortex-gw|distributor|ingester|query-frontend|query-scheduler|querier|compactor|store-gateway|ruler|alertmanager|overrides-exporter|cortex|mimir).*\"}\n> 0\n",
+                  "expr": "kube_statefulset_status_replicas_current{cluster=~\"$cluster\", namespace=~\"$namespace\"} -\nkube_statefulset_status_replicas_ready {cluster=~\"$cluster\", namespace=~\"$namespace\"}\n> 0\n",
                   "format": null,
                   "instant": true,
                   "interval": "",
@@ -1185,7 +1212,7 @@
             "id": 11,
             "targets": [
                {
-                  "expr": "count by(container, version) (\n  label_replace(\n    kube_pod_container_info{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\".*(cortex-gw|distributor|ingester|query-frontend|query-scheduler|querier|compactor|store-gateway|ruler|alertmanager|overrides-exporter|cortex|mimir).*\"},\n    \"version\", \"$1\", \"image\", \".*:(.*)\"\n  )\n)\n",
+                  "expr": "count by(container, version) (\n  label_replace(\n    kube_pod_container_info{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n    \"version\", \"$1\", \"image\", \".*:(.*)\"\n  )\n)\n",
                   "instant": true,
                   "legendFormat": "",
                   "refId": "A"
@@ -1204,6 +1231,10 @@
                   "options": {
                      "excludeByName": {
                         "Time": true
+                     },
+                     "indexByName": {
+                        "Time": 0,
+                        "container": 1
                      }
                   }
                },
@@ -1263,16 +1294,14 @@
                   "format": "time_series",
                   "intervalFactor": 2,
                   "legendFormat": "writes",
-                  "legendLink": null,
-                  "step": 10
+                  "legendLink": null
                },
                {
                   "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}))[1h:])\n)\n",
                   "format": "time_series",
                   "intervalFactor": 2,
                   "legendFormat": "reads",
-                  "legendLink": null,
-                  "step": 10
+                  "legendLink": null
                }
             ],
             "thresholds": [ ],
@@ -1351,7 +1380,7 @@
                "query": "label_values(cortex_build_info, cluster)",
                "refresh": 1,
                "regex": "",
-               "sort": 2,
+               "sort": 1,
                "tagValuesQuery": "",
                "tags": [ ],
                "tagsQuery": "",
@@ -1374,7 +1403,7 @@
                "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
                "refresh": 1,
                "regex": "",
-               "sort": 2,
+               "sort": 1,
                "tagValuesQuery": "",
                "tags": [ ],
                "tagsQuery": "",

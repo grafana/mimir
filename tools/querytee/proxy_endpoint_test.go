@@ -17,11 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
-
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -331,6 +330,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			endpoint.ServeHTTP(resp, req)
 			require.Equal(t, "preferred response", resp.Body.String())
 			require.Equal(t, scenario.preferredResponseStatusCode, resp.Code)
+			require.Equal(t, scenario.preferredResponseContentType, resp.Header().Get("Content-Type"))
 
 			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
 			// Wait for the response comparison to complete before checking the logged messages.

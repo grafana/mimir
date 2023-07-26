@@ -56,10 +56,10 @@ spec:
             {{- end }}
           env:
             {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- with .Values.smoke_test.env }}
-              {{ toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

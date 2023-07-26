@@ -20,17 +20,20 @@
 
   query_scheduler_ports:: $.util.defaultPorts,
 
-  newQuerySchedulerContainer(name, args)::
+  newQuerySchedulerContainer(name, args, envmap={})::
     container.new(name, $._images.query_scheduler) +
     container.withPorts($.query_scheduler_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
+    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}) +
     $.jaeger_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '1Gi') +
     $.util.resourcesLimits(null, '2Gi'),
 
+  query_scheduler_env_map:: {},
+
   query_scheduler_container::
-    self.newQuerySchedulerContainer('query-scheduler', $.query_scheduler_args),
+    self.newQuerySchedulerContainer('query-scheduler', $.query_scheduler_args, $.query_scheduler_env_map),
 
   newQuerySchedulerDeployment(name, container)::
     deployment.new(name, 2, [container]) +
@@ -55,6 +58,9 @@
 
   query_scheduler_discovery_service: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then {} else
     self.newQuerySchedulerDiscoveryService('query-scheduler', $.query_scheduler_deployment),
+
+  query_scheduler_pdb: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then null else
+    $.newMimirPdb('query-scheduler'),
 
   // Reconfigure querier and query-frontend to use scheduler.
 

@@ -23,6 +23,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -91,6 +92,26 @@ func (cfg *ResultsCacheConfig) Validate() error {
 
 func errUnsupportedResultsCacheBackend(backend string) error {
 	return fmt.Errorf("%w: %q, supported values: %v", errUnsupportedBackend, backend, supportedResultsCacheBackends)
+}
+
+type resultsCacheMetrics struct {
+	cacheRequests prometheus.Counter
+	cacheHits     prometheus.Counter
+}
+
+func newResultsCacheMetrics(requestType string, reg prometheus.Registerer) *resultsCacheMetrics {
+	return &resultsCacheMetrics{
+		cacheRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_frontend_query_result_cache_requests_total",
+			Help:        "Total number of requests (or partial requests) looked up in the results cache.",
+			ConstLabels: map[string]string{"request_type": requestType},
+		}),
+		cacheHits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_frontend_query_result_cache_hits_total",
+			Help:        "Total number of requests (or partial requests) fetched from the results cache.",
+			ConstLabels: map[string]string{"request_type": requestType},
+		}),
+	}
 }
 
 // newResultsCache creates a new results cache based on the input configuration.

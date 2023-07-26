@@ -13,6 +13,7 @@
     $._config.rulerLimitsConfig +
     $._config.queryBlocksStorageConfig +
     $.blocks_metadata_caching_config +
+    $.ruler_storage_caching_config +
     $.bucket_index_config
     {
       target: 'ruler',
@@ -30,11 +31,14 @@
       'server.http-listen-port': $._config.server_http_port,
     },
 
+  ruler_env_map:: {},
+
   ruler_container::
     if $._config.ruler_enabled then
       container.new('ruler', $._images.ruler) +
       container.withPorts($.util.defaultPorts) +
       container.withArgsMixin($.util.mapToFlags($.ruler_args)) +
+      (if std.length($.ruler_env_map) > 0 then container.withEnvMap($.ruler_env_map) else {}) +
       $.util.resourcesRequests('1', '6Gi') +
       $.util.resourcesLimits('16', '16Gi') +
       $.util.readinessProbe +
@@ -56,4 +60,7 @@
 
   ruler_service: if !$._config.is_microservices_deployment_mode || !$._config.ruler_enabled then null else
     $.util.serviceFor($.ruler_deployment, $._config.service_ignored_labels),
+
+  ruler_pdb: if !$._config.is_microservices_deployment_mode || !$._config.ruler_enabled then null else
+    $.newMimirPdb('ruler'),
 }

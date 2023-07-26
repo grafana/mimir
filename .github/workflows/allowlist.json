@@ -1,0 +1,18 @@
+[
+  {
+    "name": "sigs.k8s.io/kustomize/kyaml",
+    "reason": "the library is only used for CI not in production"
+  },
+  {
+    "name": "github.com/xlab/treeprint",
+    "reason": "the library is only used in tests"
+  },
+  {
+    "name": "github.com/aws/aws-sdk-go",
+    "reason": "the library is quite stable"
+  },
+  {
+    "name": "github.com/stretchr/testify",
+    "reason": "the library is only used in tests"
+  }
+]

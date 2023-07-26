@@ -26,7 +26,9 @@ import (
 var errMinBackends = errors.New("at least 1 backend is required")
 
 type ProxyConfig struct {
+	ServerHTTPServiceAddress       string
 	ServerHTTPServicePort          int
+	ServerGRPCServiceAddress       string
 	ServerGRPCServicePort          int
 	BackendEndpoints               string
 	PreferredBackend               string
@@ -39,8 +41,10 @@ type ProxyConfig struct {
 }
 
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.ServerHTTPServicePort, "server.http-service-port", 80, "The HTTP port where the query-tee service listens to HTTP requests.")
-	f.IntVar(&cfg.ServerGRPCServicePort, "server.grpc-service-port", 9095, "The GRPC port where the query-tee service listens to HTTP over gRPC messages.")
+	f.StringVar(&cfg.ServerHTTPServiceAddress, "server.http-service-address", "", "Bind address for server where query-tee service listens for HTTP requests.")
+	f.IntVar(&cfg.ServerHTTPServicePort, "server.http-service-port", 80, "The HTTP port where the query-tee service listens for HTTP requests.")
+	f.StringVar(&cfg.ServerGRPCServiceAddress, "server.grpc-service-address", "", "Bind address for server where query-tee service listens for HTTP over gRPC requests.")
+	f.IntVar(&cfg.ServerGRPCServicePort, "server.grpc-service-port", 9095, "The GRPC port where the query-tee service listens for HTTP over gRPC messages.")
 	f.StringVar(&cfg.BackendEndpoints, "backend.endpoints", "", "Comma separated list of backend endpoints to query.")
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend when selecting the response to send back to the client. If no preferred backend is configured then the query-tee will send back to the client the first successful response received without waiting for other backends.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 150*time.Second, "The timeout when reading the response from a backend.")
@@ -155,13 +159,15 @@ func (p *Proxy) Start() error {
 	// Setup server first, so we can fail early if the ports are in use.
 	serv, err := server.New(server.Config{
 		// HTTP configs
+		HTTPListenAddress:             p.cfg.ServerHTTPServiceAddress,
 		HTTPListenPort:                p.cfg.ServerHTTPServicePort,
 		HTTPServerReadTimeout:         1 * time.Minute,
 		HTTPServerWriteTimeout:        2 * time.Minute,
 		ServerGracefulShutdownTimeout: 0,
 
 		// gRPC configs
-		GRPCListenPort: p.cfg.ServerGRPCServicePort,
+		GRPCListenAddress: p.cfg.ServerGRPCServiceAddress,
+		GRPCListenPort:    p.cfg.ServerGRPCServicePort,
 		// Same size configurations as in Mimir default gRPC configuration values
 		GPRCServerMaxRecvMsgSize:           100 * 1024 * 1024,
 		GRPCServerMaxSendMsgSize:           100 * 1024 * 1024,

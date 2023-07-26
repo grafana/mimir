@@ -50,14 +50,15 @@ func newS3Config(cfg Config) (s3.Config, error) {
 	}
 
 	return s3.Config{
-		Bucket:          cfg.BucketName,
-		Endpoint:        cfg.Endpoint,
-		Region:          cfg.Region,
-		AccessKey:       cfg.AccessKeyID,
-		SecretKey:       cfg.SecretAccessKey.String(),
-		Insecure:        cfg.Insecure,
-		PutUserMetadata: putUserMetadata,
-		SSEConfig:       sseCfg,
+		Bucket:             cfg.BucketName,
+		Endpoint:           cfg.Endpoint,
+		Region:             cfg.Region,
+		AccessKey:          cfg.AccessKeyID,
+		SecretKey:          cfg.SecretAccessKey.String(),
+		Insecure:           cfg.Insecure,
+		PutUserMetadata:    putUserMetadata,
+		SSEConfig:          sseCfg,
+		ListObjectsVersion: cfg.ListObjectsVersion,
 		HTTPConfig: s3.HTTPConfig{
 			IdleConnTimeout:       model.Duration(cfg.HTTP.IdleConnTimeout),
 			ResponseHeaderTimeout: model.Duration(cfg.HTTP.ResponseHeaderTimeout),

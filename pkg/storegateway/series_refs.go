@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -720,7 +719,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	blockID              ulid.ULID
 	shard                *sharding.ShardSelector
 	seriesHasher         seriesHasher
-	skipChunks           bool
+	strategy             seriesIteratorStrategy
 	minTime, maxTime     int64
 	tenantID             string
 	chunkRangesPerSeries int
@@ -742,19 +741,36 @@ func openBlockSeriesChunkRefsSetsIterator(
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHasher seriesHasher,
-	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
+	strategy seriesIteratorStrategy,
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	chunkRangesPerSeries int,
 	stats *safeQueryStats,
+	reuse *reusedPostingsAndMatchers, // If this is not nil, these posting and matchers are used as it is without fetching new ones.
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
 	}
 
-	ps, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
-	if err != nil {
-		return nil, errors.Wrap(err, "expanded matching postings")
+	var (
+		ps              []storage.SeriesRef
+		pendingMatchers []*labels.Matcher
+		fetchPostings   = true
+	)
+	if reuse != nil {
+		fetchPostings = !reuse.isSet()
+		ps = reuse.ps
+		pendingMatchers = reuse.matchers
+	}
+	if fetchPostings {
+		var err error
+		ps, pendingMatchers, err = indexr.ExpandedPostings(ctx, matchers, stats)
+		if err != nil {
+			return nil, errors.Wrap(err, "expanded matching postings")
+		}
+		if reuse != nil {
+			reuse.set(ps, pendingMatchers)
+		}
 	}
 
 	var iterator seriesChunkRefsSetIterator
@@ -767,7 +783,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		blockMeta,
 		shard,
 		seriesHasher,
-		skipChunks,
+		strategy,
 		minTime,
 		maxTime,
 		tenantID,
@@ -781,6 +797,31 @@ func openBlockSeriesChunkRefsSetsIterator(
 	return seriesStreamingFetchRefsDurationIterator(iterator, stats), nil
 }
 
+// reusedPostings is used to share the postings and matches across function calls for re-use
+// in case of streaming series. We have it as a separate struct so that we can give a safe way
+// to use it by making a copy where required. You can use it to put items only once.
+type reusedPostingsAndMatchers struct {
+	ps       []storage.SeriesRef
+	matchers []*labels.Matcher
+	filled   bool
+}
+
+func (p *reusedPostingsAndMatchers) set(ps []storage.SeriesRef, matchers []*labels.Matcher) {
+	if p.filled {
+		// We already have something here.
+		return
+	}
+	// Postings list can be modified later, so we make a copy here.
+	p.ps = make([]storage.SeriesRef, len(ps))
+	copy(p.ps, ps)
+	p.matchers = matchers
+	p.filled = true
+}
+
+func (p *reusedPostingsAndMatchers) isSet() bool {
+	return p.filled
+}
+
 // seriesStreamingFetchRefsDurationIterator tracks the time spent loading series and chunk refs.
 func seriesStreamingFetchRefsDurationIterator(iterator seriesChunkRefsSetIterator, stats *safeQueryStats) genericIterator[seriesChunkRefsSet] {
 	return newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration, _ bool) {
@@ -788,6 +829,39 @@ func seriesStreamingFetchRefsDurationIterator(iterator seriesChunkRefsSetIterato
 			stats.streamingSeriesFetchRefsDuration += duration
 		})
 	})
+}
+
+// seriesIteratorStrategy defines the strategy to use when loading the series and their chunk refs.
+// See below for available options.
+type seriesIteratorStrategy byte
+
+const (
+	// By default, the strategy is to fetch series labels AND chunk refs
+	// for time ranges overlapping mint and maxt provided.
+	// To change the default behavior, use the flags below this.
+	defaultStrategy seriesIteratorStrategy = 0
+
+	// noChunkRefs flag when used by itself fetches only series labels for series in the entire block.
+	noChunkRefs seriesIteratorStrategy = 0b00000001
+	// overlapMintMaxt flag is used together with noChunkRefs. With this, only the series whose
+	// chunks overlap with [mint, maxt] are selected.
+	overlapMintMaxt seriesIteratorStrategy = 0b00000010
+)
+
+func (s seriesIteratorStrategy) isNoChunkRefs() bool {
+	return s&noChunkRefs != 0
+}
+
+func (s seriesIteratorStrategy) isOverlapMintMaxt() bool {
+	return s&overlapMintMaxt != 0
+}
+
+func (s seriesIteratorStrategy) isNoChunkRefsOnEntireBlock() bool {
+	return s.isNoChunkRefs() && !s.isOverlapMintMaxt()
+}
+
+func (s seriesIteratorStrategy) isNoChunkRefsAndOverlapMintMaxt() bool {
+	return s.isNoChunkRefs() && s.isOverlapMintMaxt()
 }
 
 func newLoadingSeriesChunkRefsSetIterator(
@@ -799,14 +873,14 @@ func newLoadingSeriesChunkRefsSetIterator(
 	blockMeta *block.Meta,
 	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
-	skipChunks bool,
+	strategy seriesIteratorStrategy,
 	minTime int64,
 	maxTime int64,
 	tenantID string,
 	chunkRangesPerSeries int,
 	logger log.Logger,
 ) *loadingSeriesChunkRefsSetIterator {
-	if skipChunks {
+	if strategy.isNoChunkRefsOnEntireBlock() {
 		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
 	}
 
@@ -819,7 +893,7 @@ func newLoadingSeriesChunkRefsSetIterator(
 		blockID:              blockMeta.ULID,
 		shard:                shard,
 		seriesHasher:         seriesHasher,
-		skipChunks:           skipChunks,
+		strategy:             strategy,
 		minTime:              minTime,
 		maxTime:              maxTime,
 		tenantID:             tenantID,
@@ -829,19 +903,28 @@ func newLoadingSeriesChunkRefsSetIterator(
 }
 
 func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
-	sp, ctx := tracing.StartSpan(s.ctx, "loadingSeriesChunkRefsSetIterator.Next")
-	defer sp.Finish()
-
 	if s.err != nil {
 		return false
 	}
 	if !s.postingsSetIterator.Next() {
 		return false
 	}
+
+	defer func(startTime time.Time) {
+		spanLog := spanlogger.FromContext(s.ctx, s.logger)
+		level.Debug(spanLog).Log(
+			"msg", "loaded series and chunk refs",
+			"block_id", s.blockID.String(),
+			"series_count", s.At().len(),
+			"err", s.Err(),
+			"duration", time.Since(startTime),
+		)
+	}(time.Now())
+
 	nextPostings := s.postingsSetIterator.At()
 
 	var cachedSeriesID cachedSeriesForPostingsID
-	if s.skipChunks {
+	if s.strategy.isNoChunkRefsOnEntireBlock() {
 		var err error
 		// Calculate the cache ID before we filter out anything from the postings,
 		// so that the key doesn't depend on the series hash cache or any other filtering we do on the postings list.
@@ -851,7 +934,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
 		} else {
-			if cachedSet, isCached := fetchCachedSeriesForPostings(ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
+			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
 				s.currentSet = cachedSet
 				return true
 			}
@@ -870,7 +953,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		nextPostings = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHasher, loadStats)
 	}
 
-	symbolizedSet, err := s.symbolizedSet(ctx, nextPostings, loadStats)
+	symbolizedSet, err := s.symbolizedSet(s.ctx, nextPostings, loadStats)
 	if err != nil {
 		s.err = err
 		return false
@@ -891,8 +974,8 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	s.currentSet = nextSet
-	if s.skipChunks && cachedSeriesID.isSet() {
-		storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
+	if cachedSeriesID.isSet() {
+		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
 	}
 	return true
 }
@@ -919,7 +1002,20 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 		if err != nil {
 			return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "read series")
 		}
-		if !s.skipChunks {
+
+		switch {
+		case s.strategy.isNoChunkRefsAndOverlapMintMaxt():
+			overlaps := false
+			for _, m := range metas {
+				if m.MaxTime >= s.minTime && m.MinTime <= s.maxTime {
+					overlaps = true
+					break
+				}
+			}
+			if !overlaps {
+				series.lset = nil // setting the labels to nil ends up skipping the series
+			}
+		case !s.strategy.isNoChunkRefs():
 			clampLastChunkLength(symbolizedSet.series, metas)
 			series.chunksRanges = metasToRanges(partitionChunks(metas, s.chunkRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
 		}
@@ -971,15 +1067,22 @@ func clampLastChunkLength(series []symbolizedSeriesChunkRefs, nextSeriesChunkMet
 
 // filterSeries filters out series that don't belong to this shard (if sharding is configured) or that don't have any
 // chunk ranges and skipChunks=false. Empty chunks ranges indicates that the series doesn't have any chunk ranges in the
-// requested time range.
+// requested time range. filterSeries expects that the number of series matches the number of postings.
 func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet, postings []storage.SeriesRef, stats *queryStats) seriesChunkRefsSet {
 	writeIdx := 0
 	for sIdx, series := range set.series {
-		// An empty label set means the series had no chunks in this block, so we skip it.
-		// No chunk ranges means the series doesn't have a single chunk range in the requested range.
-		if len(series.lset) == 0 || (!s.skipChunks && len(series.chunksRanges) == 0) {
+
+		// We skip this series under three conditions:
+		// 1. The series doesn't have any chunks in this block OR the series didn't have any chunks in the requested time range,
+		// 	  but also the request didn't require the chunks (i.e. s.strategy.isNoChunkRefs()). This is signified by an empty label set.
+		if series.lset.IsEmpty() {
 			continue
 		}
+		// 2. The series doesn't have any chunks in the requested time range but the request required the chunks (i.e. !s.strategy.isNoChunkRefs()).
+		if !s.strategy.isNoChunkRefs() && len(series.chunksRanges) == 0 {
+			continue
+		}
+		// 3. The series doesn't belong to this shard.
 		if !shardOwned(s.shard, s.seriesHasher, postings[sIdx], series.lset, stats) {
 			continue
 		}
@@ -1112,7 +1215,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
 func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) ([]symbolizedLabel, []chunks.Meta, error) {
-	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.skipChunks, stats, lsetPool)
+	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.strategy, stats, lsetPool)
 	if !ok || err != nil {
 		return nil, nil, errors.Wrap(err, "loadSeries")
 	}

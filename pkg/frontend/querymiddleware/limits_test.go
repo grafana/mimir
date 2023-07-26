@@ -415,6 +415,18 @@ func (m multiTenantMockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(userID str
 	return m.byTenant[userID].resultsCacheOutOfOrderWindowTTL
 }
 
+func (m multiTenantMockLimits) ResultsCacheTTLForCardinalityQuery(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTLForCardinalityQuery
+}
+
+func (m multiTenantMockLimits) ResultsCacheTTLForLabelsQuery(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTLForLabelsQuery
+}
+
+func (m multiTenantMockLimits) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
+	return m.byTenant[userID].resultsCacheForUnalignedQueryEnabled
+}
+
 func (m multiTenantMockLimits) CreationGracePeriod(userID string) time.Duration {
 	return m.byTenant[userID].creationGracePeriod
 }
@@ -424,23 +436,26 @@ func (m multiTenantMockLimits) NativeHistogramsIngestionEnabled(userID string) b
 }
 
 type mockLimits struct {
-	maxQueryLookback                 time.Duration
-	maxQueryLength                   time.Duration
-	maxTotalQueryLength              time.Duration
-	maxQueryExpressionSizeBytes      int
-	maxCacheFreshness                time.Duration
-	maxQueryParallelism              int
-	maxShardedQueries                int
-	maxRegexpSizeBytes               int
-	splitInstantQueriesInterval      time.Duration
-	totalShards                      int
-	compactorShards                  int
-	compactorBlocksRetentionPeriod   time.Duration
-	outOfOrderTimeWindow             time.Duration
-	creationGracePeriod              time.Duration
-	nativeHistogramsIngestionEnabled bool
-	resultsCacheTTL                  time.Duration
-	resultsCacheOutOfOrderWindowTTL  time.Duration
+	maxQueryLookback                     time.Duration
+	maxQueryLength                       time.Duration
+	maxTotalQueryLength                  time.Duration
+	maxQueryExpressionSizeBytes          int
+	maxCacheFreshness                    time.Duration
+	maxQueryParallelism                  int
+	maxShardedQueries                    int
+	maxRegexpSizeBytes                   int
+	splitInstantQueriesInterval          time.Duration
+	totalShards                          int
+	compactorShards                      int
+	compactorBlocksRetentionPeriod       time.Duration
+	outOfOrderTimeWindow                 time.Duration
+	creationGracePeriod                  time.Duration
+	nativeHistogramsIngestionEnabled     bool
+	resultsCacheTTL                      time.Duration
+	resultsCacheOutOfOrderWindowTTL      time.Duration
+	resultsCacheTTLForCardinalityQuery   time.Duration
+	resultsCacheTTLForLabelsQuery        time.Duration
+	resultsCacheForUnalignedQueryEnabled bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -505,6 +520,18 @@ func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(string) time.Duration
 	return m.resultsCacheOutOfOrderWindowTTL
 }
 
+func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {
+	return m.resultsCacheTTLForCardinalityQuery
+}
+
+func (m mockLimits) ResultsCacheTTLForLabelsQuery(string) time.Duration {
+	return m.resultsCacheTTLForLabelsQuery
+}
+
+func (m mockLimits) ResultsCacheForUnalignedQueryEnabled(string) bool {
+	return m.resultsCacheForUnalignedQueryEnabled
+}
+
 func (m mockLimits) CreationGracePeriod(string) time.Duration {
 	return m.creationGracePeriod
 }
@@ -544,7 +571,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 
 	codec := newTestPrometheusCodec()
 	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
+		Path:  "/api/v1/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
 		Step:  int64(1 * time.Second * time.Millisecond),
@@ -588,7 +615,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 
 	codec := newTestPrometheusCodec()
 	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
+		Path:  "/api/v1/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
 		Step:  int64(1 * time.Second * time.Millisecond),
@@ -629,7 +656,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 
 	codec := newTestPrometheusCodec()
 	r, err := codec.EncodeRequest(reqCtx, &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
+		Path:  "/api/v1/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
 		Step:  int64(1 * time.Second * time.Millisecond),

@@ -118,6 +118,7 @@ func labelValuesCardinality(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		// Obtain all values for current label name.
 		lblValues, err := idxReader.LabelValues(lblName, matchers...)
 		if err != nil {

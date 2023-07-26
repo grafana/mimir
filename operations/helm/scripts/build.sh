@@ -56,11 +56,13 @@ mkdir -p "$OUTPUT_PATH"
 TESTS=$(find "${CHART_PATH}/ci" -name '*values.yaml')
 CHART_NAME=$(basename "${CHART_PATH}")
 
-for FILEPATH in $TESTS; do
-  # Extract the filename (without extension).
-  TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
-  INTERMEDIATE_OUTPUT_DIR="${INTERMEDIATE_PATH}/${TEST_NAME}-generated"
-  OUTPUT_DIR="${OUTPUT_PATH}/${TEST_NAME}-generated"
+# Array to store child process IDs
+pids=()
+
+function generate_manifests() {
+  TEST_NAME=$1
+  INTERMEDIATE_OUTPUT_DIR=$2
+  OUTPUT_DIR=$3
 
   echo ""
   echo "Templating $TEST_NAME"
@@ -72,13 +74,35 @@ for FILEPATH in $TESTS; do
     ARGS+=("--set-string" "kubeVersionOverride=${DEFAULT_KUBE_VERSION}")
   fi
 
-  set -x
-  helm template "${ARGS[@]}"
-  set +x
-
-  echo "Removing mutable config checksum, helm chart, application, image tag version for clarity"
+  echo "Rendering helm test $TEST_NAME in PID $BASHPID: 'helm template ${ARGS[*]}'"
+  helm template "${ARGS[@]}" 1>/dev/null
   cp -r "${INTERMEDIATE_OUTPUT_DIR}" "${OUTPUT_DIR}"
   rm "${OUTPUT_DIR}/${CHART_NAME}/templates/values-for-rego-tests.yaml"
   find "${OUTPUT_DIR}/${CHART_NAME}/templates" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/(alertmanager-fallback-)?config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"grafana\/(mimir|mimir-continuous-test|enterprise-metrics)):/d"
+}
 
+for FILEPATH in $TESTS; do
+  # Extract the filename (without extension).
+  TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
+  INTERMEDIATE_OUTPUT_DIR="${INTERMEDIATE_PATH}/${TEST_NAME}-generated"
+  OUTPUT_DIR="${OUTPUT_PATH}/${TEST_NAME}-generated"
+
+  # Prefix every stdout and stderr line from the test name. This makes the interleaved output of different tests easier to follow
+  generate_manifests "$TEST_NAME" "$INTERMEDIATE_OUTPUT_DIR" "$OUTPUT_DIR" > >(sed "s/^/$TEST_NAME (stdout): /") 2> >(sed "s/^/$TEST_NAME (stderr): /" >&2) &
+  pid=$!
+  pids+=("$pid")
 done
+
+# Wait for all child processes to finish. We turn off `set -e` because we want to check the exit code of each child process
+# and print a message if it's non-zero. set -e will otherwise cause the script to exit immediately if any child process has exited with non-zero exit code.
+set +e
+for p in "${pids[@]}"; do
+    wait "$p"
+    exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        wait # wait for the rest of the renderings to finish so that we don't have incomplete results
+        echo "helm template PID $p exited with non-zero exit code $exit_code. Aborting."
+        exit $exit_code
+    fi
+done
+set -e

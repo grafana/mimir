@@ -168,20 +168,23 @@ func TestBucketScanBlocksFinder_StopWhileRunningTheInitialScanOnManyBlocks(t *te
 	}
 
 	// Mock the bucket to introduce a 1s sleep while syncing each block in the bucket.
-	bucket := &bucket.ClientMock{}
-	bucket.MockIter("", []string{"user-1"}, nil)
-	bucket.MockIter("user-1/", blockPaths, nil)
-	bucket.On("Exists", mock.Anything, mock.Anything).Return(false, nil).Run(func(args mock.Arguments) {
-		// We return the meta.json doesn't exist, but introduce a 1s delay for each call.
+	bkt := &bucket.ClientMock{}
+	bkt.MockIter("", []string{"user-1"}, nil)
+	bkt.MockIter("user-1/", blockPaths, nil)
+
+	// We return that all files don't exist, but introduce a 1s delay for each call.
+	sleep := func(_ mock.Arguments) {
 		time.Sleep(time.Second)
-	})
+	}
+	bkt.On("Exists", mock.Anything, mock.Anything).Return(false, nil).Run(sleep)
+	bkt.On("Get", mock.Anything, mock.Anything).Return(nil, bucket.ErrObjectDoesNotExist).Run(sleep)
 
 	cfg := prepareBucketScanBlocksFinderConfig()
 	cfg.CacheDir = t.TempDir()
 	cfg.MetasConcurrency = 1
 	cfg.TenantsConcurrency = 1
 
-	s := NewBucketScanBlocksFinder(cfg, bucket, nil, log.NewLogfmtLogger(os.Stdout), nil)
+	s := NewBucketScanBlocksFinder(cfg, bkt, nil, log.NewLogfmtLogger(os.Stdout), nil)
 
 	// Start the scanner, let it run for 1s and then issue a stop.
 	require.NoError(t, s.StartAsync(context.Background()))

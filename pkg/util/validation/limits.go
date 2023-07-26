@@ -125,6 +125,9 @@ type Limits struct {
 	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
 	ResultsCacheTTL                        model.Duration `yaml:"results_cache_ttl" json:"results_cache_ttl" category:"experimental"`
 	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window" category:"experimental"`
+	ResultsCacheTTLForCardinalityQuery     model.Duration `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query" category:"experimental"`
+	ResultsCacheTTLForLabelsQuery          model.Duration `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query" category:"experimental"`
+	ResultsCacheForUnalignedQueryEnabled   bool           `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
 	MaxQueryExpressionSizeBytes            int            `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes" category:"experimental"`
 
 	// Cardinality
@@ -259,6 +262,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
 	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
+	f.Var(&l.ResultsCacheTTLForCardinalityQuery, "query-frontend.results-cache-ttl-for-cardinality-query", "Time to live duration for cached cardinality query results. The value 0 disables the cache.")
+	f.Var(&l.ResultsCacheTTLForLabelsQuery, "query-frontend.results-cache-ttl-for-labels-query", "Time to live duration for cached label names and label values query results. The value 0 disables the cache.")
+	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.IntVar(&l.MaxQueryExpressionSizeBytes, maxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
 
 	// Store-gateway.
@@ -317,6 +323,15 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	l.extensions = getExtensions()
 
 	return l.validate()
+}
+
+// RegisterExtensionsDefaults registers the default values for extensions into l.
+// This is especially handy for those downstream projects that wish to have control
+// over the exact moment in which the registration happens (e.g. during service
+// dependency initialization).
+func (l *Limits) RegisterExtensionsDefaults() {
+	_, getExtensions := newLimitsWithExtensions((*plainLimits)(l))
+	l.extensions = getExtensions()
 }
 
 func (l *Limits) MarshalJSON() ([]byte, error) {
@@ -828,6 +843,18 @@ func (o *Overrides) ResultsCacheTTLForOutOfOrderTimeWindow(user string) time.Dur
 	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForOutOfOrderTimeWindow)
 }
 
+func (o *Overrides) ResultsCacheTTLForCardinalityQuery(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForCardinalityQuery)
+}
+
+func (o *Overrides) ResultsCacheTTLForLabelsQuery(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForLabelsQuery)
+}
+
+func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).ResultsCacheForUnalignedQueryEnabled
+}
+
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
 	if o.tenantLimits != nil {
 		l := o.tenantLimits.ByUserID(userID)
@@ -836,6 +863,16 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 		}
 	}
 	return o.defaultLimits
+}
+
+// AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants
+func AllTrueBooleansPerTenant(tenantIDs []string, f func(string) bool) bool {
+	for _, tenantID := range tenantIDs {
+		if !f(tenantID) {
+			return false
+		}
+	}
+	return true
 }
 
 // SmallestPositiveIntPerTenant is returning the minimal positive value of the
@@ -908,6 +945,20 @@ func LargestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) 
 	return *result
 }
 
+// MinDurationPerTenant is returning the minimum duration per tenant. Without
+// tenants given it will return a time.Duration(0).
+func MinDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
+	result := time.Duration(0)
+	for idx, tenantID := range tenantIDs {
+		v := f(tenantID)
+
+		if idx == 0 || v < result {
+			result = v
+		}
+	}
+	return result
+}
+
 // MaxDurationPerTenant is returning the maximum duration per tenant. Without
 // tenants given it will return a time.Duration(0).
 func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
@@ -958,6 +1009,9 @@ func MustRegisterExtension[E interface{ Default() E }](name string) func(*Limits
 			// Call e.Default() here every time instead of storing it when the extension is being registered, as it might change over time.
 			// Especially when the default values are initialized after package initialization phase, where this is registered.
 			return e.Default()
+		}
+		if l.extensions[name] == nil {
+			return zeroE
 		}
 		return l.extensions[name].(E)
 	}

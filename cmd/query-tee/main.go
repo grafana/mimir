@@ -38,7 +38,7 @@ func main() {
 
 	util_log.InitLogger(&server.Config{
 		LogLevel: cfg.LogLevel,
-	})
+	}, false)
 
 	// Run the instrumentation server.
 	registry := prometheus.NewRegistry()
@@ -47,6 +47,7 @@ func main() {
 	i := instrumentation.NewMetricsServer(cfg.ServerMetricsPort, registry)
 	if err := i.Start(); err != nil {
 		level.Error(util_log.Logger).Log("msg", "Unable to start instrumentation server", "err", err.Error())
+		util_log.Flush()
 		os.Exit(1)
 	}
 
@@ -54,11 +55,13 @@ func main() {
 	proxy, err := querytee.NewProxy(cfg.ProxyConfig, util_log.Logger, mimirReadRoutes(cfg), registry)
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "Unable to initialize the proxy", "err", err.Error())
+		util_log.Flush()
 		os.Exit(1)
 	}
 
 	if err := proxy.Start(); err != nil {
 		level.Error(util_log.Logger).Log("msg", "Unable to start the proxy", "err", err.Error())
+		util_log.Flush()
 		os.Exit(1)
 	}
 

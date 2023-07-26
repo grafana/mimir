@@ -79,6 +79,19 @@ message SeriesRequest {
 
   // Thanos shard_info.
   reserved 13;
+
+  // If streaming_chunks_batch_size=0, the response must only contain one 'series' at a time
+  // with the series labels and chunks data sent together.
+  // If streaming_chunks_batch_size > 0
+  // - The store may choose to send the streaming_series/streaming_chunks OR behave as
+  //   if streaming_chunks_batch_size=0 if it does not support streaming series.
+  // - The store must not send a mix of 'series' and streaming_series/streaming_chunks for a single request.
+  // - If the store chooses to send streaming series, all the streaming_series must be sent before
+  //   sending any streaming_chunks, with the last streaming_series response containing is_end_of_series_stream=true.
+  //   The order of series in both streaming_series/streaming_chunks must match and the size of the batch must not
+  //   cross streaming_chunks_batch_size, although it can be lower than that.
+  // The proto field ID is 100 so that we have an option to bring back compatibility with Thanos' storage API.
+  uint64 streaming_chunks_batch_size = 100;
 }
 
 message Stats {
@@ -105,6 +118,18 @@ message SeriesResponse {
     /// stats is a object containing stats for a series response from the store-gateways so that we can collect stats
     /// related to the processing the series response on store-gateways did available to the querier and query-frontends.
     Stats stats = 4;
+
+    /// streaming_series is a list of series labels sent as part of a streaming Series call.
+    /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
+    /// Series are sent in batches because sending one at a time has additional CPU overhead for not much memory gains.
+    StreamingSeriesBatch streaming_series = 5;
+
+    /// streaming_chunks is a list of chunks sent as part of a streaming Series request.
+    /// They are associated with series labels sent as streaming_series earlier in the same Series request.
+    /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
+    /// Chunks are sent in batches because sending one series' chunks at a time has additional
+    //  CPU overhead for not much memory gains.
+    StreamingChunksBatch streaming_chunks = 6;
   }
 }
 
