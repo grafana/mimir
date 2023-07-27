@@ -7464,7 +7464,7 @@
             },
             {
               "kind": "field",
-              "name": "index_header_sparse_persistence_concurrency",
+              "name": "index_header_sparse_persistence_enabled",
               "required": false,
               "desc": "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.",
               "fieldValue": null,

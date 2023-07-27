@@ -395,7 +395,7 @@ type BucketStoreConfig struct {
 	IndexHeaderLazyLoadingConcurrency int `yaml:"index_header_lazy_loading_concurrency" category:"experimental"`
 
 	// Controls whether persisting a sparse version of the index-header to disk is enabled.
-	IndexHeaderSparsePersistenceEnabled bool `yaml:"index_header_sparse_persistence_concurrency" category:"experimental"`
+	IndexHeaderSparsePersistenceEnabled bool `yaml:"index_header_sparse_persistence_enabled" category:"experimental"`
 
 	// Controls the partitioner, used to aggregate multiple GET object API requests.
 	PartitionerMaxGapBytes uint64 `yaml:"partitioner_max_gap_bytes" category:"advanced"`
