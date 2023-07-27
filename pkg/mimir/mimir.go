@@ -751,7 +751,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	mimir.setupObjstoreTracing()
 	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
-	middleware.InitGRPCMiddleware(&cfg.Server)
+	middleware.InitGRPCMiddleware(&mimir.Cfg.Server)
 
 	if err := mimir.setupModuleManager(); err != nil {
 		return nil, err
