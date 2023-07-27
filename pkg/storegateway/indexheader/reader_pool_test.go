@@ -28,10 +28,10 @@ import (
 
 func TestReaderPool_NewBinaryReader(t *testing.T) {
 	tests := map[string]struct {
-		lazyReaderEnabled     bool
-		lazyReaderIdleTimeout time.Duration
-		initFn                func(blockId ulid.ULID, lazyLoadedSnapshotPath string)
-		checkMetricFn         func(metrics *ReaderPoolMetrics)
+		lazyReaderEnabled         bool
+		lazyReaderIdleTimeout     time.Duration
+		persistLazyLoadedHeaderFn func(blockId ulid.ULID, lazyLoadedSnapshotPath string)
+		checkMetricFn             func(metrics *ReaderPoolMetrics)
 	}{
 		"lazy reader is disabled": {
 			lazyReaderEnabled: false,
@@ -51,7 +51,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 		"lazy reader lazyLoadedHeadersSnapshot is present": {
 			lazyReaderEnabled:     true,
 			lazyReaderIdleTimeout: time.Minute,
-			initFn: func(blockId ulid.ULID, lazyLoadedSnapshotPath string) {
+			persistLazyLoadedHeaderFn: func(blockId ulid.ULID, lazyLoadedSnapshotPath string) {
 				snapshot := lazyLoadedHeadersSnapshot{
 					IndexHeaderLastUsedTime: map[ulid.ULID]int64{blockId: time.Now().UnixMilli()},
 					UserID:                  "anonymous",
@@ -66,9 +66,10 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 		"lazy reader lazyLoadedHeadersSnapshot is present but invalid": {
 			lazyReaderEnabled:     true,
 			lazyReaderIdleTimeout: time.Minute,
-			initFn: func(_ ulid.ULID, lazyLoadedSnapshotPath string) {
+			persistLazyLoadedHeaderFn: func(_ ulid.ULID, lazyLoadedSnapshotPath string) {
 				// let's create a random blockID to be stored in lazy loaded headers file
 				invalidBlockId, _ := ulid.New(ulid.Now(), rand.Reader)
+				// this snapshot will refer to invalid block, hence eager load wouldn't be executed
 				snapshot := lazyLoadedHeadersSnapshot{
 					IndexHeaderLastUsedTime: map[ulid.ULID]int64{invalidBlockId: time.Now().UnixMilli()},
 					UserID:                  "anonymous",
@@ -104,8 +105,8 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 				Path:   tmpDir,
 				UserID: "anonymous",
 			}
-			if testData.initFn != nil {
-				testData.initFn(blockID, snapshotConfig.Path)
+			if testData.persistLazyLoadedHeaderFn != nil {
+				testData.persistLazyLoadedHeaderFn(blockID, snapshotConfig.Path)
 			}
 
 			metrics := NewReaderPoolMetrics(nil)
