@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -54,8 +55,9 @@ type ReaderPool struct {
 	close chan struct{}
 
 	// Keep track of all readers managed by the pool.
-	lazyReadersMx sync.Mutex
-	lazyReaders   map[*LazyBinaryReader]struct{}
+	lazyReadersMx            sync.Mutex
+	lazyReaders              map[*LazyBinaryReader]struct{}
+	lazyLoadedHeaderSnapshot *lazyLoadedHeadersSnapshot
 }
 
 // LazyLoadedHeadersSnapshotConfig stores information needed to track lazy loaded index headers.
@@ -86,9 +88,32 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 	return atomicfs.CreateFileAndMove(tmpPath, finalPath, bytes.NewReader(data))
 }
 
+func loadLazyLoadedSnapshot(fileName string) (*lazyLoadedHeadersSnapshot, error) {
+	snapshotByte, err := os.ReadFile(fileName)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := &lazyLoadedHeadersSnapshot{}
+	err = json.Unmarshal(snapshotByte, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
 func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics)
+	lazyLoadedSnapshotFn := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFile)
+	snapshot, err := loadLazyLoadedSnapshot(lazyLoadedSnapshotFn)
+	if err != nil {
+		// just log and delete the file
+		err := os.Remove(lazyLoadedSnapshotFn)
+		if err != nil {
+			// log again
+		}
+	}
+
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics, snapshot)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -125,14 +150,15 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics) *ReaderPool {
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, snapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
 	return &ReaderPool{
-		logger:                logger,
-		metrics:               metrics,
-		lazyReaderEnabled:     lazyReaderEnabled,
-		lazyReaderIdleTimeout: lazyReaderIdleTimeout,
-		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
-		close:                 make(chan struct{}),
+		logger:                   logger,
+		metrics:                  metrics,
+		lazyReaderEnabled:        lazyReaderEnabled,
+		lazyReaderIdleTimeout:    lazyReaderIdleTimeout,
+		lazyReaders:              make(map[*LazyBinaryReader]struct{}),
+		close:                    make(chan struct{}),
+		lazyLoadedHeaderSnapshot: snapshot,
 	}
 }
 
@@ -149,7 +175,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	}
 
 	if p.lazyReaderEnabled {
-		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
+		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadedHeaderSnapshot)
 	} else {
 		reader, err = readerFactory()
 	}

@@ -38,6 +38,7 @@ type LazyBinaryReaderMetrics struct {
 	unloadCount       prometheus.Counter
 	unloadFailedCount prometheus.Counter
 	loadDuration      prometheus.Histogram
+	eagerLoadCount    prometheus.Counter
 }
 
 // NewLazyBinaryReaderMetrics makes new LazyBinaryReaderMetrics.
@@ -63,6 +64,10 @@ func NewLazyBinaryReaderMetrics(reg prometheus.Registerer) *LazyBinaryReaderMetr
 			Name:    "indexheader_lazy_load_duration_seconds",
 			Help:    "Duration of the index-header lazy loading in seconds.",
 			Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 15, 30, 60, 120, 300},
+		}),
+		eagerLoadCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "indexheader_startup_eager_load_total",
+			Help: "TODO",
 		}),
 	}
 }
@@ -90,16 +95,7 @@ type LazyBinaryReader struct {
 // on the local disk at dir location, this function will build it downloading required
 // sections from the full index stored in the bucket. However, this function doesn't load
 // (mmap or streaming read) the index-header; it will be loaded at first Reader function call.
-func NewLazyBinaryReader(
-	ctx context.Context,
-	readerFactory func() (Reader, error),
-	logger log.Logger,
-	bkt objstore.BucketReader,
-	dir string,
-	id ulid.ULID,
-	metrics *LazyBinaryReaderMetrics,
-	onClosed func(*LazyBinaryReader),
-) (*LazyBinaryReader, error) {
+func NewLazyBinaryReader(ctx context.Context, readerFactory func() (Reader, error), logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, metrics *LazyBinaryReaderMetrics, onClosed func(*LazyBinaryReader), snapshot *lazyLoadedHeadersSnapshot) (*LazyBinaryReader, error) {
 	path := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 
 	// If the index-header doesn't exist we should download it.
@@ -118,7 +114,7 @@ func NewLazyBinaryReader(
 		level.Debug(logger).Log("msg", "built index-header file", "path", path, "elapsed", time.Since(start))
 	}
 
-	return &LazyBinaryReader{
+	ll := &LazyBinaryReader{
 		logger:        logger,
 		filepath:      path,
 		metrics:       metrics,
@@ -126,7 +122,29 @@ func NewLazyBinaryReader(
 		onClosed:      onClosed,
 		readerFactory: readerFactory,
 		blockID:       id,
-	}, nil
+	}
+
+	eagerLoadSnapshot(snapshot, id, ll)
+
+	return ll, nil
+}
+
+func eagerLoadSnapshot(snapshot *lazyLoadedHeadersSnapshot, id ulid.ULID, ll *LazyBinaryReader) {
+	if snapshot != nil {
+		usedAtSnapshot := snapshot.IndexHeaderLastUsedTime[id]
+		if usedAtSnapshot > 0 {
+			ll.readerMx.RLock()
+			defer ll.readerMx.RUnlock()
+
+			if err := ll.load(); err != nil {
+				// TODO
+			}
+
+			ll.usedAt.Store(usedAtSnapshot)
+
+			ll.metrics.eagerLoadCount.Inc()
+		}
+	}
 }
 
 // Close implements Reader. It unloads the index-header from memory (releasing the mmap
