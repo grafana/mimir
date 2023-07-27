@@ -16,14 +16,6 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 )
 
-var (
-	// PrometheusMinTime is earliest possible timestamp supported by the Prometheus API.
-	PrometheusMinTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
-
-	// PrometheusMaxTime is latest possible timestamp supported by the Prometheus API.
-	PrometheusMaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
-)
-
 func TimeToMillis(t time.Time) int64 {
 	return t.Unix()*1000 + int64(t.Nanosecond())/int64(time.Millisecond)
 }
