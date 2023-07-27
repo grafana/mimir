@@ -183,6 +183,9 @@ func (r *StreamBinaryReader) loadSparseFromDisk(ctx context.Context, logger log.
 	span, _ := tracing.StartSpan(ctx, "index_header_load_sparse_header")
 	defer span.Finish()
 
+	start := time.Now()
+	defer level.Info(logger).Log("msg", "loaded sparse index-header from disk", "path", sparseHeadersPath, "elapsed", time.Since(start))
+
 	level.Debug(logger).Log("msg", "reading from sparse index-header file", "path", sparseHeadersPath)
 
 	sparseHeaders := &indexheaderpb.Sparse{}
@@ -217,8 +220,11 @@ func (r *StreamBinaryReader) loadSparseFromDisk(ctx context.Context, logger log.
 
 // loadSparseFromIndexHeader loads in symbols and postings offset table from the index-header and stores a sparse version.
 func (r *StreamBinaryReader) loadSparseFromIndexHeader(ctx context.Context, logger log.Logger, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (err error) {
-	span, _ := tracing.StartSpan(ctx, "index_header_load_index_header")
+	span, _ := tracing.StartSpan(ctx, "index_header_construct_sparse_index_header")
 	defer span.Finish()
+
+	start := time.Now()
+	defer level.Info(logger).Log("msg", "constructed sparse index-header", "elapsed", time.Since(start))
 
 	level.Debug(logger).Log("msg", "constructing sparse index-header")
 
@@ -239,6 +245,9 @@ func (r *StreamBinaryReader) loadSparseFromIndexHeader(ctx context.Context, logg
 func writeSparseHeadersToFile(ctx context.Context, logger log.Logger, sparseHeadersPath string, reader *StreamBinaryReader) error {
 	span, _ := tracing.StartSpan(ctx, "index_header_write_sparse_header")
 	defer span.Finish()
+
+	start := time.Now()
+	defer level.Info(logger).Log("msg", "wrote sparse index-header to disk", "path", sparseHeadersPath, "elapsed", time.Since(start))
 
 	level.Debug(logger).Log("msg", "writing sparse index-header to disk", "path", sparseHeadersPath)
 
