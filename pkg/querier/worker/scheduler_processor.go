@@ -37,6 +37,8 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
+const maxNotifyFrontendRetries = 5
+
 func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
 		log:            log,
@@ -213,16 +215,30 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			Body: []byte(errMsg),
 		}
 	}
+	var c client.PoolClient
+	var retries int
 
-	c, err := sp.frontendPool.GetClientFor(frontendAddress)
-	if err == nil {
+	for {
+		c, err = sp.frontendPool.GetClientFor(frontendAddress)
+		if err != nil {
+			break
+		}
 		// Response is empty and uninteresting.
 		_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 			QueryID:      queryID,
 			HttpResponse: response,
 			Stats:        stats,
 		})
+		if err == nil || retries >= maxNotifyFrontendRetries {
+			break
+		}
+		// If the used connection returned and error, remove it from the pool and retry.
+		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", retries)
+
+		sp.frontendPool.RemoveClientFor(frontendAddress)
+		retries++
 	}
+
 	if err != nil {
 		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress)
 	}
