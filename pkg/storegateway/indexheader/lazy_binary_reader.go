@@ -210,6 +210,7 @@ func (r *LazyBinaryReader) LabelNames() ([]string, error) {
 	return r.reader.LabelNames()
 }
 
+// EagerLoadHeadersSnapshot eagerly load index headers from the stored lazyLoadedHeadersSnapshot
 func (r *LazyBinaryReader) EagerLoadHeadersSnapshot(lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) {
 	if lazyLoadedHeadersSnapshot != nil {
 		usedAtSnapshot := lazyLoadedHeadersSnapshot.IndexHeaderLastUsedTime[r.blockID]
