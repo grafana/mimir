@@ -36,7 +36,7 @@
     container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
-    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}) +
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
 
