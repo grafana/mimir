@@ -221,6 +221,7 @@ func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
 	tmpDir, bkt, blockID := initLazyBinaryReaderArgsForTest(t)
 
 	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+		// Eager loaded headers from snapshot we stored
 		snapshot := &lazyLoadedHeadersSnapshot{
 			IndexHeaderLastUsedTime: map[ulid.ULID]int64{blockID: time.Now().UnixMilli()},
 			UserID:                  "anonymous",
@@ -228,28 +229,30 @@ func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
 		r.EagerLoadHeadersSnapshot(snapshot)
 
 		require.NoError(t, err)
-		require.NotNil(t, r.reader)
+		require.NotNil(t, r.reader, "t.reader must already eagerly loaded")
 		t.Cleanup(func() {
 			require.NoError(t, r.Close())
 		})
 
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.eagerLoadCount))
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 
-		// Should lazy load the index upon first usage.
+		// The index should already be loaded, the following call will return reader already loaded above
 		v, err := r.IndexVersion()
 		require.NoError(t, err)
 		require.Equal(t, 2, v)
 		require.True(t, r.reader != nil)
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.eagerLoadCount))
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 
 		labelNames, err := r.LabelNames()
 		require.NoError(t, err)
 		require.Equal(t, []string{"a"}, labelNames)
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.eagerLoadCount))
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.eagerLoadCount))
 	})
 }
 
