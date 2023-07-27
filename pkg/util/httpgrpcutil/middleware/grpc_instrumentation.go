@@ -41,7 +41,8 @@ func OpenTracingHTTPGRPCUnaryServerInterceptor(tracer opentracing.Tracer) grpc.U
 		if info.FullMethod == "/httpgrpc.HTTP/Handle" {
 			if httpGRPCReq, ok := req.(*httpgrpc.HTTPRequest); ok {
 				reqURL := httpGRPCReq.GetUrl()
-				opentracing.StartSpanFromContextWithTracer(ctx, tracer, reqURL)
+				span := opentracing.SpanFromContext(ctx)
+				span.SetTag("http.url", reqURL)
 			}
 		}
 
