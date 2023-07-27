@@ -175,7 +175,9 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	}
 
 	if p.lazyReaderEnabled {
-		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadedHeaderSnapshot)
+		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
+		lazyBinaryReader.EagerLoadHeadersSnapshot(p.lazyLoadedHeaderSnapshot)
+		reader, err = lazyBinaryReader, lazyErr
 	} else {
 		reader, err = readerFactory()
 	}

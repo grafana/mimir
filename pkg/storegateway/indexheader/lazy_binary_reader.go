@@ -67,7 +67,7 @@ func NewLazyBinaryReaderMetrics(reg prometheus.Registerer) *LazyBinaryReaderMetr
 		}),
 		eagerLoadCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "indexheader_startup_eager_load_total",
-			Help: "TODO",
+			Help: "Total number of index-header eagerly loaded operations during store-gateway startup.",
 		}),
 	}
 }
@@ -95,7 +95,16 @@ type LazyBinaryReader struct {
 // on the local disk at dir location, this function will build it downloading required
 // sections from the full index stored in the bucket. However, this function doesn't load
 // (mmap or streaming read) the index-header; it will be loaded at first Reader function call.
-func NewLazyBinaryReader(ctx context.Context, readerFactory func() (Reader, error), logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, metrics *LazyBinaryReaderMetrics, onClosed func(*LazyBinaryReader), snapshot *lazyLoadedHeadersSnapshot) (*LazyBinaryReader, error) {
+func NewLazyBinaryReader(
+	ctx context.Context,
+	readerFactory func() (Reader, error),
+	logger log.Logger,
+	bkt objstore.BucketReader,
+	dir string,
+	id ulid.ULID,
+	metrics *LazyBinaryReaderMetrics,
+	onClosed func(*LazyBinaryReader),
+) (*LazyBinaryReader, error) {
 	path := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 
 	// If the index-header doesn't exist we should download it.
@@ -114,7 +123,7 @@ func NewLazyBinaryReader(ctx context.Context, readerFactory func() (Reader, erro
 		level.Debug(logger).Log("msg", "built index-header file", "path", path, "elapsed", time.Since(start))
 	}
 
-	ll := &LazyBinaryReader{
+	return &LazyBinaryReader{
 		logger:        logger,
 		filepath:      path,
 		metrics:       metrics,
@@ -122,29 +131,7 @@ func NewLazyBinaryReader(ctx context.Context, readerFactory func() (Reader, erro
 		onClosed:      onClosed,
 		readerFactory: readerFactory,
 		blockID:       id,
-	}
-
-	eagerLoadSnapshot(snapshot, id, ll)
-
-	return ll, nil
-}
-
-func eagerLoadSnapshot(snapshot *lazyLoadedHeadersSnapshot, id ulid.ULID, ll *LazyBinaryReader) {
-	if snapshot != nil {
-		usedAtSnapshot := snapshot.IndexHeaderLastUsedTime[id]
-		if usedAtSnapshot > 0 {
-			ll.readerMx.RLock()
-			defer ll.readerMx.RUnlock()
-
-			if err := ll.load(); err != nil {
-				// TODO
-			}
-
-			ll.usedAt.Store(usedAtSnapshot)
-
-			ll.metrics.eagerLoadCount.Inc()
-		}
-	}
+	}, nil
 }
 
 // Close implements Reader. It unloads the index-header from memory (releasing the mmap
@@ -221,6 +208,24 @@ func (r *LazyBinaryReader) LabelNames() ([]string, error) {
 
 	r.usedAt.Store(time.Now().UnixNano())
 	return r.reader.LabelNames()
+}
+
+func (r *LazyBinaryReader) EagerLoadHeadersSnapshot(lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) {
+	if lazyLoadedHeadersSnapshot != nil {
+		usedAtSnapshot := lazyLoadedHeadersSnapshot.IndexHeaderLastUsedTime[r.blockID]
+		if usedAtSnapshot > 0 {
+			r.readerMx.RLock()
+			defer r.readerMx.RUnlock()
+
+			if err := r.load(); err != nil {
+				level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", err)
+				return
+			}
+
+			r.usedAt.Store(usedAtSnapshot)
+			r.metrics.eagerLoadCount.Inc()
+		}
+	}
 }
 
 // load ensures the underlying binary index-header reader has been successfully loaded. Returns
