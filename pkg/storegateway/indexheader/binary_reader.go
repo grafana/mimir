@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/tracing"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
@@ -70,6 +71,9 @@ type BinaryTOC struct {
 
 // WriteBinary build index-header file from the pieces of index in object storage.
 func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, filename string) (err error) {
+	span, _ := tracing.StartSpan(ctx, "index_header_write_index_header")
+	defer span.Finish()
+
 	ir, indexVersion, err := newChunkedIndexReader(ctx, bkt, id)
 	if err != nil {
 		return errors.Wrap(err, "new index reader")
