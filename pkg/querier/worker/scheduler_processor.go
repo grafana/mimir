@@ -215,27 +215,30 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			Body: []byte(errMsg),
 		}
 	}
-	retries := 0
+	var c client.PoolClient
+	var retries int
 
-retry:
-	c, err := sp.frontendPool.GetClientFor(frontendAddress)
-	if err == nil {
+	for {
+		c, err = sp.frontendPool.GetClientFor(frontendAddress)
+		if err != nil {
+			break
+		}
 		// Response is empty and uninteresting.
 		_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 			QueryID:      queryID,
 			HttpResponse: response,
 			Stats:        stats,
 		})
-		// If the used connection returned and error, remove it from the pool and retry.
-		if err != nil && retries < maxNotifyFrontendRetries {
-			level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress)
-
-			sp.frontendPool.RemoveClientFor(frontendAddress)
-			retries++
-
-			goto retry
+		if err == nil || retries >= maxNotifyFrontendRetries {
+			break
 		}
+		// If the used connection returned and error, remove it from the pool and retry.
+		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", retries)
+
+		sp.frontendPool.RemoveClientFor(frontendAddress)
+		retries++
 	}
+
 	if err != nil {
 		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress)
 	}
