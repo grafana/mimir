@@ -428,6 +428,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMAXPROCS
+          value: "8"
         image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: distributor
