@@ -142,7 +142,7 @@ func newFileStreamBinaryReader(ctx context.Context, binPath string, sparseHeader
 
 		// If sparseHeaders are not on disk, construct sparseHeaders and write to disk.
 		if err != nil {
-			if err = r.loadSparseFromIndexHeader(ctx, logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
+			if err = r.constructSparseFromIndexHeader(ctx, logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
 				return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
 			}
 			if err := writeSparseHeadersToFile(ctx, logger, sparseHeadersPath, r); err != nil {
@@ -157,7 +157,7 @@ func newFileStreamBinaryReader(ctx context.Context, binPath string, sparseHeader
 			}
 		}
 	} else {
-		if err = r.loadSparseFromIndexHeader(ctx, logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
+		if err = r.constructSparseFromIndexHeader(ctx, logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
 			return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
 		}
 	}
@@ -218,8 +218,8 @@ func (r *StreamBinaryReader) loadSparseFromDisk(ctx context.Context, logger log.
 	return nil
 }
 
-// loadSparseFromIndexHeader loads in symbols and postings offset table from the index-header and stores a sparse version.
-func (r *StreamBinaryReader) loadSparseFromIndexHeader(ctx context.Context, logger log.Logger, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (err error) {
+// constructSparseFromIndexHeader loads in symbols and postings offset table from the index-header and stores a sparse version.
+func (r *StreamBinaryReader) constructSparseFromIndexHeader(ctx context.Context, logger log.Logger, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (err error) {
 	span, _ := tracing.StartSpan(ctx, "index_header_construct_sparse_index_header")
 	defer span.Finish()
 
