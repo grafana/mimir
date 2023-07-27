@@ -88,7 +88,7 @@
         'ingester.ring.instance-availability-zone': 'zone-%s' % zone,
       },
     )) +
-    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}),
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}),
 
   newIngesterZoneStatefulSet(zone, container)::
     local name = 'ingester-zone-%s' % zone;
@@ -216,7 +216,7 @@
         'store-gateway.sharding-ring.prefix': 'multi-zone/',
       }
     )) +
-    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}),
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}),
 
   newStoreGatewayZoneStatefulSet(zone, container)::
     local name = 'store-gateway-zone-%s' % zone;
