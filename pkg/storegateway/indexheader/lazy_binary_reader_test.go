@@ -303,3 +303,50 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 	wg.Wait()
 	require.Equal(t, totalLoaded.Load(), uint32(numLazyReader))
 }
+
+func TestLazyBinaryReader_ConcurrentLoadingOfSameIndexReader(t *testing.T) {
+	tmpDir, bkt, blockID := prepareTempDirBucketAndBlock(t)
+
+	const (
+		maxLazyLoadConcurrency = 1
+		numClients             = 25
+	)
+
+	factory := func() (Reader, error) { return nil, errors.New("error") }
+
+	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
+	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	require.NoError(t, err)
+
+	var clientWG sync.WaitGroup
+	clientWG.Add(numClients)
+
+	start := make(chan struct{})
+
+	// Start many clients for the same lazyReader
+	for i := 0; i < numClients; i++ {
+		go func() {
+			<-start
+			_, _ = lazyReader.IndexVersion()
+			clientWG.Done()
+		}()
+	}
+
+	// Give goroutines chance to start and wait for start channel.
+	time.Sleep(1 * time.Second)
+	close(start)
+
+	done := make(chan struct{})
+	go func() {
+		// Wait until all of them finish.
+		clientWG.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// ok
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "goroutines did not finish in time")
+	}
+}
