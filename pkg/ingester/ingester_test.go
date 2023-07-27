@@ -2700,7 +2700,7 @@ func TestIngester_QueryStream(t *testing.T) {
 	}()
 
 	// Query back the series using GRPC streaming.
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig())
+	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -2967,7 +2967,7 @@ func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
 	}()
 
 	// Query back the series using GRPC streaming.
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig())
+	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -3054,7 +3054,7 @@ func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg
 	}()
 
 	// Query back the series using GRPC streaming.
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig())
+	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck
 
@@ -3243,7 +3243,7 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 		require.NoError(t, serv.Serve(listener))
 	}()
 
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig())
+	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck
 
