@@ -55,9 +55,9 @@ type ReaderPool struct {
 	close chan struct{}
 
 	// Keep track of all readers managed by the pool.
-	lazyReadersMx            sync.Mutex
-	lazyReaders              map[*LazyBinaryReader]struct{}
-	lazyLoadedHeaderSnapshot *lazyLoadedHeadersSnapshot
+	lazyReadersMx             sync.Mutex
+	lazyReaders               map[*LazyBinaryReader]struct{}
+	lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot
 }
 
 // LazyLoadedHeadersSnapshotConfig stores information needed to track lazy loaded index headers.
@@ -88,28 +88,15 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 	return atomicfs.CreateFileAndMove(tmpPath, finalPath, bytes.NewReader(data))
 }
 
-func loadLazyLoadedSnapshot(fileName string) (*lazyLoadedHeadersSnapshot, error) {
-	snapshotByte, err := os.ReadFile(fileName)
-	if err != nil {
-		return nil, err
-	}
-	snapshot := &lazyLoadedHeadersSnapshot{}
-	err = json.Unmarshal(snapshotByte, snapshot)
-	if err != nil {
-		return nil, err
-	}
-	return snapshot, nil
-}
-
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
 func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
-	lazyLoadedSnapshotFn := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFile)
-	snapshot, err := loadLazyLoadedSnapshot(lazyLoadedSnapshotFn)
+	lazyLoadedSnapshotFileName := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFile)
+	snapshot, err := loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
 	if err != nil {
 		// just log and delete the file
-		err := os.Remove(lazyLoadedSnapshotFn)
+		err := os.Remove(lazyLoadedSnapshotFileName)
 		if err != nil {
-			// log again
+			level.Warn(logger).Log("msg", "loading lazy-loaded index header failed; skipping", "file", lazyLoadedSnapshotFileName, "err", err)
 		}
 	}
 
@@ -150,16 +137,29 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, snapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
 	return &ReaderPool{
-		logger:                   logger,
-		metrics:                  metrics,
-		lazyReaderEnabled:        lazyReaderEnabled,
-		lazyReaderIdleTimeout:    lazyReaderIdleTimeout,
-		lazyReaders:              make(map[*LazyBinaryReader]struct{}),
-		close:                    make(chan struct{}),
-		lazyLoadedHeaderSnapshot: snapshot,
+		logger:                    logger,
+		metrics:                   metrics,
+		lazyReaderEnabled:         lazyReaderEnabled,
+		lazyReaderIdleTimeout:     lazyReaderIdleTimeout,
+		lazyReaders:               make(map[*LazyBinaryReader]struct{}),
+		close:                     make(chan struct{}),
+		lazyLoadedHeadersSnapshot: lazyLoadedHeadersSnapshot,
 	}
+}
+
+func loadLazyLoadedHeadersSnapshot(fileName string) (*lazyLoadedHeadersSnapshot, error) {
+	snapshotByte, err := os.ReadFile(fileName)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := &lazyLoadedHeadersSnapshot{}
+	err = json.Unmarshal(snapshotByte, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }
 
 // NewBinaryReader creates and returns a new binary reader. If the pool has been configured
@@ -176,7 +176,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 
 	if p.lazyReaderEnabled {
 		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
-		lazyBinaryReader.EagerLoadHeadersSnapshot(p.lazyLoadedHeaderSnapshot)
+		lazyBinaryReader.EagerLoadHeadersSnapshot(p.lazyLoadedHeadersSnapshot)
 		reader, err = lazyBinaryReader, lazyErr
 	} else {
 		reader, err = readerFactory()
