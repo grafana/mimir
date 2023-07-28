@@ -105,7 +105,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		}
 	}
 
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics, snapshot)
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, eagerLoadIndexReaderEnabled, metrics, snapshot)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -153,12 +153,13 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, eagerLoadReaderEnabled bool, metrics *ReaderPoolMetrics, lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
 	return &ReaderPool{
 		logger:                    logger,
 		metrics:                   metrics,
 		lazyReaderEnabled:         lazyReaderEnabled,
 		lazyReaderIdleTimeout:     lazyReaderIdleTimeout,
+		eagerLoadReaderEnabled:    eagerLoadReaderEnabled,
 		lazyReaders:               make(map[*LazyBinaryReader]struct{}),
 		close:                     make(chan struct{}),
 		lazyLoadedHeadersSnapshot: lazyLoadedHeadersSnapshot,
