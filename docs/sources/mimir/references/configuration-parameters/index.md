@@ -3260,6 +3260,11 @@ bucket_store:
   # inactivity.
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout
   [index_header_lazy_loading_idle_timeout: <duration> | default = 1h]
+  
+  # (advanced) If enabled, store-gateway will periodically persist lazy loaded
+  # index-header and loading it eagerly during startup.
+  # CLI flag: -blocks-storage.bucket-store.index-header-eager-loading-startup-enabled
+  [index_header_eager_loading_startup_enabled: <boolean> | default = false]
 
   # (advanced) Max size - in bytes - of a gap for which the partitioner
   # aggregates together two bucket GET object requests.

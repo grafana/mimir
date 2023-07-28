@@ -226,7 +226,7 @@ func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
 			IndexHeaderLastUsedTime: map[ulid.ULID]int64{blockID: time.Now().UnixMilli()},
 			UserID:                  "anonymous",
 		}
-		r.EagerLoadHeadersSnapshot(snapshot)
+		r.EagerLoadIndexHeadersSnapshot(snapshot)
 
 		require.NoError(t, err)
 		require.NotNil(t, r.reader, "t.reader must already eagerly loaded")

@@ -30,6 +30,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 	tests := map[string]struct {
 		lazyReaderEnabled         bool
 		lazyReaderIdleTimeout     time.Duration
+		eagerLoadReaderEnabled    bool
 		persistLazyLoadedHeaderFn func(blockId ulid.ULID, lazyLoadedSnapshotPath string)
 		checkMetricFn             func(metrics *ReaderPoolMetrics)
 	}{
@@ -49,8 +50,9 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			},
 		},
 		"lazy reader lazyLoadedHeadersSnapshot is present": {
-			lazyReaderEnabled:     true,
-			lazyReaderIdleTimeout: time.Minute,
+			lazyReaderEnabled:      true,
+			lazyReaderIdleTimeout:  time.Minute,
+			eagerLoadReaderEnabled: true,
 			persistLazyLoadedHeaderFn: func(blockId ulid.ULID, lazyLoadedSnapshotPath string) {
 				snapshot := lazyLoadedHeadersSnapshot{
 					IndexHeaderLastUsedTime: map[ulid.ULID]int64{blockId: time.Now().UnixMilli()},
@@ -64,8 +66,9 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			},
 		},
 		"lazy reader lazyLoadedHeadersSnapshot is present but invalid": {
-			lazyReaderEnabled:     true,
-			lazyReaderIdleTimeout: time.Minute,
+			lazyReaderEnabled:      true,
+			lazyReaderIdleTimeout:  time.Minute,
+			eagerLoadReaderEnabled: true,
 			persistLazyLoadedHeaderFn: func(_ ulid.ULID, lazyLoadedSnapshotPath string) {
 				// let's create a random blockID to be stored in lazy loaded headers file
 				invalidBlockID, _ := ulid.New(ulid.Now(), rand.Reader)
@@ -111,7 +114,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			}
 
 			metrics := NewReaderPoolMetrics(nil)
-			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, metrics, snapshotConfig)
+			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, testData.eagerLoadReaderEnabled, metrics, snapshotConfig)
 			defer pool.Close()
 
 			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})

@@ -481,6 +481,8 @@ Usage of ./cmd/mimir/mimir:
     	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.index-cache.redis.write-timeout duration
     	Client write timeout. (default 3s)
+  -blocks-storage.bucket-store.index-header-eager-loading-startup-enabled
+    	If enabled, store-gateway will periodically persist lazy loaded index-header and loading it eagerly during startup.
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration

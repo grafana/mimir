@@ -46,10 +46,11 @@ func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 // and automatically close them once the idle timeout is reached. A closed lazy reader
 // will be automatically re-opened upon next usage.
 type ReaderPool struct {
-	lazyReaderEnabled     bool
-	lazyReaderIdleTimeout time.Duration
-	logger                log.Logger
-	metrics               *ReaderPoolMetrics
+	lazyReaderEnabled      bool
+	lazyReaderIdleTimeout  time.Duration
+	eagerLoadReaderEnabled bool
+	logger                 log.Logger
+	metrics                *ReaderPoolMetrics
 
 	// Channel used to signal once the pool is closing.
 	close chan struct{}
@@ -89,46 +90,35 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 }
 
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
-	lazyLoadedSnapshotFileName := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFile)
-	snapshot, err := loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
-	if err != nil {
-		level.Warn(logger).Log("msg", "loading lazy-loaded index header failed; removing the file", "file", lazyLoadedSnapshotFileName, "err", err)
-		err := os.Remove(lazyLoadedSnapshotFileName)
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, eagerLoadIndexReaderEnabled bool, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
+	var lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot
+	if lazyReaderEnabled && eagerLoadIndexReaderEnabled {
+		lazyLoadedSnapshotFileName := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFile)
+		var err error
+		lazyLoadedHeadersSnapshot, err = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
 		if err != nil {
-			level.Warn(logger).Log("msg", "removing lazy-loaded index header failed", "file", lazyLoadedSnapshotFileName, "err", err)
+			level.Warn(logger).Log("msg", "loading lazy-loaded index header failed; removing the file", "file", lazyLoadedSnapshotFileName, "err", err)
+			err := os.Remove(lazyLoadedSnapshotFileName)
+			if err != nil {
+				level.Warn(logger).Log("msg", "removing lazy-loaded index header failed", "file", lazyLoadedSnapshotFileName, "err", err)
+			}
 		}
 	}
 
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics, snapshot)
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics, lazyLoadedHeadersSnapshot)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
 		checkFreq := p.lazyReaderIdleTimeout / 10
 
 		go func() {
-			tickerLazyLoadPersist := time.NewTicker(time.Minute)
-			defer tickerLazyLoadPersist.Stop()
-
 			tickerIdleReader := time.NewTicker(checkFreq)
 			defer tickerIdleReader.Stop()
 
-			for {
-				select {
-				case <-p.close:
-					return
-				case <-tickerIdleReader.C:
-					p.closeIdleReaders()
-				case <-tickerLazyLoadPersist.C:
-					snapshot := lazyLoadedHeadersSnapshot{
-						IndexHeaderLastUsedTime: p.LoadedBlocks(),
-						UserID:                  lazyLoadedSnapshotConfig.UserID,
-					}
-
-					if err := snapshot.persist(lazyLoadedSnapshotConfig.Path); err != nil {
-						level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
-					}
-				}
+			if p.eagerLoadReaderEnabled {
+				selectTickerForIndexHeadersEagerLoadEnabled(p, tickerIdleReader, lazyLoadedSnapshotConfig)
+			} else {
+				selectTickerForIndexHeadersEagerLoadDisabled(p, tickerIdleReader)
 			}
 		}()
 	}
@@ -162,6 +152,42 @@ func loadLazyLoadedHeadersSnapshot(fileName string) (*lazyLoadedHeadersSnapshot,
 	return snapshot, nil
 }
 
+// selectTickerForIndexHeadersEagerLoadEnabled has case clause for tickerLazyLoadPersist ticker that is needed when index-header eager load is enabled
+func selectTickerForIndexHeadersEagerLoadEnabled(p *ReaderPool, tickerIdleReader *time.Ticker, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) {
+	tickerLazyLoadPersist := time.NewTicker(time.Minute)
+	defer tickerLazyLoadPersist.Stop()
+
+	for {
+		select {
+		case <-p.close:
+			return
+		case <-tickerIdleReader.C:
+			p.closeIdleReaders()
+		case <-tickerLazyLoadPersist.C:
+			snapshot := lazyLoadedHeadersSnapshot{
+				IndexHeaderLastUsedTime: p.LoadedBlocks(),
+				UserID:                  lazyLoadedSnapshotConfig.UserID,
+			}
+
+			if err := snapshot.persist(lazyLoadedSnapshotConfig.Path); err != nil {
+				level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
+			}
+		}
+	}
+}
+
+// selectTickerForIndexHeadersEagerLoadDisabled is similar like selectTickerForIndexHeadersEagerLoadEnabled except this doesn't have the case clause for tickerLazyLoadPersist ticker that is needed when index-header eager load is enabled
+func selectTickerForIndexHeadersEagerLoadDisabled(p *ReaderPool, tickerIdleReader *time.Ticker) {
+	for {
+		select {
+		case <-p.close:
+			return
+		case <-tickerIdleReader.C:
+			p.closeIdleReaders()
+		}
+	}
+}
+
 // NewBinaryReader creates and returns a new binary reader. If the pool has been configured
 // with lazy reader enabled, this function will return a lazy reader. The returned lazy reader
 // is tracked by the pool and automatically closed once the idle timeout expires.
@@ -176,7 +202,9 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 
 	if p.lazyReaderEnabled {
 		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
-		lazyBinaryReader.EagerLoadHeadersSnapshot(p.lazyLoadedHeadersSnapshot)
+		if p.eagerLoadReaderEnabled {
+			lazyBinaryReader.EagerLoadIndexHeadersSnapshot(p.lazyLoadedHeadersSnapshot)
+		}
 		reader, err = lazyBinaryReader, lazyErr
 	} else {
 		reader, err = readerFactory()
