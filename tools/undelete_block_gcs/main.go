@@ -76,6 +76,7 @@ func worker(client *storage.Client, ch chan string) {
 		files, err := listDeletedFiles(context.Background(), bucket, p)
 		if err != nil {
 			log.Println("failed to get files for prefix", line, "due to error:", err)
+			continue
 		}
 
 		for _, f := range files {
