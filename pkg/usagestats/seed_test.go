@@ -66,7 +66,7 @@ func TestReadSeedFile(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			testData.setup(bucketClient)
 
-			seed, err := readSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), log.NewNopLogger())
+			seed, err := readSeedFile(context.Background(), objstore.WrapWithMetrics(bucketClient, nil, ""), log.NewNopLogger())
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), testData.expectedErr.Error())
@@ -106,7 +106,7 @@ func TestWriteSeedFile(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			testData.setup(bucketClient)
 
-			err := writeSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), seed)
+			err := writeSeedFile(context.Background(), objstore.WrapWithMetrics(bucketClient, nil, ""), seed)
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), testData.expectedErr.Error())
@@ -178,7 +178,7 @@ func TestWaitSeedFileStability(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			testData := testSetup(t, bucketClient)
 
-			actualSeed, err := waitSeedFileStability(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), minStability, log.NewNopLogger())
+			actualSeed, err := waitSeedFileStability(context.Background(), objstore.WrapWithMetrics(bucketClient, nil, ""), minStability, log.NewNopLogger())
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), testData.expectedErr.Error())
@@ -295,7 +295,7 @@ func TestInitSeedFile_CreatingConcurrency(t *testing.T) {
 			// Wait for the start.
 			<-start
 
-			seed, err := initSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), minStability, log.NewNopLogger())
+			seed, err := initSeedFile(context.Background(), objstore.WrapWithMetrics(bucketClient, nil, ""), minStability, log.NewNopLogger())
 			if err != nil {
 				return err
 			}

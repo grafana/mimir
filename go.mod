@@ -66,7 +66,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717235037-3f2821e2c1b1
 	github.com/prometheus/procfs v0.11.0
-	github.com/thanos-io/objstore v0.0.0-20230710163637-47c0118da0ca
+	github.com/thanos-io/objstore v0.0.0-20230727115635-d0c43443ecda
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.0.0-rcv0013
 	go.opentelemetry.io/otel v1.16.0

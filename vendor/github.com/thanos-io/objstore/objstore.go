@@ -400,9 +400,9 @@ type IsOpFailureExpectedFunc func(error) bool
 
 var _ InstrumentedBucket = &metricBucket{}
 
-// BucketWithMetrics takes a bucket and registers metrics with the given registry for
+// WrapWithMetrics takes a bucket and registers metrics with the given registry for
 // operations run against the bucket.
-func BucketWithMetrics(name string, b Bucket, reg prometheus.Registerer) *metricBucket {
+func WrapWithMetrics(b Bucket, reg prometheus.Registerer, name string) *metricBucket {
 	bkt := &metricBucket{
 		bkt:                 b,
 		isOpFailureExpected: func(err error) bool { return false },
@@ -422,6 +422,13 @@ func BucketWithMetrics(name string, b Bucket, reg prometheus.Registerer) *metric
 			Name:        "objstore_bucket_operation_fetched_bytes_total",
 			Help:        "Total number of bytes fetched from bucket, per operation.",
 			ConstLabels: prometheus.Labels{"bucket": name},
+		}, []string{"operation"}),
+
+		opsTransferredBytes: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:        "objstore_bucket_operation_transferred_bytes",
+			Help:        "Number of bytes transferred from/to bucket per operation.",
+			ConstLabels: prometheus.Labels{"bucket": name},
+			Buckets:     prometheus.ExponentialBuckets(2<<14, 2, 16), // 32KiB, 64KiB, ... 1GiB
 		}, []string{"operation"}),
 
 		opsDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -450,6 +457,14 @@ func BucketWithMetrics(name string, b Bucket, reg prometheus.Registerer) *metric
 		bkt.opsDuration.WithLabelValues(op)
 		bkt.opsFetchedBytes.WithLabelValues(op)
 	}
+	// fetched bytes only relevant for get and getrange
+	for _, op := range []string{
+		OpGet,
+		OpGetRange,
+		// TODO: Add uploads
+	} {
+		bkt.opsTransferredBytes.WithLabelValues(op)
+	}
 	bkt.lastSuccessfulUploadTime.WithLabelValues(b.Name())
 	return bkt
 }
@@ -461,8 +476,8 @@ type metricBucket struct {
 	opsFailures         *prometheus.CounterVec
 	isOpFailureExpected IsOpFailureExpectedFunc
 
-	opsFetchedBytes *prometheus.CounterVec
-
+	opsFetchedBytes          *prometheus.CounterVec
+	opsTransferredBytes      *prometheus.HistogramVec
 	opsDuration              *prometheus.HistogramVec
 	lastSuccessfulUploadTime *prometheus.GaugeVec
 }
@@ -473,6 +488,7 @@ func (b *metricBucket) WithExpectedErrs(fn IsOpFailureExpectedFunc) Bucket {
 		ops:                      b.ops,
 		opsFailures:              b.opsFailures,
 		opsFetchedBytes:          b.opsFetchedBytes,
+		opsTransferredBytes:      b.opsTransferredBytes,
 		isOpFailureExpected:      fn,
 		opsDuration:              b.opsDuration,
 		lastSuccessfulUploadTime: b.lastSuccessfulUploadTime,
@@ -530,6 +546,7 @@ func (b *metricBucket) Get(ctx context.Context, name string) (io.ReadCloser, err
 		b.opsFailures,
 		b.isOpFailureExpected,
 		b.opsFetchedBytes,
+		b.opsTransferredBytes,
 	), nil
 }
 
@@ -551,6 +568,7 @@ func (b *metricBucket) GetRange(ctx context.Context, name string, off, length in
 		b.opsFailures,
 		b.isOpFailureExpected,
 		b.opsFetchedBytes,
+		b.opsTransferredBytes,
 	), nil
 }
 
@@ -627,13 +645,15 @@ type timingReadCloser struct {
 
 	start             time.Time
 	op                string
+	readBytes         int64
 	duration          *prometheus.HistogramVec
 	failed            *prometheus.CounterVec
 	isFailureExpected IsOpFailureExpectedFunc
 	fetchedBytes      *prometheus.CounterVec
+	transferredBytes  *prometheus.HistogramVec
 }
 
-func newTimingReadCloser(rc io.ReadCloser, op string, dur *prometheus.HistogramVec, failed *prometheus.CounterVec, isFailureExpected IsOpFailureExpectedFunc, fetchedBytes *prometheus.CounterVec) *timingReadCloser {
+func newTimingReadCloser(rc io.ReadCloser, op string, dur *prometheus.HistogramVec, failed *prometheus.CounterVec, isFailureExpected IsOpFailureExpectedFunc, fetchedBytes *prometheus.CounterVec, transferredBytes *prometheus.HistogramVec) *timingReadCloser {
 	// Initialize the metrics with 0.
 	dur.WithLabelValues(op)
 	failed.WithLabelValues(op)
@@ -648,6 +668,8 @@ func newTimingReadCloser(rc io.ReadCloser, op string, dur *prometheus.HistogramV
 		failed:            failed,
 		isFailureExpected: isFailureExpected,
 		fetchedBytes:      fetchedBytes,
+		transferredBytes:  transferredBytes,
+		readBytes:         0,
 	}
 }
 
@@ -662,6 +684,7 @@ func (rc *timingReadCloser) Close() error {
 	}
 	if !rc.alreadyGotErr && err == nil {
 		rc.duration.WithLabelValues(rc.op).Observe(time.Since(rc.start).Seconds())
+		rc.transferredBytes.WithLabelValues(rc.op).Observe(float64(rc.readBytes))
 		rc.alreadyGotErr = true
 	}
 	return err
@@ -670,6 +693,7 @@ func (rc *timingReadCloser) Close() error {
 func (rc *timingReadCloser) Read(b []byte) (n int, err error) {
 	n, err = rc.ReadCloser.Read(b)
 	rc.fetchedBytes.WithLabelValues(rc.op).Add(float64(n))
+	rc.readBytes += int64(n)
 	// Report metric just once.
 	if !rc.alreadyGotErr && err != nil && err != io.EOF {
 		if !rc.isFailureExpected(err) {
