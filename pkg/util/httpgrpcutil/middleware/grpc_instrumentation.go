@@ -43,7 +43,8 @@ func OpenTracingHTTPGRPCUnaryServerInterceptor(tracer opentracing.Tracer) grpc.U
 				reqURL := httpGRPCReq.GetUrl()
 				span := opentracing.SpanFromContext(ctx)
 				span.SetTag("http.url", reqURL)
-				opentracing.StartSpanFromContextWithTracer(ctx, tracer, reqURL)
+				span, ctx = opentracing.StartSpanFromContextWithTracer(ctx, tracer, reqURL)
+				defer span.Finish()
 			}
 		}
 
