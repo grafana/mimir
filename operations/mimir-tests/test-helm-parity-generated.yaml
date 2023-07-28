@@ -189,7 +189,7 @@ apiVersion: v1
 data:
   alertmanager_fallback_config.yaml: |
     receivers:
-      - name: default-receiver
+        - name: default-receiver
     route:
         receiver: default-receiver
 kind: ConfigMap
