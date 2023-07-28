@@ -55,11 +55,11 @@
   * `cortex_ingester_utilization_limiter_current_memory_usage_bytes`: The current ingester memory utilization
 * [ENHANCEMENT] Ruler: added `insight=true` field to ruler's prometheus component for rule evaluation logs. #5510
 * [ENHANCEMENT] Distributor Ingester: Add metrics to count the number of requests rejected for hitting per-instance limits, `cortex_distributor_instance_rejected_requests_total` and `cortex_ingester_instance_rejected_requests_total` respectively. #5551
-* [ENHANCEMENT] Distributor: add support for ingesting exponential histograms that are over the native histogram scale limit of 8 in OpenTelemetry format by downscaling them. #5532
+* [ENHANCEMENT] Distributor: add support for ingesting exponential histograms that are over the native histogram scale limit of 8 in OpenTelemetry format by downscaling them. #5532 #5607
 * [ENHANCEMENT] General: buffered logging: #5506
   * `-log.buffered`: Enable buffered logging
 * [ENHANCEMENT] Distributor: add more detailed information to traces generated while processing OTLP write requests. #5539
-* [ENHANCEMENT] Distributor: improve performance ingesting OTLP payloads. #5531
+* [ENHANCEMENT] Distributor: improve performance ingesting OTLP payloads. #5531 #5607
 * [ENHANCEMENT] Ingester: optimize label-values with matchers call when number of matched series is small. #5600
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
