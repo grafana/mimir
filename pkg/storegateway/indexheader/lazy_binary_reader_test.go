@@ -209,7 +209,7 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 					return
 				default:
 					_, err := r.PostingsOffset("a", "1")
-					require.True(t, err == nil || errors.Is(err, errUnloadedWhileLoading))
+					require.True(t, err == nil || errors.Is(err, errUnloadedWhileLoading), "unexpected error: %s", err)
 				}
 			}
 		}()
