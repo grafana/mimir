@@ -15,6 +15,7 @@ mimir {
     unregister_ingesters_on_shutdown: false,
     query_sharding_enabled: true,
     overrides_exporter_enabled: true,
+    etcd_replicas: 5,
 
     alertmanager+: {
       fallback_config: {
