@@ -698,6 +698,46 @@ func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, blockID
 	require.Equal(t, markedForDeletion, exists)
 }
 
+func TestBlocksCleaner_ShouldDeleteTenantWhenNoMoreBlocksRemain(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	const userID = "user-1"
+	ctx := context.Background()
+	now := time.Now()
+	deletionDelay := 12 * time.Hour
+
+	block1 := createTSDBBlock(t, bucketClient, userID, 10, 20, 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, userID, 20, 30, 2, nil)
+
+	createDeletionMark(t, bucketClient, userID, block1, now.Add(-deletionDelay).Add(time.Hour))
+	createDeletionMark(t, bucketClient, userID, block2, now.Add(-deletionDelay).Add(time.Hour))
+
+	checkBlock(t, "user-1", bucketClient, block1, true, true)
+	checkBlock(t, "user-1", bucketClient, block2, true, true)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:           deletionDelay,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
+	}
+
+	logger := test.NewTestingLogger(t)
+	reg := prometheus.NewPedanticRegistry()
+	cfgProvider := newMockConfigProvider()
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
+	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
+
+	idx, err := bucketindex.ReadIndex(ctx, bucketClient, userID, nil, logger)
+	require.NoError(t, err)
+	fmt.Println("FAZ: ", len(idx.Blocks), len(idx.BlockDeletionMarks), idx.UpdatedAt)
+	assert.ElementsMatch(t, []ulid.ULID{}, idx.Blocks.GetULIDs())
+	assert.ElementsMatch(t, []ulid.ULID{block1, block2}, idx.BlockDeletionMarks.GetULIDs())
+}
+
 func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)

@@ -423,6 +423,13 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantPartialBlocks.WithLabelValues(userID).Set(float64(len(partials)))
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
 
+	// If there are no more blocks, mark the tenant for deletion
+	// if len(idx.Blocks) == 0 {
+	// 	if err := mimir_tsdb.WriteTenantDeletionMark(ctx, c.bucketClient, userID, c.cfgProvider, mimir_tsdb.NewTenantDeletionMark(time.Now())); err != nil {
+	// 		return err
+	// 	}
+	// }
+
 	return nil
 }
 
