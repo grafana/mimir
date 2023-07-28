@@ -78,12 +78,11 @@ type LazyBinaryReader struct {
 	lazyLoadingGate gate.Gate
 	ctx             context.Context
 
+	readerMx      sync.RWMutex
+	reader        Reader
+	readerErr     error
+	readerInUse   sync.WaitGroup // Only increased when readerMx is held.
 	readerFactory func() (Reader, error)
-
-	readerMx    sync.RWMutex
-	reader      Reader
-	readerErr   error
-	readerInUse sync.WaitGroup // Only increased when readerMx is held.
 
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
