@@ -504,8 +504,8 @@ github.com/cespare/xxhash/v2 v2.2.0 h1:DC2CZ1Ep5Y4k3ZQ899DldepgrayRUGE6BBZ/cd9Cj
 github.com/cespare/xxhash/v2 v2.2.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc h1:r9yn26N6K60wfQPMwxNeD8U2djqObFYh6o9LXfeMecg=
 github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc/go.mod h1:S666TGglI7cVCVpErP7i+7iFlS330LD8vZDcFk9IdCg=
-github.com/charleskorn/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717033559-beffb82bb827 h1:/eFbe8NJWZD9NIaOA8RJ4gjxw7tME7V7t+B3ufyH7iE=
-github.com/charleskorn/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717033559-beffb82bb827/go.mod h1:FLUCs/7YJX0pauUBlj+5cy2h0ckjVMno2YyXsO/j89k=
+github.com/charleskorn/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230719070131-77d6f20f8ca9 h1:LL9bHJSMlzEgSQFVGMY5PGREjSzqL1f6uvk8E4qoe3c=
+github.com/charleskorn/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230719070131-77d6f20f8ca9/go.mod h1:FLUCs/7YJX0pauUBlj+5cy2h0ckjVMno2YyXsO/j89k=
 github.com/chromedp/cdproto v0.0.0-20210526005521-9e51b9051fd0/go.mod h1:At5TxYYdxkbQL0TSefRjhLE3Q0lgvqKKMSFUglJ7i1U=
 github.com/chromedp/cdproto v0.0.0-20210706234513-2bc298e8be7f/go.mod h1:At5TxYYdxkbQL0TSefRjhLE3Q0lgvqKKMSFUglJ7i1U=
 github.com/chromedp/cdproto v0.0.0-20220629234738-4cfc9cdeeb92 h1:0kiAQSLWZDt4wsmcICou3C6in/OJ58FCqvXcB8Ax1Dk=

@@ -270,7 +270,7 @@ replace github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-
 replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 
 // Replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite with a fork until https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/24288 is merged.
-replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite => github.com/charleskorn/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230717033559-beffb82bb827
+replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite => github.com/charleskorn/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.0.0-20230719070131-77d6f20f8ca9
 
 // Use a fork of weaveworks/common while we work out if there is a better design for https://github.com/weaveworks/common/pull/293
 replace github.com/weaveworks/common => github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce
