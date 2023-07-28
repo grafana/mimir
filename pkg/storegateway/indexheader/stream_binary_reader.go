@@ -18,12 +18,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
