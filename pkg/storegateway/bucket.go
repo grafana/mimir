@@ -613,10 +613,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
 	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
 	err = s.queryGate.Start(spanCtx)
+	span.Finish()
 	if err != nil {
 		return errors.Wrapf(err, "failed to wait for turn")
 	}
-	span.Finish()
 	defer s.queryGate.Done()
 
 	var (
