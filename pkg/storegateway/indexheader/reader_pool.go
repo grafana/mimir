@@ -91,11 +91,11 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
 func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, eagerLoadIndexReaderEnabled bool, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
-	var lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot
+	var snapshot *lazyLoadedHeadersSnapshot
 	if lazyReaderEnabled && eagerLoadIndexReaderEnabled {
 		lazyLoadedSnapshotFileName := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFile)
 		var err error
-		lazyLoadedHeadersSnapshot, err = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
+		snapshot, err = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
 		if err != nil {
 			level.Warn(logger).Log("msg", "loading lazy-loaded index header failed; removing the file", "file", lazyLoadedSnapshotFileName, "err", err)
 			err := os.Remove(lazyLoadedSnapshotFileName)
@@ -105,7 +105,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		}
 	}
 
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics, lazyLoadedHeadersSnapshot)
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, metrics, snapshot)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -116,9 +116,35 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 			defer tickerIdleReader.Stop()
 
 			if p.eagerLoadReaderEnabled {
-				selectTickerForIndexHeadersEagerLoadEnabled(p, tickerIdleReader, lazyLoadedSnapshotConfig)
+				tickerLazyLoadPersist := time.NewTicker(time.Minute)
+				defer tickerLazyLoadPersist.Stop()
+
+				for {
+					select {
+					case <-p.close:
+						return
+					case <-tickerIdleReader.C:
+						p.closeIdleReaders()
+					case <-tickerLazyLoadPersist.C:
+						snapshot := lazyLoadedHeadersSnapshot{
+							IndexHeaderLastUsedTime: p.LoadedBlocks(),
+							UserID:                  lazyLoadedSnapshotConfig.UserID,
+						}
+
+						if err := snapshot.persist(lazyLoadedSnapshotConfig.Path); err != nil {
+							level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
+						}
+					}
+				}
 			} else {
-				selectTickerForIndexHeadersEagerLoadDisabled(p, tickerIdleReader)
+				for {
+					select {
+					case <-p.close:
+						return
+					case <-tickerIdleReader.C:
+						p.closeIdleReaders()
+					}
+				}
 			}
 		}()
 	}
@@ -150,42 +176,6 @@ func loadLazyLoadedHeadersSnapshot(fileName string) (*lazyLoadedHeadersSnapshot,
 		return nil, err
 	}
 	return snapshot, nil
-}
-
-// selectTickerForIndexHeadersEagerLoadEnabled has case clause for tickerLazyLoadPersist ticker that is needed when index-header eager load is enabled
-func selectTickerForIndexHeadersEagerLoadEnabled(p *ReaderPool, tickerIdleReader *time.Ticker, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) {
-	tickerLazyLoadPersist := time.NewTicker(time.Minute)
-	defer tickerLazyLoadPersist.Stop()
-
-	for {
-		select {
-		case <-p.close:
-			return
-		case <-tickerIdleReader.C:
-			p.closeIdleReaders()
-		case <-tickerLazyLoadPersist.C:
-			snapshot := lazyLoadedHeadersSnapshot{
-				IndexHeaderLastUsedTime: p.LoadedBlocks(),
-				UserID:                  lazyLoadedSnapshotConfig.UserID,
-			}
-
-			if err := snapshot.persist(lazyLoadedSnapshotConfig.Path); err != nil {
-				level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
-			}
-		}
-	}
-}
-
-// selectTickerForIndexHeadersEagerLoadDisabled is similar like selectTickerForIndexHeadersEagerLoadEnabled except this doesn't have the case clause for tickerLazyLoadPersist ticker that is needed when index-header eager load is enabled
-func selectTickerForIndexHeadersEagerLoadDisabled(p *ReaderPool, tickerIdleReader *time.Ticker) {
-	for {
-		select {
-		case <-p.close:
-			return
-		case <-tickerIdleReader.C:
-			p.closeIdleReaders()
-		}
-	}
 }
 
 // NewBinaryReader creates and returns a new binary reader. If the pool has been configured
