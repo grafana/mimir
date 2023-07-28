@@ -4,6 +4,7 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/weaveworks/common/httpgrpc"
@@ -15,6 +16,8 @@ import (
 func InitGRPCMiddleware(cfg *server.Config) {
 	cfg.GRPCMiddleware = append(cfg.GRPCMiddleware, OpenTracingHTTPGRPCUnaryServerInterceptor(opentracing.GlobalTracer()))
 }
+
+const httpGRPCHandleMethod = "/httpgrpc.HTTP/Handle"
 
 // OpenTracingHTTPGRPCUnaryServerInterceptor returns a grpc.UnaryServerInterceptor suitable
 // for use in a grpc.NewServer call.
@@ -38,12 +41,16 @@ func OpenTracingHTTPGRPCUnaryServerInterceptor(tracer opentracing.Tracer) grpc.U
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (resp interface{}, err error) {
-		if info.FullMethod == "/httpgrpc.HTTP/Handle" {
+		if info.FullMethod == httpGRPCHandleMethod {
 			if httpGRPCReq, ok := req.(*httpgrpc.HTTPRequest); ok {
 				reqURL := httpGRPCReq.GetUrl()
+				reqMethod := httpGRPCReq.GetMethod()
 				span := opentracing.SpanFromContext(ctx)
-				span.SetTag("http.url", reqURL)
-				span, ctx = opentracing.StartSpanFromContextWithTracer(ctx, tracer, reqURL)
+				span.SetTag("http.url", reqURL).SetTag("http.method", reqMethod)
+				span, ctx = opentracing.StartSpanFromContextWithTracer(
+					ctx, tracer, fmt.Sprintf("%s/%s", httpGRPCHandleMethod, reqURL),
+				)
+				span.SetTag("http.url", reqURL).SetTag("http.method", reqMethod)
 				defer span.Finish()
 			}
 		}
