@@ -223,7 +223,7 @@ func (r *LazyBinaryReader) LabelNames() ([]string, error) {
 
 // load ensures the underlying binary index-header reader has been successfully loaded. Returns
 // an error on failure. This function MUST be called with the read lock already acquired.
-func (r *LazyBinaryReader) load() (returnErr error) {
+func (r *LazyBinaryReader) load() error {
 	// Nothing to do if we already tried loading it.
 	if r.reader != nil {
 		return nil
@@ -232,27 +232,33 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 		return r.readerErr
 	}
 
+	// Release the read lock, so that load1 can take write lock. Take the read lock again once done.
+	r.readerMx.RUnlock()
+	err := r.load1()
+	r.readerMx.RLock()
+
+	// Between the write lock release and the subsequent read lock, the unload() may have run,
+	// so we make sure to catch this edge case.
+	if err == nil && r.reader == nil {
+		err = errUnloadedWhileLoading
+	}
+	return err
+}
+
+// load1 is called from load, after releasing the read lock. load1 will acquire write lock instead.
+func (r *LazyBinaryReader) load1() error {
 	// lazyLoadingGate implementation: blocks load if too many are happening at once.
+	// It's important to get permit from the Gate when NOT holding the read-lock, otherwise we risk that multiple goroutines
+	// that enter `load()` will deadlock themselves. (If Start() allows one goroutine to continue, but blocks another one,
+	// then goroutine that continues would not be able to get Write lock.)
 	err := r.lazyLoadingGate.Start(r.ctx)
 	if err != nil {
 		return errors.Wrapf(err, "failed to wait for turn")
 	}
 	defer r.lazyLoadingGate.Done()
 
-	// Take the write lock to ensure we'll try to load it only once. Take again
-	// the read lock once done.
-	r.readerMx.RUnlock()
 	r.readerMx.Lock()
-	defer func() {
-		r.readerMx.Unlock()
-		r.readerMx.RLock()
-
-		// Between the write unlock and the subsequent read lock, the unload() may have run,
-		// so we make sure to catch this edge case.
-		if returnErr == nil && r.reader == nil {
-			returnErr = errUnloadedWhileLoading
-		}
-	}()
+	defer r.readerMx.Unlock()
 
 	// Ensure none else tried to load it in the meanwhile.
 	if r.reader != nil {
