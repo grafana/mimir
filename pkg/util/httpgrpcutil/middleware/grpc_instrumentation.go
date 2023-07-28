@@ -45,7 +45,7 @@ func OpenTracingHTTPGRPCUnaryServerInterceptor(tracer opentracing.Tracer) grpc.U
 			if httpGRPCReq, ok := req.(*httpgrpc.HTTPRequest); ok {
 				fullReqURL := httpGRPCReq.GetUrl()
 				reqMethod := httpGRPCReq.GetMethod()
-				if parsedReqURL, err := url.Parse(fullReqURL); err != nil {
+				if parsedReqURL, _ := url.Parse(fullReqURL); parsedReqURL != nil {
 					span := opentracing.SpanFromContext(ctx)
 					span.SetTag("http.url", fullReqURL).SetTag("http.method", reqMethod)
 					span, ctx = opentracing.StartSpanFromContextWithTracer(
