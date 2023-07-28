@@ -61,6 +61,7 @@
 * [ENHANCEMENT] Distributor: add more detailed information to traces generated while processing OTLP write requests. #5539
 * [ENHANCEMENT] Distributor: improve performance ingesting OTLP payloads. #5531 #5607
 * [ENHANCEMENT] Ingester: optimize label-values with matchers call when number of matched series is small. #5600
+* [ENHANCEMENT] Alertmanager: added experimental `-alertmanager.default-template` option to allow a default template file to be loaded for tenants. #5611
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377

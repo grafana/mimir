@@ -28,6 +28,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
@@ -60,6 +61,8 @@ var (
 	errInvalidExternalURLMissingHostname   = errors.New("the configured external URL is invalid because it's missing the hostname")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
+	errDefaultTemplateInvalid              = errors.New("-alertmanager.default-template validation failed")
+	errDefaultTemplateUnreadable           = errors.New("-alertmanager.default-template could not be read")
 )
 
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
@@ -89,6 +92,9 @@ type MultitenantAlertmanagerConfig struct {
 
 	// Allow disabling of full_state object cleanup.
 	EnableStateCleanup bool `yaml:"enable_state_cleanup" category:"advanced"`
+
+	// Default template file loaded for all tenants.
+	DefaultTemplate string `yaml:"default_template" category:"experimental"`
 }
 
 const (
@@ -111,6 +117,8 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
 
 	f.BoolVar(&cfg.EnableStateCleanup, "alertmanager.enable-state-cleanup", true, "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.")
+
+	f.StringVar(&cfg.DefaultTemplate, "alertmanager.default-template", "", "Optional filename of a template file which is loaded by default for all tenants, prior to their own templates being loaded.")
 
 	cfg.AlertmanagerClient.RegisterFlagsWithPrefix("alertmanager.alertmanager-client", f)
 	cfg.Persister.RegisterFlagsWithPrefix("alertmanager", f)
@@ -146,6 +154,23 @@ func (cfg *MultitenantAlertmanagerConfig) Validate() error {
 
 	if cfg.ShardingRing.ZoneAwarenessEnabled && cfg.ShardingRing.InstanceZone == "" {
 		return errZoneAwarenessEnabledWithoutZoneInfo
+	}
+
+	if cfg.DefaultTemplate != "" {
+		// Test the template at start-up, to fail-fast instead of failing at tenant creation time.
+
+		// Check the file is readable. FromGlobs does not fail is templates files are missing.
+		if _, err := os.ReadFile(cfg.DefaultTemplate); err != nil {
+			return errors.Wrapf(errDefaultTemplateUnreadable, "%s", err)
+		}
+
+		// Note we want to use FromGlobs because this is how the templates will be
+		// parsed at tenant configuration time. This means we read the file twice
+		// which is not a big loss as the files are likely to be small.
+		_, err := template.FromGlobs([]string{cfg.DefaultTemplate}, withCustomFunctions("user"))
+		if err != nil {
+			return errors.Wrapf(errDefaultTemplateInvalid, "%s", err)
+		}
 	}
 
 	return nil
@@ -784,6 +809,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 		Store:                             am.store,
 		PersisterConfig:                   am.cfg.Persister,
 		Limits:                            am.limits,
+		DefaultTemplate:                   am.cfg.DefaultTemplate,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)

@@ -194,6 +194,30 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			},
 			expected: errInvalidExternalURLMissingScheme,
 		},
+		"should fail if a default template is given but the file does not exist": {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+				cfg.DefaultTemplate = "/this-is-not-a-file"
+			},
+			expected: errDefaultTemplateUnreadable,
+		},
+		"should fail if a default template is given but invalid": {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+				templateFile := filepath.Join(t.TempDir(), "test-default-template.tmpl")
+				err := os.WriteFile(templateFile, []byte(`{{ invalid }}`), 0664)
+				assert.NoError(t, err)
+				cfg.DefaultTemplate = templateFile
+			},
+			expected: errDefaultTemplateInvalid,
+		},
+		"should succeed if a default template is given valid": {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+				templateFile := filepath.Join(t.TempDir(), "test-default-template.tmpl")
+				err := os.WriteFile(templateFile, []byte(`{{ define "__alertmanager" }}My Alertmanager{{ end }}`), 0664)
+				assert.NoError(t, err)
+				cfg.DefaultTemplate = templateFile
+			},
+			expected: nil,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -201,7 +225,8 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			cfg := &MultitenantAlertmanagerConfig{}
 			flagext.DefaultValues(cfg)
 			testData.setup(t, cfg)
-			assert.Equal(t, testData.expected, cfg.Validate())
+			err := cfg.Validate()
+			assert.Truef(t, errors.Is(err, testData.expected), "Expected: %v\nGot: %v", testData.expected, err)
 		})
 	}
 }

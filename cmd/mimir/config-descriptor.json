@@ -12399,6 +12399,17 @@
           "fieldFlag": "alertmanager.enable-state-cleanup",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "default_template",
+          "required": false,
+          "desc": "Optional filename of a template file which is loaded by default for all tenants, prior to their own templates being loaded.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager.default-template",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
