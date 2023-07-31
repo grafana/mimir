@@ -18,22 +18,10 @@ func InitGRPCMiddleware(cfg *server.Config) {
 }
 
 const httpGRPCHandleMethod = "/httpgrpc.HTTP/Handle"
+const httpSpanNameSep = " "
 
 // OpenTracingHTTPGRPCUnaryServerInterceptor returns a grpc.UnaryServerInterceptor suitable
 // for use in a grpc.NewServer call.
-//
-// For example:
-//
-//	s := grpc.NewServer(
-//	    ...,  // (existing ServerOptions)
-//	    grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer)))
-//
-// All gRPC server spans will look for an OpenTracing SpanContext in the gRPC
-// metadata; if found, the server span will act as the ChildOf that RPC
-// SpanContext.
-//
-// Root or not, the server Span will be embedded in the context.Context for the
-// application-specific gRPC handler(s) to access.
 func OpenTracingHTTPGRPCUnaryServerInterceptor(tracer opentracing.Tracer) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
@@ -43,17 +31,30 @@ func OpenTracingHTTPGRPCUnaryServerInterceptor(tracer opentracing.Tracer) grpc.U
 	) (resp interface{}, err error) {
 		if info.FullMethod == httpGRPCHandleMethod {
 			if httpGRPCReq, ok := req.(*httpgrpc.HTTPRequest); ok {
+				// decorate existing parent span with attributes
 				fullReqURL := httpGRPCReq.GetUrl()
 				reqMethod := httpGRPCReq.GetMethod()
+				span := opentracing.SpanFromContext(ctx)
+				span.SetTag("http.request.method", reqMethod).SetTag("url.path", fullReqURL)
+
+				// start & decorate child span with more specific name, attempting to follow OTEL HTTP conventions:
+				//   "HTTP server span names SHOULD be {http.request.method} {http.route}
+				//   if there is a (low-cardinality) http.route available"
+				// we do not have the lower-cardinality matched route available, only the URL, so we
+				// attempt to keep cardinality low by only using the route portion of the URL.
+				childSpanName := httpGRPCHandleMethod + httpSpanNameSep + reqMethod // e.g. "/httpgrpc.HTTP/Handle POST"
+
+				// only use the URL path if we can get it
+				//   "HTTP server span names SHOULD be {http.method}
+				//   if there is no (low-cardinality) http.route available"
 				if parsedReqURL, _ := url.Parse(fullReqURL); parsedReqURL != nil {
-					span := opentracing.SpanFromContext(ctx)
-					span.SetTag("http.url", fullReqURL).SetTag("http.method", reqMethod)
-					span, ctx = opentracing.StartSpanFromContextWithTracer(
-						ctx, tracer, httpGRPCHandleMethod+parsedReqURL.Path,
-					)
-					span.SetTag("http.url", fullReqURL).SetTag("http.method", reqMethod)
-					defer span.Finish()
+					childSpanName += httpSpanNameSep + parsedReqURL.Path // e.g. "/httpgrpc.HTTP/Handle POST /api/v1/metrics"
+
 				}
+
+				childSpan, _ := opentracing.StartSpanFromContextWithTracer(ctx, tracer, childSpanName)
+				childSpan.SetTag("http.request.method", reqMethod).SetTag("url.path", fullReqURL)
+				defer childSpan.Finish()
 			}
 		}
 
