@@ -109,6 +109,25 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 			continue
 		}
 
+		if templateVar.Datasource.LegacyName != "" {
+			var isPrometheusDS bool
+			for _, templateVarTemp := range templating.List {
+				if templateVarTemp.Name == strings.Replace(templateVar.Datasource.LegacyName, "$", "", 1) && templateVarTemp.Type == "datasource" {
+					if templateVarTemp.Type == "prometheus" {
+						isPrometheusDS = true
+					}
+					break
+				}
+			}
+			if !isPrometheusDS {
+				continue
+			}
+		}
+
+		if templateVar.Datasource.LegacyName == "" && templateVar.Datasource.Type != "prometheus" {
+			continue
+		}
+
 		query, err := getQueryFromTemplating(templateVar.Name, templateVar.Query)
 		if err != nil {
 			parseErrors = append(parseErrors, err)
