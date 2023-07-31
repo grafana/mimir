@@ -94,7 +94,7 @@ func WithCustomFunctions(userID string) template.Option {
 }
 
 // loadTemplates produces a template.Template from several in-memory template files.
-// It is adapted from FromGlobs in github.com/prometheus/alertmanager/template/template.go
+// It is adapted from FromGlobs in prometheus/alertmanager: https://github.com/prometheus/alertmanager/blob/9de8ef36755298a68b6ab20244d4369d38bdea99/template/template.go#L67-L95
 func loadTemplates(tmpls []io.Reader, options ...template.Option) (*template.Template, error) {
 	t, err := template.New(options...)
 	if err != nil {
