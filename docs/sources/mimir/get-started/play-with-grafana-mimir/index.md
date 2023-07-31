@@ -1,6 +1,6 @@
 ---
 aliases:
-  - ../tutorial/play-with-grafana-mimir
+  - /tutorials/play-with-grafana-mimir/
 associated_technologies:
   - mimir
 author:
