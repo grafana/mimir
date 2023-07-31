@@ -991,7 +991,7 @@
                         "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "99th Percentile",
+                        "legendFormat": "99th percentile",
                         "refId": "A",
                         "step": 10
                      },
@@ -999,7 +999,7 @@
                         "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "50th Percentile",
+                        "legendFormat": "50th percentile",
                         "refId": "B",
                         "step": 10
                      },
@@ -1083,7 +1083,7 @@
                         "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_samples_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "99th Percentile",
+                        "legendFormat": "99th percentile",
                         "refId": "A",
                         "step": 10
                      },
@@ -1091,7 +1091,7 @@
                         "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_samples_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "50th Percentile",
+                        "legendFormat": "50th percentile",
                         "refId": "B",
                         "step": 10
                      },
@@ -1175,7 +1175,7 @@
                         "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_exemplars_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "99th Percentile",
+                        "legendFormat": "99th percentile",
                         "refId": "A",
                         "step": 10
                      },
@@ -1183,7 +1183,7 @@
                         "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_exemplars_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "50th Percentile",
+                        "legendFormat": "50th percentile",
                         "refId": "B",
                         "step": 10
                      },
