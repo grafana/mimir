@@ -2411,10 +2411,10 @@ func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
 
 func Test_configChanged(t *testing.T) {
 	type tc struct {
-		name  string
-		left  alertspb.AlertConfigDesc
-		right alertspb.AlertConfigDesc
-		exp   bool
+		name    string
+		left    alertspb.AlertConfigDesc
+		right   alertspb.AlertConfigDesc
+		changed bool
 	}
 
 	cases := []tc{
@@ -2448,7 +2448,7 @@ func Test_configChanged(t *testing.T) {
 					},
 				},
 			},
-			exp: false,
+			changed: false,
 		},
 		{
 			name: "user changed",
@@ -2472,7 +2472,7 @@ func Test_configChanged(t *testing.T) {
 					},
 				},
 			},
-			exp: true,
+			changed: true,
 		},
 		{
 			name: "config changed",
@@ -2496,7 +2496,7 @@ func Test_configChanged(t *testing.T) {
 					},
 				},
 			},
-			exp: true,
+			changed: true,
 		},
 		{
 			name: "template body changed",
@@ -2520,7 +2520,7 @@ func Test_configChanged(t *testing.T) {
 					},
 				},
 			},
-			exp: true,
+			changed: true,
 		},
 		{
 			name: "template name changed",
@@ -2544,7 +2544,7 @@ func Test_configChanged(t *testing.T) {
 					},
 				},
 			},
-			exp: true,
+			changed: true,
 		},
 		{
 			name: "template added",
@@ -2572,7 +2572,7 @@ func Test_configChanged(t *testing.T) {
 					},
 				},
 			},
-			exp: true,
+			changed: true,
 		},
 		{
 			name: "template removed",
@@ -2600,14 +2600,14 @@ func Test_configChanged(t *testing.T) {
 					},
 				},
 			},
-			exp: true,
+			changed: true,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r := configChanged(c.left, c.right)
-			require.Equal(t, c.exp, r)
+			require.Equal(t, c.changed, r)
 		})
 	}
 }
