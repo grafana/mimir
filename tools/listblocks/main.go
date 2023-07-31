@@ -65,7 +65,7 @@ func main() {
 	flag.BoolVar(&cfg.showStats, "show-stats", false, "Show block stats (number of series, chunks, samples)")
 
 	// Parse CLI flags.
-	if err := util.ParseFlags(flag.CommandLine); err != nil {
+	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}

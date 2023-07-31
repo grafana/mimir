@@ -53,7 +53,7 @@ func main() {
 	flag.StringVar(&cfg.sorting, "sorting", compactor.CompactionOrderOldestFirst, "One of: "+strings.Join(compactor.CompactionOrders, ", ")+".")
 
 	// Parse CLI arguments.
-	if err := util.ParseFlags(flag.CommandLine); err != nil {
+	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}

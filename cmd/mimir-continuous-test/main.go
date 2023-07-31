@@ -43,7 +43,7 @@ func main() {
 	cfg := &Config{}
 	cfg.RegisterFlags(flag.CommandLine)
 
-	if err := util.ParseFlags(flag.CommandLine); err != nil {
+	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}

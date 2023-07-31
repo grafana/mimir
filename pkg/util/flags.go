@@ -57,9 +57,9 @@ func ParseFlagsAndArguments(f *flag.FlagSet) ([]string, error) {
 	return f.Args(), err
 }
 
-// ParseFlags calls Parse() on the input flag.FlagSet and enforces no arguments have been parsed.
+// ParseFlagsWithoutArguments calls Parse() on the input flag.FlagSet and enforces no arguments have been parsed.
 // This utility should be called whenever we only expect CLI flags but no arguments.
-func ParseFlags(f *flag.FlagSet) error {
+func ParseFlagsWithoutArguments(f *flag.FlagSet) error {
 	if err := f.Parse(os.Args[1:]); err != nil {
 		return err
 	}

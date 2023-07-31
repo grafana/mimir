@@ -42,7 +42,7 @@ func main() {
 	httpServer := flag.String("http-listen", ":18080", "Listen address for HTTP server (useful for profiling of this tool)")
 
 	// Parse CLI arguments.
-	if err := util.ParseFlags(flag.CommandLine); err != nil {
+	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}

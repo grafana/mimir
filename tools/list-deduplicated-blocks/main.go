@@ -48,7 +48,7 @@ func main() {
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 
 	// Parse CLI arguments.
-	if err := util.ParseFlags(flag.CommandLine); err != nil {
+	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}
