@@ -15,6 +15,7 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -24,7 +25,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
@@ -53,7 +53,7 @@ func main() {
 	flag.StringVar(&cfg.sorting, "sorting", compactor.CompactionOrderOldestFirst, "One of: "+strings.Join(compactor.CompactionOrders, ", ")+".")
 
 	// Parse CLI arguments.
-	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatalln(err.Error())
 	}
 

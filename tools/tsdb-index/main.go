@@ -10,14 +10,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var logger = log.NewLogfmtLogger(os.Stderr)
@@ -30,7 +29,7 @@ func main() {
 	printChunks := flag.Bool("show-chunks", false, "Print chunk details")
 
 	// Parse CLI arguments.
-	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)

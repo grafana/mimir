@@ -18,6 +18,7 @@ import (
 
 	gklog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/logging"
@@ -26,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -54,7 +54,7 @@ func main() {
 	}
 
 	// Parse CLI arguments.
-	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		exitWithMessage(err.Error())
 	}
 

@@ -13,8 +13,9 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/grafana/dskit/flagext"
+
 	"github.com/grafana/mimir/pkg/mimir"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/tools/doc-generator/parse"
 )
@@ -135,7 +136,7 @@ func main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	// Parse CLI arguments.
-	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)

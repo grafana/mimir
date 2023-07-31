@@ -324,7 +324,7 @@ lint: check-makefiles
 
 	# Do not directly call flag.Parse() and argument getters, to try to reduce risk of misuse.
 	faillint -paths \
-		"flag.{Parse,NArg,Arg,Args}=github.com/grafana/mimir/pkg/util.{ParseFlagsAndArguments,ParseFlagsWithoutArguments}" \
+		"flag.{Parse,NArg,Arg,Args}=github.com/grafana/dskit/flagext.{ParseFlagsAndArguments,ParseFlagsWithoutArguments}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 format: ## Run gofmt and goimports.

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -48,7 +49,7 @@ func main() {
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 
 	// Parse CLI arguments.
-	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatalln(err.Error())
 	}
 

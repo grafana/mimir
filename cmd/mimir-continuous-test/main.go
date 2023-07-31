@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/weaveworks/common/logging"
@@ -16,7 +17,6 @@ import (
 	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/continuoustest"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -43,7 +43,7 @@ func main() {
 	cfg := &Config{}
 	cfg.RegisterFlags(flag.CommandLine)
 
-	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}

@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -130,7 +129,7 @@ func main() {
 	cfg.RegisterFlags(flag.CommandLine)
 
 	// Parse CLI arguments.
-	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}

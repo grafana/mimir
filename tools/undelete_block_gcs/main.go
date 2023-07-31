@@ -14,16 +14,15 @@ import (
 	"sync"
 
 	"cloud.google.com/go/storage"
+	"github.com/grafana/dskit/flagext"
 	"google.golang.org/api/iterator"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
 	concurrency := flag.Int("concurrency", 8, "number of concurrent goroutines")
 
 	// Parse CLI arguments.
-	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatalln(err.Error())
 	}
 

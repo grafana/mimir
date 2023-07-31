@@ -9,16 +9,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
 	seconds := flag.Bool("seconds", false, "Print timestamp as unix timestamp in seconds")
 
 	// Parse CLI arguments.
-	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)

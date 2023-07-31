@@ -11,9 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/regexp"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -118,7 +117,7 @@ func addLicense(dir string) error {
 
 func main() {
 	// Parse CLI arguments.
-	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)

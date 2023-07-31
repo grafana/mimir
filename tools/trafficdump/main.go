@@ -24,9 +24,8 @@ import (
 	"github.com/google/gopacket/pcap"
 	"github.com/google/gopacket/tcpassembly"
 	"github.com/google/gopacket/tcpassembly/tcpreader"
+	"github.com/grafana/dskit/flagext"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
@@ -42,7 +41,7 @@ func main() {
 	httpServer := flag.String("http-listen", ":18080", "Listen address for HTTP server (useful for profiling of this tool)")
 
 	// Parse CLI arguments.
-	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatalln(err.Error())
 	}
 

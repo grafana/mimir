@@ -14,7 +14,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/dskit/flagext"
 )
 
 type Config struct {
@@ -30,7 +30,7 @@ func main() {
 	flag.StringVar(&cfg.TenantID, "tenant-id", "", "Tenant ID to inject to proxied requests.")
 
 	// Parse CLI arguments.
-	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatalln(err.Error())
 	}
 

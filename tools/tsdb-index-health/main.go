@@ -9,9 +9,9 @@ import (
 	"os"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var logger = log.NewLogfmtLogger(os.Stderr)
@@ -28,7 +28,7 @@ func main() {
 	}
 
 	// Parse CLI arguments.
-	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)

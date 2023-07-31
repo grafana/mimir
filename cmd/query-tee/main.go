@@ -11,12 +11,12 @@ import (
 	"os"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/server"
 
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/tools/querytee"
@@ -38,7 +38,7 @@ func main() {
 	cfg.ProxyConfig.RegisterFlags(flag.CommandLine)
 
 	// Parse CLI arguments.
-	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -29,7 +30,7 @@ func main() {
 	flag.IntVar(&shards, "shard-count", 0, "number of shards")
 
 	// Parse CLI arguments.
-	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)

@@ -10,10 +10,9 @@ import (
 	"os"
 	"unsafe"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
@@ -21,7 +20,7 @@ func main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	// Parse CLI arguments.
-	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
