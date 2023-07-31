@@ -10,6 +10,7 @@ import (
 	"os"
 	"unsafe"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
@@ -18,9 +19,17 @@ func main() {
 	// Clean up all flags registered via init() methods of 3rd-party libraries.
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
-	flag.Parse()
+	// Parse CLI arguments.
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
 
-	filepath := flag.Arg(0)
+	if len(args) != 1 {
+		log.Fatalf("the command expect 1 argument but %d was provided\n", len(args))
+	}
+
+	filepath := args[0]
 
 	f, err := fileutil.OpenMmapFile(filepath)
 	if err != nil {

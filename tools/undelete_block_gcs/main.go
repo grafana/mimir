@@ -14,16 +14,21 @@ import (
 	"sync"
 
 	"cloud.google.com/go/storage"
+	"github.com/grafana/dskit/flagext"
 	"google.golang.org/api/iterator"
 )
 
 func main() {
 	concurrency := flag.Int("concurrency", 8, "number of concurrent goroutines")
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatalln(err.Error())
+	}
 
 	client, err := storage.NewClient(context.Background())
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 
 	ch := make(chan string)
