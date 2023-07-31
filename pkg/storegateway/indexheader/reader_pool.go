@@ -38,10 +38,11 @@ func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 // and automatically close them once the idle timeout is reached. A closed lazy reader
 // will be automatically re-opened upon next usage.
 type ReaderPool struct {
-	lazyReaderEnabled     bool
-	lazyReaderIdleTimeout time.Duration
-	logger                log.Logger
-	metrics               *ReaderPoolMetrics
+	lazyReaderEnabled        bool
+	lazyReaderIdleTimeout    time.Duration
+	sparsePersistenceEnabled bool
+	logger                   log.Logger
+	metrics                  *ReaderPoolMetrics
 
 	// Gate used to limit the number of concurrent index-header loads.
 	lazyLoadingGate gate.Gate
@@ -55,8 +56,8 @@ type ReaderPool struct {
 }
 
 // NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers if enabled.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, lazyLoadingGate, metrics)
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, sparsePersistenceEnabled, lazyLoadingGate, metrics)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -78,15 +79,16 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
 	return &ReaderPool{
-		logger:                logger,
-		metrics:               metrics,
-		lazyReaderEnabled:     lazyReaderEnabled,
-		lazyReaderIdleTimeout: lazyReaderIdleTimeout,
-		lazyLoadingGate:       lazyLoadingGate,
-		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
-		close:                 make(chan struct{}),
+		logger:                   logger,
+		metrics:                  metrics,
+		lazyReaderEnabled:        lazyReaderEnabled,
+		lazyReaderIdleTimeout:    lazyReaderIdleTimeout,
+		sparsePersistenceEnabled: sparsePersistenceEnabled,
+		lazyLoadingGate:          lazyLoadingGate,
+		lazyReaders:              make(map[*LazyBinaryReader]struct{}),
+		close:                    make(chan struct{}),
 	}
 }
 
@@ -99,7 +101,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	var err error
 
 	readerFactory = func() (Reader, error) {
-		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
+		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, p.sparsePersistenceEnabled, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
 	}
 
 	if p.lazyReaderEnabled {
