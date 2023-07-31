@@ -7474,14 +7474,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"get\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"get\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -7563,14 +7563,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"get_range\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"get_range\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -7652,14 +7652,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"exists\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"exists\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -7753,14 +7753,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"attributes\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"attributes\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -7842,14 +7842,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"upload\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"upload\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -7931,14 +7931,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"delete\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",operation=\"delete\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -8007,7 +8007,7 @@ data:
                       "value": "default"
                    },
                    "hide": 0,
-                   "label": "Data Source",
+                   "label": "Data source",
                    "name": "datasource",
                    "options": [ ],
                    "query": "prometheus",
