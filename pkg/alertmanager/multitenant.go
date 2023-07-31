@@ -1304,11 +1304,11 @@ func configChanged(left, right alertspb.AlertConfigDesc) bool {
 	}
 
 	for _, tm := range right.Templates {
-		corr, ok := existing[tm.Filename]
+		corresponding, ok := existing[tm.Filename]
 		if !ok {
 			return true // Right has a template that left does not.
 		}
-		if corr != tm.Body {
+		if corresponding != tm.Body {
 			return true // The template content is different.
 		}
 		delete(existing, tm.Filename)
