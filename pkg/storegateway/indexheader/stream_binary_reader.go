@@ -190,7 +190,7 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(ctx context.Context, logg
 		spanLog.Span.Finish()
 	}()
 
-	level.Debug(logger).Log("msg", "reading from sparse index-header file", "path", sparseHeadersPath)
+	level.Info(spanLog).Log("msg", "reading from sparse index-header file", "path", sparseHeadersPath)
 
 	sparseHeaders := &indexheaderpb.Sparse{}
 
@@ -232,7 +232,7 @@ func (r *StreamBinaryReader) loadFromIndexHeader(ctx context.Context, logger log
 		spanLog.Span.Finish()
 	}()
 
-	level.Debug(logger).Log("msg", "constructing sparse index-header")
+	level.Info(spanLog).Log("msg", "constructing sparse index-header")
 
 	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
 	if err != nil {
@@ -257,7 +257,7 @@ func writeSparseHeadersToFile(ctx context.Context, logger log.Logger, id ulid.UL
 		spanLog.Span.Finish()
 	}()
 
-	level.Debug(logger).Log("msg", "writing sparse index-header to disk", "path", sparseHeadersPath)
+	level.Info(spanLog).Log("msg", "writing sparse index-header to disk", "path", sparseHeadersPath)
 
 	sparseHeaders := &indexheaderpb.Sparse{}
 
