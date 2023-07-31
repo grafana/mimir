@@ -55,8 +55,7 @@ func main() {
 
 	// Parse CLI arguments.
 	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		exitWithMessage(err.Error())
 	}
 
 	logger := log.NewDefaultLogger(cfg.LogLevel, cfg.LogFormat)

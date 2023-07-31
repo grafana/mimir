@@ -7,13 +7,11 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -33,8 +31,7 @@ func main() {
 
 	// Parse CLI arguments.
 	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		log.Fatalln(err.Error())
 	}
 
 	// Parse remote URL.

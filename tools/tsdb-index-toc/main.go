@@ -23,13 +23,11 @@ func main() {
 	// Parse CLI arguments.
 	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		log.Fatalln(err.Error())
 	}
 
 	if len(args) != 1 {
-		fmt.Fprintf(os.Stderr, "the command expect 1 argument but %d was provided\n", len(args))
-		os.Exit(1)
+		log.Fatalf("the command expect 1 argument but %d was provided\n", len(args))
 	}
 
 	filepath := args[0]

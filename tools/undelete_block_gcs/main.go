@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -25,13 +24,12 @@ func main() {
 
 	// Parse CLI arguments.
 	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		log.Fatalln(err.Error())
 	}
 
 	client, err := storage.NewClient(context.Background())
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 
 	ch := make(chan string)

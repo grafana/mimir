@@ -66,8 +66,7 @@ func main() {
 
 	// Parse CLI flags.
 	if err := util.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		log.Fatalln(err.Error())
 	}
 
 	if cfg.userID == "" {
