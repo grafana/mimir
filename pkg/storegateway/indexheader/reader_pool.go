@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 )
 
 var lazyLoadedHeadersListFile = "lazy-loaded.json"
+var eagerLoadOOMMarkerFile = "eager-load-oom-marker.txt"
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
 type ReaderPoolMetrics struct {
@@ -191,8 +193,9 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	if p.lazyReaderEnabled {
 		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
 		if p.eagerLoadReaderEnabled && p.lazyLoadedHeadersSnapshot != nil {
+			oomMarkerPath := filepath.Join(dir, id.String(), eagerLoadOOMMarkerFile)
 			if p.lazyLoadedHeadersSnapshot.IndexHeaderLastUsedTime[id] > 0 {
-				lazyBinaryReader.EagerLoad()
+				p.tryEagerLoadIndexHeadersSnapshot(lazyBinaryReader, oomMarkerPath)
 			}
 		}
 		reader, err = lazyBinaryReader, lazyErr
@@ -212,6 +215,24 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	}
 
 	return reader, err
+}
+
+func (p *ReaderPool) tryEagerLoadIndexHeadersSnapshot(lazyBinaryReader *LazyBinaryReader, oomMarkerPath string) {
+	eagerLoadOOMMarkerExists, err := atomicfs.Exists(oomMarkerPath)
+	if err != nil {
+		level.Warn(p.logger).Log("msg", "checking eager-load-oom-marker file failed", "file", oomMarkerPath, "err", err)
+		return
+	}
+	if !eagerLoadOOMMarkerExists {
+		atomicfs.CreateFile(oomMarkerPath, strings.NewReader(time.Now().UTC().Format(time.RFC3339)))
+		lazyBinaryReader.EagerLoad()
+		oomMarkerRemoveErr := os.Remove(oomMarkerPath)
+		if oomMarkerRemoveErr != nil {
+			level.Warn(p.logger).Log("msg", "removing eager-load oom marker file failed", "file", oomMarkerPath, "err", oomMarkerRemoveErr)
+		}
+	} else {
+		level.Warn(p.logger).Log("msg", "eager-load-oom-marker file presents; skipping eager loading", "file", oomMarkerPath, "err", err)
+	}
 }
 
 // Close the pool and stop checking for idle readers. No reader tracked by this pool
