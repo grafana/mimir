@@ -309,8 +309,6 @@ func (r *LazyBinaryReader) unloadIfIdleSince(ts int64) error {
 	r.readerMx.Lock()
 	defer r.readerMx.Unlock()
 
-	r.readerInUse.Wait()
-
 	// Nothing to do if already unloaded.
 	if r.reader == nil {
 		return nil
@@ -320,6 +318,9 @@ func (r *LazyBinaryReader) unloadIfIdleSince(ts int64) error {
 	if ts > 0 && r.usedAt.Load() > ts {
 		return errNotIdle
 	}
+
+	// Wait until all users finished using current reader.
+	r.readerInUse.Wait()
 
 	r.metrics.unloadCount.Inc()
 	if err := r.reader.Close(); err != nil {
