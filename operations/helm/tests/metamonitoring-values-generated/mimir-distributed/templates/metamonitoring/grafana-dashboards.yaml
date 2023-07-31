@@ -1261,7 +1261,7 @@ data:
                             "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\", route=~\"/alertmanagerpb.Alertmanager/HandleRequest\"})) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A",
                             "step": 10
                          },
@@ -1269,7 +1269,7 @@ data:
                             "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\", route=~\"/alertmanagerpb.Alertmanager/HandleRequest\"})) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B",
                             "step": 10
                          },
@@ -1716,14 +1716,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(cortex_alertmanager_notification_latency_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(cortex_alertmanager_notification_latency_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -1926,14 +1926,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"attributes\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"attributes\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -2015,14 +2015,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"exists\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"exists\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -2116,14 +2116,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -2205,14 +2205,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get_range\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get_range\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -2294,14 +2294,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"upload\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"upload\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -2383,14 +2383,14 @@ data:
                             "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"delete\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
                             "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"delete\"}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -2738,7 +2738,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Syncs/sec",
+                      "title": "Syncs / sec",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -2813,7 +2813,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Syncs/sec (by reason)",
+                      "title": "Syncs / sec (by reason)",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -2888,7 +2888,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Ring check errors/sec",
+                      "title": "Ring check errors / sec",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -2976,7 +2976,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Initial syncs /sec",
+                      "title": "Initial syncs / sec",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -3045,7 +3045,7 @@ data:
                             "format": "time_series",
                             "interval": "1m",
                             "intervalFactor": 2,
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
@@ -3053,7 +3053,7 @@ data:
                             "format": "time_series",
                             "interval": "1m",
                             "intervalFactor": 2,
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
@@ -3155,7 +3155,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Fetch state from other alertmanagers /sec",
+                      "title": "Fetch state from other alertmanagers / sec",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -3252,7 +3252,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Replicate state to other alertmanagers /sec",
+                      "title": "Replicate state to other alertmanagers / sec",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -3337,7 +3337,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Merge state from other alertmanagers /sec",
+                      "title": "Merge state from other alertmanagers / sec",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -3422,7 +3422,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Persist state to remote storage /sec",
+                      "title": "Persist state to remote storage / sec",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
