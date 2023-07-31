@@ -109,6 +109,14 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errInvalidEndpointPrefix,
 		},
+		"should pass if native_aws_auth_enabled is set": {
+			setup: func() *Config {
+				return &Config{
+					SignatureVersion:     SignatureVersionV4,
+					NativeAWSAuthEnabled: true,
+				}
+			},
+		},
 	}
 
 	for testName, testData := range tests {
