@@ -52,10 +52,16 @@ func Usage(printAll bool, configs ...interface{}) error {
 					fieldCat = fieldcategory.Experimental
 				case "deprecated":
 					fieldCat = fieldcategory.Deprecated
+				case "hidden":
+					fieldCat = fieldcategory.Hidden
 				}
 			}
 		}
 
+		if fieldCat == fieldcategory.Hidden {
+			// Don't print help for this flag since it's hidden
+			return
+		}
 		if fieldCat != fieldcategory.Basic && !printAll {
 			// Don't print help for this flag since we're supposed to print only basic flags
 			return
