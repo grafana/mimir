@@ -116,6 +116,7 @@
 * [CHANGE] Fix reference to `get-started` documentation directory. #5476
 * [CHANGE] Fix link to external OTLP/HTTP documentation.
 * [ENHANCEMENT] Improved `MimirRulerTooManyFailedQueries` runbook. #5586
+* [ENHANCEMENT] Improved "Recover accidentally deleted blocks" runbook. #5620
 
 ### Tools
 
