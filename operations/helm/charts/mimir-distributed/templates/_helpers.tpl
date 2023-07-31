@@ -241,9 +241,9 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.podLabels" -}}
-{{- with .ctx.Values.global.podLabels }}
+{{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
-{{- end }}
+{{ end }}
 {{- if .ctx.Values.enterprise.legacyLabels }}
 {{- if .component -}}
 app: {{ include "mimir.name" .ctx }}-{{ .component }}
