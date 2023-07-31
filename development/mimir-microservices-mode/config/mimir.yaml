@@ -1,6 +1,7 @@
 multitenancy_enabled: false
 
 distributor:
+  remote_timeout: 15s
   pool:
     health_check_ingesters: true
   ring:

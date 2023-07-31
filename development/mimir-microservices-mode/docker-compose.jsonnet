@@ -53,9 +53,18 @@ std.manifestYamlDoc({
 
   gateway:: {
     'gateway-1': {
-      //image: 'us.gcr.io/kubernetes-dev/cloud-backend-gateway:master-a08103ce-WIP',
-      image: 'us.gcr.io/kubernetes-dev/cortex-gateway:experiment-with-grpc-bounded-load-balancing-f3ae366d',
-      command: ['/usr/bin/cloud-backend-gateway', '-server.http-listen-port=7999', '-auth.disabled', '-cortex.oauth.enabled=false', '-auditlogging.enabled=false', '-cortex.distributor.endpoint=dns:///distributor:9000', '-instrumentation.server.port=7998', '-gateway.grpc-load-balancing-policy=bounded_load'],
+      image: 'us.gcr.io/kubernetes-dev/cortex-gateway:experiment-with-grpc-bounded-load-balancing-6d456dfc',
+      command: [
+        '/usr/bin/cloud-backend-gateway',
+        '-server.http-listen-port=7999',
+        '-auth.disabled',
+        '-cortex.oauth.enabled=false',
+        '-auditlogging.enabled=false',
+        '-cortex.distributor.endpoint=dns:///distributor:9000',
+        '-cortex.write.timeout=15s',
+        '-instrumentation.server.port=7998',
+        '-gateway.grpc-load-balancing-policy=bounded_load',
+      ],
       entrypoint: '',
       ports: ['7998:7998', '7999:7999'],
     },

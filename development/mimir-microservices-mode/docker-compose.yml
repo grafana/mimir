@@ -56,10 +56,10 @@
       - "-cortex.oauth.enabled=false"
       - "-auditlogging.enabled=false"
       - "-cortex.distributor.endpoint=dns:///distributor:9000"
+      - "-cortex.write.timeout=15s"
       - "-instrumentation.server.port=7998"
-      - "-gateway.grpc-load-balancing-policy=bounded_load"
     "entrypoint": ""
-    "image": "us.gcr.io/kubernetes-dev/cortex-gateway:experiment-with-grpc-bounded-load-balancing-f3ae366d"
+    "image": "us.gcr.io/kubernetes-dev/cortex-gateway:experiment-with-grpc-bounded-load-balancing-6d456dfc"
     "ports":
       - "7998:7998"
       - "7999:7999"
