@@ -24,6 +24,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
@@ -50,7 +51,12 @@ func main() {
 	flag.IntVar(&cfg.shardCount, "shard-count", 4, "Shard count")
 	flag.IntVar(&cfg.splitGroups, "split-groups", 4, "Split groups")
 	flag.StringVar(&cfg.sorting, "sorting", compactor.CompactionOrderOldestFirst, "One of: "+strings.Join(compactor.CompactionOrders, ", ")+".")
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := util.ParseFlags(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	if cfg.userID == "" {
 		log.Fatalln("no user specified")

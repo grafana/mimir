@@ -322,6 +322,11 @@ lint: check-makefiles
 		"github.com/grafana/dskit/ring.{Read}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# Do not directly call flag.Parse() and argument getters, to try to reduce risk of misuse.
+	faillint -paths \
+		"flag.{Parse,NArg,Arg,Args}=github.com/grafana/mimir/pkg/util.{ParseFlagsAndArguments,ParseFlags}" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;

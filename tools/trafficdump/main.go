@@ -25,6 +25,8 @@ import (
 	"github.com/google/gopacket/tcpassembly"
 	"github.com/google/gopacket/tcpassembly/tcpreader"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
@@ -39,7 +41,11 @@ func main() {
 	assemblersMaxPagesPerConnection := flag.Int("assembler.max-pages-per-connection", 0, "Upper limit on the number of pages buffered for a single connection. If this limit is reached for a connection, the smallest sequence number will be flushed, along with any contiguous data. If <= 0, this is ignored.")
 	httpServer := flag.String("http-listen", ":18080", "Listen address for HTTP server (useful for profiling of this tool)")
 
-	flag.Parse()
+	// Parse CLI arguments.
+	if err := util.ParseFlags(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	if *httpServer != "" {
 		go func() {

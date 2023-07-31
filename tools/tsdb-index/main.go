@@ -16,6 +16,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 var logger = log.NewLogfmtLogger(os.Stderr)
@@ -26,9 +28,15 @@ func main() {
 
 	metricSelector := flag.String("select", "", "PromQL metric selector")
 	printChunks := flag.Bool("show-chunks", false, "Print chunk details")
-	flag.Parse()
 
-	if flag.NArg() == 0 {
+	// Parse CLI arguments.
+	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	if len(args) == 0 {
 		fmt.Println("No block directory specified.")
 		return
 	}
@@ -51,7 +59,7 @@ func main() {
 		level.Error(logger).Log(matchersStr...)
 	}
 
-	for _, blockDir := range flag.Args() {
+	for _, blockDir := range args {
 		printBlockIndex(blockDir, *printChunks, matchers)
 	}
 }

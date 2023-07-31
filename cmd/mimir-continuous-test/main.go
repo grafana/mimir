@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/go-kit/log/level"
@@ -15,6 +16,7 @@ import (
 	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/continuoustest"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -37,10 +39,14 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func main() {
-	// Parse CLI flags.
+	// Parse CLI arguments.
 	cfg := &Config{}
 	cfg.RegisterFlags(flag.CommandLine)
-	flag.Parse()
+
+	if err := util.ParseFlags(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	util_log.InitLogger(&server.Config{
 		LogLevel: cfg.LogLevel,

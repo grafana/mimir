@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/grafana/regexp"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -115,14 +117,19 @@ func addLicense(dir string) error {
 }
 
 func main() {
-	// Parse the flags.
-	flag.Parse()
-	if flag.NArg() == 0 {
+	// Parse CLI arguments.
+	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: add-license <dir> ...")
 		os.Exit(1)
 	}
 
-	for _, dir := range flag.Args() {
+	for _, dir := range args {
 		if err := addLicense(dir); err != nil {
 			log.Fatal(err)
 		}

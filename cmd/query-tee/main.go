@@ -7,6 +7,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/go-kit/log/level"
@@ -15,6 +16,7 @@ import (
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/server"
 
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/tools/querytee"
@@ -34,7 +36,12 @@ func main() {
 	flag.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Path prefix for API paths (query-tee will accept Prometheus API calls at <prefix>/api/v1/...). Example: -server.path-prefix=/prometheus")
 	cfg.LogLevel.RegisterFlags(flag.CommandLine)
 	cfg.ProxyConfig.RegisterFlags(flag.CommandLine)
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := util.ParseFlags(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	util_log.InitLogger(&server.Config{
 		LogLevel: cfg.LogLevel,

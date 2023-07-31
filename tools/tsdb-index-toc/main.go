@@ -12,15 +12,27 @@ import (
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
 	// Clean up all flags registered via init() methods of 3rd-party libraries.
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
-	flag.Parse()
+	// Parse CLI arguments.
+	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
-	filepath := flag.Arg(0)
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("the command expect 1 argument but %d was provided", len(args)))
+		os.Exit(1)
+	}
+
+	filepath := args[0]
 
 	f, err := fileutil.OpenMmapFile(filepath)
 	if err != nil {

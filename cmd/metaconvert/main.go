@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -51,7 +52,12 @@ func main() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
 		flag.PrintDefaults()
 	}
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := util.ParseFlags(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	logger := log.NewDefaultLogger(cfg.LogLevel, cfg.LogFormat)
 

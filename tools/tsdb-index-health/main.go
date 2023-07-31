@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 var logger = log.NewLogfmtLogger(os.Stderr)
@@ -26,14 +27,19 @@ func main() {
 		flag.PrintDefaults()
 	}
 
-	flag.Parse()
+	// Parse CLI arguments.
+	args, err := util.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
-	if flag.NArg() == 0 {
+	if len(args) == 0 {
 		flag.Usage()
 		return
 	}
 
-	for _, b := range flag.Args() {
+	for _, b := range args {
 		meta, err := block.ReadMetaFromDir(b)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to read meta from block dir", b, "error:", err)

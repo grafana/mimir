@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -15,11 +16,18 @@ import (
 
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/iterator"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
 	concurrency := flag.Int("concurrency", 8, "number of concurrent goroutines")
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := util.ParseFlags(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	client, err := storage.NewClient(context.Background())
 	if err != nil {

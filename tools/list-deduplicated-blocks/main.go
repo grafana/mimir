@@ -46,7 +46,12 @@ func main() {
 	logger := gokitlog.NewNopLogger()
 	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := util.ParseFlags(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	if cfg.userID == "" {
 		log.Fatalln("no user specified")
