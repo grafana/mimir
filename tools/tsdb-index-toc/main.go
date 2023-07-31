@@ -28,7 +28,7 @@ func main() {
 	}
 
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("the command expect 1 argument but %d was provided", len(args)))
+		fmt.Fprintf(os.Stderr, "the command expect 1 argument but %d was provided\n", len(args))
 		os.Exit(1)
 	}
 
