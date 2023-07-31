@@ -121,6 +121,8 @@
 ### Tools
 
 * [CHANGE] copyblocks: add support for S3 and the ability to copy between different object storage services. Due to this, the `-source-service` and `-destination-service` flags are now required and the `-service` flag has been removed. #5486
+* [ENHANCEMENT] ulidtime: add -seconds flag to print timestamps as Unix timestamps. #5621
+* [ENHANCEMENT] ulidtime: exit with status code 1 if some ULIDs can't be parsed. #5621
 * [BUGFIX] Stop tools from panicking when `-help` flag is passed. #5412
 * [BUGFIX] Remove github.com/golang/glog command line flags from tools. #5413
 
