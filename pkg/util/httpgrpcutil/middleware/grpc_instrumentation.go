@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/server"
 	"google.golang.org/grpc"
@@ -34,8 +35,8 @@ func OpenTracingHTTPGRPCUnaryServerInterceptor(tracer opentracing.Tracer) grpc.U
 				// decorate existing parent span with attributes
 				fullReqURL := httpGRPCReq.GetUrl()
 				reqMethod := httpGRPCReq.GetMethod()
-				span := opentracing.SpanFromContext(ctx)
-				span.SetTag("http.request.method", reqMethod).SetTag("url.path", fullReqURL)
+				parentSpan := opentracing.SpanFromContext(ctx)
+				parentSpan.SetTag("http.request.method", reqMethod).SetTag("url.path", fullReqURL)
 
 				// start & decorate child span with more specific name, attempting to follow OTEL HTTP conventions:
 				//   "HTTP server span names SHOULD be {http.request.method} {http.route}
@@ -52,8 +53,13 @@ func OpenTracingHTTPGRPCUnaryServerInterceptor(tracer opentracing.Tracer) grpc.U
 
 				}
 
-				childSpan, _ := opentracing.StartSpanFromContextWithTracer(ctx, tracer, childSpanName)
-				childSpan.SetTag("http.request.method", reqMethod).SetTag("url.path", fullReqURL)
+				startSpanOpts := []opentracing.StartSpanOption{
+					ext.SpanKindRPCServer,
+					opentracing.Tag{Key: string(ext.Component), Value: "gRPC"},
+					opentracing.Tag{Key: "http.request.method", Value: reqMethod},
+					opentracing.Tag{Key: "url.path", Value: fullReqURL},
+				}
+				childSpan, _ := opentracing.StartSpanFromContextWithTracer(ctx, tracer, childSpanName, startSpanOpts...)
 				defer childSpan.Finish()
 			}
 		}
