@@ -2606,7 +2606,7 @@ func Test_configChanged(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r := configChanged(c.left, c.right)
-			require.Equal(t, c.changed, r)
+			assert.Equal(t, c.changed, r)
 		})
 	}
 }
