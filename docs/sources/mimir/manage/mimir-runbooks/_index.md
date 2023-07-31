@@ -1876,6 +1876,28 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 
 _This runbook assumes you've enabled versioning in your GCS bucket and the retention of deleted blocks didn't expire yet._
 
+#### Recover accidentally deleted blocks using `undelete_block_gcs`
+
+Step 1: Compile the `undelete_block_gcs` tool, whose sources are available in the Mimir repository at `tools/undelete_block_gcs/`.
+
+Step 2: Build a list of TSDB blocks to undelete and store it to a file named `deleted-list`. The file should contain the path of 1 block per line, prefixed by `gs://`. For example:
+
+```
+gs://bucket/tenant-1/01H6NCQVS3D3H6D8WGBZ9KB41Z
+gs://bucket/tenant-1/01H6NCR7HSZ8DHKEG9SSJ0QZKQ
+gs://bucket/tenant-1/01H6NCRBJTY8R1F4FQJ3B1QK9W
+```
+
+Step 3: Run the `undelete_block_gcs` tool to recover the deleted blocks:
+
+```
+cat deleted-list | undelete_block_gcs -concurrency 16
+```
+
+> **Note**: we recommend to try the `undelete_block_gcs` on a single block first, ensure that it gets recovered correctly and then run it against a bigger set of blocks to recover.
+
+#### Recover accidentally deleted blocks using `gsutil`
+
 These are just example actions but should give you a fair idea on how you could go about doing this. Read the [GCS doc](https://cloud.google.com/storage/docs/using-versioned-objects#gsutil_1) before you proceed.
 
 Step 1: Use `gsutil ls -l -a $BUCKET` to list all blocks, including the deleted ones. Now identify the deleted blocks and save the ones to restore in a file named `deleted-block-list` (one block per line).
@@ -1889,7 +1911,7 @@ Step 2: Once you have the `deleted-block-list`, you can now list all the objects
 while read block; do
 # '-a' includes non-current object versions / generations in the listing
 # '-r' requests a recursive listing.
-gsutil ls -a -r $block | grep "#" | grep --invert-match deletion-mark.json | grep --invert-match index.cache.json
+gsutil ls -a -r $block | grep "#" | grep --invert-match deletion-mark.json
 done < deleted-list > full-deleted-file-list
 ```
 
@@ -1900,7 +1922,7 @@ Step 3: Run the following script to restore the objects:
 ```
 while read file; do
 gsutil cp $file ${file%#*}
-done < full-deleted-list
+done < full-deleted-file-list
 ```
 
 ## Log lines
