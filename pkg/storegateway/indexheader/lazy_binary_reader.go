@@ -211,21 +211,18 @@ func (r *LazyBinaryReader) LabelNames() ([]string, error) {
 }
 
 // EagerLoadIndexHeadersSnapshot eagerly load index headers from the stored lazyLoadedHeadersSnapshot
-func (r *LazyBinaryReader) EagerLoadIndexHeadersSnapshot(lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) {
-	if lazyLoadedHeadersSnapshot != nil {
-		usedAtSnapshot := lazyLoadedHeadersSnapshot.IndexHeaderLastUsedTime[r.blockID]
-		if usedAtSnapshot > 0 {
-			r.readerMx.RLock()
-			defer r.readerMx.RUnlock()
+func (r *LazyBinaryReader) EagerLoadIndexHeadersSnapshot(usedAtSnapshot int64) {
+	if usedAtSnapshot > 0 {
+		r.readerMx.RLock()
+		defer r.readerMx.RUnlock()
 
-			if err := r.load(); err != nil {
-				level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", err)
-				return
-			}
-
-			r.usedAt.Store(usedAtSnapshot)
-			r.metrics.eagerLoadCount.Inc()
+		if err := r.load(); err != nil {
+			level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", err)
+			return
 		}
+
+		r.usedAt.Store(usedAtSnapshot)
+		r.metrics.eagerLoadCount.Inc()
 	}
 }
 

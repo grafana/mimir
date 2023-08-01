@@ -188,8 +188,11 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 
 	if p.lazyReaderEnabled {
 		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
-		if p.eagerLoadReaderEnabled {
-			lazyBinaryReader.EagerLoadIndexHeadersSnapshot(p.lazyLoadedHeadersSnapshot)
+		if p.eagerLoadReaderEnabled && p.lazyLoadedHeadersSnapshot != nil {
+			usedAtSnapshot := p.lazyLoadedHeadersSnapshot.IndexHeaderLastUsedTime[id]
+			if usedAtSnapshot > 0 {
+				lazyBinaryReader.EagerLoadIndexHeadersSnapshot(usedAtSnapshot)
+			}
 		}
 		reader, err = lazyBinaryReader, lazyErr
 	} else {
