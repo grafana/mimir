@@ -40,20 +40,6 @@ func Remove(p string) error {
 	return merr.Err()
 }
 
-// Exists returns true if the shutdown marker file exists on the given path, false otherwise
-func Exists(p string) (bool, error) {
-	s, err := os.Stat(p)
-	if err != nil && os.IsNotExist(err) {
-		return false, nil
-	}
-
-	if err != nil {
-		return false, err
-	}
-
-	return s.Mode().IsRegular(), nil
-}
-
 // GetPath returns the absolute path of the shutdown marker file
 func GetPath(dirPath string) string {
 	return path.Join(dirPath, shutdownMarkerFilename)
