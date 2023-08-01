@@ -466,8 +466,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		userBkt,
 		fetcher,
 		u.syncDirForUser(userID),
-		u.cfg.BucketStore.StreamingBatchSize,
-		u.cfg.BucketStore.ChunkRangesPerSeries,
+		u.cfg.BucketStore,
 		selectPostingsStrategy(u.logger, u.cfg.BucketStore.SeriesSelectionStrategyName, u.cfg.BucketStore.SelectionStrategies.WorstCaseSeriesPreference),
 		NewChunksLimiterFactory(func() uint64 {
 			return uint64(u.limits.MaxChunksPerQuery(userID))
@@ -476,12 +475,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 			return uint64(u.limits.MaxFetchedSeriesPerQuery(userID))
 		}),
 		u.partitioners,
-		u.cfg.BucketStore.BlockSyncConcurrency,
-		u.cfg.BucketStore.PostingOffsetsInMemSampling,
-		u.cfg.BucketStore.IndexHeader,
-		u.cfg.BucketStore.IndexHeaderLazyLoadingEnabled,
-		u.cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout,
-		u.cfg.BucketStore.IndexHeaderEagerLoadingStartupEnabled,
 		u.seriesHashCache,
 		u.bucketStoreMetrics,
 		bucketStoreOpts...,

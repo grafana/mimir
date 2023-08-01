@@ -42,6 +42,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
@@ -214,18 +215,11 @@ func NewBucketStore(
 	bkt objstore.InstrumentedBucketReader,
 	fetcher block.MetadataFetcher,
 	dir string,
-	maxSeriesPerBatch int,
-	numChunksRangesPerSeries int,
+	bucketStoreConfig tsdb.BucketStoreConfig,
 	postingsStrategy postingsSelectionStrategy,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
 	partitioners blockPartitioners,
-	blockSyncConcurrency int,
-	postingOffsetsInMemSampling int,
-	indexHeaderCfg indexheader.Config,
-	lazyIndexReaderEnabled bool,
-	lazyIndexReaderIdleTimeout time.Duration,
-	eagerLoadIndexReaderEnabled bool,
 	seriesHashCache *hashcache.SeriesHashCache,
 	metrics *BucketStoreMetrics,
 	options ...BucketStoreOption,
@@ -239,18 +233,18 @@ func NewBucketStore(
 		chunksCache:                 chunkscache.NoopCache{},
 		blocks:                      map[ulid.ULID]*bucketBlock{},
 		blockSet:                    newBucketBlockSet(),
-		blockSyncConcurrency:        blockSyncConcurrency,
+		blockSyncConcurrency:        bucketStoreConfig.BlockSyncConcurrency,
 		queryGate:                   gate.NewNoop(),
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioners:                partitioners,
-		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
-		indexHeaderCfg:              indexHeaderCfg,
+		postingOffsetsInMemSampling: bucketStoreConfig.PostingOffsetsInMemSampling,
+		indexHeaderCfg:              bucketStoreConfig.IndexHeader,
 		seriesHashCache:             seriesHashCache,
 		metrics:                     metrics,
 		userID:                      userID,
-		maxSeriesPerBatch:           maxSeriesPerBatch,
-		numChunksRangesPerSeries:    numChunksRangesPerSeries,
+		maxSeriesPerBatch:           bucketStoreConfig.StreamingBatchSize,
+		numChunksRangesPerSeries:    bucketStoreConfig.ChunkRangesPerSeries,
 		postingsStrategy:            postingsStrategy,
 	}
 
@@ -264,7 +258,7 @@ func NewBucketStore(
 		UserID: userID,
 	}
 	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, eagerLoadIndexReaderEnabled, metrics.indexHeaderReaderMetrics, lazyLoadedSnapshotConfig)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeaderLazyLoadingEnabled, bucketStoreConfig.IndexHeaderLazyLoadingIdleTimeout, bucketStoreConfig.IndexHeaderEagerLoadingStartupEnabled, metrics.indexHeaderReaderMetrics, lazyLoadedSnapshotConfig)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")

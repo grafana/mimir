@@ -115,10 +115,11 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 			tickerIdleReader := time.NewTicker(checkFreq)
 			defer tickerIdleReader.Stop()
 
-			var tickerLazyLoadPersist *time.Ticker
-			if p.eagerLoadReaderEnabled {
-				tickerLazyLoadPersist = time.NewTicker(time.Minute)
-				defer tickerLazyLoadPersist.Stop()
+			tickerLazyLoadPersist := time.NewTicker(time.Minute)
+			defer tickerLazyLoadPersist.Stop()
+			if !p.eagerLoadReaderEnabled {
+				// if eager load of lazy load index headers is not enabled, just stop the ticker now
+				tickerLazyLoadPersist.Stop()
 			}
 
 			for {
