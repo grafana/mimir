@@ -49,6 +49,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 
 	"github.com/grafana/dskit/tenant"
@@ -409,7 +410,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 	}
 
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
-	shutdownMarkerFound, err := shutdownmarker.Exists(shutdownMarkerPath)
+	shutdownMarkerFound, err := atomicfs.Exists(shutdownMarkerPath)
 	if err != nil {
 		return errors.Wrap(err, "failed to check ingester shutdown marker")
 	}
@@ -2679,7 +2680,7 @@ func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
 	switch r.Method {
 	case http.MethodGet:
-		exists, err := shutdownmarker.Exists(shutdownMarkerPath)
+		exists, err := atomicfs.Exists(shutdownMarkerPath)
 		if err != nil {
 			level.Error(i.logger).Log("msg", "unable to check for prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)

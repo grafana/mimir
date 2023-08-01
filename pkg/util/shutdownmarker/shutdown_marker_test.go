@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
 func TestShutdownMarker_GetPath(t *testing.T) {
@@ -18,14 +20,14 @@ func TestShutdownMarker_GetPath(t *testing.T) {
 func TestShutdownMarker_Create(t *testing.T) {
 	dir := t.TempDir()
 	shutdownMarkerPath := GetPath(dir)
-	exists, err := Exists(shutdownMarkerPath)
+	exists, err := atomicfs.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
 	require.False(t, exists)
 
 	err = Create(shutdownMarkerPath)
 	require.NoError(t, err)
 
-	exists, err = Exists(shutdownMarkerPath)
+	exists, err = atomicfs.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
 	require.True(t, exists)
 }
@@ -33,17 +35,17 @@ func TestShutdownMarker_Create(t *testing.T) {
 func TestShutdownMarker_Remove(t *testing.T) {
 	dir := t.TempDir()
 	shutdownMarkerPath := GetPath(dir)
-	exists, err := Exists(shutdownMarkerPath)
+	exists, err := atomicfs.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
 	require.False(t, exists)
 
 	require.Nil(t, Create(shutdownMarkerPath))
-	exists, err = Exists(shutdownMarkerPath)
+	exists, err = atomicfs.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
 	require.True(t, exists)
 
 	require.Nil(t, Remove(shutdownMarkerPath))
-	exists, err = Exists(shutdownMarkerPath)
+	exists, err = atomicfs.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
 	require.False(t, exists)
 }

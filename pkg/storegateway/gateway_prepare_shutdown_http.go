@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 )
 
@@ -34,7 +35,7 @@ func (g *StoreGateway) PrepareShutdownHandler(w http.ResponseWriter, req *http.R
 	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 	switch req.Method {
 	case http.MethodGet:
-		exists, err := shutdownmarker.Exists(shutdownMarkerPath)
+		exists, err := atomicfs.Exists(shutdownMarkerPath)
 		if err != nil {
 			level.Error(g.logger).Log("msg", "unable to check for prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -90,7 +91,7 @@ func (g *StoreGateway) unsetPrepareShutdown() {
 // previous attempt to shut down.
 func (g *StoreGateway) setPrepareShutdownFromShutdownMarker() error {
 	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
-	shutdownMarkerFound, err := shutdownmarker.Exists(shutdownMarkerPath)
+	shutdownMarkerFound, err := atomicfs.Exists(shutdownMarkerPath)
 	if err != nil {
 		return errors.Wrap(err, "failed to check store-gateway shutdown marker")
 	}

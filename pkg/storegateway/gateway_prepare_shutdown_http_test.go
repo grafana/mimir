@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -53,7 +54,7 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 
 	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 	// ensure that there is no shutdown marker
-	exists, err := shutdownmarker.Exists(shutdownMarkerPath)
+	exists, err := atomicfs.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
 	require.False(t, exists)
 
@@ -67,7 +68,7 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	g.PrepareShutdownHandler(response1, httptest.NewRequest("GET", "/store-gateway/prepare-shutdown", nil))
 	require.Equal(t, "unset\n", response1.Body.String())
 	require.Equal(t, 200, response1.Code)
-	exists, err = shutdownmarker.Exists(shutdownMarkerPath)
+	exists, err = atomicfs.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
 	require.False(t, exists)
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -88,7 +89,7 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 		cortex_storegateway_prepare_shutdown_requested 1
 	`), "cortex_storegateway_prepare_shutdown_requested"))
 
-	exists, err = shutdownmarker.Exists(shutdownMarkerPath)
+	exists, err = atomicfs.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
 	require.True(t, exists)
 	require.False(t, g.ringLifecycler.ShouldKeepInstanceInTheRingOnShutdown())
@@ -109,7 +110,7 @@ func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 		# TYPE cortex_storegateway_prepare_shutdown_requested gauge
 		cortex_storegateway_prepare_shutdown_requested 0
 	`), "cortex_storegateway_prepare_shutdown_requested"))
-	exists, err = shutdownmarker.Exists(shutdownMarkerPath)
+	exists, err = atomicfs.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
 	require.False(t, exists)
 	require.True(t, g.ringLifecycler.ShouldKeepInstanceInTheRingOnShutdown())
@@ -142,7 +143,7 @@ func TestStoreGateway_InitialisePrepareShutdownAtStartup(t *testing.T) {
 	err := shutdownmarker.Create(shutdownMarkerPath)
 	require.NoError(t, err)
 	// ensure that there is s shutdown marker
-	exists, err := shutdownmarker.Exists(shutdownMarkerPath)
+	exists, err := atomicfs.Exists(shutdownMarkerPath)
 	require.NoError(t, err)
 	require.True(t, exists)
 
