@@ -63,7 +63,6 @@ func CreateFileAndMove(tmpPath, finalPath string, data io.Reader) error {
 }
 
 // Exists returns true if a file existed in the path p.
-// TODO: move shutdown marker usage to use this instead
 func Exists(p string) (bool, error) {
 	s, err := os.Stat(p)
 	if err != nil && os.IsNotExist(err) {
