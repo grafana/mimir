@@ -193,9 +193,8 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	if p.lazyReaderEnabled {
 		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
 		if p.eagerLoadReaderEnabled && p.lazyLoadedHeadersSnapshot != nil {
-			oomMarkerPath := filepath.Join(dir, id.String(), eagerLoadOOMMarkerFile)
 			if p.lazyLoadedHeadersSnapshot.IndexHeaderLastUsedTime[id] > 0 {
-				p.tryEagerLoadIndexHeadersSnapshot(lazyBinaryReader, oomMarkerPath)
+				p.tryEagerLoadIndexHeadersSnapshot(lazyBinaryReader, dir, id)
 			}
 		}
 		reader, err = lazyBinaryReader, lazyErr
@@ -217,12 +216,15 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	return reader, err
 }
 
-func (p *ReaderPool) tryEagerLoadIndexHeadersSnapshot(lazyBinaryReader *LazyBinaryReader, oomMarkerPath string) {
+func (p *ReaderPool) tryEagerLoadIndexHeadersSnapshot(lazyBinaryReader *LazyBinaryReader, dir string, blockID ulid.ULID) {
+	oomMarkerPath := filepath.Join(dir, blockID.String(), eagerLoadOOMMarkerFile)
 	eagerLoadOOMMarkerExists, err := atomicfs.Exists(oomMarkerPath)
 	if err != nil {
 		level.Warn(p.logger).Log("msg", "checking eager-load-oom-marker file failed", "file", oomMarkerPath, "err", err)
 		return
 	}
+	defer os.Remove(oomMarkerPath)
+
 	if !eagerLoadOOMMarkerExists {
 		atomicfs.CreateFile(oomMarkerPath, strings.NewReader(time.Now().UTC().Format(time.RFC3339)))
 		lazyBinaryReader.EagerLoad()
@@ -231,7 +233,12 @@ func (p *ReaderPool) tryEagerLoadIndexHeadersSnapshot(lazyBinaryReader *LazyBina
 			level.Warn(p.logger).Log("msg", "removing eager-load oom marker file failed", "file", oomMarkerPath, "err", oomMarkerRemoveErr)
 		}
 	} else {
-		level.Warn(p.logger).Log("msg", "eager-load-oom-marker file presents; skipping eager loading", "file", oomMarkerPath, "err", err)
+		level.Warn(p.logger).Log("msg", "eager-load-oom-marker file presents; skipping eager loading and removing lazy-loaded blockID", "file", oomMarkerPath, "err", err)
+		delete(p.lazyLoadedHeadersSnapshot.IndexHeaderLastUsedTime, blockID)
+		lazyLoadedPath := filepath.Join(dir, blockID.String(), lazyLoadedHeadersListFile)
+		if err := p.lazyLoadedHeadersSnapshot.persist(lazyLoadedPath); err != nil {
+			level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
+		}
 	}
 }
 
