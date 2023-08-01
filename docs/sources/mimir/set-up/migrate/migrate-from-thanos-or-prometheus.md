@@ -97,7 +97,7 @@ This may cause that incorrect results are returned for the query.
    For Amazon S3, use the `aws` tool:
 
    ```bash
-   aws s3 cp -r s3://<THANOS-BUCKET> s3://<INTERMEDIATE-MIMIR-BUCKET>/
+   aws s3 cp --recursive s3://<THANOS-BUCKET> s3://<INTERMEDIATE-MIMIR-BUCKET>/
    ```
 
    For Google Cloud Storage (GCS), use the `gsutil` tool:
@@ -347,7 +347,7 @@ This may cause that incorrect results are returned for the query.
    For Amazon S3, use the `aws` tool:
 
    ```bash
-   aws s3 cp -r s3://<INTERMEDIATE-MIMIR-BUCKET> s3://<MIMIR-GCS-BUCKET>/<TENANT>/
+   aws s3 cp --recursive s3://<INTERMEDIATE-MIMIR-BUCKET> s3://<MIMIR-AWS-BUCKET>/<TENANT>/
    ```
 
    For Google Cloud Storage (GCS), use the gsutil tool:
