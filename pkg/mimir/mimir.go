@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -751,7 +752,10 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	mimir.setupObjstoreTracing()
 	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
-	middleware.InitGRPCMiddleware(&mimir.Cfg.Server)
+	//middleware.InitGRPCMiddleware(&mimir.Cfg.Server)
+
+	mimir.Cfg.Server.Router = mux.NewRouter()
+	middleware.InitHTTPMiddleware(mimir.Cfg.Server.Router)
 
 	if err := mimir.setupModuleManager(); err != nil {
 		return nil, err
