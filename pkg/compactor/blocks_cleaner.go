@@ -253,6 +253,31 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDel
 	})
 }
 
+// cleanUpUserWithNoBlocks removes any additional files that may remain when a user has no blocks. Should only
+// be called when there no more blocks remaining.
+func (c *BlocksCleaner) cleanUpUserWithNoBlocks(ctx context.Context, userBucket objstore.Bucket, userID string, userLogger log.Logger) error {
+	// Delete bucket index
+	if err := bucketindex.DeleteIndex(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
+		return errors.Wrap(err, "failed to delete bucket index file")
+	}
+
+	// Delete deletion markers folder
+	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.MarkersPathname, userLogger); err != nil {
+		return errors.Wrap(err, "failed to delete marker files")
+	} else if deleted > 0 {
+		level.Info(userLogger).Log("msg", "deleted marker files for tenant with no blocks remaining", "count", deleted)
+	}
+
+	// Delete debug folder
+	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.DebugMetas, userLogger); err != nil {
+		return errors.Wrap(err, "failed to delete "+block.DebugMetas)
+	} else if deleted > 0 {
+		level.Info(userLogger).Log("msg", "deleted files under "+block.DebugMetas+" for tenant with no blocks remaining", "count", deleted)
+	}
+
+	return nil
+}
+
 // deleteUserMarkedForDeletion removes blocks and remaining data for tenant marked for deletion.
 func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID string, userLogger log.Logger) error {
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
@@ -423,12 +448,12 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantPartialBlocks.WithLabelValues(userID).Set(float64(len(partials)))
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
 
-	// If there are no more blocks, mark the tenant for deletion
-	// if len(idx.Blocks) == 0 {
-	// 	if err := mimir_tsdb.WriteTenantDeletionMark(ctx, c.bucketClient, userID, c.cfgProvider, mimir_tsdb.NewTenantDeletionMark(time.Now())); err != nil {
-	// 		return err
-	// 	}
-	// }
+	// If there are no more blocks, clean up any remaining files
+	if len(idx.Blocks) == 0 {
+		if err := c.cleanUpUserWithNoBlocks(ctx, userBucket, userID, userLogger); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
