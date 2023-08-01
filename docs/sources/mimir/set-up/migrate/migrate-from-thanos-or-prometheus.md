@@ -289,6 +289,34 @@ This may cause that incorrect results are returned for the query.
 
    Use the below script to remove the labels from the meta.json.
 
+   For Amazon S3, use the `aws` tool:
+
+   ```bash
+   #!/bin/bash
+   
+   BUCKET="XXX"
+
+   echo "Fetching list of meta.json files (this can take a while if there are many blocks)"
+   aws s3 ls $BUCKET --recursive | awk '{print $4}' | grep meta.json > meta-files.txt
+    
+   echo "Processing meta.json files"
+   for FILE in $(cat meta-files.txt); do
+      echo "Removing Thanos labels from $FILE"
+      ORIG_META_JSON=$(aws s3 cp s3://$BUCKET/$FILE -)
+      UPDATED_META_JSON=$(echo "$ORIG_META_JSON" | jq "del(.thanos.labels)")
+
+      if ! diff -u <( echo "$ORIG_META_JSON" | jq . ) <( echo "$UPDATED_META_JSON" | jq .) > /dev/null; then
+        echo "Backing up $FILE to $FILE.orig"
+        aws s3 cp "s3://$BUCKET/$FILE" "s3://$BUCKET/$FILE.orig"
+        echo "Uploading modified $FILE"
+        echo "$UPDATED_META_JSON" | aws s3 cp - "s3://$BUCKET/$FILE"
+      else
+        echo "No diff for $FILE"
+      fi
+   done
+   ```
+    For Google Cloud Storage (GCS), use the gsutil tool:
+
    ```bash
    #!/bin/bash
 
