@@ -228,12 +228,12 @@ func (p *ReaderPool) tryEagerLoadIndexHeadersSnapshot(lazyBinaryReader *LazyBina
 	defer os.Remove(oomMarkerPath)
 
 	if !eagerLoadOOMMarkerExists {
-		atomicfs.CreateFile(oomMarkerPath, strings.NewReader(time.Now().UTC().Format(time.RFC3339)))
-		lazyBinaryReader.EagerLoad()
-		oomMarkerRemoveErr := os.Remove(oomMarkerPath)
-		if oomMarkerRemoveErr != nil {
-			level.Warn(p.logger).Log("msg", "removing eager-load oom marker file failed", "file", oomMarkerPath, "err", oomMarkerRemoveErr)
+		err := atomicfs.CreateFile(oomMarkerPath, strings.NewReader(time.Now().UTC().Format(time.RFC3339)))
+		if err != nil {
+			level.Warn(p.logger).Log("msg", "creating eager-load-oom-marker file failed", "file", oomMarkerPath, "err", err)
+			return
 		}
+		lazyBinaryReader.EagerLoad()
 	} else {
 		level.Warn(p.logger).Log("msg", "eager-load-oom-marker file presents; skipping eager loading and removing lazy-loaded blockID", "file", oomMarkerPath, "err", err)
 		delete(p.lazyLoadedHeadersSnapshot.IndexHeaderLastUsedTime, blockID)
