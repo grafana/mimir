@@ -223,6 +223,8 @@ func (p *ReaderPool) tryEagerLoadIndexHeadersSnapshot(lazyBinaryReader *LazyBina
 		level.Warn(p.logger).Log("msg", "checking eager-load-oom-marker file failed", "file", oomMarkerPath, "err", err)
 		return
 	}
+	// we will remove the marker either when marker doesn't exist (which later will be created) and also when it is already
+	// exist (when the process was previosly failed to complete eager loading).
 	defer os.Remove(oomMarkerPath)
 
 	if !eagerLoadOOMMarkerExists {
