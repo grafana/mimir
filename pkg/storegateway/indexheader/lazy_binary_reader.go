@@ -67,7 +67,7 @@ func NewLazyBinaryReaderMetrics(reg prometheus.Registerer) *LazyBinaryReaderMetr
 		}),
 		eagerLoadCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "indexheader_startup_eager_load_total",
-			Help: "Total number of index-header eagerly loaded operations during store-gateway startup.",
+			Help: "Total number of index-headers eagerly loaded during store-gateway startup.",
 		}),
 	}
 }
