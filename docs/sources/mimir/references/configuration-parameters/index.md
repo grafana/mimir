@@ -3263,7 +3263,7 @@ bucket_store:
 
   # (experimental) If enabled, store-gateway will periodically persist block IDs
   # of lazy loaded index-headers and load them eagerly during startup. This
-  # config has no effect if index-header lazy loading is disabled.
+  # configuration has no effect if index-header lazy loading is disabled.
   # CLI flag: -blocks-storage.bucket-store.index-header-eager-loading-startup-enabled
   [index_header_eager_loading_startup_enabled: <boolean> | default = false]
 
