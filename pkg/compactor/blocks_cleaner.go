@@ -253,9 +253,9 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDel
 	})
 }
 
-// cleanUpUserWithNoBlocks removes any additional files that may remain when a user has no blocks. Should only
+// deleteRemainingData removes any additional files that may remain when a user has no blocks. Should only
 // be called when there no more blocks remaining.
-func (c *BlocksCleaner) cleanUpUserWithNoBlocks(ctx context.Context, userBucket objstore.Bucket, userID string, userLogger log.Logger) error {
+func (c *BlocksCleaner) deleteRemainingData(ctx context.Context, userBucket objstore.Bucket, userID string, userLogger log.Logger) error {
 	// Delete bucket index
 	if err := bucketindex.DeleteIndex(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
 		return errors.Wrap(err, "failed to delete bucket index file")
@@ -450,7 +450,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 
 	// If there are no more blocks, clean up any remaining files
 	if len(idx.Blocks) == 0 {
-		if err := c.cleanUpUserWithNoBlocks(ctx, userBucket, userID, userLogger); err != nil {
+		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
 			return err
 		}
 	}
