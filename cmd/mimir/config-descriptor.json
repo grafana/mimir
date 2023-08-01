@@ -7163,12 +7163,12 @@
               "kind": "field",
               "name": "index_header_eager_loading_startup_enabled",
               "required": false,
-              "desc": "If enabled, store-gateway will periodically persist lazy loaded index-header and loading it eagerly during startup.",
+              "desc": "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. This config has no effect if index-header lazy loading is disabled.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.bucket-store.index-header-eager-loading-startup-enabled",
               "fieldType": "boolean",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",

@@ -115,37 +115,30 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 			tickerIdleReader := time.NewTicker(checkFreq)
 			defer tickerIdleReader.Stop()
 
+			var tickerLazyLoadPersist *time.Ticker
 			if p.eagerLoadReaderEnabled {
-				tickerLazyLoadPersist := time.NewTicker(time.Minute)
+				tickerLazyLoadPersist = time.NewTicker(time.Minute)
 				defer tickerLazyLoadPersist.Stop()
+			}
 
-				for {
-					select {
-					case <-p.close:
-						return
-					case <-tickerIdleReader.C:
-						p.closeIdleReaders()
-					case <-tickerLazyLoadPersist.C:
-						snapshot := lazyLoadedHeadersSnapshot{
-							IndexHeaderLastUsedTime: p.LoadedBlocks(),
-							UserID:                  lazyLoadedSnapshotConfig.UserID,
-						}
-
-						if err := snapshot.persist(lazyLoadedSnapshotConfig.Path); err != nil {
-							level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
-						}
+			for {
+				select {
+				case <-p.close:
+					return
+				case <-tickerIdleReader.C:
+					p.closeIdleReaders()
+				case <-tickerLazyLoadPersist.C:
+					snapshot := lazyLoadedHeadersSnapshot{
+						IndexHeaderLastUsedTime: p.LoadedBlocks(),
+						UserID:                  lazyLoadedSnapshotConfig.UserID,
 					}
-				}
-			} else {
-				for {
-					select {
-					case <-p.close:
-						return
-					case <-tickerIdleReader.C:
-						p.closeIdleReaders()
+
+					if err := snapshot.persist(lazyLoadedSnapshotConfig.Path); err != nil {
+						level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
 					}
 				}
 			}
+
 		}()
 	}
 

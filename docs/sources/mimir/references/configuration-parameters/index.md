@@ -3261,8 +3261,9 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout
   [index_header_lazy_loading_idle_timeout: <duration> | default = 1h]
 
-  # (advanced) If enabled, store-gateway will periodically persist lazy loaded
-  # index-header and loading it eagerly during startup.
+  # (experimental) If enabled, store-gateway will periodically persist block IDs
+  # of lazy loaded index-headers and load them eagerly during startup. This
+  # config has no effect if index-header lazy loading is disabled.
   # CLI flag: -blocks-storage.bucket-store.index-header-eager-loading-startup-enabled
   [index_header_eager_loading_startup_enabled: <boolean> | default = false]
 
