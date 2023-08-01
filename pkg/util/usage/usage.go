@@ -32,36 +32,35 @@ func Usage(printAll bool, configs ...interface{}) error {
 		v := reflect.ValueOf(fl.Value)
 		fieldCat := fieldcategory.Basic
 		var field reflect.StructField
+		var hasField bool
 
 		// Do not print usage for deprecated flags.
 		if fl.Value.String() == "deprecated" {
 			return
 		}
-
-		if override, ok := fieldcategory.GetOverride(fl.Name); ok {
-			fieldCat = override
-		} else if v.Kind() == reflect.Ptr {
+		if v.Kind() == reflect.Ptr {
 			ptr := v.Pointer()
-			field, ok = fields[ptr]
-			if ok {
-				catStr := field.Tag.Get("category")
-				switch catStr {
-				case "advanced":
-					fieldCat = fieldcategory.Advanced
-				case "experimental":
-					fieldCat = fieldcategory.Experimental
-				case "deprecated":
-					fieldCat = fieldcategory.Deprecated
-				case "hidden":
-					fieldCat = fieldcategory.Hidden
-				}
+			field, hasField = fields[ptr]
+			if hasField && isFieldHidden(field) {
+				// Don't print help for this flag since it's hidden
+				return
 			}
 		}
 
-		if fieldCat == fieldcategory.Hidden {
-			// Don't print help for this flag since it's hidden
-			return
+		if override, ok := fieldcategory.GetOverride(fl.Name); ok {
+			fieldCat = override
+		} else if hasField {
+			catStr := field.Tag.Get("category")
+			switch catStr {
+			case "advanced":
+				fieldCat = fieldcategory.Advanced
+			case "experimental":
+				fieldCat = fieldcategory.Experimental
+			case "deprecated":
+				fieldCat = fieldcategory.Deprecated
+			}
 		}
+
 		if fieldCat != fieldcategory.Basic && !printAll {
 			// Don't print help for this flag since we're supposed to print only basic flags
 			return
@@ -227,6 +226,16 @@ func getFlagName(fl *flag.Flag) string {
 	}
 
 	return "value"
+}
+
+func isFieldHidden(f reflect.StructField) bool {
+	return getDocTagFlag(f, "hidden")
+}
+
+func getDocTagFlag(f reflect.StructField, name string) bool {
+	cfg := parseDocTag(f)
+	_, ok := cfg[name]
+	return ok
 }
 
 func getFlagDefault(fl *flag.Flag, field reflect.StructField) string {

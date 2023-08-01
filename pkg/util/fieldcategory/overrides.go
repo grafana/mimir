@@ -15,8 +15,6 @@ const (
 	Experimental
 	// Deprecated is the deprecated field category.
 	Deprecated
-	// Hidden is the hidden field category.
-	Hidden
 )
 
 func (c Category) String() string {
@@ -29,8 +27,6 @@ func (c Category) String() string {
 		return "experimental"
 	case Deprecated:
 		return "deprecated"
-	case Hidden:
-		return "hidden"
 	default:
 		panic(fmt.Sprintf("Unknown field category: %d", c))
 	}
