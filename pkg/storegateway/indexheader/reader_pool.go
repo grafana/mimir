@@ -116,11 +116,13 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 			tickerIdleReader := time.NewTicker(checkFreq)
 			defer tickerIdleReader.Stop()
 
-			tickerLazyLoadPersist := time.NewTicker(time.Minute)
-			defer tickerLazyLoadPersist.Stop()
-			if !p.eagerLoadReaderEnabled {
-				// if eager load of lazy load index headers is not enabled, just stop the ticker now
-				tickerLazyLoadPersist.Stop()
+			var lazyLoadC <-chan time.Time
+
+			if p.eagerLoadReaderEnabled {
+				tickerLazyLoadPersist := time.NewTicker(time.Minute)
+				defer tickerLazyLoadPersist.Stop()
+
+				lazyLoadC = tickerLazyLoadPersist.C
 			}
 
 			for {
@@ -129,7 +131,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 					return
 				case <-tickerIdleReader.C:
 					p.closeIdleReaders()
-				case <-tickerLazyLoadPersist.C:
+				case <-lazyLoadC:
 					snapshot := lazyLoadedHeadersSnapshot{
 						IndexHeaderLastUsedTime: p.LoadedBlocks(),
 						UserID:                  lazyLoadedSnapshotConfig.UserID,
