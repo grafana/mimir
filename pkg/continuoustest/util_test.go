@@ -4,6 +4,7 @@ package continuoustest
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,6 +141,13 @@ func testVerifySamplesSumFloats(t *testing.T, generateValue generateValueFunc, t
 func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, testLabel string) {
 	// Round to millis since that's the precision of Prometheus timestamps.
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
+
+	if strings.HasSuffix(testLabel, "histogram_int_gauge") {
+		// fixes flaky test for TestVerifySamplesSum/generateHistogramValue_for_histogram_int_gauge:should_return_error_if_there's_a_missing_series where the last histogram has an expected value of 0 so the number of series is irrelevant
+		for generateHistogramIntValue(now.Add(30*time.Second), true) == 0 {
+			now = now.Add(1 * time.Second)
+		}
+	}
 
 	tests := map[string]struct {
 		histograms              []model.SampleHistogramPair
