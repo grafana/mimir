@@ -19,7 +19,6 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
-	mimirtrace "github.com/grafana/mimir/pkg/util/trace"
 )
 
 // ClientsPool is the interface used to get the client from the pool for a specified address.
@@ -102,7 +101,7 @@ func (f *alertmanagerClientsPool) GetClientFor(addr string) (Client, error) {
 // dialAlertmanagerClient establishes a GRPC connection to an alertmanager that is aware of the the health of the server
 // and collects observations of request durations.
 func dialAlertmanagerClient(cfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*alertmanagerClient, error) {
-	opts, err := cfg.DialOption(mimirtrace.GRPCClientInstrument(requestDuration))
+	opts, err := cfg.DialOption(grpcclient.Instrument(requestDuration))
 	if err != nil {
 		return nil, err
 	}

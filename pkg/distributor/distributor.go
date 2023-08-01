@@ -707,8 +707,9 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = copyString(cluster), copyString(replica)
+
 		span := trace.SpanFromContext(ctx)
-		if span != nil {
+		if span.SpanContext().IsValid() {
 			span.SetAttributes(attribute.String("cluster", cluster))
 			span.SetAttributes(attribute.String("replica", replica))
 		}
