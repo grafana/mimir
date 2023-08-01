@@ -7468,7 +7468,7 @@
               "required": false,
               "desc": "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.",
               "fieldValue": null,
-              "fieldDefaultValue": true,
+              "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.bucket-store.index-header-sparse-persistence-enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"

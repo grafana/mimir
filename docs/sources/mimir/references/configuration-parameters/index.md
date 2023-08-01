@@ -3398,7 +3398,7 @@ bucket_store:
   # the index-header to disk on construction and load sparse index-headers from
   # disk instead of the whole index-header.
   # CLI flag: -blocks-storage.bucket-store.index-header-sparse-persistence-enabled
-  [index_header_sparse_persistence_enabled: <boolean> | default = true]
+  [index_header_sparse_persistence_enabled: <boolean> | default = false]
 
   # (advanced) Max size - in bytes - of a gap for which the partitioner
   # aggregates together two bucket GET object requests.
