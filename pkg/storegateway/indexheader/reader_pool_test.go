@@ -106,15 +106,16 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			snapshotConfig := LazyLoadedHeadersSnapshotConfig{
-				Path:   tmpDir,
-				UserID: "anonymous",
+				Path:                                   tmpDir,
+				UserID:                                 "anonymous",
+				IndexHeadersEagerLoadingStartupEnabled: testData.eagerLoadReaderEnabled,
 			}
 			if testData.persistLazyLoadedHeaderFn != nil {
 				testData.persistLazyLoadedHeaderFn(blockID, snapshotConfig.Path)
 			}
 
 			metrics := NewReaderPoolMetrics(nil)
-			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, testData.eagerLoadReaderEnabled, metrics, snapshotConfig)
+			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, metrics, snapshotConfig)
 			defer pool.Close()
 
 			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
