@@ -725,7 +725,7 @@ func TestBlocksCleaner_ShouldCleanUpFilesWhenNoMoreBlocksRemain(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, exists)
 
-	// Create a debug file
+	// Create a debug file that wouldn't otherwise be deleted by the cleaner
 	debugMetaFile := path.Join(userID, block.DebugMetas, "meta.json")
 	require.NoError(t, bucketClient.Upload(context.Background(), debugMetaFile, strings.NewReader("random content")))
 
@@ -741,8 +741,7 @@ func TestBlocksCleaner_ShouldCleanUpFilesWhenNoMoreBlocksRemain(t *testing.T) {
 	cfgProvider := newMockConfigProvider()
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
-	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
+	require.NoError(t, cleaner.runCleanupWithErr(ctx))
 
 	// Check bucket index, markers and debug files have been deleted.
 	exists, err = bucketClient.Exists(ctx, blockDeletionMarkFile)

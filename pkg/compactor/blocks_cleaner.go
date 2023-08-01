@@ -261,7 +261,7 @@ func (c *BlocksCleaner) deleteRemainingData(ctx context.Context, userBucket objs
 		return errors.Wrap(err, "failed to delete bucket index file")
 	}
 
-	// Delete deletion markers folder
+	// Delete markers folder
 	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.MarkersPathname, userLogger); err != nil {
 		return errors.Wrap(err, "failed to delete marker files")
 	} else if deleted > 0 {
@@ -438,22 +438,22 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		level.Info(userLogger).Log("msg", "cleaned up partial blocks", "partials", len(partials))
 	}
 
-	// Upload the updated index to the storage.
-	if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
-		return err
+	// If there are no more blocks, clean up any remaining files
+	// Otherwise upload the updated index to the storage.
+	if len(idx.Blocks) == 0 {
+		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
+			return err
+		}
+	} else {
+		if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
+			return err
+		}
 	}
 
 	c.tenantBlocks.WithLabelValues(userID).Set(float64(len(idx.Blocks)))
 	c.tenantMarkedBlocks.WithLabelValues(userID).Set(float64(len(idx.BlockDeletionMarks)))
 	c.tenantPartialBlocks.WithLabelValues(userID).Set(float64(len(partials)))
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
-
-	// If there are no more blocks, clean up any remaining files
-	if len(idx.Blocks) == 0 {
-		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
-			return err
-		}
-	}
 
 	return nil
 }
