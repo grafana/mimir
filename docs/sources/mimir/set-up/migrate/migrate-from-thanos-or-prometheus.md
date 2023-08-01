@@ -297,7 +297,7 @@ This may cause that incorrect results are returned for the query.
    BUCKET="XXX"
 
    echo "Fetching list of meta.json files (this can take a while if there are many blocks)"
-   aws s3 ls $BUCKET --recursive | awk '{print $4}' | grep meta.json > meta-files.txt
+   aws s3 ls $BUCKET --recursive | awk '{print $4}' | grep meta.json | grep -v meta.json.orig > meta-files.txt
     
    echo "Processing meta.json files"
    for FILE in $(cat meta-files.txt); do
