@@ -210,9 +210,9 @@ func (r *LazyBinaryReader) LabelNames() ([]string, error) {
 	return r.reader.LabelNames()
 }
 
-// EagerLoadIndexHeadersSnapshot eagerly load index headers from the stored lazyLoadedHeadersSnapshot
-func (r *LazyBinaryReader) EagerLoadIndexHeadersSnapshot(usedAtSnapshot int64) {
-	if usedAtSnapshot > 0 {
+// EagerLoad eagerly load index headers from the stored lazyLoadedHeadersSnapshot
+func (r *LazyBinaryReader) EagerLoad(usedAt int64) {
+	if usedAt > 0 {
 		r.readerMx.RLock()
 		defer r.readerMx.RUnlock()
 
@@ -221,7 +221,7 @@ func (r *LazyBinaryReader) EagerLoadIndexHeadersSnapshot(usedAtSnapshot int64) {
 			return
 		}
 
-		r.usedAt.Store(usedAtSnapshot)
+		r.usedAt.Store(usedAt)
 		r.metrics.eagerLoadCount.Inc()
 	}
 }

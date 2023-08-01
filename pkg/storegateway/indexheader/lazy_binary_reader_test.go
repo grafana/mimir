@@ -222,7 +222,7 @@ func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
 
 	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
 		usedAtSnapshot := time.Now().UnixMilli()
-		r.EagerLoadIndexHeadersSnapshot(usedAtSnapshot)
+		r.EagerLoad(usedAtSnapshot)
 
 		require.NoError(t, err)
 		require.NotNil(t, r.reader, "t.reader must already eagerly loaded")
