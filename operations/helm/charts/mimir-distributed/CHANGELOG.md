@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [ENHANCEMENT] Distributor: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce distributor CPU utilization, assuming the CPU request is set to a value close to the actual utilization. #5588
+* [ENHANCEMENT] Querier: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce noisy neighbour issues created by the querier, whose CPU utilization could eventually saturate the Kubernetes node if unbounded. #5646
 
 ## 5.0.0
 
