@@ -89,7 +89,7 @@ Several parameters that were available in versions 2.x of the mimir-distributed 
    - The default arguments are now encoded in the Helm chart templates; the values `*-cache.allocatedMemory`, `*-cache.maxItemMemory` and `*-cache.port` control the arguments `-m`, `-I` and `-u`. To provide additional arguments, use `*-cache.extraArgs`.
    - The `memcached*.metrics` values were consolidated under `memcachedExporter`.
 
-   See also an [example of migration of customized memcached values between versions 2.x and 3.0](#example-of-migration-of-customized-memcached-values-between-versions-21-and-30).
+   See also an [example of migration of customized memcached values between versions 2.x and 3.0](#example-of-migration-of-customized-memcached-values-between-versions-2x-and-30).
 
 1. Update your memcached-related Mimir configuration
    via your customized Helm chart value that is named `mimir.config`, if needed:
