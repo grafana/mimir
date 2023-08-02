@@ -35,7 +35,9 @@ Depending on what version of the `mimir-distributed` Helm chart is installed cur
         enabled: false
       ```
 
-      > **Note**: A direct upgrade from non-zone aware ingesters to zone-aware ingesters will cause data loss.
+      {{% admonition type="note" %}}
+      A direct upgrade from non-zone aware ingesters to zone-aware ingesters will cause data loss.
+      {{% /admonition %}}
 
   1.  If you have modified the `mimir.config` value, either make sure to merge in the latest version from the chart, or consider using `mimir.structuredConfig` instead.
 
