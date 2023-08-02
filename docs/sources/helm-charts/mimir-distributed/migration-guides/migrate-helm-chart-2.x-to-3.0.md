@@ -131,7 +131,9 @@ The example values file is compatible with any 2.x version of the mimir-distribu
 - The default pod security policy is disabled.
 - ServiceMonitors are enabled.
 - Object storage credentials for block storage are specified directly in the `mimir.config` value.
-  > **Note:** The unmodified parts of the default `mimir.config` are omitted for brevity, even though in a valid 2.x values file they need to be included.
+  {{% admonition type="note" %}}
+  The unmodified parts of the default `mimir.config` are omitted for brevity, even though in a valid 2.x values file they need to be included.
+  {{% /admonition %}}
 
 ```yaml
 rbac:
