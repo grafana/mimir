@@ -47,7 +47,7 @@ Experimental configuration and flags are subject to change.
 The following features are currently experimental:
 
 - Compactor
-  - Enable cleanup of remaining files in the tenant bucket when there no blocks remaining in the bucket index.
+  - Enable cleanup of remaining files in the tenant bucket when there are no blocks remaining in the bucket index.
     - `-compactor.no-blocks-file-cleanup-enabled`
 - Ruler
   - Tenant federation
