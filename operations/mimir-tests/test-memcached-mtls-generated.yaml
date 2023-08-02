@@ -1366,7 +1366,7 @@ spec:
             memory: 1536Mi
           requests:
             cpu: "1"
-            memory: 1329Mi
+            memory: 1176Mi
         volumeMounts:
         - mountPath: /var/secrets/memcached-ca-cert/
           name: memcached-ca-cert
@@ -1443,7 +1443,7 @@ spec:
             memory: 1536Mi
           requests:
             cpu: "1"
-            memory: 1329Mi
+            memory: 1176Mi
         volumeMounts:
         - mountPath: /var/secrets/memcached-ca-cert/
           name: memcached-ca-cert
@@ -1520,7 +1520,7 @@ spec:
             memory: 768Mi
           requests:
             cpu: "1"
-            memory: 715Mi
+            memory: 638Mi
         volumeMounts:
         - mountPath: /var/secrets/memcached-ca-cert/
           name: memcached-ca-cert
