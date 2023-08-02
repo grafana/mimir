@@ -3698,6 +3698,11 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.max-compaction-time
 [max_compaction_time: <duration> | default = 1h]
 
+# (experimental) If enabled, will delete the bucket-index, markers and debug
+# files in the tenant bucket when there are no blocks left in the index.
+# CLI flag: -compactor.no-blocks-file-cleanup-enabled
+[no_blocks_file_cleanup_enabled: <boolean> | default = false]
+
 # (advanced) Number of goroutines opening blocks before compaction.
 # CLI flag: -compactor.max-opening-blocks-concurrency
 [max_opening_blocks_concurrency: <int> | default = 1]
