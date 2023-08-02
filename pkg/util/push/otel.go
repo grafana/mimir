@@ -182,7 +182,7 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
 				entry := mimirpb.MetricMetadata{
 					Type:             mimirpb.MetricMetadata_MetricType(scopeMetrics.Metrics().At(k).Type()),
-					MetricFamilyName: prometheustranslator.BuildPromCompliantName(scopeMetrics.Metrics().At(k), ""), // Use otlp method for translating metric name scopeMetrics.Metrics().At(k).Name()
+					MetricFamilyName: prometheustranslator.BuildPromCompliantName(scopeMetrics.Metrics().At(k), ""),
 					Help:             scopeMetrics.Metrics().At(k).Description(),
 					Unit:             scopeMetrics.Metrics().At(k).Unit(),
 				}
