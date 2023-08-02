@@ -32,7 +32,10 @@
       ), byContainerPort
     ),
 
-  mimir_read_env_map:: $.querier_env_map,
+  mimir_read_env_map:: $.querier_env_map {
+    // Do not inherit GOMAXPROCS from querier because mimir-read runs more components.
+    GOMAXPROCS: null,
+  },
 
   mimir_read_container:: if !$._config.is_read_write_deployment_mode then null else
     container.new('mimir-read', $._images.mimir_read) +
