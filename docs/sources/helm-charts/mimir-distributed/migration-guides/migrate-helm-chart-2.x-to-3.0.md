@@ -2,8 +2,8 @@
 aliases:
   - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/
   - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.x-to-3.0/
-description: "Migrate the Helm chart from version 2.x to 3.0"
-title: "Migrate the Helm chart from version 2.x to 3.0"
+description: "Migrate the Mimir Helm chart from version 2.x to 3.0"
+title: "Migrate the Mimir Helm chart from version 2.x to 3.0"
 menuTitle: "Migrate Helm chart 2.x to 3.0"
 weight: 100
 ---
