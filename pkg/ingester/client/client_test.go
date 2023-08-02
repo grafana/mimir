@@ -7,14 +7,25 @@ package client
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
+	"runtime"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/server"
+	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -55,5 +66,74 @@ func TestMarshall(t *testing.T) {
 		_, err = util.ParseProtoReader(context.Background(), recorder.Body, recorder.Body.Len(), plentySize, nil, &req, util.RawSnappy)
 		require.NoError(t, err)
 		require.Equal(t, numSeries, len(req.Timeseries))
+	}
+}
+
+func BenchmarkIngesterClient_ConcurrentStreams(b *testing.B) {
+	serverCfg := server.Config{}
+	flagext.DefaultValues(&serverCfg)
+	require.NoError(b, serverCfg.LogLevel.Set("error"))
+	serverCfg.GPRCServerMaxConcurrentStreams = 100
+	//serverCfg.GPRCServerMaxConcurrentStreams = 10000
+	serverCfg.Registerer = prometheus.NewRegistry()
+	server, err := server.New(serverCfg)
+	require.NoError(b, err)
+	b.Cleanup(server.Shutdown)
+	go func() {
+		_ = server.Run()
+	}()
+	b.Cleanup(server.Stop)
+
+	ingServ := &IngesterServerMock{}
+	RegisterIngesterServer(server.GRPC, ingServ)
+	noopLock := &sync.Mutex{}
+	ingServ.On("Push", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		bytes := make([]byte, 1024)
+		noopLock.Lock()
+		noopLock.Unlock()
+		bytes[4] = byte(time.Now().Second()) // use the slice to retain the memory during the Sleep
+	}).Return(&mimirpb.WriteResponse{}, errors.New("overwhelmed"))
+
+	client, err := MakeIngesterClient(server.GRPCListenAddr().String(), Config{}, NewMetrics(prometheus.NewRegistry()))
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = client.Close() })
+
+	wg := &sync.WaitGroup{}
+	reportingWG := &sync.WaitGroup{}
+	ctx, err := user.InjectIntoGRPCRequest(user.InjectOrgID(context.Background(), "test"))
+	require.NoError(b, err)
+	b.ResetTimer()
+
+	for j := 0; j < b.N; j++ {
+		var maxHeap uint64
+		stopReporting := make(chan struct{})
+		reportingWG.Add(1)
+		go func() {
+			memStats := &runtime.MemStats{}
+			defer reportingWG.Done()
+			t := time.NewTicker(time.Millisecond)
+			defer t.Stop()
+			for {
+				select {
+				case <-stopReporting:
+					return
+				case <-t.C:
+					runtime.ReadMemStats(memStats)
+					maxHeap = util_math.Max(memStats.HeapInuse, maxHeap)
+				}
+			}
+		}()
+		for i := 0; i < 100_000; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, err := client.Push(ctx, &mimirpb.WriteRequest{})
+				assert.ErrorContains(b, err, "overwhelmed")
+			}()
+		}
+		wg.Wait()
+		close(stopReporting)
+		reportingWG.Wait()
+		b.ReportMetric(float64(maxHeap), "max-heap")
 	}
 }
