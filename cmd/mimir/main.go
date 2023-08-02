@@ -76,7 +76,6 @@ func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&mf.printHelp, "h", false, "Print basic help.")
 	fs.BoolVar(&mf.printHelpAll, "help-all", false, "Print help, also including advanced and experimental parameters.")
 }
-
 func main() {
 	// Cleanup all flags registered via init() methods of 3rd-party libraries.
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)

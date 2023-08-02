@@ -64,7 +64,7 @@ jobs:
           The reason this library is in the allowlist is that ${{ steps.check-allowlist.outputs.reasons}}"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_TOKEN: ${{secrets.GRAFANABOT_TOKEN}}
 
       - name: Manual review is required
         if: steps.check-allowlist.conclusion != 'success' || steps.check-allowlist.outputs.allInAllowlist == 'false'

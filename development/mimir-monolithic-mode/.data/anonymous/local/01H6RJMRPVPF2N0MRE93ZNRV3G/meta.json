@@ -1,0 +1,71 @@
+{
+	"ulid": "01H6RJMRPVPF2N0MRE93ZNRV3G",
+	"minTime": 1690894480.753,
+	"maxTime": 1690905284.446,
+	"stats": {
+		"numSamples": 1172984,
+		"numSeries": 11,
+		"numProfiles": 7918
+	},
+	"files": [
+		{
+			"relPath": "functions.parquet",
+			"sizeBytes": 119097,
+			"parquet": {
+				"numRowGroups": 1,
+				"numRows": 2954
+			}
+		},
+		{
+			"relPath": "index.tsdb",
+			"sizeBytes": 4066,
+			"tsdb": {
+				"numSeries": 11
+			}
+		},
+		{
+			"relPath": "locations.parquet",
+			"sizeBytes": 284351,
+			"parquet": {
+				"numRowGroups": 1,
+				"numRows": 6528
+			}
+		},
+		{
+			"relPath": "mappings.parquet",
+			"sizeBytes": 1712,
+			"parquet": {
+				"numRowGroups": 1,
+				"numRows": 3
+			}
+		},
+		{
+			"relPath": "profiles.parquet",
+			"sizeBytes": 5381972,
+			"parquet": {
+				"numRowGroups": 1,
+				"numRows": 7918
+			}
+		},
+		{
+			"relPath": "stacktraces.parquet",
+			"sizeBytes": 209077,
+			"parquet": {
+				"numRowGroups": 1,
+				"numRows": 7032
+			}
+		},
+		{
+			"relPath": "strings.parquet",
+			"sizeBytes": 173485,
+			"parquet": {
+				"numRowGroups": 1,
+				"numRows": 3617
+			}
+		}
+	],
+	"compaction": {
+		"level": 0
+	},
+	"version": 1
+}

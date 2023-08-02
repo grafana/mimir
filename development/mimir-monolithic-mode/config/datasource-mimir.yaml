@@ -6,7 +6,7 @@ datasources:
   uid: mimir
   orgID: 1
   url: http://mimir-1:8001/prometheus
-  isDefault: true
+  isDefault: false
   jsonData:
     prometheusType: Mimir
     exemplarTraceIdDestinations:
@@ -18,3 +18,13 @@ datasources:
   uid: jaeger
   orgID: 1
   url: http://jaeger:16686/
+
+- name: phlare
+  type: phlare
+  access: proxy
+  uid: phlare
+  basicAuth: false
+  editable: true
+  isDefault: true
+  url: http://phlare:4100
+  version: 1
