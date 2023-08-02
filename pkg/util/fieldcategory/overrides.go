@@ -68,6 +68,10 @@ var overrides = map[string]Category{
 	"server.path-prefix":                                Advanced,
 	"server.register-instrumentation":                   Advanced,
 	"server.log-request-at-info-level-enabled":          Advanced,
+
+	// main.go global flags
+	"config.file":       Basic,
+	"config.expand-env": Basic,
 }
 
 func AddOverrides(o map[string]Category) {
