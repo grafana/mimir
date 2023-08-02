@@ -131,7 +131,6 @@ func OTLPHandler(
 			return body, err
 		}
 
-<<<<<<< HEAD
 		metricCount := len(metrics)
 		sampleCount := 0
 		histogramCount := 0
@@ -153,16 +152,7 @@ func OTLPHandler(
 
 		req.Timeseries = metrics
 
-		metadata, err := otelMetricsToMetadata(logger, otlpReq.Metrics())
-
-		// TODO decide what to to if the translation fails
-		if err != nil {
-			return body, err
-		}
-=======
 		metadata := otelMetricsToMetadata(otlpReq.Metrics())
->>>>>>> 2f307623c (chore: remove TODOs and and unused code)
-
 		req.Metadata = metadata
 
 		return body, nil
