@@ -37,11 +37,12 @@ const (
 )
 
 type BlocksCleanerConfig struct {
-	DeletionDelay           time.Duration
-	CleanupInterval         time.Duration
-	CleanupConcurrency      int
-	TenantCleanupDelay      time.Duration // Delay before removing tenant deletion mark and "debug".
-	DeleteBlocksConcurrency int
+	DeletionDelay              time.Duration
+	CleanupInterval            time.Duration
+	CleanupConcurrency         int
+	TenantCleanupDelay         time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeleteBlocksConcurrency    int
+	NoBlocksFileCleanupEnabled bool
 }
 
 type BlocksCleaner struct {
@@ -440,7 +441,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 
 	// If there are no more blocks, clean up any remaining files
 	// Otherwise upload the updated index to the storage.
-	if len(idx.Blocks) == 0 {
+	if c.cfg.NoBlocksFileCleanupEnabled && len(idx.Blocks) == 0 {
 		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
 			return err
 		}

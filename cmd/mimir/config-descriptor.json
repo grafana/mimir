@@ -8054,6 +8054,17 @@
         },
         {
           "kind": "field",
+          "name": "no_blocks_file_cleanup_enabled",
+          "required": false,
+          "desc": "If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.no-blocks-file-cleanup-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_opening_blocks_concurrency",
           "required": false,
           "desc": "Number of goroutines opening blocks before compaction.",
