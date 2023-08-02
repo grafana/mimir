@@ -1,18 +1,19 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/
-description: "Migrate the Helm chart from version 2.1 to 3.0"
-title: "Migrate the Helm chart from version 2.1 to 3.0"
-menuTitle: "Migrate Helm chart 2.1 to 3.0"
+  - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.x-to-3.0/
+description: "Migrate the Helm chart from version 2.x to 3.0"
+title: "Migrate the Helm chart from version 2.x to 3.0"
+menuTitle: "Migrate Helm chart 2.x to 3.0"
 weight: 100
 ---
 
-# Migrate the Helm chart from version 2.1 to 3.0
+# Migrate the Helm chart from version 2.x to 3.0
 
-There are breaking changes between the Grafana Mimir Helm chart versions 2.1 and 3.0.
-Several parameters that were available in version 2.1 of the mimir-distributed Helm chart have changed.
+There are breaking changes between the Grafana Mimir Helm chart versions 2.x and 3.0.
+Several parameters that were available in versions 2.x of the mimir-distributed Helm chart have changed.
 
-**To migrate from Helm chart 2.1 to 3.0:**
+**To migrate from Helm chart 2.x to 3.0:**
 
 1. Understand the improvements that we made to the Mimir configuration in the Helm chart:
 
@@ -88,7 +89,7 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
    - The default arguments are now encoded in the Helm chart templates; the values `*-cache.allocatedMemory`, `*-cache.maxItemMemory` and `*-cache.port` control the arguments `-m`, `-I` and `-u`. To provide additional arguments, use `*-cache.extraArgs`.
    - The `memcached*.metrics` values were consolidated under `memcachedExporter`.
 
-   See also an [example of migration of customized memcached values between versions 2.1 and 3.0](#example-of-migration-of-customized-memcached-values-between-versions-21-and-30).
+   See also an [example of migration of customized memcached values between versions 2.x and 3.0](#example-of-migration-of-customized-memcached-values-between-versions-21-and-30).
 
 1. Update your memcached-related Mimir configuration
    via your customized Helm chart value that is named `mimir.config`, if needed:
@@ -124,13 +125,13 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
 
 ## Example of migrated values
 
-The example values file is compatible with version 2.1 of the mimir-distributed Helm chart, and demonstrates a few things:
+The example values file is compatible with any 2.x version of the mimir-distributed Helm chart, and demonstrates a few things:
 
 - All memcached caches are enabled.
 - The default pod security policy is disabled.
 - ServiceMonitors are enabled.
 - Object storage credentials for block storage are specified directly in the `mimir.config` value.
-  > **Note:** The unmodified parts of the default `mimir.config` are omitted for brevity, even though in a valid 2.1 values file they need to be included.
+  > **Note:** The unmodified parts of the default `mimir.config` are omitted for brevity, even though in a valid 2.x values file they need to be included.
 
 ```yaml
 rbac:
@@ -178,7 +179,7 @@ After applying the migration steps listed in this guide,
 you now have a Kubernetes Secret that contains
 the S3 credentials, and a values file for version 3.0.
 The values file is does not have any omissions.
-The parts that were omitted in the 2.1 version are automatically included by the Helm chart in version 3.0.
+The parts that were omitted in the 2.x version are automatically included by the Helm chart in version 3.0.
 
 Kubernetes Secret:
 
@@ -234,7 +235,7 @@ global:
         name: mimir-bucket-secret
 ```
 
-## Example of migration of customized memcached values between versions 2.1 and 3.0
+## Example of migration of customized memcached values between versions 2.x and 3.0
 
 Version 2.1:
 
