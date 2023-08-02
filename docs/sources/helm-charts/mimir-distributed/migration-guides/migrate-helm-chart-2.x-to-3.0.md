@@ -8,7 +8,7 @@ menuTitle: "Migrate Helm chart 2.x to 3.0"
 weight: 100
 ---
 
-# Migrate the Helm chart from version 2.x to 3.0
+# Migrate the Mimir Helm chart from version 2.x to 3.0
 
 There are breaking changes between the Grafana Mimir Helm chart versions 2.x and 3.0.
 Several parameters that were available in versions 2.x of the mimir-distributed Helm chart have changed.
