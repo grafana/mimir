@@ -2035,6 +2035,11 @@ alertmanager_client:
 # removed for any tenant that does not have a configuration.
 # CLI flag: -alertmanager.enable-state-cleanup
 [enable_state_cleanup: <boolean> | default = true]
+
+# (experimental) Optional filename of a template file which is loaded by default
+# for all tenants, prior to their own templates being loaded.
+# CLI flag: -alertmanager.default-template
+[default_template: <string> | default = ""]
 ```
 
 ### alertmanager_storage

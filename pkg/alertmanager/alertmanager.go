@@ -87,6 +87,7 @@ type Config struct {
 	Replicator        Replicator
 	Store             alertstore.AlertStore
 	PersisterConfig   PersisterConfig
+	DefaultTemplate   string
 }
 
 // An Alertmanager manages the alerts for one user.
@@ -311,14 +312,21 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 
 // ApplyConfig applies a new configuration to an Alertmanager.
 func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg string) error {
-	templateFiles := make([]string, len(conf.Templates))
-	for i, t := range conf.Templates {
+	templateFiles := make([]string, 0, len(conf.Templates)+1)
+
+	// The default system template is processed before user templates, so that
+	// user templates can still override anything they want.
+	if am.cfg.DefaultTemplate != "" {
+		templateFiles = append(templateFiles, am.cfg.DefaultTemplate)
+	}
+
+	for _, t := range conf.Templates {
 		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
 		if err != nil {
 			return err
 		}
 
-		templateFiles[i] = templateFilepath
+		templateFiles = append(templateFiles, templateFilepath)
 	}
 
 	tmpl, err := template.FromGlobs(templateFiles, withCustomFunctions(userID))

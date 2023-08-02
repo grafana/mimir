@@ -153,6 +153,8 @@ Usage of ./cmd/mimir/mimir:
     	Filename of fallback config to use if none specified for instance.
   -alertmanager.configs.poll-interval duration
     	How frequently to poll Alertmanager configs. (default 15s)
+  -alertmanager.default-template string
+    	[experimental] Optional filename of a template file which is loaded by default for all tenants, prior to their own templates being loaded.
   -alertmanager.enable-api
     	Enable the alertmanager config API. (default true)
   -alertmanager.enable-state-cleanup
