@@ -30,8 +30,8 @@ BINARY_SUFFIX ?= ""
 
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
-IMAGE_PREFIX ?= grafana/
-BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
+IMAGE_PREFIX ?= us.gcr.io/kubernetes-dev/
+BUILD_IMAGE ?= grafana/mimir-build-image
 CONTAINER_MOUNT_OPTIONS ?= delegated,z
 
 # For a tag push, $GITHUB_REF will look like refs/tags/<tag_name>.

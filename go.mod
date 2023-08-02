@@ -225,7 +225,12 @@ require (
 	go.opentelemetry.io/collector/featuregate v1.0.0-rcv0014 // indirect
 	go.opentelemetry.io/collector/semconv v0.82.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0 // indirect
+	go.opentelemetry.io/contrib/propagators/jaeger v1.15.0 // indirect
+	go.opentelemetry.io/contrib/samplers/jaegerremote v0.9.0 // indirect
+	go.opentelemetry.io/otel/bridge/opentracing v1.14.0 // indirect
+	go.opentelemetry.io/otel/exporters/jaeger v1.14.0 // indirect
 	go.opentelemetry.io/otel/metric v1.16.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.16.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/oauth2 v0.10.0 // indirect
@@ -247,6 +252,8 @@ require (
 
 // Using a fork of Prometheus with Mimir-specific changes.
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230727094429-c8f5ad1492a4
+
+replace github.com/weaveworks/common => /Users/ying-jeanne/Workspace/common
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
