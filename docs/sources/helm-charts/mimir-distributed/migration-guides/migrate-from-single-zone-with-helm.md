@@ -1,11 +1,13 @@
 ---
-title: "Migrate from single zone to zone-aware replication"
-menuTitle: "Migrate from single zone to zone-aware replication"
+title: "Migrate from single zone to zone-aware replication in Helm chart version 4.0"
+menuTitle: "Migrate from single zone to zone-aware replication in Helm chart version 4.0"
 description: "Learn how to migrate from having a single availability zone to full zone-aware replication using the Grafana Mimir Helm chart"
 weight: 10
 ---
 
-# Migrate from single zone to zone-aware replication
+# Migrate from single zone to zone-aware replication in Helm chart version 4.0
+
+The `mimir-distributed` Helm chart version 4.0 enables zone-aware replication by default. This is a breaking change for existing installations and requires a migration.
 
 This document explains how to migrate stateful components from single zone to [zone-aware replication](/docs/mimir/{{< param "mimir_docs_version" >}}/configure/configure-zone-aware-replication/) with Helm. The three components in question are the [alertmanager](/docs/mimir/{{< param "mimir_docs_version" >}}/references/architecture/components/alertmanager/), the [store-gateway](/docs/mimir/{{< param "mimir_docs_version" >}}/references/architecture/components/store-gateway/) and the [ingester](/docs/mimir/{{< param "mimir_docs_version" >}}/references/architecture/components/ingester/).
 
@@ -33,7 +35,7 @@ Depending on what version of the `mimir-distributed` Helm chart is installed cur
         enabled: false
       ```
 
-      > **Note**: a direct upgrade from non-zone aware ingesters to zone-aware ingesters will cause data loss othewise.
+      > **Note**: a direct upgrade from non-zone aware ingesters to zone-aware ingesters will cause data loss otherwise.
 
   1.  If you have modified the `mimir.config` value, either make sure to merge in the latest version from the chart, or consider using `mimir.structuredConfig` instead.
 
