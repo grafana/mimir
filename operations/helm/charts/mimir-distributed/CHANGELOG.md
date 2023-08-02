@@ -28,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Sets the `appProtocol` value to `tcp` for the `gossip-ring-svc` template. This allows memberlist to work with istio protocol selection. #5177
+
 ## 5.0.0
 
 * [CHANGE] Changed max unavailable ingesters and store-gateways in a zone to 50. #5327
@@ -38,7 +40,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Memcached: enable providing additional extended options (`-o/--extended`) via `<cache-section>.extraExtendedOptions`. #5353
 * [ENHANCEMENT] Memcached exporter: enable adding additional CLI arguments via `memcachedExporter.extraArgs`. #5353
 * [ENHANCEMENT] Memcached: allow mounting additional volumes to the memcached and exporter containers via `<cache-section>.extraVolumes` and `<cache-section>.extraVolumeMounts`. #5353
-* [ENHANCEMENT] Adds the optional appProtocol field to the memberlist service. This allows memberlist to work with istio protocol selection. You can configure the appProtocol via the `mimir.memberlistAppProtocol` value. #5177
 
 ## 4.5.0
 
