@@ -59,6 +59,9 @@ func Usage(printAll bool, configs ...interface{}) error {
 			case "deprecated":
 				fieldCat = fieldcategory.Deprecated
 			}
+		} else {
+			// The field is neither an override nor has been parsed, so we'll skip it.
+			return
 		}
 
 		if fieldCat != fieldcategory.Basic && !printAll {
@@ -149,7 +152,7 @@ func parseStructure(structure interface{}, fields map[uintptr]reflect.StructFiel
 		fields[fieldValue.Addr().Pointer()] = field
 
 		// Recurse if a struct
-		if field.Type.Kind() != reflect.Struct || ignoreStructType(field.Type) || !field.IsExported() {
+		if field.Type.Kind() != reflect.Struct || isFieldHidden(field) || ignoreStructType(field.Type) || !field.IsExported() {
 			continue
 		}
 
