@@ -162,6 +162,8 @@ func Test_loadTemplates(t *testing.T) {
 }
 
 func templateDataForTests(t *testing.T, tmpl *template.Template) *template.Data {
+	t.Helper()
+
 	eurl, _ := url.Parse("http://localhost:9090")
 	tmpl.ExternalURL = eurl // This is done externally, by the system using the templates.
 	return tmpl.Data("receiver", model.LabelSet{}, &types.Alert{
