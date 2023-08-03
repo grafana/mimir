@@ -36,12 +36,22 @@
     container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
-    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}) +
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
 
   querier_env_map:: {
     JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
+
+    // Dynamically set GOMAXPROCS based on CPU request.
+    GOMAXPROCS: std.toString(
+      std.ceil(
+        std.max(
+          $.util.parseCPU($.querier_container.resources.requests.cpu) * 2,
+          $.util.parseCPU($.querier_container.resources.requests.cpu) + 4
+        ),
+      )
+    ),
   },
 
   querier_container::

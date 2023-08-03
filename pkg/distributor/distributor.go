@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/instrument"
-	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
@@ -45,6 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/push"
@@ -220,9 +220,10 @@ const (
 
 // New constructs a new Distributor
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(addr, clientConfig)
+			return ingester_client.MakeIngesterClient(addr, clientConfig, clientMetrics)
 		}
 	}
 
@@ -1020,7 +1021,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		il := d.getInstanceLimits()
 		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return nil, middleware.DoNotLogError{Err: errMaxInflightRequestsReached}
+			return nil, util_log.DoNotLogError{Err: errMaxInflightRequestsReached}
 		}
 
 		if il.MaxIngestionRate > 0 {

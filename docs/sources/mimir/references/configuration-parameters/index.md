@@ -3394,6 +3394,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-concurrency
   [index_header_lazy_loading_concurrency: <int> | default = 0]
 
+  # (experimental) If enabled, store-gateway will persist a sparse version of
+  # the index-header to disk on construction and load sparse index-headers from
+  # disk instead of the whole index-header.
+  # CLI flag: -blocks-storage.bucket-store.index-header-sparse-persistence-enabled
+  [index_header_sparse_persistence_enabled: <boolean> | default = false]
+
   # (advanced) Max size - in bytes - of a gap for which the partitioner
   # aggregates together two bucket GET object requests.
   # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes
@@ -3691,6 +3697,11 @@ The `compactor` block configures the compactor component.
 # discovery of blocks more often. 0 = disabled.
 # CLI flag: -compactor.max-compaction-time
 [max_compaction_time: <duration> | default = 1h]
+
+# (experimental) If enabled, will delete the bucket-index, markers and debug
+# files in the tenant bucket when there are no blocks left in the index.
+# CLI flag: -compactor.no-blocks-file-cleanup-enabled
+[no_blocks_file_cleanup_enabled: <boolean> | default = false]
 
 # (advanced) Number of goroutines opening blocks before compaction.
 # CLI flag: -compactor.max-opening-blocks-concurrency

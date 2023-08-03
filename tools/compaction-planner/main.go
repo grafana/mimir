@@ -15,6 +15,7 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -50,7 +51,11 @@ func main() {
 	flag.IntVar(&cfg.shardCount, "shard-count", 4, "Shard count")
 	flag.IntVar(&cfg.splitGroups, "split-groups", 4, "Split groups")
 	flag.StringVar(&cfg.sorting, "sorting", compactor.CompactionOrderOldestFirst, "One of: "+strings.Join(compactor.CompactionOrders, ", ")+".")
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatalln(err.Error())
+	}
 
 	if cfg.userID == "" {
 		log.Fatalln("no user specified")

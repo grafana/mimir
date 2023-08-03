@@ -352,16 +352,6 @@ groups:
       severity: critical
 - name: mimir-provisioning
   rules:
-  - alert: MimirProvisioningTooManyActiveSeries
-    annotations:
-      message: |
-        The number of in-memory series per ingester in {{ $labels.cluster }}/{{ $labels.namespace }} is too high.
-      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirprovisioningtoomanyactiveseries
-    expr: |
-      avg by (cluster, namespace) (cortex_ingester_memory_series) > 1.6e6
-    for: 2h
-    labels:
-      severity: warning
   - alert: MimirProvisioningTooManyWrites
     annotations:
       message: |

@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -33,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -238,6 +238,7 @@ func NewBucketStore(
 	indexHeaderCfg indexheader.Config,
 	lazyIndexReaderEnabled bool,
 	lazyIndexReaderIdleTimeout time.Duration,
+	sparsePersistenceEnabled bool,
 	seriesHashCache *hashcache.SeriesHashCache,
 	metrics *BucketStoreMetrics,
 	options ...BucketStoreOption,
@@ -272,7 +273,7 @@ func NewBucketStore(
 	}
 
 	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, sparsePersistenceEnabled, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
@@ -611,9 +612,9 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
-	tracing.DoWithSpan(ctx, "store_query_gate_ismyturn", func(ctx context.Context, _ tracing.Span) {
-		err = s.queryGate.Start(ctx)
-	})
+	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
+	err = s.queryGate.Start(spanCtx)
+	span.Finish()
 	if err != nil {
 		return errors.Wrapf(err, "failed to wait for turn")
 	}
@@ -1252,7 +1253,7 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
 	// ignore the span context so that we can use the context for cancellation
-	span, _ := tracing.StartSpan(ctx, "bucket_store_open_blocks_for_reading")
+	span, _ := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
 	defer span.Finish()
 
 	s.blocksMx.RLock()

@@ -128,7 +128,11 @@ func main() {
 	cfg := config{}
 	cfg.RegisterFlags(flag.CommandLine)
 
-	flag.Parse()
+	// Parse CLI arguments.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	logger := log.NewLogfmtLogger(os.Stdout)
 	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
