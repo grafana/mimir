@@ -73,6 +73,8 @@ func BenchmarkIngesterClient_ConcurrentStreams(b *testing.B) {
 	serverCfg := server.Config{}
 	flagext.DefaultValues(&serverCfg)
 	serverCfg.ExcludeRequestInLog = true
+	serverCfg.GRPCListenPort = 0 // get any free port
+	serverCfg.HTTPListenPort = 0 // get any free port
 	serverCfg.GPRCServerMaxConcurrentStreams = 10000
 	serverCfg.Log = logging.NewGoKit(serverCfg.LogLevel)
 	serverCfg.Registerer = prometheus.NewRegistry()
