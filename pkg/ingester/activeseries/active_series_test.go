@@ -31,11 +31,11 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
-	assert.Nil(t, activeMatching)
+	assert.Empty(t, activeMatching)
 	assert.Equal(t, 0, allActiveHistograms)
-	assert.Nil(t, activeMatchingHistograms)
+	assert.Empty(t, activeMatchingHistograms)
 	assert.Equal(t, 0, allActiveBuckets)
-	assert.Nil(t, activeMatchingBuckets)
+	assert.Empty(t, activeMatchingBuckets)
 
 	c.UpdateSeries(ls1, ref1, time.Now(), -1)
 	valid = c.Purge(time.Now())
@@ -155,7 +155,7 @@ func TestActiveSeries_ContainsRef(t *testing.T) {
 			assert.True(t, valid)
 			allActive, activeMatching, _, _, _, _ := c.ActiveWithMatchers()
 			assert.Equal(t, exp, allActive)
-			assert.Nil(t, activeMatching)
+			assert.Empty(t, activeMatching)
 
 			for i := 0; i < len(series); i++ {
 				assert.Equal(t, i >= ttl, c.ContainsRef(refs[i]))
@@ -374,7 +374,7 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 			assert.True(t, valid)
 			allActive, activeMatching, _, _, _, _ := c.ActiveWithMatchers()
 			assert.Equal(t, exp, allActive)
-			assert.Nil(t, activeMatching)
+			assert.Empty(t, activeMatching)
 		})
 	}
 }
@@ -504,7 +504,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
-	assert.Equal(t, []int(nil), activeMatching)
+	assert.Empty(t, activeMatching)
 
 	asmWithMoreMatchers := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"a": `{a="3"}`,
