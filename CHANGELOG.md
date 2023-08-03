@@ -41,7 +41,8 @@
 * [BUGFIX] Alerts: fixed issue where `GossipMembersMismatch` warning message referred to per-instance labels that were not produced by the alert query. #6146
 
 ### Jsonnet
-
+* 
+* [CHANGE] Ingester: reduce `-server.grpc-max-concurrent-streams` to 500. #5666
 * [FEATURE] Store-gateway: Allow automated zone-by-zone downscaling, that can be enabled via the `store_gateway_automated_downscale_enabled` flag. It is disabled by default. #6149
 * [FEATURE] Ingester: Allow to configure TSDB Head early compaction using the following `_config` parameters: #6181
   * `ingester_tsdb_head_early_compaction_enabled` (disabled by default)

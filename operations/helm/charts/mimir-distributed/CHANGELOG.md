@@ -28,6 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Reduce `-server.grpc-max-concurrent-streams` from 1000 to 500. #5666
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.9.1`. #6022 #6110
 
 ## 5.1.0
