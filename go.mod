@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20230721071918-7ba66579c3ac
+	github.com/grafana/dskit v0.0.0-20230731140248-b62b4b2ca7b2
 	github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
 	github.com/hashicorp/golang-lru v0.6.0
 	github.com/json-iterator/go v1.1.12
@@ -38,7 +38,7 @@ require (
 	github.com/spf13/afero v1.9.5
 	github.com/stretchr/testify v1.8.4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce
+	github.com/weaveworks/common v0.0.0-20230728070032-dd9e68f319d5
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.2.1
 	golang.org/x/crypto v0.11.0
@@ -53,7 +53,7 @@ require (
 require (
 	cloud.google.com/go/storage v1.31.0
 	github.com/alecthomas/chroma v0.10.0
-	github.com/aws/aws-sdk-go v1.44.309
+	github.com/aws/aws-sdk-go v1.44.312
 	github.com/dennwc/varint v1.0.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.5.9
@@ -65,7 +65,7 @@ require (
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.82.0
-	github.com/prometheus/procfs v0.11.0
+	github.com/prometheus/procfs v0.11.1
 	github.com/thanos-io/objstore v0.0.0-20230727115635-d0c43443ecda
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.0.0-rcv0014
@@ -73,7 +73,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.16.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
-	google.golang.org/api v0.132.0
+	google.golang.org/api v0.134.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	sigs.k8s.io/kustomize/kyaml v0.14.3
 )
@@ -236,7 +236,7 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230717213848-3f92550aa753 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230717213848-3f92550aa753 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230717213848-3f92550aa753 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230720185612-659f7aaaa771 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/telebot.v3 v3.1.3 // indirect
@@ -268,6 +268,3 @@ replace github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-
 
 // Replace opentracing-contrib/go-stdlib with a fork until https://github.com/opentracing-contrib/go-stdlib/pull/68 is merged.
 replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
-
-// Use a fork of weaveworks/common while we work out if there is a better design for https://github.com/weaveworks/common/pull/293
-replace github.com/weaveworks/common => github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce

@@ -5,9 +5,11 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/weaveworks/common/logging"
@@ -37,10 +39,14 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func main() {
-	// Parse CLI flags.
+	// Parse CLI arguments.
 	cfg := &Config{}
 	cfg.RegisterFlags(flag.CommandLine)
-	flag.Parse()
+
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	util_log.InitLogger(&server.Config{
 		LogLevel: cfg.LogLevel,

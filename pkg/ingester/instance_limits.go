@@ -9,10 +9,10 @@ import (
 	"flag"
 
 	"github.com/pkg/errors"
-	"github.com/weaveworks/common/middleware"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
@@ -27,7 +27,7 @@ var (
 	errMaxIngestionRateReached    = errors.New(globalerror.IngesterMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the samples ingestion rate limit", maxIngestionRateFlag))
 	errMaxTenantsReached          = errors.New(globalerror.IngesterMaxTenants.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of tenants", maxInMemoryTenantsFlag))
 	errMaxInMemorySeriesReached   = errors.New(globalerror.IngesterMaxInMemorySeries.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of in-memory series", maxInMemorySeriesFlag))
-	errMaxInflightRequestsReached = middleware.DoNotLogError{Err: errors.New(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))}
+	errMaxInflightRequestsReached = util_log.DoNotLogError{Err: errors.New(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))}
 )
 
 // InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return

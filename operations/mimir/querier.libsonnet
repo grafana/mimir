@@ -42,6 +42,16 @@
 
   querier_env_map:: {
     JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
+
+    // Dynamically set GOMAXPROCS based on CPU request.
+    GOMAXPROCS: std.toString(
+      std.ceil(
+        std.max(
+          $.util.parseCPU($.querier_container.resources.requests.cpu) * 2,
+          $.util.parseCPU($.querier_container.resources.requests.cpu) + 4
+        ),
+      )
+    ),
   },
 
   querier_container::

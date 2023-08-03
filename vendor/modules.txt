@@ -145,7 +145,7 @@ github.com/armon/go-metrics/prometheus
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
-# github.com/aws/aws-sdk-go v1.44.309
+# github.com/aws/aws-sdk-go v1.44.312
 ## explicit; go 1.11
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
@@ -556,7 +556,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230721071918-7ba66579c3ac
+# github.com/grafana/dskit v0.0.0-20230731140248-b62b4b2ca7b2
 ## explicit; go 1.18
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -881,7 +881,7 @@ github.com/prometheus/common/sigv4
 # github.com/prometheus/exporter-toolkit v0.10.0
 ## explicit; go 1.18
 github.com/prometheus/exporter-toolkit/web
-# github.com/prometheus/procfs v0.11.0
+# github.com/prometheus/procfs v0.11.1
 ## explicit; go 1.19
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
@@ -1025,7 +1025,7 @@ github.com/uber/jaeger-client-go/utils
 ## explicit
 github.com/uber/jaeger-lib/metrics
 github.com/uber/jaeger-lib/metrics/prometheus
-# github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce => github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce
+# github.com/weaveworks/common v0.0.0-20230728070032-dd9e68f319d5
 ## explicit; go 1.14
 github.com/weaveworks/common/errors
 github.com/weaveworks/common/grpc
@@ -1267,7 +1267,7 @@ golang.org/x/tools/internal/typesinternal
 ## explicit; go 1.17
 golang.org/x/xerrors
 golang.org/x/xerrors/internal
-# google.golang.org/api v0.132.0
+# google.golang.org/api v0.134.0
 ## explicit; go 1.19
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/transport
@@ -1308,7 +1308,7 @@ google.golang.org/genproto/internal
 ## explicit; go 1.19
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20230717213848-3f92550aa753
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20230720185612-659f7aaaa771
 ## explicit; go 1.19
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
@@ -1486,4 +1486,3 @@ sigs.k8s.io/yaml
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
 # github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
-# github.com/weaveworks/common => github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce

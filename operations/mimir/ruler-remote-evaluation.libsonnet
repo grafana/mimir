@@ -35,7 +35,11 @@
       'querier.max-concurrent': $._config.ruler_querier_max_concurrency,
     },
 
-  ruler_querier_env_map:: $.querier_env_map,
+  ruler_querier_env_map:: $.querier_env_map {
+    // Do not dynamically set GOMAXPROCS for ruler-querier. We don't expect ruler-querier resources
+    // utilization to be spiky, and we want to reduce the risk rule evaluations are getting delayed.
+    GOMAXPROCS: null,
+  },
 
   ruler_querier_container::
     $.newQuerierContainer('ruler-querier', $.ruler_querier_args, $.ruler_querier_env_map),

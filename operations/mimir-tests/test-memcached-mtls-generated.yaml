@@ -625,6 +625,8 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
         image: grafana/mimir:2.9.0
@@ -1364,7 +1366,7 @@ spec:
             memory: 1536Mi
           requests:
             cpu: "1"
-            memory: 1329Mi
+            memory: 1176Mi
         volumeMounts:
         - mountPath: /var/secrets/memcached-ca-cert/
           name: memcached-ca-cert
@@ -1441,7 +1443,7 @@ spec:
             memory: 1536Mi
           requests:
             cpu: "1"
-            memory: 1329Mi
+            memory: 1176Mi
         volumeMounts:
         - mountPath: /var/secrets/memcached-ca-cert/
           name: memcached-ca-cert
@@ -1518,7 +1520,7 @@ spec:
             memory: 768Mi
           requests:
             cpu: "1"
-            memory: 715Mi
+            memory: 638Mi
         volumeMounts:
         - mountPath: /var/secrets/memcached-ca-cert/
           name: memcached-ca-cert
