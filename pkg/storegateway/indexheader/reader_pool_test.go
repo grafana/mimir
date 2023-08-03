@@ -86,20 +86,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 	}
 
 	ctx := context.Background()
-
-	tmpDir := t.TempDir()
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	require.NoError(t, err)
-	defer func() { require.NoError(t, bkt.Close()) }()
-
-	// Create block.
-	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
-		labels.FromStrings("a", "1"),
-		labels.FromStrings("a", "2"),
-		labels.FromStrings("a", "3"),
-	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
-	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
