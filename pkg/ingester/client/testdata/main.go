@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/weaveworks/common/user"
@@ -22,38 +23,36 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	client, err := client.MakeIngesterClient(address, client.Config{}, client.NewMetrics(prometheus.NewRegistry()))
+	client, err := client.MakeIngesterClient(address, client.Config{GRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 100000000}}, client.NewMetrics(prometheus.NewRegistry()))
 	if err != nil {
 		panic(err)
 	}
 	defer client.Close()
 
-	writeRequests := make([]*mimirpb.WriteRequest, numRequests)
-	for i := 0; i < numRequests; i++ {
-		writeRequests[i] = &mimirpb.WriteRequest{
-			Timeseries: mimirpb.PreallocTimeseriesSliceFromPool(),
-		}
-		for j := range writeRequests[i].Timeseries {
-			writeRequests[i].Timeseries[j].TimeSeries = &mimirpb.TimeSeries{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(strings.Repeat("a", 20), strings.Repeat("b", 40))),
-				Samples: make([]mimirpb.Sample, 1),
-			}
+	writeRequest := &mimirpb.WriteRequest{
+		Timeseries: mimirpb.PreallocTimeseriesSliceFromPool(),
+	}
+	writeRequest.Timeseries = writeRequest.Timeseries[:cap(writeRequest.Timeseries)]
+	for j := range writeRequest.Timeseries {
+		writeRequest.Timeseries[j].TimeSeries = &mimirpb.TimeSeries{
+			Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(strings.Repeat("a", 20), strings.Repeat("b", 40))),
+			Samples: make([]mimirpb.Sample, 1),
 		}
 	}
-
 	wg := &sync.WaitGroup{}
 	ctx, err := user.InjectIntoGRPCRequest(user.InjectOrgID(context.Background(), "test"))
 	if err != nil {
 		panic(err)
 	}
 	for i := 0; i < numRequests; i++ {
-		i := i
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := client.Push(ctx, writeRequests[i])
-			if err == nil || !strings.Contains(err.Error(), "not implemented") {
-				panic("error doesn't contain 'not implemented'")
+			_, err := client.Push(ctx, writeRequest)
+			if err == nil {
+				panic("error is nil")
+			} else if !strings.Contains(err.Error(), "not implemented") {
+				panic("error doesn't contain 'not implemented': " + err.Error())
 			}
 		}()
 	}
