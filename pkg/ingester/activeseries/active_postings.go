@@ -39,7 +39,7 @@ func (a *Postings) Err() error {
 // Next implements index.Postings.
 func (a *Postings) Next() bool {
 	for a.postings.Next() {
-		if a.activeSeries.ContainsRef(uint64(a.postings.At())) {
+		if a.activeSeries.ContainsRef(a.postings.At()) {
 			return true
 		}
 	}
@@ -55,7 +55,7 @@ func (a *Postings) Seek(v storage.SeriesRef) bool {
 	}
 
 	// If the underlying postings contain a value, check if it's active.
-	if a.activeSeries.ContainsRef(uint64(a.postings.At())) {
+	if a.activeSeries.ContainsRef(a.postings.At()) {
 		return true
 	}
 

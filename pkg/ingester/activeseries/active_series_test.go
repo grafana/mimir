@@ -14,16 +14,17 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 )
 
 const DefaultTimeout = 5 * time.Minute
 
 func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
-	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
-	ref2, ls2 := uint64(2), labels.FromStrings("a", "2")
-	ref3, ls3 := uint64(3), labels.FromStrings("a", "3")
-	ref4, ls4 := uint64(4), labels.FromStrings("a", "4")
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
+	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 	valid := c.Purge(time.Now())
@@ -132,7 +133,7 @@ func TestActiveSeries_ContainsRef(t *testing.T) {
 		collision2,
 	}
 
-	refs := []uint64{1, 2, 3, 4}
+	refs := []storage.SeriesRef{1, 2, 3, 4}
 
 	// Run the same test for increasing TTL values
 	for ttl := 1; ttl <= len(series); ttl++ {
@@ -164,11 +165,11 @@ func TestActiveSeries_ContainsRef(t *testing.T) {
 }
 
 func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
-	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
-	ref2, ls2 := uint64(2), labels.FromStrings("a", "2")
-	ref3, ls3 := uint64(3), labels.FromStrings("a", "3")
-	ref4, ls4 := uint64(4), labels.FromStrings("a", "4")
-	ref5, ls5 := uint64(5), labels.FromStrings("a", "5")
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
+	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
+	ref5, ls5 := storage.SeriesRef(5), labels.FromStrings("a", "5")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3|4"}`}))
 
@@ -330,7 +331,7 @@ func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 
 func TestActiveSeries_ShouldCorrectlyHandleHashCollisions(t *testing.T) {
 	ls1, ls2 := labelsWithHashCollision()
-	ref1, ref2 := uint64(1), uint64(2)
+	ref1, ref2 := storage.SeriesRef(1), storage.SeriesRef(2)
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 	c.UpdateSeries(ls1, ref1, time.Now(), -1)
@@ -351,7 +352,7 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 		collision2,
 	}
 
-	refs := []uint64{1, 2, 3, 4}
+	refs := []storage.SeriesRef{1, 2, 3, 4}
 
 	// Run the same test for increasing TTL values
 	for ttl := 1; ttl <= len(series); ttl++ {
@@ -387,7 +388,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 		collision2,
 	}
 
-	refs := []uint64{1, 2, 3, 4}
+	refs := []storage.SeriesRef{1, 2, 3, 4}
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{_=~"y.*"}`}))
 
@@ -425,7 +426,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 
 func TestActiveSeries_PurgeOpt(t *testing.T) {
 	ls1, ls2 := labelsWithHashCollision()
-	ref1, ref2 := uint64(1), uint64(2)
+	ref1, ref2 := storage.SeriesRef(1), storage.SeriesRef(2)
 
 	currentTime := time.Now()
 	c := NewActiveSeries(&Matchers{}, 59*time.Second)
@@ -456,10 +457,10 @@ func TestActiveSeries_PurgeOpt(t *testing.T) {
 }
 
 func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
-	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
-	ref2, ls2 := uint64(2), labels.FromStrings("a", "2")
-	ref3, ls3 := uint64(3), labels.FromStrings("a", "3")
-	ref4, ls4 := uint64(4), labels.FromStrings("a", "4")
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
+	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.*}`}))
 
@@ -522,7 +523,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 }
 
 func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
-	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
@@ -560,7 +561,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 }
 
 func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
-	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
@@ -612,7 +613,7 @@ func BenchmarkActiveSeriesTest_single_series(b *testing.B) {
 
 func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) {
 	series := labels.FromStrings("a", "a")
-	ref := uint64(1)
+	ref := storage.SeriesRef(1)
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 
@@ -667,7 +668,7 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 			const nLabels = 10
 			builder := labels.NewScratchBuilder(nLabels)
 			series := make([]labels.Labels, tt.nSeries)
-			refs := make([]uint64, tt.nSeries)
+			refs := make([]storage.SeriesRef, tt.nSeries)
 			for s := 0; s < tt.nSeries; s++ {
 				builder.Reset()
 				for i := 0; i < nLabels; i++ {
@@ -675,7 +676,7 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 					builder.Add(fmt.Sprintf("abcdefghijabcdefghi%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcd%d", s))
 				}
 				series[s] = builder.Labels()
-				refs[s] = uint64(s)
+				refs[s] = storage.SeriesRef(s)
 			}
 
 			now := time.Now().UnixNano()
@@ -710,10 +711,10 @@ func benchmarkPurge(b *testing.B, twice bool) {
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 
 	series := [numSeries]labels.Labels{}
-	refs := [numSeries]uint64{}
+	refs := [numSeries]storage.SeriesRef{}
 	for s := 0; s < numSeries; s++ {
 		series[s] = labels.FromStrings("a", strconv.Itoa(s))
-		refs[s] = uint64(s)
+		refs[s] = storage.SeriesRef(s)
 	}
 
 	for i := 0; i < b.N; i++ {
