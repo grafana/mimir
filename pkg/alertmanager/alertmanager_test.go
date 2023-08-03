@@ -8,6 +8,7 @@ package alertmanager
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"testing"
@@ -85,7 +86,8 @@ route:
 
 	cfg, err := config.Load(cfgRaw)
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
+	tmpls := make([]io.Reader, 0)
+	require.NoError(t, am.ApplyConfig(user, cfg, tmpls, cfgRaw))
 
 	now := time.Now()
 
@@ -168,7 +170,8 @@ route:
 
 	cfg, err := config.Load(cfgRaw)
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
+	tmpls := make([]io.Reader, 0)
+	require.NoError(t, am.ApplyConfig(user, cfg, tmpls, cfgRaw))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{

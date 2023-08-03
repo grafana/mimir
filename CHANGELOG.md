@@ -63,6 +63,7 @@
 * [ENHANCEMENT] Distributor: improve performance ingesting OTLP payloads. #5531 #5607 #5616
 * [ENHANCEMENT] Ingester: optimize label-values with matchers call when number of matched series is small. #5600
 * [ENHANCEMENT] Compactor: Delete bucket-index, markers and debug files if there are no blocks left in the bucket index. This cleanup must be enabled by using `-compactor.no-blocks-file-cleanup-enabled` option. #5648
+* [ENHANCEMENT] Alertmanager: Reloading config and templates no longer needs to hit the disk. #4967
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377
@@ -172,9 +173,11 @@
 * [ENHANCEMENT] Alertmanager: Add additional template function `queryFromGeneratorURL` returning query URL decoded query from the `GeneratorURL` field of an alert. #4301
 * [ENHANCEMENT] Ruler: added experimental ruler storage cache support. The cache should reduce the number of "list objects" API calls issued to the object storage when there are 2+ ruler replicas running in a Mimir cluster. The cache can be configured setting `-ruler-storage.cache.*` CLI flags or their respective YAML config options. #4950 #5054
 * [ENHANCEMENT] Store-gateway: added HTTP `/store-gateway/prepare-shutdown` endpoint for gracefully scaling down of store-gateways. A gauge `cortex_store_gateway_prepare_shutdown_requested` has been introduced for tracing this process. #4955
-* [ENHANCEMENT] Updated Kuberesolver dependency (github.com/sercand/kuberesolver) from v2.4.0 to v4.0.0 and gRPC dependency (google.golang.org/grpc) from v1.47.0 to v1.53.0. #4922
-* [ENHANCEMENT] Introduced new options for logging HTTP request headers: `-server.log-request-headers` enables logging HTTP request headers, `-server.log-request-headers-exclude-list` lists headers which should not be logged. #4922
-* [ENHANCEMENT] Block upload: `/api/v1/upload/block/{block}/files` endpoint now disables read and write HTTP timeout, overriding `-server.http-read-timeout` and `-server.http-write-timeout` values. This is done to allow large file uploads to succeed. #4956
+* [ENHANCEMENT] Alertmanager: Reloading config and templates no longer needs to hit the disk. #4967
+* [BUGFIX] Metadata API: Mimir will now return an empty object when no metadata is available, matching Prometheus. #4782
+* [BUGFIX] Store-gateway: add collision detection on expanded postings and individual postings cache keys. #4770
+* [BUGFIX] Ruler: Support the `type=alert|record` query parameter for the API endpoint `<prometheus-http-prefix>/api/v1/rules`. #4302
+* [BUGFIX] Backend: Check that alertmanager's data-dir doesn't overlap with bucket-sync dir. #4921
 * [ENHANCEMENT] Alertmanager: Introduce new metrics from upstream. #4918
   * `cortex_alertmanager_notifications_failed_total` (added `reason` label)
   * `cortex_alertmanager_nflog_maintenance_total`

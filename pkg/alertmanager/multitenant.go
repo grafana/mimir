@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -659,56 +660,16 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertCon
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
-	var userAmConfig *amconfig.Config
-	var err error
-	var hasTemplateChanges bool
-	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
-	var pathsToRemove = make(map[string]struct{})
-
-	// List existing files to keep track of the ones to be removed
-	if oldTemplateFiles, err := os.ReadDir(userTemplateDir); err == nil {
-		for _, file := range oldTemplateFiles {
-			templateFilePath, err := safeTemplateFilepath(userTemplateDir, file.Name())
-			if err != nil {
-				return err
-			}
-			pathsToRemove[templateFilePath] = struct{}{}
-		}
-	}
-
-	for _, tmpl := range cfg.Templates {
-		templateFilePath, err := safeTemplateFilepath(userTemplateDir, tmpl.Filename)
-		if err != nil {
-			return err
-		}
-
-		// Removing from pathsToRemove map the files that still exists in the config
-		delete(pathsToRemove, templateFilePath)
-		hasChanged, err := storeTemplateFile(templateFilePath, tmpl.Body)
-		if err != nil {
-			return err
-		}
-
-		if hasChanged {
-			hasTemplateChanges = true
-		}
-	}
-
-	for pathToRemove := range pathsToRemove {
-		err := os.Remove(pathToRemove)
-		if err != nil {
-			level.Warn(am.logger).Log("msg", "failed to remove file", "file", pathToRemove, "err", err)
-		}
-		hasTemplateChanges = true
-	}
-
 	level.Debug(am.logger).Log("msg", "setting config", "user", cfg.User)
 
 	am.alertmanagersMtx.Lock()
 	defer am.alertmanagersMtx.Unlock()
+
 	existing, hasExisting := am.alertmanagers[cfg.User]
 
 	rawCfg := cfg.RawConfig
+	var userAmConfig *amconfig.Config
+	var err error
 	if cfg.RawConfig == "" {
 		if am.fallbackConfig == "" {
 			return fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
@@ -737,18 +698,23 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
+	templates := make([]io.Reader, 0, len(cfg.Templates))
+	for _, tmpl := range cfg.Templates {
+		templates = append(templates, strings.NewReader(tmpl.Body))
+	}
+
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, rawCfg)
+		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, templates, rawCfg)
 		if err != nil {
 			return err
 		}
 		am.alertmanagers[cfg.User] = newAM
-	} else if am.cfgs[cfg.User].RawConfig != cfg.RawConfig || hasTemplateChanges {
+	} else if configChanged(am.cfgs[cfg.User], cfg) {
 		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
 		// If the config changed, apply the new one.
-		err := existing.ApplyConfig(cfg.User, userAmConfig, rawCfg)
+		err := existing.ApplyConfig(cfg.User, userAmConfig, templates, rawCfg)
 		if err != nil {
 			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 		}
@@ -762,7 +728,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amconfig.Config, rawCfg string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amconfig.Config, templates []io.Reader, rawCfg string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -789,7 +755,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
 
-	if err := newAM.ApplyConfig(userID, amConfig, rawCfg); err != nil {
+	if err := newAM.ApplyConfig(userID, amConfig, templates, rawCfg); err != nil {
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
 
@@ -1230,4 +1196,31 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func configChanged(left, right alertspb.AlertConfigDesc) bool {
+	if left.User != right.User {
+		return true
+	}
+	if left.RawConfig != right.RawConfig {
+		return true
+	}
+
+	existing := make(map[string]string)
+	for _, tm := range left.Templates {
+		existing[tm.Filename] = tm.Body
+	}
+
+	for _, tm := range right.Templates {
+		corresponding, ok := existing[tm.Filename]
+		if !ok {
+			return true // Right has a template that left does not.
+		}
+		if corresponding != tm.Body {
+			return true // The template content is different.
+		}
+		delete(existing, tm.Filename)
+	}
+
+	return len(existing) != 0 // Left has a template that right does not.
 }
