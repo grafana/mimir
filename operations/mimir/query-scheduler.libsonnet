@@ -66,7 +66,7 @@
   // Reconfigure querier and query-frontend to use scheduler.
 
   local querySchedulerAddress(name) =
-    '%s.%s.svc.cluster.local:9095' % [discoveryServiceName(name), $._config.namespace],
+    '%s.%s.svc.%s:9095' % [discoveryServiceName(name), $._config.namespace, $._config.tld],
 
   querierUseQuerySchedulerArgs(name):: {
     'querier.frontend-address': null,
