@@ -28,7 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [ENHANCEMENT] Sets the `appProtocol` value to `tcp` for the `gossip-ring-svc` template. This allows memberlist to work with istio protocol selection. #5177
+* [ENHANCEMENT] Sets the `appProtocol` value to `tcp` for the `gossip-ring-svc` service template. This allows memberlist to work with istio protocol selection. #5177
 
 ## 5.0.0
 
