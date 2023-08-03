@@ -6,6 +6,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"net/http/httptest"
 	"os"
@@ -114,12 +115,14 @@ func BenchmarkIngesterClient_ConcurrentStreams(b *testing.B) {
 		}
 	}()
 	b.ResetTimer()
-
+	generatorOutput := &bytes.Buffer{}
 	for j := 0; j < b.N; j++ {
 		// Send requests in a separate process, so we can record the RSS of this process separately.
 		sendRequestsCmd := exec.Command("go", "run", "testdata/main.go", server.GRPCListenAddr().String(), strconv.Itoa(1_000_000))
-		require.NoError(b, sendRequestsCmd.Start())
-		require.NoError(b, sendRequestsCmd.Wait())
+		sendRequestsCmd.Stdout = generatorOutput
+		sendRequestsCmd.Stderr = generatorOutput
+		require.NoError(b, sendRequestsCmd.Start(), generatorOutput.String())
+		require.NoError(b, sendRequestsCmd.Wait(), generatorOutput.String())
 	}
 	close(stopReporting)
 	reportingWG.Wait()
