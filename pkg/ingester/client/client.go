@@ -9,20 +9,11 @@ import (
 	"flag"
 
 	"github.com/grafana/dskit/grpcclient"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
-
-//lint:ignore faillint It's non-trivial to remove this global variable.
-var ingesterClientRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Name:    "cortex_ingester_client_request_duration_seconds",
-	Help:    "Time spent doing Ingester requests.",
-	Buckets: prometheus.ExponentialBuckets(0.001, 4, 8),
-}, []string{"operation", "status_code"})
 
 // HealthAndIngesterClient is the union of IngesterClient and grpc_health_v1.HealthClient.
 type HealthAndIngesterClient interface {
@@ -38,8 +29,8 @@ type closableHealthAndIngesterClient struct {
 }
 
 // MakeIngesterClient makes a new IngesterClient
-func MakeIngesterClient(addr string, cfg Config) (HealthAndIngesterClient, error) {
-	dialOpts, err := cfg.GRPCClientConfig.DialOption(grpcclient.Instrument(ingesterClientRequestDuration))
+func MakeIngesterClient(addr string, cfg Config, metrics *Metrics) (HealthAndIngesterClient, error) {
+	dialOpts, err := cfg.GRPCClientConfig.DialOption(grpcclient.Instrument(metrics.RequestDuration))
 	if err != nil {
 		return nil, err
 	}

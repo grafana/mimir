@@ -51,6 +51,7 @@ memcached {
       $.memcached {
         name: 'memcached-frontend',
         max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
+        overprovision_factor: 1.05,
         connection_limit: 16384,
         extended_options: ['track_sizes'],
       } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
@@ -62,6 +63,7 @@ memcached {
       $.memcached {
         name: 'memcached-index-queries',
         max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
+        overprovision_factor: 1.05,
         connection_limit: 16384,
         extended_options: ['track_sizes'],
       } + if $._config.memcached_index_queries_mtls_enabled then $.memcached_mtls else {}
@@ -93,6 +95,7 @@ memcached {
 
         // Metadata cache doesn't need much memory.
         memory_limit_mb: 512,
+        overprovision_factor: 1.05,
 
         statefulSet+:
           statefulSet.mixin.spec.withReplicas(1),

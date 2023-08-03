@@ -47,7 +47,6 @@ import (
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/middleware"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -715,7 +714,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	defer pushReq.CleanUp()
 
 	if err := i.checkRunning(); err != nil {
-		return nil, middleware.DoNotLogError{Err: err}
+		return nil, util_log.DoNotLogError{Err: err}
 	}
 
 	// We will report *this* request in the error too.
@@ -2083,7 +2082,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		StripeSize:                         i.cfg.BlocksStorageConfig.TSDB.StripeSize,
 		HeadChunksWriteBufferSize:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
 		HeadChunksEndTimeVariance:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		WALCompression:                     i.cfg.BlocksStorageConfig.TSDB.WALCompressionType,
+		WALCompression:                     i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
 		WALSegmentSize:                     i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:               walReplayConcurrency,
 		SeriesLifecycleCallback:            userDB,

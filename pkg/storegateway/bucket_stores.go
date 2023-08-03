@@ -497,6 +497,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		u.cfg.BucketStore.IndexHeader,
 		u.cfg.BucketStore.IndexHeaderLazyLoadingEnabled,
 		u.cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout,
+		u.cfg.BucketStore.IndexHeaderSparsePersistenceEnabled,
 		u.seriesHashCache,
 		u.bucketStoreMetrics,
 		bucketStoreOpts...,

@@ -18,6 +18,7 @@ import (
 
 	gklog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/logging"
@@ -51,7 +52,11 @@ func main() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
 		flag.PrintDefaults()
 	}
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		exitWithMessage(err.Error())
+	}
 
 	logger := log.NewDefaultLogger(cfg.LogLevel, cfg.LogFormat)
 

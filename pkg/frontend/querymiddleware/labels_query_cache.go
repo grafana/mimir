@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -62,12 +63,12 @@ func (c *labelsQueryCache) parseRequest(path string, values url.Values) (*generi
 
 	// Both the label names and label values API endpoints support the same exact parameters (with the same defaults),
 	// so in this function there's no distinction between the two.
-	startTime, err := parseRequestTimeParam(values, "start", util.PrometheusMinTime.UnixMilli())
+	startTime, err := parseRequestTimeParam(values, "start", v1.MinTime.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
 
-	endTime, err := parseRequestTimeParam(values, "end", util.PrometheusMaxTime.UnixMilli())
+	endTime, err := parseRequestTimeParam(values, "end", v1.MaxTime.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
@@ -92,12 +93,12 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	// Align start and end times to default block boundaries. The reason is that both TSDB (so the Mimir ingester)
 	// and Mimir store-gateway query the label names and values out of blocks overlapping within the start and end
 	// time. This means that for maximum granularity is the block.
-	if startTime != util.PrometheusMinTime.UnixMilli() {
+	if startTime != v1.MinTime.UnixMilli() {
 		if reminder := startTime % twoHoursMillis; reminder != 0 {
 			startTime -= reminder
 		}
 	}
-	if endTime != util.PrometheusMaxTime.UnixMilli() {
+	if endTime != v1.MaxTime.UnixMilli() {
 		if reminder := endTime % twoHoursMillis; reminder != 0 {
 			endTime += twoHoursMillis - reminder
 		}

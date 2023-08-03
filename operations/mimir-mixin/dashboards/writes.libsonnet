@@ -389,5 +389,26 @@ local filename = 'mimir-writes.json';
           |||
         ),
       )
+    )
+    .addRow(
+      $.row('Instance Limits')
+      .addPanel(
+        $.panel('Rejected distributor requests') +
+        $.queryPanel(
+          'sum by (reason) (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))'
+          % $.jobMatcher($._config.job_names.distributor),
+          '{{reason}}',
+        ) +
+        { yaxes: $.yaxes('req/s') }
+      )
+      .addPanel(
+        $.panel('Rejected ingester requests') +
+        $.queryPanel(
+          'sum by (reason) (rate(cortex_ingester_instance_rejected_requests_total{%s}[$__rate_interval]))'
+          % $.jobMatcher($._config.job_names.ingester),
+          '{{reason}}',
+        ) +
+        { yaxes: $.yaxes('req/s') }
+      ),
     ),
 }
