@@ -169,7 +169,7 @@ func loadLazyLoadedHeadersSnapshot(fileName string) (*lazyLoadedHeadersSnapshot,
 		return nil, err
 	}
 	snapshot := &lazyLoadedHeadersSnapshot{}
-	err = json.Unmarshal(snapshotByte, snapshot)
+	err = json.Unmarshal(snapshotBytes, snapshot)
 	if err != nil {
 		return nil, err
 	}
