@@ -409,9 +409,7 @@ func resizeAndClear(l int, prev []uint32) []uint32 {
 		if l == 0 {
 			return nil
 		}
-		// The allocation is bigger than the required capacity to save time in cases when the number of matchers are just slightly increasing.
-		// In cases where the default matchers are slightly changed in size it could save from lot of reallocations, while having low memory impact.
-		return make([]uint32, l, l*2)
+		return make([]uint32, l)
 	}
 
 	p := prev[:l]
