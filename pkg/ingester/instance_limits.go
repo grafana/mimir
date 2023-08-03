@@ -6,13 +6,15 @@
 package ingester
 
 import (
+	"context"
 	"flag"
+	"time"
 
-	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
@@ -22,13 +24,40 @@ const (
 	maxInflightPushRequestsFlag = "ingester.instance-limits.max-inflight-push-requests"
 )
 
+// We don't include values in the messages for per-instance limits to avoid leaking Mimir cluster configuration to users.
 var (
-	// We don't include values in the message to avoid leaking Mimir cluster configuration to users.
-	errMaxIngestionRateReached    = errors.New(globalerror.IngesterMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the samples ingestion rate limit", maxIngestionRateFlag))
-	errMaxTenantsReached          = errors.New(globalerror.IngesterMaxTenants.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of tenants", maxInMemoryTenantsFlag))
-	errMaxInMemorySeriesReached   = errors.New(globalerror.IngesterMaxInMemorySeries.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of in-memory series", maxInMemorySeriesFlag))
-	errMaxInflightRequestsReached = util_log.DoNotLogError{Err: errors.New(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))}
+	errMaxIngestionRateReached    = newInstanceLimitError(globalerror.IngesterMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the samples ingestion rate limit", maxIngestionRateFlag))
+	errMaxTenantsReached          = newInstanceLimitError(globalerror.IngesterMaxTenants.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of tenants", maxInMemoryTenantsFlag))
+	errMaxInMemorySeriesReached   = newInstanceLimitError(globalerror.IngesterMaxInMemorySeries.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of in-memory series", maxInMemorySeriesFlag))
+	errMaxInflightRequestsReached = newInstanceLimitError(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
 )
+
+type instanceLimitErr struct {
+	msg    string
+	status *status.Status
+}
+
+func newInstanceLimitError(msg string) error {
+	return &instanceLimitErr{
+		// Errors from hitting per-instance limits are always "unavailable" for gRPC
+		status: status.New(codes.Unavailable, msg),
+		msg:    msg,
+	}
+}
+
+func (e *instanceLimitErr) ShouldLog(context.Context, time.Duration) bool {
+	// We increment metrics when hitting per-instance limits and so there's no need to
+	// log them, the error doesn't contain any interesting information for us.
+	return false
+}
+
+func (e *instanceLimitErr) GRPCStatus() *status.Status {
+	return e.status
+}
+
+func (e *instanceLimitErr) Error() string {
+	return e.msg
+}
 
 // InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return
 // (internal) error.
