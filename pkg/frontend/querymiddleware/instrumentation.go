@@ -9,10 +9,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/grafana/dskit/instrument"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/instrument"
 )
 
 // newInstrumentMiddleware can be inserted into the middleware chain to expose timing information.

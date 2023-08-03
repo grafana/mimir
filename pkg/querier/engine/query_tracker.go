@@ -7,7 +7,7 @@ import (
 	"context"
 
 	"github.com/grafana/dskit/tenant" //lint:ignore faillint queryTracker needs tenant package
-	"github.com/weaveworks/common/tracing"
+	"github.com/grafana/dskit/tracing"
 
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint queryTracker needs activitytracker
 )

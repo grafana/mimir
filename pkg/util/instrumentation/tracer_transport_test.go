@@ -9,13 +9,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/config"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
 )
 
 func TestTracerTransportPropagatesTrace(t *testing.T) {
