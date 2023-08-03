@@ -225,7 +225,12 @@ require (
 	go.opentelemetry.io/collector/featuregate v1.0.0-rcv0014 // indirect
 	go.opentelemetry.io/collector/semconv v0.82.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0 // indirect
+	go.opentelemetry.io/contrib/propagators/jaeger v1.15.0 // indirect
+	go.opentelemetry.io/contrib/samplers/jaegerremote v0.9.0 // indirect
+	go.opentelemetry.io/otel/bridge/opentracing v1.14.0 // indirect
+	go.opentelemetry.io/otel/exporters/jaeger v1.14.0 // indirect
 	go.opentelemetry.io/otel/metric v1.16.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.16.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/oauth2 v0.10.0 // indirect
@@ -268,3 +273,5 @@ replace github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-
 
 // Replace opentracing-contrib/go-stdlib with a fork until https://github.com/opentracing-contrib/go-stdlib/pull/68 is merged.
 replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
+
+replace github.com/weaveworks/common => /Users/dimitar/grafana/forks/ying-weaveworks-common
