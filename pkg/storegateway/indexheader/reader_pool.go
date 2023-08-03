@@ -98,10 +98,10 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		var err error
 		snapshot, err = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
 		if err != nil {
-			level.Warn(logger).Log("msg", "loading lazy-loaded index header failed; removing the file", "file", lazyLoadedSnapshotFileName, "err", err)
+			level.Warn(logger).Log("msg", "loading the list of index-headers from file failed; starting with no loaded index-headers", "file", lazyLoadedSnapshotFileName, "err", err)
 			err := os.Remove(lazyLoadedSnapshotFileName)
 			if err != nil {
-				level.Warn(logger).Log("msg", "removing lazy-loaded index header failed", "file", lazyLoadedSnapshotFileName, "err", err)
+				level.Warn(logger).Log("msg", "removing the list of index-headers file failed", "file", lazyLoadedSnapshotFileName, "err", err)
 			}
 		}
 	}

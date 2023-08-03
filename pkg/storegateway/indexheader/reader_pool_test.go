@@ -31,8 +31,8 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 		lazyReaderEnabled         bool
 		lazyReaderIdleTimeout     time.Duration
 		eagerLoadReaderEnabled    bool
-		persistLazyLoadedHeaderFn func(blockId ulid.ULID, lazyLoadedSnapshotPath string)
-		checkMetricFn             func(metrics *ReaderPoolMetrics)
+		persistLazyLoadedHeaderFn func(blockId ulid.ULID) lazyLoadedHeadersSnapshot
+		checkMetricFn             func(t *testing.T, metrics *ReaderPoolMetrics)
 	}{
 		"lazy reader is disabled": {
 			lazyReaderEnabled: false,
@@ -44,7 +44,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 		"lazy reader and close on idle timeout are both enabled": {
 			lazyReaderEnabled:     true,
 			lazyReaderIdleTimeout: time.Minute,
-			checkMetricFn: func(metrics *ReaderPoolMetrics) {
+			checkMetricFn: func(t *testing.T, metrics *ReaderPoolMetrics) {
 				require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 				require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.eagerLoadCount), "no persisted lazy loaded headers file so no eagerLoadCount")
 			},
@@ -53,14 +53,13 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			lazyReaderEnabled:      true,
 			lazyReaderIdleTimeout:  time.Minute,
 			eagerLoadReaderEnabled: true,
-			persistLazyLoadedHeaderFn: func(blockId ulid.ULID, lazyLoadedSnapshotPath string) {
-				snapshot := lazyLoadedHeadersSnapshot{
+			persistLazyLoadedHeaderFn: func(blockId ulid.ULID) lazyLoadedHeadersSnapshot {
+				return lazyLoadedHeadersSnapshot{
 					IndexHeaderLastUsedTime: map[ulid.ULID]int64{blockId: time.Now().UnixMilli()},
 					UserID:                  "anonymous",
 				}
-				_ = snapshot.persist(lazyLoadedSnapshotPath)
 			},
-			checkMetricFn: func(metrics *ReaderPoolMetrics) {
+			checkMetricFn: func(t *testing.T, metrics *ReaderPoolMetrics) {
 				require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 				require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.eagerLoadCount), "found persisted lazy loaded headers file so eager loading should be executed")
 			},
@@ -69,18 +68,17 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			lazyReaderEnabled:      true,
 			lazyReaderIdleTimeout:  time.Minute,
 			eagerLoadReaderEnabled: true,
-			persistLazyLoadedHeaderFn: func(_ ulid.ULID, lazyLoadedSnapshotPath string) {
+			persistLazyLoadedHeaderFn: func(_ ulid.ULID) lazyLoadedHeadersSnapshot {
 				// let's create a random blockID to be stored in lazy loaded headers file
 				invalidBlockID, _ := ulid.New(ulid.Now(), rand.Reader)
 				// this snapshot will refer to invalid block, hence eager load wouldn't be executed:59
 
-				snapshot := lazyLoadedHeadersSnapshot{
+				return lazyLoadedHeadersSnapshot{
 					IndexHeaderLastUsedTime: map[ulid.ULID]int64{invalidBlockID: time.Now().UnixMilli()},
 					UserID:                  "anonymous",
 				}
-				_ = snapshot.persist(lazyLoadedSnapshotPath)
 			},
-			checkMetricFn: func(metrics *ReaderPoolMetrics) {
+			checkMetricFn: func(t *testing.T, metrics *ReaderPoolMetrics) {
 				require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 				require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.eagerLoadCount), "no eager load because of invalid blockID")
 			},
@@ -111,7 +109,9 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 				IndexHeadersEagerLoadingStartupEnabled: testData.eagerLoadReaderEnabled,
 			}
 			if testData.persistLazyLoadedHeaderFn != nil {
-				testData.persistLazyLoadedHeaderFn(blockID, snapshotConfig.Path)
+				lazyLoadedSnapshot := testData.persistLazyLoadedHeaderFn(blockID)
+				err := lazyLoadedSnapshot.persist(snapshotConfig.Path)
+				require.NoError(t, err)
 			}
 
 			metrics := NewReaderPoolMetrics(nil)
@@ -128,7 +128,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			require.Equal(t, []string{"a"}, labelNames)
 
 			if testData.checkMetricFn != nil {
-				testData.checkMetricFn(metrics)
+				testData.checkMetricFn(t, metrics)
 			}
 		})
 	}
