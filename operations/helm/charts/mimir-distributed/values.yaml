@@ -365,7 +365,6 @@ mimir:
       file: /var/{{ include "mimir.name" . }}/runtime.yaml
 
     server:
-      grpc_server_max_concurrent_streams: 1000
       grpc_server_max_connection_age: 2m
       grpc_server_max_connection_age_grace: 5m
       grpc_server_max_connection_idle: 1m
