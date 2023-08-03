@@ -164,7 +164,7 @@ func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 func loadLazyLoadedHeadersSnapshot(fileName string) (*lazyLoadedHeadersSnapshot, error) {
-	snapshotByte, err := os.ReadFile(fileName)
+	snapshotBytes, err := os.ReadFile(fileName)
 	if err != nil {
 		return nil, err
 	}
