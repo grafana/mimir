@@ -643,12 +643,27 @@ func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) 
 
 func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 	for _, tt := range []struct {
-		nRounds int // Number of times we update the same series
-		nSeries int // Number of series we create
+		nRounds   int // Number of times we update the same series
+		nSeries   int // Number of series we create
+		nMatchers int
 	}{
 		{
+			nRounds: 0, // Just benchmarking NewActiveSeries.
+			nSeries: 0,
+		},
+		{
+			nRounds:   0, // Benchmarking NewActiveSeries with matchers.
+			nSeries:   0,
+			nMatchers: 100,
+		},
+		{
 			nRounds: 1,
 			nSeries: 100000,
+		},
+		{
+			nRounds:   1,
+			nSeries:   100000,
+			nMatchers: 100,
 		},
 		{
 			nRounds: 1,
@@ -661,9 +676,14 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 		{
 			nRounds: 10,
 			nSeries: 1000000,
+		},
+		{
+			nRounds:   10,
+			nSeries:   100000,
+			nMatchers: 100,
 		},
 	} {
-		b.Run(fmt.Sprintf("rounds=%d series=%d", tt.nRounds, tt.nSeries), func(b *testing.B) {
+		b.Run(fmt.Sprintf("rounds=%d series=%d matchers=%d", tt.nRounds, tt.nSeries, tt.nMatchers), func(b *testing.B) {
 			// Prepare series
 			const nLabels = 10
 			builder := labels.NewScratchBuilder(nLabels)
@@ -679,11 +699,18 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 				refs[s] = storage.SeriesRef(s)
 			}
 
+			// Prepare matchers.
+			m := map[string]string{}
+			for i := 0; i < tt.nMatchers; i++ {
+				m[fmt.Sprintf("matcher%d", i)] = fmt.Sprintf(`{abcdefghijabcdefghi0=~.*%d}`, i)
+			}
+			asm := NewMatchers(mustNewCustomTrackersConfigFromMap(b, m))
+
 			now := time.Now().UnixNano()
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				c := NewActiveSeries(&Matchers{}, DefaultTimeout)
+				c := NewActiveSeries(asm, DefaultTimeout)
 				for round := 0; round <= tt.nRounds; round++ {
 					for ix := 0; ix < tt.nSeries; ix++ {
 						c.UpdateSeries(series[ix], refs[ix], time.Unix(0, now), -1)
