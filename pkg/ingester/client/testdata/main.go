@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// This program sends remote-write gRPC requests to an ingester.
+// It accepts two arguments: the address of an ingester, and the number of requests to send.
+// It proceeds to send all requests concurrently, and then exit.
+// Each request is 7KB in size, and contains 100 timeseries each with 1 sample.
+// It expects that the response of each request is an error containing the string "not implemented".
+
 package main
 
 import (
