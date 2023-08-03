@@ -116,6 +116,7 @@
 
 * [CHANGE] Proxy `Content-Type` response header from backend. Previously `Content-Type: text/plain; charset=utf-8` was returned on all requests. #5183
 * [CHANGE] Increase default value of `-proxy.compare-skip-recent-samples` to avoid racing with recording rule evaluation. #5561
+* [CHANGE] Add `-backend.skip-tls-verify` to optionally skip TLS verification on backends. #5656
 
 ### Documentation
 

@@ -34,9 +34,9 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 	backendURL3, err := url.Parse("http://backend-3/")
 	require.NoError(t, err)
 
-	backendPref := NewProxyBackend("backend-1", backendURL1, time.Second, true)
-	backendOther1 := NewProxyBackend("backend-2", backendURL2, time.Second, false)
-	backendOther2 := NewProxyBackend("backend-3", backendURL3, time.Second, false)
+	backendPref := NewProxyBackend("backend-1", backendURL1, time.Second, true, false)
+	backendOther1 := NewProxyBackend("backend-2", backendURL2, time.Second, false, false)
+	backendOther2 := NewProxyBackend("backend-3", backendURL3, time.Second, false, false)
 
 	tests := map[string]struct {
 		backends  []*ProxyBackend
@@ -145,8 +145,8 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 	require.NoError(t, err)
 
 	backends := []*ProxyBackend{
-		NewProxyBackend("backend-1", backendURL1, time.Second, true),
-		NewProxyBackend("backend-2", backendURL2, time.Second, false),
+		NewProxyBackend("backend-1", backendURL1, time.Second, true, false),
+		NewProxyBackend("backend-2", backendURL2, time.Second, false, false),
 	}
 	endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil)
 
@@ -311,8 +311,8 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			require.NoError(t, err)
 
 			backends := []*ProxyBackend{
-				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true),
-				NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false),
+				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false),
+				NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false, false),
 			}
 
 			logger := newMockLogger()
