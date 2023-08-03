@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	numStripes = 512
+	numStripes = 128
 
 	EnabledFlag     = "ingester.active-series-metrics-enabled"
 	IdleTimeoutFlag = "ingester.active-series-metrics-idle-timeout"
