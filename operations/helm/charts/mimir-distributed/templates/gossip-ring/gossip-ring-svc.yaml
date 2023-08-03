@@ -11,6 +11,7 @@ spec:
   ports:
     - name: gossip-ring
       port: {{ include "mimir.memberlistBindPort" . }}
+      appProtocol: tcp
       protocol: TCP
       targetPort: {{ include "mimir.memberlistBindPort" . }}
   publishNotReadyAddresses: true
