@@ -73,8 +73,8 @@ func BenchmarkIngesterClient_ConcurrentStreams(b *testing.B) {
 	serverCfg := server.Config{}
 	flagext.DefaultValues(&serverCfg)
 	serverCfg.ExcludeRequestInLog = true
-	serverCfg.GPRCServerMaxConcurrentStreams = 100
-	//serverCfg.GPRCServerMaxConcurrentStreams = 10000
+	//serverCfg.GPRCServerMaxConcurrentStreams = 100
+	serverCfg.GPRCServerMaxConcurrentStreams = 10000
 	serverCfg.Log = logging.NewGoKit(serverCfg.LogLevel)
 	serverCfg.Registerer = prometheus.NewRegistry()
 	server, err := server.New(serverCfg)
@@ -118,7 +118,7 @@ func BenchmarkIngesterClient_ConcurrentStreams(b *testing.B) {
 	generatorOutput := &bytes.Buffer{}
 	for j := 0; j < b.N; j++ {
 		// Send requests in a separate process, so we can record the RSS of this process separately.
-		sendRequestsCmd := exec.Command("go", "run", "testdata/main.go", server.GRPCListenAddr().String(), strconv.Itoa(1_000_000))
+		sendRequestsCmd := exec.Command("go", "run", "testdata/main.go", server.GRPCListenAddr().String(), strconv.Itoa(100_000))
 		sendRequestsCmd.Stdout = generatorOutput
 		sendRequestsCmd.Stderr = generatorOutput
 		require.NoError(b, sendRequestsCmd.Start(), generatorOutput.String())
