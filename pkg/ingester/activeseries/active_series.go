@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"go.uber.org/atomic"
 )
 
@@ -58,7 +59,7 @@ type seriesStripe struct {
 	oldestEntryTs atomic.Int64
 
 	mu                                   sync.RWMutex
-	refs                                 map[uint64]seriesEntry
+	refs                                 map[storage.SeriesRef]seriesEntry
 	active                               int   // Number of active entries in this stripe. Only decreased during purge or clear.
 	activeMatching                       []int // Number of active entries in this stripe matching each matcher of the configured Matchers.
 	activeNativeHistograms               int   // Number of active entries (only native histograms) in this stripe. Only decreased during purge or clear.
@@ -110,7 +111,7 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
 // Pass -1 in numNativeHistogramBuckets if the series is not a native histogram series.
-func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref uint64, now time.Time, numNativeHistogramBuckets int) {
+func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef, now time.Time, numNativeHistogramBuckets int) {
 	stripeID := ref % numStripes
 
 	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, numNativeHistogramBuckets)
@@ -135,7 +136,7 @@ func (c *ActiveSeries) purge(keepUntil time.Time) {
 	}
 }
 
-func (c *ActiveSeries) ContainsRef(ref uint64) bool {
+func (c *ActiveSeries) ContainsRef(ref storage.SeriesRef) bool {
 	stripeID := ref % numStripes
 	return c.stripes[stripeID].containsRef(ref)
 }
@@ -177,7 +178,7 @@ func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, tot
 	return
 }
 
-func (s *seriesStripe) containsRef(ref uint64) bool {
+func (s *seriesStripe) containsRef(ref storage.SeriesRef) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -215,7 +216,7 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeH
 	return s.active, s.activeNativeHistograms, s.activeNativeHistogramBuckets
 }
 
-func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref uint64, numNativeHistogramBuckets int) {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref storage.SeriesRef, numNativeHistogramBuckets int) {
 	nowNanos := now.UnixNano()
 
 	e, needsUpdating := s.findEntryForSeries(ref, numNativeHistogramBuckets)
@@ -241,14 +242,14 @@ func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels
 	}
 }
 
-func (s *seriesStripe) findEntryForSeries(ref uint64, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
+func (s *seriesStripe) findEntryForSeries(ref storage.SeriesRef, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	entry := s.refs[ref]
 	return entry.nanos, entry.numNativeHistogramBuckets != numNativeHistogramBuckets
 }
 
-func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref uint64, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
+func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -325,7 +326,7 @@ func (s *seriesStripe) clear() {
 	defer s.mu.Unlock()
 
 	s.oldestEntryTs.Store(0)
-	s.refs = map[uint64]seriesEntry{}
+	s.refs = map[storage.SeriesRef]seriesEntry{}
 	s.active = 0
 	s.activeNativeHistograms = 0
 	s.activeNativeHistogramBuckets = 0
@@ -342,7 +343,7 @@ func (s *seriesStripe) reinitialize(asm *Matchers) {
 	defer s.mu.Unlock()
 
 	s.oldestEntryTs.Store(0)
-	s.refs = map[uint64]seriesEntry{}
+	s.refs = map[storage.SeriesRef]seriesEntry{}
 	s.active = 0
 	s.activeNativeHistograms = 0
 	s.activeNativeHistogramBuckets = 0
