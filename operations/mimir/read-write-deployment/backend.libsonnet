@@ -29,8 +29,8 @@
 
       // Use ruler's remote evaluation mode.
       'querier.frontend-address': null,
-      'ruler.query-frontend.address': 'dns:///mimir-read-headless.%(namespace)s.svc.%(tld)s:9095' % $._config,
-      'ruler.alertmanager-url': 'http://mimir-backend.%(namespace)s.svc.%(tld)s:8080/alertmanager' % $._config,
+      'ruler.query-frontend.address': 'dns:///mimir-read-headless.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
+      'ruler.alertmanager-url': 'http://mimir-backend.%(namespace)s.svc.%(cluster_domain)s:8080/alertmanager' % $._config,
 
       // Restrict number of active query-schedulers.
       'query-scheduler.max-used-instances': 2,

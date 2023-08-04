@@ -15,7 +15,7 @@
       'distributor.ha-tracker.enable': true,
       'distributor.ha-tracker.enable-for-all-users': true,
       'distributor.ha-tracker.store': 'etcd',
-      'distributor.ha-tracker.etcd.endpoints': 'etcd-client.%(namespace)s.svc.%(tld)s:2379' % $._config,
+      'distributor.ha-tracker.etcd.endpoints': 'etcd-client.%(namespace)s.svc.%(cluster_domain)s:2379' % $._config,
       'distributor.ha-tracker.prefix': 'prom_ha/',
 
       // The memory requests are 2G, and we barely use 100M.
@@ -27,7 +27,7 @@
 
       // The ingestion rate global limit requires the distributors to form a ring.
       'distributor.ring.store': 'consul',
-      'distributor.ring.consul.hostname': 'consul.%(namespace)s.svc.%(tld)s:8500' % $._config,
+      'distributor.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'distributor.ring.prefix': '',
     } + $.mimirRuntimeConfigFile,
 
