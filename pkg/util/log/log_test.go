@@ -9,7 +9,7 @@ import (
 
 	gokitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/weaveworks/common/server"
+	"github.com/grafana/dskit/server"
 
 	"github.com/grafana/mimir/pkg/util/log"
 )

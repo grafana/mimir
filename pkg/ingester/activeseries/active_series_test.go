@@ -14,27 +14,28 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 )
 
 const DefaultTimeout = 5 * time.Minute
 
 func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
-	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
-	ref2, ls2 := uint64(2), labels.FromStrings("a", "2")
-	ref3, ls3 := uint64(3), labels.FromStrings("a", "3")
-	ref4, ls4 := uint64(4), labels.FromStrings("a", "4")
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
+	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 	valid := c.Purge(time.Now())
 	assert.True(t, valid)
 	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
-	assert.Nil(t, activeMatching)
+	assert.Empty(t, activeMatching)
 	assert.Equal(t, 0, allActiveHistograms)
-	assert.Nil(t, activeMatchingHistograms)
+	assert.Empty(t, activeMatchingHistograms)
 	assert.Equal(t, 0, allActiveBuckets)
-	assert.Nil(t, activeMatchingBuckets)
+	assert.Empty(t, activeMatchingBuckets)
 
 	c.UpdateSeries(ls1, ref1, time.Now(), -1)
 	valid = c.Purge(time.Now())
@@ -132,7 +133,7 @@ func TestActiveSeries_ContainsRef(t *testing.T) {
 		collision2,
 	}
 
-	refs := []uint64{1, 2, 3, 4}
+	refs := []storage.SeriesRef{1, 2, 3, 4}
 
 	// Run the same test for increasing TTL values
 	for ttl := 1; ttl <= len(series); ttl++ {
@@ -154,7 +155,7 @@ func TestActiveSeries_ContainsRef(t *testing.T) {
 			assert.True(t, valid)
 			allActive, activeMatching, _, _, _, _ := c.ActiveWithMatchers()
 			assert.Equal(t, exp, allActive)
-			assert.Nil(t, activeMatching)
+			assert.Empty(t, activeMatching)
 
 			for i := 0; i < len(series); i++ {
 				assert.Equal(t, i >= ttl, c.ContainsRef(refs[i]))
@@ -164,11 +165,11 @@ func TestActiveSeries_ContainsRef(t *testing.T) {
 }
 
 func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
-	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
-	ref2, ls2 := uint64(2), labels.FromStrings("a", "2")
-	ref3, ls3 := uint64(3), labels.FromStrings("a", "3")
-	ref4, ls4 := uint64(4), labels.FromStrings("a", "4")
-	ref5, ls5 := uint64(5), labels.FromStrings("a", "5")
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
+	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
+	ref5, ls5 := storage.SeriesRef(5), labels.FromStrings("a", "5")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3|4"}`}))
 
@@ -330,7 +331,7 @@ func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 
 func TestActiveSeries_ShouldCorrectlyHandleHashCollisions(t *testing.T) {
 	ls1, ls2 := labelsWithHashCollision()
-	ref1, ref2 := uint64(1), uint64(2)
+	ref1, ref2 := storage.SeriesRef(1), storage.SeriesRef(2)
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 	c.UpdateSeries(ls1, ref1, time.Now(), -1)
@@ -351,7 +352,7 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 		collision2,
 	}
 
-	refs := []uint64{1, 2, 3, 4}
+	refs := []storage.SeriesRef{1, 2, 3, 4}
 
 	// Run the same test for increasing TTL values
 	for ttl := 1; ttl <= len(series); ttl++ {
@@ -373,7 +374,7 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 			assert.True(t, valid)
 			allActive, activeMatching, _, _, _, _ := c.ActiveWithMatchers()
 			assert.Equal(t, exp, allActive)
-			assert.Nil(t, activeMatching)
+			assert.Empty(t, activeMatching)
 		})
 	}
 }
@@ -387,7 +388,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 		collision2,
 	}
 
-	refs := []uint64{1, 2, 3, 4}
+	refs := []storage.SeriesRef{1, 2, 3, 4}
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{_=~"y.*"}`}))
 
@@ -425,7 +426,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 
 func TestActiveSeries_PurgeOpt(t *testing.T) {
 	ls1, ls2 := labelsWithHashCollision()
-	ref1, ref2 := uint64(1), uint64(2)
+	ref1, ref2 := storage.SeriesRef(1), storage.SeriesRef(2)
 
 	currentTime := time.Now()
 	c := NewActiveSeries(&Matchers{}, 59*time.Second)
@@ -456,10 +457,10 @@ func TestActiveSeries_PurgeOpt(t *testing.T) {
 }
 
 func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
-	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
-	ref2, ls2 := uint64(2), labels.FromStrings("a", "2")
-	ref3, ls3 := uint64(3), labels.FromStrings("a", "3")
-	ref4, ls4 := uint64(4), labels.FromStrings("a", "4")
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
+	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.*}`}))
 
@@ -503,7 +504,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
-	assert.Equal(t, []int(nil), activeMatching)
+	assert.Empty(t, activeMatching)
 
 	asmWithMoreMatchers := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"a": `{a="3"}`,
@@ -522,7 +523,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 }
 
 func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
-	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
@@ -560,7 +561,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 }
 
 func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
-	ref1, ls1 := uint64(1), labels.FromStrings("a", "1")
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
@@ -600,19 +601,25 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 	assert.Equal(t, []int{0, 0}, activeMatching)
 }
 
-var activeSeriesTestGoroutines = []int{50, 100, 500}
+func BenchmarkActiveSeries_UpdateSeriesConcurrency(b *testing.B) {
+	var activeSeriesTestGoroutines = []int{50, 100, 500, 1000}
 
-func BenchmarkActiveSeriesTest_single_series(b *testing.B) {
 	for _, num := range activeSeriesTestGoroutines {
-		b.Run(fmt.Sprintf("%d", num), func(b *testing.B) {
-			benchmarkActiveSeriesConcurrencySingleSeries(b, num)
+		b.Run(fmt.Sprintf("Single series, concurrency = %d", num), func(b *testing.B) {
+			benchmarkActiveSeriesUpdateSeriesConcurrencySingleSeries(b, num)
+		})
+	}
+
+	for _, num := range activeSeriesTestGoroutines {
+		b.Run(fmt.Sprintf("Multiple series, concurrency = %d", num), func(b *testing.B) {
+			benchmarkActiveSeriesUpdateSeriesConcurrencyMultipleSeries(b, num)
 		})
 	}
 }
 
-func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) {
+func benchmarkActiveSeriesUpdateSeriesConcurrencySingleSeries(b *testing.B, goroutines int) {
 	series := labels.FromStrings("a", "a")
-	ref := uint64(1)
+	ref := storage.SeriesRef(1)
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 
@@ -640,14 +647,73 @@ func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) 
 	wg.Wait()
 }
 
+func benchmarkActiveSeriesUpdateSeriesConcurrencyMultipleSeries(b *testing.B, goroutines int) {
+	const numSeries = 10000
+
+	// Create the series.
+	seriesList := make([]labels.Labels, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		seriesList = append(seriesList, labels.FromStrings("series_id", strconv.Itoa(i)))
+	}
+
+	var (
+		c     = NewActiveSeries(&Matchers{}, DefaultTimeout)
+		wg    = &sync.WaitGroup{}
+		start = make(chan struct{})
+		max   = int(math.Ceil(float64(b.N) / float64(goroutines)))
+		now   = time.Now()
+	)
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+
+		go func(workerID int) {
+			defer wg.Done()
+			<-start
+
+			// Each worker starts from a different position of the series list,
+			// to better simulate a real world scenario.
+			nextSeriesID := (numSeries / goroutines) * workerID
+
+			for ix := 0; ix < max; ix++ {
+				if nextSeriesID >= numSeries {
+					nextSeriesID = 0
+				}
+
+				now = now.Add(time.Duration(ix) * time.Millisecond)
+				c.UpdateSeries(seriesList[nextSeriesID], storage.SeriesRef(nextSeriesID), now, -1)
+			}
+		}(i)
+	}
+
+	b.ResetTimer()
+	close(start)
+	wg.Wait()
+}
+
 func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 	for _, tt := range []struct {
-		nRounds int // Number of times we update the same series
-		nSeries int // Number of series we create
+		nRounds   int // Number of times we update the same series
+		nSeries   int // Number of series we create
+		nMatchers int
 	}{
 		{
+			nRounds: 0, // Just benchmarking NewActiveSeries.
+			nSeries: 0,
+		},
+		{
+			nRounds:   0, // Benchmarking NewActiveSeries with matchers.
+			nSeries:   0,
+			nMatchers: 100,
+		},
+		{
 			nRounds: 1,
 			nSeries: 100000,
+		},
+		{
+			nRounds:   1,
+			nSeries:   100000,
+			nMatchers: 100,
 		},
 		{
 			nRounds: 1,
@@ -660,14 +726,19 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 		{
 			nRounds: 10,
 			nSeries: 1000000,
+		},
+		{
+			nRounds:   10,
+			nSeries:   100000,
+			nMatchers: 100,
 		},
 	} {
-		b.Run(fmt.Sprintf("rounds=%d series=%d", tt.nRounds, tt.nSeries), func(b *testing.B) {
+		b.Run(fmt.Sprintf("rounds=%d series=%d matchers=%d", tt.nRounds, tt.nSeries, tt.nMatchers), func(b *testing.B) {
 			// Prepare series
 			const nLabels = 10
 			builder := labels.NewScratchBuilder(nLabels)
 			series := make([]labels.Labels, tt.nSeries)
-			refs := make([]uint64, tt.nSeries)
+			refs := make([]storage.SeriesRef, tt.nSeries)
 			for s := 0; s < tt.nSeries; s++ {
 				builder.Reset()
 				for i := 0; i < nLabels; i++ {
@@ -675,14 +746,21 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 					builder.Add(fmt.Sprintf("abcdefghijabcdefghi%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcd%d", s))
 				}
 				series[s] = builder.Labels()
-				refs[s] = uint64(s)
+				refs[s] = storage.SeriesRef(s)
 			}
+
+			// Prepare matchers.
+			m := map[string]string{}
+			for i := 0; i < tt.nMatchers; i++ {
+				m[fmt.Sprintf("matcher%d", i)] = fmt.Sprintf(`{abcdefghijabcdefghi0=~.*%d}`, i)
+			}
+			asm := NewMatchers(mustNewCustomTrackersConfigFromMap(b, m))
 
 			now := time.Now().UnixNano()
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				c := NewActiveSeries(&Matchers{}, DefaultTimeout)
+				c := NewActiveSeries(asm, DefaultTimeout)
 				for round := 0; round <= tt.nRounds; round++ {
 					for ix := 0; ix < tt.nSeries; ix++ {
 						c.UpdateSeries(series[ix], refs[ix], time.Unix(0, now), -1)
@@ -710,10 +788,10 @@ func benchmarkPurge(b *testing.B, twice bool) {
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 
 	series := [numSeries]labels.Labels{}
-	refs := [numSeries]uint64{}
+	refs := [numSeries]storage.SeriesRef{}
 	for s := 0; s < numSeries; s++ {
 		series[s] = labels.FromStrings("a", strconv.Itoa(s))
-		refs[s] = uint64(s)
+		refs[s] = storage.SeriesRef(s)
 	}
 
 	for i := 0; i < b.N; i++ {

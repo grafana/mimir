@@ -698,6 +698,65 @@ func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, blockID
 	require.Equal(t, markedForDeletion, exists)
 }
 
+func TestBlocksCleaner_ShouldCleanUpFilesWhenNoMoreBlocksRemain(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	const userID = "user-1"
+	ctx := context.Background()
+	now := time.Now()
+	deletionDelay := 12 * time.Hour
+
+	// Create two blocks and mark them for deletion at a time before the deletionDelay
+	block1 := createTSDBBlock(t, bucketClient, userID, 10, 20, 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, userID, 20, 30, 2, nil)
+
+	createDeletionMark(t, bucketClient, userID, block1, now.Add(-deletionDelay).Add(-time.Hour))
+	createDeletionMark(t, bucketClient, userID, block2, now.Add(-deletionDelay).Add(-time.Hour))
+
+	checkBlock(t, "user-1", bucketClient, block1, true, true)
+	checkBlock(t, "user-1", bucketClient, block2, true, true)
+
+	// Create a deletion mark within the deletionDelay period that won't correspond to any block
+	randomULID := ulid.MustNew(ulid.Now(), rand.Reader)
+	createDeletionMark(t, bucketClient, userID, randomULID, now.Add(-deletionDelay).Add(time.Hour))
+	blockDeletionMarkFile := path.Join(userID, block.DeletionMarkFilepath(randomULID))
+	exists, err := bucketClient.Exists(ctx, blockDeletionMarkFile)
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	// Create a debug file that wouldn't otherwise be deleted by the cleaner
+	debugMetaFile := path.Join(userID, block.DebugMetas, "meta.json")
+	require.NoError(t, bucketClient.Upload(context.Background(), debugMetaFile, strings.NewReader("random content")))
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:              deletionDelay,
+		CleanupInterval:            time.Minute,
+		CleanupConcurrency:         1,
+		DeleteBlocksConcurrency:    1,
+		NoBlocksFileCleanupEnabled: true,
+	}
+
+	logger := test.NewTestingLogger(t)
+	reg := prometheus.NewPedanticRegistry()
+	cfgProvider := newMockConfigProvider()
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	require.NoError(t, cleaner.runCleanupWithErr(ctx))
+
+	// Check bucket index, markers and debug files have been deleted.
+	exists, err = bucketClient.Exists(ctx, blockDeletionMarkFile)
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	exists, err = bucketClient.Exists(ctx, debugMetaFile)
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	_, err = bucketindex.ReadIndex(ctx, bucketClient, userID, nil, logger)
+	require.ErrorIs(t, err, bucketindex.ErrIndexNotFound)
+}
+
 func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)

@@ -25,26 +25,26 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	spec1 := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
-			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 				sample{10, 11, nil, nil},
 				sample{20, 12, nil, nil},
 				sample{30, 13, nil, nil},
-			}),
+			})),
 		},
 	}
 	spec2 := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "zxcv", "foo", "bar"),
 		Chunks: []chunks.Meta{
-			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 				sample{40, 0, test.GenerateTestHistogram(1), nil},
 				sample{50, 0, test.GenerateTestHistogram(2), nil},
 				sample{60, 0, test.GenerateTestHistogram(3), nil},
-			}),
-			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			})),
+			must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 				sample{70, 0, test.GenerateTestHistogram(4), nil},
 				sample{80, 0, test.GenerateTestHistogram(5), nil},
 				sample{90, 0, test.GenerateTestHistogram(6), nil},
-			}),
+			})),
 		},
 	}
 
@@ -85,4 +85,11 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

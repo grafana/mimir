@@ -6,6 +6,7 @@
 package log
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -14,8 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	dslog "github.com/grafana/dskit/log"
-	"github.com/weaveworks/common/logging"
-	"github.com/weaveworks/common/server"
+	"github.com/grafana/dskit/server"
 )
 
 var (
@@ -37,10 +37,10 @@ func InitLogger(cfg *server.Config, buffered bool) {
 	Logger = level.NewFilter(logger, cfg.LogLevel.Gokit)
 
 	// cfg.Log wraps log function, skip 6 stack frames to get caller information.
-	cfg.Log = logging.GoKit(level.NewFilter(log.With(l, "caller", log.Caller(6)), cfg.LogLevel.Gokit))
+	cfg.Log = dslog.GoKit(level.NewFilter(log.With(l, "caller", log.Caller(6)), cfg.LogLevel.Gokit))
 }
 
-func newBasicLogger(format logging.Format, buffered bool) log.Logger {
+func newBasicLogger(format dslog.Format, buffered bool) log.Logger {
 	var logger log.Logger
 	var writer io.Writer = os.Stderr
 
@@ -74,7 +74,7 @@ func newBasicLogger(format logging.Format, buffered bool) log.Logger {
 }
 
 // NewDefaultLogger creates a new gokit logger with the configured level and format
-func NewDefaultLogger(l logging.Level, format logging.Format) log.Logger {
+func NewDefaultLogger(l dslog.Level, format dslog.Format) log.Logger {
 	logger := newBasicLogger(format, false)
 	return level.NewFilter(log.With(logger, "ts", log.DefaultTimestampUTC), l.Gokit)
 }
@@ -105,3 +105,9 @@ func Flush() error {
 
 	return nil
 }
+
+type DoNotLogError struct{ Err error }
+
+func (i DoNotLogError) Error() string                                     { return i.Err.Error() }
+func (i DoNotLogError) Unwrap() error                                     { return i.Err }
+func (i DoNotLogError) ShouldLog(_ context.Context, _ time.Duration) bool { return false }

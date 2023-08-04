@@ -15,6 +15,7 @@ spec:
   ports:
     - name: gossip-ring
       port: 7946
+      appProtocol: tcp
       protocol: TCP
       targetPort: 7946
   publishNotReadyAddresses: true

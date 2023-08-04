@@ -10,6 +10,7 @@
 * [CHANGE] Querier: Renamed `-querier.prefer-streaming-chunks` to `-querier.prefer-streaming-chunks-from-ingesters` to enable streaming chunks from ingesters to queriers. #5182
 * [CHANGE] Querier: `-query-frontend.cache-unaligned-requests` has been moved from a global flag to a per-tenant override. #5312
 * [CHANGE] Ingester: removed `cortex_ingester_shipper_dir_syncs_total` and `cortex_ingester_shipper_dir_sync_failures_total` metrics. The former metric was not much useful, and the latter was never incremented. #5396
+* [CHANGE] Ingester: Do not log errors related to hitting per-instance limits to reduce resource usage when ingesters are under pressure. #5585
 * [CHANGE] gRPC clients: use default connect timeout of 5s, and therefore enable default connect backoff max delay of 5s. #5562
 * [FEATURE] Cardinality API: Add a new `count_method` parameter which enables counting active series #5136
 * [FEATURE] Query-frontend: added experimental support to cache cardinality, label names and label values query responses. The cache will be used when `-query-frontend.cache-results` is enabled, and `-query-frontend.results-cache-ttl-for-cardinality-query` or `-query-frontend.results-cache-ttl-for-labels-query` set to a value greater than 0. The following metrics have been added to track the query results cache hit ratio per `request_type`: #5212 #5235 #5426 #5524
@@ -22,6 +23,7 @@
   * `-ingester.log-utilization-based-limiter-cpu-samples`
 * [FEATURE] Ruler: Support filtering results from rule status endpoint by `file`, `rule_group` and `rule_name`. #5291
 * [FEATURE] Ingester: add experimental support for creating tokens by using spread minimizing strategy. This can be enabled with `-ingester.ring.token-generation-strategy: spread-minimizing` and `-ingester.ring.spread-minimizing-zones: <all available zones>`. In that case `-ingester.ring.tokens-file-path` must be empty. #5308 #5324
+* [FEATURE] Storegateway: Persist sparse index-headers to disk and read from disk on index-header loads instead of reconstructing. #5465 #5651
 * [FEATURE] Ingester: add experimental CLI flag `-ingester.ring.spread-minimizing-join-ring-in-order` that allows an ingester to register tokens in the ring only after all previous ingesters (with ID lower than its own ID) have already been registered. #5541
 * [FEATURE] Ingester: add experimental support to compact the TSDB Head when the number of in-memory series is equal or greater than `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`, and the ingester estimates that the per-tenant TSDB Head compaction will reduce in-memory series by at least `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`. #5371
 * [FEATURE] Ingester: add new metrics for tracking native histograms in active series: `cortex_ingester_active_native_histogram_series`, `cortex_ingester_active_native_histogram_series_custom_tracker`, `cortex_ingester_active_native_histogram_buckets`, `cortex_ingester_active_native_histogram_buckets_custom_tracker`. The first 2 are the subsets of the existing and unmodified `cortex_ingester_active_series` and `cortex_ingester_active_series_custom_tracker` respectively, only tracking native histogram series, and the last 2 are the equivalents for tracking the number of buckets in native histogram series. #5318
@@ -61,6 +63,8 @@
 * [ENHANCEMENT] Distributor: add more detailed information to traces generated while processing OTLP write requests. #5539
 * [ENHANCEMENT] Distributor: improve performance ingesting OTLP payloads. #5531 #5607 #5616
 * [ENHANCEMENT] Ingester: optimize label-values with matchers call when number of matched series is small. #5600
+* [ENHANCEMENT] Compactor: Delete bucket-index, markers and debug files if there are no blocks left in the bucket index. This cleanup must be enabled by using `-compactor.no-blocks-file-cleanup-enabled` option. #5648
+* [ENHANCEMENT] Ingester: reduce memory usage of active series tracker. #5665
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377
@@ -83,9 +87,11 @@
 * [ENHANCEMENT] Dashboards: split query results cache hit ratio by request type in "Query results cache hit ratio" panel on the "Mimir / Queries" dashboard. #5423
 * [ENHANCEMENT] Dashboards: add "rejected queries" panel to "queries" dashboard. #5429
 * [ENHANCEMENT] Dashboards: add native histogram active series and active buckets to "tenants" dashboard. #5543
+* [ENHANCEMENT] Dashboards: add panels to "Mimir / Writes" for requests rejected for per-instance limits. #5638
 * [BUGFIX] Alerts: fix `MimirIngesterRestarts` to fire only when the ingester container is restarted, excluding the cases the pod is rescheduled. #5397
 * [BUGFIX] Dashboards: fix "unhealthy pods" panel on "rollout progress" dashboard showing only a number rather than the name of the workload and the number of unhealthy pods if only one workload has unhealthy pods. #5113 #5200
 * [BUGFIX] Alerts: fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts. #5396
+* [BUGFIX] Alerts: Fix `MimirGossipMembersMismatch` to include `admin-api` pods so that it does not always fire in GEM deployments. #5641
 
 ### Jsonnet
 
@@ -100,7 +106,10 @@
 * [ENHANCEMENT] Distributor: allow adjustment of the targeted CPU usage as a percentage of requested CPU. This can be adjusted with `_config.autoscaling_distributor_cpu_target_utilization`. #5525
 * [ENHANCEMENT] Ruler: add configuration option `_config.ruler_remote_evaluation_max_query_response_size_bytes` to easily set the maximum query response size allowed (in bytes). #5592
 * [ENHANCEMENT] Distributor: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce distributor CPU utilization, assuming the CPU request is set to a value close to the actual utilization. #5588
+* [ENHANCEMENT] Querier: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce noisy neighbour issues created by the querier, whose CPU utilization could eventually saturate the Kubernetes node if unbounded. #5646 #5658
 * [ENHANCEMENT] Allow to remove an entry from the configured environment variable for a given component, setting the environment value to `null` in the `*_env_map` objects (e.g. `store_gateway_env_map+:: { 'field': null}`). #5599
+* [ENHANCEMENT] Allow overriding the default number of replicas for `etcd`.
+* [ENHANCEMENT] Memcached: reduce memory request for results, chunks and metadata caches. The requested memory is 5% greater than the configured memcached max cache size. #5661
 
 ### Mimirtool
 
@@ -110,6 +119,7 @@
 
 * [CHANGE] Proxy `Content-Type` response header from backend. Previously `Content-Type: text/plain; charset=utf-8` was returned on all requests. #5183
 * [CHANGE] Increase default value of `-proxy.compare-skip-recent-samples` to avoid racing with recording rule evaluation. #5561
+* [CHANGE] Add `-backend.skip-tls-verify` to optionally skip TLS verification on backends. #5656
 
 ### Documentation
 
@@ -121,8 +131,10 @@
 ### Tools
 
 * [CHANGE] copyblocks: add support for S3 and the ability to copy between different object storage services. Due to this, the `-source-service` and `-destination-service` flags are now required and the `-service` flag has been removed. #5486
+* [FEATURE] undelete_block_gcs: Added new tool for undeleting blocks on GCS storage. #5610
 * [ENHANCEMENT] ulidtime: add -seconds flag to print timestamps as Unix timestamps. #5621
 * [ENHANCEMENT] ulidtime: exit with status code 1 if some ULIDs can't be parsed. #5621
+* [ENHANCEMENT] tsdb-index-toc: added index-header size estimates. #5652
 * [BUGFIX] Stop tools from panicking when `-help` flag is passed. #5412
 * [BUGFIX] Remove github.com/golang/glog command line flags from tools. #5413
 

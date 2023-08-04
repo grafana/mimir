@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -26,11 +27,16 @@ func main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	shards := 0
-
 	flag.IntVar(&shards, "shard-count", 0, "number of shards")
-	flag.Parse()
 
-	if flag.NArg() == 0 {
+	// Parse CLI arguments.
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	if len(args) == 0 {
 		fmt.Println("no block directory specified")
 		return
 	}
@@ -47,7 +53,7 @@ func main() {
 		}
 	}
 
-	for _, blockDir := range flag.Args() {
+	for _, blockDir := range args {
 		err := analyseSymbols(blockDir, uniqueSymbols, uniqueSymbolsPerShard)
 		if err != nil {
 			log.Println("failed to analyse symbols for", blockDir, "due to error:", err)

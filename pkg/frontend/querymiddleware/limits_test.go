@@ -16,10 +16,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util"

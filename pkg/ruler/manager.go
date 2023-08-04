@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/user"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
 

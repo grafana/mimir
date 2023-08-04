@@ -158,8 +158,10 @@ func mockTSDBHistogramChunkData(t *testing.T) []byte {
 	appender, err := chunk.Appender()
 	require.NoError(t, err)
 
-	appender.AppendHistogram(time.Unix(1, 0).Unix()*1000, test.GenerateTestHistogram(1))
-	appender.AppendHistogram(time.Unix(2, 0).Unix()*1000, test.GenerateTestHistogram(2))
+	_, _, _, err = appender.AppendHistogram(nil, time.Unix(1, 0).Unix()*1000, test.GenerateTestHistogram(1), true)
+	require.NoError(t, err)
+	_, _, _, err = appender.AppendHistogram(nil, time.Unix(2, 0).Unix()*1000, test.GenerateTestHistogram(2), true)
+	require.NoError(t, err)
 
 	return chunk.Bytes()
 }
@@ -169,8 +171,10 @@ func mockTSDBFloatHistogramChunkData(t *testing.T) []byte {
 	appender, err := chunk.Appender()
 	require.NoError(t, err)
 
-	appender.AppendFloatHistogram(time.Unix(1, 0).Unix()*1000, test.GenerateTestFloatHistogram(1))
-	appender.AppendFloatHistogram(time.Unix(2, 0).Unix()*1000, test.GenerateTestFloatHistogram(2))
+	_, _, _, err = appender.AppendFloatHistogram(nil, time.Unix(1, 0).Unix()*1000, test.GenerateTestFloatHistogram(1), true)
+	require.NoError(t, err)
+	_, _, _, err = appender.AppendFloatHistogram(nil, time.Unix(2, 0).Unix()*1000, test.GenerateTestFloatHistogram(2), true)
+	require.NoError(t, err)
 
 	return chunk.Bytes()
 }

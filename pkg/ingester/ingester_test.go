@@ -29,10 +29,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
 	dskit_metrics "github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -47,12 +50,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -5414,10 +5416,9 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 
 func TestIngester_PushInstanceLimits(t *testing.T) {
 	tests := map[string]struct {
-		limits          InstanceLimits
-		reqs            map[string][]*mimirpb.WriteRequest
-		expectedErr     error
-		expectedErrType interface{}
+		limits      InstanceLimits
+		reqs        map[string][]*mimirpb.WriteRequest
+		expectedErr error
 	}{
 		"should succeed creating one user and series": {
 			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1},
@@ -5460,7 +5461,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 				},
 			},
 
-			expectedErr: wrapWithUser(errMaxInMemorySeriesReached, "test"),
+			expectedErr: errMaxInMemorySeriesReached,
 		},
 
 		"should fail creating two users": {
@@ -5487,7 +5488,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: wrapWithUser(errMaxTenantsReached, "user2"),
+			expectedErr: errMaxTenantsReached,
 		},
 
 		"should fail pushing samples in two requests due to rate limit": {
@@ -5556,9 +5557,12 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					} else {
 						// Last push may expect error.
 						if testData.expectedErr != nil {
-							assert.Equal(t, testData.expectedErr, err)
-						} else if testData.expectedErrType != nil {
-							assert.True(t, errors.As(err, testData.expectedErrType), "expected error type %T, got %v", testData.expectedErrType, err)
+							assert.ErrorIs(t, err, testData.expectedErr)
+							var optional middleware.OptionalLogging
+							assert.ErrorAs(t, err, &optional)
+							s, ok := status.FromError(err)
+							require.True(t, ok, "expected to be able to convert to gRPC status")
+							assert.Equal(t, codes.Unavailable, s.Code())
 						} else {
 							assert.NoError(t, err)
 						}
@@ -5621,7 +5625,8 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
 
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -5685,13 +5690,31 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 		time.Sleep(10 * time.Millisecond) // Give first goroutine a chance to start pushing...
 		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+		var optional middleware.OptionalLogging
 
 		_, err := i.Push(ctx, req)
-		require.Equal(t, errMaxInflightRequestsReached, err)
+		require.ErrorIs(t, err, errMaxInflightRequestsReached)
+		require.ErrorAs(t, err, &optional)
+		require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
+
+		s, ok := status.FromError(err)
+		require.True(t, ok, "expected to be able to convert to gRPC status")
+		require.Equal(t, codes.Unavailable, s.Code())
+
 		return nil
 	})
 
 	require.NoError(t, g.Wait())
+
+	// Ensure the rejected request has been tracked in a metric.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_instance_rejected_requests_total Requests rejected for hitting per-instance limits
+		# TYPE cortex_ingester_instance_rejected_requests_total counter
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 1
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
+	`), "cortex_ingester_instance_rejected_requests_total"))
 }
 
 func generateSamplesForLabel(baseLabels labels.Labels, series, samples int) *mimirpb.WriteRequest {

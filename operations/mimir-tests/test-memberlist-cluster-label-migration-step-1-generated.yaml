@@ -621,6 +621,8 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
         image: grafana/mimir:2.9.0
@@ -1284,7 +1286,7 @@ spec:
             memory: 1536Mi
           requests:
             cpu: 500m
-            memory: 1329Mi
+            memory: 1176Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
@@ -1338,7 +1340,7 @@ spec:
             memory: 1536Mi
           requests:
             cpu: 500m
-            memory: 1329Mi
+            memory: 1176Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
@@ -1392,7 +1394,7 @@ spec:
             memory: 768Mi
           requests:
             cpu: 500m
-            memory: 715Mi
+            memory: 638Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150

@@ -556,7 +556,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230721071918-7ba66579c3ac
+# github.com/grafana/dskit v0.0.0-20230804003603-740f56bd2934
 ## explicit; go 1.18
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -565,11 +565,15 @@ github.com/grafana/dskit/crypto/tls
 github.com/grafana/dskit/dns
 github.com/grafana/dskit/dns/godns
 github.com/grafana/dskit/dns/miekgdns
+github.com/grafana/dskit/errors
 github.com/grafana/dskit/flagext
 github.com/grafana/dskit/gate
 github.com/grafana/dskit/grpcclient
 github.com/grafana/dskit/grpcencoding/snappy
 github.com/grafana/dskit/grpcutil
+github.com/grafana/dskit/httpgrpc
+github.com/grafana/dskit/httpgrpc/server
+github.com/grafana/dskit/instrument
 github.com/grafana/dskit/internal/math
 github.com/grafana/dskit/internal/slices
 github.com/grafana/dskit/kv
@@ -581,7 +585,9 @@ github.com/grafana/dskit/limiter
 github.com/grafana/dskit/log
 github.com/grafana/dskit/loser
 github.com/grafana/dskit/metrics
+github.com/grafana/dskit/middleware
 github.com/grafana/dskit/modules
+github.com/grafana/dskit/mtime
 github.com/grafana/dskit/multierror
 github.com/grafana/dskit/netutil
 github.com/grafana/dskit/promregistry
@@ -590,10 +596,14 @@ github.com/grafana/dskit/ring/client
 github.com/grafana/dskit/ring/shard
 github.com/grafana/dskit/runtimeconfig
 github.com/grafana/dskit/runutil
+github.com/grafana/dskit/server
 github.com/grafana/dskit/services
+github.com/grafana/dskit/signals
 github.com/grafana/dskit/spanlogger
 github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
+github.com/grafana/dskit/tracing
+github.com/grafana/dskit/user
 # github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
 ## explicit; go 1.17
 github.com/grafana/e2e
@@ -886,7 +896,7 @@ github.com/prometheus/exporter-toolkit/web
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e => github.com/grafana/mimir-prometheus v0.0.0-20230727094429-c8f5ad1492a4
+# github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e => github.com/grafana/mimir-prometheus v0.0.0-20230804080622-75ba9622f401
 ## explicit; go 1.19
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -911,6 +921,8 @@ github.com/prometheus/prometheus/scrape
 github.com/prometheus/prometheus/storage
 github.com/prometheus/prometheus/storage/remote
 github.com/prometheus/prometheus/storage/remote/azuread
+github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus
+github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite
 github.com/prometheus/prometheus/template
 github.com/prometheus/prometheus/tsdb
 github.com/prometheus/prometheus/tsdb/chunkenc
@@ -1025,20 +1037,6 @@ github.com/uber/jaeger-client-go/utils
 ## explicit
 github.com/uber/jaeger-lib/metrics
 github.com/uber/jaeger-lib/metrics/prometheus
-# github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce => github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce
-## explicit; go 1.14
-github.com/weaveworks/common/errors
-github.com/weaveworks/common/grpc
-github.com/weaveworks/common/httpgrpc
-github.com/weaveworks/common/httpgrpc/server
-github.com/weaveworks/common/instrument
-github.com/weaveworks/common/logging
-github.com/weaveworks/common/middleware
-github.com/weaveworks/common/mtime
-github.com/weaveworks/common/server
-github.com/weaveworks/common/signals
-github.com/weaveworks/common/tracing
-github.com/weaveworks/common/user
 # github.com/weaveworks/promrus v1.2.0
 ## explicit
 github.com/weaveworks/promrus
@@ -1480,10 +1478,9 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230727094429-c8f5ad1492a4
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230804080622-75ba9622f401
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
 # github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
-# github.com/weaveworks/common => github.com/weaveworks/common v0.0.0-20230714173453-d1f8877b91ce
