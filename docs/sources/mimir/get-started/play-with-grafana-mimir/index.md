@@ -1,7 +1,7 @@
 ---
 aliases:
   - /tutorials/play-with-grafana-mimir/
-  - /docs/mimir/latest/tutorials/play-with-grafana-mimir/
+  - ../tutorials/play-with-grafana-mimir/
 associated_technologies:
   - mimir
 author:
