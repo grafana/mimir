@@ -3,35 +3,20 @@
 package middleware
 
 import (
-	"context"
 	"net/http"
-	"net/url"
 
 	"github.com/gorilla/mux"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/server"
-	"google.golang.org/grpc"
+	"github.com/uber/jaeger-client-go"
 )
-
-// InitGRPCMiddleware initializes the stuff
-func InitGRPCMiddleware(cfg *server.Config) {
-	cfg.GRPCMiddleware = append(cfg.GRPCMiddleware, OpenTracingHTTPGRPCUnaryServerInterceptor(opentracing.GlobalTracer()))
-}
 
 const httpGRPCHandleMethod = "/httpgrpc.HTTP/Handle"
 const httpSpanNameSep = " "
 
-// InitHTTPMiddleware initializes the stuff
+// InitHTTPMiddleware initializes gorilla/mux-compatible HTTP middleware
 func InitHTTPMiddleware(router *mux.Router) {
 	middleware := OpenTracingHTTPGRPCMiddleware{router: router}
-
-	//middlewareFunc := func(handler http.Handler) http.Handler {
-	//	return nethttp.Middleware(opentracing.GlobalTracer(), router)
-	//}
-	//
-	//router.Use(middlewareFunc)
 	router.Use(middleware.Wrap)
 }
 
@@ -39,6 +24,23 @@ type OpenTracingHTTPGRPCMiddleware struct {
 	router *mux.Router
 }
 
+// Wrap creates and decorates server-side tracing spans for httpgrpc requests
+//
+// The httpgrpc client wraps HTTP requests up into a generic httpgrpc.HTTP/Handle gRPC method.
+// The httpgrpc server unwraps httpgrpc.HTTP/Handle gRPC requests into HTTP requests
+// and forwards them to its own internal HTTP router.
+//
+// By default, the server-side tracing spans for the httpgrpc.HTTP/Handle gRPC method
+// have no data about the wrapped HTTP request being handled.
+//
+// Wrap starts & decorates a child span with OTEL HTTP server span name and tag conventions
+// and attaches the HTTP server span tags to the parent httpgrpc.HTTP/Handle gRPC span,
+// allowing tracing tooling to differentiate the HTTP requests represented by the httpgrpc.HTTP/Handle spans.
+//
+// Parent span tagging depends on using a Jaeger tracer for now in order to access OperationName(),
+// which is not required to satisfy the generic opentracing Tracer interface.
+//
+// (Currently-experimental) OTEL HTTP tracing standards are used, as opentracing has limited standards defined.
 func (m *OpenTracingHTTPGRPCMiddleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -47,11 +49,15 @@ func (m *OpenTracingHTTPGRPCMiddleware) Wrap(next http.Handler) http.Handler {
 		matchedRoute, _ := mux.CurrentRoute(r).GetPathTemplate()
 
 		parentSpan := opentracing.SpanFromContext(ctx)
-		parentSpan.SetTag("http.request.method", r.Method)
-		parentSpan.SetTag("http.route", matchedRoute)
-		parentSpan.SetTag("url.path", r.RequestURI)
+		if parentSpan, ok := parentSpan.(*jaeger.Span); ok {
+			if parentSpan.OperationName() == httpGRPCHandleMethod {
+				parentSpan.SetTag("http.request.method", r.Method)
+				parentSpan.SetTag("http.route", matchedRoute)
+				parentSpan.SetTag("url.path", r.RequestURI)
+			}
+		}
 
-		childSpanName := r.Method + httpSpanNameSep + matchedRoute
+		childSpanName := httpServerSpanName(r.Method, matchedRoute)
 		startSpanOpts := []opentracing.StartSpanOption{
 			ext.SpanKindRPCServer,
 			opentracing.Tag{Key: string(ext.Component), Value: "net/http"},
@@ -62,55 +68,22 @@ func (m *OpenTracingHTTPGRPCMiddleware) Wrap(next http.Handler) http.Handler {
 		childSpan, _ := opentracing.StartSpanFromContextWithTracer(ctx, tracer, childSpanName, startSpanOpts...)
 		defer childSpan.Finish()
 
+		r = r.WithContext(opentracing.ContextWithSpan(r.Context(), childSpan))
+
 		next.ServeHTTP(w, r)
 	})
 }
 
-// OpenTracingHTTPGRPCUnaryServerInterceptor returns a grpc.UnaryServerInterceptor suitable
-// for use in a grpc.NewServer call.
-// TODO not needed if we just use the HTTP middleware approach above?
-func OpenTracingHTTPGRPCUnaryServerInterceptor(tracer opentracing.Tracer) grpc.UnaryServerInterceptor {
-	return func(
-		ctx context.Context,
-		req interface{},
-		info *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler,
-	) (resp interface{}, err error) {
-		if info.FullMethod == httpGRPCHandleMethod {
-			if httpGRPCReq, ok := req.(*httpgrpc.HTTPRequest); ok {
-				// decorate existing parent span with attributes
-				fullReqURL := httpGRPCReq.GetUrl()
-				reqMethod := httpGRPCReq.GetMethod()
-				parentSpan := opentracing.SpanFromContext(ctx)
-				parentSpan.SetTag("http.request.method", reqMethod).SetTag("url.path", fullReqURL)
-
-				// start & decorate child span with more specific name, attempting to follow OTEL HTTP conventions:
-				//   "HTTP server span names SHOULD be {http.request.method} {http.route}
-				//   if there is a (low-cardinality) http.route available"
-				// we do not have the lower-cardinality matched route available, only the URL, so we
-				// attempt to keep cardinality low by only using the path portion of the URL.
-				childSpanName := httpGRPCHandleMethod + httpSpanNameSep + reqMethod // e.g. "/httpgrpc.HTTP/Handle POST"
-
-				// only use the URL path if we can get it
-				//   "HTTP server span names SHOULD be {http.method}
-				//   if there is no (low-cardinality) http.route available"
-				if parsedReqURL, _ := url.Parse(fullReqURL); parsedReqURL != nil {
-					childSpanName += httpSpanNameSep + parsedReqURL.Path // e.g. "/httpgrpc.HTTP/Handle POST /api/v1/metrics"
-
-				}
-
-				startSpanOpts := []opentracing.StartSpanOption{
-					ext.SpanKindRPCServer,
-					opentracing.Tag{Key: string(ext.Component), Value: "gRPC"},
-					opentracing.Tag{Key: "http.request.method", Value: reqMethod},
-					opentracing.Tag{Key: "url.path", Value: fullReqURL},
-				}
-				childSpan, _ := opentracing.StartSpanFromContextWithTracer(ctx, tracer, childSpanName, startSpanOpts...)
-				defer childSpan.Finish()
-			}
-		}
-
-		resp, err = handler(ctx, req)
-		return resp, err
+// httpServerSpanName constructs a tracing span operation name according to OTEL standards
+//
+// > HTTP server span names SHOULD be {http.request.method} {http.route}
+// > if there is a (low-cardinality) http.route available.
+// > HTTP server span names SHOULD be {http.method}
+// > if there is no (low-cardinality) http.route available
+func httpServerSpanName(method, matchedRoute string) string {
+	spanName := method
+	if matchedRoute != "" {
+		spanName += httpSpanNameSep + matchedRoute
 	}
+	return spanName
 }

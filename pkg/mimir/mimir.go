@@ -752,7 +752,6 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	mimir.setupObjstoreTracing()
 	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
-	//middleware.InitGRPCMiddleware(&mimir.Cfg.Server)
 
 	mimir.Cfg.Server.Router = mux.NewRouter()
 	middleware.InitHTTPMiddleware(mimir.Cfg.Server.Router)
