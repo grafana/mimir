@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/atomic"
 )
 
 const DefaultTimeout = 5 * time.Minute
@@ -621,19 +622,31 @@ func benchmarkActiveSeriesUpdateSeriesConcurrency(b *testing.B, numSeries, numGo
 	}
 
 	var (
-		c         = NewActiveSeries(&Matchers{}, DefaultTimeout)
-		wg        = &sync.WaitGroup{}
-		start     = make(chan struct{})
-		stopPurge = make(chan struct{})
-		max       = int(math.Ceil(float64(b.N) / float64(numGoroutines)))
-		now       = time.Now()
+		// Run the active series tracker with an active timeout = 0 so that the Purge() will always
+		// purge the series.
+		c           = NewActiveSeries(&Matchers{}, 0)
+		updateGroup = &sync.WaitGroup{}
+		purgeGroup  = &sync.WaitGroup{}
+		start       = make(chan struct{})
+		stopPurge   = make(chan struct{})
+		max         = int(math.Ceil(float64(b.N) / float64(numGoroutines)))
+		nowMillis   = atomic.NewInt64(time.Now().UnixNano())
 	)
 
+	// Utility function generate monotonic time increases.
+	now := func() time.Time {
+		return time.UnixMilli(nowMillis.Inc())
+	}
+
+	future := func() time.Time {
+		return time.UnixMilli(nowMillis.Add(time.Hour.Milliseconds()))
+	}
+
 	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
+		updateGroup.Add(1)
 
 		go func(workerID int) {
-			defer wg.Done()
+			defer updateGroup.Done()
 			<-start
 
 			// Each worker starts from a different position of the series list,
@@ -645,24 +658,24 @@ func benchmarkActiveSeriesUpdateSeriesConcurrency(b *testing.B, numSeries, numGo
 					nextSeriesID = 0
 				}
 
-				now = now.Add(time.Duration(ix) * time.Millisecond)
-				c.UpdateSeries(seriesList[nextSeriesID], storage.SeriesRef(nextSeriesID), now, -1)
+				c.UpdateSeries(seriesList[nextSeriesID], storage.SeriesRef(nextSeriesID), now(), -1)
 			}
 		}(i)
 	}
 
 	if withPurge {
-		// When the purge is enabled, we continuously call Purge() with a timestamp in the future
-		// so that all series will be purged.
-		future := time.Now().Add(time.Hour)
+		purgeGroup.Add(1)
 
 		go func() {
+			defer purgeGroup.Done()
+			<-start
+
 			for {
 				select {
 				case <-stopPurge:
 					return
 				default:
-					c.Purge(future)
+					c.Purge(future())
 				}
 
 				// Throttle, but keep high pressure from Purge().
@@ -673,9 +686,11 @@ func benchmarkActiveSeriesUpdateSeriesConcurrency(b *testing.B, numSeries, numGo
 
 	b.ResetTimer()
 	close(start)
-	wg.Wait()
+	updateGroup.Wait()
 
 	// The test is over so we can stop the purge routine.
+	close(stopPurge)
+	purgeGroup.Wait()
 }
 
 func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
