@@ -40,3 +40,12 @@ patches:
     patch: |-
       - op: remove
         path: /spec/clusterIP
+
+  # TODO(dimitarvdimitrov): Helm adds appProtocol to the memberlist service
+  - target:
+      kind: Service
+      name: 'mimir-gossip-ring'
+    patch: |-
+      - op: replace
+        path: /spec/ports/0/appProtocol
+        value: tcp
