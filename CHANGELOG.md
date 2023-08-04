@@ -121,6 +121,7 @@
   * `autoscaling_query_frontend_cpu_target_utilization` (defaults to `1`)
   * `autoscaling_ruler_query_frontend_cpu_target_utilization` (defaults to `1`)
   * `autoscaling_alertmanager_cpu_target_utilization` (defaults to `1`)
+* [ENHANCEMENT] Gossip-ring: add appProtocol for istio compatibility. #5680
 
 ### Mimirtool
 

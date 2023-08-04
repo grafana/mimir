@@ -294,7 +294,8 @@ metadata:
 spec:
   clusterIP: None
   ports:
-  - name: gossip-ring
+  - appProtocol: tcp
+    name: gossip-ring
     port: 7946
     protocol: TCP
     targetPort: 7946
