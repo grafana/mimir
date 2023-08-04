@@ -110,6 +110,7 @@
 * [ENHANCEMENT] Allow to remove an entry from the configured environment variable for a given component, setting the environment value to `null` in the `*_env_map` objects (e.g. `store_gateway_env_map+:: { 'field': null}`). #5599
 * [ENHANCEMENT] Allow overriding the default number of replicas for `etcd`.
 * [ENHANCEMENT] Memcached: reduce memory request for results, chunks and metadata caches. The requested memory is 5% greater than the configured memcached max cache size. #5661
+* [ENHANCEMENT] Gossip-ring: add appProtocol for istio compatibility. #5680
 
 ### Mimirtool
 
