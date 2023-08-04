@@ -602,54 +602,18 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 }
 
 func BenchmarkActiveSeries_UpdateSeriesConcurrency(b *testing.B) {
-	var activeSeriesTestGoroutines = []int{50, 100, 500, 1000}
-
-	for _, num := range activeSeriesTestGoroutines {
-		b.Run(fmt.Sprintf("Single series, concurrency = %d", num), func(b *testing.B) {
-			benchmarkActiveSeriesUpdateSeriesConcurrencySingleSeries(b, num)
-		})
-	}
-
-	for _, num := range activeSeriesTestGoroutines {
-		b.Run(fmt.Sprintf("Multiple series, concurrency = %d", num), func(b *testing.B) {
-			benchmarkActiveSeriesUpdateSeriesConcurrencyMultipleSeries(b, num)
-		})
-	}
-}
-
-func benchmarkActiveSeriesUpdateSeriesConcurrencySingleSeries(b *testing.B, goroutines int) {
-	series := labels.FromStrings("a", "a")
-	ref := storage.SeriesRef(1)
-
-	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
-
-	wg := &sync.WaitGroup{}
-	start := make(chan struct{})
-	max := int(math.Ceil(float64(b.N) / float64(goroutines)))
-
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-
-			now := time.Now()
-
-			for ix := 0; ix < max; ix++ {
-				now = now.Add(time.Duration(ix) * time.Millisecond)
-				c.UpdateSeries(series, ref, now, -1)
+	for _, numSeries := range []int{1, 1_000_000} {
+		for _, numGoroutines := range []int{50, 100, 500, 1000} {
+			for _, withPurge := range []bool{false, true} {
+				b.Run(fmt.Sprintf("series = %d, concurrency = %d, purge = %t", numSeries, numGoroutines, withPurge), func(b *testing.B) {
+					benchmarkActiveSeriesUpdateSeriesConcurrency(b, numSeries, numGoroutines, withPurge)
+				})
 			}
-		}()
+		}
 	}
-
-	b.ResetTimer()
-	close(start)
-	wg.Wait()
 }
 
-func benchmarkActiveSeriesUpdateSeriesConcurrencyMultipleSeries(b *testing.B, goroutines int) {
-	const numSeries = 10000
-
+func benchmarkActiveSeriesUpdateSeriesConcurrency(b *testing.B, numSeries, numGoroutines int, withPurge bool) {
 	// Create the series.
 	seriesList := make([]labels.Labels, 0, numSeries)
 	for i := 0; i < numSeries; i++ {
@@ -657,14 +621,15 @@ func benchmarkActiveSeriesUpdateSeriesConcurrencyMultipleSeries(b *testing.B, go
 	}
 
 	var (
-		c     = NewActiveSeries(&Matchers{}, DefaultTimeout)
-		wg    = &sync.WaitGroup{}
-		start = make(chan struct{})
-		max   = int(math.Ceil(float64(b.N) / float64(goroutines)))
-		now   = time.Now()
+		c         = NewActiveSeries(&Matchers{}, DefaultTimeout)
+		wg        = &sync.WaitGroup{}
+		start     = make(chan struct{})
+		stopPurge = make(chan struct{})
+		max       = int(math.Ceil(float64(b.N) / float64(numGoroutines)))
+		now       = time.Now()
 	)
 
-	for i := 0; i < goroutines; i++ {
+	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 
 		go func(workerID int) {
@@ -673,7 +638,7 @@ func benchmarkActiveSeriesUpdateSeriesConcurrencyMultipleSeries(b *testing.B, go
 
 			// Each worker starts from a different position of the series list,
 			// to better simulate a real world scenario.
-			nextSeriesID := (numSeries / goroutines) * workerID
+			nextSeriesID := (numSeries / numGoroutines) * workerID
 
 			for ix := 0; ix < max; ix++ {
 				if nextSeriesID >= numSeries {
@@ -686,9 +651,31 @@ func benchmarkActiveSeriesUpdateSeriesConcurrencyMultipleSeries(b *testing.B, go
 		}(i)
 	}
 
+	if withPurge {
+		// When the purge is enabled, we continuously call Purge() with a timestamp in the future
+		// so that all series will be purged.
+		future := time.Now().Add(time.Hour)
+
+		go func() {
+			for {
+				select {
+				case <-stopPurge:
+					return
+				default:
+					c.Purge(future)
+				}
+
+				// Throttle, but keep high pressure from Purge().
+				time.Sleep(time.Millisecond)
+			}
+		}()
+	}
+
 	b.ResetTimer()
 	close(start)
 	wg.Wait()
+
+	// The test is over so we can stop the purge routine.
 }
 
 func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
