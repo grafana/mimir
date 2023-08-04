@@ -51,7 +51,7 @@ The different API endpoints have different features, and the main differences fo
 - **Get label names API**<br />
   Yes. The optional `match[]` parameter makes it possible to select the series from which to read the label names. The `match[]` parameter can be specified multiple times. When omitted, label names are extracted from all series.
 - **Label names cardinality API**<br />
-  Yes. The optional `selector` parameter allows to select the series from which to read the label names. The `selector` parameter can be specified only once. When omitted, label names are extracted from all series.
+  Yes. The optional `selector` parameter makes it possible to select the series from which to read the label names. The `selector` parameter can be specified only once. When omitted, label names are extracted from all series.
 
 ## Querying label values
 
@@ -70,7 +70,7 @@ The default prefix is `/prometheus`.
 ### Recommendations and performance trade-off
 
 - Prefer _get label values_ over _label values cardinality_ API, unless you need to know the number of series for each label name and value.
-- The _get label values_ API allows to specify a single label name, while the _label values cardinality_ API allows to specify multiple label names. If you need to get the label values for multiple label names, we recommend issuing multiple _get label values_ requests instead of a single _label values cardinality_ API call with multiple label names.
+- The _get label values_ API makes it possible to specify a single label name, and the _label values cardinality_ API makes it possible to specify multiple label names. If you need to get the label values for multiple label names, we recommend issuing multiple _get label values_ requests instead of a single _label values cardinality_ API call with multiple label names.
 - The _get label values_ API `start` and `end` parameters are optional. When omitted, Mimir will query label values for the whole retention period or up to the configured `-store.max-labels-query-length`. We recommend to always specify `start` and `end` parameters, and preferably set them to the shortest period that is feasible for your use case. The longer the time range, the more computationally expensive the request is.
 - For both API endpoints, executing a request specifying the series selector is computationally more expensive than the same request without the series selector. However, the results set might be significantly smaller when the series selector reduces the series set.
 
@@ -93,7 +93,7 @@ The different API endpoints have different features, and the main differences fo
 - **Get label values API**<br />
   Yes. The optional `match[]` parameter makes it possible to select the series from which to read the label values. The `match[]` parameter can be specified multiple times. When omitted, label values are extracted from all series.
 - **Label values cardinality API**<br />
-  Yes. The optional `selector` parameter allows to select the series from which to read the label names and values. The `selector` parameter can be specified only once. When omitted, label names and values are extracted from all series.
+  Yes. The optional `selector` parameter makes it possible to select the series from which to read the label names and values. The `selector` parameter can be specified only once. When omitted, label names and values are extracted from all series.
 
 ## Alternatives
 
