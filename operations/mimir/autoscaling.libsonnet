@@ -11,7 +11,6 @@
     autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
     autoscaling_ruler_querier_max_replicas: error 'you must set autoscaling_ruler_querier_max_replicas in the _config',
     autoscaling_ruler_querier_cpu_target_utilization: 1,
-    autoscaling_ruler_querier_memory_target_utilization: 1,
 
     autoscaling_distributor_enabled: false,
     autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
@@ -284,7 +283,7 @@
 
   // newRulerQuerierScaledObject will create a scaled object for the ruler-querier component with the given name.
   // `weight` param works in the same way as in `newQuerierScaledObject`, see docs there.
-  newRulerQuerierScaledObject(name, querier_cpu_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
+  newRulerQuerierScaledObject(name, querier_cpu_requests, min_replicas, max_replicas, cpu_target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
 
@@ -298,7 +297,7 @@
         query: metricWithWeight('max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace], weight),
 
         // threshold is expected to be a string.
-        threshold: std.toString(cpuToMilliCPUInt(querier_cpu_requests)),
+        threshold: std.toString(cpuToMilliCPUInt(querier_cpu_requests) * cpu_target_utilization),
       },
     ],
   }),
@@ -310,7 +309,6 @@
       min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
-      memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
     ),
 
   ruler_querier_deployment: overrideSuperIfExists(
