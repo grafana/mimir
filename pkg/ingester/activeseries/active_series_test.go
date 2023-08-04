@@ -601,17 +601,23 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 	assert.Equal(t, []int{0, 0}, activeMatching)
 }
 
-var activeSeriesTestGoroutines = []int{50, 100, 500}
+func BenchmarkActiveSeries_UpdateSeriesConcurrency(b *testing.B) {
+	var activeSeriesTestGoroutines = []int{50, 100, 500, 1000}
 
-func BenchmarkActiveSeriesTest_single_series(b *testing.B) {
 	for _, num := range activeSeriesTestGoroutines {
-		b.Run(fmt.Sprintf("%d", num), func(b *testing.B) {
-			benchmarkActiveSeriesConcurrencySingleSeries(b, num)
+		b.Run(fmt.Sprintf("Single series, concurrency = %d", num), func(b *testing.B) {
+			benchmarkActiveSeriesUpdateSeriesConcurrencySingleSeries(b, num)
+		})
+	}
+
+	for _, num := range activeSeriesTestGoroutines {
+		b.Run(fmt.Sprintf("Multiple series, concurrency = %d", num), func(b *testing.B) {
+			benchmarkActiveSeriesUpdateSeriesConcurrencyMultipleSeries(b, num)
 		})
 	}
 }
 
-func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) {
+func benchmarkActiveSeriesUpdateSeriesConcurrencySingleSeries(b *testing.B, goroutines int) {
 	series := labels.FromStrings("a", "a")
 	ref := storage.SeriesRef(1)
 
@@ -634,6 +640,50 @@ func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) 
 				c.UpdateSeries(series, ref, now, -1)
 			}
 		}()
+	}
+
+	b.ResetTimer()
+	close(start)
+	wg.Wait()
+}
+
+func benchmarkActiveSeriesUpdateSeriesConcurrencyMultipleSeries(b *testing.B, goroutines int) {
+	const numSeries = 10000
+
+	// Create the series.
+	seriesList := make([]labels.Labels, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		seriesList = append(seriesList, labels.FromStrings("series_id", strconv.Itoa(i)))
+	}
+
+	var (
+		c     = NewActiveSeries(&Matchers{}, DefaultTimeout)
+		wg    = &sync.WaitGroup{}
+		start = make(chan struct{})
+		max   = int(math.Ceil(float64(b.N) / float64(goroutines)))
+		now   = time.Now()
+	)
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+
+		go func(workerID int) {
+			defer wg.Done()
+			<-start
+
+			// Each worker starts from a different position of the series list,
+			// to better simulate a real world scenario.
+			nextSeriesID := (numSeries / goroutines) * workerID
+
+			for ix := 0; ix < max; ix++ {
+				if nextSeriesID >= numSeries {
+					nextSeriesID = 0
+				}
+
+				now = now.Add(time.Duration(ix) * time.Millisecond)
+				c.UpdateSeries(seriesList[nextSeriesID], storage.SeriesRef(nextSeriesID), now, -1)
+			}
+		}(i)
 	}
 
 	b.ResetTimer()
