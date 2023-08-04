@@ -480,16 +480,16 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 		{
 			Labels: seriesWithOutOfOrderChunks,
 			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}}),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
 			},
 		},
 		// Series with out of order and overlapping chunks.
 		{
 			Labels: seriesWithOverlappingChunks,
 			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}}),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
 			},
 		},
 	}
@@ -982,4 +982,11 @@ func generateSeries(card []int) []labels.Labels {
 	rec(0)
 
 	return series
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
