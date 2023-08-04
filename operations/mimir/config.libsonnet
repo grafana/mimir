@@ -752,11 +752,11 @@
         if $._config.cache_metadata_backend == 'memcached' then (
           {
             'ruler-storage.cache.backend': 'memcached',
-            'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
+            'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
             'ruler-storage.cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
             'ruler-storage.cache.memcached.max-async-concurrency': 50,
           } + if $._config.memcached_metadata_mtls_enabled then {
-            'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:11212' % $._config,
+            'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
             'ruler-storage.cache.memcached.connect-timeout': '1s',
             'ruler-storage.cache.memcached.tls-enabled': true,
             'ruler-storage.cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
@@ -766,7 +766,7 @@
           } else {}
         ) else if $._config.cache_metadata_backend == 'redis' then {
           'ruler-storage.cache.backend': 'redis',
-          'ruler-storage.cache.redis.endpoint': '%(cache_metadata_backend)s-metadata.%(namespace)s.svc.cluster.local:6379' % $._config,
+          'ruler-storage.cache.redis.endpoint': '%(cache_metadata_backend)s-metadata.%(namespace)s.svc.%(cluster_domain)s:6379' % $._config,
           'ruler-storage.cache.redis.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
           'ruler-storage.cache.redis.max-async-concurrency': 50,
         } else {}
