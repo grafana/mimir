@@ -388,7 +388,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
@@ -463,7 +463,7 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.metadata-cache.backend=redis
-        - -blocks-storage.bucket-store.metadata-cache.redis.endpoint=redis-metadata.default.svc.cluster.local:6379
+        - -blocks-storage.bucket-store.metadata-cache.redis.endpoint=redis-metadata.default.svc.cluster.local.:6379
         - -blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.redis.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
@@ -477,11 +477,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -mem-ballast-size-bytes=268435456
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
+        - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -560,9 +560,9 @@ spec:
         - -query-frontend.max-total-query-length=12000h
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=redis
-        - -query-frontend.results-cache.redis.endpoint=redis-frontend.default.svc.cluster.local:6379
+        - -query-frontend.results-cache.redis.endpoint=redis-frontend.default.svc.cluster.local.:6379
         - -query-frontend.results-cache.redis.max-item-size=5242880
-        - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
+        - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -693,7 +693,7 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.metadata-cache.backend=redis
-        - -blocks-storage.bucket-store.metadata-cache.redis.endpoint=redis-metadata.default.svc.cluster.local:6379
+        - -blocks-storage.bucket-store.metadata-cache.redis.endpoint=redis-metadata.default.svc.cluster.local.:6379
         - -blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.redis.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
@@ -706,14 +706,14 @@ spec:
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -querier.max-partial-query-length=768h
         - -ruler-storage.cache.backend=redis
         - -ruler-storage.cache.redis.endpoint=redis-metadata.default.svc.cluster.local:6379
         - -ruler-storage.cache.redis.max-async-concurrency=50
         - -ruler-storage.cache.redis.max-item-size=1048576
         - -ruler-storage.gcs.bucket-name=rules-bucket
-        - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
+        - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
         - -ruler.ring.store=memberlist
@@ -792,7 +792,7 @@ spec:
         - -alertmanager.web.external-url=http://test/alertmanager
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -894,7 +894,7 @@ spec:
         - -compactor.split-groups=1
         - -compactor.symbols-flushers-concurrency=4
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -998,7 +998,7 @@ spec:
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1086,13 +1086,13 @@ spec:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=redis
         - -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size=150
-        - -blocks-storage.bucket-store.chunks-cache.redis.endpoint=redis.default.svc.cluster.local:6379
+        - -blocks-storage.bucket-store.chunks-cache.redis.endpoint=redis.default.svc.cluster.local.:6379
         - -blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.redis.max-item-size=1048576
         - -blocks-storage.bucket-store.index-cache.backend=redis
         - -blocks-storage.bucket-store.index-cache.redis.connection-pool-size=150
-        - -blocks-storage.bucket-store.index-cache.redis.endpoint=redis-index-queries.default.svc.cluster.local:6379
+        - -blocks-storage.bucket-store.index-cache.redis.endpoint=redis-index-queries.default.svc.cluster.local.:6379
         - -blocks-storage.bucket-store.index-cache.redis.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.redis.max-item-size=5242880
@@ -1100,7 +1100,7 @@ spec:
         - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=redis
         - -blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size=150
-        - -blocks-storage.bucket-store.metadata-cache.redis.endpoint=redis-metadata.default.svc.cluster.local:6379
+        - -blocks-storage.bucket-store.metadata-cache.redis.endpoint=redis-metadata.default.svc.cluster.local.:6379
         - -blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.redis.max-item-size=1048576
@@ -1109,7 +1109,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
