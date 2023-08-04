@@ -13,6 +13,8 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"go.uber.org/atomic"
 )
 
@@ -38,6 +40,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
 	stripes [numStripes]seriesStripe
+	deleted deletedSeries
 
 	// matchersMutex protects matchers and lastMatchersUpdate.
 	matchersMutex      sync.RWMutex
@@ -45,13 +48,15 @@ type ActiveSeries struct {
 	lastMatchersUpdate time.Time
 
 	// The duration after which series become inactive.
-	// Also used to determine if enough time has passed since configuration reload for valid results.
+	// Also used to determine if enough time isActive passed since configuration reload for valid results.
 	timeout time.Duration
 }
 
 // seriesStripe holds a subset of the series timestamps for a single tenant.
 type seriesStripe struct {
 	matchers *Matchers
+
+	deleted *deletedSeries
 
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
@@ -73,6 +78,8 @@ type seriesEntry struct {
 	nanos                     *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
 	matches                   preAllocDynamicSlice //  Index of the matcher matching
 	numNativeHistogramBuckets int                  // Number of buckets in native histogram series, -1 if not a native histogram.
+
+	deleted bool // This series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
 }
 
 func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
@@ -80,7 +87,7 @@ func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm)
+		c.stripes[i].reinitialize(asm, &c.deleted)
 	}
 
 	return c
@@ -97,7 +104,7 @@ func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
 	defer c.matchersMutex.Unlock()
 
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm)
+		c.stripes[i].reinitialize(asm, &c.deleted)
 	}
 	c.matchers = asm
 	c.lastMatchersUpdate = now
@@ -114,7 +121,27 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef, now time.Time, numNativeHistogramBuckets int) {
 	stripeID := ref % numStripes
 
-	c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, numNativeHistogramBuckets)
+	created := c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, numNativeHistogramBuckets)
+	if created {
+		if deleted, ok := c.deleted.find(series); ok {
+			deletedStripeID := deleted.ref % numStripes
+			c.stripes[deletedStripeID].remove(deleted.ref)
+		}
+	}
+}
+
+// PostDeletion should be called when series are deleted from the head.
+// Sometimes series can be deleted befure they're considered inactive (this happens with OOO series),
+// in this case we need to mark those series as deleted and save their labels to avoid accounting from them twice if
+// new series for same labels is created shortly after.
+func (c *ActiveSeries) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+	for ref, lbls := range deleted {
+		ref := storage.SeriesRef(ref)
+		stripeID := ref % numStripes
+		if c.stripes[stripeID].containsRef(ref) {
+			c.stripes[stripeID].markDeleted(ref, lbls)
+		}
+	}
 }
 
 // Purge purges expired entries and returns true if enough time has passed since
@@ -186,6 +213,22 @@ func (s *seriesStripe) containsRef(ref storage.SeriesRef) bool {
 	return ok
 }
 
+func (s *seriesStripe) markDeleted(ref storage.SeriesRef, lbls labels.Labels) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.refs[ref]; !ok {
+		// Doesn't exist anymore.
+		return
+	}
+
+	series := s.refs[ref]
+	series.deleted = true
+	s.refs[ref] = series
+
+	s.deleted.add(ref, lbls)
+}
+
 // getTotal will return the total active series in the stripe
 // and the total active series that are native histograms
 // and the total number of buckets in active native histogram series
@@ -216,15 +259,16 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeH
 	return s.active, s.activeNativeHistograms, s.activeNativeHistogramBuckets
 }
 
-func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref storage.SeriesRef, numNativeHistogramBuckets int) {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref storage.SeriesRef, numNativeHistogramBuckets int) bool {
 	nowNanos := now.UnixNano()
 
 	e, needsUpdating := s.findEntryForSeries(ref, numNativeHistogramBuckets)
-	entryTimeSet := false
+	created := false
 	if e == nil || needsUpdating {
-		e, entryTimeSet = s.findAndUpdateOrCreateEntryForSeries(ref, series, nowNanos, numNativeHistogramBuckets)
+		e, created = s.findAndUpdateOrCreateEntryForSeries(ref, series, nowNanos, numNativeHistogramBuckets)
 	}
 
+	entryTimeSet := created
 	if !entryTimeSet {
 		if prev := e.Load(); nowNanos > prev {
 			entryTimeSet = e.CompareAndSwap(prev, nowNanos)
@@ -240,6 +284,8 @@ func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels
 			}
 		}
 	}
+
+	return created
 }
 
 func (s *seriesStripe) findEntryForSeries(ref storage.SeriesRef, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
@@ -249,7 +295,7 @@ func (s *seriesStripe) findEntryForSeries(ref storage.SeriesRef, numNativeHistog
 	return entry.nanos, entry.numNativeHistogramBuckets != numNativeHistogramBuckets
 }
 
-func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int) (*atomic.Int64, bool) {
+func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int) (entryTime *atomic.Int64, created bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -316,7 +362,6 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 	}
 
 	s.refs[ref] = e
-
 	return e.nanos, true
 }
 
@@ -338,10 +383,11 @@ func (s *seriesStripe) clear() {
 }
 
 // Reinitialize assigns new matchers and corresponding size activeMatching slices.
-func (s *seriesStripe) reinitialize(asm *Matchers) {
+func (s *seriesStripe) reinitialize(asm *Matchers, deleted *deletedSeries) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.deleted = deleted
 	s.oldestEntryTs.Store(0)
 	s.refs = map[storage.SeriesRef]seriesEntry{}
 	s.active = 0
@@ -374,6 +420,9 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 	for ref, entry := range s.refs {
 		ts := entry.nanos.Load()
 		if ts < keepUntilNanos {
+			if entry.deleted {
+				s.deleted.purge(ref)
+			}
 			delete(s.refs, ref)
 			continue
 		}
@@ -404,6 +453,43 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 	}
 }
 
+// remove a single series from the stripe.
+// This is mostly the same logic from purge() but we decrement counters for a single entry instead of incrementing for each entry.
+// Note: we might remove the oldest series here, but the worst thing can happen is that we let run a useless purge() cycle later,
+// so this method doesn't update the oldestEntryTs.
+func (s *seriesStripe) remove(ref storage.SeriesRef) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	entry, ok := s.refs[ref]
+	if !ok {
+		// At the time of writing this, entry.deleted is always true when calling remove().
+		// If this changed, we should check that to avoid calling s.deleted.purge() too many times.
+		s.deleted.purge(ref)
+		// Was purged already.
+		// We can assume s.deleted.purge() was called already too.
+		return
+	}
+
+	s.active--
+	if entry.numNativeHistogramBuckets >= 0 {
+		s.activeNativeHistograms--
+		s.activeNativeHistogramBuckets -= uint32(entry.numNativeHistogramBuckets)
+	}
+	ml := entry.matches.len()
+	for i := 0; i < ml; i++ {
+		match := entry.matches.get(i)
+		s.activeMatching[match]--
+		if entry.numNativeHistogramBuckets >= 0 {
+			s.activeMatchingNativeHistograms[match]--
+			s.activeMatchingNativeHistogramBuckets[match] -= uint32(entry.numNativeHistogramBuckets)
+		}
+	}
+
+	s.deleted.purge(ref)
+	delete(s.refs, ref)
+}
+
 func resizeAndClear(l int, prev []uint32) []uint32 {
 	if cap(prev) < l {
 		if l == 0 {
@@ -417,4 +503,61 @@ func resizeAndClear(l int, prev []uint32) []uint32 {
 		p[i] = 0
 	}
 	return p
+}
+
+type deletedSeries struct {
+	mu   sync.RWMutex
+	keys map[storage.SeriesRef]string
+	refs map[string]deletedSeriesRef
+
+	// buf can be used when write lock is held.
+	// If only read lock is held, then bufs pool should be used instead.
+	buf  []byte
+	bufs zeropool.Pool[[]byte]
+}
+
+type deletedSeriesRef struct {
+	ref storage.SeriesRef
+	key string
+}
+
+func (ds *deletedSeries) find(lbls labels.Labels) (deletedSeriesRef, bool) {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+
+	buf := ds.bufs.Get()
+	defer ds.bufs.Put(buf)
+
+	ref, ok := ds.refs[string(lbls.Bytes(buf))]
+	return ref, ok
+}
+
+// add should be called only when write lock on the seriesStripe is held.
+// this way we can avoid race conditions by adding something that is purged and leaking series.
+func (ds *deletedSeries) add(ref storage.SeriesRef, lbls labels.Labels) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	if ds.keys == nil {
+		ds.keys = map[storage.SeriesRef]string{}
+		ds.refs = map[string]deletedSeriesRef{}
+	}
+
+	key := string(lbls.Bytes(ds.buf))
+
+	ds.keys[ref] = key
+	ds.refs[key] = deletedSeriesRef{ref, key}
+}
+
+func (ds *deletedSeries) purge(ref storage.SeriesRef) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	key, ok := ds.keys[ref]
+	if !ok {
+		return
+	}
+
+	delete(ds.keys, ref)
+	delete(ds.refs, key)
 }

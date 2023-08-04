@@ -15,6 +15,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,6 +26,7 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
 	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
 	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
+	ref5 := storage.SeriesRef(5) // will be used for ls1 again.
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 	valid := c.Purge(time.Now())
@@ -122,6 +124,58 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	assert.Equal(t, 4, allActive)
 	assert.Equal(t, 1, allActiveHistograms)
 	assert.Equal(t, 7, allActiveBuckets)
+
+	// ref1 was deleted from head, but still active.
+	c.PostDeletion(map[chunks.HeadSeriesRef]labels.Labels{
+		chunks.HeadSeriesRef(ref1): ls1,
+	})
+	allActive, _, allActiveHistograms, _, allActiveBuckets, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, 7, allActiveBuckets)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, 7, allActiveBuckets)
+
+	// Doesn't change after purging.
+	valid = c.Purge(time.Now())
+	assert.True(t, valid)
+	allActive, _, allActiveHistograms, _, allActiveBuckets, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, 7, allActiveBuckets)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, 7, allActiveBuckets)
+
+	// ref5 is created with the same labelset as ls1, it shouldn't be accounted as different series.
+	c.UpdateSeries(ls1, ref5, time.Now(), -1)
+	allActive, _, allActiveHistograms, _, allActiveBuckets, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, 7, allActiveBuckets)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, 7, allActiveBuckets)
+
+	// Doesn't change after purging.
+	valid = c.Purge(time.Now())
+	assert.True(t, valid)
+	allActive, _, allActiveHistograms, _, allActiveBuckets, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, 7, allActiveBuckets)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 4, allActive)
+	assert.Equal(t, 1, allActiveHistograms)
+	assert.Equal(t, 7, allActiveBuckets)
+
+	// Make sure deleted is empty, so we're not leaking.
+	assert.Empty(t, c.deleted.refs)
+	assert.Empty(t, c.deleted.keys)
 }
 
 func TestActiveSeries_ContainsRef(t *testing.T) {
@@ -170,6 +224,7 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
 	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
 	ref5, ls5 := storage.SeriesRef(5), labels.FromStrings("a", "5")
+	ref6 := storage.SeriesRef(6) // same as ls2
 
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3|4"}`}))
 
@@ -309,6 +364,72 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 3, allActiveHistograms)
 	assert.Equal(t, 11, allActiveBuckets)
+
+	// ref2 is deleted from the head, but still active.
+	c.PostDeletion(map[chunks.HeadSeriesRef]labels.Labels{
+		chunks.HeadSeriesRef(ref2): ls2,
+	})
+	// Numbers don't change.
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, []int{3}, activeMatching)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assert.Equal(t, 11, allActiveBuckets)
+	assert.Equal(t, []int{6}, activeMatchingBuckets)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, 11, allActiveBuckets)
+
+	// Don't change after purging.
+	valid = c.Purge(time.Now())
+	assert.True(t, valid)
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, []int{3}, activeMatching)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assert.Equal(t, 11, allActiveBuckets)
+	assert.Equal(t, []int{6}, activeMatchingBuckets)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, 11, allActiveBuckets)
+
+	// ls2 is pushed again, this time with ref6
+	c.UpdateSeries(ls2, ref6, time.Now(), -1)
+	// Numbers don't change.
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, []int{3}, activeMatching)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assert.Equal(t, 11, allActiveBuckets)
+	assert.Equal(t, []int{6}, activeMatchingBuckets)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, 11, allActiveBuckets)
+
+	// Don't change after purging.
+	valid = c.Purge(time.Now())
+	assert.True(t, valid)
+	allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, []int{3}, activeMatching)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assert.Equal(t, 11, allActiveBuckets)
+	assert.Equal(t, []int{6}, activeMatchingBuckets)
+	allActive, allActiveHistograms, allActiveBuckets = c.Active()
+	assert.Equal(t, 5, allActive)
+	assert.Equal(t, 3, allActiveHistograms)
+	assert.Equal(t, 11, allActiveBuckets)
+
+	// Make sure deleted is empty, so we're not leaking.
+	assert.Empty(t, c.deleted.refs)
+	assert.Empty(t, c.deleted.keys)
 }
 
 func labelsWithHashCollision() (labels.Labels, labels.Labels) {
@@ -345,14 +466,17 @@ func TestActiveSeries_ShouldCorrectlyHandleHashCollisions(t *testing.T) {
 
 func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 	collision1, collision2 := labelsWithHashCollision()
+	deletedLabels := labels.FromStrings("deleted", "true")
 	series := []labels.Labels{
+		deletedLabels,
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		collision1,
 		collision2,
 	}
 
-	refs := []storage.SeriesRef{1, 2, 3, 4}
+	const deletedRef = 1
+	refs := []storage.SeriesRef{1, 2, 3, 4, 5}
 
 	// Run the same test for increasing TTL values
 	for ttl := 1; ttl <= len(series); ttl++ {
@@ -363,6 +487,9 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 			for i := 0; i < len(series); i++ {
 				c.UpdateSeries(series[i], refs[i], time.Unix(int64(i), 0), -1)
 			}
+			c.PostDeletion(map[chunks.HeadSeriesRef]labels.Labels{
+				deletedRef: deletedLabels,
+			})
 
 			c.purge(time.Unix(int64(ttl), 0))
 			// call purge twice, just to hit "quick" path. It doesn't really do anything.
@@ -375,6 +502,10 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 			allActive, activeMatching, _, _, _, _ := c.ActiveWithMatchers()
 			assert.Equal(t, exp, allActive)
 			assert.Empty(t, activeMatching)
+
+			// Deleted series is the first one so it should be always deleted and we should see empty deleted refs & keys.
+			assert.Empty(t, c.deleted.refs)
+			assert.Empty(t, c.deleted.keys)
 		})
 	}
 }
