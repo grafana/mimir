@@ -233,6 +233,11 @@ func NewQuerierHandler(
 		Help:      "Current number of inflight requests to the querier.",
 	}, []string{"method", "route"})
 
+	const (
+		remoteWriteEnabled = false
+		oltpEnabled        = false
+	)
+
 	api := v1.NewAPI(
 		engine,
 		querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
@@ -259,6 +264,8 @@ func NewQuerierHandler(
 		prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return nil, nil }),
 		reg,
 		nil,
+		remoteWriteEnabled,
+		oltpEnabled,
 	)
 
 	api.InstallCodec(protobufCodec{})
