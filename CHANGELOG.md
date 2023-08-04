@@ -127,6 +127,7 @@
 * [CHANGE] Fix link to external OTLP/HTTP documentation.
 * [ENHANCEMENT] Improved `MimirRulerTooManyFailedQueries` runbook. #5586
 * [ENHANCEMENT] Improved "Recover accidentally deleted blocks" runbook. #5620
+* [ENHANCEMENT] Documented options and trade-offs to query label names and values. #5582
 
 ### Tools
 
