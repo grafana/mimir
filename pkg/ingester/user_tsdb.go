@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -299,11 +300,11 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
 }
 
-func (u *userTSDB) PostDeletion(metrics ...labels.Labels) {
+func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 
-	for _, metric := range metrics {
-		metricName, err := extract.MetricNameFromLabels(metric)
+	for _, lbls := range metrics {
+		metricName, err := extract.MetricNameFromLabels(lbls)
 		if err != nil {
 			// This should never happen because it has already been checked in PreCreation().
 			continue
