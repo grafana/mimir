@@ -5,34 +5,42 @@
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
+    autoscaling_querier_target_utilization: 0.75,  // Target to utilize 75% querier workers on peak traffic, so we have 25% room for higher peaks.
 
     autoscaling_ruler_querier_enabled: false,
     autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
     autoscaling_ruler_querier_max_replicas: error 'you must set autoscaling_ruler_querier_max_replicas in the _config',
+    autoscaling_ruler_querier_cpu_target_utilization: 1,
+    autoscaling_ruler_querier_memory_target_utilization: 1,
 
     autoscaling_distributor_enabled: false,
     autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
     autoscaling_distributor_max_replicas: error 'you must set autoscaling_distributor_max_replicas in the _config',
     autoscaling_distributor_cpu_target_utilization: 1,
+    autoscaling_distributor_memory_target_utilization: 1,
 
     autoscaling_ruler_enabled: false,
     autoscaling_ruler_min_replicas: error 'you must set autoscaling_ruler_min_replicas in the _config',
     autoscaling_ruler_max_replicas: error 'you must set autoscaling_ruler_max_replicas in the _config',
+    autoscaling_ruler_cpu_target_utilization: 1,
     autoscaling_ruler_memory_target_utilization: 1,
 
     autoscaling_query_frontend_enabled: false,
     autoscaling_query_frontend_min_replicas: error 'you must set autoscaling_query_frontend_min_replicas in the _config',
     autoscaling_query_frontend_max_replicas: error 'you must set autoscaling_query_frontend_max_replicas in the _config',
+    autoscaling_query_frontend_cpu_target_utilization: 1,
     autoscaling_query_frontend_memory_target_utilization: 1,
 
     autoscaling_ruler_query_frontend_enabled: false,
     autoscaling_ruler_query_frontend_min_replicas: error 'you must set autoscaling_ruler_query_frontend_min_replicas in the _config',
     autoscaling_ruler_query_frontend_max_replicas: error 'you must set autoscaling_ruler_query_frontend_max_replicas in the _config',
+    autoscaling_ruler_query_frontend_cpu_target_utilization: 1,
     autoscaling_ruler_query_frontend_memory_target_utilization: 1,
 
     autoscaling_alertmanager_enabled: false,
     autoscaling_alertmanager_min_replicas: error 'you must set autoscaling_alertmanager_min_replicas in the _config',
     autoscaling_alertmanager_max_replicas: error 'you must set autoscaling_alertmanager_max_replicas in the _config',
+    autoscaling_alertmanager_cpu_target_utilization: 1,
     autoscaling_alertmanager_memory_target_utilization: 1,
   },
 
@@ -142,7 +150,7 @@
   // `weight` param can be used to control just a portion of the expected queriers with the generated scaled object.
   // For example, if you run multiple querier deployments on different node types, you can use the weight to control which portion of them runs on which nodes.
   // The weight is a number between 0 and 1, where 1 means 100% of the expected queriers.
-  newQuerierScaledObject(name, query_scheduler_container, querier_max_concurrent, min_replicas, max_replicas, weight=1):: self.newScaledObject(name, $._config.namespace, {
+  newQuerierScaledObject(name, query_scheduler_container, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
 
@@ -159,15 +167,12 @@
         // if within the next 5 minutes after a scale up we have further spikes).
         query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.75"}[5m]))' % [query_scheduler_container, $._config.namespace], weight),
 
-        // Target to utilize 75% querier workers on peak traffic (as measured by query above),
-        // so we have 25% room for higher peaks.
-        local targetUtilization = 0.75,
-        threshold: '%d' % (querier_max_concurrent * targetUtilization),
+        threshold: '%d' % (querier_max_concurrent * target_utilization),
       },
     ],
   }),
 
-  newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, memory_target_utilization):: self.newScaledObject(
+  newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: min_replicas,
       max_replica_count: max_replicas,
@@ -183,7 +188,7 @@
             $._config.namespace,
           ],
           // Threshold is expected to be a string
-          threshold: std.toString(cpuToMilliCPUInt(cpu_requests)),
+          threshold: std.toString(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization),
         },
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -247,6 +252,7 @@
       querier_max_concurrent=$.querier_args['querier.max-concurrent'],
       min_replicas=$._config.autoscaling_querier_min_replicas,
       max_replicas=$._config.autoscaling_querier_max_replicas,
+      target_utilization=$._config.autoscaling_querier_target_utilization,
     ),
 
   querier_deployment: overrideSuperIfExists(
@@ -261,6 +267,7 @@
       memory_requests=$.query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_query_frontend_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_query_frontend_memory_target_utilization,
     ),
   query_frontend_deployment: overrideSuperIfExists(
@@ -277,7 +284,7 @@
 
   // newRulerQuerierScaledObject will create a scaled object for the ruler-querier component with the given name.
   // `weight` param works in the same way as in `newQuerierScaledObject`, see docs there.
-  newRulerQuerierScaledObject(name, querier_cpu_requests, min_replicas, max_replicas, weight=1):: self.newScaledObject(name, $._config.namespace, {
+  newRulerQuerierScaledObject(name, querier_cpu_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
 
@@ -302,6 +309,8 @@
       querier_cpu_requests=$.ruler_querier_container.resources.requests.cpu,
       min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
+      memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
     ),
 
   ruler_querier_deployment: overrideSuperIfExists(
@@ -316,6 +325,7 @@
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_ruler_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_query_frontend_memory_target_utilization,
     ),
   ruler_query_frontend_deployment: overrideSuperIfExists(
@@ -330,7 +340,7 @@
   // Distributors
   //
 
-  newDistributorScaledObject(name, distributor_cpu_requests, distributor_memory_requests, min_replicas, max_replicas, cpu_target_utilization):: self.newScaledObject(name, $._config.namespace, {
+  newDistributorScaledObject(name, distributor_cpu_requests, distributor_memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
 
@@ -353,7 +363,7 @@
         query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
 
         // threshold is expected to be a string
-        threshold: std.toString($.util.siToBytes(distributor_memory_requests)),
+        threshold: std.toString($.util.siToBytes(distributor_memory_requests) * memory_target_utilization),
       },
     ],
   }),
@@ -366,6 +376,7 @@
       min_replicas=$._config.autoscaling_distributor_min_replicas,
       max_replicas=$._config.autoscaling_distributor_max_replicas,
       cpu_target_utilization=$._config.autoscaling_distributor_cpu_target_utilization,
+      memory_target_utilization=$._config.autoscaling_distributor_memory_target_utilization,
     ),
 
   distributor_deployment: overrideSuperIfExists(
@@ -396,7 +407,7 @@
             $._config.namespace,
           ],
           // Threshold is expected to be a string
-          threshold: std.toString(cpuToMilliCPUInt($.ruler_container.resources.requests.cpu)),
+          threshold: std.toString(cpuToMilliCPUInt($.ruler_container.resources.requests.cpu) * $._config.autoscaling_ruler_cpu_target_utilization),
         },
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -429,7 +440,7 @@
 
   // Alertmanager
 
-  newAlertmanagerScaledObject(name, alertmanager_cpu_requests, alertmanager_memory_requests, min_replicas, max_replicas, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
+  newAlertmanagerScaledObject(name, alertmanager_cpu_requests, alertmanager_memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
 
@@ -442,7 +453,7 @@
         // Threshold is expected to be a string.
         // Since alertmanager is very memory-intensive as opposed to cpu-intensive, we don't bother
         // with the any target utilization calculation for cpu, to keep things simpler and cheaper.
-        threshold: std.toString(cpuToMilliCPUInt(alertmanager_cpu_requests)),
+        threshold: std.toString(cpuToMilliCPUInt(alertmanager_cpu_requests) * cpu_target_utilization),
       },
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -463,6 +474,7 @@
       alertmanager_memory_requests=$.alertmanager_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_alertmanager_min_replicas,
       max_replicas=$._config.autoscaling_alertmanager_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_alertmanager_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_alertmanager_memory_target_utilization,
     ) + {
       spec+: {
