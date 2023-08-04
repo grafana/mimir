@@ -19,14 +19,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/weaveworks/common/user"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -163,14 +162,20 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	filter := AnyRule
+	rulesReq := RulesRequest{
+		Filter:    AnyRule,
+		RuleName:  req.URL.Query()["rule_name"],
+		RuleGroup: req.URL.Query()["rule_group"],
+		File:      req.URL.Query()["file"],
+	}
+
 	ruleTypeFilter := strings.ToLower(req.URL.Query().Get("type"))
 	if ruleTypeFilter != "" {
 		switch ruleTypeFilter {
 		case "alert":
-			filter = AlertingRule
+			rulesReq.Filter = AlertingRule
 		case "record":
-			filter = RecordingRule
+			rulesReq.Filter = RecordingRule
 		default:
 			respondInvalidRequest(logger, w, fmt.Sprintf("not supported value %q", ruleTypeFilter))
 			return
@@ -178,7 +183,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, err := a.ruler.GetRules(req.Context(), filter)
+	rgs, err := a.ruler.GetRules(req.Context(), rulesReq)
 
 	if err != nil {
 		respondServerError(logger, w, err.Error())
@@ -266,7 +271,7 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, err := a.ruler.GetRules(req.Context(), AlertingRule)
+	rgs, err := a.ruler.GetRules(req.Context(), RulesRequest{Filter: AlertingRule})
 
 	if err != nil {
 		respondServerError(logger, w, err.Error())

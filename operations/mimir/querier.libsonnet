@@ -17,9 +17,7 @@
       target: 'querier',
 
       'server.http-listen-port': $._config.server_http_port,
-
-      // Limit query concurrency to prevent multi large queries causing an OOM.
-      'querier.max-concurrent': $._config.querier.concurrency,
+      'querier.max-concurrent': $._config.querier_max_concurrency,
 
       'querier.frontend-address': if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
         'query-frontend-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
@@ -32,22 +30,32 @@
 
   querier_ports:: $.util.defaultPorts,
 
-  querier_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
-  },
-
-  newQuerierContainer(name, args)::
+  newQuerierContainer(name, args, envmap={})::
     container.new(name, $._images.querier) +
     container.withPorts($.querier_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
-    container.withEnvMap($.querier_env_map) +
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
 
+  querier_env_map:: {
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
+
+    // Dynamically set GOMAXPROCS based on CPU request.
+    GOMAXPROCS: std.toString(
+      std.ceil(
+        std.max(
+          $.util.parseCPU($.querier_container.resources.requests.cpu) * 2,
+          $.util.parseCPU($.querier_container.resources.requests.cpu) + 4
+        ),
+      )
+    ),
+  },
+
   querier_container::
-    self.newQuerierContainer('querier', $.querier_args),
+    self.newQuerierContainer('querier', $.querier_args, $.querier_env_map),
 
   local deployment = $.apps.v1.deployment,
 
@@ -62,8 +70,9 @@
   querier_deployment: if !$._config.is_microservices_deployment_mode then null else
     self.newQuerierDeployment('querier', $.querier_container),
 
-  local service = $.core.v1.service,
-
   querier_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),
+
+  querier_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('querier'),
 }

@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deployment
+spec:
+  selector:
+    matchLabels:
+      name: test-deployment
+  template:
+    metadata:
+      labels:
+        rollout-group: test-group
+    spec:
+      containers:
+        - name: test-container

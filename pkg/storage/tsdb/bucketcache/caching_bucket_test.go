@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -23,9 +25,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/exp/slices"
-
-	"github.com/grafana/dskit/cache"
-	"github.com/grafana/dskit/runutil"
 )
 
 func TestChunksCaching(t *testing.T) {

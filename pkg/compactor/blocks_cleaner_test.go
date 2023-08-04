@@ -698,6 +698,65 @@ func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, blockID
 	require.Equal(t, markedForDeletion, exists)
 }
 
+func TestBlocksCleaner_ShouldCleanUpFilesWhenNoMoreBlocksRemain(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	const userID = "user-1"
+	ctx := context.Background()
+	now := time.Now()
+	deletionDelay := 12 * time.Hour
+
+	// Create two blocks and mark them for deletion at a time before the deletionDelay
+	block1 := createTSDBBlock(t, bucketClient, userID, 10, 20, 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, userID, 20, 30, 2, nil)
+
+	createDeletionMark(t, bucketClient, userID, block1, now.Add(-deletionDelay).Add(-time.Hour))
+	createDeletionMark(t, bucketClient, userID, block2, now.Add(-deletionDelay).Add(-time.Hour))
+
+	checkBlock(t, "user-1", bucketClient, block1, true, true)
+	checkBlock(t, "user-1", bucketClient, block2, true, true)
+
+	// Create a deletion mark within the deletionDelay period that won't correspond to any block
+	randomULID := ulid.MustNew(ulid.Now(), rand.Reader)
+	createDeletionMark(t, bucketClient, userID, randomULID, now.Add(-deletionDelay).Add(time.Hour))
+	blockDeletionMarkFile := path.Join(userID, block.DeletionMarkFilepath(randomULID))
+	exists, err := bucketClient.Exists(ctx, blockDeletionMarkFile)
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	// Create a debug file that wouldn't otherwise be deleted by the cleaner
+	debugMetaFile := path.Join(userID, block.DebugMetas, "meta.json")
+	require.NoError(t, bucketClient.Upload(context.Background(), debugMetaFile, strings.NewReader("random content")))
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:              deletionDelay,
+		CleanupInterval:            time.Minute,
+		CleanupConcurrency:         1,
+		DeleteBlocksConcurrency:    1,
+		NoBlocksFileCleanupEnabled: true,
+	}
+
+	logger := test.NewTestingLogger(t)
+	reg := prometheus.NewPedanticRegistry()
+	cfgProvider := newMockConfigProvider()
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	require.NoError(t, cleaner.runCleanupWithErr(ctx))
+
+	// Check bucket index, markers and debug files have been deleted.
+	exists, err = bucketClient.Exists(ctx, blockDeletionMarkFile)
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	exists, err = bucketClient.Exists(ctx, debugMetaFile)
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	_, err = bucketindex.ReadIndex(ctx, bucketClient, userID, nil, logger)
+	require.ErrorIs(t, err, bucketindex.ErrIndexNotFound)
+}
+
 func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
@@ -734,7 +793,7 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
 	checkBlock(t, "user-1", bucketClient, block2, true, false)
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 
 	// check that no blocks were marked for deletion, because deletion delay is set to 0.
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
@@ -744,7 +803,7 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	// The delay time must be very short since these temporary files were just created
 	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Nanosecond
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 
 	// check that first block was marked for deletion (partial block updated far in the past), but not the second one, because it's not partial.
 	checkBlock(t, "user-1", bucketClient, block1, false, true)
@@ -818,11 +877,11 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Hour
 	cfgProvider.userPartialBlockDelay["user-2"] = 1 * time.Nanosecond
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 	checkBlock(t, "user-1", bucketClient, block1, false, false) // This block was updated too recently, so we don't mark it for deletion just yet.
 	checkBlock(t, "user-2", bucketClient, block2, true, false)  // No change for user-2.
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-2"))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-2", logger))
 	checkBlock(t, "user-1", bucketClient, block1, false, false) // No change for user-1
 	checkBlock(t, "user-2", bucketClient, block2, true, false)  // Block with corrupted meta is NOT marked for deletion.
 
@@ -884,7 +943,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 
 	// Run the cleanup.
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 
 	// Ensure the block has NOT been marked for deletion.
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
@@ -1058,5 +1117,5 @@ func (c *BlocksCleaner) runCleanupWithErr(ctx context.Context) error {
 		return err
 	}
 
-	return c.cleanUsers(ctx, allUsers, isDeleted)
+	return c.cleanUsers(ctx, allUsers, isDeleted, log.NewNopLogger())
 }

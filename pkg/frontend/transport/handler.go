@@ -6,7 +6,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -20,14 +19,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/httpgrpc/server"
-
-	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
@@ -176,28 +174,17 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(ctx)
 	}
 
+	// Ensure to close the request body reader.
 	defer func() { _ = r.Body.Close() }()
 
-	// Store the body contents, so we can read it multiple times.
-	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	// Limit the read body size.
+	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
 
-	// Parse the form, as it's needed to build the activity for the activity-tracker.
-	if err := r.ParseForm(); err != nil {
+	params, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return
 	}
-
-	// Store a copy of the params and restore the request state.
-	// Restore the body, so it can be read again if it's used to forward the request through a roundtripper.
-	// Restore the Form and PostForm, to avoid subtle bugs in middlewares, as they were set by ParseForm.
-	params := copyValues(r.Form)
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-	r.Form, r.PostForm = nil, nil
 
 	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, params) })
 	defer f.at.Delete(activityIndex)
@@ -208,7 +195,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeError(w, err)
-		f.reportQueryStats(r, params, queryResponseTime, stats, err)
+		f.reportQueryStats(r, params, queryResponseTime, 0, stats, err)
 		return
 	}
 
@@ -223,13 +210,13 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(resp.StatusCode)
 	// we don't check for copy error as there is no much we can do at this point
-	_, _ = io.Copy(w, resp.Body)
+	queryResponseSize, _ := io.Copy(w, resp.Body)
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
 		f.reportSlowQuery(r, params, queryResponseTime)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, queryResponseTime, stats, nil)
+		f.reportQueryStats(r, params, queryResponseTime, queryResponseSize, stats, nil)
 	}
 }
 
@@ -250,7 +237,7 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, stats *querier_stats.Stats, queryErr error) {
+func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, queryResponseSizeBytes int64, stats *querier_stats.Stats, queryErr error) {
 	tenantIDs, err := tenant.TenantIDs(r.Context())
 	if err != nil {
 		return
@@ -281,6 +268,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"path", r.URL.Path,
 		"user_agent", r.UserAgent(),
 		"response_time", queryResponseTime,
+		"response_size_bytes", queryResponseSizeBytes,
 		"query_wall_time_seconds", wallTime.Seconds(),
 		"fetched_series_count", numSeries,
 		"fetched_chunk_bytes", numBytes,
@@ -378,12 +366,4 @@ func httpRequestActivity(request *http.Request, requestParams url.Values) string
 
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
 	return strings.Join([]string{tenantID, request.Method, request.URL.Path, params}, " ")
-}
-
-func copyValues(src url.Values) url.Values {
-	dst := make(url.Values, len(src))
-	for k, vs := range src {
-		dst[k] = append([]string(nil), vs...)
-	}
-	return dst
 }

@@ -171,7 +171,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.C
 		users = append(users, userID)
 	}
 
-	// concurrenty.ForEachJob is a helper function that runs a function for each job in parallel.
+	// concurrency.ForEachJob is a helper function that runs a function for each job in parallel.
 	// It cancel context of jobFunc once iteration is done.
 	// That is why the context passed to syncRulesToManager should be the global context not the context of jobFunc.
 	err := concurrency.ForEachJob(ctx, len(users), 10, func(_ context.Context, idx int) error {

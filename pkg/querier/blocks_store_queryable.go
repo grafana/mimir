@@ -143,13 +143,14 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 type BlocksStoreQueryable struct {
 	services.Service
 
-	stores          BlocksStoreSet
-	finder          BlocksFinder
-	consistency     *BlocksConsistencyChecker
-	logger          log.Logger
-	queryStoreAfter time.Duration
-	metrics         *blocksStoreQueryableMetrics
-	limits          BlocksStoreLimits
+	stores                   BlocksStoreSet
+	finder                   BlocksFinder
+	consistency              *BlocksConsistencyChecker
+	logger                   log.Logger
+	queryStoreAfter          time.Duration
+	metrics                  *blocksStoreQueryableMetrics
+	limits                   BlocksStoreLimits
+	streamingChunksBatchSize uint64
 
 	// Subservices manager.
 	subservices        *services.Manager
@@ -162,6 +163,7 @@ func NewBlocksStoreQueryable(
 	consistency *BlocksConsistencyChecker,
 	limits BlocksStoreLimits,
 	queryStoreAfter time.Duration,
+	streamingChunksBatchSize uint64,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*BlocksStoreQueryable, error) {
@@ -171,15 +173,16 @@ func NewBlocksStoreQueryable(
 	}
 
 	q := &BlocksStoreQueryable{
-		stores:             stores,
-		finder:             finder,
-		consistency:        consistency,
-		queryStoreAfter:    queryStoreAfter,
-		logger:             logger,
-		subservices:        manager,
-		subservicesWatcher: services.NewFailureWatcher(),
-		metrics:            newBlocksStoreQueryableMetrics(reg),
-		limits:             limits,
+		stores:                   stores,
+		finder:                   finder,
+		consistency:              consistency,
+		queryStoreAfter:          queryStoreAfter,
+		logger:                   logger,
+		subservices:              manager,
+		subservicesWatcher:       services.NewFailureWatcher(),
+		metrics:                  newBlocksStoreQueryableMetrics(reg),
+		limits:                   limits,
+		streamingChunksBatchSize: streamingChunksBatchSize,
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stopping)
@@ -261,7 +264,12 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		reg,
 	)
 
-	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, logger, reg)
+	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
+	if !querierCfg.PreferStreamingChunksFromStoreGateways {
+		streamingBufferSize = 0
+	}
+
+	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
@@ -301,30 +309,32 @@ func (q *BlocksStoreQueryable) Querier(ctx context.Context, mint, maxt int64) (s
 	}
 
 	return &blocksStoreQuerier{
-		ctx:             ctx,
-		minT:            mint,
-		maxT:            maxt,
-		userID:          userID,
-		finder:          q.finder,
-		stores:          q.stores,
-		metrics:         q.metrics,
-		limits:          q.limits,
-		consistency:     q.consistency,
-		logger:          q.logger,
-		queryStoreAfter: q.queryStoreAfter,
+		ctx:                      ctx,
+		minT:                     mint,
+		maxT:                     maxt,
+		userID:                   userID,
+		finder:                   q.finder,
+		stores:                   q.stores,
+		metrics:                  q.metrics,
+		limits:                   q.limits,
+		streamingChunksBatchSize: q.streamingChunksBatchSize,
+		consistency:              q.consistency,
+		logger:                   q.logger,
+		queryStoreAfter:          q.queryStoreAfter,
 	}, nil
 }
 
 type blocksStoreQuerier struct {
-	ctx         context.Context
-	minT, maxT  int64
-	userID      string
-	finder      BlocksFinder
-	stores      BlocksStoreSet
-	metrics     *blocksStoreQueryableMetrics
-	consistency *BlocksConsistencyChecker
-	limits      BlocksStoreLimits
-	logger      log.Logger
+	ctx                      context.Context
+	minT, maxT               int64
+	userID                   string
+	finder                   BlocksFinder
+	stores                   BlocksStoreSet
+	metrics                  *blocksStoreQueryableMetrics
+	consistency              *BlocksConsistencyChecker
+	limits                   BlocksStoreLimits
+	streamingChunksBatchSize uint64
+	logger                   log.Logger
 
 	// If set, the querier manipulates the max time to not be greater than
 	// "now - queryStoreAfter" so that most recent blocks are not queried.
@@ -434,6 +444,7 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
 		resSeriesSets     = []storage.SeriesSet(nil)
 		resWarnings       = storage.Warnings(nil)
+		streamStarters    []func()
 	)
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -442,13 +453,14 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 	}
 
 	queryFunc := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		seriesSets, queriedBlocks, warnings, err := q.fetchSeriesFromStores(spanCtx, sp, clients, minT, maxT, convertedMatchers)
+		seriesSets, queriedBlocks, warnings, startStreamingChunks, err := q.fetchSeriesFromStores(spanCtx, sp, clients, minT, maxT, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
 
 		resSeriesSets = append(resSeriesSets, seriesSets...)
 		resWarnings = append(resWarnings, warnings...)
+		streamStarters = append(streamStarters, startStreamingChunks)
 
 		return queriedBlocks, nil
 	}
@@ -456,6 +468,11 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 	err = q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, shard, queryFunc)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
+	}
+
+	// If this was a streaming call, start fetching streaming chunks here.
+	for _, ss := range streamStarters {
+		ss()
 	}
 
 	if len(resSeriesSets) == 0 {
@@ -676,7 +693,11 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // Errors while creating storepb.SeriesRequest, context cancellation, and unprocessable
 // requests to the store-gateways (e.g., if a chunk or series limit is hit) are
 // considered serious errors. All other errors are not returned, but they give rise to fetch retrials.
-func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, convertedMatchers []storepb.LabelMatcher) ([]storage.SeriesSet, []ulid.ULID, storage.Warnings, error) {
+//
+// In case of a successful run, fetchSeriesFromStores returns a startStreamingChunks function to start streaming
+// chunks for the fetched series iff it was a streaming call for series+chunks. startStreamingChunks must be called
+// before iterating on the series.
+func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ storage.Warnings, startStreamingChunks func(), _ error) {
 	var (
 		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, q.userID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
@@ -687,6 +708,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		spanLog       = spanlogger.FromContext(ctx, q.logger)
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
+		streamReaders []*storeGatewayStreamReader
+		streams       []storegatewaypb.StoreGateway_SeriesClient
 	)
 
 	// Concurrently fetch series from all clients.
@@ -702,12 +725,18 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			// But this is an acceptable workaround for now.
 			skipChunks := sp != nil && sp.Func == "series"
 
-			req, err := createSeriesRequest(minT, maxT, convertedMatchers, skipChunks, blockIDs)
+			req, err := createSeriesRequest(minT, maxT, convertedMatchers, skipChunks, blockIDs, q.streamingChunksBatchSize)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create series request")
 			}
 
-			stream, err := c.Series(gCtx, req)
+			stream, err := c.Series(reqCtx, req)
+			if err == nil {
+				mtx.Lock()
+				streams = append(streams, stream)
+				mtx.Unlock()
+				err = gCtx.Err()
+			}
 			if err != nil {
 				if shouldStopQueryFunc(err) {
 					return err
@@ -717,7 +746,9 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				return nil
 			}
 
+			// A storegateway client will only fill either of mySeries or myStreamingSeries, and not both.
 			mySeries := []*storepb.Series(nil)
+			myStreamingSeries := []*storepb.StreamingSeries(nil)
 			myWarnings := storage.Warnings(nil)
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
@@ -742,22 +773,22 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					return nil
 				}
 
-				// Response may either contain series, warning or hints.
+				// Response may either contain series, streaming series, warning or hints.
 				if s := resp.GetSeries(); s != nil {
 					mySeries = append(mySeries, s)
 
 					// Add series fingerprint to query limiter; will return error if we are over the limit
 					limitErr := queryLimiter.AddSeries(s.Labels)
 					if limitErr != nil {
-						return validation.LimitError(limitErr.Error())
+						return limitErr
 					}
 
 					chunksCount, chunksSize := countChunksAndBytes(s)
 					if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksSize); chunkBytesLimitErr != nil {
-						return validation.LimitError(chunkBytesLimitErr.Error())
+						return chunkBytesLimitErr
 					}
 					if chunkLimitErr := queryLimiter.AddChunks(chunksCount); chunkLimitErr != nil {
-						return validation.LimitError(chunkLimitErr.Error())
+						return chunkLimitErr
 					}
 				}
 
@@ -782,28 +813,60 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				if s := resp.GetStats(); s != nil {
 					indexBytesFetched += s.FetchedIndexBytes
 				}
+
+				if ss := resp.GetStreamingSeries(); ss != nil {
+					for _, s := range ss.Series {
+						// Add series fingerprint to query limiter; will return error if we are over the limit
+						limitErr := queryLimiter.AddSeries(s.Labels)
+						if limitErr != nil {
+							return validation.LimitError(limitErr.Error())
+						}
+					}
+					myStreamingSeries = append(myStreamingSeries, ss.Series...)
+					if ss.IsEndOfSeriesStream {
+						// We expect "end of stream" to be sent after the hints and the stats have been sent.
+						break
+					}
+				}
 			}
 
-			numSeries := len(mySeries)
-			chunksFetched, chunkBytes := countChunksAndBytes(mySeries...)
-
-			reqStats.AddFetchedSeries(uint64(numSeries))
-			reqStats.AddFetchedChunkBytes(uint64(chunkBytes))
-			reqStats.AddFetchedChunks(uint64(chunksFetched))
 			reqStats.AddFetchedIndexBytes(indexBytesFetched)
+			var streamReader *storeGatewayStreamReader
+			if len(mySeries) > 0 {
+				chunksFetched, chunkBytes := countChunksAndBytes(mySeries...)
 
-			level.Debug(spanLog).Log("msg", "received series from store-gateway",
-				"instance", c.RemoteAddress(),
-				"fetched series", numSeries,
-				"fetched chunk bytes", chunkBytes,
-				"fetched chunks", chunksFetched,
-				"fetched index bytes", indexBytesFetched,
-				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+				reqStats.AddFetchedSeries(uint64(len(mySeries)))
+				reqStats.AddFetchedChunkBytes(uint64(chunkBytes))
+				reqStats.AddFetchedChunks(uint64(chunksFetched))
+
+				level.Debug(spanLog).Log("msg", "received series from store-gateway",
+					"instance", c.RemoteAddress(),
+					"fetched series", len(mySeries),
+					"fetched chunk bytes", chunkBytes,
+					"fetched chunks", chunksFetched,
+					"fetched index bytes", indexBytesFetched,
+					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+			} else if len(myStreamingSeries) > 0 {
+				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
+				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
+				streamReader = newStoreGatewayStreamReader(stream, len(myStreamingSeries), queryLimiter, reqStats, q.logger)
+				level.Debug(spanLog).Log("msg", "received streaming series from store-gateway",
+					"instance", c.RemoteAddress(),
+					"fetched series", len(myStreamingSeries),
+					"fetched index bytes", indexBytesFetched,
+					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+			}
 
 			// Store the result.
 			mtx.Lock()
-			seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
+			if len(mySeries) > 0 {
+				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
+			} else if len(myStreamingSeries) > 0 {
+				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{series: myStreamingSeries, streamReader: streamReader})
+				streamReaders = append(streamReaders, streamReader)
+			}
 			warnings = append(warnings, myWarnings...)
 			queriedBlocks = append(queriedBlocks, myQueriedBlocks...)
 			mtx.Unlock()
@@ -814,10 +877,21 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 	// Wait until all client requests complete.
 	if err := g.Wait(); err != nil {
-		return nil, nil, nil, err
+		for _, stream := range streams {
+			if err := stream.CloseSend(); err != nil {
+				level.Warn(q.logger).Log("msg", "closing storegateway client stream failed", "err", err)
+			}
+		}
+		return nil, nil, nil, nil, err
 	}
 
-	return seriesSets, queriedBlocks, warnings, nil
+	startStreamingChunks = func() {
+		for _, sr := range streamReaders {
+			sr.StartBuffering()
+		}
+	}
+
+	return seriesSets, queriedBlocks, warnings, startStreamingChunks, nil
 }
 
 func shouldStopQueryFunc(err error) bool {
@@ -999,7 +1073,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	return valueSets, warnings, queriedBlocks, nil
 }
 
-func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID) (*storepb.SeriesRequest, error) {
+func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
 	// Selectively query only specific blocks.
 	hints := &hintspb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
@@ -1016,12 +1090,17 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 		return nil, errors.Wrapf(err, "failed to marshal series request hints")
 	}
 
+	if skipChunks {
+		// We don't do the streaming call if we are not requesting the chunks.
+		streamingBatchSize = 0
+	}
 	return &storepb.SeriesRequest{
-		MinTime:    minT,
-		MaxTime:    maxT,
-		Matchers:   matchers,
-		Hints:      anyHints,
-		SkipChunks: skipChunks,
+		MinTime:                  minT,
+		MaxTime:                  maxT,
+		Matchers:                 matchers,
+		Hints:                    anyHints,
+		SkipChunks:               skipChunks,
+		StreamingChunksBatchSize: streamingBatchSize,
 	}, nil
 }
 

@@ -6,26 +6,16 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"strconv"
-
-	"github.com/pkg/errors"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/dskit/tenant"
+	"github.com/pkg/errors"
+	"github.com/weaveworks/common/httpgrpc"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
-)
-
-const (
-	minLimit     = 0
-	maxLimit     = 500
-	defaultLimit = 20
 )
 
 // LabelNamesCardinalityHandler creates handler for label names cardinality endpoint.
@@ -41,17 +31,18 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 			http.Error(w, fmt.Sprintf("cardinality analysis is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
 			return
 		}
-		matchers, limit, err := extractLabelNamesRequestParams(r)
+
+		cardinalityRequest, err := cardinality.DecodeLabelNamesRequest(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		response, err := d.LabelNamesAndValues(ctx, matchers)
+		response, err := d.LabelNamesAndValues(ctx, cardinalityRequest.Matchers)
 		if err != nil {
 			respondFromError(err, w)
 			return
 		}
-		cardinalityResponse := toLabelNamesCardinalityResponse(response, limit)
+		cardinalityResponse := toLabelNamesCardinalityResponse(response, cardinalityRequest.Limit)
 		util.WriteJSONResponse(w, cardinalityResponse)
 	})
 }
@@ -71,113 +62,20 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 			return
 		}
 
-		labelNames, matchers, limit, err := extractLabelValuesRequestParams(r)
+		cardinalityRequest, err := cardinality.DecodeLabelValuesRequest(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, labelNames, matchers)
+		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, cardinalityRequest.LabelNames, cardinalityRequest.Matchers, cardinalityRequest.CountMethod)
 		if err != nil {
 			respondFromError(err, w)
 			return
 		}
 
-		util.WriteJSONResponse(w, toLabelValuesCardinalityResponse(seriesCountTotal, cardinalityResponse, limit))
+		util.WriteJSONResponse(w, toLabelValuesCardinalityResponse(seriesCountTotal, cardinalityResponse, cardinalityRequest.Limit))
 	})
-}
-
-func extractLabelNamesRequestParams(r *http.Request) ([]*labels.Matcher, int, error) {
-	err := r.ParseForm()
-	if err != nil {
-		return nil, 0, err
-	}
-	matchers, err := extractSelector(r)
-	if err != nil {
-		return nil, 0, err
-	}
-	limit, err := extractLimit(r)
-	if err != nil {
-		return nil, 0, err
-	}
-	return matchers, limit, nil
-}
-
-// extractLabelValuesRequestParams parses query params from GET requests and parses request body from POST requests
-func extractLabelValuesRequestParams(r *http.Request) (labelNames []model.LabelName, matchers []*labels.Matcher, limit int, err error) {
-	if err := r.ParseForm(); err != nil {
-		return nil, nil, 0, err
-	}
-
-	labelNames, err = extractLabelNames(r)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
-	matchers, err = extractSelector(r)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
-	limit, err = extractLimit(r)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
-	return labelNames, matchers, limit, nil
-}
-
-// extractSelector parses and gets selector query parameter containing a single matcher
-func extractSelector(r *http.Request) (matchers []*labels.Matcher, err error) {
-	selectorParams := r.Form["selector"]
-	if len(selectorParams) == 0 {
-		return nil, nil
-	}
-	if len(selectorParams) > 1 {
-		return nil, fmt.Errorf("multiple 'selector' params are not allowed")
-	}
-	return parser.ParseMetricSelector(selectorParams[0])
-}
-
-// extractLimit parses and validates request param `limit` if it's defined, otherwise returns default value.
-func extractLimit(r *http.Request) (limit int, err error) {
-	limitParams := r.Form["limit"]
-	if len(limitParams) == 0 {
-		return defaultLimit, nil
-	}
-	if len(limitParams) > 1 {
-		return 0, fmt.Errorf("multiple 'limit' params are not allowed")
-	}
-	limit, err = strconv.Atoi(limitParams[0])
-	if err != nil {
-		return 0, err
-	}
-	if limit < minLimit {
-		return 0, fmt.Errorf("'limit' param cannot be less than '%v'", minLimit)
-	}
-	if limit > maxLimit {
-		return 0, fmt.Errorf("'limit' param cannot be greater than '%v'", maxLimit)
-	}
-	return limit, nil
-}
-
-// extractLabelNames parses and gets label_names query parameter containing an array of label values
-func extractLabelNames(r *http.Request) ([]model.LabelName, error) {
-	labelNamesParams := r.Form["label_names[]"]
-	if len(labelNamesParams) == 0 {
-		return nil, fmt.Errorf("'label_names[]' param is required")
-	}
-
-	labelNames := make([]model.LabelName, 0, len(labelNamesParams))
-	for _, labelNameParam := range labelNamesParams {
-		labelName := model.LabelName(labelNameParam)
-		if !labelName.IsValid() {
-			return nil, fmt.Errorf("invalid 'label_names' param '%v'", labelNameParam)
-		}
-		labelNames = append(labelNames, labelName)
-	}
-
-	return labelNames, nil
 }
 
 func respondFromError(err error, w http.ResponseWriter) {

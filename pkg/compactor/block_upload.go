@@ -18,12 +18,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/regexp"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/sharding"

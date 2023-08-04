@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -39,7 +40,7 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, copyFileToSharedDir(s, "docs/sources/mimir/tutorials/play-with-grafana-mimir/config/mimir.yaml", "mimir.yaml"))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/mimir/get-started/play-with-grafana-mimir/config/mimir.yaml", "mimir.yaml"))
 
 	// Start dependencies.
 	minio := e2edb.NewMinio(9000, mimirBucketName)
@@ -92,11 +93,11 @@ func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService, s
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
 
-	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
+	labelValues, err := c.LabelValues("foo", v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := c.LabelNames(prometheusMinTime, prometheusMaxTime)
+	labelNames, err := c.LabelNames(v1.MinTime, v1.MaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 

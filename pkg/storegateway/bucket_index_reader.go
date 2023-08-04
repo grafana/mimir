@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
+	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -83,9 +83,9 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 		cached  bool
 		promise expandedPostingsPromise
 	)
-	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ExpandedPostings()")
 	defer func() {
-		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded)
+		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded, "block_id", r.block.meta.ULID.String())
 		if returnErr != nil {
 			span.LogFields(otlog.Error(returnErr))
 		}
@@ -604,9 +604,17 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 }
 
 // preloadSeries expects the provided ids to be sorted.
-func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
-	span, ctx := tracing.StartSpan(ctx, "preloadSeries()")
-	defer span.Finish()
+func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (loadedSeries *bucketIndexLoadedSeries, err error) {
+	defer func(startTime time.Time) {
+		spanLog := spanlogger.FromContext(ctx, r.block.logger)
+		level.Debug(spanLog).Log(
+			"msg", "fetched series and chunk refs from object store",
+			"block_id", r.block.meta.ULID.String(),
+			"series_count", len(loadedSeries.series),
+			"err", err,
+			"duration", time.Since(startTime),
+		)
+	}(time.Now())
 
 	timer := prometheus.NewTimer(r.block.metrics.seriesFetchDuration)
 	defer timer.ObserveDuration()
@@ -755,12 +763,12 @@ func (l *bucketIndexLoadedSeries) addSeries(ref storage.SeriesRef, data []byte) 
 // Error is returned on decoding error or if the reference does not resolve to a known series.
 //
 // It's NOT safe to call this function concurrently with addSeries().
-func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, chks *[]chunks.Meta, skipChunks bool, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) (ok bool, _ []symbolizedLabel, err error) {
+func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, chks *[]chunks.Meta, strategy seriesIteratorStrategy, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) (ok bool, _ []symbolizedLabel, err error) {
 	b, ok := l.series[ref]
 	if !ok {
 		return false, nil, errors.Errorf("series %d not found", ref)
 	}
 	stats.seriesProcessed++
 	stats.seriesProcessedSizeSum += len(b)
-	return decodeSeries(b, lsetPool, chks, skipChunks)
+	return decodeSeries(b, lsetPool, chks, strategy)
 }

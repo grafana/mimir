@@ -32,10 +32,23 @@
 
   distributor_ports:: $.util.defaultPorts,
 
+  distributor_env_map:: {
+    // Dynamically set GOMAXPROCS based on CPU request.
+    GOMAXPROCS: std.toString(
+      std.ceil(
+        std.max(
+          8,  // Always run on at least 8 gothreads, so that at least 2 of them (25%) are dedicated to GC.
+          $.util.parseCPU($.distributor_container.resources.requests.cpu) * 2
+        ),
+      )
+    ),
+  },
+
   distributor_container::
     container.new('distributor', $._images.distributor) +
     container.withPorts($.distributor_ports) +
     container.withArgsMixin($.util.mapToFlags($.distributor_args)) +
+    (if std.length($.distributor_env_map) > 0 then container.withEnvMap(std.prune($.distributor_env_map)) else {}) +
     $.util.resourcesRequests('2', '2Gi') +
     $.util.resourcesLimits(null, '4Gi') +
     $.util.readinessProbe +
@@ -56,4 +69,7 @@
   distributor_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.distributor_deployment, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
+
+  distributor_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('distributor'),
 }

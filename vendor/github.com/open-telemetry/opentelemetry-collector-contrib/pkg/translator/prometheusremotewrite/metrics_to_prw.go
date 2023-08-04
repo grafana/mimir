@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package prometheusremotewrite // import "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
 
@@ -31,6 +20,7 @@ type Settings struct {
 	ExternalLabels      map[string]string
 	DisableTargetInfo   bool
 	ExportCreatedMetric bool
+	AddMetricSuffixes   bool
 }
 
 // FromMetrics converts pmetric.Metrics to prometheus remote write format.
@@ -90,7 +80,7 @@ func FromMetrics(md pmetric.Metrics, settings Settings) (tsMap map[string]*promp
 					if dataPoints.Len() == 0 {
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
-					name := prometheustranslator.BuildPromCompliantName(metric, settings.Namespace)
+					name := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 					for x := 0; x < dataPoints.Len(); x++ {
 						errs = multierr.Append(
 							errs,

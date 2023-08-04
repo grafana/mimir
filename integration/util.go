@@ -8,7 +8,6 @@ package integration
 
 import (
 	"bytes"
-	"math"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -41,14 +40,6 @@ var (
 	generateTestGaugeHistogram      = test.GenerateTestGaugeHistogram
 	generateTestGaugeFloatHistogram = test.GenerateTestGaugeFloatHistogram
 	generateTestSampleHistogram     = test.GenerateTestSampleHistogram
-
-	// These are the earliest and latest possible timestamps supported by the Prometheus API -
-	// the Prometheus API does not support omitting a time range from query requests,
-	// so we use these when we want to query over all time.
-	// These values are defined in github.com/prometheus/prometheus/web/api/v1/api.go but
-	// sadly not exported.
-	prometheusMinTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
-	prometheusMaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
 )
 
 // generateSeriesFunc defines what kind of series (and expected vectors/matrices) to generate - float samples or native histograms

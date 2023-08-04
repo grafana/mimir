@@ -50,10 +50,13 @@
 
   alertmanager_ports:: $.util.defaultPorts,
 
+  alertmanager_env_map:: {},
+
   alertmanager_container::
     if $._config.alertmanager_enabled then
       container.new('alertmanager', $._images.alertmanager) +
       container.withPorts($.alertmanager_ports) +
+      (if std.length($.alertmanager_env_map) > 0 then container.withEnvMap(std.prune($.alertmanager_env_map)) else {}) +
       container.withEnvMixin([container.envType.fromFieldPath('POD_IP', 'status.podIP')]) +
       container.withArgsMixin(
         $.util.mapToFlags($.alertmanager_args)

@@ -9,9 +9,8 @@ import (
 	"context"
 
 	"github.com/go-kit/log"
-	"github.com/weaveworks/common/tracing"
-
 	"github.com/grafana/dskit/tenant"
+	"github.com/weaveworks/common/tracing"
 )
 
 // WithUserID returns a Logger that has information about the current user in

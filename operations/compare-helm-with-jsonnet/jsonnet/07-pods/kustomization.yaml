@@ -11,7 +11,7 @@ patches:
       kind: Deployment
     patch: |-
       - op: remove
-        path: /spec/template/spec/containers/0/env
+        path: /spec/template/spec/containers/0/env/1
 
   # TODO(logiraptor): Jsonnet sets POD_IP on the alertmanager
   - target:

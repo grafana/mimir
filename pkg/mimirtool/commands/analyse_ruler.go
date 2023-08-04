@@ -13,7 +13,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
@@ -64,17 +63,18 @@ func AnalyzeRuler(c client.Config) (*analyze.MetricsInRuler, error) {
 			}
 		}
 	}
+
+	var metricsUsed model.LabelValues
+	for metric := range output.OverallMetrics {
+		metricsUsed = append(metricsUsed, model.LabelValue(metric))
+	}
+	sort.Sort(metricsUsed)
+	output.MetricsUsed = metricsUsed
+
 	return output, nil
 }
 
 func writeOutRuleMetrics(mir *analyze.MetricsInRuler, outputFile string) error {
-	var metricsUsed model.LabelValues
-	for metric := range mir.OverallMetrics {
-		metricsUsed = append(metricsUsed, model.LabelValue(metric))
-	}
-	sort.Sort(metricsUsed)
-
-	mir.MetricsUsed = metricsUsed
 	out, err := json.MarshalIndent(mir, "", "  ")
 	if err != nil {
 		return err

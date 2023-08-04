@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
 )
 
 // The table gets initialized with sync.Once but may still cause a race
@@ -40,9 +41,50 @@ type Symbols struct {
 
 const symbolFactor = 32
 
+// NewSymbolsFromSparseHeader reads from sparse index header and returns a Symbols object for symbol lookups.
+func NewSymbolsFromSparseHeader(factory *streamencoding.DecbufFactory, symbols *indexheaderpb.Symbols, version int, offset int) (s *Symbols, err error) {
+	s = &Symbols{
+		factory:     factory,
+		version:     version,
+		tableOffset: offset,
+	}
+
+	s.offsets = make([]int, len(symbols.Offsets))
+
+	for i, offset := range symbols.Offsets {
+		s.offsets[i] = int(offset)
+	}
+
+	s.seen = int(symbols.SymbolsCount)
+
+	return s, nil
+}
+
+// NewSparseSymbol loads all symbols data into an index-header sparse to be persisted to disk
+func (s *Symbols) NewSparseSymbol() (sparse *indexheaderpb.Symbols) {
+	sparseSymbols := &indexheaderpb.Symbols{}
+
+	offsets := make([]int64, len(s.offsets))
+
+	for i, offset := range s.offsets {
+		offsets[i] = int64(offset)
+	}
+
+	sparseSymbols.Offsets = offsets
+	sparseSymbols.SymbolsCount = int64(s.seen)
+
+	return sparseSymbols
+}
+
 // NewSymbols returns a Symbols object for symbol lookups.
-func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *Symbols, err error) {
-	d := factory.NewDecbufAtChecked(offset, castagnoliTable)
+func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int, doChecksum bool) (s *Symbols, err error) {
+	var d streamencoding.Decbuf
+	if doChecksum {
+		d = factory.NewDecbufAtChecked(offset, castagnoliTable)
+	} else {
+		d = factory.NewDecbufAtUnchecked(offset)
+	}
+
 	defer runutil.CloseWithErrCapture(&err, &d, "read symbols")
 	if err := d.Err(); err != nil {
 		return nil, fmt.Errorf("decode symbol table: %w", d.Err())

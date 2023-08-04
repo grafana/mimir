@@ -8,7 +8,7 @@ description: "Learn how to configure Grafana Mimir to ingest and query native hi
 
 To enable support for ingesting Prometheus native histograms over the [remote write API](/docs/mimir/{{< param "mimir_docs_version" >}}/references/http-api/#remote-write) endpoint, set the configuration parameter `native_histograms_ingestion_enabled` to true.
 
-To enable support for querying native histograms together with [Grafana Mimir query sharding](/docs/mimir/{{< param "mimir_docs_version" >}}/operators-guide/architecture/query-sharding/), set the configuration parameter `query_result_response_format` to `protobuf`.
+To enable support for querying native histograms together with [Grafana Mimir query sharding](/docs/mimir/{{< param "mimir_docs_version" >}}/references/architecture/query-sharding/), set the configuration parameter `query_result_response_format` to `protobuf`.
 
 Example values file:
 

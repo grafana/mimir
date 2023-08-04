@@ -13,7 +13,7 @@
     // 1: Shared crosshair, the crosshair will appear on all panels but the
     // tooltip will  appear only on the panel under the cursor
     // 2: Shared Tooltip, both crosshair and tooltip will appear on all panels
-    graph_tooltip: 0,
+    graph_tooltip: 1,
 
     // Tags for dashboards.
     tags: ['mimir'],
@@ -67,7 +67,7 @@
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary Mimir clusters.
     // Whenever you do any change here, please reflect it in the doc at:
-    // docs/sources/mimir/operators-guide/monitoring-grafana-mimir/requirements.md
+    // docs/sources/mimir/manage/monitoring-grafana-mimir/requirements.md
     job_names: {
       ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
       distributor: ['distributor', 'cortex', 'mimir', 'mimir-write.*'],
@@ -78,7 +78,7 @@
       ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom ruler-query-frontend deployments.
       query_scheduler: ['query-scheduler.*', 'mimir-backend.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
       ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ring_members: ['alertmanager', 'compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
+      ring_members: ['admin-api', 'alertmanager', 'compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
       store_gateway: ['store-gateway.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also per-zone store-gateway deployments.
       gateway: ['gateway', 'cortex-gw', 'cortex-gw-internal'],
       compactor: ['compactor.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also custom compactor deployments.
@@ -272,7 +272,7 @@
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate,
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[1m])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it

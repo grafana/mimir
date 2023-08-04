@@ -5,9 +5,11 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/weaveworks/common/logging"
@@ -37,14 +39,18 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func main() {
-	// Parse CLI flags.
+	// Parse CLI arguments.
 	cfg := &Config{}
 	cfg.RegisterFlags(flag.CommandLine)
-	flag.Parse()
+
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	util_log.InitLogger(&server.Config{
 		LogLevel: cfg.LogLevel,
-	})
+	}, false)
 
 	// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
 	if trace, err := tracing.NewFromEnv("mimir-continuous-test"); err != nil {
@@ -63,6 +69,7 @@ func main() {
 	i := instrumentation.NewMetricsServer(cfg.ServerMetricsPort, registry)
 	if err := i.Start(); err != nil {
 		level.Error(logger).Log("msg", "Unable to start instrumentation server", "err", err.Error())
+		util_log.Flush()
 		os.Exit(1)
 	}
 
@@ -70,6 +77,7 @@ func main() {
 	client, err := continuoustest.NewClient(cfg.Client, logger)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to initialize client", "err", err.Error())
+		util_log.Flush()
 		os.Exit(1)
 	}
 
@@ -78,6 +86,7 @@ func main() {
 	m.AddTest(continuoustest.NewWriteReadSeriesTest(cfg.WriteReadSeriesTest, client, logger, registry))
 	if err := m.Run(context.Background()); err != nil {
 		level.Error(logger).Log("msg", "Failed to run continuous test", "err", err.Error())
+		util_log.Flush()
 		os.Exit(1)
 	}
 }

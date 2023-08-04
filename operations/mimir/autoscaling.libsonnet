@@ -13,6 +13,7 @@
     autoscaling_distributor_enabled: false,
     autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
     autoscaling_distributor_max_replicas: error 'you must set autoscaling_distributor_max_replicas in the _config',
+    autoscaling_distributor_cpu_target_utilization: 1,
 
     autoscaling_ruler_enabled: false,
     autoscaling_ruler_min_replicas: error 'you must set autoscaling_ruler_min_replicas in the _config',
@@ -28,6 +29,11 @@
     autoscaling_ruler_query_frontend_min_replicas: error 'you must set autoscaling_ruler_query_frontend_min_replicas in the _config',
     autoscaling_ruler_query_frontend_max_replicas: error 'you must set autoscaling_ruler_query_frontend_max_replicas in the _config',
     autoscaling_ruler_query_frontend_memory_target_utilization: 1,
+
+    autoscaling_alertmanager_enabled: false,
+    autoscaling_alertmanager_min_replicas: error 'you must set autoscaling_alertmanager_min_replicas in the _config',
+    autoscaling_alertmanager_max_replicas: error 'you must set autoscaling_alertmanager_max_replicas in the _config',
+    autoscaling_alertmanager_memory_target_utilization: 1,
   },
 
   assert !$._config.autoscaling_querier_enabled || $._config.query_scheduler_enabled
@@ -161,7 +167,7 @@
     ],
   }),
 
-  local newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, memory_target_utilization) = self.newScaledObject(
+  newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, memory_target_utilization):: self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: min_replicas,
       max_replica_count: max_replicas,
@@ -212,7 +218,7 @@
   // Helper methods
   //
 
-  local removeReplicasFromSpec = {
+  removeReplicasFromSpec:: {
     spec+: {
       // Remove the "replicas" field so that Flux doesn't reconcile it.
       replicas+:: null,
@@ -245,11 +251,11 @@
 
   querier_deployment: overrideSuperIfExists(
     'querier_deployment',
-    if !$._config.autoscaling_querier_enabled then {} else removeReplicasFromSpec
+    if !$._config.autoscaling_querier_enabled then {} else $.removeReplicasFromSpec
   ),
 
   query_frontend_scaled_object: if !$._config.autoscaling_query_frontend_enabled then null else
-    newQueryFrontendScaledObject(
+    $.newQueryFrontendScaledObject(
       name='query-frontend',
       cpu_requests=$.query_frontend_container.resources.requests.cpu,
       memory_requests=$.query_frontend_container.resources.requests.memory,
@@ -259,7 +265,7 @@
     ),
   query_frontend_deployment: overrideSuperIfExists(
     'query_frontend_deployment',
-    if $._config.autoscaling_query_frontend_enabled then removeReplicasFromSpec else
+    if $._config.autoscaling_query_frontend_enabled then $.removeReplicasFromSpec else
       if ($._config.query_sharding_enabled && $._config.autoscaling_querier_enabled) then
         queryFrontendReplicas($._config.autoscaling_querier_max_replicas) else
         {}
@@ -300,11 +306,11 @@
 
   ruler_querier_deployment: overrideSuperIfExists(
     'ruler_querier_deployment',
-    if !$._config.autoscaling_ruler_querier_enabled then {} else removeReplicasFromSpec
+    if !$._config.autoscaling_ruler_querier_enabled then {} else $.removeReplicasFromSpec
   ),
 
   ruler_query_frontend_scaled_object: if !$._config.autoscaling_ruler_query_frontend_enabled || !$._config.ruler_remote_evaluation_enabled then null else
-    newQueryFrontendScaledObject(
+    $.newQueryFrontendScaledObject(
       name='ruler-query-frontend',
       cpu_requests=$.ruler_query_frontend_container.resources.requests.cpu,
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
@@ -314,7 +320,7 @@
     ),
   ruler_query_frontend_deployment: overrideSuperIfExists(
     'ruler_query_frontend_deployment',
-    if $._config.autoscaling_ruler_query_frontend_enabled then removeReplicasFromSpec else
+    if $._config.autoscaling_ruler_query_frontend_enabled then $.removeReplicasFromSpec else
       if ($._config.query_sharding_enabled && $._config.autoscaling_ruler_querier_enabled) then
         queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas) else
         {}
@@ -324,7 +330,7 @@
   // Distributors
   //
 
-  newDistributorScaledObject(name, distributor_cpu_requests, distributor_memory_requests, min_replicas, max_replicas):: self.newScaledObject(name, $._config.namespace, {
+  newDistributorScaledObject(name, distributor_cpu_requests, distributor_memory_requests, min_replicas, max_replicas, cpu_target_utilization):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
 
@@ -338,7 +344,7 @@
         query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
 
         // threshold is expected to be a string.
-        threshold: std.toString(cpuToMilliCPUInt(distributor_cpu_requests)),
+        threshold: std.toString(cpuToMilliCPUInt(distributor_cpu_requests) * cpu_target_utilization),
       },
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -359,11 +365,12 @@
       distributor_memory_requests=$.distributor_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_distributor_min_replicas,
       max_replicas=$._config.autoscaling_distributor_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_distributor_cpu_target_utilization,
     ),
 
   distributor_deployment: overrideSuperIfExists(
     'distributor_deployment',
-    if !$._config.autoscaling_distributor_enabled then {} else removeReplicasFromSpec
+    if !$._config.autoscaling_distributor_enabled then {} else $.removeReplicasFromSpec
   ),
 
   // Ruler
@@ -413,10 +420,60 @@
 
   ruler_deployment: overrideSuperIfExists(
     'ruler_deployment',
-    if !$._config.autoscaling_ruler_enabled then {} else removeReplicasFromSpec
+    if !$._config.autoscaling_ruler_enabled then {} else $.removeReplicasFromSpec
   ),
 
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,
+
+  // Alertmanager
+
+  newAlertmanagerScaledObject(name, alertmanager_cpu_requests, alertmanager_memory_requests, min_replicas, max_replicas, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
+    min_replica_count: min_replicas,
+    max_replica_count: max_replicas,
+
+    triggers: [
+      {
+        metric_name: 'cortex_%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+        query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
+
+        // Threshold is expected to be a string.
+        // Since alertmanager is very memory-intensive as opposed to cpu-intensive, we don't bother
+        // with the any target utilization calculation for cpu, to keep things simpler and cheaper.
+        threshold: std.toString(cpuToMilliCPUInt(alertmanager_cpu_requests)),
+      },
+      {
+        metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+        // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all alertmanagers over 15m.
+        query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
+
+        // Threshold is expected to be a string.
+        threshold: std.toString(std.ceil($.util.siToBytes(alertmanager_memory_requests) * memory_target_utilization)),
+      },
+    ],
+  }),
+
+  alertmanager_scaled_object: if !$._config.autoscaling_alertmanager_enabled then null else
+    $.newAlertmanagerScaledObject(
+      name='alertmanager',
+      alertmanager_cpu_requests=$.alertmanager_container.resources.requests.cpu,
+      alertmanager_memory_requests=$.alertmanager_container.resources.requests.memory,
+      min_replicas=$._config.autoscaling_alertmanager_min_replicas,
+      max_replicas=$._config.autoscaling_alertmanager_max_replicas,
+      memory_target_utilization=$._config.autoscaling_alertmanager_memory_target_utilization,
+    ) + {
+      spec+: {
+        scaleTargetRef+: {
+          kind: 'StatefulSet',
+        },
+      },
+    },
+
+  alertmanager_statefulset: overrideSuperIfExists(
+    'alertmanager_statefulset',
+    if !$._config.autoscaling_alertmanager_enabled then {} else $.removeReplicasFromSpec
+  ),
 }

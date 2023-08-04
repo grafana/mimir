@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
@@ -31,7 +30,7 @@ import (
 // method implies that only a single sample and optionally exemplar can be set for each series.
 //
 // For histograms use NewWriteRequest and Add* functions to build write request with Floats and Histograms
-func ToWriteRequest(lbls []labels.Labels, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
+func ToWriteRequest(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
 	return NewWriteRequest(metadata, source).AddFloatSeries(lbls, samples, exemplars)
 }
 
@@ -47,10 +46,10 @@ func NewWriteRequest(metadata []*MetricMetadata, source WriteRequest_SourceEnum)
 // AddFloatSeries converts matched slices of Labels, Samples, Exemplars into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func (req *WriteRequest) AddFloatSeries(lbls []labels.Labels, samples []Sample, exemplars []*Exemplar) *WriteRequest {
+func (req *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range samples {
 		ts := TimeseriesFromPool()
-		ts.Labels = append(ts.Labels, FromLabelsToLabelAdapters(lbls[i])...)
+		ts.Labels = append(ts.Labels, lbls[i]...)
 		ts.Samples = append(ts.Samples, s)
 
 		if exemplars != nil {
@@ -69,10 +68,10 @@ func (req *WriteRequest) AddFloatSeries(lbls []labels.Labels, samples []Sample, 
 // AddHistogramSeries converts matched slices of Labels, Histograms, Exemplars into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func (req *WriteRequest) AddHistogramSeries(lbls []labels.Labels, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
+func (req *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range histograms {
 		ts := TimeseriesFromPool()
-		ts.Labels = append(ts.Labels, FromLabelsToLabelAdapters(lbls[i])...)
+		ts.Labels = append(ts.Labels, lbls[i]...)
 		ts.Histograms = append(ts.Histograms, s)
 
 		if exemplars != nil {
@@ -87,64 +86,6 @@ func (req *WriteRequest) AddHistogramSeries(lbls []labels.Labels, histograms []H
 	}
 
 	return req
-}
-
-// FromLabelAdaptersToLabels casts []LabelAdapter to labels.Labels.
-// It uses unsafe, but as LabelAdapter == labels.Label this should be safe.
-// This allows us to use labels.Labels directly in protos.
-//
-// Note: while resulting labels.Labels is supposedly sorted, this function
-// doesn't enforce that. If input is not sorted, output will be wrong.
-func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
-	return *(*labels.Labels)(unsafe.Pointer(&ls))
-}
-
-// FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to labels.Labels.
-// Do NOT use unsafe to convert between data types because this function may
-// get in input labels whose data structure is reused.
-func FromLabelAdaptersToLabelsWithCopy(input []LabelAdapter) labels.Labels {
-	return CopyLabels(FromLabelAdaptersToLabels(input))
-}
-
-// CopyLabels efficiently copies labels input slice. To be used in cases where input slice
-// can be reused, but long-term copy is needed.
-func CopyLabels(input []labels.Label) labels.Labels {
-	result := make(labels.Labels, len(input))
-
-	size := 0
-	for _, l := range input {
-		size += len(l.Name)
-		size += len(l.Value)
-	}
-
-	// Copy all strings into the buffer, and use 'yoloString' to convert buffer
-	// slices to strings.
-	buf := make([]byte, size)
-
-	for i, l := range input {
-		result[i].Name, buf = copyStringToBuffer(l.Name, buf)
-		result[i].Value, buf = copyStringToBuffer(l.Value, buf)
-	}
-	return result
-}
-
-// Copies string to buffer (which must be big enough), and converts buffer slice containing
-// the string copy into new string.
-func copyStringToBuffer(in string, buf []byte) (string, []byte) {
-	l := len(in)
-	c := copy(buf, in)
-	if c != l {
-		panic("not copied full string")
-	}
-
-	return yoloString(buf[0:l]), buf[l:]
-}
-
-// FromLabelsToLabelAdapters casts labels.Labels to []LabelAdapter.
-// It uses unsafe, but as LabelAdapter == labels.Label this should be safe.
-// This allows us to use labels.Labels directly in protos.
-func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
-	return *(*[]LabelAdapter)(unsafe.Pointer(&ls))
 }
 
 // FromLabelAdaptersToMetric converts []LabelAdapter to a model.Metric.

@@ -22,14 +22,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-
-	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 )
 
 func TestAMConfigValidationAPI(t *testing.T) {
@@ -371,7 +370,7 @@ alertmanager_config: |
 			err: errors.Wrap(errProxyFromEnvironmentURLNotAllowed, "error validating Alertmanager config"),
 		},
 		{
-			name: "Should return error if global OAuth2 TLS key_file is set",
+			name: "Should return error if global OAuth2 TLS is configured through files",
 			cfg: `
 alertmanager_config: |
   global:
@@ -381,14 +380,36 @@ alertmanager_config: |
         client_secret: secret
         token_url: http://example.com
         tls_config:
-          key_file: /secrets
+          key_file: /secrets/key
+          cert_file: /secrets/cert
 
   route:
     receiver: 'default-receiver'
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errTLSFileNotAllowed, "error validating Alertmanager config"),
+			err: errors.Wrap(errTLSConfigNotAllowed, "error validating Alertmanager config"),
+		},
+		{
+			name: "Should return error if global OAuth2 TLS is configured through byte slices",
+			cfg: `
+alertmanager_config: |
+  global:
+    http_config:
+      oauth2:
+        client_id: test
+        client_secret: secret
+        token_url: http://example.com
+        tls_config:
+          key: key
+          cert: cert
+
+  route:
+    receiver: 'default-receiver'
+  receivers:
+    - name: default-receiver
+`,
+			err: errors.Wrap(errTLSConfigNotAllowed, "error validating Alertmanager config"),
 		},
 		{
 			name: "Should return error if receiver's HTTP password_file is set",
@@ -1074,13 +1095,13 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			input: &commoncfg.TLSConfig{
 				CertFile: "/cert",
 			},
-			expected: errTLSFileNotAllowed,
+			expected: errTLSConfigNotAllowed,
 		},
 		"TLSConfig": {
 			input: commoncfg.TLSConfig{
 				CertFile: "/cert",
 			},
-			expected: errTLSFileNotAllowed,
+			expected: errTLSConfigNotAllowed,
 		},
 		"*GlobalConfig.SMTPAuthPasswordFile": {
 			input: &config.GlobalConfig{
@@ -1161,7 +1182,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 					},
 				}},
 			},
-			expected: errTLSFileNotAllowed,
+			expected: errTLSConfigNotAllowed,
 		},
 	}
 

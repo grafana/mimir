@@ -213,9 +213,9 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 			encoded, err := codec.EncodeResponse(context.Background(), httpRequest, decoded)
 			require.NoError(t, err)
 
-			expectedJSON, err := bodyBuffer(httpResponse)
+			expectedJSON, err := readResponseBody(httpResponse)
 			require.NoError(t, err)
-			encodedJSON, err := bodyBuffer(encoded)
+			encodedJSON, err := readResponseBody(encoded)
 			require.NoError(t, err)
 
 			require.JSONEq(t, string(expectedJSON), string(encodedJSON))
@@ -367,7 +367,7 @@ func TestPrometheusCodec_JSONEncoding(t *testing.T) {
 			require.Equal(t, http.StatusOK, encoded.StatusCode)
 			require.Equal(t, "application/json", encoded.Header.Get("Content-Type"))
 
-			encodedJSON, err := bodyBuffer(encoded)
+			encodedJSON, err := readResponseBody(encoded)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expectedJSON, string(encodedJSON))
 			require.Equal(t, len(encodedJSON), int(encoded.ContentLength))

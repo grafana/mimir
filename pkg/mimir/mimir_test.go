@@ -59,6 +59,10 @@ import (
 
 func TestMimir(t *testing.T) {
 	cfg := Config{
+		Server: server.Config{
+			HTTPListenAddress: "localhost",
+			GRPCListenAddress: "localhost",
+		},
 		Ingester: ingester.Config{
 			BlocksStorageConfig: tsdb.BlocksStorageConfig{
 				Bucket: bucket.Config{
@@ -232,7 +236,7 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
 	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
 
-	util_log.InitLogger(&cfg.Server)
+	util_log.InitLogger(&cfg.Server, false)
 
 	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)

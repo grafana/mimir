@@ -19,17 +19,20 @@
 
   query_frontend_ports:: $.util.defaultPorts,
 
-  newQueryFrontendContainer(name, args)::
+  newQueryFrontendContainer(name, args, envmap={})::
     container.new(name, $._images.query_frontend) +
     container.withPorts($.query_frontend_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.jaeger_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '600Mi') +
     $.util.resourcesLimits(null, '1200Mi'),
 
+  query_frontend_env_map:: {},
+
   query_frontend_container::
-    self.newQueryFrontendContainer('query-frontend', $.query_frontend_args),
+    self.newQueryFrontendContainer('query-frontend', $.query_frontend_args, $.query_frontend_env_map),
 
   local deployment = $.apps.v1.deployment,
 
@@ -53,4 +56,7 @@
     // use the service cluster IP so that when the service DNS is resolved it
     // returns the set of query-frontend IPs.
     $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
+
+  query_frontend_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('query-frontend'),
 }

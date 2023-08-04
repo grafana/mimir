@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -55,11 +56,11 @@ func runQueryingIngester(t *testing.T, client *e2emimir.Client, seriesName strin
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// Verify we can retrieve the labels we just pushed.
-	labelValues, err := client.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
+	labelValues, err := client.LabelValues("foo", v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := client.LabelNames(prometheusMinTime, prometheusMaxTime)
+	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
@@ -108,11 +109,11 @@ func runQueryingStoreGateway(t *testing.T, client *e2emimir.Client, cluster read
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// Verify we can retrieve the labels we just pushed.
-	labelValues, err := client.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
+	labelValues, err := client.LabelValues("foo", v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := client.LabelNames(prometheusMinTime, prometheusMaxTime)
+	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
