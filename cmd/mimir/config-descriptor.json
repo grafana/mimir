@@ -5058,6 +5058,17 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "native_aws_auth_enabled",
+              "required": false,
+              "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.s3.native-aws-auth-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -10577,6 +10588,17 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "native_aws_auth_enabled",
+              "required": false,
+              "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.s3.native-aws-auth-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -12540,6 +12562,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.s3.storage-class",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "native_aws_auth_enabled",
+              "required": false,
+              "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager-storage.s3.native-aws-auth-enabled",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
             {
@@ -14785,6 +14818,17 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.s3.storage-class",
                   "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "native_aws_auth_enabled",
+                  "required": false,
+                  "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "common.storage.s3.native-aws-auth-enabled",
+                  "fieldType": "boolean",
                   "fieldCategory": "experimental"
                 },
                 {

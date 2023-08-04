@@ -49,6 +49,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -alertmanager-storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -alertmanager-storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -alertmanager-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -alertmanager-storage.s3.secret-access-key string
@@ -667,6 +669,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -blocks-storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -blocks-storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -blocks-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -blocks-storage.s3.secret-access-key string
@@ -821,6 +825,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -common.storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -common.storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -common.storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -common.storage.s3.secret-access-key string
@@ -2103,6 +2109,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -ruler-storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -ruler-storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -ruler-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -ruler-storage.s3.secret-access-key string
