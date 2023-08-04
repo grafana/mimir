@@ -556,7 +556,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230731140248-b62b4b2ca7b2
+# github.com/grafana/dskit v0.0.0-20230804003603-740f56bd2934
 ## explicit; go 1.18
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -565,11 +565,15 @@ github.com/grafana/dskit/crypto/tls
 github.com/grafana/dskit/dns
 github.com/grafana/dskit/dns/godns
 github.com/grafana/dskit/dns/miekgdns
+github.com/grafana/dskit/errors
 github.com/grafana/dskit/flagext
 github.com/grafana/dskit/gate
 github.com/grafana/dskit/grpcclient
 github.com/grafana/dskit/grpcencoding/snappy
 github.com/grafana/dskit/grpcutil
+github.com/grafana/dskit/httpgrpc
+github.com/grafana/dskit/httpgrpc/server
+github.com/grafana/dskit/instrument
 github.com/grafana/dskit/internal/math
 github.com/grafana/dskit/internal/slices
 github.com/grafana/dskit/kv
@@ -581,7 +585,9 @@ github.com/grafana/dskit/limiter
 github.com/grafana/dskit/log
 github.com/grafana/dskit/loser
 github.com/grafana/dskit/metrics
+github.com/grafana/dskit/middleware
 github.com/grafana/dskit/modules
+github.com/grafana/dskit/mtime
 github.com/grafana/dskit/multierror
 github.com/grafana/dskit/netutil
 github.com/grafana/dskit/promregistry
@@ -590,10 +596,14 @@ github.com/grafana/dskit/ring/client
 github.com/grafana/dskit/ring/shard
 github.com/grafana/dskit/runtimeconfig
 github.com/grafana/dskit/runutil
+github.com/grafana/dskit/server
 github.com/grafana/dskit/services
+github.com/grafana/dskit/signals
 github.com/grafana/dskit/spanlogger
 github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
+github.com/grafana/dskit/tracing
+github.com/grafana/dskit/user
 # github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
 ## explicit; go 1.17
 github.com/grafana/e2e
@@ -1025,20 +1035,6 @@ github.com/uber/jaeger-client-go/utils
 ## explicit
 github.com/uber/jaeger-lib/metrics
 github.com/uber/jaeger-lib/metrics/prometheus
-# github.com/weaveworks/common v0.0.0-20230728070032-dd9e68f319d5
-## explicit; go 1.14
-github.com/weaveworks/common/errors
-github.com/weaveworks/common/grpc
-github.com/weaveworks/common/httpgrpc
-github.com/weaveworks/common/httpgrpc/server
-github.com/weaveworks/common/instrument
-github.com/weaveworks/common/logging
-github.com/weaveworks/common/middleware
-github.com/weaveworks/common/mtime
-github.com/weaveworks/common/server
-github.com/weaveworks/common/signals
-github.com/weaveworks/common/tracing
-github.com/weaveworks/common/user
 # github.com/weaveworks/promrus v1.2.0
 ## explicit
 github.com/weaveworks/promrus

@@ -10,9 +10,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )

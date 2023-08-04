@@ -20,9 +20,9 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/tracing"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"

@@ -14,9 +14,9 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 )

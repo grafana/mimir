@@ -10,8 +10,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/scrape"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util/spanlogger"

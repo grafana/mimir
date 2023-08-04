@@ -13,10 +13,10 @@ import (
 
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 )
 
 func TestCardinalityQueryCache_RoundTrip_WithTenantFederation(t *testing.T) {

@@ -10,11 +10,11 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/server"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
-	"github.com/weaveworks/common/logging"
-	"github.com/weaveworks/common/server"
-	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
@@ -24,7 +24,7 @@ import (
 
 type Config struct {
 	ServerMetricsPort   int
-	LogLevel            logging.Level
+	LogLevel            log.Level
 	Client              continuoustest.ClientConfig
 	Manager             continuoustest.ManagerConfig
 	WriteReadSeriesTest continuoustest.WriteReadSeriesTestConfig

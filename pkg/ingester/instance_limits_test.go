@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/middleware"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/middleware"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"

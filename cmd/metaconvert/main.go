@@ -19,9 +19,9 @@ import (
 	gklog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	dslog "github.com/grafana/dskit/log"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
-	"github.com/weaveworks/common/logging"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -31,8 +31,8 @@ import (
 )
 
 type config struct {
-	LogLevel     logging.Level
-	LogFormat    logging.Format
+	LogLevel     dslog.Level
+	LogFormat    dslog.Format
 	BucketConfig bucket.Config
 	DryRun       bool
 	Tenant       string
