@@ -41,8 +41,8 @@ The different API endpoints have different features, and the main differences fo
 - **Get label names**<br />
   Yes. However, the actual time range granularity is restricted to TSDB block range periods, which are `2h` for the most recent metrics, and up to `24h` for historical metrics when running Mimir with the default configuration.
   In practice, the input `start` and `end` parameters are rounded to the TSDB block boundaries:
-  - The `start` parameter is rounded to the start of the nearest block containing samples with timestamps that are less than or equal to the input timestamp.
-  - The `end` parameter is rounded to the end of the nearest block containing samples with timestamps that are greater than or equal to the input timestamp.
+  - The `start` parameter is rounded to the start of the nearest block containing samples with timestamps that are greater than or equal to the input timestamp.
+  - The `end` parameter is rounded to the end of the nearest block containing samples with timestamps that are less than or equal to the input timestamp.
 - **Label names cardinality**<br />
   No. The API queries only the in-memory series in the ingesters that hold series for the tenant.
 
@@ -83,8 +83,8 @@ The different API endpoints have different features, and the main differences fo
 - **Get label values API**<br />
   Yes. However, the actual time range granularity is restricted to TSDB block range periods, which are `2h` for the most recent metrics, and up to `24h` for historical metrics when running Mimir with the default configuration.
   In practice, the input `start` and `end` parameters are rounded to the TSDB block boundaries:
-  - The `start` parameter is rounded to the start of the nearest block containing samples with timestamps that are less than or equal to the input timestamp.
-  - The `end` parameter is rounded to the end of the nearest block containing samples with timestamps that are greater than or equal to the input timestamp.
+  - The `start` parameter is rounded to the start of the nearest block containing samples with timestamps that are greater than or equal to the input timestamp.
+  - The `end` parameter is rounded to the end of the nearest block containing samples with timestamps that are less than or equal to the input timestamp.
 - **Label values cardinality API**<br />
   No. The API queries only the in-memory series in the ingesters that hold series for the tenant.
 
