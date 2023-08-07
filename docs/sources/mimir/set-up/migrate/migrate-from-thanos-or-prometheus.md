@@ -293,12 +293,12 @@ This may cause that incorrect results are returned for the query.
 
    ```bash
    #!/bin/bash
-   
+
    BUCKET="XXX"
 
    echo "Fetching list of meta.json files (this can take a while if there are many blocks)"
    aws s3 ls $BUCKET --recursive | awk '{print $4}' | grep meta.json | grep -v meta.json.orig > meta-files.txt
-    
+
    echo "Processing meta.json files"
    for FILE in $(cat meta-files.txt); do
       echo "Removing Thanos labels from $FILE"
@@ -315,7 +315,8 @@ This may cause that incorrect results are returned for the query.
       fi
    done
    ```
-    For Google Cloud Storage (GCS), use the gsutil tool:
+
+   For Google Cloud Storage (GCS), use the gsutil tool:
 
    ```bash
    #!/bin/bash
