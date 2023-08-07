@@ -520,12 +520,13 @@ type deletedSeriesRef struct {
 }
 
 func (ds *deletedSeries) find(lbls labels.Labels) (deletedSeriesRef, bool) {
-	ds.mu.RLock()
-	defer ds.mu.RUnlock()
-
 	buf := ds.bufs.Get()
 	defer ds.bufs.Put(buf)
 
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+
+	// This map lookup won't allocate a string.
 	ref, ok := ds.refs[string(lbls.Bytes(buf))]
 	return ref, ok
 }
