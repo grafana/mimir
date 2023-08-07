@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	prometheustranslator "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
 	"io"
 	"net/http"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
-	prometheustranslator "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -172,7 +172,7 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
 				entry := mimirpb.MetricMetadata{
 					Type:             mimirpb.MetricMetadata_MetricType(scopeMetrics.Metrics().At(k).Type()),
-					MetricFamilyName: prometheustranslator.BuildPromCompliantName(scopeMetrics.Metrics().At(k), ""),
+					MetricFamilyName: prometheustranslator.BuildCompliantName(scopeMetrics.Metrics().At(k), "", true),
 					Help:             scopeMetrics.Metrics().At(k).Description(),
 					Unit:             scopeMetrics.Metrics().At(k).Unit(),
 				}
