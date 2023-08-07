@@ -48,7 +48,7 @@ type ActiveSeries struct {
 	lastMatchersUpdate time.Time
 
 	// The duration after which series become inactive.
-	// Also used to determine if enough time isActive passed since configuration reload for valid results.
+	// Also used to determine if enough time has passed since configuration reload for valid results.
 	timeout time.Duration
 }
 
@@ -131,7 +131,7 @@ func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef,
 }
 
 // PostDeletion should be called when series are deleted from the head.
-// Sometimes series can be deleted befure they're considered inactive (this happens with OOO series),
+// Sometimes series can be deleted before they're considered inactive (this happens with OOO series),
 // in this case we need to mark those series as deleted and save their labels to avoid accounting from them twice if
 // new series for same labels is created shortly after.
 func (c *ActiveSeries) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labels) {
