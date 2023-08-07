@@ -171,6 +171,38 @@
     ],
   }),
 
+  // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
+  // per replica over 5m (rolling window) and then we pick the highest value over the last 15m.
+  // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+  // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+  // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
+  // of containers there are running at any given time, without suffering the PromQL lookback period.
+
+  local cpuHPAQuery = |||
+    max_over_time(
+      sum(
+        sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"}[5m]))
+        and
+        max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
+      )[15m:]
+    ) * 1000
+  |||,
+
+  // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across
+  // all replicas over 15m.
+  // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+  // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
+  // of containers there are running at any given time, without suffering the PromQL lookback period.
+  local memoryHPAQuery = |||
+    max_over_time(
+      sum(
+        sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"})
+        and
+        max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
+      )[15m:]
+    )
+  |||,
+
   newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: min_replicas,
@@ -179,24 +211,21 @@
         {
           metric_name: '%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per query-frontend over 5m (rolling window)
-          // and then we pick the highest value over the last 15m.
-          // Multiply by 1000 to get the result in millicores. This is due to KEDA only working with ints.
-          query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [
-            name,
-            $._config.namespace,
-          ],
+          query: cpuHPAQuery % {
+            container: name,
+            namespace: $._config.namespace,
+          },
+
           // Threshold is expected to be a string
           threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
         },
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all query-frontends over 15m.
-          query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [
-            name,
-            $._config.namespace,
-          ],
+          query: memoryHPAQuery % {
+            container: name,
+            namespace: $._config.namespace,
+          },
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
@@ -292,9 +321,7 @@
         metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
         // Due to the more predicatable nature of the ruler-querier workload we can scale on CPU usage.
-        // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per ruler-querier over 5m (rolling window)
-        // and then we pick the highest value over the last 15m.
-        query: metricWithWeight('max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace], weight),
+        query: metricWithWeight(cpuHPAQuery % { container: name, namespace: $._config.namespace }, weight),
 
         // threshold is expected to be a string.
         threshold: std.toString(std.floor(cpuToMilliCPUInt(querier_cpu_requests) * cpu_target_utilization)),
@@ -346,10 +373,10 @@
       {
         metric_name: 'cortex_%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per distributor over 5m (rolling window)
-        // and then we pick the highest value over the last 15m.
-        // Multiply by 1000 to get the result in millicores. This is due to KEDA only working with Ints.
-        query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
+        query: cpuHPAQuery % {
+          container: name,
+          namespace: $._config.namespace,
+        },
 
         // threshold is expected to be a string.
         threshold: std.toString(std.floor(cpuToMilliCPUInt(distributor_cpu_requests) * cpu_target_utilization)),
@@ -357,8 +384,10 @@
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all distributors over 15m.
-        query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
+        query: memoryHPAQuery % {
+          container: name,
+          namespace: $._config.namespace,
+        },
 
         // threshold is expected to be a string
         threshold: std.toString(std.floor($.util.siToBytes(distributor_memory_requests) * memory_target_utilization)),
@@ -397,24 +426,21 @@
         {
           metric_name: '%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per ruler over 5m (rolling window)
-          // and then we pick the highest value over the last 15m.
-          // Multiply by 1000 to get the result in millicores. This is due to KEDA only working with ints.
-          query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [
-            name,
-            $._config.namespace,
-          ],
+          query: cpuHPAQuery % {
+            container: name,
+            namespace: $._config.namespace,
+          },
+
           // Threshold is expected to be a string
           threshold: std.toString(std.floor(cpuToMilliCPUInt($.ruler_container.resources.requests.cpu) * $._config.autoscaling_ruler_cpu_target_utilization)),
         },
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all rulers over 15m.
-          query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [
-            name,
-            $._config.namespace,
-          ],
+          query: memoryHPAQuery % {
+            container: name,
+            namespace: $._config.namespace,
+          },
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor($.util.siToBytes($.ruler_container.resources.requests.memory) * $._config.autoscaling_ruler_memory_target_utilization)),
@@ -446,7 +472,10 @@
       {
         metric_name: 'cortex_%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
+        query: cpuHPAQuery % {
+          container: name,
+          namespace: $._config.namespace,
+        },
 
         // Threshold is expected to be a string.
         // Since alertmanager is very memory-intensive as opposed to cpu-intensive, we don't bother
@@ -456,8 +485,10 @@
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all alertmanagers over 15m.
-        query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
+        query: memoryHPAQuery % {
+          container: name,
+          namespace: $._config.namespace,
+        },
 
         // Threshold is expected to be a string.
         threshold: std.toString(std.floor($.util.siToBytes(alertmanager_memory_requests) * memory_target_utilization)),
