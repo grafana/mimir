@@ -5,6 +5,7 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -130,13 +131,13 @@ func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
 }
 
 func (l *UtilizationBasedLimiter) update(_ context.Context) error {
-	l.compute(time.Now)
+	l.compute(time.Now, runtime.NumCPU())
 	return nil
 }
 
 // compute and return the current CPU and memory utilization.
 // This function must be called at a regular interval (resourceUtilizationUpdateInterval) to get a predictable behaviour.
-func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil float64, currMemoryUtil uint64) {
+func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time, numCPUs int) (currCPUUtil float64, currMemoryUtil uint64) {
 	cpuTime, currMemoryUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "err", err.Error())
@@ -157,6 +158,13 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 		// against wall clock changes, since it's based on the monotonic clock:
 		// https://pkg.go.dev/time#hdr-Monotonic_Clocks
 		cpuUtil := (cpuTime - prevCPUTime) / now.Sub(prevUpdate).Seconds()
+		// Sometimes CPU measurements are *far* higher than the actual number of cores -
+		// as a workaround until we've managed to find the bug, clamp to number of cores
+		if nCPUs := float64(numCPUs); cpuUtil > nCPUs {
+			level.Warn(l.logger).Log("msg", "clamping CPU utilization measurement",
+				"cpu_utilization", formatCPU(cpuUtil), "num_cores", numCPUs)
+			cpuUtil = nCPUs
+		}
 		l.cpuMovingAvg.Add(int64(cpuUtil * 100))
 		l.cpuMovingAvg.Tick()
 		if l.cpuSamples != nil {

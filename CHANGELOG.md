@@ -75,6 +75,7 @@
 * [BUGFIX] Querier: Retry frontend result notification when an error is returned. #5591
 * [BUGFIX] Querier: fix issue where `cortex_ingester_client_request_duration_seconds` metric did not include streaming query requests that did not return any series. #5695
 * [BUGFIX] Ingester: Fix ActiveSeries tracker double-counting series that have been deleted from the Head while still being active and then recreated again. #5678
+* [BUGFIX] Ingester: When measuring CPU utilization wrt. read path limiting, clamp to number of CPU cores in case measurement is too high, as a workaround. #5691
 
 ### Mixin
 
