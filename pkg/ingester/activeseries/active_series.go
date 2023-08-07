@@ -463,11 +463,9 @@ func (s *seriesStripe) remove(ref storage.SeriesRef) {
 
 	entry, ok := s.refs[ref]
 	if !ok {
-		// At the time of writing this, entry.deleted is always true when calling remove().
-		// If this changed, we should check that to avoid calling s.deleted.purge() too many times.
-		s.deleted.purge(ref)
 		// Was purged already.
-		// We can assume s.deleted.purge() was called already too.
+		// There's no need to call s.deleted.purge() because since we're holding the lock,
+		// we know that nobody could have added this series in the meantime.
 		return
 	}
 
