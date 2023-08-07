@@ -166,7 +166,7 @@
         // if within the next 5 minutes after a scale up we have further spikes).
         query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.75"}[5m]))' % [query_scheduler_container, $._config.namespace], weight),
 
-        threshold: '%d' % (querier_max_concurrent * target_utilization),
+        threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
       },
     ],
   }),
@@ -187,7 +187,7 @@
             $._config.namespace,
           ],
           // Threshold is expected to be a string
-          threshold: std.toString(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization),
+          threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
         },
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -297,7 +297,7 @@
         query: metricWithWeight('max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace], weight),
 
         // threshold is expected to be a string.
-        threshold: std.toString(cpuToMilliCPUInt(querier_cpu_requests) * cpu_target_utilization),
+        threshold: std.toString(std.floor(cpuToMilliCPUInt(querier_cpu_requests) * cpu_target_utilization)),
       },
     ],
   }),
@@ -352,7 +352,7 @@
         query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
 
         // threshold is expected to be a string.
-        threshold: std.toString(cpuToMilliCPUInt(distributor_cpu_requests) * cpu_target_utilization),
+        threshold: std.toString(std.floor(cpuToMilliCPUInt(distributor_cpu_requests) * cpu_target_utilization)),
       },
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -361,7 +361,7 @@
         query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
 
         // threshold is expected to be a string
-        threshold: std.toString($.util.siToBytes(distributor_memory_requests) * memory_target_utilization),
+        threshold: std.toString(std.floor($.util.siToBytes(distributor_memory_requests) * memory_target_utilization)),
       },
     ],
   }),
@@ -405,7 +405,7 @@
             $._config.namespace,
           ],
           // Threshold is expected to be a string
-          threshold: std.toString(cpuToMilliCPUInt($.ruler_container.resources.requests.cpu) * $._config.autoscaling_ruler_cpu_target_utilization),
+          threshold: std.toString(std.floor(cpuToMilliCPUInt($.ruler_container.resources.requests.cpu) * $._config.autoscaling_ruler_cpu_target_utilization)),
         },
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -451,7 +451,7 @@
         // Threshold is expected to be a string.
         // Since alertmanager is very memory-intensive as opposed to cpu-intensive, we don't bother
         // with the any target utilization calculation for cpu, to keep things simpler and cheaper.
-        threshold: std.toString(cpuToMilliCPUInt(alertmanager_cpu_requests) * cpu_target_utilization),
+        threshold: std.toString(std.floor(cpuToMilliCPUInt(alertmanager_cpu_requests) * cpu_target_utilization)),
       },
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -460,7 +460,7 @@
         query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
 
         // Threshold is expected to be a string.
-        threshold: std.toString(std.ceil($.util.siToBytes(alertmanager_memory_requests) * memory_target_utilization)),
+        threshold: std.toString(std.floor($.util.siToBytes(alertmanager_memory_requests) * memory_target_utilization)),
       },
     ],
   }),
