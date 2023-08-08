@@ -289,7 +289,7 @@ How to **investigate**:
 - If the `route` label is `alertmanager`, check the logs for distributor errors containing `component=AlertmanagerDistributor`
   - Check if instances are starved for resources using the `Mimir / Alertmanager resources` dashboard
   - If the distributor errors are `context deadline exceeded` and the instances are not starved for resources, increase the distributor
-  timeout with `-alertmanager.alertmanager-client.remote-timeout=<timeout>`. The defaut is 2s if not specified.
+    timeout with `-alertmanager.alertmanager-client.remote-timeout=<timeout>`. The defaut is 2s if not specified.
 
 ### MimirIngesterUnhealthy
 
