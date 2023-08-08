@@ -7406,6 +7406,13 @@ func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
 
 	// OOO-only series.
 	pushSamples(0, "ooo_series")
+	pushSamples(0, "ooo_series_not_pushed_again")
+
+	// Head should have 3 series, all 3 active
+	db := i.getTSDB(userID)
+	require.Equal(t, uint64(3), db.Head().NumSeries())
+	active, _, _ := db.activeSeries.Active()
+	require.Equal(t, 3, active)
 
 	// Run a regular compaction.
 	i.compactBlocks(context.Background(), false, 0, nil)
@@ -7413,12 +7420,11 @@ func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
 	// Check that there's only one series in the head. This is not something we _want_,
 	// but this is something we know is happening because of very aggressive OOO series garbage collection.
 	// If this isn't 1 but 2, then it doesn't make sense to check active series.
-	db := i.getTSDB(userID)
 	require.Equal(t, uint64(1), db.Head().NumSeries())
 
-	// There should be still 2 active series.
-	active, _, _ := db.activeSeries.Active()
-	require.Equal(t, 2, active)
+	// There should be still 3 active series.
+	active, _, _ = db.activeSeries.Active()
+	require.Equal(t, 3, active)
 
 	// Send more samples to both series.
 	pushSamples(480, "series")
@@ -7430,9 +7436,9 @@ func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
 	// OOO series were GC-ed.
 	require.Equal(t, uint64(1), db.Head().NumSeries())
 
-	// There should be still 2 active series.
+	// There should be still 3 active series.
 	active, _, _ = db.activeSeries.Active()
-	require.Equal(t, 2, active)
+	require.Equal(t, 3, active)
 }
 
 // Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload tests whether out-of-order
