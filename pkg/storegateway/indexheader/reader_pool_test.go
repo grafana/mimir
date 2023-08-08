@@ -28,44 +28,46 @@ import (
 
 func TestReaderPool_NewBinaryReader(t *testing.T) {
 	tests := map[string]struct {
-		lazyReaderEnabled         bool
-		lazyReaderIdleTimeout     time.Duration
-		eagerLoadReaderEnabled    bool
-		persistLazyLoadedHeaderFn func(blockId ulid.ULID) lazyLoadedHeadersSnapshot
-		checkMetricFn             func(t *testing.T, metrics *ReaderPoolMetrics)
+		lazyReaderEnabled             bool
+		lazyReaderIdleTimeout         time.Duration
+		eagerLoadReaderEnabled        bool
+		persistLazyLoadedHeaderFn     func(blockId ulid.ULID) lazyLoadedHeadersSnapshot
+		expectedLoadCountMetricBefore int
+		expectedLoadCountMetricAfter  int
 	}{
 		"lazy reader is disabled": {
-			lazyReaderEnabled: false,
+			lazyReaderEnabled:            false,
+			expectedLoadCountMetricAfter: 0, // no lazy loading
 		},
 		"lazy reader is enabled but close on idle timeout is disabled": {
-			lazyReaderEnabled:     true,
-			lazyReaderIdleTimeout: 0,
+			lazyReaderEnabled:            true,
+			lazyReaderIdleTimeout:        0,
+			expectedLoadCountMetricAfter: 1,
 		},
 		"lazy reader and close on idle timeout are both enabled": {
-			lazyReaderEnabled:     true,
-			lazyReaderIdleTimeout: time.Minute,
-			checkMetricFn: func(t *testing.T, metrics *ReaderPoolMetrics) {
-				require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
-			},
+			lazyReaderEnabled:            true,
+			lazyReaderIdleTimeout:        time.Minute,
+			expectedLoadCountMetricAfter: 1,
 		},
 		"lazy reader lazyLoadedHeadersSnapshot is present": {
-			lazyReaderEnabled:      true,
-			lazyReaderIdleTimeout:  time.Minute,
-			eagerLoadReaderEnabled: true,
+			lazyReaderEnabled:             true,
+			lazyReaderIdleTimeout:         time.Minute,
+			eagerLoadReaderEnabled:        true,
+			expectedLoadCountMetricBefore: 1, // the index header will be eagerly loaded before the operation
+			expectedLoadCountMetricAfter:  1,
 			persistLazyLoadedHeaderFn: func(blockId ulid.ULID) lazyLoadedHeadersSnapshot {
 				return lazyLoadedHeadersSnapshot{
 					IndexHeaderLastUsedTime: map[ulid.ULID]int64{blockId: time.Now().UnixMilli()},
 					UserID:                  "anonymous",
 				}
 			},
-			checkMetricFn: func(t *testing.T, metrics *ReaderPoolMetrics) {
-				require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
-			},
 		},
 		"lazy reader lazyLoadedHeadersSnapshot is present but invalid": {
-			lazyReaderEnabled:      true,
-			lazyReaderIdleTimeout:  time.Minute,
-			eagerLoadReaderEnabled: true,
+			lazyReaderEnabled:             true,
+			lazyReaderIdleTimeout:         time.Minute,
+			eagerLoadReaderEnabled:        true,
+			expectedLoadCountMetricBefore: 0, // although eagear loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
+			expectedLoadCountMetricAfter:  1,
 			persistLazyLoadedHeaderFn: func(_ ulid.ULID) lazyLoadedHeadersSnapshot {
 				// let's create a random blockID to be stored in lazy loaded headers file
 				invalidBlockID, _ := ulid.New(ulid.Now(), rand.Reader)
@@ -75,9 +77,6 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 					IndexHeaderLastUsedTime: map[ulid.ULID]int64{invalidBlockID: time.Now().UnixMilli()},
 					UserID:                  "anonymous",
 				}
-			},
-			checkMetricFn: func(t *testing.T, metrics *ReaderPoolMetrics) {
-				require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 			},
 		},
 	}
@@ -106,14 +105,14 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			require.NoError(t, err)
 			defer func() { require.NoError(t, r.Close()) }()
 
+			require.Equal(t, float64(testData.expectedLoadCountMetricBefore), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
+
 			// Ensure it can read data.
 			labelNames, err := r.LabelNames()
 			require.NoError(t, err)
 			require.Equal(t, []string{"a"}, labelNames)
 
-			if testData.checkMetricFn != nil {
-				testData.checkMetricFn(t, metrics)
-			}
+			require.Equal(t, float64(testData.expectedLoadCountMetricAfter), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 		})
 	}
 }
