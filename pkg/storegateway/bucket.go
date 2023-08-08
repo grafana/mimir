@@ -295,8 +295,6 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 	return s.syncBlocks(ctx, false)
 }
 
-// syncBlocks synchronizes the stores state with the Bucket bucket.
-// It will reuse disk space as persistent cache based on s.dir param.
 func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
