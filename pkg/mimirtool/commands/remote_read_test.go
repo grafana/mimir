@@ -6,9 +6,12 @@
 package commands
 
 import (
+	"fmt"
 	"io"
 	"testing"
+	"time"
 
+	"github.com/grafana/mimir/pkg/mimirtool/backfill"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
@@ -149,4 +152,42 @@ func TestTimeSeriesIterator(t *testing.T) {
 		})
 	}
 
+}
+
+// TestEarlyCommit writes samples of many series that don't fit into the same
+// append commit. It makes sure that batching the samples into many commits
+// doesn't cause the appends to advance the head block too far and make future
+// appends invalid.
+func TestEarlyCommit(t *testing.T) {
+	maxSamplesPerBlock := 1000
+	series := 100
+	samples := 140
+
+	start := int64(time.Date(2023, 8, 30, 11, 42, 17, 0, time.UTC).UnixNano())
+	inc := int64(time.Minute / time.Millisecond)
+	end := start + (inc * int64(samples))
+	ts := make([]*prompb.TimeSeries, series)
+	for i := 0; i < series; i++ {
+		s := &prompb.TimeSeries{
+			Labels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: fmt.Sprintf("metric_%d", i),
+				},
+			},
+			Samples: make([]prompb.Sample, samples),
+		}
+		for j := 0; j < samples; j++ {
+			s.Samples[j] = prompb.Sample{
+				Value:     float64(j),
+				Timestamp: start + (inc * int64(j)),
+			}
+		}
+		ts[i] = s
+	}
+	iterator := func() backfill.Iterator {
+		return newTimeSeriesIterator(ts)
+	}
+	err := backfill.CreateBlocks(iterator, start, end, maxSamplesPerBlock, t.TempDir(), true, io.Discard)
+	assert.NoError(t, err)
 }
