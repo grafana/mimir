@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"io"
 	"net/http"
 	"net/url"
@@ -138,9 +139,9 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 }
 
 // PushOTLP the input timeseries to the remote endpoint in OTLP format
-func (c *Client) PushOTLP(timeseries []prompb.TimeSeries) (*http.Response, error) {
+func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) (*http.Response, error) {
 	// Create write request
-	otlpRequest := push.TimeseriesToOTLPRequest(timeseries)
+	otlpRequest := push.TimeseriesToOTLPRequest(timeseries, metadata)
 
 	data, err := otlpRequest.MarshalProto()
 	if err != nil {

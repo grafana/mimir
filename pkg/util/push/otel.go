@@ -172,7 +172,7 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
 				entry := mimirpb.MetricMetadata{
 					Type:             mimirpb.MetricMetadata_MetricType(scopeMetrics.Metrics().At(k).Type()),
-					MetricFamilyName: prometheustranslator.BuildCompliantName(scopeMetrics.Metrics().At(k), "", true),
+					MetricFamilyName: prometheustranslator.BuildCompliantName(scopeMetrics.Metrics().At(k), "", true), // TODO expose addMetricSuffixes in configuration
 					Help:             scopeMetrics.Metrics().At(k).Description(),
 					Unit:             scopeMetrics.Metrics().At(k).Unit(),
 				}
@@ -303,10 +303,10 @@ func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 }
 
 // TimeseriesToOTLPRequest is used in tests.
-func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportRequest {
+func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
-	for _, ts := range timeseries {
+	for i, ts := range timeseries {
 		name := ""
 		attributes := pcommon.NewMap()
 
@@ -326,6 +326,8 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyGauge()
+			metric.SetDescription(metadata[i].GetHelp())
+			metric.SetUnit(metadata[i].GetUnit())
 			for _, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
@@ -338,6 +340,8 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyExponentialHistogram()
+			metric.SetDescription(metadata[i].GetHelp())
+			metric.SetUnit(metadata[i].GetUnit())
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for _, histogram := range ts.Histograms {
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()

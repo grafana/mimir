@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestOTLPIngestion(t *testing.T) {
@@ -47,8 +48,14 @@ func TestOTLPIngestion(t *testing.T) {
 	// Push some series to Mimir.
 	now := time.Now()
 	series, expectedVector, expectedMatrix := generateFloatSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	metadata := []mimirpb.MetricMetadata{
+		{
+			Help: "foo",
+			Unit: "foo",
+		},
+	}
 
-	res, err := c.PushOTLP(series)
+	res, err := c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
@@ -73,7 +80,7 @@ func TestOTLPIngestion(t *testing.T) {
 
 	// Push series with histograms to Mimir
 	series, expectedVector, _ = generateHistogramSeries("series", now)
-	res, err = c.PushOTLP(series)
+	res, err = c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 

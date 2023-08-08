@@ -53,6 +53,13 @@ func TestHandlerOTLPPush(t *testing.T) {
 				},
 			},
 		}
+	// Sample Metadata needs to contain metadata for every series in the sampleSeries
+	sampleMetadata := []mimirpb.MetricMetadata{
+		{
+			Help: "metric_help",
+			Unit: "metric_unit",
+		},
+	}
 	samplesVerifierFunc := func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
@@ -66,13 +73,20 @@ func TestHandlerOTLPPush(t *testing.T) {
 		assert.Equal(t, "__name__", series[0].Labels[0].Name)
 		assert.Equal(t, "foo", series[0].Labels[0].Value)
 
+		metadata := request.Metadata
+		assert.Equal(t, mimirpb.MetricMetadata_MetricType(1), metadata[0].GetType())
+		assert.Equal(t, "foo", metadata[0].GetMetricFamilyName())
+		assert.Equal(t, "metric_help", metadata[0].GetHelp())
+		assert.Equal(t, "metric_unit", metadata[0].GetUnit())
+
 		pushReq.CleanUp()
 		return &mimirpb.WriteResponse{}, nil
 	}
 
 	tests := []struct {
-		name   string
-		series []prompb.TimeSeries
+		name     string
+		series   []prompb.TimeSeries
+		metadata []mimirpb.MetricMetadata
 
 		compression bool
 		encoding    string
@@ -87,6 +101,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:   100000,
 			verifyFunc:   samplesVerifierFunc,
 			series:       sampleSeries,
+			metadata:     sampleMetadata,
 			responseCode: http.StatusOK,
 		},
 		{
@@ -95,6 +110,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:   100000,
 			verifyFunc:   samplesVerifierFunc,
 			series:       sampleSeries,
+			metadata:     sampleMetadata,
 			responseCode: http.StatusOK,
 		},
 		{
@@ -102,18 +118,20 @@ func TestHandlerOTLPPush(t *testing.T) {
 			compression: false,
 			maxMsgSize:  30,
 			series:      sampleSeries,
+			metadata:    sampleMetadata,
 			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 				_, err = pushReq.WriteRequest()
 				return &mimirpb.WriteResponse{}, err
 			},
 			responseCode: http.StatusRequestEntityTooLarge,
-			errMessage:   "the incoming push request has been rejected because its message size of 37 bytes is larger",
+			errMessage:   "the incoming push request has been rejected because its message size of 63 bytes is larger",
 		},
 		{
 			name:       "Write samples. Unsupported compression",
 			encoding:   "snappy",
 			maxMsgSize: 100000,
 			series:     sampleSeries,
+			metadata:   sampleMetadata,
 			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 				_, err = pushReq.WriteRequest()
 				return &mimirpb.WriteResponse{}, err
@@ -134,6 +152,12 @@ func TestHandlerOTLPPush(t *testing.T) {
 					},
 				},
 			},
+			metadata: []mimirpb.MetricMetadata{
+				{
+					Help: "metric_help",
+					Unit: "metric_unit",
+				},
+			},
 			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
@@ -145,6 +169,12 @@ func TestHandlerOTLPPush(t *testing.T) {
 				assert.Equal(t, 1, len(histograms))
 				assert.Equal(t, 1, int(histograms[0].Schema))
 
+				metadata := request.Metadata
+				assert.Equal(t, mimirpb.MetricMetadata_MetricType(4), metadata[0].GetType())
+				assert.Equal(t, "foo", metadata[0].GetMetricFamilyName())
+				assert.Equal(t, "metric_help", metadata[0].GetHelp())
+				assert.Equal(t, "metric_unit", metadata[0].GetUnit())
+
 				pushReq.CleanUp()
 				return &mimirpb.WriteResponse{}, nil
 			},
@@ -153,7 +183,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			exportReq := TimeseriesToOTLPRequest(tt.series)
+			exportReq := TimeseriesToOTLPRequest(tt.series, tt.metadata)
 			req := createOTLPRequest(t, exportReq, tt.compression)
 			if tt.encoding != "" {
 				req.Header.Set("Content-Encoding", tt.encoding)
