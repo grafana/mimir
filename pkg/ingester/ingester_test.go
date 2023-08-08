@@ -7373,6 +7373,74 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 	verifyCompactedHead(t, i, true)
 }
 
+// Test_Ingester_OutOfOrder_CompactHead_StillActive tests that active series correctly tracks OOO series after compaction.
+func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+
+	// Set the OOO window to 10h.
+	limits := map[string]*validation.Limits{userID: {OutOfOrderTimeWindow: model.Duration(10 * time.Hour)}}
+	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	require.NoError(t, err)
+
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() any { return i.lifecycler.HealthyInstancesCount() })
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	pushSamples := func(ts int64, series string) {
+		samples := []mimirpb.Sample{{TimestampMs: ts * time.Minute.Milliseconds(), Value: float64(ts)}}
+		lbls := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}}}
+		_, err = i.Push(ctx, mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API))
+		require.NoError(t, err)
+	}
+
+	// Samples for regular series.
+	pushSamples(1, "series")
+	pushSamples(240, "series")
+
+	// OOO-only series.
+	pushSamples(0, "ooo_series")
+	pushSamples(0, "ooo_series_not_pushed_again")
+
+	// Head should have 3 series, all 3 active
+	db := i.getTSDB(userID)
+	require.Equal(t, uint64(3), db.Head().NumSeries())
+	active, _, _ := db.activeSeries.Active()
+	require.Equal(t, 3, active)
+
+	// Run a regular compaction.
+	i.compactBlocks(context.Background(), false, 0, nil)
+
+	// Check that there's only one series in the head. This is not something we _want_,
+	// but this is something we know is happening because of very aggressive OOO series garbage collection.
+	// If this isn't 1 but 2, then it doesn't make sense to check active series.
+	require.Equal(t, uint64(1), db.Head().NumSeries())
+
+	// There should be still 3 active series.
+	active, _, _ = db.activeSeries.Active()
+	require.Equal(t, 3, active)
+
+	// Send more samples to both series.
+	pushSamples(480, "series")
+	pushSamples(240, "ooo_series")
+
+	// Run a regular compaction.
+	i.compactBlocks(context.Background(), false, math.MaxInt64, nil)
+
+	// OOO series were GC-ed.
+	require.Equal(t, uint64(1), db.Head().NumSeries())
+
+	// There should be still 3 active series.
+	active, _, _ = db.activeSeries.Active()
+	require.Equal(t, 3, active)
+}
+
 // Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload tests whether out-of-order
 // data is compacted and uploaded into a block that is labeled as being out-of-order.
 func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
