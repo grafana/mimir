@@ -195,7 +195,8 @@
 
       local ports = [
         servicePort.newNamed('gossip-ring', gossipRingPort, gossipRingPort) +
-        servicePort.withProtocol('TCP'),
+        servicePort.withProtocol('TCP') +
+        servicePort.withAppProtocol('tcp'),
       ];
       service.new(
         'gossip-ring',  // name

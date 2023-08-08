@@ -27,6 +27,7 @@
 * [FEATURE] Ingester: add experimental CLI flag `-ingester.ring.spread-minimizing-join-ring-in-order` that allows an ingester to register tokens in the ring only after all previous ingesters (with ID lower than its own ID) have already been registered. #5541
 * [FEATURE] Ingester: add experimental support to compact the TSDB Head when the number of in-memory series is equal or greater than `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`, and the ingester estimates that the per-tenant TSDB Head compaction will reduce in-memory series by at least `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`. #5371
 * [FEATURE] Ingester: add new metrics for tracking native histograms in active series: `cortex_ingester_active_native_histogram_series`, `cortex_ingester_active_native_histogram_series_custom_tracker`, `cortex_ingester_active_native_histogram_buckets`, `cortex_ingester_active_native_histogram_buckets_custom_tracker`. The first 2 are the subsets of the existing and unmodified `cortex_ingester_active_series` and `cortex_ingester_active_series_custom_tracker` respectively, only tracking native histogram series, and the last 2 are the equivalents for tracking the number of buckets in native histogram series. #5318
+* [FEATURE] Add experimental CLI flag `-<prefix>.s3.native-aws-auth-enabled` that allows to enable the default credentials provider chain of the AWS SDK. #5636
 * [ENHANCEMENT] Overrides-exporter: Add new metrics for write path and alertmanager (`max_global_metadata_per_user`, `max_global_metadata_per_metric`, `request_rate`, `request_burst_size`, `alertmanager_notification_rate_limit`, `alertmanager_max_dispatcher_aggregation_groups`, `alertmanager_max_alerts_count`, `alertmanager_max_alerts_size_bytes`) and added flag `-overrides-exporter.enabled-metrics` to explicitly configure desired metrics, e.g. `-overrides-exporter.enabled-metrics=request_rate,ingestion_rate`. Default value for this flag is: `ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant`. #5376
 * [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. #5137 #5389
@@ -72,6 +73,7 @@
 * [BUGFIX] Store-gateway: Fix issue where stopping a store-gateway could cause all store-gateways to unload all blocks. #5464
 * [BUGFIX] Allocate ballast in smaller blocks to avoid problem when entire ballast was kept in memory working set. #5565
 * [BUGFIX] Querier: Retry frontend result notification when an error is returned. #5591
+* [BUGFIX] Querier: fix issue where `cortex_ingester_client_request_duration_seconds` metric did not include streaming query requests that did not return any series. #5695
 * [BUGFIX] Ingester: Fix ActiveSeries tracker double-counting series that have been deleted from the Head while still being active and then recreated again. #5678
 
 ### Mixin
@@ -111,6 +113,16 @@
 * [ENHANCEMENT] Allow to remove an entry from the configured environment variable for a given component, setting the environment value to `null` in the `*_env_map` objects (e.g. `store_gateway_env_map+:: { 'field': null}`). #5599
 * [ENHANCEMENT] Allow overriding the default number of replicas for `etcd`.
 * [ENHANCEMENT] Memcached: reduce memory request for results, chunks and metadata caches. The requested memory is 5% greater than the configured memcached max cache size. #5661
+* [ENHANCEMENT] Autoscaling: Add the following configuration options to fine tune autoscaler target utilization: #5679 #5682 #5689
+  * `autoscaling_querier_target_utilization` (defaults to `0.75`)
+  * `autoscaling_mimir_read_target_utilization` (defaults to `0.75`)
+  * `autoscaling_ruler_querier_cpu_target_utilization` (defaults to `1`)
+  * `autoscaling_distributor_memory_target_utilization` (defaults to `1`)
+  * `autoscaling_ruler_cpu_target_utilization` (defaults to `1`)
+  * `autoscaling_query_frontend_cpu_target_utilization` (defaults to `1`)
+  * `autoscaling_ruler_query_frontend_cpu_target_utilization` (defaults to `1`)
+  * `autoscaling_alertmanager_cpu_target_utilization` (defaults to `1`)
+* [ENHANCEMENT] Gossip-ring: add appProtocol for istio compatibility. #5680
 
 ### Mimirtool
 
@@ -128,6 +140,7 @@
 * [CHANGE] Fix link to external OTLP/HTTP documentation.
 * [ENHANCEMENT] Improved `MimirRulerTooManyFailedQueries` runbook. #5586
 * [ENHANCEMENT] Improved "Recover accidentally deleted blocks" runbook. #5620
+* [ENHANCEMENT] Documented options and trade-offs to query label names and values. #5582
 
 ### Tools
 

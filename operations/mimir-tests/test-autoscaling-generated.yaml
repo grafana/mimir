@@ -294,7 +294,8 @@ metadata:
 spec:
   clusterIP: None
   ports:
-  - name: gossip-ring
+  - appProtocol: tcp
+    name: gossip-ring
     port: 7946
     protocol: TCP
     targetPort: 7946
@@ -1926,14 +1927,27 @@ spec:
   triggers:
   - metadata:
       metricName: cortex_alertmanager_cpu_hpa_default
-      query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="alertmanager",namespace="default"}[5m]))[15m:])
-        * 1000
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="alertmanager",namespace="default"}[5m]))
+            and
+            max by (pod) (up{container="alertmanager",namespace="default"}) > 0
+          )[15m:]
+        ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "2000"
     type: prometheus
   - metadata:
       metricName: cortex_alertmanager_memory_hpa_default
-      query: max_over_time(sum(container_memory_working_set_bytes{container="alertmanager",namespace="default"})[15m:])
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (container_memory_working_set_bytes{container="alertmanager",namespace="default"})
+            and
+            max by (pod) (up{container="alertmanager",namespace="default"}) > 0
+          )[15m:]
+        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "10737418240"
     type: prometheus
@@ -1960,14 +1974,27 @@ spec:
   triggers:
   - metadata:
       metricName: cortex_distributor_cpu_hpa_default
-      query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="distributor",namespace="default"}[5m]))[15m:])
-        * 1000
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="distributor",namespace="default"}[5m]))
+            and
+            max by (pod) (up{container="distributor",namespace="default"}) > 0
+          )[15m:]
+        ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "2000"
     type: prometheus
   - metadata:
       metricName: cortex_distributor_memory_hpa_default
-      query: max_over_time(sum(container_memory_working_set_bytes{container="distributor",namespace="default"})[15m:])
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (container_memory_working_set_bytes{container="distributor",namespace="default"})
+            and
+            max by (pod) (up{container="distributor",namespace="default"}) > 0
+          )[15m:]
+        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "3435973836"
     type: prometheus
@@ -2021,14 +2048,27 @@ spec:
   triggers:
   - metadata:
       metricName: query_frontend_cpu_hpa_default
-      query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="query-frontend",namespace="default"}[5m]))[15m:])
-        * 1000
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="query-frontend",namespace="default"}[5m]))
+            and
+            max by (pod) (up{container="query-frontend",namespace="default"}) > 0
+          )[15m:]
+        ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "2000"
     type: prometheus
   - metadata:
       metricName: query_frontend_memory_hpa_default
-      query: max_over_time(sum(container_memory_working_set_bytes{container="query-frontend",namespace="default"})[15m:])
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (container_memory_working_set_bytes{container="query-frontend",namespace="default"})
+            and
+            max by (pod) (up{container="query-frontend",namespace="default"}) > 0
+          )[15m:]
+        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "629145600"
     type: prometheus
@@ -2055,14 +2095,27 @@ spec:
   triggers:
   - metadata:
       metricName: ruler_cpu_hpa_default
-      query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="ruler",namespace="default"}[5m]))[15m:])
-        * 1000
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler",namespace="default"}[5m]))
+            and
+            max by (pod) (up{container="ruler",namespace="default"}) > 0
+          )[15m:]
+        ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "1000"
     type: prometheus
   - metadata:
       metricName: ruler_memory_hpa_default
-      query: max_over_time(sum(container_memory_working_set_bytes{container="ruler",namespace="default"})[15m:])
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (container_memory_working_set_bytes{container="ruler",namespace="default"})
+            and
+            max by (pod) (up{container="ruler",namespace="default"}) > 0
+          )[15m:]
+        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6442450944"
     type: prometheus
@@ -2089,8 +2142,14 @@ spec:
   triggers:
   - metadata:
       metricName: cortex_ruler_querier_hpa_default
-      query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="ruler-querier",namespace="default"}[5m]))[15m:])
-        * 1000
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler-querier",namespace="default"}[5m]))
+            and
+            max by (pod) (up{container="ruler-querier",namespace="default"}) > 0
+          )[15m:]
+        ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "200"
     type: prometheus
@@ -2117,14 +2176,27 @@ spec:
   triggers:
   - metadata:
       metricName: ruler_query_frontend_cpu_hpa_default
-      query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="ruler-query-frontend",namespace="default"}[5m]))[15m:])
-        * 1000
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler-query-frontend",namespace="default"}[5m]))
+            and
+            max by (pod) (up{container="ruler-query-frontend",namespace="default"}) > 0
+          )[15m:]
+        ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "2000"
     type: prometheus
   - metadata:
       metricName: ruler_query_frontend_memory_hpa_default
-      query: max_over_time(sum(container_memory_working_set_bytes{container="ruler-query-frontend",namespace="default"})[15m:])
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (container_memory_working_set_bytes{container="ruler-query-frontend",namespace="default"})
+            and
+            max by (pod) (up{container="ruler-query-frontend",namespace="default"}) > 0
+          )[15m:]
+        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "629145600"
     type: prometheus
