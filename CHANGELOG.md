@@ -73,6 +73,7 @@
 * [BUGFIX] Store-gateway: Fix issue where stopping a store-gateway could cause all store-gateways to unload all blocks. #5464
 * [BUGFIX] Allocate ballast in smaller blocks to avoid problem when entire ballast was kept in memory working set. #5565
 * [BUGFIX] Querier: Retry frontend result notification when an error is returned. #5591
+* [BUGFIX] Querier: fix issue where `cortex_ingester_client_request_duration_seconds` metric did not include streaming query requests that did not return any series. #5695
 
 ### Mixin
 
