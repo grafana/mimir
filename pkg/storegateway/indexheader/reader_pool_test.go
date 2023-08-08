@@ -49,7 +49,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			lazyReaderIdleTimeout:        time.Minute,
 			expectedLoadCountMetricAfter: 1,
 		},
-		"lazy reader lazyLoadedHeadersSnapshot is present": {
+		"lazy reader preShutdownLoadedBlocks is present": {
 			lazyReaderEnabled:             true,
 			lazyReaderIdleTimeout:         time.Minute,
 			eagerLoadReaderEnabled:        true,
@@ -62,11 +62,11 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 				}
 			},
 		},
-		"lazy reader lazyLoadedHeadersSnapshot is present but invalid": {
+		"no valid preShutdownLoadedBlocks is present": {
 			lazyReaderEnabled:             true,
 			lazyReaderIdleTimeout:         time.Minute,
 			eagerLoadReaderEnabled:        true,
-			expectedLoadCountMetricBefore: 0, // although eagar loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
+			expectedLoadCountMetricBefore: 0, // although eager loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
 			expectedLoadCountMetricAfter:  1,
 			persistLazyLoadedHeaderFn: func(_ ulid.ULID) lazyLoadedHeadersSnapshot {
 				// let's create a random blockID to be stored in lazy loaded headers file

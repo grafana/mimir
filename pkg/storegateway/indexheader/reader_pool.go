@@ -56,9 +56,9 @@ type ReaderPool struct {
 	close chan struct{}
 
 	// Keep track of all readers managed by the pool.
-	lazyReadersMx             sync.Mutex
-	lazyReaders               map[*LazyBinaryReader]struct{}
-	lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot
+	lazyReadersMx           sync.Mutex
+	lazyReaders             map[*LazyBinaryReader]struct{}
+	preShutdownLoadedBlocks *lazyLoadedHeadersSnapshot
 }
 
 // LazyLoadedHeadersSnapshotConfig stores information needed to track lazy loaded index headers.
@@ -152,14 +152,14 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 // newReaderPool makes a new ReaderPool.
 func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, eagerLoadReaderEnabled bool, metrics *ReaderPoolMetrics, lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
 	return &ReaderPool{
-		logger:                    logger,
-		metrics:                   metrics,
-		lazyReaderEnabled:         lazyReaderEnabled,
-		lazyReaderIdleTimeout:     lazyReaderIdleTimeout,
-		eagerLoadReaderEnabled:    eagerLoadReaderEnabled,
-		lazyReaders:               make(map[*LazyBinaryReader]struct{}),
-		close:                     make(chan struct{}),
-		lazyLoadedHeadersSnapshot: lazyLoadedHeadersSnapshot,
+		logger:                  logger,
+		metrics:                 metrics,
+		lazyReaderEnabled:       lazyReaderEnabled,
+		lazyReaderIdleTimeout:   lazyReaderIdleTimeout,
+		eagerLoadReaderEnabled:  eagerLoadReaderEnabled,
+		lazyReaders:             make(map[*LazyBinaryReader]struct{}),
+		close:                   make(chan struct{}),
+		preShutdownLoadedBlocks: lazyLoadedHeadersSnapshot,
 	}
 }
 
@@ -190,8 +190,9 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 
 	if p.lazyReaderEnabled {
 		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
-		if p.eagerLoadReaderEnabled && p.lazyLoadedHeadersSnapshot != nil {
-			if p.lazyLoadedHeadersSnapshot.IndexHeaderLastUsedTime[id] > 0 {
+		if p.eagerLoadReaderEnabled && p.preShutdownLoadedBlocks != nil {
+			// we only load if lazyBinaryReader is non nil and we have preShutdownLoadedBlocks
+			if lazyErr == nil && p.preShutdownLoadedBlocks.IndexHeaderLastUsedTime[id] > 0 {
 				lazyBinaryReader.EagerLoad()
 			}
 		}
