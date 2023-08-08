@@ -20,7 +20,7 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
+	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/uber/jaeger-client-go"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -348,7 +347,10 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 		if accumulator.End >= extents[i].End {
 			continue
 		}
-		accumulator.TraceId = jaegerTraceID(ctx)
+		traceID, sampled := tracing.ExtractTraceID(ctx)
+		if sampled {
+			accumulator.TraceId = traceID
+		}
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
 		if err != nil {
@@ -383,6 +385,7 @@ func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Ext
 	if err != nil {
 		return nil, err
 	}
+
 	return append(extents, Extent{
 		Start:            acc.Extent.Start,
 		End:              acc.Extent.End,
@@ -408,11 +411,15 @@ func toExtent(ctx context.Context, req Request, res Response, queryTime time.Tim
 	if err != nil {
 		return Extent{}, err
 	}
+	traceID, sampled := tracing.ExtractTraceID(ctx)
+	if !sampled {
+		traceID = ""
+	}
 	return Extent{
 		Start:            req.GetStart(),
 		End:              req.GetEnd(),
 		Response:         marshalled,
-		TraceId:          jaegerTraceID(ctx),
+		TraceId:          traceID,
 		QueryTimestampMs: queryTime.UnixMilli(),
 	}, nil
 }
@@ -502,20 +509,6 @@ func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extr
 		}
 	}
 	return extents, nil
-}
-
-func jaegerTraceID(ctx context.Context) string {
-	span := opentracing.SpanFromContext(ctx)
-	if span == nil {
-		return ""
-	}
-
-	spanContext, ok := span.Context().(jaeger.SpanContext)
-	if !ok {
-		return ""
-	}
-
-	return spanContext.TraceID().String()
 }
 
 func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {
