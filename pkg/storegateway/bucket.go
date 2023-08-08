@@ -292,6 +292,12 @@ func (s *BucketStore) Stats() BucketStoreStats {
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
 // It will reuse disk space as persistent cache based on s.dir param.
 func (s *BucketStore) SyncBlocks(ctx context.Context) error {
+	return s.syncBlocks(ctx, false)
+}
+
+// syncBlocks synchronizes the stores state with the Bucket bucket.
+// It will reuse disk space as persistent cache based on s.dir param.
+func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
 	if metaFetchErr != nil && metas == nil {
@@ -305,7 +311,7 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			for meta := range blockc {
-				if err := s.addBlock(ctx, meta); err != nil {
+				if err := s.addBlock(ctx, meta, initialSync); err != nil {
 					continue
 				}
 			}
@@ -347,7 +353,7 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 // InitialSync perform blocking sync with extra step at the end to delete locally saved blocks that are no longer
 // present in the bucket. The mismatch of these can only happen between restarts, so we can do that only once per startup.
 func (s *BucketStore) InitialSync(ctx context.Context) error {
-	if err := s.SyncBlocks(ctx); err != nil {
+	if err := s.syncBlocks(ctx, true); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
 
@@ -383,7 +389,7 @@ func (s *BucketStore) getBlock(id ulid.ULID) *bucketBlock {
 	return s.blocks[id]
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSync bool) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -409,6 +415,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 		meta.ULID,
 		s.postingOffsetsInMemSampling,
 		s.indexHeaderCfg,
+		initialSync,
 	)
 	if err != nil {
 		return errors.Wrap(err, "create index header reader")

@@ -179,7 +179,7 @@ func loadLazyLoadedHeadersSnapshot(fileName string) (*lazyLoadedHeadersSnapshot,
 // NewBinaryReader creates and returns a new binary reader. If the pool has been configured
 // with lazy reader enabled, this function will return a lazy reader. The returned lazy reader
 // is tracked by the pool and automatically closed once the idle timeout expires.
-func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (Reader, error) {
+func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config, initialSync bool) (Reader, error) {
 	var readerFactory func() (Reader, error)
 	var reader Reader
 	var err error
@@ -190,7 +190,8 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 
 	if p.lazyReaderEnabled {
 		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
-		if p.eagerLoadReaderEnabled && p.preShutdownLoadedBlocks != nil {
+		// we only try to eager load only during initialSync
+		if initialSync && p.eagerLoadReaderEnabled && p.preShutdownLoadedBlocks != nil {
 			// we only load if lazyBinaryReader is non nil and we have preShutdownLoadedBlocks
 			if lazyErr == nil && p.preShutdownLoadedBlocks.IndexHeaderLastUsedTime[id] > 0 {
 				lazyBinaryReader.EagerLoad()

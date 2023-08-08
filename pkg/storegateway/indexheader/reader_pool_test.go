@@ -101,7 +101,8 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, metrics, snapshotConfig)
 			defer pool.Close()
 
-			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
+			binaryReaderForInitialSync := testData.eagerLoadReaderEnabled
+			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{IndexHeaderEagerLoadingStartupEnabled: testData.eagerLoadReaderEnabled}, binaryReaderForInitialSync)
 			require.NoError(t, err)
 			defer func() { require.NoError(t, r.Close()) }()
 
@@ -128,7 +129,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, false, metrics, nil)
 	defer pool.Close()
 
-	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
+	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{}, false)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, r.Close()) }()
 
@@ -190,7 +191,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, true, metrics, nil)
 	defer pool.Close()
 
-	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
+	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{}, false)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, r.Close()) }()
 
