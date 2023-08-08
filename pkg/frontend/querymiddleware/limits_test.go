@@ -23,6 +23,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
@@ -427,6 +428,10 @@ func (m multiTenantMockLimits) ResultsCacheForUnalignedQueryEnabled(userID strin
 	return m.byTenant[userID].resultsCacheForUnalignedQueryEnabled
 }
 
+func (m multiTenantMockLimits) BlockedQueries(userID string) []*validation.BlockedQuery {
+	return m.byTenant[userID].blockedQueries
+}
+
 func (m multiTenantMockLimits) CreationGracePeriod(userID string) time.Duration {
 	return m.byTenant[userID].creationGracePeriod
 }
@@ -456,6 +461,7 @@ type mockLimits struct {
 	resultsCacheTTLForCardinalityQuery   time.Duration
 	resultsCacheTTLForLabelsQuery        time.Duration
 	resultsCacheForUnalignedQueryEnabled bool
+	blockedQueries                       []*validation.BlockedQuery
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -522,6 +528,10 @@ func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(string) time.Duration
 
 func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {
 	return m.resultsCacheTTLForCardinalityQuery
+}
+
+func (m mockLimits) BlockedQueries(string) []*validation.BlockedQuery {
+	return m.blockedQueries
 }
 
 func (m mockLimits) ResultsCacheTTLForLabelsQuery(string) time.Duration {

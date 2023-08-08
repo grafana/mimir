@@ -125,13 +125,14 @@ type Limits struct {
 	QueryIngestersWithin                 model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 
 	// Query-frontend limits.
-	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
-	ResultsCacheTTL                        model.Duration `yaml:"results_cache_ttl" json:"results_cache_ttl"`
-	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window"`
-	ResultsCacheTTLForCardinalityQuery     model.Duration `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query"`
-	ResultsCacheTTLForLabelsQuery          model.Duration `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query"`
-	ResultsCacheForUnalignedQueryEnabled   bool           `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
-	MaxQueryExpressionSizeBytes            int            `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
+	MaxTotalQueryLength                    model.Duration  `yaml:"max_total_query_length" json:"max_total_query_length"`
+	ResultsCacheTTL                        model.Duration  `yaml:"results_cache_ttl" json:"results_cache_ttl"`
+	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration  `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window"`
+	ResultsCacheTTLForCardinalityQuery     model.Duration  `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query"`
+	ResultsCacheTTLForLabelsQuery          model.Duration  `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query"`
+	ResultsCacheForUnalignedQueryEnabled   bool            `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
+	MaxQueryExpressionSizeBytes            int             `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
+	BlockedQueries                         []*BlockedQuery `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -547,6 +548,11 @@ func (o *Overrides) MaxTotalQueryLength(userID string) time.Duration {
 // MaxQueryExpressionSizeBytes returns the limit of the raw query size, in bytes.
 func (o *Overrides) MaxQueryExpressionSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).MaxQueryExpressionSizeBytes
+}
+
+// BlockedQueries returns the blocked queries.
+func (o *Overrides) BlockedQueries(userID string) []*BlockedQuery {
+	return o.getOverridesForUser(userID).BlockedQueries
 }
 
 // MaxLabelsQueryLength returns the limit of the length (in time) of a label names or values request.

@@ -305,6 +305,10 @@ func NewIngestionRateLimitedError(limit float64, burst int) LimitError {
 		ingestionRateFlag, ingestionBurstSizeFlag))
 }
 
+func NewQueryBlockedError() LimitError {
+	return LimitError(globalerror.QueryBlocked.Message("the request has been blocked by the cluster administrator"))
+}
+
 // formatLabelSet formats label adapters as a metric name with labels, while preserving
 // label order, and keeping duplicates. If there are multiple "__name__" labels, only
 // first one is used as metric name, other ones will be included as regular labels.

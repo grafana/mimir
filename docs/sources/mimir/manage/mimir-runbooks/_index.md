@@ -1704,6 +1704,19 @@ How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
+### err-mimir-query-blocked
+
+This error occurs when a query-frontend blocks a read request because the query matches at least one of the rules defined in the limits.
+
+How it **works**:
+
+- The query-frontend implements a middleware responsible for assessing whether the query is blocked or not.
+- To configure the limit, set the block `blocked_queries` in the `limits`.
+
+How to **fix** it:
+
+This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple queries you can update the tenant's limits and remove the pattern.
+
 ## Mimir routes by path
 
 **Write path**:
