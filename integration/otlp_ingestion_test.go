@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"io"
 	"testing"
 	"time"
 
@@ -77,6 +78,31 @@ func TestOTLPIngestion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
+
+	// Query the metadata
+	metadataResult, err := c.GetPrometheusMetadata("", 0)
+	require.NoError(t, err)
+	require.Equal(t, 200, metadataResult.StatusCode)
+
+	metadataResponseBody, err := io.ReadAll(metadataResult.Body)
+	require.NoError(t, err)
+
+	expectedJSON := `
+	{
+	   "status":"success",
+	   "data":{
+		  "series_1":[
+			 {
+				"type":"counter",
+				"help":"foo",
+				"unit":"foo"
+			 }
+		  ]
+	   }
+	}
+	`
+
+	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
 
 	// Push series with histograms to Mimir
 	series, expectedVector, _ = generateHistogramSeries("series", now)

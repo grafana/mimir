@@ -311,6 +311,29 @@ func (c *Client) LabelValuesCardinality(labelNames []string, selector string, li
 	return c.httpClient.Do(req.WithContext(ctx))
 }
 
+// GetPrometheusMetadata fetches the metadata from the Prometheus endpoint /api/v1/metadata.
+func (c *Client) GetPrometheusMetadata(metric string, limit int) (*http.Response, error) {
+	body := make(url.Values)
+	if len(metric) > 0 {
+		body.Set("metric", metric)
+	}
+	if limit > 0 {
+		body.Set("limit", strconv.Itoa(limit))
+	}
+
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/prometheus/api/v1/metadata", c.querierAddress), strings.NewReader(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	// Execute HTTP request
+	return c.httpClient.Do(req.WithContext(ctx))
+}
+
 type addOrgIDRoundTripper struct {
 	orgID string
 	next  http.RoundTripper
