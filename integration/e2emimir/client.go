@@ -11,13 +11,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"

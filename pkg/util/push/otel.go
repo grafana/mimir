@@ -6,10 +6,11 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
-	prometheustranslator "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
 	"io"
 	"net/http"
 	"time"
+
+	prometheustranslator "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
 
 	kitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
