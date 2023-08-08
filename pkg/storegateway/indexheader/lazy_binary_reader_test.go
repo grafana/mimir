@@ -229,7 +229,6 @@ func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
 			require.NoError(t, r.Close())
 		})
 
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.eagerLoadCount))
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 
@@ -238,14 +237,12 @@ func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 2, v)
 		require.True(t, r.reader != nil)
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.eagerLoadCount))
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 
 		labelNames, err := r.LabelNames()
 		require.NoError(t, err)
 		require.Equal(t, []string{"a"}, labelNames)
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.eagerLoadCount))
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 	})

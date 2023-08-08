@@ -38,7 +38,6 @@ type LazyBinaryReaderMetrics struct {
 	unloadCount       prometheus.Counter
 	unloadFailedCount prometheus.Counter
 	loadDuration      prometheus.Histogram
-	eagerLoadCount    prometheus.Counter
 }
 
 // NewLazyBinaryReaderMetrics makes new LazyBinaryReaderMetrics.
@@ -64,10 +63,6 @@ func NewLazyBinaryReaderMetrics(reg prometheus.Registerer) *LazyBinaryReaderMetr
 			Name:    "indexheader_lazy_load_duration_seconds",
 			Help:    "Duration of the index-header lazy loading in seconds.",
 			Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 15, 30, 60, 120, 300},
-		}),
-		eagerLoadCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "indexheader_startup_eager_load_total",
-			Help: "Total number of index-headers eagerly loaded during store-gateway startup.",
 		}),
 	}
 }
@@ -221,7 +216,6 @@ func (r *LazyBinaryReader) EagerLoad() {
 	}
 
 	r.usedAt.Store(time.Now().UnixNano())
-	r.metrics.eagerLoadCount.Inc()
 }
 
 // load ensures the underlying binary index-header reader has been successfully loaded. Returns

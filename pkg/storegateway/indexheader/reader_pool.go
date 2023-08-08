@@ -63,9 +63,9 @@ type ReaderPool struct {
 
 // LazyLoadedHeadersSnapshotConfig stores information needed to track lazy loaded index headers.
 type LazyLoadedHeadersSnapshotConfig struct {
-	Path                                   string
-	UserID                                 string
-	IndexHeadersEagerLoadingStartupEnabled bool
+	Path                string
+	UserID              string
+	EagerLoadingEnabled bool
 }
 
 type lazyLoadedHeadersSnapshot struct {
@@ -93,7 +93,7 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
 func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
 	var snapshot *lazyLoadedHeadersSnapshot
-	if lazyReaderEnabled && lazyLoadedSnapshotConfig.IndexHeadersEagerLoadingStartupEnabled {
+	if lazyReaderEnabled && lazyLoadedSnapshotConfig.EagerLoadingEnabled {
 		lazyLoadedSnapshotFileName := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFile)
 		var err error
 		snapshot, err = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
@@ -106,7 +106,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		}
 	}
 
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, lazyLoadedSnapshotConfig.IndexHeadersEagerLoadingStartupEnabled, metrics, snapshot)
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, lazyLoadedSnapshotConfig.EagerLoadingEnabled, metrics, snapshot)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {

@@ -254,9 +254,9 @@ func NewBucketStore(
 
 	lazyLoadedSnapshotConfig := indexheader.LazyLoadedHeadersSnapshotConfig{
 		// Path stores where lazy loaded blocks will be tracked in a single file per tenant
-		Path:                                   dir,
-		UserID:                                 userID,
-		IndexHeadersEagerLoadingStartupEnabled: bucketStoreConfig.IndexHeaderEagerLoadingStartupEnabled,
+		Path:                dir,
+		UserID:              userID,
+		EagerLoadingEnabled: bucketStoreConfig.IndexHeaderEagerLoadingStartupEnabled,
 	}
 	// Depend on the options
 	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeaderLazyLoadingEnabled, bucketStoreConfig.IndexHeaderLazyLoadingIdleTimeout, metrics.indexHeaderReaderMetrics, lazyLoadedSnapshotConfig)
