@@ -7161,17 +7161,6 @@
             },
             {
               "kind": "field",
-              "name": "index_header_eager_loading_startup_enabled",
-              "required": false,
-              "desc": "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. This configuration has no effect if index-header lazy loading is disabled.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-eager-loading-startup-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "partitioner_max_gap_bytes",
               "required": false,
               "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.",
@@ -7208,6 +7197,17 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.max-idle-file-handles",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "eager_loading_startup_enabled",
+                  "required": false,
+                  "desc": "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enabled this if index-header lazy loading is disabled..",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.eager-loading-startup-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,

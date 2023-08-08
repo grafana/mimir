@@ -18,6 +18,8 @@ import (
 // NotFoundRangeErr is an error returned by PostingsOffset when there is no posting for given name and value pairs.
 var NotFoundRangeErr = errors.New("range not found") //nolint:revive
 
+var errEagerLoadingStartupEnabledLazyLoadDisabled = errors.New("invalid store-gateway index header eager-loading enabled with lazy-loading disabled")
+
 // Reader is an interface allowing to read essential, minimal number of index fields from the small portion of index file called header.
 type Reader interface {
 	io.Closer
@@ -50,9 +52,18 @@ type Reader interface {
 }
 
 type Config struct {
-	MaxIdleFileHandles uint `yaml:"max_idle_file_handles" category:"advanced"`
+	MaxIdleFileHandles                    uint `yaml:"max_idle_file_handles" category:"advanced"`
+	IndexHeaderEagerLoadingStartupEnabled bool `yaml:"eager_loading_startup_enabled" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file.")
+	f.BoolVar(&cfg.IndexHeaderEagerLoadingStartupEnabled, prefix+"eager-loading-startup-enabled", false, "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enabled this if index-header lazy loading is disabled..")
+}
+
+func (cfg *Config) Validate(lazyLoadingEnabled bool) error {
+	if !lazyLoadingEnabled && cfg.IndexHeaderEagerLoadingStartupEnabled {
+		return errEagerLoadingStartupEnabledLazyLoadDisabled
+	}
+	return nil
 }

@@ -3261,12 +3261,6 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout
   [index_header_lazy_loading_idle_timeout: <duration> | default = 1h]
 
-  # (experimental) If enabled, store-gateway will periodically persist block IDs
-  # of lazy loaded index-headers and load them eagerly during startup. This
-  # configuration has no effect if index-header lazy loading is disabled.
-  # CLI flag: -blocks-storage.bucket-store.index-header-eager-loading-startup-enabled
-  [index_header_eager_loading_startup_enabled: <boolean> | default = false]
-
   # (advanced) Max size - in bytes - of a gap for which the partitioner
   # aggregates together two bucket GET object requests.
   # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes
@@ -3282,6 +3276,12 @@ bucket_store:
     # open for each index-header file.
     # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
     [max_idle_file_handles: <int> | default = 1]
+
+    # (experimental) If enabled, store-gateway will periodically persist block
+    # IDs of lazy loaded index-headers and load them eagerly during startup. It
+    # is not valid to enabled this if index-header lazy loading is disabled..
+    # CLI flag: -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
+    [eager_loading_startup_enabled: <boolean> | default = false]
 
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.
