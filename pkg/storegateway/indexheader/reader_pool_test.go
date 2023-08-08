@@ -66,12 +66,12 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			lazyReaderEnabled:             true,
 			lazyReaderIdleTimeout:         time.Minute,
 			eagerLoadReaderEnabled:        true,
-			expectedLoadCountMetricBefore: 0, // although eagear loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
+			expectedLoadCountMetricBefore: 0, // although eagar loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
 			expectedLoadCountMetricAfter:  1,
 			persistLazyLoadedHeaderFn: func(_ ulid.ULID) lazyLoadedHeadersSnapshot {
 				// let's create a random blockID to be stored in lazy loaded headers file
 				invalidBlockID, _ := ulid.New(ulid.Now(), rand.Reader)
-				// this snapshot will refer to invalid block, hence eager load wouldn't be executed:59
+				// this snapshot will refer to invalid block, hence eager load wouldn't be executed
 
 				return lazyLoadedHeadersSnapshot{
 					IndexHeaderLastUsedTime: map[ulid.ULID]int64{invalidBlockID: time.Now().UnixMilli()},
