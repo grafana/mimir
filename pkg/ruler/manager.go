@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/tracing"
 	"github.com/grafana/dskit/user"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -309,6 +310,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			sp := ot.GlobalTracer().StartSpan("notify", ot.Tag{Key: "organization", Value: userID})
 			defer sp.Finish()
 			ctx = ot.ContextWithSpan(ctx, sp)
+			ctx = tracing.GetBridgeTracer().ContextWithSpanHook(ctx, sp)
 			_ = ot.GlobalTracer().Inject(sp.Context(), ot.HTTPHeaders, ot.HTTPHeadersCarrier(req.Header))
 			return ctxhttp.Do(ctx, client, req)
 		},

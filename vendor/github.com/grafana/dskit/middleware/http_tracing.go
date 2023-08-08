@@ -5,6 +5,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -12,12 +13,13 @@ import (
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
-	"github.com/uber/jaeger-client-go"
 )
 
 // Dummy dependency to enforce that we have a nethttp version newer
 // than the one which implements Websockets. (No semver on nethttp)
 var _ = nethttp.MWURLTagFunc
+
+type HttpgppcForwardedKey struct{}
 
 // Tracer is a middleware which traces incoming requests.
 type Tracer struct {
@@ -97,12 +99,12 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		// skip spans which were not forwarded from httpgrpc.HTTP/Handle spans;
 		// standard http spans started directly from the HTTP server are presumed to
 		// already be instrumented by Tracer.Wrap
-		parentSpan := opentracing.SpanFromContext(ctx)
-		if parentSpan, ok := parentSpan.(*jaeger.Span); ok {
-			if parentSpan.OperationName() != httpGRPCHandleMethod {
-				next.ServeHTTP(w, r)
-				return
-			}
+		ctxV := ctx.Value(HttpgppcForwardedKey{})
+		if ctxV == nil || !ctxV.(bool) {
+			next.ServeHTTP(w, r)
+			return
+		} else {
+			ctx = context.WithValue(ctx, HttpgppcForwardedKey{}, false)
 		}
 
 		// extract relevant span & tag data from request
@@ -111,6 +113,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		urlPath := r.URL.Path
 		userAgent := r.Header.Get("User-Agent")
 
+		parentSpan := opentracing.SpanFromContext(ctx)
 		// tag parent httpgrpc.HTTP/Handle server span, if it exists
 		if parentSpan != nil {
 			parentSpan.SetTag(string(ext.HTTPUrl), urlPath)

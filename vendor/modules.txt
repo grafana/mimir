@@ -566,7 +566,11 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
+<<<<<<< HEAD
 # github.com/grafana/dskit v0.0.0-20230829141140-06955c011ffd
+=======
+# github.com/grafana/dskit v0.0.0-20230828154006-24b117834dd4
+>>>>>>> cad5a5183 (update dskit in mimir)
 ## explicit; go 1.19
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -1047,7 +1051,6 @@ github.com/uber/jaeger-client-go/utils
 # github.com/uber/jaeger-lib v2.4.1+incompatible
 ## explicit
 github.com/uber/jaeger-lib/metrics
-github.com/uber/jaeger-lib/metrics/prometheus
 # github.com/xhit/go-str2duration/v2 v2.1.0
 ## explicit; go 1.13
 github.com/xhit/go-str2duration/v2
@@ -1130,7 +1133,19 @@ go.opentelemetry.io/collector/semconv/v1.6.1
 # go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0
 ## explicit; go 1.19
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+<<<<<<< HEAD
 # go.opentelemetry.io/otel v1.17.0
+=======
+# go.opentelemetry.io/contrib/propagators/jaeger v1.17.0
+## explicit; go 1.19
+go.opentelemetry.io/contrib/propagators/jaeger
+# go.opentelemetry.io/contrib/samplers/jaegerremote v0.11.0
+## explicit; go 1.19
+go.opentelemetry.io/contrib/samplers/jaegerremote
+go.opentelemetry.io/contrib/samplers/jaegerremote/internal/proto-gen/jaeger-idl/proto/api_v2
+go.opentelemetry.io/contrib/samplers/jaegerremote/internal/utils
+# go.opentelemetry.io/otel v1.16.0
+>>>>>>> cad5a5183 (update dskit in mimir)
 ## explicit; go 1.19
 go.opentelemetry.io/otel
 go.opentelemetry.io/otel/attribute
@@ -1144,11 +1159,38 @@ go.opentelemetry.io/otel/propagation
 go.opentelemetry.io/otel/semconv/internal/v2
 go.opentelemetry.io/otel/semconv/v1.17.0
 go.opentelemetry.io/otel/semconv/v1.17.0/httpconv
+<<<<<<< HEAD
 # go.opentelemetry.io/otel/metric v1.17.0
 ## explicit; go 1.19
 go.opentelemetry.io/otel/metric
 go.opentelemetry.io/otel/metric/embedded
 # go.opentelemetry.io/otel/trace v1.17.0
+=======
+# go.opentelemetry.io/otel/bridge/opentracing v1.16.0
+## explicit; go 1.19
+go.opentelemetry.io/otel/bridge/opentracing
+go.opentelemetry.io/otel/bridge/opentracing/migration
+# go.opentelemetry.io/otel/exporters/jaeger v1.16.0
+## explicit; go 1.19
+go.opentelemetry.io/otel/exporters/jaeger
+go.opentelemetry.io/otel/exporters/jaeger/internal/gen-go/agent
+go.opentelemetry.io/otel/exporters/jaeger/internal/gen-go/jaeger
+go.opentelemetry.io/otel/exporters/jaeger/internal/gen-go/zipkincore
+go.opentelemetry.io/otel/exporters/jaeger/internal/third_party/thrift/lib/go/thrift
+# go.opentelemetry.io/otel/metric v1.16.0
+## explicit; go 1.19
+go.opentelemetry.io/otel/metric
+go.opentelemetry.io/otel/metric/embedded
+# go.opentelemetry.io/otel/sdk v1.16.0
+## explicit; go 1.19
+go.opentelemetry.io/otel/sdk
+go.opentelemetry.io/otel/sdk/instrumentation
+go.opentelemetry.io/otel/sdk/internal
+go.opentelemetry.io/otel/sdk/internal/env
+go.opentelemetry.io/otel/sdk/resource
+go.opentelemetry.io/otel/sdk/trace
+# go.opentelemetry.io/otel/trace v1.16.0
+>>>>>>> cad5a5183 (update dskit in mimir)
 ## explicit; go 1.19
 go.opentelemetry.io/otel/trace
 # go.uber.org/atomic v1.11.0
@@ -1239,7 +1281,12 @@ golang.org/x/sys/execabs
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
+<<<<<<< HEAD
 # golang.org/x/text v0.13.0
+=======
+golang.org/x/sys/windows/registry
+# golang.org/x/text v0.12.0
+>>>>>>> cad5a5183 (update dskit in mimir)
 ## explicit; go 1.17
 golang.org/x/text/cases
 golang.org/x/text/internal

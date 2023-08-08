@@ -56,6 +56,7 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 		return nil, err
 	}
 	toHeader(r.Headers, req.Header)
+	ctx = context.WithValue(ctx, middleware.HttpgppcForwardedKey{}, true)
 	req = req.WithContext(ctx)
 	req.RequestURI = r.Url
 	req.ContentLength = int64(len(r.Body))
