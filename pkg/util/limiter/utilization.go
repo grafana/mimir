@@ -159,7 +159,7 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 		timeSincePrevUpdate := now.Sub(prevUpdate)
 
 		// We expect the CPU utilization to be updated at a regular interval (resourceUtilizationUpdateInterval).
-		// Under some edge conditions (e.g. overloaded process / node) the time.Ticker, used to periodically call
+		// Under some edge conditions (e.g. overloaded process / node), the time.Ticker used to periodically call
 		// the UtilizationBasedLimiter.compute() function, may call compute() two times consecutively (or with a very
 		// short delay). We detect these cases and skip the update (it will be updated during the next regular tick).
 		if timeSincePrevUpdate > resourceUtilizationUpdateInterval/2 {

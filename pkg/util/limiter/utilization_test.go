@@ -336,9 +336,7 @@ func TestUtilizationBasedLimiter_ShouldNotUpdateCPUIfElapsedVeryShortTimeSincePr
 		assert.InDelta(t, float64(expected), lim.lastCPUTime, 0.0001)
 	}
 
-	// Track the CPU utilization two consecutive times, at a very short interval.
-	assert.InDelta(t, float64(5), lim.lastCPUTime, 0.0001)
-
+	// Track the CPU utilization few consecutive times, at a very short interval.
 	for i := 0; i < 5; i++ {
 		now = now.Add(resourceUtilizationUpdateInterval / 10)
 		lim.compute(nowFn)
