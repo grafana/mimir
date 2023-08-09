@@ -8983,6 +8983,16 @@
             },
             {
               "kind": "field",
+              "name": "auto_forget_enabled",
+              "required": false,
+              "desc": "When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "store-gateway.sharding-ring.auto-forget-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
               "name": "wait_stability_min_duration",
               "required": false,
               "desc": "Minimum time to wait for ring stability at startup, if set to positive value.",
