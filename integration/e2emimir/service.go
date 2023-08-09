@@ -32,7 +32,7 @@ func NewMimirService(
 	// Add jaeger configuration with a 50% sampling rate so that we can trigger
 	// code paths that rely on a trace being sampled.
 	s.SetEnvVars(map[string]string{
-		"JAEGER_SAMPLER_TYPE":  "const",
+		"JAEGER_SAMPLER_TYPE":  "probabilistic",
 		"JAEGER_SAMPLER_PARAM": "0.5",
 	})
 	return s
