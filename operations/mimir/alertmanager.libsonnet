@@ -10,6 +10,7 @@
   local hasFallbackConfig = std.length($._config.alertmanager.fallback_config) > 0,
 
   alertmanager_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +

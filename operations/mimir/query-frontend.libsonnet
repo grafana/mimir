@@ -2,6 +2,7 @@
   local container = $.core.v1.container,
 
   query_frontend_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.querySchedulerRingClientConfig +

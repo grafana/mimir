@@ -5,6 +5,7 @@
   local statefulSet = $.apps.v1.statefulSet,
 
   compactor_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +

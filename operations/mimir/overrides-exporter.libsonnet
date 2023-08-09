@@ -26,6 +26,7 @@
   overrides_exporter_port:: containerPort.newNamed(name='http-metrics', containerPort=$._config.server_http_port),
 
   overrides_exporter_args::
+    $._config.commonConfig +
     $._config.limitsConfig +
     $._config.overridesExporterRingConfig +
     $.mimirRuntimeConfigFile +

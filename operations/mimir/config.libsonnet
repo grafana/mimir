@@ -156,6 +156,9 @@
     query_tee_backend_preferred: '',
     query_tee_node_port: null,
 
+    // Common configuration parameters
+    commonConfig:: {},
+
     // usage_stats_enabled enables the reporting of anonymous usage statistics about the Mimir installation.
     // For more details about usage statistics, see:
     // https://grafana.com/docs/mimir/latest/configure/about-anonymous-usage-statistics-reporting/

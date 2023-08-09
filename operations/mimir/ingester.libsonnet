@@ -5,6 +5,7 @@
   local volumeMount = $.core.v1.volumeMount,
 
   ingester_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
