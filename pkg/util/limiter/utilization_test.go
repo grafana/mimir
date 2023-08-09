@@ -42,24 +42,24 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 		// Warmup the CPU utilization.
 		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
 			lim.compute(nowFn)
-			tim = tim.Add(time.Second)
+			tim = tim.Add(resourceUtilizationUpdateInterval)
 		}
 
 		// The fake utilization scanner linearly increases CPU usage for a minute
 		for i := 0; i < 59; i++ {
 			lim.compute(nowFn)
-			tim = tim.Add(time.Second)
+			tim = tim.Add(resourceUtilizationUpdateInterval)
 			require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
 		}
 		lim.compute(nowFn)
-		tim = tim.Add(time.Second)
+		tim = tim.Add(resourceUtilizationUpdateInterval)
 		require.Equal(t, "cpu", lim.LimitingReason(), "Limiting should be enabled due to CPU")
 
 		// The fake utilization scanner drops CPU usage again after a minute, so we expect
 		// limiting to be disabled shortly.
 		for i := 0; i < 5; i++ {
 			lim.compute(nowFn)
-			tim = tim.Add(time.Second)
+			tim = tim.Add(resourceUtilizationUpdateInterval)
 		}
 		require.Empty(t, lim.LimitingReason(), "Limiting should be disabled again")
 
@@ -79,12 +79,12 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 		// Warmup the CPU utilization.
 		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
 			lim.compute(nowFn)
-			tim = tim.Add(time.Second)
+			tim = tim.Add(resourceUtilizationUpdateInterval)
 		}
 
 		for i := 0; i < 60; i++ {
 			lim.compute(nowFn)
-			tim = tim.Add(time.Second)
+			tim = tim.Add(resourceUtilizationUpdateInterval)
 			require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
 		}
 
@@ -106,7 +106,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 
 		fakeScanner.memoryUtilization = gigabyte
 		lim.compute(nowFn)
-		tim = tim.Add(time.Second)
+		tim = tim.Add(resourceUtilizationUpdateInterval)
 		require.Equal(t, "memory", lim.LimitingReason(), "Limiting should be enabled due to memory")
 
 		fakeScanner.memoryUtilization = gigabyte - 1
@@ -131,7 +131,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 
 		fakeScanner.memoryUtilization = gigabyte
 		lim.compute(nowFn)
-		tim = tim.Add(time.Second)
+		tim = tim.Add(resourceUtilizationUpdateInterval)
 		require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -150,17 +150,17 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 		// Warmup the CPU utilization.
 		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
 			lim.compute(nowFn)
-			tim = tim.Add(time.Second)
+			tim = tim.Add(resourceUtilizationUpdateInterval)
 		}
 
 		// The fake utilization scanner linearly increases CPU usage for a minute
 		for i := 0; i < 59; i++ {
 			lim.compute(nowFn)
-			tim = tim.Add(time.Second)
+			tim = tim.Add(resourceUtilizationUpdateInterval)
 			require.Empty(t, lim.LimitingReason(), "Limiting should be disabled")
 		}
 		lim.compute(nowFn)
-		tim = tim.Add(time.Second)
+		tim = tim.Add(resourceUtilizationUpdateInterval)
 		require.Equal(t, "cpu", lim.LimitingReason(), "Limiting should be enabled due to CPU")
 		require.Nil(t, lim.cpuSamples)
 	})
@@ -178,7 +178,7 @@ func TestUtilizationBasedLimiter(t *testing.T) {
 			lim.compute(func() time.Time {
 				return ts
 			})
-			ts = ts.Add(time.Second)
+			ts = ts.Add(resourceUtilizationUpdateInterval)
 		}
 
 		var sampleStrs []string
@@ -297,7 +297,7 @@ func TestUtilizationBasedLimiter_CPUUtilizationSensitivity(t *testing.T) {
 				currCPUUtilization, _ := lim.compute(func() time.Time {
 					return ts
 				})
-				ts = ts.Add(time.Second)
+				ts = ts.Add(resourceUtilizationUpdateInterval)
 
 				// Keep track of the max CPU utilization as computed by the limiter.
 				if currCPUUtilization < minCPUUtilization {
@@ -312,6 +312,44 @@ func TestUtilizationBasedLimiter_CPUUtilizationSensitivity(t *testing.T) {
 			assert.InDelta(t, testData.expectedMaxCPUUtilization, maxCPUUtilization, 0.01)
 		})
 	}
+}
+
+func TestUtilizationBasedLimiter_ShouldNotUpdateCPUIfElapsedVeryShortTimeSincePreviousUpdate(t *testing.T) {
+	now := time.Now()
+	nowFn := func() time.Time {
+		return now
+	}
+
+	scanner := &preRecordedUtilizationScanner{instantCPUValues: generateConstCPUUtilization(10, 1)}
+
+	lim := NewUtilizationBasedLimiter(1, 0, true, log.NewNopLogger(), nil)
+	lim.utilizationScanner = scanner
+
+	// CPU utilization tracking gets initialised.
+	lim.compute(nowFn)
+	assert.InDelta(t, 1, lim.lastCPUTime, 0.0001)
+
+	// Track the CPU utilization few times.
+	for expected := 2; expected <= 5; expected++ {
+		now = now.Add(resourceUtilizationUpdateInterval)
+		lim.compute(nowFn)
+		assert.InDelta(t, float64(expected), lim.lastCPUTime, 0.0001)
+	}
+
+	// Track the CPU utilization two consecutive times, at a very short interval.
+	assert.InDelta(t, float64(5), lim.lastCPUTime, 0.0001)
+
+	for i := 0; i < 5; i++ {
+		now = now.Add(resourceUtilizationUpdateInterval / 10)
+		lim.compute(nowFn)
+		assert.InDelta(t, float64(5), lim.lastCPUTime, 0.0001)
+	}
+
+	// Track one more time with a short interval and now it should be tracked because
+	// it elapsed more than 50% of the expected update interval.
+	now = now.Add(resourceUtilizationUpdateInterval / 10)
+	lim.compute(nowFn)
+	assert.InDelta(t, float64(10), lim.lastCPUTime, 0.0001)
 }
 
 type fakeUtilizationScanner struct {

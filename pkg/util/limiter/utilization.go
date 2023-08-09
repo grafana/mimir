@@ -59,12 +59,12 @@ type UtilizationBasedLimiter struct {
 	memoryLimit uint64
 	// CPU limit in cores. The limit is enabled if the value is > 0.
 	cpuLimit float64
-	// Last CPU time counter
+	// Last CPU utilization time counter.
 	lastCPUTime float64
-	// The time of the first update
-	firstUpdate time.Time
-	// The time of the last update
-	lastUpdate     time.Time
+	// The time of the first CPU update.
+	firstCPUUpdate time.Time
+	// The time of the last CPU update.
+	lastCPUUpdate  time.Time
 	cpuMovingAvg   *math.EwmaRate
 	limitingReason atomic.String
 	currCPUUtil    atomic.Float64
@@ -152,27 +152,39 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 
 	// Add the instant CPU utilization to the moving average. The instant CPU
 	// utilization can only be computed starting from the 2nd tick.
-	if prevUpdate, prevCPUTime := l.lastUpdate, l.lastCPUTime; !prevUpdate.IsZero() {
+	if prevUpdate, prevCPUTime := l.lastCPUUpdate, l.lastCPUTime; !prevUpdate.IsZero() {
 		// Provided that nowFn returns a Time with monotonic clock reading (like time.Now()), time.Sub is robust
 		// against wall clock changes, since it's based on the monotonic clock:
 		// https://pkg.go.dev/time#hdr-Monotonic_Clocks
-		cpuUtil := (cpuTime - prevCPUTime) / now.Sub(prevUpdate).Seconds()
-		l.cpuMovingAvg.Add(int64(cpuUtil * 100))
-		l.cpuMovingAvg.Tick()
-		if l.cpuSamples != nil {
-			l.cpuSamples.Add(cpuUtil)
-		}
-	}
+		timeSincePrevUpdate := now.Sub(prevUpdate)
 
-	l.lastUpdate = now
-	l.lastCPUTime = cpuTime
+		// We expect the CPU utilization to be updated at a regular interval (resourceUtilizationUpdateInterval).
+		// Under some edge conditions (e.g. overloaded process / node) the time.Ticker, used to periodically call
+		// the UtilizationBasedLimiter.compute() function, may call compute() two times consecutively (or with a very
+		// short delay). We detect these cases and skip the update (it will be updated during the next regular tick).
+		if timeSincePrevUpdate > resourceUtilizationUpdateInterval/2 {
+			cpuUtil := (cpuTime - prevCPUTime) / timeSincePrevUpdate.Seconds()
+			l.cpuMovingAvg.Add(int64(cpuUtil * 100))
+			l.cpuMovingAvg.Tick()
+			if l.cpuSamples != nil {
+				l.cpuSamples.Add(cpuUtil)
+			}
+
+			l.lastCPUUpdate = now
+			l.lastCPUTime = cpuTime
+		}
+	} else {
+		// First time we read the CPU utilization.
+		l.lastCPUUpdate = now
+		l.lastCPUTime = cpuTime
+	}
 
 	// The CPU utilization moving average requires a warmup period before getting
 	// stable results. In this implementation we use a warmup period equal to the
 	// sliding window. During the warmup, the reported CPU utilization will be 0.
-	if l.firstUpdate.IsZero() {
-		l.firstUpdate = now
-	} else if now.Sub(l.firstUpdate) >= resourceUtilizationSlidingWindow {
+	if l.firstCPUUpdate.IsZero() {
+		l.firstCPUUpdate = now
+	} else if now.Sub(l.firstCPUUpdate) >= resourceUtilizationSlidingWindow {
 		currCPUUtil = l.cpuMovingAvg.Rate() / 100
 		l.currCPUUtil.Store(currCPUUtil)
 	}
