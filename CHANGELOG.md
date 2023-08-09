@@ -85,6 +85,7 @@
 * [CHANGE] Dashboards: default to shared crosshair on all dashboards. #5489
 * [CHANGE] Dashboards: sort variable drop-down lists from A to Z, rather than Z to A. #5490
 * [CHANGE] Alerts: removed `MimirProvisioningTooManyActiveSeries` alert. You should configure `-ingester.instance-limits.max-series` and rely on `MimirIngesterReachingSeriesLimit` alert instead. #5593
+* [CHANGE] Alerts: removed `MimirProvisioningTooManyWrites` alert. The alerting threshold used in this alert was chosen arbitrarily and ingesters receiving an higher number of samples / sec don't necessarily have any issue. You should rely on SLOs metrics and alerts instead. #5706
 * [ENHANCEMENT] Dashboards: adjust layout of "rollout progress" dashboard panels so that the "rollout progress" panel doesn't require scrolling. #5113
 * [ENHANCEMENT] Dashboards: show container name first in "pods count per version" panel on "rollout progress" dashboard. #5113
 * [ENHANCEMENT] Dashboards: show time spend waiting for turn when lazy loading index headers in the "index-header lazy load gate latency" panel on the "queries" dashboard. #5313
