@@ -78,8 +78,8 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 }
 
 func TestIngester_Push(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
+	metric1LabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "series_1"}}
+	metric1LabelSet := mimirpb.FromLabelAdaptersToMetric(metric1LabelAdapters)
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
 		"cortex_ingester_ingested_samples_failures_total",
@@ -93,6 +93,7 @@ func TestIngester_Push(t *testing.T) {
 		"cortex_ingester_active_native_histogram_buckets",
 	}
 	userID := "test"
+	now := time.Now()
 
 	tests := map[string]struct {
 		reqs                      []*mimirpb.WriteRequest
@@ -111,7 +112,7 @@ func TestIngester_Push(t *testing.T) {
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					[]*mimirpb.MetricMetadata{
@@ -119,7 +120,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 					mimirpb.API),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
 					[]*mimirpb.MetricMetadata{
@@ -129,7 +130,7 @@ func TestIngester_Push(t *testing.T) {
 			},
 			expectedErr: nil,
 			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
+				&model.SampleStream{Metric: metric1LabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
 			},
 			expectedMetadataIngested: []*mimirpb.MetricMetadata{
 				{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGE},
@@ -182,16 +183,16 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
 					{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.HISTOGRAM},
-				}, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{metricLabelAdapters},
+				}, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(1))}, nil),
 				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
 					{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGEHISTOGRAM},
-				}, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{metricLabelAdapters},
+				}, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2, util_test.GenerateTestGaugeHistogram(2))}, nil),
 			},
 			expectedErr: nil,
 			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+				&model.SampleStream{Metric: metric1LabelSet, Histograms: []model.SampleHistogramPair{
 					{Timestamp: model.Time(1), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1))},
 					{Timestamp: model.Time(2), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(2))},
 				}},
@@ -255,14 +256,14 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				// Ingesting an exemplar requires a sample to create the series first
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					[]*mimirpb.Exemplar{
 						{
@@ -277,11 +278,11 @@ func TestIngester_Push(t *testing.T) {
 			},
 			expectedErr: nil,
 			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
+				&model.SampleStream{Metric: metric1LabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
 			},
 			expectedExemplarsIngested: []mimirpb.TimeSeries{
 				{
-					Labels: metricLabelAdapters,
+					Labels: metric1LabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
 							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
@@ -347,13 +348,13 @@ func TestIngester_Push(t *testing.T) {
 			disableActiveSeries: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
 					mimirpb.API),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
 					nil,
@@ -361,7 +362,7 @@ func TestIngester_Push(t *testing.T) {
 			},
 			expectedErr: nil,
 			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
+				&model.SampleStream{Metric: metric1LabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -387,23 +388,23 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on sample out-of-order": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
 					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
 					mimirpb.API,
 				),
 			},
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), userID).Error()),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metric1LabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 10}}},
+				&model.SampleStream{Metric: metric1LabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 10}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -435,7 +436,7 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on all samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -446,16 +447,16 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels:  metricLabelAdapters,
+								Labels:  metric1LabelAdapters,
 								Samples: []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
 							},
 						},
 					},
 				},
 			},
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID).Error()),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metric1LabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
+				&model.SampleStream{Metric: metric1LabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -487,7 +488,7 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on all samples with histograms out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -498,7 +499,7 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels:     metricLabelAdapters,
+								Labels:     metric1LabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
 								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
 							},
@@ -506,9 +507,9 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID).Error()),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metric1LabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
+				&model.SampleStream{Metric: metric1LabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -541,7 +542,7 @@ func TestIngester_Push(t *testing.T) {
 		"should succeed if histograms are out of bound but samples are not and histograms are not accepted": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -552,7 +553,7 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels:     metricLabelAdapters,
+								Labels:     metric1LabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 + 1000}},
 								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
 							},
@@ -562,7 +563,7 @@ func TestIngester_Push(t *testing.T) {
 			},
 			expectedErr: nil,
 			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 0, Timestamp: 1575043969 + 1000}}},
+				&model.SampleStream{Metric: metric1LabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 0, Timestamp: 1575043969 + 1000}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -592,7 +593,7 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on some samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -603,7 +604,7 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: metricLabelAdapters,
+								Labels: metric1LabelAdapters,
 								Samples: []mimirpb.Sample{
 									{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)},
 									{Value: 1, TimestampMs: 1575043969 - (86000 * 1000)},
@@ -613,9 +614,9 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID).Error()),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metric1LabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
+				&model.SampleStream{Metric: metric1LabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -644,26 +645,207 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_series{user="test"} 1
 			`,
 		},
+		"should soft fail on some samples with timestamp too far in future in a write request": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli()}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: metric1LabelAdapters,
+								Samples: []mimirpb.Sample{
+									{Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
+									{Value: 3, TimestampMs: now.UnixMilli() + 1}},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metric1LabelAdapters), userID).Error()),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metric1LabelSet, Values: []model.SamplePair{
+					{Value: 1, Timestamp: model.Time(now.UnixMilli())},
+					{Value: 3, Timestamp: model.Time(now.UnixMilli() + 1)},
+				}},
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+			`,
+		},
+		"should soft fail on some histograms with timestamp too far in future in a write request": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: metric1LabelAdapters,
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(now.UnixMilli(), util_test.GenerateTestHistogram(0)),
+									mimirpb.FromHistogramToHistogramProto(now.UnixMilli()+(86400*1000), util_test.GenerateTestHistogram(1))},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metric1LabelAdapters), userID).Error()),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metric1LabelSet, Histograms: []model.SampleHistogramPair{
+					{Timestamp: model.Time(now.UnixMilli()), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(0))},
+				}},
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+			`,
+		},
+		"should soft fail on some exemplars with timestamp too far in future in a write request": {
+			maxExemplars: 1,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: metric1LabelAdapters,
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: now.UnixMilli()}},
+								Exemplars: []mimirpb.Exemplar{
+									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, Value: 1, TimestampMs: now.UnixMilli()},
+									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}, Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metric1LabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID).Error()),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metric1LabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(now.UnixMilli())},
+					},
+				},
+			},
+			expectedExemplarsIngested: []mimirpb.TimeSeries{
+				{
+					Labels: metric1LabelAdapters,
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, TimestampMs: now.UnixMilli(), Value: 1},
+					},
+				},
+			},
+			additionalMetrics: []string{
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 1
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 1
+			`,
+		},
 		"should soft fail on two different sample values at the same timestamp": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb.LabelAdapter{metric1LabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 1575043969}},
 					nil,
 					nil,
 					mimirpb.API,
 				),
 			},
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), userID).Error()),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metric1LabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
+				&model.SampleStream{Metric: metric1LabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
@@ -701,7 +883,7 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb.LabelAdapter{metric1LabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
 										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
@@ -714,7 +896,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:              httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID).Error()),
+			expectedErr:              httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metric1LabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID).Error()),
 			expectedIngested:         nil,
 			expectedMetadataIngested: nil,
 			additionalMetrics: []string{

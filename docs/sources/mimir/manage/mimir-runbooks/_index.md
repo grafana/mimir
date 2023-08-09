@@ -1253,7 +1253,15 @@ This non-critical error occurs when Mimir receives a write request that contains
 Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
 On a per-tenant basis, you can fine tune the tolerance by configuring the `-validation.max-length-label-value` option.
 
-> **Note:** Series with invalid samples are skipped during the ingestion, and series within the same request are ingested.
+> **Note:** Series with invalid samples are skipped during the ingestion, and valid samples within the same request are ingested.
+
+### err-mimir-exemplar-too-far-in-future
+
+This non-critical error occurs when Mimir receives a write request that contains an exemplar whose timestamp is in the future compared to the current "real world" time.
+Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
+On a per-tenant basis, you can fine tune the tolerance by configuring the `-validation.max-length-label-value` option.
+
+> **Note:** Series with invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
 
 ### err-mimir-exemplar-labels-missing
 

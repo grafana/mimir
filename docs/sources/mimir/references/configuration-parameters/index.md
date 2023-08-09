@@ -2729,9 +2729,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_native_histogram_buckets: <int> | default = 0]
 
 # (advanced) Controls how far into the future incoming samples are accepted
-# compared to the wall clock. Any sample with timestamp `t` will be rejected if
-# `t > (now + validation.create-grace-period)`. Also used by query-frontend to
-# avoid querying too far into the future. 0 to disable.
+# compared to the wall clock. Any sample will be rejected if its timestamp is
+# greater than '(now + -validation.create-grace-period)'. This configuration is
+# enforced in the distributor, ingester and query-frontend (to avoid querying
+# too far into the future). 0 to disable.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
 
