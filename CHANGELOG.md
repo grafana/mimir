@@ -144,6 +144,7 @@
 * [ENHANCEMENT] Improved `MimirRulerTooManyFailedQueries` runbook. #5586
 * [ENHANCEMENT] Improved "Recover accidentally deleted blocks" runbook. #5620
 * [ENHANCEMENT] Documented options and trade-offs to query label names and values. #5582
+* [ENHANCEMENT] Improved `MimirRequestErrors` runbook for alertmanager. #5694
 
 ### Tools
 

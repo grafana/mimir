@@ -286,6 +286,10 @@ How to **investigate**:
 - Looking at `Mimir / Alertmanager` dashboard you should see in which part of the stack the error originates
 - If some replicas are going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
+- If the `route` label is `alertmanager`, check the logs for distributor errors containing `component=AlertmanagerDistributor`
+  - Check if instances are starved for resources using the `Mimir / Alertmanager resources` dashboard
+  - If the distributor errors are `context deadline exceeded` and the instances are not starved for resources, increase the distributor
+    timeout with `-alertmanager.alertmanager-client.remote-timeout=<timeout>`. The defaut is 2s if not specified.
 
 ### MimirIngesterUnhealthy
 
