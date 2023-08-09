@@ -5,6 +5,7 @@
   local deployment = $.apps.v1.deployment,
 
   query_scheduler_args+::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.querySchedulerRingLifecyclerConfig
