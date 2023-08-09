@@ -303,9 +303,18 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('')
       .addPanel(
-        $.panel('Blocks currently loaded') +
+        $.panel('Blocks currently owned') +
         $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway), '{{%s}}' % $._config.per_instance_label) +
-        { fill: 0 }
+        { fill: 0 } +
+        $.panelDescription(
+          'Blocks currently owned',
+          |||
+            This panel shows the number of blocks owned by each store-gateway replica.
+            For each owned block, the store-gateway keeps its index-header on disk, and
+            eventually loaded in memory (if index-header lazy loading is disabled, or lazy loading
+            is enabled and the index-header was loaded).
+          |||
+        ),
       )
       .addPanel(
         $.panel('Blocks loaded / sec') +
