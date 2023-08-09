@@ -44,7 +44,7 @@
       "fieldDefaultValue": 0,
       "fieldFlag": "shutdown-delay",
       "fieldType": "duration",
-      "fieldCategory": "experimental"
+      "fieldCategory": "advanced"
     },
     {
       "kind": "field",
