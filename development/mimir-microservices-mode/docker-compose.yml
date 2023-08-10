@@ -215,20 +215,6 @@
     "ports":
       - "16686:16686"
       - "14268"
-  "load-generator":
-    "command":
-      - "--remote-url=http://distributor-2:8001/api/v1/push"
-      - "--remote-write-concurrency=5"
-      - "--remote-write-interval=10s"
-      - "--series-count=1000"
-      - "--tenants-count=1"
-      - "--query-enabled=true"
-      - "--query-interval=1s"
-      - "--query-url=http://querier:8004/prometheus"
-      - "--server-metrics-port=9900"
-    "image": "pracucci/cortex-load-generator:add-query-support-8633d4e"
-    "ports":
-      - "9900:9900"
   "memcached":
     "image": "memcached:1.6.19-alpine"
     "ports":
@@ -259,7 +245,7 @@
       - "DISTRIBUTOR_HOST=distributor-1:8000"
       - "ALERT_MANAGER_HOST=alertmanager-1:8031"
       - "RULER_HOST=ruler-1:8021"
-      - "QUERY_FRONTEND_HOST=query-frontend:8007"
+      - "QUERY_TEE_HOST=query-tee:8200"
       - "COMPACTOR_HOST=compactor:8007"
     "hostname": "nginx"
     "image": "nginxinc/nginx-unprivileged:1.22-alpine"
@@ -304,6 +290,31 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+  "querier-streaming":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8204 -server.grpc-listen-port=9204 -activity-tracker.filepath=/activity/querier-8204 -querier.use-streaming-promql-engine=true -query-scheduler.ring.prefix=streaming/-querier.scheduler-address=query-scheduler-streaming:9011 -querier.frontend-address= -memberlist.nodename=querier -memberlist.bind-port=10204 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=querier"
+    "hostname": "querier-streaming"
+    "image": "mimir"
+    "ports":
+      - "8204:8204"
+      - "10204:10204"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "query-frontend":
     "build":
       "context": "."
@@ -326,6 +337,31 @@
     "ports":
       - "8007:8007"
       - "10007:10007"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "query-frontend-streaming":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8207 -server.grpc-listen-port=9207 -activity-tracker.filepath=/activity/query-frontend-8207 -query-frontend.max-total-query-length=8760h -query-scheduler.ring.prefix=streaming/ -query-frontend.scheduler-address=query-scheduler-streaming:9011 -memberlist.nodename=query-frontend-streaming -memberlist.bind-port=10207 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=query-frontend-streaming"
+    "hostname": "query-frontend-streaming"
+    "image": "mimir"
+    "ports":
+      - "8207:8207"
+      - "10207:10207"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -354,6 +390,42 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+  "query-scheduler-streaming":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8211 -server.grpc-listen-port=9211 -activity-tracker.filepath=/activity/query-scheduler-8211 -query-frontend.max-total-query-length=8760h -query-scheduler.ring.prefix=streaming/ -memberlist.nodename=query-scheduler -memberlist.bind-port=10211 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=query-scheduler"
+    "hostname": "query-scheduler-streaming"
+    "image": "mimir"
+    "ports":
+      - "8211:8211"
+      - "10211:10211"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "query-tee":
+    "command":
+      - "-backend.endpoints=http://query-frontend:8007,http://query-frontend-streaming:8207"
+      - "-backend.preferred=query-frontend"
+      - "-server.http-service-port=8200"
+      - "-server.path-prefix=/prometheus"
+      - "-proxy.compare-responses=true"
+      - "-proxy.passthrough-non-registered-routes=true"
+    "image": "grafana/query-tee:2.9.0"
+    "ports":
+      - "8200:8200"
   "ruler-1":
     "build":
       "context": "."

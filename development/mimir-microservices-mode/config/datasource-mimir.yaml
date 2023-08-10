@@ -18,3 +18,25 @@ datasources:
   uid: jaeger
   orgID: 1
   url: http://jaeger:16686/
+- name: Mimir (non-streaming)
+  type: prometheus
+  access: proxy
+  uid: mimir-non-streaming
+  orgID: 1
+  url: http://query-frontend:8007/prometheus
+  jsonData:
+    prometheusType: Mimir
+    exemplarTraceIdDestinations:
+      - name: traceID
+        datasourceUid: jaeger
+- name: Mimir (streaming)
+  type: prometheus
+  access: proxy
+  uid: mimir-streaming
+  orgID: 1
+  url: http://query-frontend-streaming:8207/prometheus
+  jsonData:
+    prometheusType: Mimir
+    exemplarTraceIdDestinations:
+      - name: traceID
+        datasourceUid: jaeger
