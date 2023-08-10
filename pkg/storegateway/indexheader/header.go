@@ -58,7 +58,7 @@ type Config struct {
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file.")
-	f.BoolVar(&cfg.IndexHeaderEagerLoadingStartupEnabled, prefix+"eager-loading-startup-enabled", false, "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enabled this if index-header lazy loading is disabled..")
+	f.BoolVar(&cfg.IndexHeaderEagerLoadingStartupEnabled, prefix+"eager-loading-startup-enabled", false, "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.")
 }
 
 func (cfg *Config) Validate(lazyLoadingEnabled bool) error {
