@@ -212,7 +212,7 @@ func writeBlockUploadError(err error, msg string, logger log.Logger, w http.Resp
 // hexTimeNano returns a hex-encoded big-endian representation of the current time in nanoseconds, previously converted to uint64 and encoded as big-endian.
 func hexTimeNowNano() string {
 	var buf [8]byte
-	binary.BigEndian.AppendUint64(buf[:], uint64(time.Now().UTC().UnixNano()))
+	binary.BigEndian.PutUint64(buf[:], uint64(time.Now().UTC().UnixNano()))
 	return hex.EncodeToString(buf[:])
 }
 
@@ -324,10 +324,12 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	level.Debug(logger).Log("msg", "uploading block file to bucket", "destination", dst, "size", r.ContentLength)
 	reader := bodyReader{r: r}
 	if err := userBkt.Upload(ctx, dst, reader); err != nil {
-		level.Error(logger).Log("msg", "failed uploading block file to bucket", "destination", dst, "err", err)
 		// We don't know what caused the error; it could be the client's fault (e.g. killed
 		// connection), but internal server error is the safe choice here.
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		// If customer complains with "I got an internal server error" give them something we could correlate to our logs.
+		id := hexTimeNowNano()
+		level.Error(logger).Log("msg", "failed uploading block file to bucket", "destination", dst, "err", err, "error_id", id)
+		http.Error(w, fmt.Sprintf("internal server error (id %s)", id), http.StatusInternalServerError)
 		return
 	}
 
