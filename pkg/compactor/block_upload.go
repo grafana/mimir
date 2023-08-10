@@ -56,13 +56,16 @@ func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.R
 	}
 
 	ctx := r.Context()
-	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
-
-	const op = "start block upload"
+	logger := log.With(
+		util_log.WithContext(ctx, c.logger),
+		"feature", "block upload",
+		"block", blockID,
+		"operation", "start block upload",
+	)
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 	if _, _, err := c.checkBlockState(ctx, userBkt, blockID, false); err != nil {
-		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
+		writeBlockUploadError(err, "while checking for complete block", logger, w)
 		return
 	}
 
@@ -74,7 +77,7 @@ func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.R
 				statusCode: http.StatusRequestEntityTooLarge,
 			}
 		}
-		writeBlockUploadError(err, op, "", logger, w)
+		writeBlockUploadError(err, "", logger, w)
 		return
 	}
 
@@ -84,14 +87,16 @@ func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.R
 			message:    "malformed request body",
 			statusCode: http.StatusBadRequest,
 		}
-		writeBlockUploadError(err, op, "", logger, w)
+		writeBlockUploadError(err, "", logger, w)
 		return
 	}
 
 	if err := c.createBlockUpload(ctx, &meta, logger, userBkt, tenantID, blockID); err != nil {
-		writeBlockUploadError(err, op, "", logger, w)
+		writeBlockUploadError(err, "", logger, w)
 		return
 	}
+
+	level.Info(logger).Log("msg", "started block upload")
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -108,14 +113,17 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 	}
 
 	ctx := r.Context()
-	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
-
-	const op = "complete block upload"
+	logger := log.With(
+		util_log.WithContext(ctx, c.logger),
+		"feature", "block upload",
+		"block", blockID,
+		"operation", "complete block upload",
+	)
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 	m, _, err := c.checkBlockState(ctx, userBkt, blockID, true)
 	if err != nil {
-		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
+		writeBlockUploadError(err, "while checking for complete block", logger, w)
 		return
 	}
 
@@ -140,12 +148,12 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 				message:    fmt.Sprintf("too many block upload validations in progress, limit is %d", maxConcurrency),
 				statusCode: http.StatusTooManyRequests,
 			}
-			writeBlockUploadError(err, op, "", logger, w)
+			writeBlockUploadError(err, "", logger, w)
 			return
 		}
 		// create validation file to signal that block validation has started
 		if err := c.uploadValidation(ctx, blockID, userBkt); err != nil {
-			writeBlockUploadError(err, op, "while creating validation file", logger, w)
+			writeBlockUploadError(err, "while creating validation file", logger, w)
 			return
 		}
 		decreaseActiveValidationsInDefer = false
@@ -153,13 +161,13 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 			defer c.blockUploadValidations.Dec()
 			return c.validateBlock(ctx, logger, blockID, m, userBkt, tenantID)
 		})
-	} else {
-		if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
-			writeBlockUploadError(err, op, "uploading meta file", logger, w)
-			return
-		}
-		level.Debug(logger).Log("msg", "successfully completed block upload")
 	}
+	if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
+		writeBlockUploadError(err, "uploading meta file", logger, w)
+		return
+	}
+
+	level.Info(logger).Log("msg", "successfully completed block upload")
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -184,10 +192,10 @@ func (c *MultitenantCompactor) parseBlockUploadParameters(r *http.Request) (ulid
 	return blockID, tenantID, nil
 }
 
-func writeBlockUploadError(err error, op, extra string, logger log.Logger, w http.ResponseWriter) {
+func writeBlockUploadError(err error, extra string, logger log.Logger, w http.ResponseWriter) {
 	var httpErr httpError
 	if errors.As(err, &httpErr) {
-		level.Warn(logger).Log("msg", httpErr.message, "operation", op)
+		level.Warn(logger).Log("msg", httpErr.message)
 		http.Error(w, httpErr.message, httpErr.statusCode)
 		return
 	}
@@ -195,7 +203,7 @@ func writeBlockUploadError(err error, op, extra string, logger log.Logger, w htt
 	if extra != "" {
 		extra = " " + extra
 	}
-	level.Error(logger).Log("msg", fmt.Sprintf("an unexpected error occurred%s", extra), "operation", op, "err", err)
+	level.Error(logger).Log("msg", "failed"+extra, "err", err)
 	http.Error(w, "internal server error", http.StatusInternalServerError)
 }
 
@@ -236,31 +244,35 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	}
 
 	ctx := r.Context()
-	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
-	const op = "block file upload"
+	logger := log.With(
+		util_log.WithContext(ctx, c.logger),
+		"feature", "block upload",
+		"block", blockID,
+		"operation", "block file upload",
+	)
 
 	pth := r.URL.Query().Get("path")
 	if pth == "" {
 		err := httpError{statusCode: http.StatusBadRequest, message: "missing or invalid file path"}
-		writeBlockUploadError(err, op, "", logger, w)
+		writeBlockUploadError(err, "", logger, w)
 		return
 	}
 
 	if path.Base(pth) == block.MetaFilename {
 		err := httpError{statusCode: http.StatusBadRequest, message: fmt.Sprintf("%s is not allowed", block.MetaFilename)}
-		writeBlockUploadError(err, op, "", logger, w)
+		writeBlockUploadError(err, "", logger, w)
 		return
 	}
 
 	if !rePath.MatchString(pth) {
 		err := httpError{statusCode: http.StatusBadRequest, message: fmt.Sprintf("invalid path: %q", pth)}
-		writeBlockUploadError(err, op, "", logger, w)
+		writeBlockUploadError(err, "", logger, w)
 		return
 	}
 
 	if r.ContentLength == 0 {
 		err := httpError{statusCode: http.StatusBadRequest, message: "file cannot be empty"}
-		writeBlockUploadError(err, op, "", logger, w)
+		writeBlockUploadError(err, "", logger, w)
 		return
 	}
 
@@ -268,14 +280,14 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 	m, _, err := c.checkBlockState(ctx, userBkt, blockID, true)
 	if err != nil {
-		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
+		writeBlockUploadError(err, "while checking for complete block", logger, w)
 		return
 	}
 
 	// This should not happen.
 	if m == nil {
 		err := httpError{statusCode: http.StatusInternalServerError, message: "internal error"}
-		writeBlockUploadError(err, op, "", logger, w)
+		writeBlockUploadError(err, "", logger, w)
 		return
 	}
 
@@ -287,14 +299,14 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 			if r.ContentLength >= 0 && r.ContentLength != f.SizeBytes {
 				err := httpError{statusCode: http.StatusBadRequest, message: fmt.Sprintf("file size doesn't match %s", block.MetaFilename)}
-				writeBlockUploadError(err, op, "", logger, w)
+				writeBlockUploadError(err, "", logger, w)
 				return
 			}
 		}
 	}
 	if !found {
 		err := httpError{statusCode: http.StatusBadRequest, message: "unexpected file"}
-		writeBlockUploadError(err, op, "", logger, w)
+		writeBlockUploadError(err, "", logger, w)
 		return
 	}
 
@@ -303,7 +315,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	level.Debug(logger).Log("msg", "uploading block file to bucket", "destination", dst, "size", r.ContentLength)
 	reader := bodyReader{r: r}
 	if err := userBkt.Upload(ctx, dst, reader); err != nil {
-		level.Error(logger).Log("msg", "failed uploading block file to bucket", "operation", op, "destination", dst, "err", err)
+		level.Error(logger).Log("msg", "failed uploading block file to bucket", "destination", dst, "err", err)
 		// We don't know what caused the error; it could be the client's fault (e.g. killed
 		// connection), but internal server error is the safe choice here.
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -359,7 +371,7 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 		return
 	}
 
-	level.Debug(logger).Log("msg", "successfully completed block upload")
+	level.Info(logger).Log("msg", "successfully completed block upload")
 }
 
 func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta *block.Meta) error {
@@ -635,6 +647,12 @@ func (c *MultitenantCompactor) GetBlockUploadStateHandler(w http.ResponseWriter,
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	logger := log.With(
+		util_log.WithContext(r.Context(), c.logger),
+		"feature", "block upload",
+		"block", blockID,
+		"operation", "get block state",
+	)
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 	if err != nil {
@@ -644,7 +662,7 @@ func (c *MultitenantCompactor) GetBlockUploadStateHandler(w http.ResponseWriter,
 
 	s, _, v, err := c.getBlockUploadState(r.Context(), userBkt, blockID)
 	if err != nil {
-		writeBlockUploadError(err, "get block state", "", log.With(util_log.WithContext(r.Context(), c.logger), "block", blockID), w)
+		writeBlockUploadError(err, "", logger, w)
 		return
 	}
 
