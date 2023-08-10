@@ -95,16 +95,15 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 	var snapshot *lazyLoadedHeadersSnapshot
 	if lazyReaderEnabled && lazyLoadedSnapshotConfig.EagerLoadingEnabled {
 		lazyLoadedSnapshotFileName := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFile)
-		var loadSnapshotErr error
-		snapshot, loadSnapshotErr = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
-		if loadSnapshotErr != nil {
+		var err error
+		snapshot, err = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
+		if err != nil {
 			level.Warn(logger).Log("msg", "loading the list of index-headers from file failed; starting with no loaded index-headers", "file", lazyLoadedSnapshotFileName, "err", err)
 		}
-		// We will remove the file regardless the value of loadSnapshotErr.
+		// We will remove the file regardless the value of err.
 		// In the case such as snapshot loading causing OOM, we will still
 		// remove the snapshot file and do lazyLoading after server is restarted.
-		err := os.Remove(lazyLoadedSnapshotFileName)
-		if err != nil {
+		if err := os.Remove(lazyLoadedSnapshotFileName); err != nil {
 			level.Warn(logger).Log("msg", "removing the list of index-headers file failed", "file", lazyLoadedSnapshotFileName, "err", err)
 		}
 	}
