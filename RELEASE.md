@@ -4,10 +4,11 @@ This document describes the Mimir release process as well as release shepherd re
 
 ## Release schedule
 
-A new Grafana Mimir release is cut approximately every 6 weeks. The following table contains past releases and tentative dates for upcoming releases:
+A new Grafana Mimir release is cut approximately once every quarter, at the beginning of March, June, September and December.
+The following table contains past releases and tentative dates for upcoming releases:
 
 | Version | Date       | Release shepherd   |
-| ------- | ---------- | ------------------ |
+|---------|------------|--------------------|
 | 2.0.0   | 2022-03-20 | Marco Pracucci     |
 | 2.1.0   | 2022-05-16 | Johanna Ratliff    |
 | 2.2.0   | 2022-06-27 | Oleg Zaytsev       |
@@ -18,7 +19,8 @@ A new Grafana Mimir release is cut approximately every 6 weeks. The following ta
 | 2.7.0   | 2023-03-06 | Vernon Miller      |
 | 2.8.0   | 2023-04-17 | Jon Kartago Lamida |
 | 2.9.0   | 2023-05-29 | Felix Beuke        |
-| 2.10.0  | 2023-07-10 | _To be announced_  |
+| 2.10.0  | 2023-09-06 | Oleg Zaytsev       |
+| 2.11.0  | 2023-12-06 | _To be announced_  |
 
 ## Release shepherd responsibilities
 
