@@ -5,7 +5,7 @@ std.manifestYamlDoc({
 
     // If true, Mimir services are run under Delve debugger, that can be attached to via remote-debugging session.
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
-    debug: true,
+    debug: false,
 
     // How long should Mimir docker containers sleep before Mimir is started.
     sleep_seconds: 3,
@@ -20,7 +20,7 @@ std.manifestYamlDoc({
     ring: 'memberlist',
 
     // If true, a load generator is started.
-    enable_load_generator: false,
+    enable_load_generator: true,
 
     // If true, start and enable scraping by these components.
     // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
@@ -385,14 +385,15 @@ std.manifestYamlDoc({
     'query-tee': {
       image: 'grafana/query-tee:2.9.0',
       command: [
-        '-backend.endpoints=http://query-frontend:8007,http://query-frontend-streaming:8207',
-        '-backend.preferred=query-frontend',
+        '-backend.endpoints=http://querier:8004,http://querier-streaming:8204',
+        '-backend.preferred=querier',
+        '-server.metrics-port=9901',
         '-server.http-service-port=8200',
         '-server.path-prefix=/prometheus',
         '-proxy.compare-responses=true',
         '-proxy.passthrough-non-registered-routes=true',
       ],
-      ports: ['8200:8200'],
+      ports: ['8200:8200', '9901:9901'],
     }
   },
 

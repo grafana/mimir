@@ -21,6 +21,10 @@ scrape_configs:
           - 'query-scheduler:8011'
           - 'memcached-exporter:9150'
           - 'load-generator:9900'
+          - 'query-tee:9901'
+          - 'querier-streaming:8204'
+          - 'query-frontend-streaming:8207'
+          - 'query-scheduler-streaming:8211'
         labels:
           cluster: 'docker-compose'
           namespace: 'mimir-microservices-mode'
