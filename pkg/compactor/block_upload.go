@@ -5,6 +5,8 @@ package compactor
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -200,8 +202,17 @@ func writeBlockUploadError(err error, msg string, logger log.Logger, w http.Resp
 		return
 	}
 
-	level.Error(logger).Log("msg", msg, "err", err)
-	http.Error(w, "internal server error", http.StatusInternalServerError)
+	// If customer complains with "I got an internal server error" give them something we could correlate to our logs.
+	id := hexTimeNowNano()
+	level.Error(logger).Log("msg", msg, "err", err, "error_id", id)
+	http.Error(w, fmt.Sprintf("internal server error (id %s)", id), http.StatusInternalServerError)
+}
+
+// hexTimeNano returns a hex-encoded big-endian representation of the current time in nanoseconds, previously converted to uint64 and encoded as big-endian.
+func hexTimeNowNano() string {
+	var buf [8]byte
+	binary.BigEndian.AppendUint64(buf[:], uint64(time.Now().UTC().UnixNano()))
+	return hex.EncodeToString(buf[:])
 }
 
 func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, meta *block.Meta,
