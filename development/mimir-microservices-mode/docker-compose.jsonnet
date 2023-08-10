@@ -5,7 +5,7 @@ std.manifestYamlDoc({
 
     // If true, Mimir services are run under Delve debugger, that can be attached to via remote-debugging session.
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
-    debug: false,
+    debug: true,
 
     // How long should Mimir docker containers sleep before Mimir is started.
     sleep_seconds: 3,
@@ -86,6 +86,7 @@ std.manifestYamlDoc({
 
   read_components(useStreaming=false)::
     local suffix = if useStreaming then '-streaming' else '';
+    local querySchedulerAddress = if useStreaming then 'query-scheduler-streaming:9211' else 'query-scheduler:9011';
 
     {
       ['querier'+suffix]: mimirService({
@@ -95,7 +96,7 @@ std.manifestYamlDoc({
         extraArguments:
           (if useStreaming then '-querier.use-streaming-promql-engine=true -query-scheduler.ring.prefix=streaming/' else '') +
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
-          if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler'+suffix+':9011 -querier.frontend-address=' else '',
+          if $._config.use_query_scheduler then '-querier.scheduler-address='+querySchedulerAddress+' -querier.frontend-address=' else '',
       }),
 
       ['query-frontend'+suffix]: mimirService({
@@ -107,7 +108,7 @@ std.manifestYamlDoc({
           '-query-frontend.max-total-query-length=8760h' +
           (if useStreaming then ' -query-scheduler.ring.prefix=streaming/' else '') +
           // Use of scheduler is activated by `-query-frontend.scheduler-address` option.
-          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler'+suffix+':9011' else ''),
+          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address='+querySchedulerAddress else ''),
       }),
     } + (
       if $._config.use_query_scheduler then {
