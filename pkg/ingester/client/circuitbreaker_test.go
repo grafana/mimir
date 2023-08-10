@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestIsSuccessful(t *testing.T) {
@@ -66,7 +68,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 		MaxConsecutiveFailures: 1,
 		OpenTimeout:            60 * time.Second,
 		ClosedInterval:         60 * time.Second,
-	}, NewMetrics(reg))
+	}, NewMetrics(reg), test.NewTestingLogger(t))
 
 	// Initial request that should succeed because the circuit breaker is "closed"
 	err := breaker(context.Background(), "methodName", "", "", &conn, success)

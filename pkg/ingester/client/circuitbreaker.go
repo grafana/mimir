@@ -6,10 +6,14 @@ import (
 	"context"
 	"errors"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/sony/gobreaker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -18,7 +22,7 @@ const (
 	resultOpen    = "circuit_breaker_open"
 )
 
-func NewCircuitBreaker(name string, cfg CircuitBreakerConfig, metrics *Metrics) grpc.UnaryClientInterceptor {
+func NewCircuitBreaker(name string, cfg CircuitBreakerConfig, metrics *Metrics, logger log.Logger) grpc.UnaryClientInterceptor {
 	breaker := gobreaker.NewCircuitBreaker(gobreaker.Settings{
 		Name:        name,
 		Interval:    cfg.ClosedInterval,
@@ -28,6 +32,7 @@ func NewCircuitBreaker(name string, cfg CircuitBreakerConfig, metrics *Metrics) 
 			return uint64(counts.ConsecutiveFailures) >= cfg.MaxConsecutiveFailures
 		},
 		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+			level.Info(logger).Log("msg", "circuit breaker changing state", "name", name, "from", from, "to", to)
 			metrics.circuitBreakerTransitions.WithLabelValues(to.String()).Inc()
 		},
 		IsSuccessful: isSuccessful,
@@ -48,6 +53,8 @@ func NewCircuitBreaker(name string, cfg CircuitBreakerConfig, metrics *Metrics) 
 		})
 
 		if err != nil && (errors.Is(err, gobreaker.ErrOpenState) || errors.Is(err, gobreaker.ErrTooManyRequests)) {
+			spanlog := spanlogger.FromContext(ctx, logger)
+			level.Debug(spanlog).Log("msg", "circuit breaker open when making call to ingester", "name", name, "method", method)
 			metrics.circuitBreakerResults.WithLabelValues(resultOpen).Inc()
 		} else if !isSuccessful(err) {
 			metrics.circuitBreakerResults.WithLabelValues(resultError).Inc()

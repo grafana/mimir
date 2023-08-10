@@ -9,6 +9,7 @@ import (
 	"flag"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -30,10 +31,10 @@ type closableHealthAndIngesterClient struct {
 }
 
 // MakeIngesterClient makes a new IngesterClient
-func MakeIngesterClient(addr string, cfg Config, metrics *Metrics) (HealthAndIngesterClient, error) {
+func MakeIngesterClient(addr string, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
 	unary, stream := grpcclient.Instrument(metrics.requestDuration)
 	if cfg.CircuitBreaker.Enabled {
-		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(addr, cfg.CircuitBreaker, metrics)}, unary...)
+		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(addr, cfg.CircuitBreaker, metrics, logger)}, unary...)
 	}
 
 	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream)
