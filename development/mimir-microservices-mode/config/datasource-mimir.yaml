@@ -40,3 +40,14 @@ datasources:
     exemplarTraceIdDestinations:
       - name: traceID
         datasourceUid: jaeger
+- name: Mimir querier (streaming)
+  type: prometheus
+  access: proxy
+  uid: mimir-querier-streaming
+  orgID: 1
+  url: http://querier-streaming:8204/prometheus
+  jsonData:
+    prometheusType: Mimir
+    exemplarTraceIdDestinations:
+      - name: traceID
+        datasourceUid: jaeger
