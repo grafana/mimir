@@ -109,6 +109,8 @@ service:
 
 We follow the official [OTLP Metric points to Prometheus](https://opentelemetry.io/docs/reference/specification/compatibility/prometheus_and_openmetrics/#otlp-metric-points-to-prometheus) specification.
 
+By default, Grafana Mimir does not accept [OpenTelemetry Exponential Histogram](https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram) metrics. For Mimir to accept them, ingestion of Prometheus Native Histogram metrics must first be enabled following the instructions in [Configure native histogram ingestion](./#configure-native-histograms-ingestion). After this is done, Mimir will accept OpenTelemetry Exponential Histograms, and convert them into Prometheus Native Histograms following the conventions described in the Expontial Histrogragrams specification.
+
 You might experience the following common issues:
 
 - Dots (.) are converted to \_
