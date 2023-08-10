@@ -682,7 +682,7 @@ type Mimir struct {
 	QuerierQueryable         prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable        prom_storage.ExemplarQueryable
 	MetadataSupplier         querier.MetadataSupplier
-	QuerierEngine            *promql.Engine
+	QuerierEngine            promql.QueryEngine
 	QueryFrontendTripperware querymiddleware.Tripperware
 	QueryFrontendCodec       querymiddleware.Codec
 	Ruler                    *ruler.Ruler

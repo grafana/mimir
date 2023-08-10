@@ -1708,6 +1708,17 @@
         },
         {
           "kind": "field",
+          "name": "use_streaming_prom_ql_engine",
+          "required": false,
+          "desc": "Use streaming PromQL engine",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.use-streaming-promql-engine",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",

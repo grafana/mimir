@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/streaming"
 	"github.com/prometheus/prometheus/storage"
 	"golang.org/x/sync/errgroup"
 
@@ -56,6 +57,8 @@ type Config struct {
 	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"experimental"`
 	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"experimental"`
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"experimental"`
+
+	UseStreamingPromQLEngine bool `yaml:"use_streaming_prom_ql_engine" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -96,6 +99,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
+	f.BoolVar(&cfg.UseStreamingPromQLEngine, "querier.use-streaming-promql-engine", false, "Use streaming PromQL engine")
+
 	// The querier.query-ingesters-within flag has been moved to the limits.go file
 	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.11.0
 	// TODO: Remove in Mimir 2.11.0
@@ -129,7 +134,7 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 	queryMetrics := stats.NewQueryMetrics(reg)
 
@@ -153,8 +158,16 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	engine := promql.NewEngine(engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg))
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, engine
+	var eng promql.QueryEngine
+	opts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+
+	if cfg.UseStreamingPromQLEngine {
+		eng = streaming.NewEngine(opts)
+	} else {
+		eng = promql.NewEngine(opts)
+	}
+
+	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
