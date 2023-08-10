@@ -218,13 +218,13 @@
             "uid": "mimir-non-streaming"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.50, sum by (le, backend) (rate(cortex_querytee_backend_request_duration_seconds_bucket{route=~\"api_v1_query(_range)?\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le, backend) (rate(cortex_querytee_backend_request_duration_seconds_bucket{route=~\"api_v1_query(_range)?\"}[$__rate_interval])))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "p50 latency",
+      "title": "p99 latency",
       "type": "timeseries"
     },
     {
@@ -808,6 +808,6 @@
   "timezone": "",
   "title": "Streaming PromQL engine",
   "uid": "d7sBA1eVk",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }
