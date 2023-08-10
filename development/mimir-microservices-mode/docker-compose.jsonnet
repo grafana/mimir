@@ -373,7 +373,7 @@ std.manifestYamlDoc({
         '--series-count=100000',
         '--tenants-count=1',
         '--query-enabled=true',
-        '--query-interval=10s',
+        '--query-interval=30s',
         '--query-url=http://query-tee:8200/prometheus',
         '--server-metrics-port=9900',
       ],
