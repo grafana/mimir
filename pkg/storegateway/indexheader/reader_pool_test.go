@@ -28,53 +28,53 @@ import (
 
 func TestReaderPool_NewBinaryReader(t *testing.T) {
 	tests := map[string]struct {
-		lazyReaderEnabled             bool
-		lazyReaderIdleTimeout         time.Duration
-		eagerLoadReaderEnabled        bool
-		persistLazyLoadedHeaderFn     func(blockId ulid.ULID) lazyLoadedHeadersSnapshot
-		expectedLoadCountMetricBefore int
-		expectedLoadCountMetricAfter  int
+		lazyReaderEnabled                           bool
+		lazyReaderIdleTimeout                       time.Duration
+		eagerLoadReaderEnabled                      bool
+		createLazyLoadedHeadersSnapshotFn           func(blockId ulid.ULID) lazyLoadedHeadersSnapshot
+		expectedLoadCountMetricBeforeLabelNamesCall int
+		expectedLoadCountMetricAfterLabelNamesCall  int
 	}{
 		"lazy reader is disabled": {
-			lazyReaderEnabled:            false,
-			expectedLoadCountMetricAfter: 0, // no lazy loading
+			lazyReaderEnabled:                          false,
+			expectedLoadCountMetricAfterLabelNamesCall: 0, // no lazy loading
 		},
 		"lazy reader is enabled but close on idle timeout is disabled": {
-			lazyReaderEnabled:            true,
-			lazyReaderIdleTimeout:        0,
-			expectedLoadCountMetricAfter: 1,
+			lazyReaderEnabled:                          true,
+			lazyReaderIdleTimeout:                      0,
+			expectedLoadCountMetricAfterLabelNamesCall: 1,
 		},
 		"lazy reader and close on idle timeout are both enabled": {
-			lazyReaderEnabled:            true,
-			lazyReaderIdleTimeout:        time.Minute,
-			expectedLoadCountMetricAfter: 1,
+			lazyReaderEnabled:                          true,
+			lazyReaderIdleTimeout:                      time.Minute,
+			expectedLoadCountMetricAfterLabelNamesCall: 1,
 		},
-		"lazy reader preShutdownLoadedBlocks is present": {
-			lazyReaderEnabled:             true,
-			lazyReaderIdleTimeout:         time.Minute,
-			eagerLoadReaderEnabled:        true,
-			expectedLoadCountMetricBefore: 1, // the index header will be eagerly loaded before the operation
-			expectedLoadCountMetricAfter:  1,
-			persistLazyLoadedHeaderFn: func(blockId ulid.ULID) lazyLoadedHeadersSnapshot {
+		"block is present in pre-shutdown loaded blocks and eager-loading is enabled": {
+			lazyReaderEnabled:                           true,
+			lazyReaderIdleTimeout:                       time.Minute,
+			eagerLoadReaderEnabled:                      true,
+			expectedLoadCountMetricBeforeLabelNamesCall: 1, // the index header will be eagerly loaded before the operation
+			expectedLoadCountMetricAfterLabelNamesCall:  1,
+			createLazyLoadedHeadersSnapshotFn: func(blockId ulid.ULID) lazyLoadedHeadersSnapshot {
 				return lazyLoadedHeadersSnapshot{
 					IndexHeaderLastUsedTime: map[ulid.ULID]int64{blockId: time.Now().UnixMilli()},
 					UserID:                  "anonymous",
 				}
 			},
 		},
-		"no valid preShutdownLoadedBlocks is present": {
-			lazyReaderEnabled:             true,
-			lazyReaderIdleTimeout:         time.Minute,
-			eagerLoadReaderEnabled:        true,
-			expectedLoadCountMetricBefore: 0, // although eager loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
-			expectedLoadCountMetricAfter:  1,
-			persistLazyLoadedHeaderFn: func(_ ulid.ULID) lazyLoadedHeadersSnapshot {
-				// let's create a random blockID to be stored in lazy loaded headers file
-				invalidBlockID, _ := ulid.New(ulid.Now(), rand.Reader)
-				// this snapshot will refer to invalid block, hence eager load wouldn't be executed
+		"block is not present in pre-shutdown loaded blocks snapshot and eager-loading is enabled": {
+			lazyReaderEnabled:                           true,
+			lazyReaderIdleTimeout:                       time.Minute,
+			eagerLoadReaderEnabled:                      true,
+			expectedLoadCountMetricBeforeLabelNamesCall: 0, // although eager loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
+			expectedLoadCountMetricAfterLabelNamesCall:  1,
+			createLazyLoadedHeadersSnapshotFn: func(_ ulid.ULID) lazyLoadedHeadersSnapshot {
+				// let's create a random fake blockID to be stored in lazy loaded headers file
+				fakeBlockID, _ := ulid.New(ulid.Now(), rand.Reader)
+				// this snapshot will refer to fake block, hence eager load wouldn't be executed for the real block that we test
 
 				return lazyLoadedHeadersSnapshot{
-					IndexHeaderLastUsedTime: map[ulid.ULID]int64{invalidBlockID: time.Now().UnixMilli()},
+					IndexHeaderLastUsedTime: map[ulid.ULID]int64{fakeBlockID: time.Now().UnixMilli()},
 					UserID:                  "anonymous",
 				}
 			},
@@ -91,8 +91,8 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 				UserID:              "anonymous",
 				EagerLoadingEnabled: testData.eagerLoadReaderEnabled,
 			}
-			if testData.persistLazyLoadedHeaderFn != nil {
-				lazyLoadedSnapshot := testData.persistLazyLoadedHeaderFn(blockID)
+			if testData.createLazyLoadedHeadersSnapshotFn != nil {
+				lazyLoadedSnapshot := testData.createLazyLoadedHeadersSnapshotFn(blockID)
 				err := lazyLoadedSnapshot.persist(snapshotConfig.Path)
 				require.NoError(t, err)
 			}
@@ -106,14 +106,14 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			require.NoError(t, err)
 			defer func() { require.NoError(t, r.Close()) }()
 
-			require.Equal(t, float64(testData.expectedLoadCountMetricBefore), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
+			require.Equal(t, float64(testData.expectedLoadCountMetricBeforeLabelNamesCall), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 
 			// Ensure it can read data.
 			labelNames, err := r.LabelNames()
 			require.NoError(t, err)
 			require.Equal(t, []string{"a"}, labelNames)
 
-			require.Equal(t, float64(testData.expectedLoadCountMetricAfter), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
+			require.Equal(t, float64(testData.expectedLoadCountMetricAfterLabelNamesCall), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 		})
 	}
 }
