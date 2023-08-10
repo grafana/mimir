@@ -100,11 +100,11 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		if err != nil {
 			level.Warn(logger).Log("msg", "loading the list of index-headers from file failed; not eagerly loading index-headers for tenant", "file", lazyLoadedSnapshotFileName, "err", err, "tenant", lazyLoadedSnapshotConfig.UserID)
 		}
-		// We will remove the file regardless the value of err.
+		// We will remove the file regardless whether err is nil or not nil.
 		// In the case such as snapshot loading causing OOM, we will still
-		// remove the snapshot file and do lazyLoading after server is restarted.
+		// remove the snapshot and lazy load after server is restarted.
 		if err := os.Remove(lazyLoadedSnapshotFileName); err != nil {
-			level.Warn(logger).Log("msg", "removing the list of index-headers file failed", "file", lazyLoadedSnapshotFileName, "err", err)
+			level.Warn(logger).Log("msg", "removing the snapshot failed", "file", lazyLoadedSnapshotFileName, "err", err)
 		}
 	}
 
@@ -192,10 +192,14 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 
 	if p.lazyReaderEnabled {
 		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed)
+		if lazyErr != nil {
+			return nil, lazyErr
+		}
+
 		// we only try to eager load only during initialSync
 		if initialSync && p.eagerLoadReaderEnabled && p.preShutdownLoadedBlocks != nil {
-			// we only load if lazyBinaryReader is non nil and we have preShutdownLoadedBlocks
-			if lazyErr == nil && p.preShutdownLoadedBlocks.IndexHeaderLastUsedTime[id] > 0 {
+			// we only eager load if we have preShutdownLoadedBlocks for the given block id
+			if p.preShutdownLoadedBlocks.IndexHeaderLastUsedTime[id] > 0 {
 				lazyBinaryReader.EagerLoad()
 			}
 		}
