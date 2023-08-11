@@ -48,6 +48,7 @@ func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 type ReaderPool struct {
 	lazyReaderEnabled        bool
 	lazyReaderIdleTimeout    time.Duration
+	eagerLoadReaderEnabled   bool
 	sparsePersistenceEnabled bool
 	logger                   log.Logger
 	metrics                  *ReaderPoolMetrics
