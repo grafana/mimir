@@ -123,13 +123,13 @@ func NewLazyBinaryReader(
 	}
 
 	return &LazyBinaryReader{
-		logger:        logger,
-		filepath:      path,
-		metrics:       metrics,
-		usedAt:        atomic.NewInt64(time.Now().UnixNano()),
-		onClosed:      onClosed,
-		readerFactory: readerFactory,
-		blockID:       id,
+		logger:          logger,
+		filepath:        path,
+		metrics:         metrics,
+		usedAt:          atomic.NewInt64(time.Now().UnixNano()),
+		onClosed:        onClosed,
+		readerFactory:   readerFactory,
+		blockID:         id,
 		lazyLoadingGate: lazyLoadingGate,
 		ctx:             ctx,
 	}, nil

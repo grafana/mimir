@@ -1488,8 +1488,8 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				IndexHeader: indexheader.Config{
 					IndexHeaderEagerLoadingStartupEnabled: false,
 				},
-				IndexHeaderLazyLoadingEnabled:     false,
-				IndexHeaderLazyLoadingIdleTimeout: 0,
+				IndexHeaderLazyLoadingEnabled:       false,
+				IndexHeaderLazyLoadingIdleTimeout:   0,
 				IndexHeaderSparsePersistenceEnabled: true,
 			},
 			selectAllStrategy{},
@@ -1601,37 +1601,37 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 					// Reset the memory pool tracker.
 					seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-			metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
-			assert.NoError(t, err)
+					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
+					assert.NoError(t, err)
 
-			// Create the bucket store.
-			store, err := NewBucketStore(
-				"test-user",
-				instrumentedBucket,
-				metaFetcher,
-				tmpDir,
-				mimir_tsdb.BucketStoreConfig{
-					StreamingBatchSize:          batchSize,
-					ChunkRangesPerSeries:        1,
-					BlockSyncConcurrency:        1,
-					PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-					IndexHeader: indexheader.Config{
-						IndexHeaderEagerLoadingStartupEnabled: false,
-					},
-					IndexHeaderLazyLoadingEnabled:     false,
-					IndexHeaderLazyLoadingIdleTimeout: 0,
-					IndexHeaderSparsePersistenceEnabled: true,
-				},
-				selectAllStrategy{},
-				newStaticChunksLimiterFactory(0),
-				newStaticSeriesLimiterFactory(0),
-				newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-				hashcache.NewSeriesHashCache(1024*1024),
-				NewBucketStoreMetrics(nil),
-				WithLogger(logger),
-			)
-			require.NoError(t, err)
-			require.NoError(t, store.SyncBlocks(ctx))
+					// Create the bucket store.
+					store, err := NewBucketStore(
+						"test-user",
+						instrumentedBucket,
+						metaFetcher,
+						tmpDir,
+						mimir_tsdb.BucketStoreConfig{
+							StreamingBatchSize:          batchSize,
+							ChunkRangesPerSeries:        1,
+							BlockSyncConcurrency:        1,
+							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+							IndexHeader: indexheader.Config{
+								IndexHeaderEagerLoadingStartupEnabled: false,
+							},
+							IndexHeaderLazyLoadingEnabled:       false,
+							IndexHeaderLazyLoadingIdleTimeout:   0,
+							IndexHeaderSparsePersistenceEnabled: true,
+						},
+						selectAllStrategy{},
+						newStaticChunksLimiterFactory(0),
+						newStaticSeriesLimiterFactory(0),
+						newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+						hashcache.NewSeriesHashCache(1024*1024),
+						NewBucketStoreMetrics(nil),
+						WithLogger(logger),
+					)
+					require.NoError(t, err)
+					require.NoError(t, store.SyncBlocks(ctx))
 
 					// Run workers.
 					wg := sync.WaitGroup{}
@@ -1942,8 +1942,8 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 			IndexHeader: indexheader.Config{
 				IndexHeaderEagerLoadingStartupEnabled: false,
 			},
-			IndexHeaderLazyLoadingEnabled:     false,
-			IndexHeaderLazyLoadingIdleTimeout: 0,
+			IndexHeaderLazyLoadingEnabled:       false,
+			IndexHeaderLazyLoadingIdleTimeout:   0,
 			IndexHeaderSparsePersistenceEnabled: true,
 		},
 		selectAllStrategy{},
@@ -2002,8 +2002,8 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 			IndexHeader: indexheader.Config{
 				IndexHeaderEagerLoadingStartupEnabled: false,
 			},
-			IndexHeaderLazyLoadingEnabled:     false,
-			IndexHeaderLazyLoadingIdleTimeout: 0,
+			IndexHeaderLazyLoadingEnabled:       false,
+			IndexHeaderLazyLoadingIdleTimeout:   0,
 			IndexHeaderSparsePersistenceEnabled: true,
 		},
 		selectAllStrategy{},
@@ -2069,8 +2069,8 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 			IndexHeader: indexheader.Config{
 				IndexHeaderEagerLoadingStartupEnabled: false,
 			},
-			IndexHeaderLazyLoadingEnabled:     false,
-			IndexHeaderLazyLoadingIdleTimeout: 0,
+			IndexHeaderLazyLoadingEnabled:       false,
+			IndexHeaderLazyLoadingIdleTimeout:   0,
 			IndexHeaderSparsePersistenceEnabled: true,
 		},
 		selectAllStrategy{},
@@ -2195,8 +2195,8 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 			IndexHeader: indexheader.Config{
 				IndexHeaderEagerLoadingStartupEnabled: false,
 			},
-			IndexHeaderLazyLoadingEnabled:     false,
-			IndexHeaderLazyLoadingIdleTimeout: 0,
+			IndexHeaderLazyLoadingEnabled:       false,
+			IndexHeaderLazyLoadingIdleTimeout:   0,
 			IndexHeaderSparsePersistenceEnabled: true,
 		},
 		selectAllStrategy{},
@@ -2362,8 +2362,8 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 							IndexHeader: indexheader.Config{
 								IndexHeaderEagerLoadingStartupEnabled: false,
 							},
-							IndexHeaderLazyLoadingEnabled:     false,
-							IndexHeaderLazyLoadingIdleTimeout: 0,
+							IndexHeaderLazyLoadingEnabled:       false,
+							IndexHeaderLazyLoadingIdleTimeout:   0,
 							IndexHeaderSparsePersistenceEnabled: true,
 						},
 						selectAllStrategy{},
@@ -2482,8 +2482,8 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 			IndexHeader: indexheader.Config{
 				IndexHeaderEagerLoadingStartupEnabled: false,
 			},
-			IndexHeaderLazyLoadingEnabled:     false,
-			IndexHeaderLazyLoadingIdleTimeout: 0,
+			IndexHeaderLazyLoadingEnabled:       false,
+			IndexHeaderLazyLoadingIdleTimeout:   0,
 			IndexHeaderSparsePersistenceEnabled: true,
 		},
 		selectAllStrategy{},
