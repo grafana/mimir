@@ -238,12 +238,14 @@ jobs:
       - name: "Build website"
         run: |
           docker run \
-            -v ${PWD}/docs/sources/mimir:/hugo/content/docs/mimir/latest \
-            -v ${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/latest \
+            -v "${PWD}/docs/sources/mimir:/hugo/content/docs/mimir/${MIMIR_VERSION}" \
+            -v "${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/latest" \
             -e HUGO_REFLINKSERRORLEVEL=ERROR \
             --rm \
             grafana/docs-base:latest \
               /bin/bash -c 'make hugo'
+        env:
+          MIMIR_VERSION: v2.9.x
 
   build:
     runs-on: ubuntu-latest
