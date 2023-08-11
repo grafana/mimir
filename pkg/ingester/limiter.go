@@ -8,6 +8,7 @@ package ingester
 import (
 	"fmt"
 	"math"
+	"sync"
 
 	"github.com/pkg/errors"
 
@@ -36,11 +37,12 @@ type RingCount interface {
 // Limiter implements primitives to get the maximum number of series
 // an ingester can handle for a specific tenant
 type Limiter struct {
-	limits                   *validation.Overrides
-	ring                     RingCount
-	replicationFactor        int
-	zoneAwarenessEnabled     bool
-	ingestionShardsForTenant map[string]int
+	limits                       *validation.Overrides
+	ring                         RingCount
+	replicationFactor            int
+	zoneAwarenessEnabled         bool
+	ingestionShardsForTenantLock sync.RWMutex
+	ingestionShardsForTenant     map[string]int
 }
 
 // NewLimiter makes a new in-memory series limiter
@@ -186,7 +188,28 @@ func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int 
 	if globalLimit == 0 {
 		return 0
 	}
+	ingestersInZoneCount := l.getIngestersInZone(userID)
+	// This may happen, for example when the total number of ingesters is asynchronously updated, or
+	// when zone-aware replication is enabled but ingesters in a zone have been scaled down.
+	// In those cases we ignore the global limit.
+	if ingestersInZoneCount == 0 {
+		return 0
+	}
 
+	zonesCount := l.getZonesCount()
+	// Global limit is equally distributed among all the active zones.
+	// The portion of global limit related to each zone is then equally distributed
+	// among all the ingesters belonging to that zone.
+	return int((float64(globalLimit*l.replicationFactor) / float64(zonesCount)) / float64(ingestersInZoneCount))
+}
+
+func (l *Limiter) getIngestersInZone(userID string) int {
+	l.ingestionShardsForTenantLock.RLock()
+	shards, ok := l.ingestionShardsForTenant[userID]
+	l.ingestionShardsForTenantLock.RUnlock()
+	if ok {
+		return shards
+	}
 	zonesCount := l.getZonesCount()
 	var ingestersInZoneCount int
 	if zonesCount > 1 {
@@ -198,35 +221,19 @@ func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int 
 		// the total number of ingesters
 		ingestersInZoneCount = l.ring.InstancesCount()
 	}
-	shardSize := l.getShardSize(userID)
+	configShardSize := l.limits.IngestionTenantShardSize(userID)
+
 	// If shuffle sharding is enabled and the total number of ingesters in the zone is greater than the
-	// expected number of ingesters per sharded zone, then we should honor the latter because series/metadata
+	// expected number of ingest shards, then we should honor the number of ingesters per zone because series/metadata
 	// cannot be written to more ingesters than that.
-	if shardSize > 0 {
-		ingestersInZoneCount = util_math.Min(ingestersInZoneCount, util.ShuffleShardExpectedInstancesPerZone(shardSize, zonesCount))
+	if configShardSize > 0 {
+		ingestersInZoneCount = util_math.Min(ingestersInZoneCount, util.ShuffleShardExpectedInstancesPerZone(configShardSize, zonesCount))
 	}
 
-	// This may happen, for example when the total number of ingesters is asynchronously updated, or
-	// when zone-aware replication is enabled but ingesters in a zone have been scaled down.
-	// In those cases we ignore the global limit.
-	if ingestersInZoneCount == 0 {
-		return 0
-	}
-
-	// Global limit is equally distributed among all the active zones.
-	// The portion of global limit related to each zone is then equally distributed
-	// among all the ingesters belonging to that zone.
-	return int((float64(globalLimit*l.replicationFactor) / float64(zonesCount)) / float64(ingestersInZoneCount))
-}
-
-func (l *Limiter) getShardSize(userID string) int {
-	if shards, ok := l.ingestionShardsForTenant[userID]; ok {
-		return shards
-	}
-	configShards := l.limits.IngestionTenantShardSize(userID)
-	l.ingestionShardsForTenant[userID] = configShards
-	return configShards
-
+	l.ingestionShardsForTenantLock.Lock()
+	l.ingestionShardsForTenant[userID] = ingestersInZoneCount
+	l.ingestionShardsForTenantLock.Unlock()
+	return ingestersInZoneCount
 }
 
 func (l *Limiter) getZonesCount() int {
@@ -237,5 +244,7 @@ func (l *Limiter) getZonesCount() int {
 }
 
 func (l *Limiter) ClearShardsForTenant() {
+	l.ingestionShardsForTenantLock.Lock()
 	l.ingestionShardsForTenant = make(map[string]int)
+	l.ingestionShardsForTenantLock.Unlock()
 }
