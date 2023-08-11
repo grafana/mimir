@@ -78,7 +78,7 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 }
 
 func TestIngester_Push(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "series_1"}}
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
