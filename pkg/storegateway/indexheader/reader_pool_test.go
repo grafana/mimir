@@ -64,7 +64,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 				}
 			},
 		},
-		"block is present in pre-shutdown loaded blocks and eager-loading is enabled after initial sync": {
+		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header after initial sync": {
 			lazyReaderEnabled:      true,
 			lazyReaderIdleTimeout:  time.Minute,
 			eagerLoadReaderEnabled: true,
