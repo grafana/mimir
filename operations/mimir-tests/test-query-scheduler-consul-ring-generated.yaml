@@ -875,8 +875,8 @@ spec:
       name: distributor
   strategy:
     rollingUpdate:
-      maxSurge: 5
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
   template:
     metadata:
       labels:
