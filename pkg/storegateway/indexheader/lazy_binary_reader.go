@@ -224,6 +224,19 @@ func (r *LazyBinaryReader) LabelNames() ([]string, error) {
 	return r.reader.LabelNames()
 }
 
+// EagerLoad attempts to eagerly load this index header.
+func (r *LazyBinaryReader) EagerLoad() {
+	r.readerMx.RLock()
+	defer r.readerMx.RUnlock()
+
+	if err := r.load(); err != nil {
+		level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", err)
+		return
+	}
+
+	r.usedAt.Store(time.Now().UnixNano())
+}
+
 // load ensures the underlying binary index-header reader has been successfully loaded. Returns
 // an error on failure. This function MUST be called with the read lock already acquired.
 func (r *LazyBinaryReader) load() error {

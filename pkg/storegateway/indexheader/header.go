@@ -18,6 +18,8 @@ import (
 // NotFoundRangeErr is an error returned by PostingsOffset when there is no posting for given name and value pairs.
 var NotFoundRangeErr = errors.New("range not found") //nolint:revive
 
+var errEagerLoadingStartupEnabledLazyLoadDisabled = errors.New("invalid configuration: store-gateway index header eager-loading is enabled, but lazy-loading is disabled")
+
 // Reader is an interface allowing to read essential, minimal number of index fields from the small portion of index file called header.
 type Reader interface {
 	io.Closer
@@ -52,11 +54,20 @@ type Reader interface {
 }
 
 type Config struct {
-	MaxIdleFileHandles uint `yaml:"max_idle_file_handles" category:"advanced"`
-	VerifyOnLoad       bool `yaml:"verify_on_load" category:"advanced"`
+	MaxIdleFileHandles                    uint `yaml:"max_idle_file_handles" category:"advanced"`
+	IndexHeaderEagerLoadingStartupEnabled bool `yaml:"eager_loading_startup_enabled" category:"experimental"`
+	VerifyOnLoad                          bool `yaml:"verify_on_load" category:"advanced"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index header file.")
+	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file.")
+	f.BoolVar(&cfg.IndexHeaderEagerLoadingStartupEnabled, prefix+"eager-loading-startup-enabled", false, "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.")
 	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
+}
+
+func (cfg *Config) Validate(lazyLoadingEnabled bool) error {
+	if !lazyLoadingEnabled && cfg.IndexHeaderEagerLoadingStartupEnabled {
+		return errEagerLoadingStartupEnabledLazyLoadDisabled
+	}
+	return nil
 }
