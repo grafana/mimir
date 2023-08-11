@@ -104,7 +104,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		// In the case such as snapshot loading causing OOM, we will still
 		// remove the snapshot and lazy load after server is restarted.
 		if err := os.Remove(lazyLoadedSnapshotFileName); err != nil {
-			level.Warn(logger).Log("msg", "removing the snapshot failed", "file", lazyLoadedSnapshotFileName, "err", err)
+			level.Warn(logger).Log("msg", "removing the lazy-loaded index-header snapshot failed", "file", lazyLoadedSnapshotFileName, "err", err)
 		}
 	}
 
