@@ -129,6 +129,7 @@
   * `autoscaling_alertmanager_cpu_target_utilization` (defaults to `1`)
 * [ENHANCEMENT] Gossip-ring: add appProtocol for istio compatibility. #5680
 * [ENHANCEMENT] Add _config.commonConfig to allow adding common configuration parameters for all Mimir components. #5703
+* [ENHANCEMENT] Update rollout-operator to `v0.7.0`. #5718
 * [BUGFIX] Fix compilation when index, chunks or metadata caches are disabled. #5710
 
 ### Mimirtool
