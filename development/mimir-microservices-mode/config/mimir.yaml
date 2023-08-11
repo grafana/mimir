@@ -30,6 +30,8 @@ ingester:
 querier:
   minimize_ingester_requests: true
   minimize_ingester_requests_hedging_delay: 2s
+  streaming_chunks_per_ingester_series_buffer_size: 256
+  prefer_streaming_chunks_from_ingesters: true
 
 # These memberlist options will be only used if memberlist is activated via CLI option.
 memberlist:
