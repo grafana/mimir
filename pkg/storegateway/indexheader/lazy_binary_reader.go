@@ -205,7 +205,7 @@ func (r *LazyBinaryReader) LabelNames() ([]string, error) {
 	return r.reader.LabelNames()
 }
 
-// EagerLoad eagerly load index headers.
+// EagerLoad attempts to eagerly load this index header.
 func (r *LazyBinaryReader) EagerLoad() {
 	r.readerMx.RLock()
 	defer r.readerMx.RUnlock()
