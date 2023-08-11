@@ -190,25 +190,24 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, lo
 //
 //nolint:revive
 type TSDBConfig struct {
-	Dir                       string               `yaml:"dir"`
-	BlockRanges               DurationList         `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
-	Retention                 time.Duration        `yaml:"retention_period"`
-	ShipInterval              time.Duration        `yaml:"ship_interval" category:"advanced"`
-	ShipConcurrency           int                  `yaml:"ship_concurrency" category:"advanced"`
-	HeadCompactionInterval    time.Duration        `yaml:"head_compaction_interval" category:"advanced"`
-	HeadCompactionConcurrency int                  `yaml:"head_compaction_concurrency" category:"advanced"`
-	HeadCompactionIdleTimeout time.Duration        `yaml:"head_compaction_idle_timeout" category:"advanced"`
-	HeadChunksWriteBufferSize int                  `yaml:"head_chunks_write_buffer_size_bytes" category:"advanced"`
-	HeadChunksEndTimeVariance float64              `yaml:"head_chunks_end_time_variance" category:"experimental"`
-	StripeSize                int                  `yaml:"stripe_size" category:"advanced"`
-	WALCompressionEnabled     bool                 `yaml:"wal_compression_enabled" category:"advanced"`
-	WALCompressionType        wlog.CompressionType `yaml:"-"`
-	WALSegmentSizeBytes       int                  `yaml:"wal_segment_size_bytes" category:"advanced"`
-	WALReplayConcurrency      int                  `yaml:"wal_replay_concurrency" category:"advanced"`
-	FlushBlocksOnShutdown     bool                 `yaml:"flush_blocks_on_shutdown" category:"advanced"`
-	CloseIdleTSDBTimeout      time.Duration        `yaml:"close_idle_tsdb_timeout" category:"advanced"`
-	MemorySnapshotOnShutdown  bool                 `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
-	HeadChunksWriteQueueSize  int                  `yaml:"head_chunks_write_queue_size" category:"advanced"`
+	Dir                       string        `yaml:"dir"`
+	BlockRanges               DurationList  `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
+	Retention                 time.Duration `yaml:"retention_period"`
+	ShipInterval              time.Duration `yaml:"ship_interval" category:"advanced"`
+	ShipConcurrency           int           `yaml:"ship_concurrency" category:"advanced"`
+	HeadCompactionInterval    time.Duration `yaml:"head_compaction_interval" category:"advanced"`
+	HeadCompactionConcurrency int           `yaml:"head_compaction_concurrency" category:"advanced"`
+	HeadCompactionIdleTimeout time.Duration `yaml:"head_compaction_idle_timeout" category:"advanced"`
+	HeadChunksWriteBufferSize int           `yaml:"head_chunks_write_buffer_size_bytes" category:"advanced"`
+	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
+	StripeSize                int           `yaml:"stripe_size" category:"advanced"`
+	WALCompressionEnabled     bool          `yaml:"wal_compression_enabled" category:"advanced"`
+	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes" category:"advanced"`
+	WALReplayConcurrency      int           `yaml:"wal_replay_concurrency" category:"advanced"`
+	FlushBlocksOnShutdown     bool          `yaml:"flush_blocks_on_shutdown" category:"advanced"`
+	CloseIdleTSDBTimeout      time.Duration `yaml:"close_idle_tsdb_timeout" category:"advanced"`
+	MemorySnapshotOnShutdown  bool          `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
+	HeadChunksWriteQueueSize  int           `yaml:"head_chunks_write_queue_size" category:"advanced"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
@@ -293,12 +292,6 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 10, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
-
-	if cfg.WALCompressionEnabled {
-		cfg.WALCompressionType = wlog.CompressionSnappy
-	} else {
-		cfg.WALCompressionType = wlog.CompressionNone
-	}
 }
 
 // Validate the config.
@@ -353,6 +346,14 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config, logger log.
 	return nil
 }
 
+func (cfg *TSDBConfig) WALCompressionType() wlog.CompressionType {
+	if cfg.WALCompressionEnabled {
+		return wlog.CompressionSnappy
+	}
+
+	return wlog.CompressionNone
+}
+
 // BlocksDir returns the directory path where TSDB blocks and wal should be
 // stored by the ingester
 func (cfg *TSDBConfig) BlocksDir(userID string) string {
@@ -393,6 +394,9 @@ type BucketStoreConfig struct {
 
 	// Maximum index-headers loaded into store-gateway concurrently
 	IndexHeaderLazyLoadingConcurrency int `yaml:"index_header_lazy_loading_concurrency" category:"experimental"`
+
+	// Controls whether persisting a sparse version of the index-header to disk is enabled.
+	IndexHeaderSparsePersistenceEnabled bool `yaml:"index_header_sparse_persistence_enabled" category:"experimental"`
 
 	// Controls the partitioner, used to aggregate multiple GET object API requests.
 	PartitionerMaxGapBytes uint64 `yaml:"partitioner_max_gap_bytes" category:"advanced"`
@@ -454,6 +458,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.IndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", true, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.IndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", 60*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.IntVar(&cfg.IndexHeaderLazyLoadingConcurrency, "blocks-storage.bucket-store.index-header-lazy-loading-concurrency", 0, "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.")
+	f.BoolVar(&cfg.IndexHeaderSparsePersistenceEnabled, "blocks-storage.bucket-store.index-header-sparse-persistence-enabled", false, "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.IntVar(&cfg.ChunkRangesPerSeries, "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series", 1, "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled.")

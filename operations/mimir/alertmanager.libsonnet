@@ -10,6 +10,7 @@
   local hasFallbackConfig = std.length($._config.alertmanager.fallback_config) > 0,
 
   alertmanager_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
@@ -56,7 +57,7 @@
     if $._config.alertmanager_enabled then
       container.new('alertmanager', $._images.alertmanager) +
       container.withPorts($.alertmanager_ports) +
-      (if std.length($.alertmanager_env_map) > 0 then container.withEnvMap($.alertmanager_env_map) else {}) +
+      (if std.length($.alertmanager_env_map) > 0 then container.withEnvMap(std.prune($.alertmanager_env_map)) else {}) +
       container.withEnvMixin([container.envType.fromFieldPath('POD_IP', 'status.podIP')]) +
       container.withArgsMixin(
         $.util.mapToFlags($.alertmanager_args)

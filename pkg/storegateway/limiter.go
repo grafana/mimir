@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 )
 

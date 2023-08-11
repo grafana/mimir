@@ -2,6 +2,7 @@
   local container = $.core.v1.container,
 
   query_frontend_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.querySchedulerRingClientConfig +
@@ -23,7 +24,7 @@
     container.new(name, $._images.query_frontend) +
     container.withPorts($.query_frontend_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
-    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}) +
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.jaeger_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '600Mi') +

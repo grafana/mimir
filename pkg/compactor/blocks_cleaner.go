@@ -37,11 +37,12 @@ const (
 )
 
 type BlocksCleanerConfig struct {
-	DeletionDelay           time.Duration
-	CleanupInterval         time.Duration
-	CleanupConcurrency      int
-	TenantCleanupDelay      time.Duration // Delay before removing tenant deletion mark and "debug".
-	DeleteBlocksConcurrency int
+	DeletionDelay              time.Duration
+	CleanupInterval            time.Duration
+	CleanupConcurrency         int
+	TenantCleanupDelay         time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeleteBlocksConcurrency    int
+	NoBlocksFileCleanupEnabled bool
 }
 
 type BlocksCleaner struct {
@@ -253,6 +254,31 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDel
 	})
 }
 
+// deleteRemainingData removes any additional files that may remain when a user has no blocks. Should only
+// be called when there no more blocks remaining.
+func (c *BlocksCleaner) deleteRemainingData(ctx context.Context, userBucket objstore.Bucket, userID string, userLogger log.Logger) error {
+	// Delete bucket index
+	if err := bucketindex.DeleteIndex(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
+		return errors.Wrap(err, "failed to delete bucket index file")
+	}
+
+	// Delete markers folder
+	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.MarkersPathname, userLogger); err != nil {
+		return errors.Wrap(err, "failed to delete marker files")
+	} else if deleted > 0 {
+		level.Info(userLogger).Log("msg", "deleted marker files for tenant with no blocks remaining", "count", deleted)
+	}
+
+	// Delete debug folder
+	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.DebugMetas, userLogger); err != nil {
+		return errors.Wrap(err, "failed to delete "+block.DebugMetas)
+	} else if deleted > 0 {
+		level.Info(userLogger).Log("msg", "deleted files under "+block.DebugMetas+" for tenant with no blocks remaining", "count", deleted)
+	}
+
+	return nil
+}
+
 // deleteUserMarkedForDeletion removes blocks and remaining data for tenant marked for deletion.
 func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID string, userLogger log.Logger) error {
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
@@ -413,9 +439,16 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		level.Info(userLogger).Log("msg", "cleaned up partial blocks", "partials", len(partials))
 	}
 
-	// Upload the updated index to the storage.
-	if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
-		return err
+	// If there are no more blocks, clean up any remaining files
+	// Otherwise upload the updated index to the storage.
+	if c.cfg.NoBlocksFileCleanupEnabled && len(idx.Blocks) == 0 {
+		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
+			return err
+		}
+	} else {
+		if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
+			return err
+		}
 	}
 
 	c.tenantBlocks.WithLabelValues(userID).Set(float64(len(idx.Blocks)))

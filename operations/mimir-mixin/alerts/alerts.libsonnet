@@ -539,40 +539,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       name: 'mimir-provisioning',
       rules: [
         {
-          alert: $.alertName('ProvisioningTooManyActiveSeries'),
-          // We target each ingester to 1.5M in-memory series. This alert fires if the average
-          // number of series / ingester in a Mimir cluster is > 1.6M for 2h (we compact
-          // the TSDB head every 2h).
-          expr: |||
-            avg by (%s) (cortex_ingester_memory_series) > 1.6e6
-          ||| % [$._config.alert_aggregation_labels],
-          'for': '2h',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              The number of in-memory series per ingester in %(alert_aggregation_variables)s is too high.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: $.alertName('ProvisioningTooManyWrites'),
-          // 80k writes / s per ingester max.
-          expr: |||
-            avg by (%(alert_aggregation_labels)s) (%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate1m) > 80e3
-          ||| % $._config,
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              Ingesters in %(alert_aggregation_variables)s ingest too many samples per second.
-            ||| % $._config,
-          },
-        },
-        {
           alert: $.alertName('AllocatingTooMuchMemory'),
           expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
             threshold: '0.65',

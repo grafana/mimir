@@ -294,7 +294,8 @@ metadata:
 spec:
   clusterIP: None
   ports:
-  - name: gossip-ring
+  - appProtocol: tcp
+    name: gossip-ring
     port: 7946
     protocol: TCP
     targetPort: 7946
@@ -606,8 +607,8 @@ spec:
       name: distributor
   strategy:
     rollingUpdate:
-      maxSurge: 5
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -642,6 +643,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMAXPROCS
+          value: "8"
         image: grafana/mimir:2.9.0
         imagePullPolicy: IfNotPresent
         name: distributor
@@ -733,6 +737,8 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
         image: grafana/mimir:2.9.0
@@ -959,6 +965,7 @@ spec:
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///ruler-query-frontend.default.svc.cluster.local:9095
+        - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1134,6 +1141,7 @@ spec:
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=104857600
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
@@ -1627,7 +1635,7 @@ spec:
             memory: 1536Mi
           requests:
             cpu: 500m
-            memory: 1329Mi
+            memory: 1176Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
@@ -1681,7 +1689,7 @@ spec:
             memory: 1536Mi
           requests:
             cpu: 500m
-            memory: 1329Mi
+            memory: 1176Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
@@ -1735,7 +1743,7 @@ spec:
             memory: 768Mi
           requests:
             cpu: 500m
-            memory: 715Mi
+            memory: 638Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150

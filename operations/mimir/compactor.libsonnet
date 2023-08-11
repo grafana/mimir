@@ -5,6 +5,7 @@
   local statefulSet = $.apps.v1.statefulSet,
 
   compactor_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
@@ -88,7 +89,7 @@
     container.withPorts($.compactor_ports) +
     container.withArgsMixin($.util.mapToFlags($.compactor_args)) +
     container.withVolumeMountsMixin([volumeMount.new('compactor-data', '/data')]) +
-    (if std.length($.compactor_env_map) > 0 then container.withEnvMap($.compactor_env_map) else {}) +
+    (if std.length($.compactor_env_map) > 0 then container.withEnvMap(std.prune($.compactor_env_map)) else {}) +
     // Do not limit compactor CPU and request enough cores to honor configured max concurrency.
     $.util.resourcesRequests($._config.compactor_max_concurrency, '6Gi') +
     $.util.resourcesLimits(null, '6Gi') +

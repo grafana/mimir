@@ -5,14 +5,16 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/server"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
-	"github.com/weaveworks/common/logging"
-	"github.com/weaveworks/common/server"
-	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
@@ -22,7 +24,7 @@ import (
 
 type Config struct {
 	ServerMetricsPort   int
-	LogLevel            logging.Level
+	LogLevel            log.Level
 	Client              continuoustest.ClientConfig
 	Manager             continuoustest.ManagerConfig
 	WriteReadSeriesTest continuoustest.WriteReadSeriesTestConfig
@@ -37,14 +39,18 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func main() {
-	// Parse CLI flags.
+	// Parse CLI arguments.
 	cfg := &Config{}
 	cfg.RegisterFlags(flag.CommandLine)
-	flag.Parse()
+
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 
 	util_log.InitLogger(&server.Config{
 		LogLevel: cfg.LogLevel,
-	}, false, true)
+	}, false)
 
 	// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
 	if trace, err := tracing.NewFromEnv("mimir-continuous-test"); err != nil {

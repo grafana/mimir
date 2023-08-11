@@ -443,6 +443,10 @@ func TestFieldCategoryOverridesNotStale(t *testing.T) {
 
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
 
+	// Add ignored flags.
+	flagext.IgnoredFlag(fs, configFileOption, "Configuration file to load.")
+	_ = fs.Bool(configExpandEnv, false, "Expands ${var} or $var in config according to the values of the environment variables.")
+
 	var (
 		cfg mimir.Config
 		mf  mainFlags

@@ -49,6 +49,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -alertmanager-storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -alertmanager-storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -alertmanager-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -alertmanager-storage.s3.secret-access-key string
@@ -116,7 +118,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.alertmanager-client.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -alertmanager.alertmanager-client.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -alertmanager.alertmanager-client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -alertmanager.alertmanager-client.grpc-client-rate-limit-burst int
@@ -499,6 +501,8 @@ Usage of ./cmd/mimir/mimir:
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
     	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
+  -blocks-storage.bucket-store.index-header-sparse-persistence-enabled
+    	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.
   -blocks-storage.bucket-store.index-header.max-idle-file-handles uint
     	Maximum number of idle file handles the store-gateway keeps open for each index header file. (default 1)
   -blocks-storage.bucket-store.index-header.verify-on-load
@@ -665,6 +669,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -blocks-storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -blocks-storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -blocks-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -blocks-storage.s3.secret-access-key string
@@ -725,8 +731,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
     	[experimental] How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
-  -blocks-storage.tsdb.block-ranges-period comma-separated-list-of-durations
-    	[experimental] TSDB blocks range period. (default 2h0m0s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
@@ -821,6 +825,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -common.storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -common.storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -common.storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -common.storage.s3.secret-access-key string
@@ -921,6 +927,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of goroutines opening blocks before compaction. (default 1)
   -compactor.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
+  -compactor.no-blocks-file-cleanup-enabled
+    	[experimental] If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
   -compactor.ring.consul.acl-token string
@@ -1206,7 +1214,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -ingester.client.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -ingester.client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ingester.client.grpc-client-rate-limit-burst int
@@ -1552,7 +1560,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -querier.frontend-client.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -querier.frontend-client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -querier.frontend-client.grpc-client-rate-limit-burst int
@@ -1672,7 +1680,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.grpc-client-config.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -query-frontend.grpc-client-config.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -query-frontend.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
@@ -1862,7 +1870,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -query-scheduler.grpc-client-config.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -query-scheduler.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -query-scheduler.grpc-client-config.grpc-client-rate-limit-burst int
@@ -2101,6 +2109,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -ruler-storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -ruler-storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -ruler-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -ruler-storage.s3.secret-access-key string
@@ -2194,7 +2204,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -ruler.client.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -ruler.client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ruler.client.grpc-client-rate-limit-burst int
@@ -2266,7 +2276,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-frontend.grpc-client-config.connect-backoff-max-delay duration
     	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
   -ruler.query-frontend.grpc-client-config.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
@@ -2466,7 +2476,9 @@ Usage of ./cmd/mimir/mimir:
   -server.tls-min-version string
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
   -shutdown-delay duration
-    	[experimental] How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
+    	How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
+  -store-gateway.sharding-ring.auto-forget-enabled
+    	When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout. (default true)
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration

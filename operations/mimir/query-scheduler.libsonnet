@@ -5,6 +5,7 @@
   local deployment = $.apps.v1.deployment,
 
   query_scheduler_args+::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.querySchedulerRingLifecyclerConfig
@@ -24,7 +25,7 @@
     container.new(name, $._images.query_scheduler) +
     container.withPorts($.query_scheduler_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
-    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}) +
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.jaeger_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '1Gi') +

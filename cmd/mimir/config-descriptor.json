@@ -44,7 +44,7 @@
       "fieldDefaultValue": 0,
       "fieldFlag": "shutdown-delay",
       "fieldType": "duration",
-      "fieldCategory": "experimental"
+      "fieldCategory": "advanced"
     },
     {
       "kind": "field",
@@ -1997,9 +1997,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "ingester.client.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -3903,9 +3903,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "querier.frontend-client.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -4272,9 +4272,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "query-frontend.grpc-client-config.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -5055,6 +5055,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.s3.storage-class",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "native_aws_auth_enabled",
+              "required": false,
+              "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.s3.native-aws-auth-enabled",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
             {
@@ -7464,6 +7475,17 @@
             },
             {
               "kind": "field",
+              "name": "index_header_sparse_persistence_enabled",
+              "required": false,
+              "desc": "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.bucket-store.index-header-sparse-persistence-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "partitioner_max_gap_bytes",
               "required": false,
               "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.",
@@ -8040,6 +8062,17 @@
           "fieldFlag": "compactor.max-compaction-time",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "no_blocks_file_cleanup_enabled",
+          "required": false,
+          "desc": "If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.no-blocks-file-cleanup-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -8950,6 +8983,16 @@
             },
             {
               "kind": "field",
+              "name": "auto_forget_enabled",
+              "required": false,
+              "desc": "When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "store-gateway.sharding-ring.auto-forget-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
               "name": "wait_stability_min_duration",
               "required": false,
               "desc": "Minimum time to wait for ring stability at startup, if set to positive value.",
@@ -9402,9 +9445,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "ruler.client.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -10367,9 +10410,9 @@
                   "kind": "field",
                   "name": "connect_timeout",
                   "required": false,
-                  "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+                  "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 0,
+                  "fieldDefaultValue": 5000000000,
                   "fieldFlag": "ruler.query-frontend.grpc-client-config.connect-timeout",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
@@ -10552,6 +10595,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.s3.storage-class",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "native_aws_auth_enabled",
+              "required": false,
+              "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.s3.native-aws-auth-enabled",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
             {
@@ -12345,9 +12399,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "alertmanager.alertmanager-client.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -12518,6 +12572,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.s3.storage-class",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "native_aws_auth_enabled",
+              "required": false,
+              "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager-storage.s3.native-aws-auth-enabled",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
             {
@@ -13687,9 +13752,9 @@
               "kind": "field",
               "name": "connect_timeout",
               "required": false,
-              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.",
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 5000000000,
               "fieldFlag": "query-scheduler.grpc-client-config.connect-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -14763,6 +14828,17 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.s3.storage-class",
                   "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "native_aws_auth_enabled",
+                  "required": false,
+                  "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "common.storage.s3.native-aws-auth-enabled",
+                  "fieldType": "boolean",
                   "fieldCategory": "experimental"
                 },
                 {

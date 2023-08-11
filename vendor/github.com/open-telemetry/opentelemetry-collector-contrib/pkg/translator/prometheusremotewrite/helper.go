@@ -257,7 +257,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings, tsMap map[string]*prompb.TimeSeries) {
 	timestamp := convertTimeStamp(pt.Timestamp())
 	// sum, count, and buckets of the histogram should append suffix to baseName
-	baseName := prometheustranslator.BuildPromCompliantName(metric, settings.Namespace)
+	baseName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 	baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels)
 
 	createLabels := func(nameSuffix string, extras ...string) []prompb.Label {
@@ -456,7 +456,7 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 	tsMap map[string]*prompb.TimeSeries) {
 	timestamp := convertTimeStamp(pt.Timestamp())
 	// sum and count of the summary should append suffix to baseName
-	baseName := prometheustranslator.BuildPromCompliantName(metric, settings.Namespace)
+	baseName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 	baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels)
 
 	createLabels := func(name string, extras ...string) []prompb.Label {

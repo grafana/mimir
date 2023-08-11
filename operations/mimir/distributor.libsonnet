@@ -3,6 +3,7 @@
   local containerPort = $.core.v1.containerPort,
 
   distributor_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.grpcIngressConfig +
@@ -32,13 +33,23 @@
 
   distributor_ports:: $.util.defaultPorts,
 
-  distributor_env_map:: {},
+  distributor_env_map:: {
+    // Dynamically set GOMAXPROCS based on CPU request.
+    GOMAXPROCS: std.toString(
+      std.ceil(
+        std.max(
+          8,  // Always run on at least 8 gothreads, so that at least 2 of them (25%) are dedicated to GC.
+          $.util.parseCPU($.distributor_container.resources.requests.cpu) * 2
+        ),
+      )
+    ),
+  },
 
   distributor_container::
     container.new('distributor', $._images.distributor) +
     container.withPorts($.distributor_ports) +
     container.withArgsMixin($.util.mapToFlags($.distributor_args)) +
-    (if std.length($.distributor_env_map) > 0 then container.withEnvMap($.distributor_env_map) else {}) +
+    (if std.length($.distributor_env_map) > 0 then container.withEnvMap(std.prune($.distributor_env_map)) else {}) +
     $.util.resourcesRequests('2', '2Gi') +
     $.util.resourcesLimits(null, '4Gi') +
     $.util.readinessProbe +
@@ -51,8 +62,8 @@
     $.newMimirSpreadTopology('distributor', $._config.distributor_topology_spread_max_skew) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   local service = $.core.v1.service,
 

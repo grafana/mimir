@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
+	objstoretracing "github.com/thanos-io/objstore/tracing/opentracing"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -180,7 +181,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	instrumentedClient := objstore.NewTracingBucket(bucketWithMetrics(backendClient, name, reg))
+	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg))
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {
@@ -203,8 +204,9 @@ func bucketWithMetrics(bucketClient objstore.Bucket, name string, reg prometheus
 	reg = prometheus.WrapRegistererWithPrefix("thanos_", reg)
 	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": name}, reg)
 
-	return objstore.BucketWithMetrics(
-		"", // bucket label value
+	return objstore.WrapWithMetrics(
 		bucketClient,
-		reg)
+		reg,
+		"", // bucket label value
+	)
 }

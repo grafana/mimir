@@ -175,7 +175,8 @@ metadata:
 spec:
   clusterIP: None
   ports:
-  - name: gossip-ring
+  - appProtocol: tcp
+    name: gossip-ring
     port: 7946
     protocol: TCP
     targetPort: 7946
@@ -616,7 +617,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.6.0
+        image: grafana/rollout-operator:v0.7.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -732,7 +733,7 @@ spec:
             memory: 1536Mi
           requests:
             cpu: 500m
-            memory: 1329Mi
+            memory: 1176Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
@@ -786,7 +787,7 @@ spec:
             memory: 1536Mi
           requests:
             cpu: 500m
-            memory: 1329Mi
+            memory: 1176Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
@@ -840,7 +841,7 @@ spec:
             memory: 768Mi
           requests:
             cpu: 500m
-            memory: 715Mi
+            memory: 638Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150

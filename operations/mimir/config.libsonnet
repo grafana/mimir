@@ -145,6 +145,9 @@
     memcached_server_key_path: '/var/secrets/memcached-server-key/',
     memcached_server_cert_path: '/var/secrets/memcached-server-cert/',
 
+    // Number of etcd replicas.
+    etcd_replicas: 3,
+
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
     // (comparing performances).
@@ -152,6 +155,9 @@
     query_tee_backend_endpoints: [],
     query_tee_backend_preferred: '',
     query_tee_node_port: null,
+
+    // Common configuration parameters
+    commonConfig:: {},
 
     // usage_stats_enabled enables the reporting of anonymous usage statistics about the Mimir installation.
     // For more details about usage statistics, see:
@@ -604,44 +610,60 @@
       // First we will check if index, chunks and metadata cache backend config is equal to Redis
       // then we will enable flag for Redis cache. Otherwise, we assume the cache is Memcached.
       if $._config.cache_index_queries_backend == 'redis' && $._config.cache_chunks_backend == 'redis' && $._config.cache_metadata_backend == 'redis' then
-        {
-          // We use the similar config like memcached in the following else branch for memcached configuration.
-          // the small difference is in redis we set "get" concurrency to connection-poll-size instead of max-idle-connections.
-          'blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency': 100,
-          'blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency': 100,
-          'blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency': 100,
-          'blocks-storage.bucket-store.index-cache.redis.connection-pool-size':
-            $.store_gateway_args['blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency'] +
-            $.store_gateway_args['blocks-storage.bucket-store.index-cache.redis.max-async-concurrency'],
-          'blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size':
-            $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency'] +
-            $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency'],
-          'blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size':
-            $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency'] +
-            $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency'],
-        }
+        // We use the similar config like memcached in the following else branch for memcached configuration.
+        // the small difference is in redis we set "get" concurrency to connection-poll-size instead of max-idle-connections.
+        (
+          if !$._config.cache_index_queries_enabled then {} else {
+            'blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.index-cache.redis.connection-pool-size':
+              $.store_gateway_args['blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.index-cache.redis.max-async-concurrency'],
+          }
+        ) + (
+          if !$._config.cache_chunks_enabled then {} else {
+            'blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size':
+              $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency'],
+          }
+        ) + (
+          if !$._config.cache_metadata_enabled then {} else {
+            'blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size':
+              $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency'],
+          }
+        )
       else
-        {
-          // We should keep a number of idle connections equal to the max "get" concurrency,
-          // in order to avoid re-opening connections continuously (this would be slower
-          // and fill up the conntrack table too).
-          //
-          // The downside of this approach is that we'll end up with an higher number of
-          // active connections to memcached, so we have to make sure connections limit
-          // set in memcached is high enough.
-          'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency': 100,
-          'blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency': 100,
-          'blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency': 100,
-          'blocks-storage.bucket-store.index-cache.memcached.max-idle-connections':
-            $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency'] +
-            $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency'],
-          'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections':
-            $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency'] +
-            $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency'],
-          'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections':
-            $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency'] +
-            $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency'],
-        }
+        // We should keep a number of idle connections equal to the max "get" concurrency,
+        // in order to avoid re-opening connections continuously (this would be slower
+        // and fill up the conntrack table too).
+        //
+        // The downside of this approach is that we'll end up with an higher number of
+        // active connections to memcached, so we have to make sure connections limit
+        // set in memcached is high enough.
+        (
+          if !$._config.cache_index_queries_enabled then {} else {
+            'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.index-cache.memcached.max-idle-connections':
+              $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency'],
+          }
+        ) + (
+          if !$._config.cache_chunks_enabled then {} else {
+            'blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections':
+              $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency'],
+          }
+        ) + (
+          if !$._config.cache_metadata_enabled then {} else {
+            'blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections':
+              $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency'],
+          }
+        )
     ),
 
   blocks_chunks_caching_config::

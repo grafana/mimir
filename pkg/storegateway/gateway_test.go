@@ -937,50 +937,75 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 	})
 }
 
-func TestStoreGateway_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
-	test.VerifyNoLeak(t)
+func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
+	runTest := func(t *testing.T, autoForgetEnabled bool) {
+		test.VerifyNoLeak(t)
 
-	const unhealthyInstanceID = "unhealthy-id"
-	const heartbeatTimeout = time.Minute
+		const unhealthyInstanceID = "unhealthy-id"
+		const heartbeatTimeout = time.Minute
 
-	ctx := context.Background()
-	gatewayCfg := mockGatewayConfig()
-	gatewayCfg.ShardingRing.HeartbeatPeriod = 100 * time.Millisecond
-	gatewayCfg.ShardingRing.HeartbeatTimeout = heartbeatTimeout
+		ctx := context.Background()
+		gatewayCfg := mockGatewayConfig()
+		gatewayCfg.ShardingRing.HeartbeatPeriod = 100 * time.Millisecond
+		gatewayCfg.ShardingRing.HeartbeatTimeout = heartbeatTimeout
+		gatewayCfg.ShardingRing.AutoForgetEnabled = autoForgetEnabled
 
-	storageCfg := mockStorageConfig(t)
+		storageCfg := mockStorageConfig(t)
 
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+		ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	bucketClient := &bucket.ClientMock{}
-	bucketClient.MockIter("", []string{}, nil)
+		bucketClient := &bucket.ClientMock{}
+		bucketClient.MockIter("", []string{}, nil)
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
-	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
+		g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, g))
+		t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
-	// Add an unhealthy instance to the ring.
-	require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
-		ringDesc := ring.GetOrCreateRingDesc(in)
+		// Add an unhealthy instance to the ring.
+		require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
+			ringDesc := ring.GetOrCreateRingDesc(in)
 
-		instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(RingNumTokens), ring.ACTIVE, time.Now())
-		instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
-		ringDesc.Ingesters[unhealthyInstanceID] = instance
+			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(RingNumTokens), ring.ACTIVE, time.Now())
+			instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
+			ringDesc.Ingesters[unhealthyInstanceID] = instance
 
-		return ringDesc, true, nil
-	}))
+			return ringDesc, true, nil
+		}))
 
-	// Ensure the unhealthy instance is removed from the ring.
-	dstest.Poll(t, time.Second, false, func() interface{} {
-		d, err := ringStore.Get(ctx, RingKey)
-		if err != nil {
-			return err
+		// Assert whether the unhealthy instance has been removed.
+		const maxWaitingTime = time.Second
+
+		if autoForgetEnabled {
+			// Ensure the unhealthy instance is removed from the ring.
+			dstest.Poll(t, maxWaitingTime, false, func() interface{} {
+				d, err := ringStore.Get(ctx, RingKey)
+				if err != nil {
+					return err
+				}
+
+				_, ok := ring.GetOrCreateRingDesc(d).Ingesters[unhealthyInstanceID]
+				return ok
+			})
+		} else {
+			// Ensure the unhealthy instance has not been removed from the ring.
+			time.Sleep(maxWaitingTime)
+
+			d, err := ringStore.Get(ctx, RingKey)
+			require.NoError(t, err)
+
+			_, exists := ring.GetOrCreateRingDesc(d).Ingesters[unhealthyInstanceID]
+			require.True(t, exists)
 		}
+	}
 
-		_, ok := ring.GetOrCreateRingDesc(d).Ingesters[unhealthyInstanceID]
-		return ok
+	t.Run("should auto-forget unhealthy instances in the ring when auto-forget is enabled", func(t *testing.T) {
+		runTest(t, true)
+	})
+
+	t.Run("should not auto-forget unhealthy instances in the ring when auto-forget is disabled", func(t *testing.T) {
+		runTest(t, false)
 	})
 }
 

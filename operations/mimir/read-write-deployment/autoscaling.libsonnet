@@ -3,6 +3,7 @@
     autoscaling_mimir_read_enabled: false,
     autoscaling_mimir_read_min_replicas: error 'you must set autoscaling_mimir_read_min_replicas in the _config',
     autoscaling_mimir_read_max_replicas: error 'you must set autoscaling_mimir_read_max_replicas in the _config',
+    autoscaling_mimir_read_target_utilization: $._config.autoscaling_querier_target_utilization,
   },
 
   //
@@ -19,6 +20,7 @@
       querier_max_concurrent=$.querier_args['querier.max-concurrent'],
       min_replicas=$._config.autoscaling_mimir_read_min_replicas,
       max_replicas=$._config.autoscaling_mimir_read_max_replicas,
+      target_utilization=$._config.autoscaling_mimir_read_target_utilization,
     ),
 
   mimir_read_deployment: if !$._config.is_read_write_deployment_mode then null else (

@@ -14,8 +14,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/server"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/server"
 
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 )

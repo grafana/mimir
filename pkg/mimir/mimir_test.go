@@ -27,13 +27,13 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	dskit_metrics "github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/server"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -236,7 +236,7 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
 	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
 
-	util_log.InitLogger(&cfg.Server, false, true)
+	util_log.InitLogger(&cfg.Server, false)
 
 	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)

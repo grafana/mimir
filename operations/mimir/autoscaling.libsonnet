@@ -5,34 +5,41 @@
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
+    autoscaling_querier_target_utilization: 0.75,  // Target to utilize 75% querier workers on peak traffic, so we have 25% room for higher peaks.
 
     autoscaling_ruler_querier_enabled: false,
     autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
     autoscaling_ruler_querier_max_replicas: error 'you must set autoscaling_ruler_querier_max_replicas in the _config',
+    autoscaling_ruler_querier_cpu_target_utilization: 1,
 
     autoscaling_distributor_enabled: false,
     autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
     autoscaling_distributor_max_replicas: error 'you must set autoscaling_distributor_max_replicas in the _config',
     autoscaling_distributor_cpu_target_utilization: 1,
+    autoscaling_distributor_memory_target_utilization: 1,
 
     autoscaling_ruler_enabled: false,
     autoscaling_ruler_min_replicas: error 'you must set autoscaling_ruler_min_replicas in the _config',
     autoscaling_ruler_max_replicas: error 'you must set autoscaling_ruler_max_replicas in the _config',
+    autoscaling_ruler_cpu_target_utilization: 1,
     autoscaling_ruler_memory_target_utilization: 1,
 
     autoscaling_query_frontend_enabled: false,
     autoscaling_query_frontend_min_replicas: error 'you must set autoscaling_query_frontend_min_replicas in the _config',
     autoscaling_query_frontend_max_replicas: error 'you must set autoscaling_query_frontend_max_replicas in the _config',
+    autoscaling_query_frontend_cpu_target_utilization: 1,
     autoscaling_query_frontend_memory_target_utilization: 1,
 
     autoscaling_ruler_query_frontend_enabled: false,
     autoscaling_ruler_query_frontend_min_replicas: error 'you must set autoscaling_ruler_query_frontend_min_replicas in the _config',
     autoscaling_ruler_query_frontend_max_replicas: error 'you must set autoscaling_ruler_query_frontend_max_replicas in the _config',
+    autoscaling_ruler_query_frontend_cpu_target_utilization: 1,
     autoscaling_ruler_query_frontend_memory_target_utilization: 1,
 
     autoscaling_alertmanager_enabled: false,
     autoscaling_alertmanager_min_replicas: error 'you must set autoscaling_alertmanager_min_replicas in the _config',
     autoscaling_alertmanager_max_replicas: error 'you must set autoscaling_alertmanager_max_replicas in the _config',
+    autoscaling_alertmanager_cpu_target_utilization: 1,
     autoscaling_alertmanager_memory_target_utilization: 1,
   },
 
@@ -142,7 +149,7 @@
   // `weight` param can be used to control just a portion of the expected queriers with the generated scaled object.
   // For example, if you run multiple querier deployments on different node types, you can use the weight to control which portion of them runs on which nodes.
   // The weight is a number between 0 and 1, where 1 means 100% of the expected queriers.
-  newQuerierScaledObject(name, query_scheduler_container, querier_max_concurrent, min_replicas, max_replicas, weight=1):: self.newScaledObject(name, $._config.namespace, {
+  newQuerierScaledObject(name, query_scheduler_container, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
 
@@ -159,15 +166,44 @@
         // if within the next 5 minutes after a scale up we have further spikes).
         query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.75"}[5m]))' % [query_scheduler_container, $._config.namespace], weight),
 
-        // Target to utilize 75% querier workers on peak traffic (as measured by query above),
-        // so we have 25% room for higher peaks.
-        local targetUtilization = 0.75,
-        threshold: '%d' % (querier_max_concurrent * targetUtilization),
+        threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
       },
     ],
   }),
 
-  newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, memory_target_utilization):: self.newScaledObject(
+  // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
+  // per replica over 5m (rolling window) and then we pick the highest value over the last 15m.
+  // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+  // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+  // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
+  // of containers there are running at any given time, without suffering the PromQL lookback period.
+
+  local cpuHPAQuery = |||
+    max_over_time(
+      sum(
+        sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"}[5m]))
+        and
+        max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
+      )[15m:]
+    ) * 1000
+  |||,
+
+  // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across
+  // all replicas over 15m.
+  // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+  // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
+  // of containers there are running at any given time, without suffering the PromQL lookback period.
+  local memoryHPAQuery = |||
+    max_over_time(
+      sum(
+        sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"})
+        and
+        max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
+      )[15m:]
+    )
+  |||,
+
+  newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: min_replicas,
       max_replica_count: max_replicas,
@@ -175,24 +211,21 @@
         {
           metric_name: '%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per query-frontend over 5m (rolling window)
-          // and then we pick the highest value over the last 15m.
-          // Multiply by 1000 to get the result in millicores. This is due to KEDA only working with ints.
-          query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [
-            name,
-            $._config.namespace,
-          ],
+          query: cpuHPAQuery % {
+            container: name,
+            namespace: $._config.namespace,
+          },
+
           // Threshold is expected to be a string
-          threshold: std.toString(cpuToMilliCPUInt(cpu_requests)),
+          threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
         },
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all query-frontends over 15m.
-          query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [
-            name,
-            $._config.namespace,
-          ],
+          query: memoryHPAQuery % {
+            container: name,
+            namespace: $._config.namespace,
+          },
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
@@ -247,6 +280,7 @@
       querier_max_concurrent=$.querier_args['querier.max-concurrent'],
       min_replicas=$._config.autoscaling_querier_min_replicas,
       max_replicas=$._config.autoscaling_querier_max_replicas,
+      target_utilization=$._config.autoscaling_querier_target_utilization,
     ),
 
   querier_deployment: overrideSuperIfExists(
@@ -261,6 +295,7 @@
       memory_requests=$.query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_query_frontend_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_query_frontend_memory_target_utilization,
     ),
   query_frontend_deployment: overrideSuperIfExists(
@@ -277,7 +312,7 @@
 
   // newRulerQuerierScaledObject will create a scaled object for the ruler-querier component with the given name.
   // `weight` param works in the same way as in `newQuerierScaledObject`, see docs there.
-  newRulerQuerierScaledObject(name, querier_cpu_requests, min_replicas, max_replicas, weight=1):: self.newScaledObject(name, $._config.namespace, {
+  newRulerQuerierScaledObject(name, querier_cpu_requests, min_replicas, max_replicas, cpu_target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
 
@@ -286,12 +321,10 @@
         metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
         // Due to the more predicatable nature of the ruler-querier workload we can scale on CPU usage.
-        // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per ruler-querier over 5m (rolling window)
-        // and then we pick the highest value over the last 15m.
-        query: metricWithWeight('max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace], weight),
+        query: metricWithWeight(cpuHPAQuery % { container: name, namespace: $._config.namespace }, weight),
 
         // threshold is expected to be a string.
-        threshold: std.toString(cpuToMilliCPUInt(querier_cpu_requests)),
+        threshold: std.toString(std.floor(cpuToMilliCPUInt(querier_cpu_requests) * cpu_target_utilization)),
       },
     ],
   }),
@@ -302,6 +335,7 @@
       querier_cpu_requests=$.ruler_querier_container.resources.requests.cpu,
       min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
     ),
 
   ruler_querier_deployment: overrideSuperIfExists(
@@ -316,6 +350,7 @@
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_ruler_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_query_frontend_memory_target_utilization,
     ),
   ruler_query_frontend_deployment: overrideSuperIfExists(
@@ -330,7 +365,7 @@
   // Distributors
   //
 
-  newDistributorScaledObject(name, distributor_cpu_requests, distributor_memory_requests, min_replicas, max_replicas, cpu_target_utilization):: self.newScaledObject(name, $._config.namespace, {
+  newDistributorScaledObject(name, distributor_cpu_requests, distributor_memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
 
@@ -338,22 +373,24 @@
       {
         metric_name: 'cortex_%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per distributor over 5m (rolling window)
-        // and then we pick the highest value over the last 15m.
-        // Multiply by 1000 to get the result in millicores. This is due to KEDA only working with Ints.
-        query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
+        query: cpuHPAQuery % {
+          container: name,
+          namespace: $._config.namespace,
+        },
 
         // threshold is expected to be a string.
-        threshold: std.toString(cpuToMilliCPUInt(distributor_cpu_requests) * cpu_target_utilization),
+        threshold: std.toString(std.floor(cpuToMilliCPUInt(distributor_cpu_requests) * cpu_target_utilization)),
       },
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all distributors over 15m.
-        query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
+        query: memoryHPAQuery % {
+          container: name,
+          namespace: $._config.namespace,
+        },
 
         // threshold is expected to be a string
-        threshold: std.toString($.util.siToBytes(distributor_memory_requests)),
+        threshold: std.toString(std.floor($.util.siToBytes(distributor_memory_requests) * memory_target_utilization)),
       },
     ],
   }),
@@ -366,6 +403,7 @@
       min_replicas=$._config.autoscaling_distributor_min_replicas,
       max_replicas=$._config.autoscaling_distributor_max_replicas,
       cpu_target_utilization=$._config.autoscaling_distributor_cpu_target_utilization,
+      memory_target_utilization=$._config.autoscaling_distributor_memory_target_utilization,
     ),
 
   distributor_deployment: overrideSuperIfExists(
@@ -388,24 +426,21 @@
         {
           metric_name: '%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per ruler over 5m (rolling window)
-          // and then we pick the highest value over the last 15m.
-          // Multiply by 1000 to get the result in millicores. This is due to KEDA only working with ints.
-          query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [
-            name,
-            $._config.namespace,
-          ],
+          query: cpuHPAQuery % {
+            container: name,
+            namespace: $._config.namespace,
+          },
+
           // Threshold is expected to be a string
-          threshold: std.toString(cpuToMilliCPUInt($.ruler_container.resources.requests.cpu)),
+          threshold: std.toString(std.floor(cpuToMilliCPUInt($.ruler_container.resources.requests.cpu) * $._config.autoscaling_ruler_cpu_target_utilization)),
         },
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all rulers over 15m.
-          query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [
-            name,
-            $._config.namespace,
-          ],
+          query: memoryHPAQuery % {
+            container: name,
+            namespace: $._config.namespace,
+          },
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor($.util.siToBytes($.ruler_container.resources.requests.memory) * $._config.autoscaling_ruler_memory_target_utilization)),
@@ -429,7 +464,7 @@
 
   // Alertmanager
 
-  newAlertmanagerScaledObject(name, alertmanager_cpu_requests, alertmanager_memory_requests, min_replicas, max_replicas, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
+  newAlertmanagerScaledObject(name, alertmanager_cpu_requests, alertmanager_memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
 
@@ -437,21 +472,26 @@
       {
         metric_name: 'cortex_%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
+        query: cpuHPAQuery % {
+          container: name,
+          namespace: $._config.namespace,
+        },
 
         // Threshold is expected to be a string.
         // Since alertmanager is very memory-intensive as opposed to cpu-intensive, we don't bother
         // with the any target utilization calculation for cpu, to keep things simpler and cheaper.
-        threshold: std.toString(cpuToMilliCPUInt(alertmanager_cpu_requests)),
+        threshold: std.toString(std.floor(cpuToMilliCPUInt(alertmanager_cpu_requests) * cpu_target_utilization)),
       },
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all alertmanagers over 15m.
-        query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
+        query: memoryHPAQuery % {
+          container: name,
+          namespace: $._config.namespace,
+        },
 
         // Threshold is expected to be a string.
-        threshold: std.toString(std.ceil($.util.siToBytes(alertmanager_memory_requests) * memory_target_utilization)),
+        threshold: std.toString(std.floor($.util.siToBytes(alertmanager_memory_requests) * memory_target_utilization)),
       },
     ],
   }),
@@ -463,6 +503,7 @@
       alertmanager_memory_requests=$.alertmanager_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_alertmanager_min_replicas,
       max_replicas=$._config.autoscaling_alertmanager_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_alertmanager_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_alertmanager_memory_target_utilization,
     ) + {
       spec+: {

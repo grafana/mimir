@@ -14,11 +14,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestGettingStartedWithGrafanaMimir(t *testing.T) {
@@ -93,11 +93,11 @@ func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService, s
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
 
-	labelValues, err := c.LabelValues("foo", util.PrometheusMinTime, util.PrometheusMaxTime, nil)
+	labelValues, err := c.LabelValues("foo", v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := c.LabelNames(util.PrometheusMinTime, util.PrometheusMaxTime)
+	labelNames, err := c.LabelNames(v1.MinTime, v1.MaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 

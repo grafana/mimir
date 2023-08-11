@@ -14,6 +14,7 @@
     pvc.mixin.metadata.withName('store-gateway-data'),
 
   store_gateway_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
@@ -80,7 +81,7 @@
 
   store_gateway_statefulset: if !$._config.is_microservices_deployment_mode then null else
     self.newStoreGatewayStatefulSet('store-gateway',
-                                    $.store_gateway_container + (if std.length($.store_gateway_env_map) > 0 then container.withEnvMap($.store_gateway_env_map) else {}),
+                                    $.store_gateway_container + (if std.length($.store_gateway_env_map) > 0 then container.withEnvMap(std.prune($.store_gateway_env_map)) else {}),
                                     !$._config.store_gateway_allow_multiple_replicas_on_same_node),
 
   store_gateway_service: if !$._config.is_microservices_deployment_mode then null else

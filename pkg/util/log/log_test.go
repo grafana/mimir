@@ -9,7 +9,7 @@ import (
 
 	gokitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/weaveworks/common/server"
+	"github.com/grafana/dskit/server"
 
 	"github.com/grafana/mimir/pkg/util/log"
 )
@@ -27,7 +27,7 @@ func ExampleInitLogger() {
 
 	cfg := server.Config{}
 	_ = cfg.LogLevel.Set("info")
-	log.InitLogger(&cfg, false, true)
+	log.InitLogger(&cfg, false)
 	level.Info(log.Logger).Log("test", "1")
 	level.Debug(log.Logger).Log("test", "2 - should not print")
 	cfg.Log.Infof("test 3")
@@ -44,7 +44,7 @@ func ExampleInitLogger() {
 func BenchmarkDebugLog(b *testing.B) {
 	cfg := server.Config{}
 	_ = cfg.LogLevel.Set("info")
-	log.InitLogger(&cfg, false, true)
+	log.InitLogger(&cfg, false)
 	b.ResetTimer()
 	dl := level.Debug(log.Logger)
 	for i := 0; i < b.N; i++ {

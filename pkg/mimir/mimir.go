@@ -25,7 +25,9 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/runtimeconfig"
+	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/signals"
 	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -33,8 +35,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
-	"github.com/weaveworks/common/server"
-	"github.com/weaveworks/common/signals"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -99,7 +99,7 @@ type Config struct {
 	Target                          flagext.StringSliceCSV `yaml:"target"`
 	MultitenancyEnabled             bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant                    string                 `yaml:"no_auth_tenant" category:"advanced"`
-	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"experimental"`
+	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"advanced"`
 	MaxSeparateMetricsGroupsPerUser int                    `yaml:"max_separate_metrics_groups_per_user" category:"experimental"`
 	EnableGoRuntimeMetrics          bool                   `yaml:"enable_go_runtime_metrics" category:"advanced"`
 	PrintConfig                     bool                   `yaml:"-"`

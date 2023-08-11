@@ -78,7 +78,12 @@ var normalizeNameGate = featuregate.GlobalRegistry().MustRegister(
 	featuregate.WithRegisterReferenceURL("https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/8950"),
 )
 
-// Build a Prometheus-compliant metric name for the specified metric
+// Deprecated: use BuildCompliantName instead.
+func BuildPromCompliantName(metric pmetric.Metric, namespace string) string {
+	return BuildCompliantName(metric, namespace, true)
+}
+
+// BuildCompliantName builds a Prometheus-compliant metric name for the specified metric
 //
 // Metric name is prefixed with specified namespace and underscore (if any).
 // Namespace is not cleaned up. Make sure specified namespace follows Prometheus
@@ -86,11 +91,11 @@ var normalizeNameGate = featuregate.GlobalRegistry().MustRegister(
 //
 // See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels
 // and https://prometheus.io/docs/practices/naming/#metric-and-label-naming
-func BuildPromCompliantName(metric pmetric.Metric, namespace string) string {
+func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
 	var metricName string
 
 	// Full normalization following standard Prometheus naming conventions
-	if normalizeNameGate.IsEnabled() {
+	if addMetricSuffixes && normalizeNameGate.IsEnabled() {
 		return normalizeName(metric, namespace)
 	}
 
@@ -177,36 +182,11 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	return normalizedName
 }
 
-type Normalizer struct {
-	gate *featuregate.Gate
-}
-
-func NewNormalizer(registry *featuregate.Registry) *Normalizer {
-	var normalizeGate *featuregate.Gate
-	registry.VisitAll(func(gate *featuregate.Gate) {
-		if gate.ID() == normalizeNameGate.ID() {
-			normalizeGate = gate
-		}
-	})
-	// the registry didn't contain the flag, fallback to the global
-	// flag. Overriding the registry is really only done in tests
-	if normalizeGate == nil {
-		normalizeGate = normalizeNameGate
-	}
-	return &Normalizer{
-		gate: normalizeGate,
-	}
-}
-
 // TrimPromSuffixes trims type and unit prometheus suffixes from a metric name.
 // Following the [OpenTelemetry specs] for converting Prometheus Metric points to OTLP.
 //
 // [OpenTelemetry specs]: https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/data-model.md#metric-metadata
-func (n *Normalizer) TrimPromSuffixes(promName string, metricType pmetric.MetricType, unit string) string {
-	if !n.gate.IsEnabled() {
-		return promName
-	}
-
+func TrimPromSuffixes(promName string, metricType pmetric.MetricType, unit string) string {
 	nameTokens := strings.Split(promName, "_")
 	if len(nameTokens) == 1 {
 		return promName

@@ -20,12 +20,13 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/tracing"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/usage"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -166,10 +167,9 @@ func main() {
 		runtime.SetBlockProfileRate(mainFlags.blockProfileRate)
 	}
 
-	util_log.InitLogger(&cfg.Server, mainFlags.useBufferedLogger, !mainFlags.useBufferedLogger)
+	util_log.InitLogger(&cfg.Server, mainFlags.useBufferedLogger)
 
-	// Allocate a block of memory to alter GC behaviour. See https://github.com/golang/go/issues/23044
-	ballast := make([]byte, mainFlags.ballastBytes)
+	var ballast = util.AllocateBallast(mainFlags.ballastBytes)
 
 	// In testing mode skip JAEGER setup to avoid panic due to
 	// "duplicate metrics collector registration attempted"

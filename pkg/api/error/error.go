@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/weaveworks/common/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc"
 )
 
 type Type string

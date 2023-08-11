@@ -204,7 +204,7 @@ How to **investigate**:
   - **`ingester`**
     - Typically, ingester p99 latency is in the range 5-50ms. If the ingester latency is higher than this, you should investigate the root cause before scaling up ingesters.
     - Check out the following alerts and fix them if firing:
-      - `MimirProvisioningTooManyActiveSeries`
+      - `MimirIngesterReachingSeriesLimit`
       - `MimirProvisioningTooManyWrites`
 
 #### Read Latency
@@ -286,6 +286,10 @@ How to **investigate**:
 - Looking at `Mimir / Alertmanager` dashboard you should see in which part of the stack the error originates
 - If some replicas are going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
+- If the `route` label is `alertmanager`, check the logs for distributor errors containing `component=AlertmanagerDistributor`
+  - Check if instances are starved for resources using the `Mimir / Alertmanager resources` dashboard
+  - If the distributor errors are `context deadline exceeded` and the instances are not starved for resources, increase the distributor
+    timeout with `-alertmanager.alertmanager-client.remote-timeout=<timeout>`. The defaut is 2s if not specified.
 
 ### MimirIngesterUnhealthy
 
@@ -335,6 +339,8 @@ How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that ruler logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways.
 - In case remote operational mode is enabled the problem could be at any of the ruler query path components (ruler-query-frontend, ruler-query-scheduler and ruler-querier). Check the `Mimir / Remote ruler reads` and `Mimir / Remote ruler reads resources` dashboards to find out in which Mimir service the error is being originated.
+  - If the ruler is logging the gRPC error "received message larger than max", consider increasing `-ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size` in the ruler. This configuration option sets the maximum size of a message received by the ruler from the query-frontend (or ruler-query-frontend if you're running a dedicated read path for rule evaluations). If you're using jsonnet, you should just tune `_config.ruler_remote_evaluation_max_query_response_size_bytes`.
+  - If the ruler is logging the gRPC error "trying to send message larger than max", consider increasing `-server.grpc-max-send-msg-size-bytes` in the query-frontend (or ruler-query-frontend if you're running a dedicated read path for rule evaluations). If you're using jsonnet, you should just tune `_config.ruler_remote_evaluation_max_query_response_size_bytes`.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
 
 ### MimirRulerMissedEvaluations
@@ -773,20 +779,6 @@ How to **investigate**:
     - Fixing this will require changes to the application code
   - `other`
     - Check both Mimir and cache logs to find more details
-
-### MimirProvisioningTooManyActiveSeries
-
-This alert fires if the average number of in-memory series per ingester is above our target (1.5M).
-
-How to **fix** it:
-
-- Scale up ingesters
-  - To find out the Mimir clusters where ingesters should be scaled up and how many minimum replicas are expected:
-    ```
-    ceil(sum by(cluster, namespace) (cortex_ingester_memory_series) / 1.5e6) >
-    count by(cluster, namespace) (cortex_ingester_memory_series)
-    ```
-- After the scale up, the in-memory series are expected to be reduced at the next TSDB head compaction (occurring every 2h)
 
 ### MimirProvisioningTooManyWrites
 
@@ -1888,6 +1880,28 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 
 _This runbook assumes you've enabled versioning in your GCS bucket and the retention of deleted blocks didn't expire yet._
 
+#### Recover accidentally deleted blocks using `undelete_block_gcs`
+
+Step 1: Compile the `undelete_block_gcs` tool, whose sources are available in the Mimir repository at `tools/undelete_block_gcs/`.
+
+Step 2: Build a list of TSDB blocks to undelete and store it to a file named `deleted-list`. The file should contain the path of 1 block per line, prefixed by `gs://`. For example:
+
+```
+gs://bucket/tenant-1/01H6NCQVS3D3H6D8WGBZ9KB41Z
+gs://bucket/tenant-1/01H6NCR7HSZ8DHKEG9SSJ0QZKQ
+gs://bucket/tenant-1/01H6NCRBJTY8R1F4FQJ3B1QK9W
+```
+
+Step 3: Run the `undelete_block_gcs` tool to recover the deleted blocks:
+
+```
+cat deleted-list | undelete_block_gcs -concurrency 16
+```
+
+> **Note**: we recommend to try the `undelete_block_gcs` on a single block first, ensure that it gets recovered correctly and then run it against a bigger set of blocks to recover.
+
+#### Recover accidentally deleted blocks using `gsutil`
+
 These are just example actions but should give you a fair idea on how you could go about doing this. Read the [GCS doc](https://cloud.google.com/storage/docs/using-versioned-objects#gsutil_1) before you proceed.
 
 Step 1: Use `gsutil ls -l -a $BUCKET` to list all blocks, including the deleted ones. Now identify the deleted blocks and save the ones to restore in a file named `deleted-block-list` (one block per line).
@@ -1901,7 +1915,7 @@ Step 2: Once you have the `deleted-block-list`, you can now list all the objects
 while read block; do
 # '-a' includes non-current object versions / generations in the listing
 # '-r' requests a recursive listing.
-gsutil ls -a -r $block | grep "#" | grep --invert-match deletion-mark.json | grep --invert-match index.cache.json
+gsutil ls -a -r $block | grep "#" | grep --invert-match deletion-mark.json
 done < deleted-list > full-deleted-file-list
 ```
 
@@ -1912,7 +1926,7 @@ Step 3: Run the following script to restore the objects:
 ```
 while read file; do
 gsutil cp $file ${file%#*}
-done < full-deleted-list
+done < full-deleted-file-list
 ```
 
 ## Log lines

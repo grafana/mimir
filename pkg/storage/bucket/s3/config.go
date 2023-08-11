@@ -75,15 +75,16 @@ func (cfg *HTTPConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 // Config holds the config options for an S3 backend
 type Config struct {
-	Endpoint           string         `yaml:"endpoint"`
-	Region             string         `yaml:"region"`
-	BucketName         string         `yaml:"bucket_name"`
-	SecretAccessKey    flagext.Secret `yaml:"secret_access_key"`
-	AccessKeyID        string         `yaml:"access_key_id"`
-	Insecure           bool           `yaml:"insecure" category:"advanced"`
-	SignatureVersion   string         `yaml:"signature_version" category:"advanced"`
-	ListObjectsVersion string         `yaml:"list_objects_version" category:"advanced"`
-	StorageClass       string         `yaml:"storage_class" category:"experimental"`
+	Endpoint             string         `yaml:"endpoint"`
+	Region               string         `yaml:"region"`
+	BucketName           string         `yaml:"bucket_name"`
+	SecretAccessKey      flagext.Secret `yaml:"secret_access_key"`
+	AccessKeyID          string         `yaml:"access_key_id"`
+	Insecure             bool           `yaml:"insecure" category:"advanced"`
+	SignatureVersion     string         `yaml:"signature_version" category:"advanced"`
+	ListObjectsVersion   string         `yaml:"list_objects_version" category:"advanced"`
+	StorageClass         string         `yaml:"storage_class" category:"experimental"`
+	NativeAWSAuthEnabled bool           `yaml:"native_aws_auth_enabled" category:"experimental"`
 
 	SSE  SSEConfig  `yaml:"sse"`
 	HTTP HTTPConfig `yaml:"http"`
@@ -105,6 +106,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.SignatureVersion, prefix+"s3.signature-version", SignatureVersionV4, fmt.Sprintf("The signature version to use for authenticating against S3. Supported values are: %s.", strings.Join(supportedSignatureVersions, ", ")))
 	f.StringVar(&cfg.ListObjectsVersion, prefix+"s3.list-objects-version", "", "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.")
 	f.StringVar(&cfg.StorageClass, prefix+"s3.storage-class", "", "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: "+strings.Join(supportedStorageClasses, ", "))
+	f.BoolVar(&cfg.NativeAWSAuthEnabled, prefix+"s3.native-aws-auth-enabled", false, "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.")
 	cfg.SSE.RegisterFlagsWithPrefix(prefix+"s3.sse.", f)
 	cfg.HTTP.RegisterFlagsWithPrefix(prefix, f)
 }

@@ -71,18 +71,18 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		spec := block.SeriesSpec{
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					sample{10, 0, test.GenerateTestHistogram(1), nil},
 					sample{20, 0, test.GenerateTestHistogram(2), nil},
-				}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					sample{30, 0, test.GenerateTestHistogram(3), nil},
 					sample{40, 0, test.GenerateTestHistogram(4), nil},
-				}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					sample{50, 0, test.GenerateTestHistogram(5), nil},
 					sample{2*time.Hour.Milliseconds() - 1, 0, test.GenerateTestHistogram(6), nil},
-				}),
+				})),
 			},
 		}
 
@@ -228,4 +228,11 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

@@ -1359,10 +1359,10 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 	// Mock two tenants, each with 2 overlapping blocks.
 	spec := []*block.SeriesSpec{{
 		Labels: labels.FromStrings(labels.MetricName, "series_1"),
-		Chunks: []chunks.Meta{tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+		Chunks: []chunks.Meta{must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 			newSample(1574776800000, 0, nil, nil),
 			newSample(1574783999999, 0, nil, nil),
-		})},
+		}))},
 	}}
 
 	user1Meta1, err := block.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
@@ -2091,10 +2091,10 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		{
 			Labels: labels.FromStrings("case", "out_of_order"),
 			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(20, 20, nil, nil), newSample(21, 21, nil, nil)}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(10, 10, nil, nil), newSample(11, 11, nil, nil)}),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(20, 20, nil, nil), newSample(21, 21, nil, nil)})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(10, 10, nil, nil), newSample(11, 11, nil, nil)})),
 				// Extend block to cover 2h.
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(0, 0, nil, nil), newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)}),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(0, 0, nil, nil), newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)})),
 			},
 		},
 	}
@@ -2188,4 +2188,11 @@ func (b *bucketWithMockedAttributes) Attributes(ctx context.Context, name string
 	}
 
 	return b.Bucket.Attributes(ctx, name)
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

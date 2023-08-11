@@ -116,7 +116,7 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -auth.no-auth-tenant
 [no_auth_tenant: <string> | default = "anonymous"]
 
-# (experimental) How long to wait between SIGTERM and shutdown. After receiving
+# (advanced) How long to wait between SIGTERM and shutdown. After receiving
 # SIGTERM, Mimir will report not-ready status via /ready endpoint.
 # CLI flag: -shutdown-delay
 [shutdown_delay: <duration> | default = 0s]
@@ -2007,9 +2007,9 @@ alertmanager_client:
   [tls_min_version: <string> | default = ""]
 
   # (advanced) The maximum amount of time to establish a connection. A value of
-  # 0 means default gRPC connect timeout and backoff.
+  # 0 means default gRPC client connect timeout and backoff.
   # CLI flag: -alertmanager.alertmanager-client.connect-timeout
-  [connect_timeout: <duration> | default = 0s]
+  [connect_timeout: <duration> | default = 5s]
 
   # (advanced) Initial backoff delay after first connection failure. Only
   # relevant if ConnectTimeout > 0.
@@ -2238,9 +2238,9 @@ backoff_config:
 [tls_min_version: <string> | default = ""]
 
 # (advanced) The maximum amount of time to establish a connection. A value of 0
-# means default gRPC connect timeout and backoff.
+# means default gRPC client connect timeout and backoff.
 # CLI flag: -<prefix>.connect-timeout
-[connect_timeout: <duration> | default = 0s]
+[connect_timeout: <duration> | default = 5s]
 
 # (advanced) Initial backoff delay after first connection failure. Only relevant
 # if ConnectTimeout > 0.
@@ -3394,6 +3394,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-concurrency
   [index_header_lazy_loading_concurrency: <int> | default = 0]
 
+  # (experimental) If enabled, store-gateway will persist a sparse version of
+  # the index-header to disk on construction and load sparse index-headers from
+  # disk instead of the whole index-header.
+  # CLI flag: -blocks-storage.bucket-store.index-header-sparse-persistence-enabled
+  [index_header_sparse_persistence_enabled: <boolean> | default = false]
+
   # (advanced) Max size - in bytes - of a gap for which the partitioner
   # aggregates together two bucket GET object requests.
   # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes
@@ -3692,6 +3698,11 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.max-compaction-time
 [max_compaction_time: <duration> | default = 1h]
 
+# (experimental) If enabled, will delete the bucket-index, markers and debug
+# files in the tenant bucket when there are no blocks left in the index.
+# CLI flag: -compactor.no-blocks-file-cleanup-enabled
+[no_blocks_file_cleanup_enabled: <boolean> | default = false]
+
 # (advanced) Number of goroutines opening blocks before compaction.
 # CLI flag: -compactor.max-opening-blocks-concurrency
 [max_opening_blocks_concurrency: <int> | default = 1]
@@ -3887,6 +3898,12 @@ sharding_ring:
   # querier and ruler when running in microservices mode.
   # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
+
+  # When enabled, a store-gateway is automatically removed from the ring after
+  # failing to heartbeat the ring for a period longer than 10 times the
+  # configured -store-gateway.sharding-ring.heartbeat-timeout.
+  # CLI flag: -store-gateway.sharding-ring.auto-forget-enabled
+  [auto_forget_enabled: <boolean> | default = true]
 
   # (advanced) Minimum time to wait for ring stability at startup, if set to
   # positive value.
@@ -4270,6 +4287,12 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
 # CLI flag: -<prefix>.s3.storage-class
 [storage_class: <string> | default = ""]
+
+# (experimental) If enabled, it will use the default authentication methods of
+# the AWS SDK for go based on known environment variables and known AWS config
+# files.
+# CLI flag: -<prefix>.s3.native-aws-auth-enabled
+[native_aws_auth_enabled: <boolean> | default = false]
 
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.

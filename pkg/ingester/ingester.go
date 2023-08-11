@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
@@ -46,8 +47,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/middleware"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -723,7 +722,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	defer pushReq.CleanUp()
 
 	if err := i.checkRunning(); err != nil {
-		return nil, middleware.DoNotLogError{Err: err}
+		return nil, util_log.DoNotLogError{Err: err}
 	}
 
 	// We will report *this* request in the error too.
@@ -769,6 +768,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	db, err := i.getOrCreateTSDB(userID, false)
 	if err != nil {
+		// Check for a particular per-instance limit and return that error directly
+		// since it contains extra information for gRPC and our logging middleware.
+		if errors.Is(err, errMaxTenantsReached) {
+			return nil, err
+		}
 		return nil, wrapWithUser(err, userID)
 	}
 
@@ -814,7 +818,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
 
-		return nil, err
+		// Check for a particular per-instance limit and return that error directly
+		// since it contains extra information for gRPC and our logging middleware.
+		if errors.Is(err, errMaxInMemorySeriesReached) {
+			return nil, err
+		}
+		return nil, wrapWithUser(err, userID)
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
@@ -1047,7 +1056,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 
 			// Otherwise, return a 500.
-			return wrapWithUser(err, userID)
+			return err
 		}
 
 		numNativeHistogramBuckets := -1
@@ -1088,7 +1097,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					continue
 				}
 
-				return wrapWithUser(err, userID)
+				return err
 			}
 			numNativeHistograms := len(ts.Histograms)
 			if numNativeHistograms > 0 {
@@ -1107,7 +1116,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, uint64(ref), startAppend, numNativeHistogramBuckets)
+			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -2091,7 +2100,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		StripeSize:                         i.cfg.BlocksStorageConfig.TSDB.StripeSize,
 		HeadChunksWriteBufferSize:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
 		HeadChunksEndTimeVariance:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		WALCompression:                     i.cfg.BlocksStorageConfig.TSDB.WALCompressionType,
+		WALCompression:                     i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
 		WALSegmentSize:                     i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:               walReplayConcurrency,
 		SeriesLifecycleCallback:            userDB,

@@ -17,6 +17,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
 )
 
 const postingLengthFieldSize = 4
@@ -35,6 +36,8 @@ type PostingOffsetTable interface {
 
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
+
+	NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable)
 }
 
 // PostingListOffset contains the start and end offset of a posting list.
@@ -218,6 +221,29 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	return &t, nil
 }
 
+func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory, postingsOffsetTable *indexheaderpb.PostingOffsetTable, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
+	t := PostingOffsetTableV2{
+		factory:                     factory,
+		tableOffset:                 tableOffset,
+		postings:                    make(map[string]*postingValueOffsets, len(postingsOffsetTable.Postings)),
+		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
+	}
+
+	for sName, sOffsets := range postingsOffsetTable.Postings {
+		t.postings[sName] = &postingValueOffsets{
+			offsets: make([]postingOffset, len(sOffsets.Offsets)),
+		}
+
+		for i, sPostingOff := range sOffsets.Offsets {
+			t.postings[sName].offsets[i] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
+		}
+
+		t.postings[sName].lastValOffset = sOffsets.LastValOffset
+	}
+
+	return &t, err
+}
+
 // readOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
 func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func(string, string, uint64) error) (err error) {
@@ -292,6 +318,10 @@ func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
 	slices.Sort(labelNames)
 
 	return labelNames, nil
+}
+
+func (t *PostingOffsetTableV1) NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
+	return &indexheaderpb.PostingOffsetTable{}
 }
 
 type PostingOffsetTableV2 struct {
@@ -561,6 +591,26 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	slices.Sort(labelNames)
 
 	return labelNames, nil
+}
+
+// NewSparsePostingOffsetTable loads all postings offset table data into a sparse index-header to be persisted to disk
+func (t *PostingOffsetTableV2) NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
+	sparseHeaders := &indexheaderpb.PostingOffsetTable{
+		Postings: make(map[string]*indexheaderpb.PostingValueOffsets, len(t.postings)),
+	}
+
+	for name, offsets := range t.postings {
+		sparseHeaders.Postings[name] = &indexheaderpb.PostingValueOffsets{}
+		postingOffsets := make([]*indexheaderpb.PostingOffset, len(offsets.offsets))
+
+		for i, postingOff := range offsets.offsets {
+			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)}
+		}
+		sparseHeaders.Postings[name].Offsets = postingOffsets
+		sparseHeaders.Postings[name].LastValOffset = offsets.lastValOffset
+	}
+
+	return sparseHeaders
 }
 
 func skipNAndName(d *streamencoding.Decbuf, buf *int) {

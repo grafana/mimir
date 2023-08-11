@@ -128,8 +128,8 @@ func (p *prometheusHistogramChunk) AddHistogram(timestamp int64, h *histogram.Hi
 		return nil, err
 	}
 
-	app.AppendHistogram(timestamp, h)
-	return nil, nil
+	_, _, _, err = app.AppendHistogram(nil, timestamp, h, true)
+	return nil, err
 }
 
 func (p *prometheusHistogramChunk) UnmarshalFromBuf(bytes []byte) error {
@@ -176,8 +176,8 @@ func (p *prometheusFloatHistogramChunk) AddFloatHistogram(timestamp int64, h *hi
 		return nil, err
 	}
 
-	app.AppendFloatHistogram(timestamp, h)
-	return nil, nil
+	_, _, _, err = app.AppendFloatHistogram(nil, timestamp, h, true)
+	return nil, err
 }
 
 func (p *prometheusFloatHistogramChunk) UnmarshalFromBuf(bytes []byte) error {

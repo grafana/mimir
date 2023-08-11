@@ -99,6 +99,13 @@ spec:
             {{- with .Values.querier.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.querier.resources }}
+            {{- if $cpu_request }}
+              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+              {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            - name: "GOMAXPROCS"
+              value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
+            {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
