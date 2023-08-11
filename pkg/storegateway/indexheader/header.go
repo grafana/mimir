@@ -18,7 +18,7 @@ import (
 // NotFoundRangeErr is an error returned by PostingsOffset when there is no posting for given name and value pairs.
 var NotFoundRangeErr = errors.New("range not found") //nolint:revive
 
-var errEagerLoadingStartupEnabledLazyLoadDisabled = errors.New("invalid store-gateway index header eager-loading enabled with lazy-loading disabled")
+var errEagerLoadingStartupEnabledLazyLoadDisabled = errors.New("invalid configuration: store-gateway index header eager-loading is enabled, but lazy-loading is disabled")
 
 // Reader is an interface allowing to read essential, minimal number of index fields from the small portion of index file called header.
 type Reader interface {
