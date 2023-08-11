@@ -11,6 +11,7 @@ scrape_configs:
           - 'distributor-2:8001'
           - 'ingester-1:8002'
           - 'ingester-2:8003'
+          - 'ingester-3:8014'
           - 'querier:8004'
           - 'ruler-1:8021'
           - 'ruler-2:8022'

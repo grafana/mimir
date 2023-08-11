@@ -25,7 +25,7 @@ receivers:
                 container: 'distributor'
         - job_name: mimir-microservices-mode/ingester
           static_configs:
-            - targets: ['ingester-1:8002', 'ingester-2:8003']
+            - targets: ['ingester-1:8002', 'ingester-2:8003', 'ingester-3:8014']
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-microservices-mode'

@@ -25,7 +25,11 @@ ingester:
       store: consul
       consul:
         host: consul:8500
-    replication_factor: 1
+    replication_factor: 3
+
+querier:
+  minimize_ingester_requests: true
+  minimize_ingester_requests_hedging_delay: 2s
 
 # These memberlist options will be only used if memberlist is activated via CLI option.
 memberlist:

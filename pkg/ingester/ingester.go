@@ -3224,6 +3224,17 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 
 // checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.
 func (i *Ingester) checkReadOverloaded() error {
+	switch i.lifecycler.ID {
+	case "ingester-1":
+		return tooBusyError
+	case "ingester-2":
+		// Let the tooBusyError arrive first at the querier.
+		time.Sleep(200 * time.Millisecond)
+	case "ingester-3":
+		// Simulate a latency higher than the edging.
+		time.Sleep(3 * time.Second)
+	}
+
 	if i.utilizationBasedLimiter == nil {
 		return nil
 	}
