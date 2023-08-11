@@ -50,7 +50,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			lazyReaderIdleTimeout:                      time.Minute,
 			expectedLoadCountMetricAfterLabelNamesCall: 1,
 		},
-		"block is present in pre-shutdown loaded blocks and eager-loading is enabled during initial sync": {
+		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header during initial sync": {
 			lazyReaderEnabled:      true,
 			lazyReaderIdleTimeout:  time.Minute,
 			eagerLoadReaderEnabled: true,
