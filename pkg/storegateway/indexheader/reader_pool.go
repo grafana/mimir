@@ -98,7 +98,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		var err error
 		snapshot, err = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
 		if err != nil {
-			level.Warn(logger).Log("msg", "loading the list of index-headers from file failed; not eagerly loading index-headers for tenant", "file", lazyLoadedSnapshotFileName, "err", err, "tenant", lazyLoadedSnapshotConfig.UserID)
+			level.Warn(logger).Log("msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant", "file", lazyLoadedSnapshotFileName, "err", err, "tenant", lazyLoadedSnapshotConfig.UserID)
 		}
 		// We will remove the file regardless whether err is nil or not nil.
 		// In the case such as snapshot loading causing OOM, we will still
