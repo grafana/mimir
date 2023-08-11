@@ -94,9 +94,10 @@ std.manifestYamlDoc({
         target: 'querier',
         httpPort: 8004 + if useStreaming then 200 else 0,
         extraArguments:
-          (if useStreaming then '-querier.use-streaming-promql-engine=true -query-scheduler.ring.prefix=streaming/' else '') +
+          '-querier.prefer-streaming-chunks-from-ingesters=true' +
+          (if useStreaming then ' -querier.use-streaming-promql-engine=true -query-scheduler.ring.prefix=streaming/' else '') +
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
-          if $._config.use_query_scheduler then '-querier.scheduler-address='+querySchedulerAddress+' -querier.frontend-address=' else '',
+          if $._config.use_query_scheduler then ' -querier.scheduler-address='+querySchedulerAddress+' -querier.frontend-address=' else '',
       }),
 
       ['query-frontend'+suffix]: mimirService({
