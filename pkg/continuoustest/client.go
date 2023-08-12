@@ -3,17 +3,13 @@
 package continuoustest
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
@@ -51,6 +47,7 @@ type ClientConfig struct {
 	WriteBaseEndpoint flagext.URLValue
 	WriteBatchSize    int
 	WriteTimeout      time.Duration
+	WriteProtocol     string
 
 	ReadBaseEndpoint flagext.URLValue
 	ReadTimeout      time.Duration
@@ -65,16 +62,22 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&cfg.WriteBaseEndpoint, "tests.write-endpoint", "The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.")
 	f.IntVar(&cfg.WriteBatchSize, "tests.write-batch-size", 1000, "The maximum number of series to write in a single request.")
 	f.DurationVar(&cfg.WriteTimeout, "tests.write-timeout", 5*time.Second, "The timeout for a single write request.")
+	f.StringVar(&cfg.WriteProtocol, "tests.write-protocol", "prometheus", "The protocol to use to write series data. Supported values are: prometheus, otlp-http")
 
 	f.Var(&cfg.ReadBaseEndpoint, "tests.read-endpoint", "The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.")
 	f.DurationVar(&cfg.ReadTimeout, "tests.read-timeout", 60*time.Second, "The timeout for a single read request.")
+
 }
 
 type Client struct {
-	writeClient *http.Client
+	writeClient clientWriter
 	readClient  v1.API
 	cfg         ClientConfig
 	logger      log.Logger
+}
+
+type clientWriter interface {
+	sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error)
 }
 
 func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
@@ -92,6 +95,9 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 	}
 	if cfg.ReadBaseEndpoint.URL == nil {
 		return nil, errors.New("the read endpoint has not been set")
+	}
+	if cfg.WriteProtocol != "prometheus" && cfg.WriteProtocol != "otlp-http" {
+		return nil, fmt.Errorf("the only supported write protocols are \"prometheus\" or \"otlp-http\"")
 	}
 	// Ensure not both tenant-id and basic-auth are used at the same time
 	// anonymous is the default value for TenantID.
@@ -112,8 +118,29 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 		return nil, errors.Wrap(err, "failed to create read client")
 	}
 
+	var writeClient clientWriter
+
+	switch cfg.WriteProtocol {
+
+	case "prometheus":
+		writeClient = &prometheusWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}
+
+	case "otlp-http":
+		writeClient = &otlpHttpWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}
+	}
+
 	return &Client{
-		writeClient: &http.Client{Transport: rt},
+		writeClient: writeClient,
 		readClient:  v1.NewAPI(readClient),
 		cfg:         cfg,
 		logger:      logger,
@@ -181,52 +208,13 @@ func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries) (i
 		series = series[end:]
 
 		var err error
-		lastStatusCode, err = c.sendWriteRequest(ctx, &prompb.WriteRequest{Timeseries: batch})
+		lastStatusCode, err = c.writeClient.sendWriteRequest(ctx, &prompb.WriteRequest{Timeseries: batch})
 		if err != nil {
 			return lastStatusCode, err
 		}
 	}
 
 	return lastStatusCode, nil
-}
-
-func (c *Client) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error) {
-	data, err := proto.Marshal(req)
-	if err != nil {
-		return 0, err
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, c.cfg.WriteTimeout)
-	defer cancel()
-
-	compressed := snappy.Encode(nil, data)
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.cfg.WriteBaseEndpoint.String()+"/api/v1/push", bytes.NewReader(compressed))
-	if err != nil {
-		// Errors from NewRequest are from unparseable URLs, so are not
-		// recoverable.
-		return 0, err
-	}
-	httpReq.Header.Add("Content-Encoding", "snappy")
-	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", "mimir-continuous-test")
-	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
-
-	httpResp, err := c.writeClient.Do(httpReq)
-	if err != nil {
-		return 0, err
-	}
-	defer httpResp.Body.Close()
-
-	if httpResp.StatusCode/100 != 2 {
-		truncatedBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxErrMsgLen))
-		if err != nil {
-			return httpResp.StatusCode, errors.Wrapf(err, "server returned HTTP status %s and client failed to read response body", httpResp.Status)
-		}
-
-		return httpResp.StatusCode, fmt.Errorf("server returned HTTP status %s and body %q (truncated to %d bytes)", httpResp.Status, string(truncatedBody), maxErrMsgLen)
-	}
-
-	return httpResp.StatusCode, nil
 }
 
 // RequestOption defines a functional-style request option.
