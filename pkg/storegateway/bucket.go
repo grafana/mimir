@@ -267,8 +267,8 @@ func NewBucketStore(
 	}
 
 	lazyLoadedSnapshotConfig := indexheader.LazyLoadedHeadersSnapshotConfig{
-		Path:                dir,
-		UserID:              userID,
+		Path:   dir,
+		UserID: userID,
 	}
 	// Depend on the options
 	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedSnapshotConfig)
