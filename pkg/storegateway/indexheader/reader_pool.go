@@ -48,7 +48,6 @@ func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 type ReaderPool struct {
 	lazyReaderEnabled        bool
 	lazyReaderIdleTimeout    time.Duration
-	eagerLoadReaderEnabled   bool
 	sparsePersistenceEnabled bool
 	logger                   log.Logger
 	metrics                  *ReaderPoolMetrics
@@ -124,7 +123,7 @@ func NewReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate 
 
 			var lazyLoadC <-chan time.Time
 
-			if lazyLoadedSnapshotConfig.EagerLoadingEnabled {
+			if indexHeaderConfig.EagerLoadingStartupEnabled {
 				tickerLazyLoadPersist := time.NewTicker(time.Minute)
 				defer tickerLazyLoadPersist.Stop()
 
@@ -162,7 +161,6 @@ func newReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate 
 		metrics:                  metrics,
 		lazyReaderEnabled:        indexHeaderConfig.LazyLoadingEnabled,
 		lazyReaderIdleTimeout:    indexHeaderConfig.LazyLoadingIdleTimeout,
-		eagerLoadReaderEnabled:   indexHeaderConfig.EagerLoadingStartupEnabled,
 		sparsePersistenceEnabled: indexHeaderConfig.SparsePersistenceEnabled,
 		lazyReaders:              make(map[*LazyBinaryReader]struct{}),
 		close:                    make(chan struct{}),
