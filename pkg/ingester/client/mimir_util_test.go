@@ -77,7 +77,7 @@ func TestSendQueryStream(t *testing.T) {
 	// Try to receive the response and assert the error we get is the context.Canceled
 	// wrapped within a gRPC error.
 	_, err = stream.Recv()
-	assert.Equal(t, true, grpcutil.IsGRPCContextCanceled(err))
+	assert.Equal(t, true, grpcutil.IsCanceled(err))
 
 	// Wait until the assertions in the server mock have completed.
 	wg.Wait()
