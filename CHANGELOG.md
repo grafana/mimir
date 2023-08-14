@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Update Go version to 1.21.0. #5734
 * [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
 * [CHANGE] Querier: change the default value of the experimental `-querier.streaming-chunks-per-ingester-buffer-size` flag to 256. #5203
 * [CHANGE] Querier: only initiate query requests to ingesters in the `ACTIVE` state in the ring. #5342
