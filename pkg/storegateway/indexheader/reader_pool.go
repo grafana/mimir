@@ -6,7 +6,11 @@
 package indexheader
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,7 +21,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
+
+var lazyLoadedHeadersListFileName = "lazy-loaded.json"
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
 type ReaderPoolMetrics struct {
@@ -51,27 +59,96 @@ type ReaderPool struct {
 	close chan struct{}
 
 	// Keep track of all readers managed by the pool.
-	lazyReadersMx sync.Mutex
-	lazyReaders   map[*LazyBinaryReader]struct{}
+	lazyReadersMx           sync.Mutex
+	lazyReaders             map[*LazyBinaryReader]struct{}
+	preShutdownLoadedBlocks *lazyLoadedHeadersSnapshot
 }
 
-// NewReaderPool makes a new ReaderPool and starts a background task for unloading idle Readers if enabled.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, sparsePersistenceEnabled, lazyLoadingGate, metrics)
+// LazyLoadedHeadersSnapshotConfig stores information needed to track lazy loaded index headers.
+type LazyLoadedHeadersSnapshotConfig struct {
+	// Path stores where lazy loaded blocks will be tracked in a single file per tenant
+	Path                string
+	UserID              string
+	EagerLoadingEnabled bool
+}
+
+type lazyLoadedHeadersSnapshot struct {
+	// IndexHeaderLastUsedTime is map of index header ulid.ULID to timestamp in millisecond.
+	IndexHeaderLastUsedTime map[ulid.ULID]int64 `json:"index_header_last_used_time"`
+	UserID                  string              `json:"user_id"`
+}
+
+// persist atomically writes this snapshot to persistDir.
+func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
+	// Create temporary path for fsync.
+	// We don't use temporary folder because the process might not have access to the temporary folder.
+	tmpPath := filepath.Join(persistDir, "tmp-"+lazyLoadedHeadersListFileName)
+	// the actual path we want to store the file in
+	finalPath := filepath.Join(persistDir, lazyLoadedHeadersListFileName)
+
+	data, err := json.Marshal(l)
+	if err != nil {
+		return err
+	}
+
+	return atomicfs.CreateFileAndMove(tmpPath, finalPath, bytes.NewReader(data))
+}
+
+// NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
+func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
+	var snapshot *lazyLoadedHeadersSnapshot
+	if lazyReaderEnabled && lazyLoadedSnapshotConfig.EagerLoadingEnabled {
+		lazyLoadedSnapshotFileName := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFileName)
+		var err error
+		snapshot, err = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
+		if err != nil {
+			level.Warn(logger).Log("msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant", "file", lazyLoadedSnapshotFileName, "err", err, "tenant", lazyLoadedSnapshotConfig.UserID)
+		}
+		// We will remove the file regardless whether err is nil or not nil.
+		// In the case such as snapshot loading causing OOM, we will still
+		// remove the snapshot and lazy load after server is restarted.
+		if err := os.Remove(lazyLoadedSnapshotFileName); err != nil {
+			level.Warn(logger).Log("msg", "removing the lazy-loaded index-header snapshot failed", "file", lazyLoadedSnapshotFileName, "err", err)
+		}
+	}
+
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, sparsePersistenceEnabled, lazyLoadingGate, metrics, snapshot)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
 		checkFreq := p.lazyReaderIdleTimeout / 10
 
 		go func() {
+			tickerIdleReader := time.NewTicker(checkFreq)
+			defer tickerIdleReader.Stop()
+
+			var lazyLoadC <-chan time.Time
+
+			if lazyLoadedSnapshotConfig.EagerLoadingEnabled {
+				tickerLazyLoadPersist := time.NewTicker(time.Minute)
+				defer tickerLazyLoadPersist.Stop()
+
+				lazyLoadC = tickerLazyLoadPersist.C
+			}
+
 			for {
 				select {
 				case <-p.close:
 					return
-				case <-time.After(checkFreq):
+				case <-tickerIdleReader.C:
 					p.closeIdleReaders()
+				case <-lazyLoadC:
+					snapshot := lazyLoadedHeadersSnapshot{
+						IndexHeaderLastUsedTime: p.LoadedBlocks(),
+						UserID:                  lazyLoadedSnapshotConfig.UserID,
+					}
+
+					if err := snapshot.persist(lazyLoadedSnapshotConfig.Path); err != nil {
+						level.Warn(p.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
+					}
 				}
 			}
+
 		}()
 	}
 
@@ -79,23 +156,37 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
 	return &ReaderPool{
 		logger:                   logger,
 		metrics:                  metrics,
 		lazyReaderEnabled:        lazyReaderEnabled,
 		lazyReaderIdleTimeout:    lazyReaderIdleTimeout,
 		sparsePersistenceEnabled: sparsePersistenceEnabled,
-		lazyLoadingGate:          lazyLoadingGate,
 		lazyReaders:              make(map[*LazyBinaryReader]struct{}),
 		close:                    make(chan struct{}),
+		preShutdownLoadedBlocks:  lazyLoadedHeadersSnapshot,
+		lazyLoadingGate:          lazyLoadingGate,
 	}
+}
+
+func loadLazyLoadedHeadersSnapshot(fileName string) (*lazyLoadedHeadersSnapshot, error) {
+	snapshotBytes, err := os.ReadFile(fileName)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := &lazyLoadedHeadersSnapshot{}
+	err = json.Unmarshal(snapshotBytes, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }
 
 // NewBinaryReader creates and returns a new binary reader. If the pool has been configured
 // with lazy reader enabled, this function will return a lazy reader. The returned lazy reader
 // is tracked by the pool and automatically closed once the idle timeout expires.
-func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (Reader, error) {
+func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config, initialSync bool) (Reader, error) {
 	var readerFactory func() (Reader, error)
 	var reader Reader
 	var err error
@@ -105,7 +196,19 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	}
 
 	if p.lazyReaderEnabled {
-		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
+		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
+		if lazyErr != nil {
+			return nil, lazyErr
+		}
+
+		// we only try to eager load only during initialSync
+		if initialSync && p.preShutdownLoadedBlocks != nil {
+			// we only eager load if we have preShutdownLoadedBlocks for the given block id
+			if p.preShutdownLoadedBlocks.IndexHeaderLastUsedTime[id] > 0 {
+				lazyBinaryReader.EagerLoad()
+			}
+		}
+		reader, err = lazyBinaryReader, lazyErr
 	} else {
 		reader, err = readerFactory()
 	}
@@ -170,4 +273,19 @@ func (p *ReaderPool) onLazyReaderClosed(r *LazyBinaryReader) {
 	// but because the consumer closed it. By contract, a reader closed by the consumer can't
 	// be used anymore, so we can automatically remove it from the pool.
 	delete(p.lazyReaders, r)
+}
+
+// LoadedBlocks returns a new map of lazy-loaded block IDs and the last time they were used in milliseconds.
+func (p *ReaderPool) LoadedBlocks() map[ulid.ULID]int64 {
+	p.lazyReadersMx.Lock()
+	defer p.lazyReadersMx.Unlock()
+
+	blocks := make(map[ulid.ULID]int64, len(p.lazyReaders))
+	for r := range p.lazyReaders {
+		if r.reader != nil {
+			blocks[r.blockID] = r.usedAt.Load() / int64(time.Millisecond)
+		}
+	}
+
+	return blocks
 }

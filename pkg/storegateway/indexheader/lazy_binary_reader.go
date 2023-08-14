@@ -85,6 +85,8 @@ type LazyBinaryReader struct {
 
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
+
+	blockID ulid.ULID
 }
 
 // NewLazyBinaryReader makes a new LazyBinaryReader. If the index-header does not exist
@@ -127,6 +129,7 @@ func NewLazyBinaryReader(
 		usedAt:          atomic.NewInt64(time.Now().UnixNano()),
 		onClosed:        onClosed,
 		readerFactory:   readerFactory,
+		blockID:         id,
 		lazyLoadingGate: lazyLoadingGate,
 		ctx:             ctx,
 	}, nil
@@ -219,6 +222,19 @@ func (r *LazyBinaryReader) LabelNames() ([]string, error) {
 
 	r.usedAt.Store(time.Now().UnixNano())
 	return r.reader.LabelNames()
+}
+
+// EagerLoad attempts to eagerly load this index header.
+func (r *LazyBinaryReader) EagerLoad() {
+	r.readerMx.RLock()
+	defer r.readerMx.RUnlock()
+
+	if err := r.load(); err != nil {
+		level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", err)
+		return
+	}
+
+	r.usedAt.Store(time.Now().UnixNano())
 }
 
 // load ensures the underlying binary index-header reader has been successfully loaded. Returns

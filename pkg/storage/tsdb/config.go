@@ -498,6 +498,9 @@ func (cfg *BucketStoreConfig) Validate(logger log.Logger) error {
 	if cfg.SeriesSelectionStrategyName == WorstCasePostingsStrategy && cfg.SelectionStrategies.WorstCaseSeriesPreference <= 0 {
 		return errors.New("invalid worst-case series preference; must be positive")
 	}
+	if err := cfg.IndexHeader.Validate(cfg.IndexHeaderLazyLoadingEnabled); err != nil {
+		return errors.Wrap(err, "index-header configuration")
+	}
 	if cfg.IndexHeaderLazyLoadingConcurrency < 0 {
 		return errInvalidIndexHeaderLazyLoadingConcurrency
 	}
