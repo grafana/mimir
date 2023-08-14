@@ -7623,7 +7623,7 @@
                 },
                 {
                   "kind": "field",
-                  "name": "index_header_lazy_loading_enabled",
+                  "name": "lazy_loading_enabled",
                   "required": false,
                   "desc": "If enabled, store-gateway will lazy load an index-header only once required by a query.",
                   "fieldValue": null,
@@ -7634,7 +7634,7 @@
                 },
                 {
                   "kind": "field",
-                  "name": "index_header_lazy_loading_idle_timeout",
+                  "name": "lazy_loading_idle_timeout",
                   "required": false,
                   "desc": "If index-header lazy loading is enabled and this setting is \u003e 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.",
                   "fieldValue": null,
@@ -7645,7 +7645,7 @@
                 },
                 {
                   "kind": "field",
-                  "name": "index_header_lazy_loading_concurrency",
+                  "name": "lazy_loading_concurrency",
                   "required": false,
                   "desc": "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.",
                   "fieldValue": null,
@@ -7656,7 +7656,7 @@
                 },
                 {
                   "kind": "field",
-                  "name": "index_header_sparse_persistence_enabled",
+                  "name": "sparse_persistence_enabled",
                   "required": false,
                   "desc": "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.",
                   "fieldValue": null,

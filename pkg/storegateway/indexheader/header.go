@@ -61,14 +61,14 @@ type Config struct {
 	MaxIdleFileHandles         uint `yaml:"max_idle_file_handles" category:"advanced"`
 	EagerLoadingStartupEnabled bool `yaml:"eager_loading_startup_enabled" category:"experimental"`
 	// Controls whether index-header lazy loading is enabled.
-	LazyLoadingEnabled     bool          `yaml:"index_header_lazy_loading_enabled" category:"advanced"`
-	LazyLoadingIdleTimeout time.Duration `yaml:"index_header_lazy_loading_idle_timeout" category:"advanced"`
+	LazyLoadingEnabled     bool          `yaml:"lazy_loading_enabled" category:"advanced"`
+	LazyLoadingIdleTimeout time.Duration `yaml:"lazy_loading_idle_timeout" category:"advanced"`
 
 	// Maximum index-headers loaded into store-gateway concurrently
-	LazyLoadingConcurrency int `yaml:"index_header_lazy_loading_concurrency" category:"experimental"`
+	LazyLoadingConcurrency int `yaml:"lazy_loading_concurrency" category:"experimental"`
 
 	// Controls whether persisting a sparse version of the index-header to disk is enabled.
-	SparsePersistenceEnabled bool `yaml:"index_header_sparse_persistence_enabled" category:"experimental"`
+	SparsePersistenceEnabled bool `yaml:"sparse_persistence_enabled" category:"experimental"`
 	VerifyOnLoad             bool `yaml:"verify_on_load" category:"advanced"`
 }
 
