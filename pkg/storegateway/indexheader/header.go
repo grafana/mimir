@@ -19,7 +19,10 @@ import (
 // NotFoundRangeErr is an error returned by PostingsOffset when there is no posting for given name and value pairs.
 var NotFoundRangeErr = errors.New("range not found") //nolint:revive
 
-var errEagerLoadingStartupEnabledLazyLoadDisabled = errors.New("invalid configuration: store-gateway index header eager-loading is enabled, but lazy-loading is disabled")
+var (
+	errEagerLoadingStartupEnabledLazyLoadDisabled = errors.New("invalid configuration: store-gateway index header eager-loading is enabled, but lazy-loading is disabled")
+	errInvalidIndexHeaderLazyLoadingConcurrency   = errors.New("invalid index-header lazy loading max concurrency; must be non-negative")
+)
 
 // Reader is an interface allowing to read essential, minimal number of index fields from the small portion of index file called header.
 type Reader interface {
@@ -82,6 +85,9 @@ func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 func (cfg *Config) Validate() error {
 	if !cfg.LazyLoadingEnabled && cfg.EagerLoadingStartupEnabled {
 		return errEagerLoadingStartupEnabledLazyLoadDisabled
+	}
+	if cfg.LazyLoadingConcurrency < 0 {
+		return errInvalidIndexHeaderLazyLoadingConcurrency
 	}
 	return nil
 }
