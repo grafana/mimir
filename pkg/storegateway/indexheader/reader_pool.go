@@ -25,7 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
-var lazyLoadedHeadersListFile = "lazy-loaded.json"
+var lazyLoadedHeadersListFileName = "lazy-loaded.json"
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
 type ReaderPoolMetrics struct {
@@ -48,7 +48,6 @@ func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 type ReaderPool struct {
 	lazyReaderEnabled        bool
 	lazyReaderIdleTimeout    time.Duration
-	eagerLoadReaderEnabled   bool
 	sparsePersistenceEnabled bool
 	logger                   log.Logger
 	metrics                  *ReaderPoolMetrics
@@ -82,9 +81,9 @@ type lazyLoadedHeadersSnapshot struct {
 func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 	// Create temporary path for fsync.
 	// We don't use temporary folder because the process might not have access to the temporary folder.
-	tmpPath := filepath.Join(persistDir, "tmp-"+lazyLoadedHeadersListFile)
+	tmpPath := filepath.Join(persistDir, "tmp-"+lazyLoadedHeadersListFileName)
 	// the actual path we want to store the file in
-	finalPath := filepath.Join(persistDir, lazyLoadedHeadersListFile)
+	finalPath := filepath.Join(persistDir, lazyLoadedHeadersListFileName)
 
 	data, err := json.Marshal(l)
 	if err != nil {
@@ -98,7 +97,7 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
 	var snapshot *lazyLoadedHeadersSnapshot
 	if lazyReaderEnabled && lazyLoadedSnapshotConfig.EagerLoadingEnabled {
-		lazyLoadedSnapshotFileName := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFile)
+		lazyLoadedSnapshotFileName := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFileName)
 		var err error
 		snapshot, err = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
 		if err != nil {
@@ -112,7 +111,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		}
 	}
 
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, lazyLoadedSnapshotConfig.EagerLoadingEnabled, sparsePersistenceEnabled, lazyLoadingGate, metrics, snapshot)
+	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, sparsePersistenceEnabled, lazyLoadingGate, metrics, snapshot)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -124,7 +123,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 
 			var lazyLoadC <-chan time.Time
 
-			if p.eagerLoadReaderEnabled {
+			if lazyLoadedSnapshotConfig.EagerLoadingEnabled {
 				tickerLazyLoadPersist := time.NewTicker(time.Minute)
 				defer tickerLazyLoadPersist.Stop()
 
@@ -156,13 +155,12 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, eagerLoadReaderEnabled bool, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
+func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
 	return &ReaderPool{
 		logger:                   logger,
 		metrics:                  metrics,
 		lazyReaderEnabled:        lazyReaderEnabled,
 		lazyReaderIdleTimeout:    lazyReaderIdleTimeout,
-		eagerLoadReaderEnabled:   eagerLoadReaderEnabled,
 		sparsePersistenceEnabled: sparsePersistenceEnabled,
 		lazyReaders:              make(map[*LazyBinaryReader]struct{}),
 		close:                    make(chan struct{}),
@@ -203,7 +201,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 		}
 
 		// we only try to eager load only during initialSync
-		if initialSync && p.eagerLoadReaderEnabled && p.preShutdownLoadedBlocks != nil {
+		if initialSync && p.preShutdownLoadedBlocks != nil {
 			// we only eager load if we have preShutdownLoadedBlocks for the given block id
 			if p.preShutdownLoadedBlocks.IndexHeaderLastUsedTime[id] > 0 {
 				lazyBinaryReader.EagerLoad()

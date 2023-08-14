@@ -87,7 +87,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			expectedLoadCountMetricAfterLabelNamesCall:  1,
 			createLazyLoadedHeadersSnapshotFn: func(_ ulid.ULID) lazyLoadedHeadersSnapshot {
 				// let's create a random fake blockID to be stored in lazy loaded headers file
-				fakeBlockID, _ := ulid.New(ulid.Now(), rand.Reader)
+				fakeBlockID := ulid.MustNew(ulid.Now(), rand.Reader)
 				// this snapshot will refer to fake block, hence eager load wouldn't be executed for the real block that we test
 
 				return lazyLoadedHeadersSnapshot{
@@ -142,7 +142,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
-	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, false, true, gate.NewNoop(), metrics, nil)
+	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, true, gate.NewNoop(), metrics, nil)
 	defer pool.Close()
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{}, false)
@@ -204,7 +204,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
-	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, true, false, gate.NewNoop(), metrics, nil)
+	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, false, gate.NewNoop(), metrics, nil)
 	defer pool.Close()
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{}, false)
@@ -226,7 +226,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	err = snapshot.persist(tmpDir)
 	require.NoError(t, err)
 
-	persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFile)
+	persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFileName)
 	persistedData, err := os.ReadFile(persistedFile)
 	require.NoError(t, err)
 
