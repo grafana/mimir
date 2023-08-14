@@ -388,8 +388,8 @@ type BucketStoreConfig struct {
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
 
 	// Controls whether index-header lazy loading is enabled.
-	DeprecatedIndexHeaderLazyLoadingEnabled     bool          `yaml:"index_header_lazy_loading_enabled" category:"deprecated"`      // Deprecated. TODO: Remove in Mimir 2.1x.
-	DeprecatedIndexHeaderLazyLoadingIdleTimeout time.Duration `yaml:"index_header_lazy_loading_idle_timeout" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.1x.
+	DeprecatedIndexHeaderLazyLoadingEnabled     bool          `yaml:"index_header_lazy_loading_enabled" category:"deprecated"`      // Deprecated. TODO: Remove in Mimir 2.12.
+	DeprecatedIndexHeaderLazyLoadingIdleTimeout time.Duration `yaml:"index_header_lazy_loading_idle_timeout" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.12.
 
 	// Controls the partitioner, used to aggregate multiple GET object API requests.
 	PartitionerMaxGapBytes uint64 `yaml:"partitioner_max_gap_bytes" category:"advanced"`
