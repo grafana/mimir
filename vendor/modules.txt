@@ -653,7 +653,7 @@ github.com/hashicorp/go-secure-stdlib/strutil
 # github.com/hashicorp/go-sockaddr v1.0.2
 ## explicit
 github.com/hashicorp/go-sockaddr
-# github.com/hashicorp/golang-lru v0.6.0
+# github.com/hashicorp/golang-lru v1.0.2
 ## explicit; go 1.12
 github.com/hashicorp/golang-lru/simplelru
 # github.com/hashicorp/golang-lru/v2 v2.0.2

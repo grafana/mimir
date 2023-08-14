@@ -19,7 +19,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/dskit v0.0.0-20230808012443-3f5683fdb201
 	github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
-	github.com/hashicorp/golang-lru v0.6.0
+	github.com/hashicorp/golang-lru v1.0.2
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.61
 	github.com/mitchellh/go-wordwrap v1.0.1
