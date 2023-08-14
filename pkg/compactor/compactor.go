@@ -273,6 +273,10 @@ type MultitenantCompactor struct {
 	// TSDB syncer metrics
 	syncerMetrics *aggregatedSyncerMetrics
 
+	// Block upload metrics
+	blockUploadBlocks      prometheus.Counter
+	blockUploadBytes       prometheus.Counter
+	blockUploadFiles       prometheus.Counter
 	blockUploadValidations atomic.Int64
 }
 
@@ -366,6 +370,18 @@ func newMultitenantCompactor(
 			Name:        blocksMarkedForDeletionName,
 			Help:        blocksMarkedForDeletionHelp,
 			ConstLabels: prometheus.Labels{"reason": "compaction"},
+		}),
+		blockUploadBlocks: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_block_upload_blocks_total",
+			Help: "Total number of blocks successfully uploaded and validated using the block upload API.",
+		}),
+		blockUploadBytes: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_block_upload_bytes_total",
+			Help: "Total number of bytes from successfully uploaded blocks using block upload API.",
+		}),
+		blockUploadFiles: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_block_upload_files_total",
+			Help: "Total number of files from successfully uploaded blocks using block upload API.",
 		}),
 	}
 

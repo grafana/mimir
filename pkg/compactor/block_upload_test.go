@@ -7,6 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"io"
 	"math"
 	"net/http"
@@ -1356,6 +1359,7 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 		expectErrorInValidationFile bool
 		expectTempUploadingMeta     bool
 		expectMeta                  bool
+		expectFuncSuccess           bool
 	}{
 		{
 			name:                        "validation fails",
@@ -1420,6 +1424,7 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 			expectValidationFile:    false,
 			expectTempUploadingMeta: false,
 			expectMeta:              true,
+			expectFuncSuccess:       true,
 		},
 	}
 
@@ -1435,18 +1440,47 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 			}
 			cfgProvider := newMockConfigProvider()
 			c := &MultitenantCompactor{
-				logger:       log.NewNopLogger(),
-				bucketClient: injectedBkt,
-				cfgProvider:  cfgProvider,
+				logger:            log.NewNopLogger(),
+				bucketClient:      injectedBkt,
+				cfgProvider:       cfgProvider,
+				blockUploadBlocks: promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
+				blockUploadBytes:  promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
+				blockUploadFiles:  promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
 			}
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
 
-			meta := block.Meta{}
+			meta := block.Meta{
+				Thanos: block.ThanosMeta{
+					Files: []block.File{
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 42,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 17,
+						},
+						{
+							RelPath: "meta.json",
+						},
+					},
+				},
+			}
 			marshalAndUploadJSON(t, bkt, uploadingMetaPath, meta)
 			v := validationFile{}
 			marshalAndUploadJSON(t, bkt, validationPath, v)
 
 			c.validateAndCompleteBlockUpload(log.NewNopLogger(), userBkt, ulid.MustParse(blockID), &meta, tc.validation)
+
+			if tc.expectFuncSuccess {
+				assert.Equal(t, 1.0, promtest.ToFloat64(c.blockUploadBlocks))
+				assert.Equal(t, 59.0, promtest.ToFloat64(c.blockUploadBytes))
+				assert.Equal(t, 3.0, promtest.ToFloat64(c.blockUploadFiles))
+			} else {
+				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadBlocks))
+				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadBytes))
+				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadFiles))
+			}
 
 			tempUploadingMetaExists, err := bkt.Exists(context.Background(), uploadingMetaPath)
 			require.NoError(t, err)
@@ -1515,6 +1549,8 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		{
 			name:             "valid block",
 			lbls:             validLabels,
+			verifyChunks:     true,
+			expectError:      false,
 			populateFileList: true,
 		},
 		{
@@ -1973,6 +2009,89 @@ func TestMultitenantCompactor_ValidateMaximumBlockSize(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMultitenantCompactor_MarkBlockComplete(t *testing.T) {
+	const tenantID = "test"
+	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
+	injectedError := fmt.Errorf("injected error")
+
+	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
+	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
+	testCases := []struct {
+		name          string
+		errorInjector func(op bucket.Operation, name string) error
+		expectSuccess bool
+	}{
+		{
+			name:          "marking block complete succeeds",
+			expectSuccess: true,
+		},
+		{
+			name:          "uploading meta file fails",
+			errorInjector: bucket.InjectErrorOn(bucket.OpUpload, metaPath, injectedError),
+		},
+		{
+			name:          "deleting uploading meta file fails",
+			errorInjector: bucket.InjectErrorOn(bucket.OpDelete, uploadingMetaPath, injectedError),
+			expectSuccess: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bkt := objstore.NewInMemBucket()
+			var injectedBkt objstore.Bucket = bkt
+			if tc.errorInjector != nil {
+				injectedBkt = &bucket.ErrorInjectedBucketClient{
+					Bucket:   bkt,
+					Injector: tc.errorInjector,
+				}
+			}
+			cfgProvider := newMockConfigProvider()
+			c := &MultitenantCompactor{
+				logger:            log.NewNopLogger(),
+				bucketClient:      injectedBkt,
+				cfgProvider:       cfgProvider,
+				blockUploadBlocks: promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
+				blockUploadBytes:  promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
+				blockUploadFiles:  promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
+			}
+			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
+
+			meta := block.Meta{
+				Thanos: block.ThanosMeta{
+					Files: []block.File{
+						{
+							RelPath:   "chunks/000001",
+							SizeBytes: 42,
+						},
+						{
+							RelPath:   "index",
+							SizeBytes: 17,
+						},
+						{
+							RelPath: "meta.json",
+						},
+					},
+				},
+			}
+			marshalAndUploadJSON(t, bkt, uploadingMetaPath, meta)
+
+			ctx := context.Background()
+			err := c.markBlockComplete(ctx, log.NewNopLogger(), userBkt, ulid.MustParse(blockID), &meta)
+			if tc.expectSuccess {
+				require.NoError(t, err)
+				assert.Equal(t, 1.0, promtest.ToFloat64(c.blockUploadBlocks))
+				assert.Equal(t, 59.0, promtest.ToFloat64(c.blockUploadBytes))
+				assert.Equal(t, 3.0, promtest.ToFloat64(c.blockUploadFiles))
+			} else {
+				require.Error(t, err)
+				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadBlocks))
+				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadBytes))
+				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadFiles))
 			}
 		})
 	}

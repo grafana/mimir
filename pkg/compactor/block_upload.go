@@ -373,6 +373,11 @@ func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log
 		level.Warn(logger).Log("msg", fmt.Sprintf("failed to delete %s from block in object storage", uploadingMetaFilename), "err", err)
 	}
 
+	// Increment metrics on successful block upload
+	c.blockUploadBlocks.Inc()
+	c.blockUploadBytes.Add(float64(meta.BlockBytes()))
+	c.blockUploadFiles.Add(float64(len(meta.Thanos.Files)))
+
 	return nil
 }
 
