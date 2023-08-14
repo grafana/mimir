@@ -267,7 +267,6 @@ func NewBucketStore(
 	}
 
 	lazyLoadedSnapshotConfig := indexheader.LazyLoadedHeadersSnapshotConfig{
-		// Path stores where lazy loaded blocks will be tracked in a single file per tenant
 		Path:                dir,
 		UserID:              userID,
 		EagerLoadingEnabled: bucketStoreConfig.IndexHeader.IndexHeaderEagerLoadingStartupEnabled,

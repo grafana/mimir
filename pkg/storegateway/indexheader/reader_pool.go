@@ -66,6 +66,7 @@ type ReaderPool struct {
 
 // LazyLoadedHeadersSnapshotConfig stores information needed to track lazy loaded index headers.
 type LazyLoadedHeadersSnapshotConfig struct {
+	// Path stores where lazy loaded blocks will be tracked in a single file per tenant
 	Path                string
 	UserID              string
 	EagerLoadingEnabled bool
