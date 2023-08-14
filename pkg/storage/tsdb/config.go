@@ -434,7 +434,8 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.BucketIndex.RegisterFlagsWithPrefix(f, bucketIndexFlagPrefix)
 	cfg.IndexHeader.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header.")
 
-	// Take value from DeprecatedConfig if it is set
+	// TODO: Remove in Mimir 2.12.
+	// Take value from Indexheader DeprecatedConfig if it is set
 	if cfg.DeprecatedIndexHeaderLazyLoadingEnabled {
 		cfg.IndexHeader.LazyLoadingEnabled = cfg.DeprecatedIndexHeaderLazyLoadingEnabled
 	}
