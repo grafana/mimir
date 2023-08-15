@@ -45,6 +45,7 @@ func OTLPHandler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	EnableOtelMetadataStorage bool,
 	reg prometheus.Registerer,
 	push Func,
 ) http.Handler {
@@ -153,8 +154,10 @@ func OTLPHandler(
 
 		req.Timeseries = metrics
 
-		metadata := otelMetricsToMetadata(otlpReq.Metrics())
-		req.Metadata = metadata
+		if EnableOtelMetadataStorage {
+			metadata := otelMetricsToMetadata(otlpReq.Metrics())
+			req.Metadata = metadata
+		}
 
 		return body, nil
 	})

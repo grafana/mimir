@@ -148,5 +148,6 @@ func TestOTLPIngestion(t *testing.T) {
 	require.Equal(t, 200, metadataResult.StatusCode)
 
 	metadataResponseBody, err = io.ReadAll(metadataResult.Body)
+	require.NoError(t, err)
 	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
 }
