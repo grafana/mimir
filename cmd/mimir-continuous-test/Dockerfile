@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-FROM       alpine:3.18.2
+FROM       alpine:3.18.3
 RUN        apk add --no-cache ca-certificates tzdata
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
 ARG        TARGETOS
