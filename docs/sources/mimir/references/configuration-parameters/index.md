@@ -2753,6 +2753,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # during the relabeling phase and cleaned afterwards: __meta_tenant_id
 [metric_relabel_configs: <relabel_config...> | default = ]
 
+# (experimental) Flag to determines the error code returned when distributor
+# rate limits are reached. If set to true, the error code will be 503; if set to
+# false, a 429 error is returned
+# CLI flag: -distributor.enable_service_unavailable_error_on_rate_limit
+[enable_service_unavailable_error_on_rate_limit: <boolean> | default = false]
+
 # The maximum number of in-memory series per tenant, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
