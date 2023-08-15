@@ -171,11 +171,12 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
 			scopeMetrics := scopeMetricsSlice.At(j)
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
+				metric := scopeMetrics.Metrics().At(k)
 				entry := mimirpb.MetricMetadata{
-					Type:             mimirpb.MetricMetadata_MetricType(scopeMetrics.Metrics().At(k).Type()),
-					MetricFamilyName: prometheustranslator.BuildCompliantName(scopeMetrics.Metrics().At(k), "", true), // TODO expose addMetricSuffixes in configuration
-					Help:             scopeMetrics.Metrics().At(k).Description(),
-					Unit:             scopeMetrics.Metrics().At(k).Unit(),
+					Type:             mimirpb.MetricMetadata_MetricType(metric.Type()),
+					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", true), // TODO expose addMetricSuffixes in configuration
+					Help:             metric.Description(),
+					Unit:             metric.Unit(),
 				}
 				metadata = append(metadata, &entry)
 			}

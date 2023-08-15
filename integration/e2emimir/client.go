@@ -313,15 +313,16 @@ func (c *Client) LabelValuesCardinality(labelNames []string, selector string, li
 
 // GetPrometheusMetadata fetches the metadata from the Prometheus endpoint /api/v1/metadata.
 func (c *Client) GetPrometheusMetadata(metric string, limit int) (*http.Response, error) {
-	body := make(url.Values)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/prometheus/api/v1/metadata", c.querierAddress), nil)
+	query := req.URL.Query()
 	if len(metric) > 0 {
-		body.Set("metric", metric)
+		query.Add("metric", metric)
 	}
 	if limit > 0 {
-		body.Set("limit", strconv.Itoa(limit))
+		query.Add("limit", strconv.Itoa(limit))
 	}
+	req.URL.RawQuery = query.Encode()
 
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/prometheus/api/v1/metadata", c.querierAddress), strings.NewReader(body.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +331,6 @@ func (c *Client) GetPrometheusMetadata(metric string, limit int) (*http.Response
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	// Execute HTTP request
 	return c.httpClient.Do(req.WithContext(ctx))
 }
 
