@@ -377,11 +377,11 @@ func newMultitenantCompactor(
 		}),
 		blockUploadBytes: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_block_upload_bytes_total",
-			Help: "Total number of bytes from successfully uploaded blocks using block upload API.",
+			Help: "Total number of bytes from successfully uploaded and validated blocks using block upload API.",
 		}),
 		blockUploadFiles: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_block_upload_files_total",
-			Help: "Total number of files from successfully uploaded blocks using block upload API.",
+			Help: "Total number of files from successfully uploaded and validated blocks using block upload API.",
 		}),
 	}
 
