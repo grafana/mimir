@@ -73,7 +73,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.16.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
-	google.golang.org/api v0.136.0
+	google.golang.org/api v0.137.0
 	sigs.k8s.io/kustomize/kyaml v0.14.3
 )
 
@@ -156,7 +156,7 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20230705174524-200ffdc848b8 // indirect
-	github.com/google/s2a-go v0.1.4 // indirect
+	github.com/google/s2a-go v0.1.5 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.5 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.0 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
