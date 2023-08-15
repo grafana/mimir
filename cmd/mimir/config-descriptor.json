@@ -229,6 +229,33 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "cert",
+              "required": false,
+              "desc": "Server TLS certificate. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "key",
+              "required": false,
+              "desc": "Server TLS key. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_ca",
+              "required": false,
+              "desc": "Root certificate authority used to verify client certificates. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "cert_file",
               "required": false,
               "desc": "HTTP server cert path.",
@@ -281,6 +308,33 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "cert",
+              "required": false,
+              "desc": "Server TLS certificate. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "key",
+              "required": false,
+              "desc": "Server TLS key. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_ca",
+              "required": false,
+              "desc": "Root certificate authority used to verify client certificates. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
             {
               "kind": "field",
               "name": "cert_file",
@@ -4683,6 +4737,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "connection_pool_timeout",
+                  "required": false,
+                  "desc": "Maximum duration to wait to get a connection from pool.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 4000000000,
+                  "fieldFlag": "query-frontend.results-cache.redis.connection-pool-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "min_idle_connections",
                   "required": false,
                   "desc": "Minimum number of idle connections.",
@@ -5930,6 +5995,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "connection_pool_timeout",
+                      "required": false,
+                      "desc": "Maximum duration to wait to get a connection from pool.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.connection-pool-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "min_idle_connections",
                       "required": false,
                       "desc": "Minimum number of idle connections.",
@@ -6452,6 +6528,17 @@
                       "fieldDefaultValue": 100,
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size",
                       "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "connection_pool_timeout",
+                      "required": false,
+                      "desc": "Maximum duration to wait to get a connection from pool.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.connection-pool-timeout",
+                      "fieldType": "duration",
                       "fieldCategory": "advanced"
                     },
                     {
@@ -7013,6 +7100,17 @@
                       "fieldDefaultValue": 100,
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size",
                       "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "connection_pool_timeout",
+                      "required": false,
+                      "desc": "Maximum duration to wait to get a connection from pool.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.connection-pool-timeout",
+                      "fieldType": "duration",
                       "fieldCategory": "advanced"
                     },
                     {
@@ -11415,6 +11513,17 @@
                   "fieldDefaultValue": 100,
                   "fieldFlag": "ruler-storage.cache.redis.connection-pool-size",
                   "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connection_pool_timeout",
+                  "required": false,
+                  "desc": "Maximum duration to wait to get a connection from pool.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 4000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.connection-pool-timeout",
+                  "fieldType": "duration",
                   "fieldCategory": "advanced"
                 },
                 {
