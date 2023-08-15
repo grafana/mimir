@@ -80,7 +80,7 @@ func TestOTLPIngestion(t *testing.T) {
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// Query the metadata
-	metadataResult, err := c.GetPrometheusMetadata("", 0)
+	metadataResult, err := c.GetPrometheusMetadata()
 	require.NoError(t, err)
 	require.Equal(t, 200, metadataResult.StatusCode)
 
@@ -120,4 +120,33 @@ func TestOTLPIngestion(t *testing.T) {
 	// it is not possible to assert with assert.ElementsMatch(t, expectedVector, result.(model.Vector))
 	// till https://github.com/open-telemetry/opentelemetry-proto/pull/441 is released. That is only
 	// to test setup logic
+
+	expectedJSON = `
+		{
+		   "status":"success",
+		   "data":{
+			  "series":[
+				 {
+					"type":"gaugehistogram",
+					"help":"foo",
+					"unit":"foo"
+				 }
+			  ],
+			  "series_1":[
+				 {
+					"type":"counter",
+					"help":"foo",
+					"unit":"foo"
+				 }
+			  ]
+		   }
+		}
+	`
+
+	metadataResult, err = c.GetPrometheusMetadata()
+	require.NoError(t, err)
+	require.Equal(t, 200, metadataResult.StatusCode)
+
+	metadataResponseBody, err = io.ReadAll(metadataResult.Body)
+	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
 }
