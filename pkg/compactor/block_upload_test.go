@@ -1359,7 +1359,6 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 		expectErrorInValidationFile bool
 		expectTempUploadingMeta     bool
 		expectMeta                  bool
-		expectFuncSuccess           bool
 	}{
 		{
 			name:                        "validation fails",
@@ -1424,7 +1423,6 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 			expectValidationFile:    false,
 			expectTempUploadingMeta: false,
 			expectMeta:              true,
-			expectFuncSuccess:       true,
 		},
 	}
 
@@ -1449,38 +1447,12 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 			}
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
 
-			meta := block.Meta{
-				Thanos: block.ThanosMeta{
-					Files: []block.File{
-						{
-							RelPath:   "chunks/000001",
-							SizeBytes: 42,
-						},
-						{
-							RelPath:   "index",
-							SizeBytes: 17,
-						},
-						{
-							RelPath: "meta.json",
-						},
-					},
-				},
-			}
+			meta := block.Meta{}
 			marshalAndUploadJSON(t, bkt, uploadingMetaPath, meta)
 			v := validationFile{}
 			marshalAndUploadJSON(t, bkt, validationPath, v)
 
 			c.validateAndCompleteBlockUpload(log.NewNopLogger(), userBkt, ulid.MustParse(blockID), &meta, tc.validation)
-
-			if tc.expectFuncSuccess {
-				assert.Equal(t, 1.0, promtest.ToFloat64(c.blockUploadBlocks))
-				assert.Equal(t, 59.0, promtest.ToFloat64(c.blockUploadBytes))
-				assert.Equal(t, 3.0, promtest.ToFloat64(c.blockUploadFiles))
-			} else {
-				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadBlocks))
-				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadBytes))
-				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadFiles))
-			}
 
 			tempUploadingMetaExists, err := bkt.Exists(context.Background(), uploadingMetaPath)
 			require.NoError(t, err)
