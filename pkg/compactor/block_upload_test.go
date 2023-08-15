@@ -7,9 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"io"
 	"math"
 	"net/http"
@@ -22,6 +19,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
