@@ -18,8 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
-
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	alertConfig "github.com/prometheus/alertmanager/config"
@@ -31,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/push"
 )
 

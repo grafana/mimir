@@ -50,7 +50,6 @@ type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.Hand
 type Config struct {
 	SkipLabelNameValidationHeader bool `yaml:"skip_label_name_validation_header_enabled" category:"advanced"`
 
-	// when true the distributor translate OTLP to metadata and forwards it,
 	EnableOtelMetadataStorage bool `yaml:"enable_otel_metadata_translation" category:"experimental"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
