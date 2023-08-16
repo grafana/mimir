@@ -1031,8 +1031,8 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
-  -distributor.enable_service_unavailable_error_on_rate_limit
-    	[experimental] Flag to determines the error code returned when distributor rate limits are reached. If set to true, the error code will be 503; if set to false, a 429 error is returned
+  -distributor.enable-service-overload-error-on-rate-limit
+    	[experimental] Flag to determines the error code returned when distributor rate limits are reached. If set to true, the error code will be 529; if set to false, a 429 error is returned
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string

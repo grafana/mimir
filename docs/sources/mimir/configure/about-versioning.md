@@ -60,8 +60,8 @@ The following features are currently experimental:
 - Distributor
   - Metrics relabeling
   - OTLP ingestion path
-  - Configuring error code to 503 instead of 429 upon rate limit exhaustion.
-    - `distributor.enable-service-unavailable-error-on-rate-limit`
+  - Configuring error code to 529 instead of 429 upon rate limit exhaustion.
+    - `distributor.enable-service-overload-error-on-rate-limit`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
