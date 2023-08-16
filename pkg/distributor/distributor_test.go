@@ -3965,7 +3965,7 @@ func TestDistributorValidation(t *testing.T) {
 	now := model.Now()
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
 
-	for i, tc := range []struct {
+	for name, tc := range map[string]struct {
 		metadata           []*mimirpb.MetricMetadata
 		labels             [][]mimirpb.LabelAdapter
 		samples            []mimirpb.Sample
@@ -3973,8 +3973,7 @@ func TestDistributorValidation(t *testing.T) {
 		expectedStatusCode int32
 		expectedErr        string
 	}{
-		// Test validation passes.
-		{
+		"validation passes": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
 			labels:   [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
@@ -3988,8 +3987,7 @@ func TestDistributorValidation(t *testing.T) {
 			}},
 		},
 
-		// Test validation passes when labels are unsorted.
-		{
+		"validation passes when labels are unsorted": {
 			labels: [][]mimirpb.LabelAdapter{
 				{
 					{Name: "foo", Value: "bar"},
@@ -4001,8 +3999,7 @@ func TestDistributorValidation(t *testing.T) {
 			}},
 		},
 
-		// Test validation fails for samples from the future.
-		{
+		"validation fails for samples from the future": {
 			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(future),
@@ -4012,8 +4009,7 @@ func TestDistributorValidation(t *testing.T) {
 			expectedErr:        fmt.Sprintf(`received a sample whose timestamp is too far in the future, timestamp: %d series: 'testmetric' (err-mimir-too-far-in-future)`, future),
 		},
 
-		// Test maximum labels names per series.
-		{
+		"exceeds maximum labels per series": {
 			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
@@ -4022,8 +4018,22 @@ func TestDistributorValidation(t *testing.T) {
 			expectedStatusCode: http.StatusBadRequest,
 			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
-		// Test multiple validation fails return the first one.
-		{
+		"exceeds maximum labels per series with a metric that exceeds 200 characters when formatted": {
+			labels: [][]mimirpb.LabelAdapter{{
+				{Name: labels.MetricName, Value: "testmetric"},
+				{Name: "foo-with-a-long-long-label", Value: "bar-with-a-long-long-value"},
+				{Name: "foo2-with-a-long-long-label", Value: "bar2-with-a-long-long-value"},
+				{Name: "foo3-with-a-long-long-label", Value: "bar3-with-a-long-long-value"},
+				{Name: "foo4-with-a-long-long-label", Value: "bar4-with-a-long-long-value"},
+			}},
+			samples: []mimirpb.Sample{{
+				TimestampMs: int64(now),
+				Value:       2,
+			}},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 5, limit: 2) series: 'testmetric{foo-with-a-long-long-label="bar-with-a-long-long-value", foo2-with-a-long-long-label="bar2-with-a-long-long-value", foo3-with-a-long-long-label="bar3-with-a-long-long-value", foo4-with-a-lo'`,
+		},
+		"multiple validation failures should return the first failure": {
 			labels: [][]mimirpb.LabelAdapter{
 				{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}},
 				{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}},
@@ -4035,8 +4045,7 @@ func TestDistributorValidation(t *testing.T) {
 			expectedStatusCode: http.StatusBadRequest,
 			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
-		// Test metadata validation fails
-		{
+		"metadata validation failure": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
 			labels:   [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
@@ -4046,8 +4055,7 @@ func TestDistributorValidation(t *testing.T) {
 			expectedStatusCode: http.StatusBadRequest,
 			expectedErr:        `received a metric metadata with no metric name`,
 		},
-		// Test empty exemplar labels fails.
-		{
+		"empty exemplar labels": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
 			labels:   [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
@@ -4063,7 +4071,7 @@ func TestDistributorValidation(t *testing.T) {
 			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")),
 		},
 	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			var limits validation.Limits
 			flagext.DefaultValues(&limits)
 
