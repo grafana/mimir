@@ -1291,9 +1291,12 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 	mockCall := tsdbCompactor.On("Compact", mock.Anything, mock.Anything, mock.Anything)
 	mockCall.RunFn = func(args mock.Arguments) {
 		dir := args.Get(0).(string)
+
 		compactedMeta, err := block.GenerateBlockFromSpec(user, dir, outputBlockSpec)
 		require.NoError(t, err)
-		os.OpenFile(filepath.Join(dir, compactedMeta.ULID.String(), "tombstones"), os.O_RDONLY|os.O_CREATE, 0666)
+
+		_, err = os.OpenFile(filepath.Join(dir, compactedMeta.ULID.String(), "tombstones"), os.O_RDONLY|os.O_CREATE, 0666)
+		require.NoError(t, err)
 
 		mockCall.ReturnArguments = mock.Arguments{compactedMeta.ULID, nil}
 	}
