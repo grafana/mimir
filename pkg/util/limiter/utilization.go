@@ -3,8 +3,12 @@
 package limiter
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,21 +33,55 @@ const (
 )
 
 type utilizationScanner interface {
-	// Scan returns CPU time in seconds and memory utilization in bytes, or an error.
-	Scan() (float64, uint64, error)
+	// Scan returns procfs CPU time and cgroup CPU time in seconds and memory utilization in bytes, or an error.
+	Scan() (float64, float64, uint64, error)
 }
 
 type procfsScanner struct {
 	proc procfs.Proc
 }
 
-func (s procfsScanner) Scan() (float64, uint64, error) {
-	ps, err := s.proc.Stat()
+func scanText(path string) (string, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return 0, 0, errors.Wrap(err, "failed to get process stats")
+		return "", errors.Wrapf(err, "unable to open %s", path)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	if !scanner.Scan() {
+		return "", fmt.Errorf("unable to scan %s", path)
+	}
+	if scanner.Err() != nil {
+		return "", errors.Wrapf(err, "unable to scan %s", path)
 	}
 
-	return ps.CPUTime(), uint64(ps.ResidentMemory()), nil
+	return scanner.Text(), nil
+}
+
+func (s procfsScanner) Scan() (float64, float64, uint64, error) {
+	ps, err := s.proc.Stat()
+	if err != nil {
+		return 0, 0, 0, errors.Wrap(err, "failed to get process stats")
+	}
+
+	const cgrpV1Path = "/sys/fs/cgroup/cpu/cpuacct.usage"
+	var cgrpCPU float64
+	cgrpCPUStr, err := scanText(cgrpV1Path)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return 0, 0, 0, err
+		}
+	} else if cgrpCPUStr != "" {
+		cgrpCPUI, err := strconv.ParseInt(cgrpCPUStr, 10, 64)
+		if err != nil {
+			return 0, 0, 0, errors.Wrapf(err, "unable to scan %s", cgrpV1Path)
+		}
+		// Convert from nanoseconds to seconds
+		cgrpCPU = float64(cgrpCPUI) / 1e9
+	}
+
+	return ps.CPUTime(), cgrpCPU, uint64(ps.ResidentMemory()), nil
 }
 
 // UtilizationBasedLimiter is a Service offering limiting based on CPU and memory utilization.
@@ -61,6 +99,8 @@ type UtilizationBasedLimiter struct {
 	cpuLimit float64
 	// Last CPU utilization time counter.
 	lastCPUTime float64
+	// Last cgroup CPU utilization time counter.
+	lastCgrpCPUTime float64
 	// The time of the first CPU update.
 	firstCPUUpdate time.Time
 	// The time of the last CPU update.
@@ -137,7 +177,7 @@ func (l *UtilizationBasedLimiter) update(_ context.Context) error {
 // compute and return the current CPU and memory utilization.
 // This function must be called at a regular interval (resourceUtilizationUpdateInterval) to get a predictable behaviour.
 func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil float64, currMemoryUtil uint64) {
-	cpuTime, currMemoryUtil, err := l.utilizationScanner.Scan()
+	cpuTime, cgrpCPUTime, currMemoryUtil, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "err", err.Error())
 		// Disable any limiting, since we can't tell resource utilization
@@ -166,17 +206,20 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 			cpuUtil := (cpuTime - prevCPUTime) / timeSincePrevUpdate.Seconds()
 			l.cpuMovingAvg.Add(int64(cpuUtil * 100))
 			l.cpuMovingAvg.Tick()
+			cgrpCPUUtil := (cgrpCPUTime - l.lastCgrpCPUTime) / timeSincePrevUpdate.Seconds()
 			if l.cpuSamples != nil {
-				l.cpuSamples.Add(cpuUtil)
+				l.cpuSamples.Add(cpuUtil, cgrpCPUUtil)
 			}
 
 			l.lastCPUUpdate = now
 			l.lastCPUTime = cpuTime
+			l.lastCgrpCPUTime = cgrpCPUTime
 		}
 	} else {
 		// First time we read the CPU utilization.
 		l.lastCPUUpdate = now
 		l.lastCPUTime = cpuTime
+		l.lastCgrpCPUTime = cgrpCPUTime
 	}
 
 	// The CPU utilization moving average requires a warmup period before getting
@@ -206,8 +249,10 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 	if enable {
 		logger := l.logger
 		if l.cpuSamples != nil {
-			// Log also the CPU samples the CPU load EWMA is based on
-			logger = log.WithSuffix(logger, "source_samples", l.cpuSamples.String())
+			// Log also the CPU samples the CPU load EWMA is based on,
+			// plus for comparison the max cgroup CPU sample during the time frame
+			logger = log.WithSuffix(logger, "source_samples", l.cpuSamples.String(),
+				"max_cgroup_cpu_sample", l.cpuSamples.MaxCgroupSample())
 		}
 		level.Info(logger).Log("msg", "enabling resource utilization based limiting",
 			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
@@ -246,21 +291,26 @@ func formatMemoryLimit(limit uint64) string {
 	return formatMemory(limit)
 }
 
+type cpuSample struct {
+	proc   float64
+	cgroup float64
+}
+
 // cpuSampleBuffer is a circular buffer of CPU samples.
 type cpuSampleBuffer struct {
-	samples []float64
+	samples []cpuSample
 	head    int
 }
 
 func newCPUSampleBuffer(size int) *cpuSampleBuffer {
 	return &cpuSampleBuffer{
-		samples: make([]float64, size),
+		samples: make([]cpuSample, size),
 	}
 }
 
 // Add adds a sample to the buffer.
-func (b *cpuSampleBuffer) Add(sample float64) {
-	b.samples[b.head] = sample
+func (b *cpuSampleBuffer) Add(procSample, cgrpSample float64) {
+	b.samples[b.head] = cpuSample{proc: procSample, cgroup: cgrpSample}
 	b.head = (b.head + 1) % len(b.samples)
 }
 
@@ -269,11 +319,23 @@ func (b *cpuSampleBuffer) String() string {
 	var sb strings.Builder
 	for i := range b.samples {
 		s := b.samples[(b.head+i)%len(b.samples)]
-		sb.WriteString(fmt.Sprintf("%.2f", s))
+		sb.WriteString(fmt.Sprintf("%.2f", s.proc))
 		if i < len(b.samples)-1 {
 			sb.WriteByte(',')
 		}
 	}
 
 	return sb.String()
+}
+
+// MaxCgroupSample returns the maximum CPU sample obtained from cgroup stats.
+func (b *cpuSampleBuffer) MaxCgroupSample() float64 {
+	max := float64(0)
+	for _, s := range b.samples {
+		if s.cgroup > max {
+			max = s.cgroup
+		}
+	}
+
+	return max
 }

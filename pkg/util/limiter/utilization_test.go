@@ -356,11 +356,11 @@ type fakeUtilizationScanner struct {
 	memoryUtilization uint64
 }
 
-func (s *fakeUtilizationScanner) Scan() (float64, uint64, error) {
+func (s *fakeUtilizationScanner) Scan() (float64, float64, uint64, error) {
 	s.totalTime += float64(1) / float64(60-s.counter)
 	s.counter++
 	s.counter %= 60
-	return s.totalTime, s.memoryUtilization, nil
+	return s.totalTime, s.totalTime, s.memoryUtilization, nil
 }
 
 func (s *fakeUtilizationScanner) String() string {
@@ -375,14 +375,14 @@ type preRecordedUtilizationScanner struct {
 	totalCPUUtilization float64
 }
 
-func (s *preRecordedUtilizationScanner) Scan() (float64, uint64, error) {
+func (s *preRecordedUtilizationScanner) Scan() (float64, float64, uint64, error) {
 	if len(s.instantCPUValues) == 0 {
-		return s.totalCPUUtilization, 0, nil
+		return s.totalCPUUtilization, 0, 0, nil
 	}
 
 	s.totalCPUUtilization += s.instantCPUValues[0]
 	s.instantCPUValues = s.instantCPUValues[1:]
-	return s.totalCPUUtilization, 0, nil
+	return s.totalCPUUtilization, s.totalCPUUtilization, 0, nil
 }
 
 func (s *preRecordedUtilizationScanner) String() string {
