@@ -44,6 +44,7 @@ var (
 	reasonExemplarTimestampInvalid = globalerror.ExemplarTimestampInvalid.LabelValue()
 	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
 	reasonExemplarTooOld           = "exemplar_too_old"
+	reasonExemplarTooFarInFuture   = "exemplar_too_far_in_future"
 
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = globalerror.MetricMetadataMetricNameTooLong.LabelValue()
@@ -167,6 +168,7 @@ type ExemplarValidationMetrics struct {
 	labelsTooLong    *prometheus.CounterVec
 	labelsBlank      *prometheus.CounterVec
 	tooOld           *prometheus.CounterVec
+	tooFarInFuture   *prometheus.CounterVec
 }
 
 func (m *ExemplarValidationMetrics) DeleteUserMetrics(userID string) {
@@ -175,6 +177,7 @@ func (m *ExemplarValidationMetrics) DeleteUserMetrics(userID string) {
 	m.labelsTooLong.DeleteLabelValues(userID)
 	m.labelsBlank.DeleteLabelValues(userID)
 	m.tooOld.DeleteLabelValues(userID)
+	m.tooFarInFuture.DeleteLabelValues(userID)
 }
 
 func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMetrics {
@@ -184,6 +187,7 @@ func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMe
 		labelsTooLong:    DiscardedExemplarsCounter(r, reasonExemplarLabelsTooLong),
 		labelsBlank:      DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
 		tooOld:           DiscardedExemplarsCounter(r, reasonExemplarTooOld),
+		tooFarInFuture:   DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
 	}
 }
 
@@ -277,11 +281,15 @@ func ValidateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.
 	return nil
 }
 
-// ExemplarTimestampOK returns true if the timestamp is newer than minTS.
+// ValidateExemplarTimestamp returns true if the exemplar timestamp is between minTS and maxTS.
 // This is separate from ValidateExemplar() so we can silently drop old ones, not log an error.
-func ExemplarTimestampOK(m *ExemplarValidationMetrics, userID string, minTS int64, e mimirpb.Exemplar) bool {
+func ValidateExemplarTimestamp(m *ExemplarValidationMetrics, userID string, minTS, maxTS int64, e mimirpb.Exemplar) bool {
 	if e.TimestampMs < minTS {
 		m.tooOld.WithLabelValues(userID).Inc()
+		return false
+	}
+	if e.TimestampMs > maxTS {
+		m.tooFarInFuture.WithLabelValues(userID).Inc()
 		return false
 	}
 	return true
