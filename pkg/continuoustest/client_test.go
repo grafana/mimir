@@ -37,11 +37,12 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 
 		// Then Unmarshal
 		body, err := io.ReadAll(reader)
+		require.NoError(t, request.Body.Close())
+
 		req := pmetricotlp.NewExportRequest()
-
 		require.NoError(t, req.UnmarshalProto(body))
-		receivedRequests = append(receivedRequests, req)
 
+		receivedRequests = append(receivedRequests, req)
 		writer.WriteHeader(nextStatusCode)
 	}))
 	t.Cleanup(server.Close)
@@ -87,6 +88,7 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		assert.Equal(t, 10, receivedRequests[1].Metrics().MetricCount())
 		assert.Equal(t, 2, receivedRequests[2].Metrics().MetricCount())
 	})
+
 	t.Run("request failed with 4xx error", func(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusBadRequest
