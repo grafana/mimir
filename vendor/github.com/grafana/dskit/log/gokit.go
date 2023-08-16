@@ -6,101 +6,58 @@ package log
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 )
 
-// NewGoKitFormat creates a new Interface backed by a GoKit logger
-// format can be "json" or defaults to logfmt
-func NewGoKitFormat(l Level, f Format) Interface {
-	var logger log.Logger
-	if f.s == "json" {
-		logger = log.NewJSONLogger(log.NewSyncWriter(os.Stderr))
-	} else {
-		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+const (
+	LogfmtFormat = "logfmt"
+	JSONFormat   = "json"
+)
+
+// NewGoKit creates a new GoKit logger with the given format and writer.
+// If the given writer is nil, os.Stderr is used.
+// If the given format is nil, logfmt is used.
+// No additional fields nor filters are added to the created logger, and
+// if they are required, the caller is expected to add them.
+func NewGoKit(format string, writer io.Writer) log.Logger {
+	if writer == nil {
+		writer = log.NewSyncWriter(os.Stderr)
 	}
-	return addStandardFields(logger, l)
+	if format == JSONFormat {
+		return log.NewJSONLogger(writer)
+	}
+	return log.NewLogfmtLogger(writer)
+}
+
+// NewGoKitWithLevel creates a new GoKit logger with the given level, format and writer.
+// If the given writer is nil, os.Stderr is used.
+// If the given format is nil, logfmt is used.
+func NewGoKitWithLevel(lvl Level, format string, writer io.Writer) log.Logger {
+	logger := NewGoKit(format, writer)
+	return level.NewFilter(logger, lvl.Option)
 }
 
 // stand-alone for test purposes
-func addStandardFields(logger log.Logger, l Level) Interface {
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
-	logger = level.NewFilter(logger, l.Gokit)
-	return gokit{logger}
+func addStandardFields(logger log.Logger) log.Logger {
+	return log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
 }
 
-// NewGoKit creates a new Interface backed by a GoKit logger
-func NewGoKit(l Level) Interface {
-	return NewGoKitFormat(l, Format{s: "logfmt"})
-}
-
-// GoKit wraps an existing gokit Logger.
-func GoKit(logger log.Logger) Interface {
-	return gokit{logger}
-}
-
-type gokit struct {
-	log.Logger
-}
-
-// Helper to defer sprintf until it is needed.
-type sprintf struct {
+type Sprintf struct {
 	format string
 	args   []interface{}
 }
 
-func (s *sprintf) String() string {
-	return fmt.Sprintf(s.format, s.args...)
-}
-
-// Helper to defer sprint until it is needed.
-// Note we don't use Sprintln because the output is passed to go-kit as one value among many on a line
-type sprint struct {
-	args []interface{}
-}
-
-func (s *sprint) String() string {
-	return fmt.Sprint(s.args...)
-}
-
-func (g gokit) Debugf(format string, args ...interface{}) {
-	level.Debug(g.Logger).Log("msg", &sprintf{format: format, args: args})
-}
-func (g gokit) Debugln(args ...interface{}) {
-	level.Debug(g.Logger).Log("msg", &sprint{args: args})
-}
-
-func (g gokit) Infof(format string, args ...interface{}) {
-	level.Info(g.Logger).Log("msg", &sprintf{format: format, args: args})
-}
-func (g gokit) Infoln(args ...interface{}) {
-	level.Info(g.Logger).Log("msg", &sprint{args: args})
-}
-
-func (g gokit) Warnf(format string, args ...interface{}) {
-	level.Warn(g.Logger).Log("msg", &sprintf{format: format, args: args})
-}
-func (g gokit) Warnln(args ...interface{}) {
-	level.Warn(g.Logger).Log("msg", &sprint{args: args})
-}
-
-func (g gokit) Errorf(format string, args ...interface{}) {
-	level.Error(g.Logger).Log("msg", &sprintf{format: format, args: args})
-}
-func (g gokit) Errorln(args ...interface{}) {
-	level.Error(g.Logger).Log("msg", &sprint{args: args})
-}
-
-func (g gokit) WithField(key string, value interface{}) Interface {
-	return gokit{log.With(g.Logger, key, value)}
-}
-
-func (g gokit) WithFields(fields Fields) Interface {
-	logger := g.Logger
-	for k, v := range fields {
-		logger = log.With(logger, k, v)
+func LazySprintf(format string, args ...interface{}) *Sprintf {
+	return &Sprintf{
+		format: format,
+		args:   args,
 	}
-	return gokit{logger}
+}
+
+func (s *Sprintf) String() string {
+	return fmt.Sprintf(s.format, s.args...)
 }

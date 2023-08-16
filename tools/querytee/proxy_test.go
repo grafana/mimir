@@ -25,6 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var testRoutes = []Route{
@@ -185,7 +187,7 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			require.NotNil(t, p)
 			defer p.Stop() //nolint:errcheck
 
-			require.NoError(t, p.Start())
+			require.NoError(t, p.Start(getLogger(t)))
 
 			// Send a query request to the proxy.
 			endpoint := fmt.Sprintf("http://%s/api/v1/query", p.server.HTTPListenAddr())
@@ -338,7 +340,7 @@ func TestProxy_Passthrough(t *testing.T) {
 			require.NotNil(t, p)
 			defer p.Stop() //nolint:errcheck
 
-			require.NoError(t, p.Start())
+			require.NoError(t, p.Start(getLogger(t)))
 
 			for _, query := range testData.queries {
 
@@ -386,6 +388,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 				GRPCListenAddress: "localhost",
 				GRPCListenPort:    0,
 				Registerer:        prometheus.NewRegistry(),
+				Log:               getLogger(t),
 			})
 			require.NoError(t, err)
 			server.HTTP.Path(pathPrefix).Methods("GET").Handler(backend.handler)
@@ -413,7 +416,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		require.NotNil(t, p)
 		defer p.Stop() //nolint:errcheck
 
-		require.NoError(t, p.Start())
+		require.NoError(t, p.Start(getLogger(t)))
 
 		// Send a query request to the proxy.
 		endpoint := getServerAddress("http", p.server) + "/api/v1/query"
@@ -440,6 +443,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 				GRPCListenAddress: "localhost",
 				GRPCListenPort:    0,
 				Registerer:        prometheus.NewRegistry(),
+				Log:               getLogger(t),
 			})
 			require.NoError(t, err)
 			server.HTTP.Path(pathPrefix).Methods("GET").Handler(backend.handler)
@@ -467,7 +471,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		require.NotNil(t, p)
 		defer p.Stop() //nolint:errcheck
 
-		require.NoError(t, p.Start())
+		require.NoError(t, p.Start(getLogger(t)))
 
 		// gRPC connection to proxy
 		grpcAddress := getServerAddress("grpc", p.server)
@@ -517,4 +521,11 @@ func getServerAddress(proto string, server *server.Server) string {
 	}
 
 	return ""
+}
+
+func getLogger(t *testing.T) log.Logger {
+	cfg := server.Config{}
+	require.NoError(t, cfg.LogLevel.Set("info"))
+	util_log.InitLogger(&cfg, false, util_log.RateLimitedLoggerCfg{})
+	return cfg.Log
 }

@@ -43,9 +43,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	util_log.InitLogger(&server.Config{
-		LogLevel: cfg.LogLevel,
-	}, false)
+	serverCfg := server.Config{LogLevel: cfg.LogLevel}
+	util_log.InitLogger(&serverCfg, false, util_log.RateLimitedLoggerCfg{})
 
 	// Run the instrumentation server.
 	registry := prometheus.NewRegistry()
@@ -66,7 +65,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := proxy.Start(); err != nil {
+	if err := proxy.Start(serverCfg.Log); err != nil {
 		level.Error(util_log.Logger).Log("msg", "Unable to start the proxy", "err", err.Error())
 		util_log.Flush()
 		os.Exit(1)
