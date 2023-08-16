@@ -184,45 +184,95 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 		totalSeries := 0
 		totalChunks := 0
 
+		// Why do we buffer batches received before we receive the estimated number of chunks?
+		// We want the chunks channel to buffer only one batch, so that during query execution we don't read too many chunks into memory at once.
+		// However, we may receive multiple batches before we receive the estimate, so we can't push all batches into the channel - we don't start
+		// reading series until we've received the estimate, so we might end up deadlocked waiting for the estimate while we can't push the batches
+		// in front of the estimate message into the channel.
+		// Under normal circumstances, there's only one batch before the estimate is received, so the impact of this in terms of peak memory consumption
+		// should be minimal.
+		batchesReceivedBeforeEstimate := make([]*storepb.StreamingChunksBatch, 0, 1)
+		haveReceivedEstimate := false
+
+		sendBatch := func(c *storepb.StreamingChunksBatch) error {
+			select {
+			case <-ctxDone:
+				// Why do we abort if the context is done?
+				// We want to make sure that this goroutine is never leaked.
+				// This goroutine could be leaked if nothing is reading from the buffer, but this method is still trying to send
+				// more series to a full buffer: it would block forever.
+				// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
+				// This only works correctly if the context is cancelled when the query request is complete or cancelled,
+				// which is true at the time of writing.
+				return s.client.Context().Err()
+			case s.seriesChunksChan <- c:
+				// Batch enqueued successfully, nothing else to do for this batch.
+				return nil
+			}
+		}
+
 		for {
 			msg, err := s.client.Recv()
 			if err != nil {
-				if errors.Is(err, io.EOF) {
-					if totalSeries < s.expectedSeriesCount {
-						onError(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries))
-					} else {
-						level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
-					}
-				} else {
+				if !errors.Is(err, io.EOF) {
 					onError(err)
+					return
 				}
 
+				if totalSeries < s.expectedSeriesCount {
+					onError(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries))
+					return
+				}
+
+				if !haveReceivedEstimate {
+					level.Warn(log).Log("msg", "did not receive chunks count estimate for stream before EOF")
+					s.chunkCountEstimateChan <- 0
+
+					for _, b := range batchesReceivedBeforeEstimate {
+						if err := sendBatch(b); err != nil {
+							onError(err)
+							return
+						}
+					}
+				}
+
+				level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
 				return
 			}
 
 			if c := msg.GetStreamingChunksEstimate(); c != nil {
+				level.Debug(log).Log("msg", "received estimated number of chunks", "chunks", c.EstimatedChunkCount)
+
 				select {
 				case <-ctxDone:
 					onError(s.client.Context().Err())
 					return
 				case s.chunkCountEstimateChan <- int(c.EstimatedChunkCount):
-					// Nothing else to do.
+					for _, b := range batchesReceivedBeforeEstimate {
+						if err := sendBatch(b); err != nil {
+							onError(err)
+							return
+						}
+					}
+
+					haveReceivedEstimate = true
+					batchesReceivedBeforeEstimate = nil
 				}
 
 				continue
 			}
 
-			c := msg.GetStreamingChunks()
-			if c == nil {
+			b := msg.GetStreamingChunks()
+			if b == nil {
 				onError(fmt.Errorf("expected to receive StreamingChunks or StreamingChunksEstimate, but got something else"))
 				return
 			}
 
-			if len(c.Series) == 0 {
+			if len(b.Series) == 0 {
 				continue
 			}
 
-			totalSeries += len(c.Series)
+			totalSeries += len(b.Series)
 			if totalSeries > s.expectedSeriesCount {
 				onError(fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries))
 				return
@@ -230,7 +280,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 
 			chunkBytes := 0
 			numChunks := 0
-			for _, s := range c.Series {
+			for _, s := range b.Series {
 				numChunks += len(s.Chunks)
 				for _, ch := range s.Chunks {
 					chunkBytes += ch.Size()
@@ -249,19 +299,13 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 			s.stats.AddFetchedChunks(uint64(numChunks))
 			s.stats.AddFetchedChunkBytes(uint64(chunkBytes))
 
-			select {
-			case <-ctxDone:
-				// Why do we abort if the context is done?
-				// We want to make sure that this goroutine is never leaked.
-				// This goroutine could be leaked if nothing is reading from the buffer, but this method is still trying to send
-				// more series to a full buffer: it would block forever.
-				// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
-				// This only works correctly if the context is cancelled when the query request is complete or cancelled,
-				// which is true at the time of writing.
-				onError(s.client.Context().Err())
-				return
-			case s.seriesChunksChan <- c:
-				// Batch enqueued successfully, nothing else to do for this batch.
+			if haveReceivedEstimate {
+				if err := sendBatch(b); err != nil {
+					onError(err)
+					return
+				}
+			} else {
+				batchesReceivedBeforeEstimate = append(batchesReceivedBeforeEstimate, b)
 			}
 		}
 	}()

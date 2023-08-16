@@ -258,60 +258,108 @@ func TestStoreGatewayStreamReader_HappyPaths(t *testing.T) {
 	series4 := []storepb.AggrChunk{createChunk(t, 1000, 5)}
 
 	testCases := map[string]struct {
-		batches []storepb.StreamingChunksBatch
+		messages               []*storepb.SeriesResponse
+		expectedChunksEstimate int
 	}{
-		"single series per batch": {
-			batches: []storepb.StreamingChunksBatch{
-				{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: series0}}},
-				{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: series1}}},
-				{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: series2}}},
-				{Series: []*storepb.StreamingChunks{{SeriesIndex: 3, Chunks: series3}}},
-				{Series: []*storepb.StreamingChunks{{SeriesIndex: 4, Chunks: series4}}},
-			},
+		"single series per batch, no chunks estimate received": {
+			messages: batchesToMessages(
+				storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: series0}}},
+				storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: series1}}},
+				storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: series2}}},
+				storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 3, Chunks: series3}}},
+				storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 4, Chunks: series4}}},
+			),
 		},
-		"multiple series per batch": {
-			batches: []storepb.StreamingChunksBatch{
-				{
+		"multiple series per batch, no chunks estimate received": {
+			messages: batchesToMessages(
+				storepb.StreamingChunksBatch{
 					Series: []*storepb.StreamingChunks{
 						{SeriesIndex: 0, Chunks: series0},
 						{SeriesIndex: 1, Chunks: series1},
 						{SeriesIndex: 2, Chunks: series2},
 					},
 				},
-				{
+				storepb.StreamingChunksBatch{
 					Series: []*storepb.StreamingChunks{
 						{SeriesIndex: 3, Chunks: series3},
 						{SeriesIndex: 4, Chunks: series4},
 					},
 				},
-			},
+			),
 		},
-		"empty batches": {
-			batches: []storepb.StreamingChunksBatch{
-				{
+		"empty batches, no chunks estimate received": {
+			messages: batchesToMessages(
+				storepb.StreamingChunksBatch{
 					Series: []*storepb.StreamingChunks{
 						{SeriesIndex: 0, Chunks: series0},
 						{SeriesIndex: 1, Chunks: series1},
 						{SeriesIndex: 2, Chunks: series2},
 					},
 				},
-				{},
-				{
+				storepb.StreamingChunksBatch{},
+				storepb.StreamingChunksBatch{
 					Series: []*storepb.StreamingChunks{
 						{SeriesIndex: 3, Chunks: series3},
 						{SeriesIndex: 4, Chunks: series4},
 					},
 				},
-				{},
+				storepb.StreamingChunksBatch{},
+			),
+		},
+		"single series per batch, chunks estimate sent before any batches": {
+			messages: []*storepb.SeriesResponse{
+				storepb.NewStreamingChunksEstimate(40),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: series0}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: series1}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: series2}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 3, Chunks: series3}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 4, Chunks: series4}}}),
 			},
+			expectedChunksEstimate: 40,
+		},
+		"single series per batch, chunks estimate sent after first batch": {
+			messages: []*storepb.SeriesResponse{
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: series0}}}),
+				storepb.NewStreamingChunksEstimate(40),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: series1}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: series2}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 3, Chunks: series3}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 4, Chunks: series4}}}),
+			},
+			expectedChunksEstimate: 40,
+		},
+		"single series per batch, chunks estimate sent after second batch": {
+			messages: []*storepb.SeriesResponse{
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: series0}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: series1}}}),
+				storepb.NewStreamingChunksEstimate(40),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: series2}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 3, Chunks: series3}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 4, Chunks: series4}}}),
+			},
+			expectedChunksEstimate: 40,
+		},
+		"single series per batch, chunks estimate sent after last batch": {
+			messages: []*storepb.SeriesResponse{
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: series0}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: series1}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: series2}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 3, Chunks: series3}}}),
+				storepb.NewStreamingChunksResponse(&storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 4, Chunks: series4}}}),
+				storepb.NewStreamingChunksEstimate(40),
+			},
+			expectedChunksEstimate: 40,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: testCase.batches}
+			mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: testCase.messages}
 			reader := newStoreGatewayStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 			reader.StartBuffering()
+
+			actualChunksEstimate := reader.EstimateChunkCount()
+			require.Equal(t, testCase.expectedChunksEstimate, actualChunksEstimate)
 
 			for i, expected := range [][]storepb.AggrChunk{series0, series1, series2, series3, series4} {
 				actual, err := reader.GetChunks(uint64(i))
@@ -330,35 +378,60 @@ func TestStoreGatewayStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 	// Ensure that the buffering goroutine is not leaked after context cancellation.
 	test.VerifyNoLeak(t)
 
-	// Create multiple batches to ensure that the buffering goroutine becomes blocked waiting to send further chunks to GetChunks().
-	batches := []storepb.StreamingChunksBatch{
-		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
-		{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}}}},
-		{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}}}},
+	testCases := map[string]func(t *testing.T, reader *storeGatewayStreamReader){
+		"GetChunks()": func(t *testing.T, reader *storeGatewayStreamReader) {
+			for i := 0; i < 3; i++ {
+				_, err := reader.GetChunks(uint64(i))
+
+				if errors.Is(err, context.Canceled) {
+					break
+				}
+
+				require.NoError(t, err)
+
+				if i == 2 {
+					require.Fail(t, "expected GetChunks to report context cancellation error before reaching end of stream")
+				}
+			}
+		},
+		"EstimateChunkCount()": func(t *testing.T, reader *storeGatewayStreamReader) {
+			estimateChunkCountReturned := make(chan struct{})
+
+			go func() {
+				reader.EstimateChunkCount()
+				close(estimateChunkCountReturned)
+			}()
+
+			select {
+			case <-estimateChunkCountReturned:
+				// Nothing to do, this is what we want.
+			case <-time.After(time.Second):
+				require.FailNow(t, "expected EstimateChunkCount() to return after context cancelled")
+			}
+		},
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, batches: batches}
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Create multiple batches to ensure that the buffering goroutine becomes blocked waiting to send further chunks to GetChunks().
+			batches := []storepb.StreamingChunksBatch{
+				{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
+				{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}}}},
+				{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}}}},
+			}
 
-	reader := newStoreGatewayStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
-	cancel()
-	reader.StartBuffering()
+			ctx, cancel := context.WithCancel(context.Background())
+			mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(batches...)}
 
-	for i := 0; i < 3; i++ {
-		_, err := reader.GetChunks(uint64(i))
+			reader := newStoreGatewayStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+			cancel()
+			reader.StartBuffering()
 
-		if errors.Is(err, context.Canceled) {
-			break
-		}
+			testCase(t, reader)
 
-		require.NoError(t, err)
-
-		if i == 2 {
-			require.Fail(t, "expected GetChunks to report context cancellation error before reaching end of stream")
-		}
+			require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after context cancelled")
+		})
 	}
-
-	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after context cancelled")
 }
 
 func TestStoreGatewayStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
@@ -366,7 +439,7 @@ func TestStoreGatewayStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
 	}
 
-	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: batches}
+	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(batches...)}
 	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
@@ -381,7 +454,7 @@ func TestStoreGatewayStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: firstSeries}}},
 	}
 
-	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: batches}
+	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(batches...)}
 	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
@@ -400,17 +473,13 @@ func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: firstSeries}}},
 	}
 
-	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: batches}
+	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(batches...)}
 	reader := newStoreGatewayStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
-	require.NoError(t, err)
-	require.Equal(t, s, firstSeries)
-
-	s, err = reader.GetChunks(1)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 1 from stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series")
+	require.EqualError(t, err, "attempted to read series at index 0 from stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series")
 
 	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after failure")
 }
@@ -425,7 +494,7 @@ func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 			},
 		},
 	}
-	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: batches}
+	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(batches...)}
 	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
@@ -457,6 +526,7 @@ func TestStoreGatewayStreamReader_ChunksLimits(t *testing.T) {
 			maxChunkBytes: 50,
 			expectedError: "the query exceeded the aggregated chunks size limit (limit: 50 bytes) (err-mimir-max-chunks-bytes-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunk-bytes-per-query, or contact your service administrator.",
 		},
+		// Estimated limits are enforced by the consumer of the reader, so that we can check the total estimate is beneath the limit before loading too many batches from too many streams.
 	}
 
 	for name, testCase := range testCases {
@@ -469,9 +539,9 @@ func TestStoreGatewayStreamReader_ChunksLimits(t *testing.T) {
 				}}}},
 			}
 
-			mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), batches: batches}
+			mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(batches...)}
 			queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
-			// TODO: test case for estimated limit
+
 			reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, 0, queryMetrics), &stats.Stats{}, log.NewNopLogger())
 			reader.StartBuffering()
 
@@ -505,21 +575,32 @@ func createChunk(t *testing.T, time int64, value float64) storepb.AggrChunk {
 	}
 }
 
+func batchesToMessages(batches ...storepb.StreamingChunksBatch) []*storepb.SeriesResponse {
+	messages := make([]*storepb.SeriesResponse, len(batches))
+
+	for i, b := range batches {
+		b := b
+		messages[i] = storepb.NewStreamingChunksResponse(&b)
+	}
+
+	return messages
+}
+
 type mockStoreGatewayQueryStreamClient struct {
-	ctx     context.Context
-	batches []storepb.StreamingChunksBatch
-	closed  atomic.Bool
+	ctx      context.Context
+	messages []*storepb.SeriesResponse
+	closed   atomic.Bool
 }
 
 func (m *mockStoreGatewayQueryStreamClient) Recv() (*storepb.SeriesResponse, error) {
-	if len(m.batches) == 0 {
+	if len(m.messages) == 0 {
 		return nil, io.EOF
 	}
 
-	batch := m.batches[0]
-	m.batches = m.batches[1:]
+	msg := m.messages[0]
+	m.messages = m.messages[1:]
 
-	return storepb.NewStreamingChunksResponse(&batch), nil
+	return msg, nil
 }
 
 func (m *mockStoreGatewayQueryStreamClient) Header() (metadata.MD, error) {
