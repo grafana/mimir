@@ -136,8 +136,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
-	validationEnabled := c.cfgProvider.CompactorBlockUploadValidationEnabled(tenantID)
-	if validationEnabled {
+	if c.cfgProvider.CompactorBlockUploadValidationEnabled(tenantID) {
 		maxConcurrency := int64(c.compactorCfg.MaxBlockUploadValidationConcurrency)
 		currentValidations := c.blockUploadValidations.Inc()
 		decreaseActiveValidationsInDefer := true
@@ -164,13 +163,14 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 			defer c.blockUploadValidations.Dec()
 			return c.validateBlock(ctx, logger, blockID, m, userBkt, tenantID)
 		})
+		level.Info(logger).Log("msg", "validation process started")
+	} else {
+		if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
+			writeBlockUploadError(err, "can't mark block as complete", logger, w)
+			return
+		}
+		level.Info(logger).Log("msg", "successfully finished block upload")
 	}
-	if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
-		writeBlockUploadError(err, "can't mark block as complete", logger, w)
-		return
-	}
-
-	level.Info(logger).Log("msg", "successfully finished block upload", "validation_enabled", validationEnabled)
 
 	w.WriteHeader(http.StatusOK)
 }
