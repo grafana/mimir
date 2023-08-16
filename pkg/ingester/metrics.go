@@ -367,6 +367,7 @@ type discardedMetrics struct {
 	sampleOutOfBounds    *prometheus.CounterVec
 	sampleOutOfOrder     *prometheus.CounterVec
 	sampleTooOld         *prometheus.CounterVec
+	sampleTooFarInFuture *prometheus.CounterVec
 	newValueForTimestamp *prometheus.CounterVec
 	perUserSeriesLimit   *prometheus.CounterVec
 	perMetricSeriesLimit *prometheus.CounterVec
@@ -374,12 +375,13 @@ type discardedMetrics struct {
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 	return &discardedMetrics{
-		sampleOutOfBounds:    validation.DiscardedSamplesCounter(r, sampleOutOfBounds),
-		sampleOutOfOrder:     validation.DiscardedSamplesCounter(r, sampleOutOfOrder),
-		sampleTooOld:         validation.DiscardedSamplesCounter(r, sampleTooOld),
-		newValueForTimestamp: validation.DiscardedSamplesCounter(r, newValueForTimestamp),
-		perUserSeriesLimit:   validation.DiscardedSamplesCounter(r, perUserSeriesLimit),
-		perMetricSeriesLimit: validation.DiscardedSamplesCounter(r, perMetricSeriesLimit),
+		sampleOutOfBounds:    validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
+		sampleOutOfOrder:     validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
+		sampleTooOld:         validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
+		sampleTooFarInFuture: validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
+		newValueForTimestamp: validation.DiscardedSamplesCounter(r, reasonNewValueForTimestamp),
+		perUserSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
+		perMetricSeriesLimit: validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
 	}
 }
 
@@ -387,6 +389,7 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 	m.sampleOutOfBounds.DeletePartialMatch(filter)
 	m.sampleOutOfOrder.DeletePartialMatch(filter)
 	m.sampleTooOld.DeletePartialMatch(filter)
+	m.sampleTooFarInFuture.DeletePartialMatch(filter)
 	m.newValueForTimestamp.DeletePartialMatch(filter)
 	m.perUserSeriesLimit.DeletePartialMatch(filter)
 	m.perMetricSeriesLimit.DeletePartialMatch(filter)
@@ -396,6 +399,7 @@ func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
 	m.sampleOutOfBounds.DeleteLabelValues(userID, group)
 	m.sampleOutOfOrder.DeleteLabelValues(userID, group)
 	m.sampleTooOld.DeleteLabelValues(userID, group)
+	m.sampleTooFarInFuture.DeleteLabelValues(userID, group)
 	m.newValueForTimestamp.DeleteLabelValues(userID, group)
 	m.perUserSeriesLimit.DeleteLabelValues(userID, group)
 	m.perMetricSeriesLimit.DeleteLabelValues(userID, group)

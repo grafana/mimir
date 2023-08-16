@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Update Go version to 1.21.0. #5734
 * [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
 * [CHANGE] Querier: change the default value of the experimental `-querier.streaming-chunks-per-ingester-buffer-size` flag to 256. #5203
 * [CHANGE] Querier: only initiate query requests to ingesters in the `ACTIVE` state in the ring. #5342
@@ -13,6 +14,7 @@
 * [CHANGE] Ingester: Do not log errors related to hitting per-instance limits to reduce resource usage when ingesters are under pressure. #5585
 * [CHANGE] gRPC clients: use default connect timeout of 5s, and therefore enable default connect backoff max delay of 5s. #5562
 * [CHANGE] The `-shutdown-delay` flag is no longer experimental. #5701
+* [CHANGE] The `-validation.create-grace-period` is now enforced in the ingester too, other than distributor and query-frontend. If you've configured `-validation.create-grace-period` then make sure the configuration is applied to ingesters too. #5712
 * [FEATURE] Cardinality API: Add a new `count_method` parameter which enables counting active series #5136
 * [FEATURE] Query-frontend: added experimental support to cache cardinality, label names and label values query responses. The cache will be used when `-query-frontend.cache-results` is enabled, and `-query-frontend.results-cache-ttl-for-cardinality-query` or `-query-frontend.results-cache-ttl-for-labels-query` set to a value greater than 0. The following metrics have been added to track the query results cache hit ratio per `request_type`: #5212 #5235 #5426 #5524
   * `cortex_frontend_query_result_cache_requests_total{request_type="query_range|cardinality|label_names_and_values"}`
@@ -67,6 +69,8 @@
 * [ENHANCEMENT] Ingester: optimize label-values with matchers call when number of matched series is small. #5600
 * [ENHANCEMENT] Compactor: Delete bucket-index, markers and debug files if there are no blocks left in the bucket index. This cleanup must be enabled by using `-compactor.no-blocks-file-cleanup-enabled` option. #5648
 * [ENHANCEMENT] Ingester: reduce memory usage of active series tracker. #5665
+* [ENHANCEMENT] Store-gateway: added `-store-gateway.sharding-ring.auto-forget-enabled` configuration parameter to control whether store-gateway auto-forget feature should be enabled or disabled (enabled by default). #5702
+* [ENHANCEMENT] Querier: improved observability of calls to ingesters during queries. #5724
 * [ENHANCEMENT] Compactor: block backfilling logging is now more verbose. #5711
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
@@ -104,6 +108,7 @@
 
 * [CHANGE] Removed `_config.querier.concurrency` configuration option and replaced it with `_config.querier_max_concurrency` and `_config.ruler_querier_max_concurrency` to allow to easily fine tune it for different querier deployments. #5322
 * [CHANGE] Change `_config.multi_zone_ingester_max_unavailable` to 50. #5327
+* [CHANGE] Change distributors rolling update strategy configuration: `maxSurge` and `maxUnavailable` are set to `15%` and `0`. #5714
 * [FEATURE] Alertmanager: Add horizontal pod autoscaler config, that can be enabled using `autoscaling_alertmanager_enabled: true`. #5194 #5249
 * [ENHANCEMENT] Enable the `track_sizes` feature for Memcached pods to help determine cache efficiency. #5209
 * [ENHANCEMENT] Add per-container map for environment variables. #5181
@@ -128,6 +133,8 @@
   * `autoscaling_alertmanager_cpu_target_utilization` (defaults to `1`)
 * [ENHANCEMENT] Gossip-ring: add appProtocol for istio compatibility. #5680
 * [ENHANCEMENT] Add _config.commonConfig to allow adding common configuration parameters for all Mimir components. #5703
+* [ENHANCEMENT] Update rollout-operator to `v0.7.0`. #5718
+* [BUGFIX] Fix compilation when index, chunks or metadata caches are disabled. #5710
 
 ### Mimirtool
 
@@ -181,6 +188,9 @@
 * [CHANGE] Compactor: change default of `-compactor.first-level-compaction-wait-period` to 25m. #5128
 * [CHANGE] Ruler: changed default of `-ruler.poll-interval` from `1m` to `10m`. Starting from this release, the configured rule groups will also be re-synced each time they're modified calling the ruler configuration API. #5170
 * [FEATURE] Query-frontend: add `-query-frontend.log-query-request-headers` to enable logging of request headers in query logs. #5030
+* [FEATURE] Store-gateway: add experimental feature to retain lazy-loaded index headers between restarts by eagerly loading them during startup. This is disabled by default and can only be enabled if lazy loading is enabled. To enable this set the following: #5606
+  * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` must be set to true
+  * `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled` must be set to true
 * [ENHANCEMENT] Add per-tenant limit `-validation.max-native-histogram-buckets` to be able to ignore native histogram samples that have too many buckets. #4765
 * [ENHANCEMENT] Store-gateway: reduce memory usage in some LabelValues calls. #4789
 * [ENHANCEMENT] Store-gateway: add a `stage` label to the metric `cortex_bucket_store_series_data_touched`. This label now applies to `data_type="chunks"` and `data_type="series"`. The `stage` label has 2 values: `processed` - the number of series that parsed - and `returned` - the number of series selected from the processed bytes to satisfy the query. #4797 #4830

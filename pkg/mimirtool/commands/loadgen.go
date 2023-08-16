@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 )

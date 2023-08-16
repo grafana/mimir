@@ -453,6 +453,16 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 [tls_min_version: <string> | default = ""]
 
 http_tls_config:
+  # Server TLS certificate. This configuration parameter is YAML only.
+  [cert: <string> | default = ""]
+
+  # Server TLS key. This configuration parameter is YAML only.
+  [key: <string> | default = ""]
+
+  # Root certificate authority used to verify client certificates. This
+  # configuration parameter is YAML only.
+  [client_ca: <string> | default = ""]
+
   # (advanced) HTTP server cert path.
   # CLI flag: -server.http-tls-cert-path
   [cert_file: <string> | default = ""]
@@ -470,6 +480,16 @@ http_tls_config:
   [client_ca_file: <string> | default = ""]
 
 grpc_tls_config:
+  # Server TLS certificate. This configuration parameter is YAML only.
+  [cert: <string> | default = ""]
+
+  # Server TLS key. This configuration parameter is YAML only.
+  [key: <string> | default = ""]
+
+  # Root certificate authority used to verify client certificates. This
+  # configuration parameter is YAML only.
+  [client_ca: <string> | default = ""]
+
   # (advanced) GRPC TLS server cert path.
   # CLI flag: -server.grpc-tls-cert-path
   [cert_file: <string> | default = ""]
@@ -2709,9 +2729,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_native_histogram_buckets: <int> | default = 0]
 
 # (advanced) Controls how far into the future incoming samples are accepted
-# compared to the wall clock. Any sample with timestamp `t` will be rejected if
-# `t > (now + validation.create-grace-period)`. Also used by query-frontend to
-# avoid querying too far into the future. 0 to disable.
+# compared to the wall clock. Any sample will be rejected if its timestamp is
+# greater than '(now + grace_period)'. This configuration is enforced in the
+# distributor, ingester and query-frontend (to avoid querying too far into the
+# future).
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
 
@@ -3412,9 +3433,15 @@ bucket_store:
 
   index_header:
     # (advanced) Maximum number of idle file handles the store-gateway keeps
-    # open for each index header file.
+    # open for each index-header file.
     # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
     [max_idle_file_handles: <int> | default = 1]
+
+    # (experimental) If enabled, store-gateway will periodically persist block
+    # IDs of lazy loaded index-headers and load them eagerly during startup. It
+    # is not valid to enable this if index-header lazy loading is disabled.
+    # CLI flag: -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
+    [eager_loading_startup_enabled: <boolean> | default = false]
 
     # (advanced) If true, verify the checksum of index headers upon loading them
     # (either on startup or lazily when lazy loading is enabled). Setting to
@@ -3899,6 +3926,12 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
 
+  # When enabled, a store-gateway is automatically removed from the ring after
+  # failing to heartbeat the ring for a period longer than 10 times the
+  # configured -store-gateway.sharding-ring.heartbeat-timeout.
+  # CLI flag: -store-gateway.sharding-ring.auto-forget-enabled
+  [auto_forget_enabled: <boolean> | default = true]
+
   # (advanced) Minimum time to wait for ring stability at startup, if set to
   # positive value.
   # CLI flag: -store-gateway.sharding-ring.wait-stability-min-duration
@@ -4121,6 +4154,10 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 # (advanced) Maximum number of connections in the pool.
 # CLI flag: -<prefix>.redis.connection-pool-size
 [connection_pool_size: <int> | default = 100]
+
+# (advanced) Maximum duration to wait to get a connection from pool.
+# CLI flag: -<prefix>.redis.connection-pool-timeout
+[connection_pool_timeout: <duration> | default = 4s]
 
 # (advanced) Minimum number of idle connections.
 # CLI flag: -<prefix>.redis.min-idle-connections

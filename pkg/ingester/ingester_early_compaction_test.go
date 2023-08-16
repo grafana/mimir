@@ -174,14 +174,17 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		sampleTimes  []time.Time
 	)
 
-	cfg := defaultIngesterTestConfig(t)
-	cfg.ActiveSeriesMetrics.Enabled = true
-	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
-	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
-	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
-	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+	ingesterCfg := defaultIngesterTestConfig(t)
+	ingesterCfg.ActiveSeriesMetrics.Enabled = true
+	ingesterCfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
+	ingesterCfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
+	ingesterCfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.CreationGracePeriod = model.Duration(24 * time.Hour) // This test writes samples in the future.
+
+	ingester, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {

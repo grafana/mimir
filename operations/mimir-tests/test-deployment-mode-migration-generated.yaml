@@ -938,8 +938,8 @@ spec:
       name: distributor
   strategy:
     rollingUpdate:
-      maxSurge: 5
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -1401,7 +1401,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.6.0
+        image: grafana/rollout-operator:v0.7.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
