@@ -100,8 +100,15 @@ func newTooManyLabelsError(series []mimirpb.LabelAdapter, limit int) ValidationE
 }
 
 func (e tooManyLabelsError) Error() string {
+	metric := mimirpb.FromLabelAdaptersToMetric(e.series).String()
+	ellipsis := ""
+
+	if len(metric) > 200 {
+		ellipsis = "..."
+	}
+
 	return globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s'", len(e.series), e.limit, mimirpb.FromLabelAdaptersToMetric(e.series).String()),
+		fmt.Sprintf("received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'", len(e.series), e.limit, metric, ellipsis),
 		maxLabelNamesPerSeriesFlag)
 }
 

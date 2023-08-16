@@ -4031,7 +4031,7 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       2,
 			}},
 			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 5, limit: 2) series: 'testmetric{foo-with-a-long-long-label="bar-with-a-long-long-value", foo2-with-a-long-long-label="bar2-with-a-long-long-value", foo3-with-a-long-long-label="bar3-with-a-long-long-value", foo4-with-a-lo'`,
+			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 5, limit: 2) series: 'testmetric{foo-with-a-long-long-label="bar-with-a-long-long-value", foo2-with-a-long-long-label="bar2-with-a-long-long-value", foo3-with-a-long-long-label="bar3-with-a-long-long-value", foo4-with-a-lo...'`,
 		},
 		"multiple validation failures should return the first failure": {
 			labels: [][]mimirpb.LabelAdapter{
