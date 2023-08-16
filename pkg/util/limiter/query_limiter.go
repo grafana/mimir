@@ -44,7 +44,7 @@ var (
 	MaxEstimatedChunksPerQueryLimitMsgFormat = globalerror.MaxEstimatedChunksPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
 		"the estimated number of chunks for the query exceeded the maximum allowed (limit: %d chunks)",
 		cardinalityStrategy,
-		validation.MaxEstimatedChunksPerQueryFlag,
+		validation.MaxEstimatedChunksPerQueryMultiplierFlag,
 	)
 )
 

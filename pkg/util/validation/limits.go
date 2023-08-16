@@ -8,6 +8,7 @@ package validation
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -26,31 +27,31 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag                 = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag               = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag                   = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag                 = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag                  = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag              = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag                  = "querier.max-fetched-series-per-query"
-	MaxEstimatedChunksPerQueryFlag         = "querier.max-estimated-fetched-chunks-per-query"
-	maxLabelNamesPerSeriesFlag             = "validation.max-label-names-per-series"
-	maxLabelNameLengthFlag                 = "validation.max-length-label-name"
-	maxLabelValueLengthFlag                = "validation.max-length-label-value"
-	maxMetadataLengthFlag                  = "validation.max-metadata-length"
-	maxNativeHistogramBucketsFlag          = "validation.max-native-histogram-buckets"
-	creationGracePeriodFlag                = "validation.create-grace-period"
-	maxPartialQueryLengthFlag              = "querier.max-partial-query-length"
-	maxTotalQueryLengthFlag                = "query-frontend.max-total-query-length"
-	maxQueryExpressionSizeBytesFlag        = "query-frontend.max-query-expression-size-bytes"
-	requestRateFlag                        = "distributor.request-rate-limit"
-	requestBurstSizeFlag                   = "distributor.request-burst-size"
-	ingestionRateFlag                      = "distributor.ingestion-rate-limit"
-	ingestionBurstSizeFlag                 = "distributor.ingestion-burst-size"
-	HATrackerMaxClustersFlag               = "distributor.ha-tracker.max-clusters"
-	resultsCacheTTLFlag                    = "query-frontend.results-cache-ttl"
-	resultsCacheTTLForOutOfOrderWindowFlag = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
-	QueryIngestersWithinFlag               = "querier.query-ingesters-within"
+	MaxSeriesPerMetricFlag                   = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag                 = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag                     = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag                   = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag                    = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag                = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag                    = "querier.max-fetched-series-per-query"
+	MaxEstimatedChunksPerQueryMultiplierFlag = "querier.max-estimated-fetched-chunks-per-query-multiplier"
+	maxLabelNamesPerSeriesFlag               = "validation.max-label-names-per-series"
+	maxLabelNameLengthFlag                   = "validation.max-length-label-name"
+	maxLabelValueLengthFlag                  = "validation.max-length-label-value"
+	maxMetadataLengthFlag                    = "validation.max-metadata-length"
+	maxNativeHistogramBucketsFlag            = "validation.max-native-histogram-buckets"
+	creationGracePeriodFlag                  = "validation.create-grace-period"
+	maxPartialQueryLengthFlag                = "querier.max-partial-query-length"
+	maxTotalQueryLengthFlag                  = "query-frontend.max-total-query-length"
+	maxQueryExpressionSizeBytesFlag          = "query-frontend.max-query-expression-size-bytes"
+	requestRateFlag                          = "distributor.request-rate-limit"
+	requestBurstSizeFlag                     = "distributor.request-burst-size"
+	ingestionRateFlag                        = "distributor.ingestion-rate-limit"
+	ingestionBurstSizeFlag                   = "distributor.ingestion-burst-size"
+	HATrackerMaxClustersFlag                 = "distributor.ha-tracker.max-clusters"
+	resultsCacheTTLFlag                      = "query-frontend.results-cache-ttl"
+	resultsCacheTTLForOutOfOrderWindowFlag   = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
+	QueryIngestersWithinFlag                 = "querier.query-ingesters-within"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -107,21 +108,21 @@ type Limits struct {
 	SeparateMetricsGroupLabel string `yaml:"separate_metrics_group_label" json:"separate_metrics_group_label" category:"experimental"`
 
 	// Querier enforced limits.
-	MaxChunksPerQuery               int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
-	MaxEstimatedChunksPerQuery      int            `yaml:"max_estimated_fetched_chunks_per_query" json:"max_estimated_fetched_chunks_per_query"`
-	MaxFetchedSeriesPerQuery        int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
-	MaxFetchedChunkBytesPerQuery    int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
-	MaxQueryLookback                model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
-	MaxPartialQueryLength           model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
-	MaxQueryParallelism             int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
-	MaxLabelsQueryLength            model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
-	MaxCacheFreshness               model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
-	MaxQueriersPerTenant            int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
-	QueryShardingTotalShards        int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
-	QueryShardingMaxShardedQueries  int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
-	QueryShardingMaxRegexpSizeBytes int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
-	SplitInstantQueriesByInterval   model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
-	QueryIngestersWithin            model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
+	MaxChunksPerQuery                    int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
+	MaxEstimatedChunksPerQueryMultiplier float64        `yaml:"max_estimated_fetched_chunks_per_query_multiplier" json:"max_estimated_fetched_chunks_per_query_multiplier"`
+	MaxFetchedSeriesPerQuery             int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
+	MaxFetchedChunkBytesPerQuery         int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
+	MaxQueryLookback                     model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
+	MaxPartialQueryLength                model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
+	MaxQueryParallelism                  int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
+	MaxLabelsQueryLength                 model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
+	MaxCacheFreshness                    model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
+	MaxQueriersPerTenant                 int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
+	QueryShardingTotalShards             int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
+	QueryShardingMaxShardedQueries       int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
+	QueryShardingMaxRegexpSizeBytes      int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
+	SplitInstantQueriesByInterval        model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
+	QueryIngestersWithin                 model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 
 	// Query-frontend limits.
 	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
@@ -218,7 +219,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
-	f.IntVar(&l.MaxEstimatedChunksPerQuery, MaxEstimatedChunksPerQueryFlag, 2*2e6, "Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
+	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 2, "Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
 	f.Var(&l.MaxPartialQueryLength, maxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
@@ -348,8 +349,12 @@ func (l *Limits) MarshalYAML() (interface{}, error) {
 func (l *Limits) validate() error {
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
-			return fmt.Errorf("invalid metric_relabel_configs")
+			return errors.New("invalid metric_relabel_configs")
 		}
+	}
+
+	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
+		return errors.New("invalid max_estimated_fetched_chunks_per_query_multiplier: must be 0 or greater than or equal to 1")
 	}
 
 	return nil
@@ -502,7 +507,8 @@ func (o *Overrides) MaxChunksPerQuery(userID string) int {
 }
 
 func (o *Overrides) MaxEstimatedChunksPerQuery(userID string) int {
-	return o.getOverridesForUser(userID).MaxEstimatedChunksPerQuery
+	overridesForUser := o.getOverridesForUser(userID)
+	return int(overridesForUser.MaxEstimatedChunksPerQueryMultiplier * float64(overridesForUser.MaxChunksPerQuery))
 }
 
 // MaxFetchedSeriesPerQuery returns the maximum number of series allowed per query when fetching

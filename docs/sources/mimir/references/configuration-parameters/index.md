@@ -2831,10 +2831,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_fetched_chunks_per_query: <int> | default = 2000000]
 
 # Maximum number of chunks estimated to be fetched in a single query from
-# ingesters and long-term storage. This limit is enforced in the querier, ruler
-# and store-gateway. 0 to disable.
-# CLI flag: -querier.max-estimated-fetched-chunks-per-query
-[max_estimated_fetched_chunks_per_query: <int> | default = 4000000]
+# ingesters and long-term storage, as a multiple of
+# -querier.max-fetched-chunks-per-query. This limit is enforced in the querier.
+# Must be greater than or equal to 1, or 0 to disable.
+# CLI flag: -querier.max-estimated-fetched-chunks-per-query-multiplier
+[max_estimated_fetched_chunks_per_query_multiplier: <float> | default = 2]
 
 # The maximum number of unique series for which a query can fetch samples from
 # each ingesters and storage. This limit is enforced in the querier, ruler and
