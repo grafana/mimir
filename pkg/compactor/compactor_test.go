@@ -1220,6 +1220,147 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 	}
 }
 
+func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.T) {
+	// Two blocks with overlapping time range
+	inputBlock1Spec := []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("case", "input_spec_1"),
+			Chunks: []chunks.Meta{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					newSample(1000, 1000, nil, nil),
+					newSample(2000, 2000, nil, nil)})),
+			},
+		},
+	}
+
+	inputBlock2Spec := []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("case", "input_spec_2"),
+			Chunks: []chunks.Meta{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					newSample(1500, 1500, nil, nil),
+					newSample(2500, 2500, nil, nil)})),
+			},
+		},
+	}
+
+	// Block with sufficient time range so compaction job gets triggered
+	inputBlock3Spec := []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("case", "input_spec_3"),
+			Chunks: []chunks.Meta{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					newSample(0, 0, nil, nil),
+					newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)})),
+			},
+		},
+	}
+
+	// Output block minTime/maxTime is greater/less than the input blocks minTime/maxTime
+	outputBlockSpec := []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("case", "output_spec"),
+			Chunks: []chunks.Meta{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					newSample(1250, 1250, nil, nil),
+					newSample(2250, 2250, nil, nil)})),
+			},
+		},
+	}
+
+	const user = "user-1"
+
+	storageDir := t.TempDir()
+
+	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), inputBlock1Spec)
+	require.NoError(t, err)
+	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), inputBlock2Spec)
+	require.NoError(t, err)
+	_, err = block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), inputBlock3Spec)
+	require.NoError(t, err)
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	cfg := prepareConfig(t)
+	cfg.CompactionRetries = 1 // No need to retry as we're testing for failure
+	c, tsdbCompactor, tsdbPlanner, logs, registry := prepare(t, cfg, bkt)
+
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{meta1, meta2}, nil)
+
+	mockCall := tsdbCompactor.On("Compact", mock.Anything, mock.Anything, mock.Anything)
+	mockCall.RunFn = func(args mock.Arguments) {
+		dir := args.Get(0).(string)
+		compactedMeta, err := block.GenerateBlockFromSpec(user, dir, outputBlockSpec)
+		require.NoError(t, err)
+		os.OpenFile(filepath.Join(dir, compactedMeta.ULID.String(), "tombstones"), os.O_RDONLY|os.O_CREATE, 0666)
+
+		mockCall.ReturnArguments = mock.Arguments{compactedMeta.ULID, nil}
+	}
+
+	// Start the compactor
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Compaction run should error due to invalid output block
+	test.Poll(t, 10*time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsErred)
+	})
+
+	// Stop the compactor.
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	// Ensure that the compaction job failed due to invalid minTime/maxTime
+	assert.Contains(t, strings.Split(strings.TrimSpace(logs.String()), "\n"),
+		fmt.Sprintf(`level=error component=compactor msg="failed to compact user blocks" user=%s err="compaction: group 0@17241709254077376921-merge--0-7200000: compacted block(s) do not contain minTime and maxTime from the input blocks"`, user))
+
+	// Check metrics
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# TYPE cortex_compactor_runs_started_total counter
+		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
+		cortex_compactor_runs_started_total 1
+
+		# TYPE cortex_compactor_runs_completed_total counter
+		# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+		cortex_compactor_runs_completed_total 0
+
+		# TYPE cortex_compactor_runs_failed_total counter
+		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
+		cortex_compactor_runs_failed_total{reason="error"} 1
+		cortex_compactor_runs_failed_total{reason="shutdown"} 0
+
+		# HELP cortex_compactor_group_compaction_runs_completed_total Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.
+		# TYPE cortex_compactor_group_compaction_runs_completed_total counter
+		cortex_compactor_group_compaction_runs_completed_total 0
+
+		# HELP cortex_compactor_group_compaction_runs_started_total Total number of group compaction attempts.
+		# TYPE cortex_compactor_group_compaction_runs_started_total counter
+		cortex_compactor_group_compaction_runs_started_total 1
+
+		# HELP cortex_compactor_group_compactions_failures_total Total number of failed group compactions.
+		# TYPE cortex_compactor_group_compactions_failures_total counter
+		cortex_compactor_group_compactions_failures_total 1
+
+		# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in new block(s).
+		# TYPE cortex_compactor_group_compactions_total counter
+		cortex_compactor_group_compactions_total 0
+
+		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+	`),
+		"cortex_compactor_runs_started_total",
+		"cortex_compactor_runs_completed_total",
+		"cortex_compactor_runs_failed_total",
+		"cortex_compactor_group_compaction_runs_completed_total",
+		"cortex_compactor_group_compaction_runs_started_total",
+		"cortex_compactor_group_compactions_failures_total",
+		"cortex_compactor_group_compactions_total",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+	))
+}
+
 func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlanning(t *testing.T) {
 	t.Parallel()
 

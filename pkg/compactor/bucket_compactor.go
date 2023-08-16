@@ -246,7 +246,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	jobLogger := log.With(c.logger, "groupKey", job.Key())
 	subDir := filepath.Join(c.compactDir, job.Key())
-
 	defer func() {
 		elapsed := time.Since(jobBeginTime)
 
@@ -276,7 +275,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	// The planner returned some blocks to compact, so we can enrich the logger
 	// with the min/max time between all blocks to compact.
-	jobLogger = log.With(jobLogger, "minTime", minTime(toCompact).String(), "maxTime", maxTime(toCompact).String())
+	toCompactMinTime := minTime(toCompact)
+	toCompactMaxTime := maxTime(toCompact)
+	jobLogger = log.With(jobLogger, "minTime", toCompactMinTime.String(), "maxTime", toCompactMaxTime.String())
 
 	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompact))
 
@@ -361,6 +362,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	uploadBegin := time.Now()
 	uploadedBlocks := atomic.NewInt64(0)
 
+	inputBlocksMinTimeFound := atomic.NewBool(false)
+	inputBlocksMaxTimeFound := atomic.NewBool(false)
+
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
@@ -394,6 +398,14 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
 
+		if newMeta.MinTime == toCompactMinTime.UnixMilli() {
+			inputBlocksMinTimeFound.Store(true)
+		}
+
+		if newMeta.MaxTime == toCompactMaxTime.UnixMilli() {
+			inputBlocksMaxTimeFound.Store(true)
+		}
+
 		begin := time.Now()
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
@@ -405,6 +417,13 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	})
 	if err != nil {
 		return false, nil, err
+	}
+
+	// Check that the minTime and maxTime from the input blocks
+	// are found at least once in the compacted output blocks to ensure
+	// there was no error during concurrent loading of input blocks.
+	if !inputBlocksMinTimeFound.Load() || !inputBlocksMaxTimeFound.Load() {
+		return false, nil, errors.New("compacted block(s) do not contain minTime and maxTime from the input blocks")
 	}
 
 	elapsed = time.Since(uploadBegin)
