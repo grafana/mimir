@@ -789,7 +789,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 
 	// Randomise the seed but log it in case we need to reproduce the test on failure.
 	seed := time.Now().UnixNano()
-	rand.Seed(seed)
+	rnd := rand.New(rand.NewSource(seed))
 	t.Log("random generator seed:", seed)
 
 	// The mocked storage contains samples within the following min/max time.
@@ -816,8 +816,8 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 	reqs := make([]Request, 0, numQueries)
 	for q := 0; q < numQueries; q++ {
 		// Generate a random time range within min/max time.
-		startTime := minTime.Add(time.Duration(rand.Int63n(maxTime.Sub(minTime).Milliseconds())) * time.Millisecond)
-		endTime := startTime.Add(time.Duration(rand.Int63n(maxTime.Sub(startTime).Milliseconds())) * time.Millisecond)
+		startTime := minTime.Add(time.Duration(rnd.Int63n(maxTime.Sub(minTime).Milliseconds())) * time.Millisecond)
+		endTime := startTime.Add(time.Duration(rnd.Int63n(maxTime.Sub(startTime).Milliseconds())) * time.Millisecond)
 
 		reqs = append(reqs, &PrometheusRangeQueryRequest{
 			Id:    int64(q),

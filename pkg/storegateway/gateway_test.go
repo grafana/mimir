@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand"
 	"net/http"
 	"os"
 	"path"
@@ -295,11 +294,6 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 			bucketIndexEnabled := bucketIndexEnabled
 			t.Run(fmt.Sprintf("%s (bucket index enabled = %v)", testName, bucketIndexEnabled), func(t *testing.T) {
 				t.Parallel()
-				// Randomize the seed but log it in case we need to reproduce the test on failure.
-				seed := time.Now().UnixNano()
-				rand.Seed(seed)
-				t.Log("random generator seed:", seed)
-
 				ctx := context.Background()
 				ringStore, closer := consul.NewInMemoryClientWithConfig(ring.GetCodec(), consul.Config{
 					MaxCasRetries: 20,
@@ -396,11 +390,6 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 	for _, userID := range []string{"user-1", "user-2"} {
 		createBucketIndex(t, bucketClient, userID)
 	}
-
-	// Randomise the seed but log it in case we need to reproduce the test on failure.
-	seed := time.Now().UnixNano()
-	rand.Seed(seed)
-	t.Log("random generator seed:", seed)
 
 	ctx := context.Background()
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
