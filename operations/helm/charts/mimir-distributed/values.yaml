@@ -1366,6 +1366,9 @@ store_gateway:
   # Pod Annotations
   podAnnotations: {}
 
+  # -- Management policy for chunks-cache pods
+  podManagementPolicy: Parallel
+
   # -- Pod Disruption Budget for store-gateway, this will be applied across availability zones to prevent losing redundancy
   podDisruptionBudget:
     maxUnavailable: 1
