@@ -2982,7 +2982,7 @@
           "kind": "field",
           "name": "creation_grace_period",
           "required": false,
-          "desc": "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample will be rejected if its timestamp is greater than '(now + -validation.create-grace-period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).",
+          "desc": "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).",
           "fieldValue": null,
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "validation.create-grace-period",
