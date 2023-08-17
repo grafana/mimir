@@ -148,7 +148,21 @@ func (ql *QueryLimiter) AddChunkBytes(chunkSizeInBytes int) error {
 }
 
 func (ql *QueryLimiter) AddChunks(count int) error {
-	return ql.incrementAndCheckChunksLimits(count, 0)
+	if ql.maxChunksPerQuery == 0 {
+		return nil
+	}
+
+	totalChunks := ql.chunkCount.Add(int64(count))
+
+	if totalChunks > int64(ql.maxChunksPerQuery) {
+		if totalChunks-int64(count) <= int64(ql.maxChunksPerQuery) {
+			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
+			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxChunks).Inc()
+		}
+
+		return validation.LimitError(fmt.Sprintf(MaxChunksPerQueryLimitMsgFormat, ql.maxChunksPerQuery))
+	}
+	return nil
 }
 
 func (ql *QueryLimiter) AddEstimatedChunks(count int) error {
@@ -156,33 +170,15 @@ func (ql *QueryLimiter) AddEstimatedChunks(count int) error {
 		return nil
 	}
 
-	return ql.incrementAndCheckChunksLimits(count, 0)
-}
+	totalChunks := ql.estimatedChunkCount.Add(int64(count))
 
-func (ql *QueryLimiter) incrementAndCheckChunksLimits(newChunks int, newEstimatedChunks int) error {
-	totalChunks := ql.chunkCount.Add(int64(newChunks))
-	totalEstimatedChunks := ql.estimatedChunkCount.Add(int64(newEstimatedChunks))
-
-	if totalChunks > int64(ql.maxChunksPerQuery) && ql.maxChunksPerQuery != 0 {
-		if totalChunks-int64(newChunks) <= int64(ql.maxChunksPerQuery) && newChunks > 0 {
-			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
-			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxChunks).Inc()
-		}
-
-		return validation.LimitError(fmt.Sprintf(MaxChunksPerQueryLimitMsgFormat, ql.maxChunksPerQuery))
-	}
-
-	totalIncludingEstimated := totalChunks + totalEstimatedChunks
-	newIncludingEstimated := newChunks + newEstimatedChunks
-
-	if totalIncludingEstimated > int64(ql.maxEstimatedChunksPerQuery) && ql.maxEstimatedChunksPerQuery != 0 {
-		if totalIncludingEstimated-int64(newIncludingEstimated) <= int64(ql.maxEstimatedChunksPerQuery) && (newIncludingEstimated) > 0 {
+	if totalChunks > int64(ql.maxEstimatedChunksPerQuery) {
+		if totalChunks-int64(count) <= int64(ql.maxEstimatedChunksPerQuery) {
 			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
 			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedChunks).Inc()
 		}
 
 		return validation.LimitError(fmt.Sprintf(MaxEstimatedChunksPerQueryLimitMsgFormat, ql.maxEstimatedChunksPerQuery))
 	}
-
 	return nil
 }

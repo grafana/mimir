@@ -109,7 +109,7 @@ func TestQueryLimiter_AddChunkBytes(t *testing.T) {
 	assertRejectedQueriesMetricValue(t, reg, 0, 1, 0, 0)
 }
 
-func TestQueryLimiter_AddChunks(t *testing.T) {
+func TestQueryLimiter_AddChunks_EnabledLimit(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(0, 0, 100, 0, stats.NewQueryMetrics(reg))
 
@@ -131,7 +131,16 @@ func TestQueryLimiter_AddChunks(t *testing.T) {
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 1, 0)
 }
 
-func TestQueryLimiter_AddEstimatedChunks(t *testing.T) {
+func TestQueryLimiter_AddChunks_IgnoresDisabledLimit(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	limiter := NewQueryLimiter(0, 0, 0, 0, stats.NewQueryMetrics(reg))
+
+	err := limiter.AddChunks(100)
+	require.NoError(t, err)
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
+}
+
+func TestQueryLimiter_AddEstimatedChunks_EnabledLimit(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(0, 0, 0, 100, stats.NewQueryMetrics(reg))
 
@@ -153,8 +162,14 @@ func TestQueryLimiter_AddEstimatedChunks(t *testing.T) {
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 1)
 }
 
-// TODO: test interaction between estimated and non-estimated
-// TODO: ensure each limit is ignored if 0
+func TestQueryLimiter_AddEstimatedChunks_IgnoresDisabledLimit(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	limiter := NewQueryLimiter(0, 0, 0, 0, stats.NewQueryMetrics(reg))
+
+	err := limiter.AddEstimatedChunks(100)
+	require.NoError(t, err)
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
+}
 
 func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	const (
