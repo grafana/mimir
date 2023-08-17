@@ -391,7 +391,6 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're
 	// chained via "next delegate").
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.JOINING, r.cfg.Ring.NumTokens))
-	delegate = ring.NewLeaveOnStoppingDelegate(delegate, r.logger)
 	delegate = ring.NewAutoForgetDelegate(r.cfg.Ring.Common.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, r.logger)
 
 	rulerRingName := "ruler"
