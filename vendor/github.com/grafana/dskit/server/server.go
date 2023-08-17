@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof" // anonymous import to get the pprof handler registered
-	"os"
 	"strings"
 	"time"
 
@@ -236,8 +235,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	// If user doesn't supply a logging implementation, by default instantiate go-kit.
 	logger := cfg.Log
 	if logger == nil {
-		writer := gokit_log.NewSyncWriter(os.Stderr)
-		logger = log.NewGoKitWithLevel(cfg.LogLevel, cfg.LogFormat, writer)
+		logger = log.NewGoKitWithLevel(cfg.LogLevel, cfg.LogFormat)
 	}
 
 	gatherer := cfg.Gatherer

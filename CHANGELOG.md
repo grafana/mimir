@@ -74,10 +74,10 @@
 * [ENHANCEMENT] Store-gateway: added `-store-gateway.sharding-ring.auto-forget-enabled` configuration parameter to control whether store-gateway auto-forget feature should be enabled or disabled (enabled by default). #5702
 * [ENHANCEMENT] Querier: improved observability of calls to ingesters during queries. #5724
 * [ENHANCEMENT] Compactor: block backfilling logging is now more verbose. #5711
-* [ENHANCEMENT] Added advanced CLI flags for configuration of `RateLimitedLogger`: #5764
+* [ENHANCEMENT] Added support to rate limit application logs: #5764
   * `-log.rate-limit-enabled`
   * `-log.rate-limit-logs-per-second`
-  * `=log.rate-limit-logs-per-second-burst`
+  * `-log.rate-limit-logs-per-second-burst`
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377

@@ -13,7 +13,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/log"
-	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 
@@ -43,8 +42,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	serverCfg := server.Config{LogLevel: cfg.LogLevel}
-	util_log.InitLogger(&serverCfg, false, util_log.RateLimitedLoggerCfg{})
+	util_log.InitLogger(log.LogfmtFormat, cfg.LogLevel, false, util_log.RateLimitedLoggerCfg{})
 
 	// Run the instrumentation server.
 	registry := prometheus.NewRegistry()
@@ -65,7 +63,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := proxy.Start(serverCfg.Log); err != nil {
+	if err := proxy.Start(); err != nil {
 		level.Error(util_log.Logger).Log("msg", "Unable to start the proxy", "err", err.Error())
 		util_log.Flush()
 		os.Exit(1)

@@ -157,7 +157,7 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	return p, nil
 }
 
-func (p *Proxy) Start(logger log.Logger) error {
+func (p *Proxy) Start() error {
 	// Setup server first, so we can fail early if the ports are in use.
 	serv, err := server.New(server.Config{
 		// HTTP configs
@@ -182,7 +182,7 @@ func (p *Proxy) Start(logger log.Logger) error {
 		Registerer:              p.registerer,
 		RegisterInstrumentation: false,
 
-		Log: logger,
+		Log: p.logger,
 	})
 	if err != nil {
 		return err

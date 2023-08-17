@@ -236,7 +236,7 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	cfg.Target = []string{Querier}
 	cfg.Server = getServerConfig(t, dslog.LogfmtFormat, "debug")
 
-	util_log.InitLogger(&cfg.Server, false, util_log.RateLimitedLoggerCfg{})
+	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
 
 	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
@@ -959,8 +959,9 @@ func getServerConfig(t *testing.T, logFormat, logLevel string) server.Config {
 		GRPCListenPort:    grpcPortNum,
 
 		GPRCServerMaxRecvMsgSize: 1024,
+		LogFormat:                logFormat,
+		Registerer:               prometheus.NewPedanticRegistry(),
 	}
-	cfg.LogFormat = logFormat
 	require.NoError(t, cfg.LogLevel.Set(logLevel))
 	return cfg
 }

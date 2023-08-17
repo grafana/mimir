@@ -18,27 +18,37 @@ const (
 	JSONFormat   = "json"
 )
 
-// NewGoKit creates a new GoKit logger with the given format and writer.
-// If the given writer is nil, os.Stderr is used.
+// NewGoKit creates a new GoKit logger with the given format.
 // If the given format is nil, logfmt is used.
 // No additional fields nor filters are added to the created logger, and
 // if they are required, the caller is expected to add them.
-func NewGoKit(format string, writer io.Writer) log.Logger {
-	if writer == nil {
-		writer = log.NewSyncWriter(os.Stderr)
-	}
+func NewGoKit(format string) log.Logger {
+	writer := log.NewSyncWriter(os.Stderr)
+	return newGoKit(format, writer)
+}
+
+// NewGoKitWithLevel creates a new GoKit logger with the given level and format.
+// If the given format is nil, logfmt is used.
+func NewGoKitWithLevel(lvl Level, format string) log.Logger {
+	logger := NewGoKit(format)
+	return level.NewFilter(logger, lvl.Option)
+}
+
+// NewGoKitWithWriter creates a new GoKit logger with the given format and writer.
+// The input writer must be provided, must be thread-safe, and the caller is
+// expected to guarantee these requirements.
+// If the given format is nil, logfmt is used.
+// No additional fields nor filters are added to the created logger, and
+// if they are required, the caller is expected to add them.
+func NewGoKitWithWriter(format string, writer io.Writer) log.Logger {
+	return newGoKit(format, writer)
+}
+
+func newGoKit(format string, writer io.Writer) log.Logger {
 	if format == JSONFormat {
 		return log.NewJSONLogger(writer)
 	}
 	return log.NewLogfmtLogger(writer)
-}
-
-// NewGoKitWithLevel creates a new GoKit logger with the given level, format and writer.
-// If the given writer is nil, os.Stderr is used.
-// If the given format is nil, logfmt is used.
-func NewGoKitWithLevel(lvl Level, format string, writer io.Writer) log.Logger {
-	logger := NewGoKit(format, writer)
-	return level.NewFilter(logger, lvl.Option)
 }
 
 // stand-alone for test purposes

@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	dslog "github.com/grafana/dskit/log"
-	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -34,11 +33,10 @@ type RateLimitedLoggerCfg struct {
 	Registry           prometheus.Registerer
 }
 
-// InitLogger initialises the global gokit logger (util_log.Logger) and overrides the
-// default logger for the server.
-func InitLogger(cfg *server.Config, buffered bool, rateLimitedCfg RateLimitedLoggerCfg) {
+// InitLogger initialises the global gokit logger (util_log.Logger) and returns that logger.
+func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimitedCfg RateLimitedLoggerCfg) log.Logger {
 	writer := getWriter(buffered)
-	logger := dslog.NewGoKit(cfg.LogFormat, writer)
+	logger := dslog.NewGoKitWithWriter(logFormat, writer)
 
 	if rateLimitedCfg.Enabled {
 		// use UTC timestamps and skip 6 stack frames if rate limited logger is needed.
@@ -48,10 +46,12 @@ func InitLogger(cfg *server.Config, buffered bool, rateLimitedCfg RateLimitedLog
 		// use UTC timestamps and skip 5 stack frames if no rate limited logger is needed.
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
 	}
-	logger = level.NewFilter(logger, cfg.LogLevel.Option)
+	// Must put the level filter last for efficiency.
+	logger = level.NewFilter(logger, logLevel.Option)
 
+	// Set global logger.
 	Logger = logger
-	cfg.Log = logger
+	return logger
 }
 
 func getWriter(buffered bool) io.Writer {
@@ -74,13 +74,6 @@ func getWriter(buffered bool) io.Writer {
 		return bufferedLogger
 	}
 	return log.NewSyncWriter(writer)
-}
-
-// NewDefaultLogger creates a new gokit logger with the configured level and format
-func NewDefaultLogger(lvl dslog.Level, format string) log.Logger {
-	writer := getWriter(false)
-	logger := log.With(dslog.NewGoKit(format, writer), "ts", log.DefaultTimestampUTC)
-	return level.NewFilter(logger, lvl.Option)
 }
 
 // CheckFatal prints an error and exits with error code 1 if err is non-nil

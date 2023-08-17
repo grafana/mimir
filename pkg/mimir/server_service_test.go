@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 )
 
 func TestServerStopViaContext(t *testing.T) {
-	serv, err := server.New(getServerCfg(t))
+	serv, err := server.New(getServerConfig(t, log.LogfmtFormat, "info"))
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -31,7 +31,7 @@ func TestServerStopViaContext(t *testing.T) {
 }
 
 func TestServerStopViaShutdown(t *testing.T) {
-	serv, err := server.New(getServerCfg(t))
+	serv, err := server.New(getServerConfig(t, log.LogfmtFormat, "info"))
 	require.NoError(t, err)
 
 	s := NewServerService(serv, func() []services.Service { return nil })
@@ -45,7 +45,7 @@ func TestServerStopViaShutdown(t *testing.T) {
 }
 
 func TestServerStopViaStop(t *testing.T) {
-	serv, err := server.New(getServerCfg(t))
+	serv, err := server.New(getServerConfig(t, log.LogfmtFormat, "info"))
 	require.NoError(t, err)
 
 	s := NewServerService(serv, func() []services.Service { return nil })
@@ -56,14 +56,4 @@ func TestServerStopViaStop(t *testing.T) {
 	// Stop makes Server stop, but ServerService doesn't expect that to happen.
 	require.Error(t, s.AwaitTerminated(context.Background()))
 	require.Equal(t, services.Failed, s.State())
-}
-
-func getServerCfg(t *testing.T) server.Config {
-	cfg := server.Config{
-		HTTPListenAddress: "localhost",
-		GRPCListenAddress: "localhost",
-		Registerer:        prometheus.NewPedanticRegistry(),
-	}
-	require.NoError(t, cfg.LogLevel.Set("info"))
-	return cfg
 }
