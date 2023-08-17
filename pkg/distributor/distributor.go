@@ -78,6 +78,7 @@ const (
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
 
+	// until http.StatusServiceOverload exists
 	statusServiceOverload = 529
 )
 
