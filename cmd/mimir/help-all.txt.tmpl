@@ -1031,8 +1031,6 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
-  -distributor.enable-service-overload-error-on-rate-limit
-    	[experimental] Flag to determines the error code returned when distributor rate limits are reached. If set to true, the error code will be 529; if set to false, a 429 error is returned
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
@@ -1189,6 +1187,8 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -distributor.service-overload-status-code-on-rate-limit-enabled
+    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.
   -enable-go-runtime-metrics
     	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
   -flusher.exit-after-flush

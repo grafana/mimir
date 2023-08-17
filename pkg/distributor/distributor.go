@@ -1044,8 +1044,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			if d.limits.EnableServiceOverloadErrorOnRateLimit(userID) {
-				// hard coded 529 error since http parckage does not contain a 529 error code
+			if d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID) {
 				return nil, httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
 			}
 			return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())

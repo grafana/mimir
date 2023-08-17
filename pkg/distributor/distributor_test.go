@@ -479,10 +479,9 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 		enableServiceOverloadError bool
 	}{
 		"request limit should be evenly shared across distributors": {
-			distributors:               2,
-			requestRate:                4,
-			requestBurstSize:           2,
-			enableServiceOverloadError: false,
+			distributors:     2,
+			requestRate:      4,
+			requestBurstSize: 2,
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
@@ -490,10 +489,9 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			},
 		},
 		"request limit is disabled when set to 0": {
-			distributors:               2,
-			requestRate:                0,
-			requestBurstSize:           0,
-			enableServiceOverloadError: false,
+			distributors:     2,
+			requestRate:      0,
+			requestBurstSize: 0,
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
@@ -501,10 +499,9 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			},
 		},
 		"request burst should set to each distributor": {
-			distributors:               2,
-			requestRate:                2,
-			requestBurstSize:           3,
-			enableServiceOverloadError: false,
+			distributors:     2,
+			requestRate:      2,
+			requestBurstSize: 3,
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
@@ -533,7 +530,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			flagext.DefaultValues(limits)
 			limits.RequestRate = testData.requestRate
 			limits.RequestBurstSize = testData.requestBurstSize
-			limits.EnableServiceOverloadErrorOnRateLimit = testData.enableServiceOverloadError
+			limits.ServiceOverloadStatusCodeOnRateLimitEnabled = testData.enableServiceOverloadError
 
 			// Start all expected distributors
 			distributors, _, _ := prepare(t, prepConfig{
