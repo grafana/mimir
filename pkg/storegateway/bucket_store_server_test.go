@@ -212,7 +212,17 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 				return
 			}
 
+			estimate := res.GetStreamingChunksEstimate()
+			if estimate != nil {
+				continue
+			}
+
 			chksBatch := res.GetStreamingChunks()
+			if chksBatch == nil {
+				err = errors.Errorf("received unexpected response type %T, expected streaming chunks estimate or streaming chunks batch", res.Result)
+				return
+			}
+
 			for _, chks := range chksBatch.Series {
 				idx++
 				if chksBatch == nil {
@@ -248,8 +258,8 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 
 		res, err = stream.Recv()
 		for err == nil {
-			if res.GetHints() == nil && res.GetStats() == nil {
-				err = errors.Errorf("got unexpected response type")
+			if res.GetHints() == nil && res.GetStats() == nil && res.GetStreamingChunksEstimate() == nil {
+				err = errors.Errorf("got unexpected response type %T", res.Result)
 				break
 			}
 			res, err = stream.Recv()
