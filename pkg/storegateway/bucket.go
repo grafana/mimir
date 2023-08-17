@@ -853,8 +853,8 @@ func (s *BucketStore) sendStreamingChunks(
 			batchSizeBytes = 0
 		}
 
-		if !haveSentEstimatedChunks {
-			// TODO: do we need to handle the case where we've sent no chunks so far? Is that possible?
+		if !haveSentEstimatedChunks && chunksCount > 0 {
+			// If this is the first batch of series, send an estimate of the total number of chunks we'll send over all batches.
 			estimate := uint64(totalSeriesCount * chunksCount / seriesCount)
 			err := s.sendMessage("streaming chunks estimate", srv, storepb.NewStreamingChunksEstimate(estimate), &encodeDuration, &sendDuration)
 			if err != nil {

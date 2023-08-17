@@ -93,7 +93,7 @@ func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewaySe
 
 // Series calls the store server's Series() endpoint via gRPC and returns the responses collected
 // via the gRPC stream.
-func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings storage.Warnings, hints hintspb.SeriesResponseHints, err error) {
+func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings storage.Warnings, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
 	var (
 		conn               *grpc.ClientConn
 		stream             storepb.Store_SeriesClient
@@ -214,6 +214,11 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 
 			estimate := res.GetStreamingChunksEstimate()
 			if estimate != nil {
+				if estimatedChunks != 0 {
+					err = errors.New("received multiple chunk count estimates")
+					return
+				}
+				estimatedChunks = estimate.EstimatedChunkCount
 				continue
 			}
 
@@ -258,7 +263,13 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 
 		res, err = stream.Recv()
 		for err == nil {
-			if res.GetHints() == nil && res.GetStats() == nil && res.GetStreamingChunksEstimate() == nil {
+			if e := res.GetStreamingChunksEstimate(); e != nil {
+				if estimatedChunks != 0 {
+					err = errors.New("received multiple chunk count estimates")
+					return
+				}
+				estimatedChunks = e.EstimatedChunkCount
+			} else if res.GetHints() == nil && res.GetStats() == nil {
 				err = errors.Errorf("got unexpected response type %T", res.Result)
 				break
 			}
