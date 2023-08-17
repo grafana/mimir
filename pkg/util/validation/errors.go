@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/prometheus/common/model"
 
@@ -103,8 +104,8 @@ func (e tooManyLabelsError) Error() string {
 	metric := mimirpb.FromLabelAdaptersToMetric(e.series).String()
 	ellipsis := ""
 
-	if len(metric) > 200 {
-		ellipsis = "..."
+	if utf8.RuneCountInString(metric) > 200 {
+		ellipsis = "\u2026"
 	}
 
 	return globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
