@@ -798,17 +798,19 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					mySeries = append(mySeries, s)
 
 					// Add series fingerprint to query limiter; will return error if we are over the limit
-					limitErr := queryLimiter.AddSeries(s.Labels)
-					if limitErr != nil {
-						return limitErr
+					if err := queryLimiter.AddSeries(s.Labels); err != nil {
+						return err
 					}
 
 					chunksCount, chunksSize := countChunksAndBytes(s)
-					if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksSize); chunkBytesLimitErr != nil {
-						return chunkBytesLimitErr
+					if err := queryLimiter.AddChunkBytes(chunksSize); err != nil {
+						return err
 					}
-					if chunkLimitErr := queryLimiter.AddChunks(chunksCount); chunkLimitErr != nil {
-						return chunkLimitErr
+					if err := queryLimiter.AddChunks(chunksCount); err != nil {
+						return err
+					}
+					if err := queryLimiter.AddEstimatedChunks(chunksCount); err != nil {
+						return err
 					}
 				}
 
