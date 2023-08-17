@@ -436,7 +436,7 @@ func (o *Overrides) AcceptHASamples(userID string) bool {
 	return o.getOverridesForUser(userID).AcceptHASamples
 }
 
-// ServiceOverloadStatusCodeOnRateLimitEnabled return whether the distributor uses error code 529 instead of 429 when the rate limit is exceeded.
+// ServiceOverloadStatusCodeOnRateLimitEnabled return whether the distributor uses status code 529 instead of 429 when the rate limit is exceeded.
 func (o *Overrides) ServiceOverloadStatusCodeOnRateLimitEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).ServiceOverloadStatusCodeOnRateLimitEnabled
 }
