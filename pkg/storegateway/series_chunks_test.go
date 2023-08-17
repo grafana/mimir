@@ -4,6 +4,7 @@ package storegateway
 
 import (
 	"context"
+	crand "crypto/rand"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -1149,7 +1150,7 @@ func generateSeriesEntriesWithChunksSize(t testing.TB, numSeries, numChunksPerSe
 
 		for j := 0; j < numChunksPerSeries; j++ {
 			chunkBytes := make([]byte, chunkDataLenBytes)
-			readBytes, err := rand.Read(chunkBytes)
+			readBytes, err := crand.Read(chunkBytes)
 			require.NoError(t, err, "couldn't generate test data")
 			require.Equal(t, chunkDataLenBytes, readBytes, "couldn't generate test data")
 

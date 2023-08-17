@@ -1412,14 +1412,17 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 	tests := map[string]struct {
 		prepareConfig     func(limits *validation.Limits)
 		minExemplarTS     int64
+		maxExemplarTS     int64
 		req               *mimirpb.WriteRequest
 		expectedExemplars []mimirpb.PreallocTimeseries
+		expectedMetrics   string
 	}{
 		"disable exemplars": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxGlobalExemplarsPerUser = 0
 			},
 			minExemplarTS: 0,
+			maxExemplarTS: 0,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
 			}},
@@ -1435,6 +1438,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				limits.MaxGlobalExemplarsPerUser = 1
 			},
 			minExemplarTS: 0,
+			maxExemplarTS: math.MaxInt64,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
@@ -1444,11 +1448,12 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
 			},
 		},
-		"one old, one new, separate series": {
+		"should drop exemplars with timestamp lower than the accepted minimum, when the exemplars are specified in different series": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxGlobalExemplarsPerUser = 1
 			},
 			minExemplarTS: 300000,
+			maxExemplarTS: math.MaxInt64,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
@@ -1460,12 +1465,18 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				}},
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
 			},
+			expectedMetrics: `
+                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+                # TYPE cortex_discarded_exemplars_total counter
+                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+            `,
 		},
-		"multi exemplars": {
+		"should drop exemplars with timestamp lower than the accepted minimum, when multiple exemplars are specified for the same series": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxGlobalExemplarsPerUser = 2
 			},
 			minExemplarTS: 300000,
+			maxExemplarTS: math.MaxInt64,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
@@ -1487,12 +1498,18 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 					},
 				},
 			},
+			expectedMetrics: `
+                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+                # TYPE cortex_discarded_exemplars_total counter
+                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+            `,
 		},
-		"one old, one new, same series": {
+		"should drop exemplars with timestamp lower than the accepted minimum, when multiple exemplars are specified in the same series": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxGlobalExemplarsPerUser = 2
 			},
 			minExemplarTS: 300000,
+			maxExemplarTS: math.MaxInt64,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
@@ -1514,6 +1531,44 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 					},
 				},
 			},
+			expectedMetrics: `
+                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+                # TYPE cortex_discarded_exemplars_total counter
+                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+            `,
+		},
+		"should drop exemplars with timestamp greater than the accepted maximum, when multiple exemplars are specified in the same series": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 2
+			},
+			minExemplarTS: 0,
+			maxExemplarTS: 100000,
+			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Exemplars: []mimirpb.Exemplar{
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+						},
+					},
+				},
+			}},
+			expectedExemplars: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Exemplars: []mimirpb.Exemplar{
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+						},
+					},
+				},
+			},
+			expectedMetrics: `
+                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+                # TYPE cortex_discarded_exemplars_total counter
+                cortex_discarded_exemplars_total{reason="exemplar_too_far_in_future",user="user"} 1
+            `,
 		},
 	}
 	now := mtime.Now()
@@ -1522,15 +1577,22 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			limits := &validation.Limits{}
 			flagext.DefaultValues(limits)
 			tc.prepareConfig(limits)
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, regs := prepare(t, prepConfig{
 				limits:          limits,
 				numDistributors: 1,
 			})
+
+			// Pre-condition check.
+			require.Len(t, ds, 1)
+			require.Len(t, regs, 1)
+
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, tc.minExemplarTS)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, tc.minExemplarTS, tc.maxExemplarTS)
 				assert.NoError(t, err)
 			}
+
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
+			assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(tc.expectedMetrics), "cortex_discarded_exemplars_total"))
 		})
 	}
 }
