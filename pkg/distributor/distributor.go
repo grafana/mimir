@@ -78,7 +78,7 @@ const (
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
 
-	// until http.StatusServiceOverload exists
+	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
 	statusServiceOverload = 529
 )
 
