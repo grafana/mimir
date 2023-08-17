@@ -11,12 +11,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"runtime"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
@@ -189,9 +187,6 @@ func main() {
 			defer trace.Close()
 		}
 	}
-
-	// Initialise seed for randomness usage.
-	rand.Seed(time.Now().UnixNano())
 
 	t, err := mimir.New(cfg, prometheus.DefaultRegisterer)
 	util_log.CheckFatal("initializing application", err)
