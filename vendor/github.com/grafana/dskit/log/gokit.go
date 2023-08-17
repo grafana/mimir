@@ -19,7 +19,7 @@ const (
 )
 
 // NewGoKit creates a new GoKit logger with the given format.
-// If the given format is nil, logfmt is used.
+// If the given format is empty or unknown, logfmt is used.
 // No additional fields nor filters are added to the created logger, and
 // if they are required, the caller is expected to add them.
 func NewGoKit(format string) log.Logger {
@@ -28,7 +28,7 @@ func NewGoKit(format string) log.Logger {
 }
 
 // NewGoKitWithLevel creates a new GoKit logger with the given level and format.
-// If the given format is nil, logfmt is used.
+// If the given format is empty or unknown, logfmt is used.
 func NewGoKitWithLevel(lvl Level, format string) log.Logger {
 	logger := NewGoKit(format)
 	return level.NewFilter(logger, lvl.Option)
@@ -37,7 +37,7 @@ func NewGoKitWithLevel(lvl Level, format string) log.Logger {
 // NewGoKitWithWriter creates a new GoKit logger with the given format and writer.
 // The input writer must be provided, must be thread-safe, and the caller is
 // expected to guarantee these requirements.
-// If the given format is nil, logfmt is used.
+// If the given format is empty or unknown, logfmt is used.
 // No additional fields nor filters are added to the created logger, and
 // if they are required, the caller is expected to add them.
 func NewGoKitWithWriter(format string, writer io.Writer) log.Logger {

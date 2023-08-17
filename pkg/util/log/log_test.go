@@ -45,10 +45,10 @@ func ExampleInitLogger() {
 	}
 
 	// Output:
-	// ts=1970-01-01T00:00:00Z caller=log_test.go:42 level=info msg=log.Logger test=1
-	// ts=1970-01-01T00:00:00Z caller=log_test.go:44 level=info msg=cfg.Log test=1
-	// ts=1970-01-01T00:00:00Z caller=log_test.go:42 level=info msg=log.Logger test=2
-	// ts=1970-01-01T00:00:00Z caller=log_test.go:44 level=info msg=cfg.Log test=2
+	// ts=1970-01-01T00:00:00Z caller=log_test.go:41 level=info msg=log.Logger test=1
+	// ts=1970-01-01T00:00:00Z caller=log_test.go:43 level=info msg=cfg.Log test=1
+	// ts=1970-01-01T00:00:00Z caller=log_test.go:41 level=info msg=log.Logger test=2
+	// ts=1970-01-01T00:00:00Z caller=log_test.go:43 level=info msg=cfg.Log test=2
 
 	os.Stderr = saveStderr
 	gokitlog.DefaultTimestampUTC = saveTimestamp

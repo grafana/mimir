@@ -72,7 +72,7 @@ func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 	fs.IntVar(&mf.blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
 	fs.BoolVar(&mf.useBufferedLogger, "log.buffered", false, "Use a buffered logger to reduce write contention.")
 	fs.BoolVar(&mf.rateLimitedLogsEnabled, "log.rate-limit-enabled", false, "Use rate limited logger to reduce the number of logged messages per second.")
-	fs.Float64Var(&mf.rateLimitedLogsPerSecond, "log.rate-limit-logs-per-second", 10000, "Maximum number of messages per second to be logged. When 0 there is no rate limit.")
+	fs.Float64Var(&mf.rateLimitedLogsPerSecond, "log.rate-limit-logs-per-second", 10000, "Maximum number of messages per second to be logged.")
 	fs.IntVar(&mf.rateLimitedLogsPerSecondBurst, "log.rate-limit-logs-per-second-burst", 25000, "Burst size, i.e., maximum number of messages that can be logged in a second, temporarily exceeding the configured maximum logs per second.")
 	fs.BoolVar(&mf.printVersion, "version", false, "Print application version and exit.")
 	fs.BoolVar(&mf.printModules, "modules", false, "List available values that can be used as target.")
