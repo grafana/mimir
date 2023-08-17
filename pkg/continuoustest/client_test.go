@@ -31,12 +31,12 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		// Handle compression
-		reader := request.Body
 		reader, err := gzip.NewReader(request.Body)
 		require.NoError(t, err)
 
 		// Then Unmarshal
 		body, err := io.ReadAll(reader)
+		require.NoError(t, err)
 		require.NoError(t, request.Body.Close())
 
 		req := pmetricotlp.NewExportRequest()

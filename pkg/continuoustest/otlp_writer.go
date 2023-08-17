@@ -18,14 +18,14 @@ import (
 	"github.com/grafana/mimir/pkg/util/push"
 )
 
-type otlpHttpWriter struct {
+type otlpHTTPWriter struct {
 	httpClient        *http.Client
 	writeBaseEndpoint flagext.URLValue
 	writeBatchSize    int
 	writeTimeout      time.Duration
 }
 
-func (pw *otlpHttpWriter) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error) {
+func (pw *otlpHTTPWriter) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error) {
 	metricRequest := push.TimeseriesToOTLPRequest(req.Timeseries)
 	rawBytes, err := metricRequest.MarshalProto()
 	if err != nil {

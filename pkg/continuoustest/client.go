@@ -131,7 +131,7 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 		}
 
 	case "otlp-http":
-		writeClient = &otlpHttpWriter{
+		writeClient = &otlpHTTPWriter{
 			httpClient:        &http.Client{Transport: rt},
 			writeBaseEndpoint: cfg.WriteBaseEndpoint,
 			writeBatchSize:    cfg.WriteBatchSize,
