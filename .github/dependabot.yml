@@ -25,9 +25,9 @@ updates:
     groups:
       docker-dependencies-update:
         update-types:
-        - "minor" 
-        - "patch"
-        - "major"
+          - "minor" 
+          - "patch"
+          - "major"
   - package-ecosystem: docker
     directory: /cmd/metaconvert/
     schedule:
@@ -36,9 +36,9 @@ updates:
     groups:
       docker-dependencies-update: 
         update-types: 
-        - "minor"
-        - "patch"
-        - "major"
+          - "minor"
+          - "patch"
+          - "major"
   - package-ecosystem: docker
     directory: /cmd/mimir/
     schedule:
@@ -47,9 +47,9 @@ updates:
     groups:
       docker-dependencies-update:
         update-types:
-        - "minor"
-        - "patch"
-        - "major"
+          - "minor"
+          - "patch"
+          - "major"
   - package-ecosystem: docker
     directory: /cmd/mimir-continuous-test/
     schedule:
@@ -58,9 +58,9 @@ updates:
     groups:
       docker-dependencies-update:
         update-types:
-        - "minor"  
-        - "patch"
-        - "major"
+          - "minor"  
+          - "patch"
+          - "major"
   - package-ecosystem: docker
     directory: /cmd/mimirtool/
     schedule:
@@ -69,9 +69,9 @@ updates:
     groups:
       docker-dependencies-update: 
         update-types:
-        - "minor"
-        - "patch"
-        - "major"
+          - "minor"
+          - "patch"
+          - "major"
   - package-ecosystem: docker
     directory: /cmd/query-tee/
     schedule:
@@ -80,9 +80,9 @@ updates:
     groups:
       docker-dependencies-update:
         update-types:
-        - "minor"
-        - "patch"
-        - "major"
+          - "minor"
+          - "patch"
+          - "major"
   - package-ecosystem: docker
     directory: /development/mimir-microservices-mode/
     schedule:
@@ -91,9 +91,9 @@ updates:
     groups:
       docker-dependencies-update:
         update-types:
-        - "minor"
-        - "patch"
-        - "major"
+          - "minor"
+          - "patch"
+          - "major"
   - package-ecosystem: docker
     directory: /development/mimir-monolithic-mode/
     schedule:
@@ -102,9 +102,9 @@ updates:
     groups:
       docker-dependencies-update:
         update-types:
-        - "minor"
-        - "patch"
-        - "major"
+          - "minor"
+          - "patch"
+          - "major"
   - package-ecosystem: docker
     directory: /development/mimir-monolithic-mode-with-swift-storage/
     schedule:
@@ -113,9 +113,9 @@ updates:
     groups:
       docker-dependencies-update:
         update-types:
-        - "minor"
-        - "patch"
-        - "major"
+          - "minor"
+          - "patch"
+          - "major"
   - package-ecosystem: docker
     directory: /development/mimir-read-write-mode/
     schedule:
@@ -124,6 +124,6 @@ updates:
     groups:
       docker-dependencies-update:
         update-types:
-        - "minor"
-        - "patch"
-        - "major"
+          - "minor"
+          - "patch"
+          - "major"
