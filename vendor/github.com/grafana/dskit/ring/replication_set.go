@@ -297,16 +297,20 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 
 			if result.err == nil {
 				resultsMap[result.instance] = result.result
-			} else if resultTracker.failed() {
-				level.Error(logger).Log("msg", "cancelling all requests because quorum cannot be reached")
+			} else {
+				contextTracker.cancelContextFor(result.instance)
 
-				if cfg.Logger != nil {
-					_ = cfg.Logger.Error(result.err)
+				if resultTracker.failed() {
+					level.Error(logger).Log("msg", "cancelling all requests because quorum cannot be reached")
+
+					if cfg.Logger != nil {
+						_ = cfg.Logger.Error(result.err)
+					}
+
+					contextTracker.cancelAllContexts()
+					cleanupResultsAlreadyReceived()
+					return nil, result.err
 				}
-
-				contextTracker.cancelAllContexts()
-				cleanupResultsAlreadyReceived()
-				return nil, result.err
 			}
 		}
 	}
