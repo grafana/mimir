@@ -452,8 +452,13 @@ func (r *Ruler) starting(ctx context.Context) error {
 }
 
 // Stop stops the Ruler.
-// Each function of the ruler is terminated before leaving the ring
+// The ruler leaves the ring before terminating rule evaluations.
 func (r *Ruler) stopping(_ error) error {
+	if r.lifecycler != nil {
+		if err := r.lifecycler.ChangeState(context.Background(), ring.LEAVING); err != nil {
+			level.Warn(r.logger).Log("msg", "couldn't leave the ring upon shutdown; continuing shutdown", "err", err)
+		}
+	}
 	r.manager.Stop()
 
 	if r.subservices != nil {
