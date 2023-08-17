@@ -472,10 +472,11 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 	}
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
-		distributors     int
-		requestRate      float64
-		requestBurstSize int
-		pushes           []testPush
+		distributors               int
+		requestRate                float64
+		requestBurstSize           int
+		pushes                     []testPush
+		enableServiceOverloadError bool
 	}{
 		"request limit should be evenly shared across distributors": {
 			distributors:     2,
@@ -508,6 +509,17 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(2, 3).Error())},
 			},
 		},
+		"request limit is reached return 529 when enable service overload error set to true": {
+			distributors:               2,
+			requestRate:                4,
+			requestBurstSize:           2,
+			enableServiceOverloadError: true,
+			pushes: []testPush{
+				{expectedError: nil},
+				{expectedError: nil},
+				{expectedError: httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(4, 2).Error())},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -518,6 +530,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			flagext.DefaultValues(limits)
 			limits.RequestRate = testData.requestRate
 			limits.RequestBurstSize = testData.requestBurstSize
+			limits.ServiceOverloadStatusCodeOnRateLimitEnabled = testData.enableServiceOverloadError
 
 			// Start all expected distributors
 			distributors, _, _ := prepare(t, prepConfig{

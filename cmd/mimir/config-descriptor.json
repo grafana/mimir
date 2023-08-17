@@ -3022,6 +3022,17 @@
         },
         {
           "kind": "field",
+          "name": "service_overload_status_code_on_rate_limit_enabled",
+          "required": false,
+          "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.service-overload-status-code-on-rate-limit-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_global_series_per_user",
           "required": false,
           "desc": "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.",
