@@ -330,10 +330,8 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	if err := userBkt.Upload(ctx, dst, reader); err != nil {
 		// We don't know what caused the error; it could be the client's fault (e.g. killed
 		// connection), but internal server error is the safe choice here.
-		// If customer complains with "I got an internal server error" give them something we could correlate to our logs.
-		id := hexTimeNowNano()
-		level.Error(logger).Log("msg", "failed uploading block file to bucket", "destination", dst, "err", err, "error_id", id)
-		http.Error(w, fmt.Sprintf("internal server error (id %s)", id), http.StatusInternalServerError)
+		level.Error(logger).Log("msg", "failed uploading block file to bucket", "destination", dst, "err", err)
+		http.Error(w, fmt.Sprintf("internal server error (id %s)", requestID), http.StatusInternalServerError)
 		return
 	}
 
