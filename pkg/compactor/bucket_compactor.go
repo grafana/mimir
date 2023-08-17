@@ -362,10 +362,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	uploadBegin := time.Now()
 	uploadedBlocks := atomic.NewInt64(0)
 
-	inputBlocksMinTimeFound := atomic.NewBool(false)
-	inputBlocksMaxTimeFound := atomic.NewBool(false)
+	if err = verifyCompactedBlocksTimeRanges(ctx, compIDs, toCompactMinTime.UnixMilli(), toCompactMaxTime.UnixMilli(), c.blockSyncConcurrency, subDir); err != nil {
+		return false, nil, err
+	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
+
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
 
@@ -398,14 +400,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
 
-		if newMeta.MinTime == toCompactMinTime.UnixMilli() {
-			inputBlocksMinTimeFound.Store(true)
-		}
-
-		if newMeta.MaxTime == toCompactMaxTime.UnixMilli() {
-			inputBlocksMaxTimeFound.Store(true)
-		}
-
 		begin := time.Now()
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
@@ -417,13 +411,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	})
 	if err != nil {
 		return false, nil, err
-	}
-
-	// Check that the minTime and maxTime from the input blocks
-	// are found at least once in the compacted output blocks to ensure
-	// there was no error during concurrent loading of input blocks.
-	if !inputBlocksMinTimeFound.Load() || !inputBlocksMaxTimeFound.Load() {
-		return false, nil, errors.New("compacted block(s) do not contain minTime and maxTime from the input blocks")
 	}
 
 	elapsed = time.Since(uploadBegin)
@@ -439,6 +426,59 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	return true, compIDs, nil
+}
+
+// verifyCompactedBlocksTimeRanges does a full run over the compacted output blocks
+// and verifies that they satisfy the min/maxTime from the input blocks
+func verifyCompactedBlocksTimeRanges(ctx context.Context, compIDs []ulid.ULID, inputBlocksMinTime, inputBlocksMaxTime int64, blockSyncConcurrency int, subDir string) error {
+	inputBlocksMinTimeFound := atomic.NewBool(false)
+	inputBlocksMaxTimeFound := atomic.NewBool(false)
+
+	err := concurrency.ForEachJob(ctx, len(compIDs), blockSyncConcurrency, func(ctx context.Context, idx int) error {
+		outputBlock := compIDs[idx]
+
+		// Skip empty block
+		if outputBlock == (ulid.ULID{}) {
+			return nil
+		}
+
+		bdir := filepath.Join(subDir, outputBlock.String())
+		meta, err := block.ReadMetaFromDir(bdir)
+		if err != nil {
+			return errors.Wrapf(err, "failed to read meta.json from %s", bdir)
+		}
+
+		// Ensure meta min/maxTime within input min/maxTime
+		if meta.MinTime < inputBlocksMinTime {
+			return fmt.Errorf("invalid minTime for block %s, block minTime %d is before input minTime %d", outputBlock.String(), meta.MinTime, inputBlocksMinTime)
+		}
+
+		if meta.MaxTime > inputBlocksMaxTime {
+			return fmt.Errorf("invalid maxTime for block %s, block maxTime %d is after input maxTime %d", outputBlock.String(), meta.MaxTime, inputBlocksMaxTime)
+		}
+
+		if meta.MinTime == inputBlocksMinTime {
+			inputBlocksMinTimeFound.Store(true)
+		}
+
+		if meta.MaxTime == inputBlocksMaxTime {
+			inputBlocksMaxTimeFound.Store(true)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// Check that the minTime and maxTime from the input blocks
+	// are found at least once in the compacted output blocks
+	if !inputBlocksMinTimeFound.Load() || !inputBlocksMaxTimeFound.Load() {
+		return errors.New("compacted block(s) do not contain minTime and maxTime from the input blocks")
+	}
+
+	return nil
 }
 
 // convertCompactionResultToForEachJobs filters out empty ULIDs.
