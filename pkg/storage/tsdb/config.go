@@ -434,15 +434,6 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.BucketIndex.RegisterFlagsWithPrefix(f, bucketIndexFlagPrefix)
 	cfg.IndexHeader.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header.")
 
-	// TODO: Remove in Mimir 2.12.
-	// Take value from Indexheader DeprecatedConfig if it is set
-	if cfg.DeprecatedIndexHeaderLazyLoadingEnabled {
-		cfg.IndexHeader.LazyLoadingEnabled = cfg.DeprecatedIndexHeaderLazyLoadingEnabled
-	}
-	if cfg.DeprecatedIndexHeaderLazyLoadingIdleTimeout > 0 {
-		cfg.IndexHeader.LazyLoadingIdleTimeout = cfg.DeprecatedIndexHeaderLazyLoadingIdleTimeout
-	}
-
 	f.StringVar(&cfg.SyncDir, "blocks-storage.bucket-store.sync-dir", "./tsdb-sync/", "Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time.")
 	f.DurationVar(&cfg.SyncInterval, "blocks-storage.bucket-store.sync-interval", 15*time.Minute, "How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction).")
 	f.Uint64Var(&cfg.DeprecatedMaxChunkPoolBytes, maxChunksBytesPoolFlag, uint64(2*units.Gibibyte), "Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit.")
