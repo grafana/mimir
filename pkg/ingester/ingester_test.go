@@ -4388,7 +4388,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	}
 
 	db := i.getTSDB(userID)
-	lastUpdate := db.lastUpdate.Load()
+	lastUpdate := db.getLastUpdate()
 
 	// Wait until 1 second passes.
 	test.Poll(t, 1*time.Second, time.Now().Unix()+1, func() interface{} {
@@ -4403,7 +4403,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	}
 
 	// Make sure last update hasn't changed.
-	require.Equal(t, lastUpdate, db.lastUpdate.Load())
+	require.Equal(t, lastUpdate, db.getLastUpdate())
 }
 
 func TestIngester_flushing(t *testing.T) {
@@ -7992,4 +7992,47 @@ func verifyShipperLastSuccessfulUploadTimeMetric(t *testing.T, reg *prometheus.R
 	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
 	assert.InDelta(t, float64(expected), metrics.MaxGauges("cortex_ingester_shipper_last_successful_upload_timestamp_seconds"), 5)
+}
+
+func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
+	ctx := context.Background()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.ShipInterval = 0
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Minute
+	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 0 // Will not run the loop, but will allow us to close any TSDB fast.
+
+	l := defaultLimitsTestConfig()
+	l.CreationGracePeriod = model.Duration(time.Hour) * 24 * 365 * 15 // 15 years in the future
+	override, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+
+	// Create ingester
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, "", "", nil)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
+	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	db, err := i.getOrCreateTSDB(userID, true)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
+
+	pushSingleSampleAtTime(t, i, time.Now().AddDate(10, 10, 10).UnixMilli()) // push sample 10 years in the future.
+
+	// Close TSDB
+	i.closeAllTSDB()
+
+	// and open it again
+	db, err = i.getOrCreateTSDB(userID, true)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	// "last update" time should still be "now", not in the future.
+	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
 }
