@@ -280,3 +280,71 @@ func TestConvertCompactionResultToForEachJobs(t *testing.T) {
 	require.Equal(t, ulidWithShardIndex{ulid: ulid1, shardIndex: 1}, res[0])
 	require.Equal(t, ulidWithShardIndex{ulid: ulid2, shardIndex: 3}, res[1])
 }
+
+func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
+	tests := map[string]struct {
+		minTime        int64
+		maxTime        int64
+		shouldErr      bool
+		expectedErrMsg string
+	}{
+		"should pass with minTime and maxTime matching the input blocks": {
+			minTime:   1000,
+			maxTime:   2500,
+			shouldErr: false,
+		},
+		"should fail with output minTime < input minTime": {
+			minTime:        500,
+			maxTime:        2500,
+			shouldErr:      true,
+			expectedErrMsg: "block minTime 500 is before input minTime 1000",
+		},
+		"should fail with output maxTime > input maxTime": {
+			minTime:        1000,
+			maxTime:        3000,
+			shouldErr:      true,
+			expectedErrMsg: "block maxTime 3000 is after input maxTime 2500",
+		},
+		"should fail due to minTime and maxTime not found": {
+			minTime:        1250,
+			maxTime:        2250,
+			shouldErr:      true,
+			expectedErrMsg: "compacted block(s) do not contain minTime 1000 and maxTime 2500 from the input blocks",
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData // Prevent loop variable being captured by func literal
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			tempDir := t.TempDir()
+
+			compactedBlock1, err := block.CreateBlock(
+				context.Background(), tempDir,
+				[]labels.Labels{
+					labels.FromStrings("test", "foo", "a", "1"),
+					labels.FromStrings("test", "foo", "a", "2"),
+					labels.FromStrings("test", "foo", "a", "3"),
+				}, 10, testData.minTime, testData.minTime+500, labels.EmptyLabels())
+			require.NoError(t, err)
+
+			compactedBlock2, err := block.CreateBlock(
+				context.Background(), tempDir,
+				[]labels.Labels{
+					labels.FromStrings("test", "foo", "a", "1"),
+					labels.FromStrings("test", "foo", "a", "2"),
+					labels.FromStrings("test", "foo", "a", "3"),
+				}, 10, testData.maxTime-500, testData.maxTime, labels.EmptyLabels())
+			require.NoError(t, err)
+
+			err = verifyCompactedBlocksTimeRanges(ctx, []ulid.ULID{compactedBlock1, compactedBlock2}, 1000, 2500, 8, tempDir)
+			if testData.shouldErr {
+				require.ErrorContains(t, err, testData.expectedErrMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

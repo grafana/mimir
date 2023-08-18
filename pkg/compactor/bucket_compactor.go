@@ -363,6 +363,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	uploadedBlocks := atomic.NewInt64(0)
 
 	if err = verifyCompactedBlocksTimeRanges(ctx, compIDs, toCompactMinTime.UnixMilli(), toCompactMaxTime.UnixMilli(), c.blockSyncConcurrency, subDir); err != nil {
+		level.Error(jobLogger).Log("msg", "compacted blocks do not satisfy the min/max time ranges from the input blocks")
+		c.metrics.groupCompactionBlocksVerificationFailed.Inc()
 		return false, nil, err
 	}
 
@@ -475,7 +477,7 @@ func verifyCompactedBlocksTimeRanges(ctx context.Context, compIDs []ulid.ULID, i
 	// Check that the minTime and maxTime from the input blocks
 	// are found at least once in the compacted output blocks
 	if !inputBlocksMinTimeFound.Load() || !inputBlocksMaxTimeFound.Load() {
-		return errors.New("compacted block(s) do not contain minTime and maxTime from the input blocks")
+		return fmt.Errorf("compacted block(s) do not contain minTime %d and maxTime %d from the input blocks", inputBlocksMinTime, inputBlocksMaxTime)
 	}
 
 	return nil
@@ -623,13 +625,14 @@ func deleteBlock(bkt objstore.Bucket, id ulid.ULID, bdir string, logger log.Logg
 
 // BucketCompactorMetrics holds the metrics tracked by BucketCompactor.
 type BucketCompactorMetrics struct {
-	groupCompactionRunsStarted   prometheus.Counter
-	groupCompactionRunsCompleted prometheus.Counter
-	groupCompactionRunsFailed    prometheus.Counter
-	groupCompactions             prometheus.Counter
-	blocksMarkedForDeletion      prometheus.Counter
-	blocksMarkedForNoCompact     prometheus.Counter
-	blocksMaxTimeDelta           prometheus.Histogram
+	groupCompactionRunsStarted              prometheus.Counter
+	groupCompactionRunsCompleted            prometheus.Counter
+	groupCompactionRunsFailed               prometheus.Counter
+	groupCompactionBlocksVerificationFailed prometheus.Counter
+	groupCompactions                        prometheus.Counter
+	blocksMarkedForDeletion                 prometheus.Counter
+	blocksMarkedForNoCompact                prometheus.Counter
+	blocksMaxTimeDelta                      prometheus.Histogram
 }
 
 // NewBucketCompactorMetrics makes a new BucketCompactorMetrics.
@@ -646,6 +649,10 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 		groupCompactionRunsFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_group_compactions_failures_total",
 			Help: "Total number of failed group compactions.",
+		}),
+		groupCompactionBlocksVerificationFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_compactor_group_compactions_blocks_verification_failures_total",
+			Help: "Total number of failures when verifying min/max time ranges of compacted output blocks.",
 		}),
 		groupCompactions: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_group_compactions_total",
