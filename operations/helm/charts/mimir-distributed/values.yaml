@@ -1367,7 +1367,9 @@ store_gateway:
   podAnnotations: {}
 
   # -- Management policy for store-gateway pods
-  podManagementPolicy: Parallel
+  # New variable introduced with Helm chart version 5.1.0. For backwards compatibility it is set to `OrderedReady`
+  # On new deployments it is highly recommended to switch it to `Parallel` as this will be the new default from 6.0.0
+  podManagementPolicy: OrderedReady
 
   # -- Pod Disruption Budget for store-gateway, this will be applied across availability zones to prevent losing redundancy
   podDisruptionBudget:
