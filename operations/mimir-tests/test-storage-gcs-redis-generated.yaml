@@ -709,7 +709,7 @@ spec:
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -querier.max-partial-query-length=768h
         - -ruler-storage.cache.backend=redis
-        - -ruler-storage.cache.redis.endpoint=redis-metadata.default.svc.cluster.local:6379
+        - -ruler-storage.cache.redis.endpoint=redis-metadata.default.svc.cluster.local.:6379
         - -ruler-storage.cache.redis.max-async-concurrency=50
         - -ruler-storage.cache.redis.max-item-size=1048576
         - -ruler-storage.gcs.bucket-name=rules-bucket

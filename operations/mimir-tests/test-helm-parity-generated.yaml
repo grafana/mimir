@@ -937,7 +937,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -ruler-storage.cache.backend=memcached
-        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.gcs.bucket-name=example-ruler-bucket

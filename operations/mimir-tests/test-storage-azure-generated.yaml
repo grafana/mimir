@@ -845,7 +845,7 @@ spec:
         - -querier.max-partial-query-length=768h
         - -ruler-storage.azure.container-name=rules-bucket
         - -ruler-storage.cache.backend=memcached
-        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
