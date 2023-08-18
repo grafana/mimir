@@ -1280,6 +1280,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 ### Mimir Continuous Test
 
 * [ENHANCEMENT] Added the `-tests.smoke-test` flag to run the `mimir-continuous-test` suite once and immediately exit. #2047 #2094
+* [ENHANCEMENT] Added the `-tests.write-protocol` flag to write using the `prometheus` remote write protocol or `otlp-http` in the `mimir-continuous-test` suite. #5719
 
 ### Documentation
 
