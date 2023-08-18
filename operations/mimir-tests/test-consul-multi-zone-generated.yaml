@@ -1430,7 +1430,7 @@ spec:
         - -ingester.ring.zone-awareness-enabled=true
         - -querier.max-partial-query-length=768h
         - -ruler-storage.cache.backend=memcached
-        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.gcs.bucket-name=rules-bucket

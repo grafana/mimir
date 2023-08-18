@@ -392,7 +392,7 @@ spec:
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
@@ -582,7 +582,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -overrides-exporter.ring.enabled=true
         - -overrides-exporter.ring.prefix=
         - -overrides-exporter.ring.store=memberlist
@@ -594,10 +594,10 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -ruler-storage.s3.bucket-name=rules-bucket
-        - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local.:8080/alertmanager
+        - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -744,7 +744,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -overrides-exporter.ring.enabled=true
         - -overrides-exporter.ring.prefix=
         - -overrides-exporter.ring.store=memberlist
@@ -756,10 +756,10 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -ruler-storage.s3.bucket-name=rules-bucket
-        - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local.:8080/alertmanager
+        - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -906,7 +906,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -overrides-exporter.ring.enabled=true
         - -overrides-exporter.ring.prefix=
         - -overrides-exporter.ring.store=memberlist
@@ -918,10 +918,10 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -ruler-storage.s3.bucket-name=rules-bucket
-        - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local.:8080/alertmanager
+        - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1037,7 +1037,7 @@ spec:
         - -common.storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local:2379
         - -distributor.ha-tracker.prefix=prom_ha/
         - -distributor.ha-tracker.store=etcd
         - -distributor.health-check-ingesters=true
@@ -1058,7 +1058,7 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc.keepalive.max-connection-age=2m
@@ -1168,7 +1168,7 @@ spec:
         - -common.storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local:2379
         - -distributor.ha-tracker.prefix=prom_ha/
         - -distributor.ha-tracker.store=etcd
         - -distributor.health-check-ingesters=true
@@ -1189,7 +1189,7 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc.keepalive.max-connection-age=2m
@@ -1299,7 +1299,7 @@ spec:
         - -common.storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local:2379
         - -distributor.ha-tracker.prefix=prom_ha/
         - -distributor.ha-tracker.store=etcd
         - -distributor.health-check-ingesters=true
@@ -1320,7 +1320,7 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc.keepalive.max-connection-age=2m
