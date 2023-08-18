@@ -1,6 +1,6 @@
 GIT_ROOT := $(shell git rev-parse --show-toplevel)
 
-MIMIR_DOCS_VERSION := $(shell sed -n 's, *mimir_docs_version: "\([^"]*\)",\1,p' "$(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed/_index.md")
+MIMIR_DOCS_VERSION := $(shell sed -ne '/^---$/,/^---$/{ s/^ *mimir_docs_version: "\([^"]\{1,\}\)"/\1/p; }' $(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed/_index.md)
 
 # List of projects to provide to the make-docs script.
 PROJECTS := mimir:$(MIMIR_DOCS_VERSION):mimir-$(MIMIR_DOCS_VERSION) helm-charts/mimir-distributed
