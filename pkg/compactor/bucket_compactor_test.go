@@ -7,6 +7,7 @@ package compactor
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -282,34 +283,39 @@ func TestConvertCompactionResultToForEachJobs(t *testing.T) {
 }
 
 func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
+	const (
+		sourceMinTime = 1000
+		sourceMaxTime = 2500
+	)
+
 	tests := map[string]struct {
-		minTime        int64
-		maxTime        int64
-		shouldErr      bool
-		expectedErrMsg string
+		compactedBlockMinTime int64
+		compactedBlockMaxTime int64
+		shouldErr             bool
+		expectedErrMsg        string
 	}{
-		"should pass with minTime and maxTime matching the input blocks": {
-			minTime:   1000,
-			maxTime:   2500,
-			shouldErr: false,
+		"should pass with minTime and maxTime matching the source blocks": {
+			compactedBlockMinTime: sourceMinTime,
+			compactedBlockMaxTime: sourceMaxTime,
+			shouldErr:             false,
 		},
-		"should fail with output minTime < input minTime": {
-			minTime:        500,
-			maxTime:        2500,
-			shouldErr:      true,
-			expectedErrMsg: "block minTime 500 is before input minTime 1000",
+		"should fail with compacted block minTime < source minTime": {
+			compactedBlockMinTime: sourceMinTime - 500,
+			compactedBlockMaxTime: sourceMaxTime,
+			shouldErr:             true,
+			expectedErrMsg:        fmt.Sprintf("compacted block minTime %d is before source minTime %d", sourceMinTime-500, sourceMinTime),
 		},
-		"should fail with output maxTime > input maxTime": {
-			minTime:        1000,
-			maxTime:        3000,
-			shouldErr:      true,
-			expectedErrMsg: "block maxTime 3000 is after input maxTime 2500",
+		"should fail with compacted block maxTime > source maxTime": {
+			compactedBlockMinTime: sourceMinTime,
+			compactedBlockMaxTime: sourceMaxTime + 500,
+			shouldErr:             true,
+			expectedErrMsg:        fmt.Sprintf("compacted block maxTime %d is after source maxTime %d", sourceMaxTime+500, sourceMaxTime),
 		},
 		"should fail due to minTime and maxTime not found": {
-			minTime:        1250,
-			maxTime:        2250,
-			shouldErr:      true,
-			expectedErrMsg: "compacted block(s) do not contain minTime 1000 and maxTime 2500 from the input blocks",
+			compactedBlockMinTime: sourceMinTime + 250,
+			compactedBlockMaxTime: sourceMaxTime - 250,
+			shouldErr:             true,
+			expectedErrMsg:        fmt.Sprintf("compacted block(s) do not contain minTime %d and maxTime %d from the source blocks", sourceMinTime, sourceMaxTime),
 		},
 	}
 
@@ -318,7 +324,6 @@ func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			ctx := context.Background()
 			tempDir := t.TempDir()
 
 			compactedBlock1, err := block.CreateBlock(
@@ -327,7 +332,7 @@ func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
 					labels.FromStrings("test", "foo", "a", "1"),
 					labels.FromStrings("test", "foo", "a", "2"),
 					labels.FromStrings("test", "foo", "a", "3"),
-				}, 10, testData.minTime, testData.minTime+500, labels.EmptyLabels())
+				}, 10, testData.compactedBlockMinTime, testData.compactedBlockMinTime+500, labels.EmptyLabels())
 			require.NoError(t, err)
 
 			compactedBlock2, err := block.CreateBlock(
@@ -336,10 +341,10 @@ func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
 					labels.FromStrings("test", "foo", "a", "1"),
 					labels.FromStrings("test", "foo", "a", "2"),
 					labels.FromStrings("test", "foo", "a", "3"),
-				}, 10, testData.maxTime-500, testData.maxTime, labels.EmptyLabels())
+				}, 10, testData.compactedBlockMaxTime-500, testData.compactedBlockMaxTime, labels.EmptyLabels())
 			require.NoError(t, err)
 
-			err = verifyCompactedBlocksTimeRanges(ctx, []ulid.ULID{compactedBlock1, compactedBlock2}, 1000, 2500, 8, tempDir)
+			err = verifyCompactedBlocksTimeRanges([]ulid.ULID{compactedBlock1, compactedBlock2}, sourceMinTime, sourceMaxTime, tempDir)
 			if testData.shouldErr {
 				require.ErrorContains(t, err, testData.expectedErrMsg)
 			} else {

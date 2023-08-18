@@ -1224,9 +1224,9 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 	const user = "user-1"
 
 	// Two blocks with overlapping time range
-	inputBlock1Spec := []*block.SeriesSpec{
+	sourceBlock1Spec := []*block.SeriesSpec{
 		{
-			Labels: labels.FromStrings("case", "input_spec_1"),
+			Labels: labels.FromStrings("case", "source_spec_1"),
 			Chunks: []chunks.Meta{
 				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					newSample(1000, 1000, nil, nil),
@@ -1235,9 +1235,9 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 		},
 	}
 
-	inputBlock2Spec := []*block.SeriesSpec{
+	sourceBlock2Spec := []*block.SeriesSpec{
 		{
-			Labels: labels.FromStrings("case", "input_spec_2"),
+			Labels: labels.FromStrings("case", "source_spec_2"),
 			Chunks: []chunks.Meta{
 				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					newSample(1500, 1500, nil, nil),
@@ -1247,9 +1247,9 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 	}
 
 	// Block with sufficient time range so compaction job gets triggered
-	inputBlock3Spec := []*block.SeriesSpec{
+	sourceBlock3Spec := []*block.SeriesSpec{
 		{
-			Labels: labels.FromStrings("case", "input_spec_3"),
+			Labels: labels.FromStrings("case", "source_spec_3"),
 			Chunks: []chunks.Meta{
 				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					newSample(0, 0, nil, nil),
@@ -1258,10 +1258,10 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 		},
 	}
 
-	// Output block not containing minTime/maxTime from input blocks
-	outputBlockSpec := []*block.SeriesSpec{
+	// Compacted block not containing minTime/maxTime from source blocks
+	compactedBlockSpec := []*block.SeriesSpec{
 		{
-			Labels: labels.FromStrings("case", "output_spec"),
+			Labels: labels.FromStrings("case", "compacted_spec"),
 			Chunks: []chunks.Meta{
 				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					newSample(1250, 1250, nil, nil),
@@ -1272,11 +1272,11 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 
 	storageDir := t.TempDir()
 
-	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), inputBlock1Spec)
+	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock1Spec)
 	require.NoError(t, err)
-	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), inputBlock2Spec)
+	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock2Spec)
 	require.NoError(t, err)
-	_, err = block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), inputBlock3Spec)
+	_, err = block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock3Spec)
 	require.NoError(t, err)
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
@@ -1292,7 +1292,7 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 	mockCall.RunFn = func(args mock.Arguments) {
 		dir := args.Get(0).(string)
 
-		compactedMeta, err := block.GenerateBlockFromSpec(user, dir, outputBlockSpec)
+		compactedMeta, err := block.GenerateBlockFromSpec(user, dir, compactedBlockSpec)
 		require.NoError(t, err)
 		f, err := os.OpenFile(filepath.Join(dir, compactedMeta.ULID.String(), "tombstones"), os.O_RDONLY|os.O_CREATE, 0666)
 		require.NoError(t, err)
@@ -1306,14 +1306,14 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 
 	// Compaction block verification should fail due to invalid output block
 	test.Poll(t, 5*time.Second, 1.0, func() interface{} {
-		return prom_testutil.ToFloat64(c.bucketCompactorMetrics.groupCompactionBlocksVerificationFailed)
+		return prom_testutil.ToFloat64(c.bucketCompactorMetrics.compactionBlocksVerificationFailed)
 	})
 
 	// Stop the compactor.
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 
-	// Check compaction job failed for the right reason
-	assert.Contains(t, logs.String(), "compacted block(s) do not contain minTime 1000 and maxTime 2501 from the input blocks")
+	// Check logs for compacted block verification failure
+	assert.Contains(t, logs.String(), "compacted block(s) do not contain minTime 1000 and maxTime 2501 from the source blocks")
 }
 
 func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlanning(t *testing.T) {
