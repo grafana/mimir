@@ -1287,6 +1287,7 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 	c, tsdbCompactor, tsdbPlanner, logs, _ := prepare(t, cfg, bkt)
 
 	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{meta1, meta2}, nil).Once()
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{}, nil).Once()
 	mockCall := tsdbCompactor.On("Compact", mock.Anything, mock.Anything, mock.Anything)
 	mockCall.RunFn = func(args mock.Arguments) {
 		dir := args.Get(0).(string)
@@ -1303,7 +1304,7 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 	// Start the compactor
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
-	// Compaction run should error due to invalid output block
+	// Compaction block verification should fail due to invalid output block
 	test.Poll(t, 5*time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.bucketCompactorMetrics.groupCompactionBlocksVerificationFailed)
 	})

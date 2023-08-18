@@ -363,9 +363,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	uploadedBlocks := atomic.NewInt64(0)
 
 	if err = verifyCompactedBlocksTimeRanges(ctx, compIDs, toCompactMinTime.UnixMilli(), toCompactMaxTime.UnixMilli(), c.blockSyncConcurrency, subDir); err != nil {
-		level.Error(jobLogger).Log("msg", "compacted blocks do not satisfy the min/max time ranges from the input blocks")
+		level.Error(jobLogger).Log("msg", err)
 		c.metrics.groupCompactionBlocksVerificationFailed.Inc()
-		return false, nil, err
 	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
