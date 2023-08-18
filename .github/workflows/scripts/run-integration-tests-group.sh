@@ -37,7 +37,7 @@ if [[ -z "$TOTAL" ]]; then
 fi
 
 # List all tests.
-ALL_TESTS=$(go test -tags=requires_docker -list 'Test.*' "${INTEGRATION_DIR}/..." | grep -E '^Test.*' | sort)
+ALL_TESTS=$(go test -tags=requires_docker,stringlabels -list 'Test.*' "${INTEGRATION_DIR}/..." | grep -E '^Test.*' | sort)
 
 # Filter tests by the requested group.
 GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX')
@@ -53,4 +53,4 @@ for TEST in $GROUP_TESTS; do
 done
 REGEX="${REGEX})$"
 
-exec go test -tags=requires_docker -timeout 2400s -v -count=1 -run "${REGEX}" "${INTEGRATION_DIR}/..."
+exec go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run "${REGEX}" "${INTEGRATION_DIR}/..."
