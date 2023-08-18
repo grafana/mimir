@@ -229,9 +229,6 @@ jobs:
           ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   test-docs:
-    env:
-      MIMIR_VERSION: v2.9.x
-      MIMIR_BRANCH: release-2.9
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -242,13 +239,12 @@ jobs:
         run: |
           MIMIR_DOCS_VERSION=$(sed -ne '/^---$/,/^---$/{ s/^ *mimir_docs_version: "\([^"]\{1,\}\)"/\1/p; }' docs/sources/helm-charts/mimir-distributed/_index.md)
 
-          echo "version=${MIMIR_DOCS_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "version=${MIMIR_DOCS_VERSION}" | tee "${GITHUB_OUTPUT}"
           if [[ "${MIMIR_DOCS_VERSION}" = next ]]; then
             echo 'branch=main' >> "${GITHUB_OUTPUT}"
           else
             MIMIR_DOCS_VERSION_WITHOUT_PREFIX="${MIMIR_DOCS_VERSION#v}"
-
-            echo "branch=release-${MIMIR_DOCS_VERSION_WITHOUT_PREFIX%.x}" >> "${GITHUB_OUTPUT}"
+            echo "branch=release-${MIMIR_DOCS_VERSION_WITHOUT_PREFIX%.x}" | tee "${GITHUB_OUTPUT}"
           fi
 
       - name: Check out ${{ steps.mimir_version.output.branch }} documentation
@@ -259,7 +255,7 @@ jobs:
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
 
-      - name: "Build website"
+      - name: Build website
         env:
           MIMIR_BRANCH: ${{ steps.mimir_version.output.branch }}
           MIMIR_VERSION: ${{ steps.mimir_version.output.version }}
