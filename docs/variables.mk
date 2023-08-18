@@ -1,9 +1,16 @@
 GIT_ROOT := $(shell git rev-parse --show-toplevel)
 
-MIMIR_DOCS_VERSION := $(shell sed -ne '/^---$/,/^---$/{ s/^ *mimir_docs_version: "\([^"]\{1,\}\)"/\1/p; }' $(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed/_index.md)
+MIMIR_DOCS_VERSION := $(shell sed -n 's, *mimir_docs_version: "\([^"]*\)",\1,p' "$(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed/_index.md")
+ifeq ($(MIMIR_DOCS_VERSION),next)
+MIMIR_DOCS_BRANCH := main
+else
+MIMIR_DOCS_BRANCH := $(patsubst v%.x,release-%,$(MIMIR_DOCS_VERSION))
+endif
 
 # List of projects to provide to the make-docs script.
 PROJECTS := mimir:$(MIMIR_DOCS_VERSION):mimir-$(MIMIR_DOCS_VERSION) helm-charts/mimir-distributed
+
+export REPOS_PATH := $(realpath $(GIT_ROOT)/..)
 
 # Use the doc-validator image defined in CI by default.
 export DOC_VALIDATOR_IMAGE := $(shell sed -n 's, *image: \(grafana/doc-validator.*\),\1,p' "$(GIT_ROOT)/.github/workflows/test-build-deploy.yml")
