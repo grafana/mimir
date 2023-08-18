@@ -247,18 +247,18 @@ jobs:
             echo "branch=release-${MIMIR_DOCS_VERSION_WITHOUT_PREFIX%.x}" | tee "${GITHUB_OUTPUT}"
           fi
 
-      - name: Check out ${{ steps.mimir_version.output.branch }} documentation
+      - name: Check out ${{ steps.mimir_version.outputs.branch }} documentation
         uses: actions/checkout@v3
         with:
-          ref: ${{ steps.mimir_version.output.branch }}
+          ref: ${{ steps.mimir_version.outputs.branch }}
 
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
 
       - name: Build website
         env:
-          MIMIR_BRANCH: ${{ steps.mimir_version.output.branch }}
-          MIMIR_VERSION: ${{ steps.mimir_version.output.version }}
+          MIMIR_BRANCH: ${{ steps.mimir_version.outputs.branch }}
+          MIMIR_VERSION: ${{ steps.mimir_version.outputs.version }}
         run: |
           docker run \
             -v "${PWD}/${MIMIR_BRANCH}/docs/sources/mimir:/hugo/content/docs/mimir/${MIMIR_VERSION}" \
