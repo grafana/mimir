@@ -11,12 +11,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"runtime"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
@@ -55,14 +53,17 @@ const (
 var testMode = false
 
 type mainFlags struct {
-	ballastBytes         int  `category:"advanced"`
-	mutexProfileFraction int  `category:"advanced"`
-	blockProfileRate     int  `category:"advanced"`
-	useBufferedLogger    bool `category:"advanced"`
-	printVersion         bool
-	printModules         bool
-	printHelp            bool
-	printHelpAll         bool
+	ballastBytes                  int     `category:"advanced"`
+	mutexProfileFraction          int     `category:"advanced"`
+	blockProfileRate              int     `category:"advanced"`
+	useBufferedLogger             bool    `category:"advanced"`
+	rateLimitedLogsEnabled        bool    `category:"experimental"`
+	rateLimitedLogsPerSecond      float64 `category:"experimental"`
+	rateLimitedLogsPerSecondBurst int     `category:"experimental"`
+	printVersion                  bool
+	printModules                  bool
+	printHelp                     bool
+	printHelpAll                  bool
 }
 
 func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
@@ -70,6 +71,9 @@ func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 	fs.IntVar(&mf.mutexProfileFraction, "debug.mutex-profile-fraction", 0, "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.")
 	fs.IntVar(&mf.blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
 	fs.BoolVar(&mf.useBufferedLogger, "log.buffered", false, "Use a buffered logger to reduce write contention.")
+	fs.BoolVar(&mf.rateLimitedLogsEnabled, "log.rate-limit-enabled", false, "Use rate limited logger to reduce the number of logged messages per second.")
+	fs.Float64Var(&mf.rateLimitedLogsPerSecond, "log.rate-limit-logs-per-second", 10000, "Maximum number of messages per second to be logged.")
+	fs.IntVar(&mf.rateLimitedLogsPerSecondBurst, "log.rate-limit-logs-per-second-burst", 25000, "Burst size, i.e., maximum number of messages that can be logged in a second, temporarily exceeding the configured maximum logs per second.")
 	fs.BoolVar(&mf.printVersion, "version", false, "Print application version and exit.")
 	fs.BoolVar(&mf.printModules, "modules", false, "List available values that can be used as target.")
 	fs.BoolVar(&mf.printHelp, "help", false, "Print basic help.")
@@ -167,7 +171,13 @@ func main() {
 		runtime.SetBlockProfileRate(mainFlags.blockProfileRate)
 	}
 
-	util_log.InitLogger(&cfg.Server, mainFlags.useBufferedLogger)
+	reg := prometheus.DefaultRegisterer
+	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, mainFlags.useBufferedLogger, util_log.RateLimitedLoggerCfg{
+		Enabled:            mainFlags.rateLimitedLogsEnabled,
+		LogsPerSecond:      mainFlags.rateLimitedLogsPerSecond,
+		LogsPerSecondBurst: mainFlags.rateLimitedLogsPerSecondBurst,
+		Registry:           reg,
+	})
 
 	var ballast = util.AllocateBallast(mainFlags.ballastBytes)
 
@@ -190,10 +200,7 @@ func main() {
 		}
 	}
 
-	// Initialise seed for randomness usage.
-	rand.Seed(time.Now().UnixNano())
-
-	t, err := mimir.New(cfg, prometheus.DefaultRegisterer)
+	t, err := mimir.New(cfg, reg)
 	util_log.CheckFatal("initializing application", err)
 
 	if mainFlags.printModules {

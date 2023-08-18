@@ -44,7 +44,7 @@
       "fieldDefaultValue": 0,
       "fieldFlag": "shutdown-delay",
       "fieldType": "duration",
-      "fieldCategory": "experimental"
+      "fieldCategory": "advanced"
     },
     {
       "kind": "field",
@@ -229,6 +229,33 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "cert",
+              "required": false,
+              "desc": "Server TLS certificate. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "key",
+              "required": false,
+              "desc": "Server TLS key. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_ca",
+              "required": false,
+              "desc": "Root certificate authority used to verify client certificates. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "cert_file",
               "required": false,
               "desc": "HTTP server cert path.",
@@ -281,6 +308,33 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "cert",
+              "required": false,
+              "desc": "Server TLS certificate. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "key",
+              "required": false,
+              "desc": "Server TLS key. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_ca",
+              "required": false,
+              "desc": "Root certificate authority used to verify client certificates. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
             {
               "kind": "field",
               "name": "cert_file",
@@ -2928,7 +2982,7 @@
           "kind": "field",
           "name": "creation_grace_period",
           "required": false,
-          "desc": "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t \u003e (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable.",
+          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).",
           "fieldValue": null,
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "validation.create-grace-period",
@@ -2964,6 +3018,17 @@
           "fieldValue": null,
           "fieldDefaultValue": null,
           "fieldType": "relabel_config...",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "service_overload_status_code_on_rate_limit_enabled",
+          "required": false,
+          "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.service-overload-status-code-on-rate-limit-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
@@ -4683,6 +4748,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "connection_pool_timeout",
+                  "required": false,
+                  "desc": "Maximum duration to wait to get a connection from pool.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 4000000000,
+                  "fieldFlag": "query-frontend.results-cache.redis.connection-pool-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "min_idle_connections",
                   "required": false,
                   "desc": "Minimum number of idle connections.",
@@ -5930,6 +6006,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "connection_pool_timeout",
+                      "required": false,
+                      "desc": "Maximum duration to wait to get a connection from pool.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.connection-pool-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "min_idle_connections",
                       "required": false,
                       "desc": "Minimum number of idle connections.",
@@ -6452,6 +6539,17 @@
                       "fieldDefaultValue": 100,
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size",
                       "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "connection_pool_timeout",
+                      "required": false,
+                      "desc": "Maximum duration to wait to get a connection from pool.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.connection-pool-timeout",
+                      "fieldType": "duration",
                       "fieldCategory": "advanced"
                     },
                     {
@@ -7017,6 +7115,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "connection_pool_timeout",
+                      "required": false,
+                      "desc": "Maximum duration to wait to get a connection from pool.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.connection-pool-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "min_idle_connections",
                       "required": false,
                       "desc": "Minimum number of idle connections.",
@@ -7516,12 +7625,23 @@
                   "kind": "field",
                   "name": "max_idle_file_handles",
                   "required": false,
-                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index header file.",
+                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.max-idle-file-handles",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "eager_loading_startup_enabled",
+                  "required": false,
+                  "desc": "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.eager-loading-startup-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -8979,6 +9099,16 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "store-gateway.sharding-ring.zone-awareness-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_enabled",
+              "required": false,
+              "desc": "When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "store-gateway.sharding-ring.auto-forget-enabled",
               "fieldType": "boolean"
             },
             {
@@ -11405,6 +11535,17 @@
                   "fieldDefaultValue": 100,
                   "fieldFlag": "ruler-storage.cache.redis.connection-pool-size",
                   "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connection_pool_timeout",
+                  "required": false,
+                  "desc": "Maximum duration to wait to get a connection from pool.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 4000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.connection-pool-timeout",
+                  "fieldType": "duration",
                   "fieldCategory": "advanced"
                 },
                 {

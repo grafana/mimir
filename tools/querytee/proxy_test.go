@@ -377,6 +377,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 
 	t.Run("HTTP proxy connection", func(t *testing.T) {
 		var backendURLs []string
+		logger := log.NewNopLogger()
 
 		// Start backend servers.
 		for _, backend := range backends {
@@ -386,6 +387,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 				GRPCListenAddress: "localhost",
 				GRPCListenPort:    0,
 				Registerer:        prometheus.NewRegistry(),
+				Log:               logger,
 			})
 			require.NoError(t, err)
 			server.HTTP.Path(pathPrefix).Methods("GET").Handler(backend.handler)
@@ -408,7 +410,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 			BackendReadTimeout:       time.Second,
 		}
 
-		p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
+		p, err := NewProxy(cfg, logger, testRoutes, prometheus.NewRegistry())
 		require.NoError(t, err)
 		require.NotNil(t, p)
 		defer p.Stop() //nolint:errcheck
@@ -431,6 +433,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 
 	t.Run("gRPC proxy connection", func(t *testing.T) {
 		var backendURLs []string
+		logger := log.NewNopLogger()
 
 		// Start backend servers.
 		for _, backend := range backends {
@@ -440,6 +443,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 				GRPCListenAddress: "localhost",
 				GRPCListenPort:    0,
 				Registerer:        prometheus.NewRegistry(),
+				Log:               logger,
 			})
 			require.NoError(t, err)
 			server.HTTP.Path(pathPrefix).Methods("GET").Handler(backend.handler)
@@ -462,7 +466,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 			BackendReadTimeout:       time.Second,
 		}
 
-		p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
+		p, err := NewProxy(cfg, logger, testRoutes, prometheus.NewRegistry())
 		require.NoError(t, err)
 		require.NotNil(t, p)
 		defer p.Stop() //nolint:errcheck

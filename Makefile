@@ -182,7 +182,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= update-golangci-lint-d48f951b3
+LATEST_BUILD_IMAGE_TAG ?= pr5734-cf25a5b2b4
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -196,7 +196,7 @@ GO_FLAGS := -ldflags "\
 		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
 		-X $(MIMIR_VERSION).Revision=$(GIT_REVISION) \
 		-X $(MIMIR_VERSION).Version=$(VERSION) \
-		-extldflags \"-static\" -s -w" -tags netgo
+		-extldflags \"-static\" -s -w" -tags netgo,stringlabels
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
@@ -242,7 +242,7 @@ lint: check-makefiles
 	golangci-lint run
 
 	# Ensure no blocklisted package is imported.
-	GOFLAGS="-tags=requires_docker" faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
+	GOFLAGS="-tags=requires_docker,stringlabels" faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
 		sync/atomic=go.uber.org/atomic,\
 		regexp=github.com/grafana/regexp,\
@@ -297,7 +297,7 @@ lint: check-makefiles
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure packages we imported from Thanos are no longer used.
-	GOFLAGS="-tags=requires_docker" faillint -paths \
+	GOFLAGS="-tags=requires_docker,stringlabels" faillint -paths \
 		"github.com/thanos-io/thanos/pkg/..." \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
@@ -338,12 +338,12 @@ print-go-version: ## Print the go version.
 	@go version | awk '{print $$3}' | sed 's/go//'
 
 test-with-race: ## Run all unit tests with data race detect.
-	go test -tags netgo -timeout 30m -race -count 1 ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 ./...
 
 cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
-	go test -tags netgo -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
 	go tool cover -html=$(COVERFILE) -o cover.html
 	go tool cover -func=cover.html | tail -n1
 
@@ -606,7 +606,7 @@ check-mimir-read-write-mode-docker-compose-yaml: ## Check the jsonnet and docker
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
-	go test -tags=requires_docker ./integration/...
+	go test -tags=requires_docker,stringlabels ./integration/...
 
 web-serve:
 	cd website && hugo --config config.toml --minify -v server

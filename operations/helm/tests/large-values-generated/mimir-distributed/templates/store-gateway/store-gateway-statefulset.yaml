@@ -17,6 +17,7 @@ metadata:
     rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 2
   selector:
     matchLabels:
@@ -172,6 +173,7 @@ metadata:
     rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 2
   selector:
     matchLabels:
@@ -327,6 +329,7 @@ metadata:
     rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 2
   selector:
     matchLabels:

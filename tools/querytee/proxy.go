@@ -181,6 +181,8 @@ func (p *Proxy) Start() error {
 		MetricsNamespace:        queryTeeMetricsNamespace,
 		Registerer:              p.registerer,
 		RegisterInstrumentation: false,
+
+		Log: p.logger,
 	})
 	if err != nil {
 		return err

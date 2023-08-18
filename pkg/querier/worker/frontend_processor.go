@@ -99,7 +99,7 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, infl
 	ctx, cancel := context.WithCancel(c.Context())
 	defer cancel()
 
-	for {
+	for ctx.Err() == nil {
 		request, err := c.Recv()
 		if err != nil {
 			return err
@@ -133,6 +133,8 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, infl
 			return fmt.Errorf("unknown request type: %v", request.Type)
 		}
 	}
+
+	return ctx.Err()
 }
 
 func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.HTTPRequest, statsEnabled bool, sendHTTPResponse func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error) {

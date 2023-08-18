@@ -14716,6 +14716,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
+                      "description": "### Blocks currently owned\nThis panel shows the number of blocks owned by each store-gateway replica.\nFor each owned block, the store-gateway keeps its index-header on disk, and\neventually loaded in memory (if index-header lazy loading is disabled, or lazy loading\nis enabled and the index-header was loaded).\n\n",
                       "fill": 0,
                       "id": 29,
                       "legend": {
@@ -14752,7 +14753,7 @@ data:
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Blocks currently loaded",
+                      "title": "Blocks currently owned",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,

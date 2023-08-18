@@ -349,6 +349,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size int
     	Maximum number of connections in the pool. (default 100)
+  -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-timeout duration
+    	Maximum duration to wait to get a connection from pool. (default 4s)
   -blocks-storage.bucket-store.chunks-cache.redis.db int
     	Database index.
   -blocks-storage.bucket-store.chunks-cache.redis.dial-timeout duration
@@ -447,6 +449,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -blocks-storage.bucket-store.index-cache.redis.connection-pool-size int
     	Maximum number of connections in the pool. (default 100)
+  -blocks-storage.bucket-store.index-cache.redis.connection-pool-timeout duration
+    	Maximum duration to wait to get a connection from pool. (default 4s)
   -blocks-storage.bucket-store.index-cache.redis.db int
     	Database index.
   -blocks-storage.bucket-store.index-cache.redis.dial-timeout duration
@@ -503,8 +507,10 @@ Usage of ./cmd/mimir/mimir:
     	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
   -blocks-storage.bucket-store.index-header-sparse-persistence-enabled
     	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.
+  -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
+    	[experimental] If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.
   -blocks-storage.bucket-store.index-header.max-idle-file-handles uint
-    	Maximum number of idle file handles the store-gateway keeps open for each index header file. (default 1)
+    	Maximum number of idle file handles the store-gateway keeps open for each index-header file. (default 1)
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.max-chunk-pool-bytes uint
@@ -571,6 +577,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size of metafile content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend). (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size int
     	Maximum number of connections in the pool. (default 100)
+  -blocks-storage.bucket-store.metadata-cache.redis.connection-pool-timeout duration
+    	Maximum duration to wait to get a connection from pool. (default 4s)
   -blocks-storage.bucket-store.metadata-cache.redis.db int
     	Database index.
   -blocks-storage.bucket-store.metadata-cache.redis.dial-timeout duration
@@ -1179,6 +1187,8 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -distributor.service-overload-status-code-on-rate-limit-enabled
+    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.
   -enable-go-runtime-metrics
     	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
   -flusher.exit-after-flush
@@ -1379,10 +1389,16 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
   -log.buffered
     	Use a buffered logger to reduce write contention.
-  -log.format value
-    	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
+  -log.format string
+    	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
+  -log.rate-limit-enabled
+    	[experimental] Use rate limited logger to reduce the number of logged messages per second.
+  -log.rate-limit-logs-per-second float
+    	[experimental] Maximum number of messages per second to be logged. (default 10000)
+  -log.rate-limit-logs-per-second-burst int
+    	[experimental] Burst size, i.e., maximum number of messages that can be logged in a second, temporarily exceeding the configured maximum logs per second. (default 25000)
   -max-separate-metrics-groups-per-user int
     	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int
@@ -1799,6 +1815,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -query-frontend.results-cache.redis.connection-pool-size int
     	Maximum number of connections in the pool. (default 100)
+  -query-frontend.results-cache.redis.connection-pool-timeout duration
+    	Maximum duration to wait to get a connection from pool. (default 4s)
   -query-frontend.results-cache.redis.db int
     	Database index.
   -query-frontend.results-cache.redis.dial-timeout duration
@@ -2029,6 +2047,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ruler-storage.cache.redis.connection-pool-size int
     	Maximum number of connections in the pool. (default 100)
+  -ruler-storage.cache.redis.connection-pool-timeout duration
+    	Maximum duration to wait to get a connection from pool. (default 4s)
   -ruler-storage.cache.redis.db int
     	Database index.
   -ruler-storage.cache.redis.dial-timeout duration
@@ -2476,7 +2496,9 @@ Usage of ./cmd/mimir/mimir:
   -server.tls-min-version string
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
   -shutdown-delay duration
-    	[experimental] How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
+    	How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
+  -store-gateway.sharding-ring.auto-forget-enabled
+    	When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout. (default true)
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration
@@ -2570,7 +2592,7 @@ Usage of ./cmd/mimir/mimir:
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.create-grace-period duration
-    	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable. (default 10m)
+    	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future). (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-label-names-per-series int

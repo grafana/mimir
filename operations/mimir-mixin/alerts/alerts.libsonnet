@@ -539,22 +539,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       name: 'mimir-provisioning',
       rules: [
         {
-          alert: $.alertName('ProvisioningTooManyWrites'),
-          // 80k writes / s per ingester max.
-          expr: |||
-            avg by (%(alert_aggregation_labels)s) (%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate1m) > 80e3
-          ||| % $._config,
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              Ingesters in %(alert_aggregation_variables)s ingest too many samples per second.
-            ||| % $._config,
-          },
-        },
-        {
           alert: $.alertName('AllocatingTooMuchMemory'),
           expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
             threshold: '0.65',

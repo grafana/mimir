@@ -286,6 +286,10 @@ How to **investigate**:
 - Looking at `Mimir / Alertmanager` dashboard you should see in which part of the stack the error originates
 - If some replicas are going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
+- If the `route` label is `alertmanager`, check the logs for distributor errors containing `component=AlertmanagerDistributor`
+  - Check if instances are starved for resources using the `Mimir / Alertmanager resources` dashboard
+  - If the distributor errors are `context deadline exceeded` and the instances are not starved for resources, increase the distributor
+    timeout with `-alertmanager.alertmanager-client.remote-timeout=<timeout>`. The defaut is 2s if not specified.
 
 ### MimirIngesterUnhealthy
 
@@ -1249,7 +1253,15 @@ This non-critical error occurs when Mimir receives a write request that contains
 Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
 On a per-tenant basis, you can fine tune the tolerance by configuring the `-validation.max-length-label-value` option.
 
-> **Note:** Series with invalid samples are skipped during the ingestion, and series within the same request are ingested.
+> **Note:** Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
+
+### err-mimir-exemplar-too-far-in-future
+
+This non-critical error occurs when Mimir receives a write request that contains an exemplar whose timestamp is in the future compared to the current "real world" time.
+Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
+On a per-tenant basis, you can fine tune the tolerance by configuring the `-validation.max-length-label-value` option.
+
+> **Note:** Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
 
 ### err-mimir-exemplar-labels-missing
 
