@@ -20,7 +20,7 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 Compile `copyblocks` using `go build`:
 
 ```bash
-go build -o copyblocks main.go abs.go gcs.go s3.go
+go build .
 ```
 
 ### Example for Google Cloud Storage
