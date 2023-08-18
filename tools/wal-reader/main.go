@@ -44,36 +44,42 @@ func main() {
 }
 
 func printWal(walDir string, printSeriesEntries, printSeriesWithSampleEntries bool) error {
+	var minSampleTime, maxSampleTime int64 = math.MaxInt64, math.MinInt64
+	// map series refs to labels (as a string)
+	series := map[chunks.HeadSeriesRef]string{}
+
 	// Backfill the checkpoint first if it exists.
 	checkpointDir, startFrom, err := wlog.LastCheckpoint(walDir)
-	if err != nil && err != record.ErrNotFound {
+	if err != nil && !errors.Is(err, record.ErrNotFound) {
 		return errors.Wrap(err, "find last checkpoint")
+	}
+
+	if err == nil {
+		log.Println("Using checkpoint directory:", checkpointDir)
+
+		sr, err := wlog.NewSegmentsReader(checkpointDir)
+		if err != nil {
+			return errors.Wrap(err, "open checkpoint")
+		}
+		defer func() {
+			if err := sr.Close(); err != nil {
+				log.Println("Error while closing the wal segments reader when processing checkpoint", "err", err)
+			}
+		}()
+
+		log.Println("replaying checkpoint")
+		if err := printWalEntries(wlog.NewReader(sr), series, printSeriesEntries, printSeriesWithSampleEntries, &minSampleTime, &maxSampleTime); err != nil {
+			return errors.Wrap(err, "replaying checkpoint")
+		}
+		log.Println("checking replay finished")
+	} else {
+		log.Println("no checkpoint found, skipping")
 	}
 
 	// Find the last segment.
 	_, endAt, e := wlog.Segments(walDir)
 	if e != nil {
 		return errors.Wrap(e, "finding WAL segments")
-	}
-
-	log.Println("Using checkpoint directory:", checkpointDir)
-
-	sr, err := wlog.NewSegmentsReader(checkpointDir)
-	if err != nil {
-		return errors.Wrap(err, "open checkpoint")
-	}
-	defer func() {
-		if err := sr.Close(); err != nil {
-			log.Println("Error while closing the wal segments reader when processing checkpoint", "err", err)
-		}
-	}()
-
-	var minSampleTime, maxSampleTime int64 = math.MaxInt64, math.MinInt64
-	// map series references to labels (as a string)
-	series := map[chunks.HeadSeriesRef]string{}
-	log.Println("replaying checkpoint")
-	if err := printWalEntries(wlog.NewReader(sr), series, printSeriesEntries, printSeriesWithSampleEntries, &minSampleTime, &maxSampleTime); err != nil {
-		return errors.Wrap(err, "replaying checkpoint")
 	}
 
 	startFrom++
