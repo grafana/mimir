@@ -47,7 +47,7 @@
 * [ENHANCEMENT] Distributor: optimize sending of requests to ingesters by reusing memory buffers for marshalling requests. #5195 #5389
 * [ENHANCEMENT] Querier: add experimental `-querier.minimize-ingester-requests` option to initially query only the minimum set of ingesters required to reach quorum. #5202 #5259 #5263
 * [ENHANCEMENT] Querier: improve error message when streaming chunks from ingesters to queriers and a query limit is reached. #5245
-* [ENHANCEMENT] Use new data structure for labels, to reduce memory consumption. #3555
+* [ENHANCEMENT] Use new data structure for labels, to reduce memory consumption. #3555 #5731
 * [ENHANCEMENT] Update alpine base image to 3.18.2. #5276
 * [ENHANCEMENT] Ruler: add `cortex_ruler_sync_rules_duration_seconds` metric, tracking the time spent syncing all rule groups owned by the ruler instance. #5311
 * [ENHANCEMENT] Store-gateway: add experimental `blocks-storage.bucket-store.index-header-lazy-loading-concurrency` config option to limit the number of concurrent index-headers loads when lazy loading. #5313 #5605
@@ -78,8 +78,9 @@
   * `-log.rate-limit-enabled`
   * `-log.rate-limit-logs-per-second`
   * `-log.rate-limit-logs-per-second-burst`
+* [ENHANCEMENT] Added `cortex_ingester_tsdb_head_max_time_seconds` metric which is a max time of all TSDB Heads open in an ingester. #5786
 * [ENHANCEMENT] Querier: cancel query requests to ingesters in a zone upon first error received from the zone, to reduce wasted effort spent computing results that won't be used #5764
-* [ENHANCEMENT] Apply dskit HTTPGRPCTracer for more detailed server-side tracing spans and tags on httpgrpc.HTTP/Handle requests #5782
+* [ENHANCEMENT] Improve tracing of internal HTTP requests sent over httpgrpc #5782
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377
@@ -89,6 +90,7 @@
 * [BUGFIX] Querier: Retry frontend result notification when an error is returned. #5591
 * [BUGFIX] Querier: fix issue where `cortex_ingester_client_request_duration_seconds` metric did not include streaming query requests that did not return any series. #5695
 * [BUGFIX] Ingester: Fix ActiveSeries tracker double-counting series that have been deleted from the Head while still being active and then recreated again. #5678
+* [BUGFIX] Ingester: Don't set "last update time" of TSDB into the future when opening TSDB. This could prevent detecting of idle TSDB for a long time, if sample in distant future was ingested. #5787
 
 ### Mixin
 
@@ -111,6 +113,7 @@
 * [BUGFIX] Dashboards: fix "unhealthy pods" panel on "rollout progress" dashboard showing only a number rather than the name of the workload and the number of unhealthy pods if only one workload has unhealthy pods. #5113 #5200
 * [BUGFIX] Alerts: fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts. #5396
 * [BUGFIX] Alerts: Fix `MimirGossipMembersMismatch` to include `admin-api` pods so that it does not always fire in GEM deployments. #5641
+* [BUGFIX] Ruler: gracefully shut down rule evaluations. #5778
 
 ### Jsonnet
 
@@ -167,6 +170,7 @@
 
 * [CHANGE] copyblocks: add support for S3 and the ability to copy between different object storage services. Due to this, the `-source-service` and `-destination-service` flags are now required and the `-service` flag has been removed. #5486
 * [FEATURE] undelete_block_gcs: Added new tool for undeleting blocks on GCS storage. #5610
+* [FEATURE] wal-reader: Added new tool for printing entries in TSDB WAL.
 * [ENHANCEMENT] ulidtime: add -seconds flag to print timestamps as Unix timestamps. #5621
 * [ENHANCEMENT] ulidtime: exit with status code 1 if some ULIDs can't be parsed. #5621
 * [ENHANCEMENT] tsdb-index-toc: added index-header size estimates. #5652
@@ -1279,6 +1283,7 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 ### Mimir Continuous Test
 
 * [ENHANCEMENT] Added the `-tests.smoke-test` flag to run the `mimir-continuous-test` suite once and immediately exit. #2047 #2094
+* [ENHANCEMENT] Added the `-tests.write-protocol` flag to write using the `prometheus` remote write protocol or `otlp-http` in the `mimir-continuous-test` suite. #5719
 
 ### Documentation
 
