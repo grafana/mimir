@@ -88,7 +88,7 @@ Under normal conditions, when a store-gateway instance shuts down, it automatica
 
 The auto-forget feature works as follows: when an healthy store-gateway instance identifies an instance in the ring that is unhealthy for longer than 10 times the configured `-store-gateway.sharding-ring.heartbeat-timeout` value, the healthy instance removes the unhealthy instance from the ring.
 
-The store-gateway auto-forget feature can be disabled setting `-store-gateway.sharding-ring.auto-forget-enabled=false`.
+The store-gateway auto-forget feature can be disabled by setting `-store-gateway.sharding-ring.auto-forget-enabled=false`.
 
 ### Zone-awareness
 
