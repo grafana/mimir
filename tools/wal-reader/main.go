@@ -4,7 +4,6 @@ package main
 
 import (
 	"flag"
-	"io"
 	"log"
 	"math"
 	"os"
@@ -84,6 +83,8 @@ func printWal(walDir string, printSeriesEntries, printSeriesWithSampleEntries bo
 		return errors.Wrap(e, "finding WAL segments")
 	}
 
+	// number returned from LastCheckpoint comes from `checkpoint.00385215` filename, but this
+	// checkpoint already contains data from segment `00385215`, so we need to continue with next one.
 	startFrom++
 	for i := startFrom; i <= endAt; i++ {
 		log.Println("replaying WAL segment", i)
@@ -93,16 +94,12 @@ func printWal(walDir string, printSeriesEntries, printSeriesWithSampleEntries bo
 		}
 
 		sr, err := wlog.NewSegmentBufReaderWithOffset(0, s)
-		if errors.Is(err, io.EOF) {
-			// File does not exist.
-			continue
-		}
 		if err != nil {
 			return errors.Wrapf(err, "reader for segment %d", i)
 		}
 		err = printWalEntries(wlog.NewReader(sr), series, printSeriesEntries, printSeriesWithSampleEntries, &minSampleTime, &maxSampleTime)
-		if err := sr.Close(); err != nil {
-			log.Println("Error while closing the wal segments reader:", err)
+		if closeErr := sr.Close(); closeErr != nil {
+			log.Println("Error while closing the wal segments reader:", closeErr)
 		}
 		if err != nil {
 			return errors.Wrapf(err, "replaying segment %d", i)
