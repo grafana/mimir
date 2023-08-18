@@ -8023,16 +8023,21 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 	require.NotNil(t, db)
 	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
 
-	pushSingleSampleAtTime(t, i, time.Now().AddDate(10, 10, 10).UnixMilli()) // push sample 10 years in the future.
+	// push sample 10 years, 10 months and 10 days in the future.
+	futureTS := time.Now().AddDate(10, 10, 10).UnixMilli()
+	pushSingleSampleAtTime(t, i, futureTS)
 
 	// Close TSDB
 	i.closeAllTSDB()
 
-	// and open it again
-	db, err = i.getOrCreateTSDB(userID, true)
+	// and open it again (it must exist)
+	db, err = i.getOrCreateTSDB(userID, false)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 
 	// "last update" time should still be "now", not in the future.
 	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
+
+	// Verify that maxTime of TSDB is actually our future sample.
+	require.Equal(t, futureTS, db.db.Head().MaxTime())
 }
