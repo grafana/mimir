@@ -1081,7 +1081,6 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 				cachedSeriesHasher{blockSeriesHashCache},
 				strategy,
 				req.MinTime, req.MaxTime,
-				1,
 				stats,
 				r,
 				s.logger,
@@ -1362,7 +1361,6 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 		cachedSeriesHasher{nil},
 		noChunkRefs,
 		minTime, maxTime,
-		1, // we skip chunks, so this doesn't make any difference
 		stats,
 		nil,
 		logger,
@@ -1584,7 +1582,6 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 		b.meta.MinTime,
 		b.meta.MaxTime,
 		b.userID,
-		1,
 		b.logger,
 	)
 	if len(pendingMatchers) > 0 {

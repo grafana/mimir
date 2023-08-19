@@ -1167,7 +1167,6 @@ func loadSeries(ctx context.Context, tb test.TB, postings []storage.SeriesRef, i
 		0,
 		0,
 		"",
-		1,
 		log.NewNopLogger(),
 	)
 	series := make([]labels.Labels, 0, len(postings))
@@ -1481,7 +1480,6 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			tmpDir,
 			mimir_tsdb.BucketStoreConfig{
 				StreamingBatchSize:          testData.maxSeriesPerBatch,
-				ChunkRangesPerSeries:        1,
 				BlockSyncConcurrency:        1,
 				PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 				IndexHeader: indexheader.Config{
@@ -1611,7 +1609,6 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 						tmpDir,
 						mimir_tsdb.BucketStoreConfig{
 							StreamingBatchSize:          batchSize,
-							ChunkRangesPerSeries:        1,
 							BlockSyncConcurrency:        1,
 							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 							IndexHeader: indexheader.Config{
@@ -1778,12 +1775,11 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			b1.meta.ULID: b1,
 			b2.meta.ULID: b2,
 		},
-		postingsStrategy:         selectAllStrategy{},
-		queryGate:                gate.NewNoop(),
-		chunksLimiterFactory:     newStaticChunksLimiterFactory(0),
-		seriesLimiterFactory:     newStaticSeriesLimiterFactory(0),
-		maxSeriesPerBatch:        65536,
-		numChunksRangesPerSeries: 1,
+		postingsStrategy:     selectAllStrategy{},
+		queryGate:            gate.NewNoop(),
+		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
+		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
+		maxSeriesPerBatch:    65536,
 	}
 
 	srv := newBucketStoreTestServer(t, store)
@@ -1934,7 +1930,6 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
 			StreamingBatchSize:          5000,
-			ChunkRangesPerSeries:        1,
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
@@ -1993,7 +1988,6 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
 			StreamingBatchSize:          5000,
-			ChunkRangesPerSeries:        1,
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
@@ -2060,7 +2054,6 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
 			StreamingBatchSize:          5000,
-			ChunkRangesPerSeries:        1,
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
@@ -2186,7 +2179,6 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
 			StreamingBatchSize:          5000,
-			ChunkRangesPerSeries:        1,
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
@@ -2352,7 +2344,6 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 						tmpDir,
 						mimir_tsdb.BucketStoreConfig{
 							StreamingBatchSize:          batchSize,
-							ChunkRangesPerSeries:        1,
 							BlockSyncConcurrency:        10,
 							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 							IndexHeader: indexheader.Config{
@@ -2472,7 +2463,6 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
 			StreamingBatchSize:          maxSeriesPerBatch,
-			ChunkRangesPerSeries:        1,
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
