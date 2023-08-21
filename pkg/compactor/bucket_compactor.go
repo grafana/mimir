@@ -364,7 +364,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	uploadedBlocks := atomic.NewInt64(0)
 
 	if err = verifyCompactedBlocksTimeRanges(compIDs, toCompactMinTime.UnixMilli(), toCompactMaxTime.UnixMilli(), subDir); err != nil {
-		level.Error(jobLogger).Log("msg", "compacted blocks verification failed", "err", err)
+		level.Warn(jobLogger).Log("msg", "compacted blocks verification failed", "err", err)
 		c.metrics.compactionBlocksVerificationFailed.Inc()
 	}
 
