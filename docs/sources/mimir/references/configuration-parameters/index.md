@@ -804,7 +804,7 @@ instance_limits:
 
 # (experimental) Enable pooling of buffers used for marshaling write requests.
 # CLI flag: -distributor.write-requests-buffer-pooling-enabled
-[write_requests_buffer_pooling_enabled: <boolean> | default = false]
+[write_requests_buffer_pooling_enabled: <boolean> | default = true]
 ```
 
 ### ingester
