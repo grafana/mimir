@@ -113,7 +113,7 @@
 * [BUGFIX] Alerts: fix `MimirIngesterRestarts` to fire only when the ingester container is restarted, excluding the cases the pod is rescheduled. #5397
 * [BUGFIX] Dashboards: fix "unhealthy pods" panel on "rollout progress" dashboard showing only a number rather than the name of the workload and the number of unhealthy pods if only one workload has unhealthy pods. #5113 #5200
 * [BUGFIX] Alerts: fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts. #5396
-* [BUGFIX] Alerts: Fix `MimirGossipMembersMismatch` to include `admin-api` pods so that it does not always fire in GEM deployments. #5641
+* [BUGFIX] Alerts: Fix `MimirGossipMembersMismatch` to include `admin-api` and custom compactor pods. `admin-api` is a GEM component. #5641 #5797
 * [BUGFIX] Ruler: gracefully shut down rule evaluations. #5778
 
 ### Jsonnet
