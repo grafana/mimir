@@ -224,7 +224,8 @@ func (r *LazyBinaryReader) EagerLoad() {
 }
 
 // getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
-// Returns the reader, and an error on failure. Must be called without lock.
+// Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
+// Must be called without lock.
 func (r *LazyBinaryReader) getOrLoadReader() (Reader, *sync.WaitGroup, error) {
 	r.readerMx.RLock()
 	defer r.readerMx.RUnlock()
