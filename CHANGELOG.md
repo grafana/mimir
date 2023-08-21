@@ -79,6 +79,8 @@
   * `-log.rate-limit-logs-per-second`
   * `-log.rate-limit-logs-per-second-burst`
 * [ENHANCEMENT] Added `cortex_ingester_tsdb_head_max_time_seconds` metric which is a max time of all TSDB Heads open in an ingester. #5786
+* [ENHANCEMENT] Querier: cancel query requests to ingesters in a zone upon first error received from the zone, to reduce wasted effort spent computing results that won't be used #5764
+* [ENHANCEMENT] Improve tracing of internal HTTP requests sent over httpgrpc #5782
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377
