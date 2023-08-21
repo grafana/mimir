@@ -366,6 +366,10 @@ overrides_exporter:
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
+
+# (experimental) Enables optimized marshaling of timeseries.
+# CLI flag: -timeseries-unmarshal-caching-optimization-enabled
+[timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
 ```
 
 ### common
@@ -797,6 +801,10 @@ instance_limits:
   # per-tenant. Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
+
+# (experimental) Enable pooling of buffers used for marshaling write requests.
+# CLI flag: -distributor.write-requests-buffer-pooling-enabled
+[write_requests_buffer_pooling_enabled: <boolean> | default = false]
 ```
 
 ### ingester

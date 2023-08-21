@@ -185,6 +185,8 @@ type Config struct {
 	// and access the deserialized write requests before/after they are pushed.
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
+
+	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -198,6 +200,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
+	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -1137,8 +1140,10 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
-	slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
-	localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
+	if d.cfg.WriteRequestsBufferPoolingEnabled {
+		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
+		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
+	}
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
 		var timeseriesCount, metadataCount int
