@@ -1470,7 +1470,6 @@ How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
 - Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
--
 
 ### err-mimir-max-estimated-chunks-per-query
 
