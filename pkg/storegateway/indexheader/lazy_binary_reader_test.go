@@ -385,6 +385,7 @@ func TestLazyBinaryReader_ConcurrentLoadingOfSameIndexReader(t *testing.T) {
 }
 
 func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
+	t.Parallel()
 	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
 
 	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
