@@ -6,11 +6,11 @@ import (
 	"html/template"
 	"math"
 	"net/http"
-	"sort"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/prometheus/tsdb"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -57,7 +57,7 @@ var tenantTSDBTemplate = template.Must(template.New("webpage").Parse(tenantTSDBP
 
 func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 	tenants := i.getTSDBUsers()
-	sort.Strings(tenants)
+	slices.Sort(tenants)
 
 	util.RenderHTTPResponse(w, tenantsPageContent{
 		Now:     time.Now(),
