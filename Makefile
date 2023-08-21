@@ -123,8 +123,8 @@ push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 .PHONY: fetch-build-image
-fetch-build-image: ## Fetch latest the docker build image. It can be used instead of building the image locally.
-	docker pull $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
+fetch-build-image: ## Fetch latest the docker build image if it isn't already present. It can be used instead of building the image locally.
+	docker image inspect $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) >/dev/null 2>&1 || docker pull $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
 	touch mimir-build-image/.uptodate
 
