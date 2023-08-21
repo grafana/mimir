@@ -669,7 +669,7 @@ func TestUnmarshalMaxEstimatedChunksPerQuery(t *testing.T) {
 			if shouldBeValid {
 				require.NoError(t, err)
 			} else {
-				require.ErrorContains(t, err, "invalid max_estimated_fetched_chunks_per_query_multiplier: must be 0 or greater than or equal to 1")
+				require.ErrorContains(t, err, "invalid value for -querier.max-estimated-fetched-chunks-per-query-multiplier: must be 0 or greater than or equal to 1")
 			}
 		})
 	}

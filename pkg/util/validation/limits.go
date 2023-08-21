@@ -354,7 +354,7 @@ func (l *Limits) validate() error {
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
-		return errors.New("invalid max_estimated_fetched_chunks_per_query_multiplier: must be 0 or greater than or equal to 1")
+		return errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
 	}
 
 	return nil
