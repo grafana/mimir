@@ -164,6 +164,14 @@ var (
 		Message:              `{{ template "telegram.default.message" . }}`,
 		ParseMode:            "HTML",
 	}
+
+	DefaultMSTeamsConfig = MSTeamsConfig{
+		NotifierConfig: NotifierConfig{
+			VSendResolved: true,
+		},
+		Title: `{{ template "msteams.default.title" . }}`,
+		Text:  `{{ template "msteams.default.text" . }}`,
+	}
 )
 
 // NotifierConfig contains base options common across all notifier configurations.
@@ -681,6 +689,7 @@ type PushoverConfig struct {
 	Message     string   `yaml:"message,omitempty" json:"message,omitempty"`
 	URL         string   `yaml:"url,omitempty" json:"url,omitempty"`
 	URLTitle    string   `yaml:"url_title,omitempty" json:"url_title,omitempty"`
+	Device      string   `yaml:"device,omitempty" json:"device,omitempty"`
 	Sound       string   `yaml:"sound,omitempty" json:"sound,omitempty"`
 	Priority    string   `yaml:"priority,omitempty" json:"priority,omitempty"`
 	Retry       duration `yaml:"retry,omitempty" json:"retry,omitempty"`
@@ -776,4 +785,19 @@ func (c *TelegramConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return fmt.Errorf("unknown parse_mode on telegram_config, must be Markdown, MarkdownV2, HTML or empty string")
 	}
 	return nil
+}
+
+type MSTeamsConfig struct {
+	NotifierConfig `yaml:",inline" json:",inline"`
+	HTTPConfig     *commoncfg.HTTPClientConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
+	WebhookURL     *SecretURL                  `yaml:"webhook_url,omitempty" json:"webhook_url,omitempty"`
+
+	Title string `yaml:"title,omitempty" json:"title,omitempty"`
+	Text  string `yaml:"text,omitempty" json:"text,omitempty"`
+}
+
+func (c *MSTeamsConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultMSTeamsConfig
+	type plain MSTeamsConfig
+	return unmarshal((*plain)(c))
 }

@@ -271,7 +271,7 @@ github.com/aws/smithy-go/rand
 github.com/aws/smithy-go/time
 github.com/aws/smithy-go/transport/http
 github.com/aws/smithy-go/transport/http/internal/io
-# github.com/benbjohnson/clock v1.3.3
+# github.com/benbjohnson/clock v1.3.5
 ## explicit; go 1.15
 github.com/benbjohnson/clock
 # github.com/beorn7/perks v1.0.1
@@ -399,7 +399,7 @@ github.com/go-openapi/jsonreference/internal
 # github.com/go-openapi/loads v0.21.2
 ## explicit; go 1.13
 github.com/go-openapi/loads
-# github.com/go-openapi/runtime v0.25.0
+# github.com/go-openapi/runtime v0.26.0
 ## explicit; go 1.18
 github.com/go-openapi/runtime
 github.com/go-openapi/runtime/flagext
@@ -817,7 +817,7 @@ github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/alertmanager v0.25.1-0.20230502165937-0f3ab929fa37
+# github.com/prometheus/alertmanager v0.26.0-rc.0
 ## explicit; go 1.18
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
