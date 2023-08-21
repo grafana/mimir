@@ -752,7 +752,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-chunks-end-time-variance float
     	[experimental] How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
   -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes int
-    	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
+    	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. The configured buffer size must be between 65536 and 8388608. (default 4194304)
   -blocks-storage.tsdb.head-chunks-write-queue-size int
     	The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. (default 1000000)
   -blocks-storage.tsdb.head-compaction-concurrency int
