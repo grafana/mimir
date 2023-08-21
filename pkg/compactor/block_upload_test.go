@@ -1441,9 +1441,9 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 				logger:            log.NewNopLogger(),
 				bucketClient:      injectedBkt,
 				cfgProvider:       cfgProvider,
-				blockUploadBlocks: promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
-				blockUploadBytes:  promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
-				blockUploadFiles:  promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
+				blockUploadBlocks: promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
+				blockUploadBytes:  promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
+				blockUploadFiles:  promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
 			}
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
 
@@ -1452,7 +1452,7 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 			v := validationFile{}
 			marshalAndUploadJSON(t, bkt, validationPath, v)
 
-			c.validateAndCompleteBlockUpload(log.NewNopLogger(), userBkt, ulid.MustParse(blockID), &meta, tc.validation)
+			c.validateAndCompleteBlockUpload(log.NewNopLogger(), tenantID, userBkt, ulid.MustParse(blockID), &meta, tc.validation)
 
 			tempUploadingMetaExists, err := bkt.Exists(context.Background(), uploadingMetaPath)
 			require.NoError(t, err)
@@ -2027,9 +2027,9 @@ func TestMultitenantCompactor_MarkBlockComplete(t *testing.T) {
 				logger:            log.NewNopLogger(),
 				bucketClient:      injectedBkt,
 				cfgProvider:       cfgProvider,
-				blockUploadBlocks: promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
-				blockUploadBytes:  promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
-				blockUploadFiles:  promauto.With(nil).NewCounter(prometheus.CounterOpts{}),
+				blockUploadBlocks: promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
+				blockUploadBytes:  promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
+				blockUploadFiles:  promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
 			}
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
 
@@ -2053,17 +2053,17 @@ func TestMultitenantCompactor_MarkBlockComplete(t *testing.T) {
 			marshalAndUploadJSON(t, bkt, uploadingMetaPath, meta)
 
 			ctx := context.Background()
-			err := c.markBlockComplete(ctx, log.NewNopLogger(), userBkt, ulid.MustParse(blockID), &meta)
+			err := c.markBlockComplete(ctx, log.NewNopLogger(), tenantID, userBkt, ulid.MustParse(blockID), &meta)
 			if tc.expectSuccess {
 				require.NoError(t, err)
-				assert.Equal(t, 1.0, promtest.ToFloat64(c.blockUploadBlocks))
-				assert.Equal(t, 59.0, promtest.ToFloat64(c.blockUploadBytes))
-				assert.Equal(t, 3.0, promtest.ToFloat64(c.blockUploadFiles))
+				assert.Equal(t, 1.0, promtest.ToFloat64(c.blockUploadBlocks.WithLabelValues(tenantID)))
+				assert.Equal(t, 59.0, promtest.ToFloat64(c.blockUploadBytes.WithLabelValues(tenantID)))
+				assert.Equal(t, 3.0, promtest.ToFloat64(c.blockUploadFiles.WithLabelValues(tenantID)))
 			} else {
 				require.Error(t, err)
-				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadBlocks))
-				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadBytes))
-				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadFiles))
+				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadBlocks.WithLabelValues(tenantID)))
+				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadBytes.WithLabelValues(tenantID)))
+				assert.Equal(t, 0.0, promtest.ToFloat64(c.blockUploadFiles.WithLabelValues(tenantID)))
 			}
 		})
 	}

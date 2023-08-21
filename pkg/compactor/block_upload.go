@@ -149,12 +149,12 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 			return
 		}
 		decreaseActiveValidationsInDefer = false
-		go c.validateAndCompleteBlockUpload(logger, userBkt, blockID, m, func(ctx context.Context) error {
+		go c.validateAndCompleteBlockUpload(logger, tenantID, userBkt, blockID, m, func(ctx context.Context) error {
 			defer c.blockUploadValidations.Dec()
 			return c.validateBlock(ctx, logger, blockID, m, userBkt, tenantID)
 		})
 	} else {
-		if err := c.markBlockComplete(ctx, logger, userBkt, blockID, m); err != nil {
+		if err := c.markBlockComplete(ctx, logger, tenantID, userBkt, blockID, m); err != nil {
 			writeBlockUploadError(err, op, "uploading meta file", logger, w)
 			return
 		}
@@ -315,7 +315,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta *block.Meta, validation func(context.Context) error) {
+func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger, tenantID string, userBkt objstore.Bucket, blockID ulid.ULID, meta *block.Meta, validation func(context.Context) error) {
 	level.Debug(logger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
 
 	{
@@ -346,7 +346,7 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 
 	ctx := context.Background()
 
-	if err := c.markBlockComplete(ctx, logger, userBkt, blockID, meta); err != nil {
+	if err := c.markBlockComplete(ctx, logger, tenantID, userBkt, blockID, meta); err != nil {
 		if err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error()); err != nil {
 			level.Error(logger).Log("msg", "error updating validation file after upload of metadata file failed", "err", err)
 		}
@@ -362,7 +362,7 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 	level.Debug(logger).Log("msg", "successfully completed block upload")
 }
 
-func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta *block.Meta) error {
+func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log.Logger, tenantID string, userBkt objstore.Bucket, blockID ulid.ULID, meta *block.Meta) error {
 	if err := c.uploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
 		level.Error(logger).Log("msg", "error uploading block metadata file", "err", err)
 		return err
@@ -374,9 +374,9 @@ func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log
 	}
 
 	// Increment metrics on successful block upload
-	c.blockUploadBlocks.Inc()
-	c.blockUploadBytes.Add(float64(meta.BlockBytes()))
-	c.blockUploadFiles.Add(float64(len(meta.Thanos.Files)))
+	c.blockUploadBlocks.WithLabelValues(tenantID).Inc()
+	c.blockUploadBytes.WithLabelValues(tenantID).Add(float64(meta.BlockBytes()))
+	c.blockUploadFiles.WithLabelValues(tenantID).Add(float64(len(meta.Thanos.Files)))
 
 	return nil
 }
