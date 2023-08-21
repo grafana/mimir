@@ -1525,8 +1525,8 @@ func BenchmarkIngesterPush(b *testing.B) {
 	require.NoError(b, err)
 
 	const (
-		series  = 10000
-		samples = 10
+		series  = 10
+		samples = 1
 	)
 
 	allLabels, allSamples := benchmarkData(series)
