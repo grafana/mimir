@@ -136,6 +136,8 @@ The following features are currently experimental:
     - `log.rate-limit-enabled`
     - `log.rate-limit-logs-per-second`
     - `log.rate-limit-logs-per-second-burst`
+- Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
+- Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 
 ## Deprecated features
 

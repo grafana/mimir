@@ -1189,6 +1189,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.service-overload-status-code-on-rate-limit-enabled
     	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.
+  -distributor.write-requests-buffer-pooling-enabled
+    	[experimental] Enable pooling of buffers used for marshaling write requests. (default true)
   -enable-go-runtime-metrics
     	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
   -flusher.exit-after-flush
@@ -2587,6 +2589,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
+  -timeseries-unmarshal-caching-optimization-enabled
+    	[experimental] Enables optimized marshaling of timeseries. (default true)
   -usage-stats.enabled
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
