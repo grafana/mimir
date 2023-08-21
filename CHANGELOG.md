@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Update Go version to 1.21.0. #5734
 * [CHANGE] Store-gateway: skip verifying index header integrity upon loading. To enable verification set `blocks_storage.bucket_store.index_header.verify_on_load: true`.
 * [CHANGE] Querier: change the default value of the experimental `-querier.streaming-chunks-per-ingester-buffer-size` flag to 256. #5203
 * [CHANGE] Querier: only initiate query requests to ingesters in the `ACTIVE` state in the ring. #5342
@@ -69,6 +70,7 @@
 * [ENHANCEMENT] Ingester: reduce memory usage of active series tracker. #5665
 * [ENHANCEMENT] Store-gateway: added `-store-gateway.sharding-ring.auto-forget-enabled` configuration parameter to control whether store-gateway auto-forget feature should be enabled or disabled (enabled by default). #5702
 * [ENHANCEMENT] Compactor: added block upload counters `cortex_block_upload_blocks_total`, `cortex_block_upload_bytes_total`, and `cortex_block_upload_files_total`. #5738
+* [ENHANCEMENT] Querier: improved observability of calls to ingesters during queries. #5724
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377

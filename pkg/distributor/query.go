@@ -318,7 +318,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
-	results, err := ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, d.queryQuorumConfig, queryIngester, cleanup)
+	results, err := ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, d.queryQuorumConfig(ctx), queryIngester, cleanup)
 	if err != nil {
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}
