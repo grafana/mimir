@@ -690,40 +690,44 @@ func (e ExistingObjectReplication) Validate() error {
 // such as pending, failed and completed bytes in total for a bucket remote target
 type TargetMetrics struct {
 	// Pending size in bytes
-	PendingSize uint64 `json:"pendingReplicationSize"`
+	PendingSize uint64 `json:"pendingReplicationSize,omitempty"`
 	// Completed size in bytes
-	ReplicatedSize uint64 `json:"completedReplicationSize"`
+	ReplicatedSize uint64 `json:"completedReplicationSize,omitempty"`
 	// Total Replica size in bytes
-	ReplicaSize uint64 `json:"replicaSize"`
+	ReplicaSize uint64 `json:"replicaSize,omitempty"`
 	// Failed size in bytes
-	FailedSize uint64 `json:"failedReplicationSize"`
+	FailedSize uint64 `json:"failedReplicationSize,omitempty"`
 	// Total number of pending operations including metadata updates
-	PendingCount uint64 `json:"pendingReplicationCount"`
+	PendingCount uint64 `json:"pendingReplicationCount,omitempty"`
 	// Total number of failed operations including metadata updates
-	FailedCount uint64 `json:"failedReplicationCount"`
+	FailedCount uint64 `json:"failedReplicationCount,omitempty"`
 	// Bandwidth limit in bytes/sec for this target
-	BandWidthLimitInBytesPerSecond int64 `json:"limitInBits"`
+	BandWidthLimitInBytesPerSecond int64 `json:"limitInBits,omitempty"`
 	// Current bandwidth used in bytes/sec for this target
-	CurrentBandwidthInBytesPerSecond float64 `json:"currentBandwidth"`
+	CurrentBandwidthInBytesPerSecond float64 `json:"currentBandwidth,omitempty"`
 	// Completed count
-	ReplicatedCount uint64 `json:"replicationCount"`
+	ReplicatedCount uint64 `json:"replicationCount,omitempty"`
+	// transfer rate for large uploads
+	XferRateLrg XferStats `json:"largeTransferRate"`
+	// transfer rate for small uploads
+	XferRateSml XferStats `json:"smallTransferRate"`
 }
 
 // Metrics represents inline replication metrics for a bucket.
 type Metrics struct {
 	Stats map[string]TargetMetrics
 	// Total Pending size in bytes across targets
-	PendingSize uint64 `json:"pendingReplicationSize"`
+	PendingSize uint64 `json:"pendingReplicationSize,omitempty"`
 	// Completed size in bytes  across targets
-	ReplicatedSize uint64 `json:"completedReplicationSize"`
+	ReplicatedSize uint64 `json:"completedReplicationSize,omitempty"`
 	// Total Replica size in bytes  across targets
-	ReplicaSize uint64 `json:"replicaSize"`
+	ReplicaSize uint64 `json:"replicaSize,omitempty"`
 	// Failed size in bytes  across targets
-	FailedSize uint64 `json:"failedReplicationSize"`
+	FailedSize uint64 `json:"failedReplicationSize,omitempty"`
 	// Total number of pending operations including metadata updates across targets
-	PendingCount uint64 `json:"pendingReplicationCount"`
+	PendingCount uint64 `json:"pendingReplicationCount,omitempty"`
 	// Total number of failed operations including metadata updates across targets
-	FailedCount uint64 `json:"failedReplicationCount"`
+	FailedCount uint64 `json:"failedReplicationCount,omitempty"`
 	// Total Replica counts
 	ReplicaCount int64 `json:"replicaCount,omitempty"`
 	// Total Replicated count
@@ -787,8 +791,10 @@ type ReplQNodeStats struct {
 	Uptime        int64  `json:"uptime"`
 	ActiveWorkers int32  `json:"activeWorkers"`
 
-	XferStats map[MetricName]XferStats    `json:"xferStats"`
-	QStats    map[MetricName]InQueueStats `json:"qStats"`
+	XferStats    map[MetricName]XferStats            `json:"xferStats"`
+	TgtXferStats map[string]map[MetricName]XferStats `json:"tgtXferStats"`
+
+	QStats map[MetricName]InQueueStats `json:"qStats"`
 }
 
 // ReplQueueStats holds stats for replication queue across nodes
@@ -810,16 +816,39 @@ type ReplQStats struct {
 	Uptime  int64 `json:"uptime"`
 	Workers int64 `json:"workers"`
 
-	XferStats map[MetricName]XferStats    `json:"xferStats"`
-	QStats    map[MetricName]InQueueStats `json:"qStats"`
+	XferStats    map[MetricName]XferStats            `json:"xferStats"`
+	TgtXferStats map[string]map[MetricName]XferStats `json:"tgtXferStats"`
+
+	QStats map[MetricName]InQueueStats `json:"qStats"`
 }
 
 // QStats returns cluster level stats for objects in replication queue
 func (q ReplQueueStats) QStats() (r ReplQStats) {
 	r.QStats = make(map[MetricName]InQueueStats)
 	r.XferStats = make(map[MetricName]XferStats)
+	r.TgtXferStats = make(map[string]map[MetricName]XferStats)
+
 	for _, node := range q.Nodes {
 		r.Workers += int64(node.ActiveWorkers)
+		for arn := range node.TgtXferStats {
+			xmap, ok := node.TgtXferStats[arn]
+			if !ok {
+				xmap = make(map[MetricName]XferStats)
+			}
+			for m, v := range xmap {
+				st, ok := r.XferStats[m]
+				if !ok {
+					st = XferStats{}
+				}
+				st.AvgRate += v.AvgRate
+				st.CurrRate += v.CurrRate
+				st.PeakRate = math.Max(st.PeakRate, v.PeakRate)
+				if _, ok := r.TgtXferStats[arn]; !ok {
+					r.TgtXferStats[arn] = make(map[MetricName]XferStats)
+				}
+				r.TgtXferStats[arn][m] = st
+			}
+		}
 		for k, v := range node.XferStats {
 			st, ok := r.XferStats[k]
 			if !ok {
@@ -848,6 +877,13 @@ func (q ReplQueueStats) QStats() (r ReplQStats) {
 			st.CurrRate /= float64(len(q.Nodes))
 			r.XferStats[k] = st
 		}
+		for arn := range r.TgtXferStats {
+			for m, v := range r.TgtXferStats[arn] {
+				v.AvgRate /= float64(len(q.Nodes))
+				v.CurrRate /= float64(len(q.Nodes))
+				r.TgtXferStats[arn][m] = v
+			}
+		}
 		r.Uptime /= int64(len(q.Nodes)) // average uptime
 	}
 
@@ -856,7 +892,6 @@ func (q ReplQueueStats) QStats() (r ReplQStats) {
 
 // MetricsV2 represents replication metrics for a bucket.
 type MetricsV2 struct {
-	History      Metrics        `json:"history"`
 	CurrentStats Metrics        `json:"currStats"`
 	QueueStats   ReplQueueStats `json:"queueStats"`
 }
