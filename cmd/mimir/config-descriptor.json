@@ -3142,7 +3142,7 @@
           "required": false,
           "desc": "Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.",
           "fieldValue": null,
-          "fieldDefaultValue": 2,
+          "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-estimated-fetched-chunks-per-query-multiplier",
           "fieldType": "float"
         },
