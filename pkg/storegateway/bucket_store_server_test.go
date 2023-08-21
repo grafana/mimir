@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -203,6 +204,24 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 	}
 
 	if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
+		res, err = stream.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// This is expected if there are no matching series: no estimate is sent and the stream is closed.
+				err = nil
+			}
+
+			return
+		}
+
+		estimate := res.GetStreamingChunksEstimate()
+		if estimate == nil {
+			err = fmt.Errorf("expected to get streaming chunks estimate message before all chunks messages, but got %T", res.Result)
+			return
+		}
+
+		estimatedChunks = estimate.EstimatedChunkCount
+
 		// Get the streaming chunks.
 		idx := -1
 		for idx < len(streamingSeriesSet)-1 {
@@ -210,16 +229,6 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			res, err = stream.Recv()
 			if err != nil {
 				return
-			}
-
-			estimate := res.GetStreamingChunksEstimate()
-			if estimate != nil {
-				if estimatedChunks != 0 {
-					err = errors.New("received multiple chunk count estimates")
-					return
-				}
-				estimatedChunks = estimate.EstimatedChunkCount
-				continue
 			}
 
 			chksBatch := res.GetStreamingChunks()
@@ -263,13 +272,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 
 		res, err = stream.Recv()
 		for err == nil {
-			if e := res.GetStreamingChunksEstimate(); e != nil {
-				if estimatedChunks != 0 {
-					err = errors.New("received multiple chunk count estimates")
-					return
-				}
-				estimatedChunks = e.EstimatedChunkCount
-			} else if res.GetHints() == nil && res.GetStats() == nil {
+			if res.GetHints() == nil && res.GetStats() == nil {
 				err = errors.Errorf("got unexpected response type %T", res.Result)
 				break
 			}

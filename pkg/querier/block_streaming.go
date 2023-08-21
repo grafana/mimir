@@ -149,7 +149,7 @@ func newStoreGatewayStreamReader(client storegatewaypb.StoreGateway_SeriesClient
 // This method should only be called if StartBuffering is not called.
 func (s *storeGatewayStreamReader) Close() {
 	if err := s.client.CloseSend(); err != nil {
-		level.Warn(s.log).Log("msg", "closing storegateway client stream failed", "err", err)
+		level.Warn(s.log).Log("msg", "closing store-gateway client stream failed", "err", err)
 	}
 }
 
@@ -184,15 +184,37 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 		totalSeries := 0
 		totalChunks := 0
 
-		// Why do we buffer batches received before we receive the estimated number of chunks?
-		// We want the chunks channel to buffer only one batch, so that during query execution we don't read too many chunks into memory at once.
-		// However, we may receive multiple batches before we receive the estimate, so we can't push all batches into the channel - we don't start
-		// reading series until we've received the estimate, so we might end up deadlocked waiting for the estimate while we can't push the batches
-		// in front of the estimate message into the channel.
-		// Under normal circumstances, there's only one batch before the estimate is received, so the impact of this in terms of peak memory consumption
-		// should be minimal.
-		batchesReceivedBeforeEstimate := make([]*storepb.StreamingChunksBatch, 0, 1)
-		haveReceivedEstimate := false
+		msg, err := s.client.Recv()
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				onError(err)
+				return
+			}
+
+			if totalSeries < s.expectedSeriesCount {
+				onError(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries))
+				return
+			}
+
+			level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
+			return
+		}
+
+		estimate := msg.GetStreamingChunksEstimate()
+		if estimate == nil {
+			onError(fmt.Errorf("expected to receive chunks estimate, but got message of type %T", msg.Result))
+			return
+		}
+
+		level.Debug(log).Log("msg", "received estimated number of chunks", "chunks", estimate.EstimatedChunkCount)
+
+		select {
+		case <-ctxDone:
+			onError(s.client.Context().Err())
+			return
+		case s.chunkCountEstimateChan <- int(estimate.EstimatedChunkCount):
+			// Nothing more to do.
+		}
 
 		sendBatch := func(c *storepb.StreamingChunksBatch) error {
 			select {
@@ -224,55 +246,21 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 					return
 				}
 
-				if !haveReceivedEstimate {
-					level.Warn(log).Log("msg", "did not receive chunks count estimate for stream before EOF")
-					s.chunkCountEstimateChan <- 0
-
-					for _, b := range batchesReceivedBeforeEstimate {
-						if err := sendBatch(b); err != nil {
-							onError(err)
-							return
-						}
-					}
-				}
-
 				level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
 				return
 			}
 
-			if c := msg.GetStreamingChunksEstimate(); c != nil {
-				level.Debug(log).Log("msg", "received estimated number of chunks", "chunks", c.EstimatedChunkCount)
-
-				select {
-				case <-ctxDone:
-					onError(s.client.Context().Err())
-					return
-				case s.chunkCountEstimateChan <- int(c.EstimatedChunkCount):
-					for _, b := range batchesReceivedBeforeEstimate {
-						if err := sendBatch(b); err != nil {
-							onError(err)
-							return
-						}
-					}
-
-					haveReceivedEstimate = true
-					batchesReceivedBeforeEstimate = nil
-				}
-
-				continue
-			}
-
-			b := msg.GetStreamingChunks()
-			if b == nil {
-				onError(fmt.Errorf("expected to receive StreamingChunks or StreamingChunksEstimate, but got something else"))
+			batch := msg.GetStreamingChunks()
+			if batch == nil {
+				onError(fmt.Errorf("expected to receive streaming chunks, but got message of type %T", msg.Result))
 				return
 			}
 
-			if len(b.Series) == 0 {
+			if len(batch.Series) == 0 {
 				continue
 			}
 
-			totalSeries += len(b.Series)
+			totalSeries += len(batch.Series)
 			if totalSeries > s.expectedSeriesCount {
 				onError(fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries))
 				return
@@ -280,7 +268,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 
 			chunkBytes := 0
 			numChunks := 0
-			for _, s := range b.Series {
+			for _, s := range batch.Series {
 				numChunks += len(s.Chunks)
 				for _, ch := range s.Chunks {
 					chunkBytes += ch.Size()
@@ -299,13 +287,9 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 			s.stats.AddFetchedChunks(uint64(numChunks))
 			s.stats.AddFetchedChunkBytes(uint64(chunkBytes))
 
-			if haveReceivedEstimate {
-				if err := sendBatch(b); err != nil {
-					onError(err)
-					return
-				}
-			} else {
-				batchesReceivedBeforeEstimate = append(batchesReceivedBeforeEstimate, b)
+			if err := sendBatch(batch); err != nil {
+				onError(err)
+				return
 			}
 		}
 	}()
