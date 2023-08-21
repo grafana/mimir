@@ -372,15 +372,15 @@ func newMultitenantCompactor(
 			ConstLabels: prometheus.Labels{"reason": "compaction"},
 		}),
 		blockUploadBlocks: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_block_upload_blocks_total",
+			Name: "cortex_block_upload_api_blocks_total",
 			Help: "Total number of blocks successfully uploaded and validated using the block upload API.",
 		}, []string{"user"}),
 		blockUploadBytes: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_block_upload_bytes_total",
+			Name: "cortex_block_upload_api_bytes_total",
 			Help: "Total number of bytes from successfully uploaded and validated blocks using block upload API.",
 		}, []string{"user"}),
 		blockUploadFiles: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_block_upload_files_total",
+			Name: "cortex_block_upload_api_files_total",
 			Help: "Total number of files from successfully uploaded and validated blocks using block upload API.",
 		}, []string{"user"}),
 	}
