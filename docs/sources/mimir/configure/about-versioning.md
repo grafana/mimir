@@ -60,6 +60,8 @@ The following features are currently experimental:
 - Distributor
   - Metrics relabeling
   - OTLP ingestion path
+  - Using status code 529 instead of 429 upon rate limit exhaustion.
+    - `distributor.service-overload-status-code-on-rate-limit-enabled`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -96,6 +98,10 @@ The following features are currently experimental:
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
+  - Spread minimizing token generation strategy:
+    - `ingester.ring.token-generation-strategy`
+    - `ingester.ring.spread-minimizing-zones`
+    - `ingester.ring.spread-minimizing-join-ring-in-order`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`, `-querier.streaming-chunks-per-ingester-buffer-size`)
@@ -125,6 +131,11 @@ The following features are currently experimental:
   - Configuring enabled metrics (`-overrides-exporter.enabled-metrics`)
 - Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+- Logger
+  - Rate limited logger support
+    - `log.rate-limit-enabled`
+    - `log.rate-limit-logs-per-second`
+    - `log.rate-limit-logs-per-second-burst`
 
 ## Deprecated features
 

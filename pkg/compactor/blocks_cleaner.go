@@ -261,6 +261,7 @@ func (c *BlocksCleaner) deleteRemainingData(ctx context.Context, userBucket objs
 	if err := bucketindex.DeleteIndex(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
 		return errors.Wrap(err, "failed to delete bucket index file")
 	}
+	level.Info(userLogger).Log("msg", "deleted bucket index for tenant with no blocks remaining")
 
 	// Delete markers folder
 	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.MarkersPathname, userLogger); err != nil {

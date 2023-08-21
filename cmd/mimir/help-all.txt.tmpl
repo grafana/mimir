@@ -1187,6 +1187,8 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -distributor.service-overload-status-code-on-rate-limit-enabled
+    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.
   -enable-go-runtime-metrics
     	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
   -flusher.exit-after-flush
@@ -1387,10 +1389,16 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
   -log.buffered
     	Use a buffered logger to reduce write contention.
-  -log.format value
-    	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
+  -log.format string
+    	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
+  -log.rate-limit-enabled
+    	[experimental] Use rate limited logger to reduce the number of logged messages per second.
+  -log.rate-limit-logs-per-second float
+    	[experimental] Maximum number of messages per second to be logged. (default 10000)
+  -log.rate-limit-logs-per-second-burst int
+    	[experimental] Burst size, i.e., maximum number of messages that can be logged in a second, temporarily exceeding the configured maximum logs per second. (default 25000)
   -max-separate-metrics-groups-per-user int
     	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int
@@ -2586,7 +2594,7 @@ Usage of ./cmd/mimir/mimir:
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.create-grace-period duration
-    	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable. (default 10m)
+    	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future). (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-label-names-per-series int

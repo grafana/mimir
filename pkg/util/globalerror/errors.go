@@ -62,6 +62,7 @@ const (
 	SampleOutOfOrder         ID = "sample-out-of-order"
 	SampleDuplicateTimestamp ID = "sample-duplicate-timestamp"
 	ExemplarSeriesMissing    ID = "exemplar-series-missing"
+	ExemplarTooFarInFuture   ID = "exemplar-too-far-in-future"
 
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
@@ -100,6 +101,11 @@ func (id ID) MessageWithStrategyAndPerTenantLimitConfig(msg, strategy, flag stri
 // LabelValue returns the error ID converted to a form suitable for use as a Prometheus label value.
 func (id ID) LabelValue() string {
 	return strings.ReplaceAll(string(id), "-", "_")
+}
+
+// Error implements error.
+func (id ID) Error() string {
+	return string(id)
 }
 
 func buildFlagsList(flag string, addFlags ...string) (string, string) {

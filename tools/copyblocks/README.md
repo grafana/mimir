@@ -15,6 +15,14 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 - Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range
 - Log what would be copied without actually copying anything with `--dry-run`
 
+## Build
+
+Compile `copyblocks` using `go build`:
+
+```bash
+go build .
+```
+
 ### Example for Google Cloud Storage
 
 ```bash
@@ -66,7 +74,7 @@ Consider passing `--client-side-copy` to avoid having to deal with that.
 
 ### Example for copying between different providers
 
-Combine the relavant source and destination configuration options using the above examples as a guide.
+Combine the relevant source and destination configuration options using the above examples as a guide.
 For instance, to copy from S3 to ABS:
 
 ```bash

@@ -367,6 +367,7 @@ type discardedMetrics struct {
 	sampleOutOfBounds    *prometheus.CounterVec
 	sampleOutOfOrder     *prometheus.CounterVec
 	sampleTooOld         *prometheus.CounterVec
+	sampleTooFarInFuture *prometheus.CounterVec
 	newValueForTimestamp *prometheus.CounterVec
 	perUserSeriesLimit   *prometheus.CounterVec
 	perMetricSeriesLimit *prometheus.CounterVec
@@ -374,12 +375,13 @@ type discardedMetrics struct {
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 	return &discardedMetrics{
-		sampleOutOfBounds:    validation.DiscardedSamplesCounter(r, sampleOutOfBounds),
-		sampleOutOfOrder:     validation.DiscardedSamplesCounter(r, sampleOutOfOrder),
-		sampleTooOld:         validation.DiscardedSamplesCounter(r, sampleTooOld),
-		newValueForTimestamp: validation.DiscardedSamplesCounter(r, newValueForTimestamp),
-		perUserSeriesLimit:   validation.DiscardedSamplesCounter(r, perUserSeriesLimit),
-		perMetricSeriesLimit: validation.DiscardedSamplesCounter(r, perMetricSeriesLimit),
+		sampleOutOfBounds:    validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
+		sampleOutOfOrder:     validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
+		sampleTooOld:         validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
+		sampleTooFarInFuture: validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
+		newValueForTimestamp: validation.DiscardedSamplesCounter(r, reasonNewValueForTimestamp),
+		perUserSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
+		perMetricSeriesLimit: validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
 	}
 }
 
@@ -387,6 +389,7 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 	m.sampleOutOfBounds.DeletePartialMatch(filter)
 	m.sampleOutOfOrder.DeletePartialMatch(filter)
 	m.sampleTooOld.DeletePartialMatch(filter)
+	m.sampleTooFarInFuture.DeletePartialMatch(filter)
 	m.newValueForTimestamp.DeletePartialMatch(filter)
 	m.perUserSeriesLimit.DeletePartialMatch(filter)
 	m.perMetricSeriesLimit.DeletePartialMatch(filter)
@@ -396,6 +399,7 @@ func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
 	m.sampleOutOfBounds.DeleteLabelValues(userID, group)
 	m.sampleOutOfOrder.DeleteLabelValues(userID, group)
 	m.sampleTooOld.DeleteLabelValues(userID, group)
+	m.sampleTooFarInFuture.DeleteLabelValues(userID, group)
 	m.newValueForTimestamp.DeleteLabelValues(userID, group)
 	m.perUserSeriesLimit.DeleteLabelValues(userID, group)
 	m.perMetricSeriesLimit.DeleteLabelValues(userID, group)
@@ -425,6 +429,7 @@ type tsdbMetrics struct {
 	tsdbMmapChunkCorruptionTotal      *prometheus.Desc
 	tsdbMmapChunkQueueOperationsTotal *prometheus.Desc
 	tsdbOOOHistogram                  *prometheus.Desc
+	tsdbMaxTime                       *prometheus.Desc
 
 	tsdbExemplarsTotal          *prometheus.Desc
 	tsdbExemplarsInStorage      *prometheus.Desc
@@ -542,6 +547,10 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			"cortex_ingester_tsdb_sample_out_of_order_delta_seconds",
 			"Delta in seconds by which a sample is considered out-of-order.",
 			nil, nil),
+		tsdbMaxTime: prometheus.NewDesc(
+			"cortex_ingester_tsdb_head_max_time_seconds",
+			"Maximum timestamp of the head block across all tenants.",
+			nil, nil),
 		tsdbLoadedBlocks: prometheus.NewDesc(
 			"cortex_ingester_tsdb_blocks_loaded",
 			"Number of currently loaded data blocks",
@@ -656,6 +665,7 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.tsdbMmapChunkCorruptionTotal
 	out <- sm.tsdbMmapChunkQueueOperationsTotal
 	out <- sm.tsdbOOOHistogram
+	out <- sm.tsdbMaxTime
 	out <- sm.tsdbLoadedBlocks
 	out <- sm.tsdbSymbolTableSize
 	out <- sm.tsdbReloads
@@ -704,6 +714,7 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, sm.tsdbMmapChunkCorruptionTotal, "prometheus_tsdb_mmap_chunk_corruptions_total")
 	data.SendSumOfCountersWithLabels(out, sm.tsdbMmapChunkQueueOperationsTotal, "prometheus_tsdb_chunk_write_queue_operations_total", "operation")
 	data.SendSumOfHistograms(out, sm.tsdbOOOHistogram, "prometheus_tsdb_sample_ooo_delta")
+	data.SendMaxOfGauges(out, sm.tsdbMaxTime, "prometheus_tsdb_head_max_time_seconds")
 	data.SendSumOfGauges(out, sm.tsdbLoadedBlocks, "prometheus_tsdb_blocks_loaded")
 	data.SendSumOfGaugesPerTenant(out, sm.tsdbSymbolTableSize, "prometheus_tsdb_symbol_table_size_bytes")
 	data.SendSumOfCounters(out, sm.tsdbReloads, "prometheus_tsdb_reloads_total")

@@ -1899,7 +1899,6 @@ func TestCanBlockWithCompactorShardIdContainQueryShard(t *testing.T) {
 	const numSeries = 1000
 	const maxShards = 512
 
-	rand.Seed(time.Now().UnixNano())
 	hashes := make([]uint64, numSeries)
 	for ix := 0; ix < numSeries; ix++ {
 		hashes[ix] = rand.Uint64()

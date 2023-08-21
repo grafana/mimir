@@ -77,6 +77,9 @@ const (
 	// Size of "slab" when using pooled buffers for marshaling write requests. When handling single Push request
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
+
+	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
+	statusServiceOverload = 529
 )
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -603,7 +606,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS int64) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS, maxExemplarTS int64) error {
 	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
@@ -647,7 +650,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 			// there never will be any.
 			return err
 		}
-		if !validation.ExemplarTimestampOK(d.exemplarValidationMetrics, userID, minExemplarTS, e) {
+		if !validation.ValidateExemplarTimestamp(d.exemplarValidationMetrics, userID, minExemplarTS, maxExemplarTS, e) {
 			ts.DeleteExemplarByMovingLast(i)
 			// Don't increase index i. After moving last exemplar to this index, we want to check it again.
 			continue
@@ -877,6 +880,9 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			minExemplarTS = earliestSampleTimestampMs - 5*time.Minute.Milliseconds()
 		}
 
+		// Enforce the creation grace period on exemplars too.
+		maxExemplarTS := now.Add(d.limits.CreationGracePeriod(userID)).UnixMilli()
+
 		var firstPartialErr error
 		var removeIndexes []int
 		for tsIdx, ts := range req.Timeseries {
@@ -889,7 +895,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelNameValidation, minExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelNameValidation, minExemplarTS, maxExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
@@ -1038,9 +1044,12 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			// Return a 429 here to tell the client it is going too fast.
+			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+			if d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID) {
+				return nil, httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
+			}
 			return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
 		}
 
