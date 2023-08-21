@@ -186,9 +186,13 @@ func (r *LazyBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer wg.Done()
 
-	return reader.SymbolsReader()
+	sr, err := reader.SymbolsReader()
+	if err != nil {
+		wg.Done()
+		return nil, err
+	}
+	return newLazySymbolsReader(sr, wg), nil
 }
 
 // LabelValuesOffsets implements Reader.
@@ -345,4 +349,27 @@ func (r *LazyBinaryReader) isIdleSince(ts int64) bool {
 	r.readerMx.RUnlock()
 
 	return loaded
+}
+
+type lazySymbolsReader struct {
+	sr   streamindex.SymbolsReader
+	wg   *sync.WaitGroup
+	once sync.Once
+}
+
+func newLazySymbolsReader(sr streamindex.SymbolsReader, wg *sync.WaitGroup) *lazySymbolsReader {
+	return &lazySymbolsReader{
+		sr: sr,
+		wg: wg,
+	}
+}
+
+func (l *lazySymbolsReader) Read(u uint32) (string, error) {
+	return l.sr.Read(u)
+}
+
+func (l *lazySymbolsReader) Close() error {
+	err := l.sr.Close()
+	l.once.Do(l.wg.Done)
+	return err
 }
