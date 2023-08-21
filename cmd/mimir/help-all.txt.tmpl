@@ -1190,7 +1190,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.service-overload-status-code-on-rate-limit-enabled
     	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.
   -distributor.write-requests-buffer-pooling-enabled
-    	[experimental] Enable pooling of buffers used for marshaling write requests. (default true)
+    	[experimental] Enable pooling of buffers used for marshaling write requests.
   -enable-go-runtime-metrics
     	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
   -flusher.exit-after-flush
