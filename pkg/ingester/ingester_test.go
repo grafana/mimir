@@ -3994,13 +3994,19 @@ func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Confi
 	// Disable TSDB head compaction jitter to have predictable tests.
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
-	ingester, err := New(ingesterCfg, overrides, nil, registerer, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, overrides, nil, registerer, noDebugNoopLogger{})
 	if err != nil {
 		return nil, err
 	}
 
 	return ingester, nil
 }
+
+// Logger which does nothing and implements the DebugEnabled interface used by SpanLogger.
+type noDebugNoopLogger struct{}
+
+func (noDebugNoopLogger) Log(...interface{}) error { return nil }
+func (noDebugNoopLogger) DebugEnabled() bool       { return false }
 
 func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 	t.Parallel()
