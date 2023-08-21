@@ -1476,6 +1476,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "write_requests_buffer_pooling_enabled",
+          "required": false,
+          "desc": "Enable pooling of buffers used for marshaling write requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.write-requests-buffer-pooling-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -15295,6 +15306,17 @@
       ],
       "fieldValue": null,
       "fieldDefaultValue": null
+    },
+    {
+      "kind": "field",
+      "name": "timeseries_unmarshal_caching_optimization_enabled",
+      "required": false,
+      "desc": "Enables optimized marshaling of timeseries.",
+      "fieldValue": null,
+      "fieldDefaultValue": true,
+      "fieldFlag": "timeseries-unmarshal-caching-optimization-enabled",
+      "fieldType": "boolean",
+      "fieldCategory": "experimental"
     }
   ],
   "fieldValue": null,
