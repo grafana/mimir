@@ -44,7 +44,7 @@
   * `-<prefix>.initial-connection-window-size`
 * [ENHANCEMENT] Query-frontend: added "response_size_bytes" field to "query stats" log. #5196
 * [ENHANCEMENT] Querier: Refine error messages for per-tenant query limits, informing the user of the preferred strategy for not hitting the limit, in addition to how they may tweak the limit. #5059
-* [ENHANCEMENT] Distributor: optimize sending of requests to ingesters by reusing memory buffers for marshalling requests. For now this optimization can be disabled by setting `-distributor.write-requests-buffer-pooling-enabled` to `false`. #5195
+* [ENHANCEMENT] Distributor: optimize sending of requests to ingesters by reusing memory buffers for marshalling requests. This optimization can be enabled by setting `-distributor.write-requests-buffer-pooling-enabled` to `true`. #5195
 * [ENHANCEMENT] Querier: add experimental `-querier.minimize-ingester-requests` option to initially query only the minimum set of ingesters required to reach quorum. #5202 #5259 #5263
 * [ENHANCEMENT] Querier: improve error message when streaming chunks from ingesters to queriers and a query limit is reached. #5245
 * [ENHANCEMENT] Use new data structure for labels, to reduce memory consumption. #3555 #5731
