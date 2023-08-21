@@ -13,7 +13,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/log"
-	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 
@@ -43,9 +42,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	util_log.InitLogger(&server.Config{
-		LogLevel: cfg.LogLevel,
-	}, false)
+	util_log.InitLogger(log.LogfmtFormat, cfg.LogLevel, false, util_log.RateLimitedLoggerCfg{})
 
 	// Run the instrumentation server.
 	registry := prometheus.NewRegistry()

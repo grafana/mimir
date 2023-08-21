@@ -472,10 +472,11 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 	}
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
-		distributors     int
-		requestRate      float64
-		requestBurstSize int
-		pushes           []testPush
+		distributors               int
+		requestRate                float64
+		requestBurstSize           int
+		pushes                     []testPush
+		enableServiceOverloadError bool
 	}{
 		"request limit should be evenly shared across distributors": {
 			distributors:     2,
@@ -508,6 +509,17 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(2, 3).Error())},
 			},
 		},
+		"request limit is reached return 529 when enable service overload error set to true": {
+			distributors:               2,
+			requestRate:                4,
+			requestBurstSize:           2,
+			enableServiceOverloadError: true,
+			pushes: []testPush{
+				{expectedError: nil},
+				{expectedError: nil},
+				{expectedError: httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(4, 2).Error())},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -518,6 +530,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			flagext.DefaultValues(limits)
 			limits.RequestRate = testData.requestRate
 			limits.RequestBurstSize = testData.requestBurstSize
+			limits.ServiceOverloadStatusCodeOnRateLimitEnabled = testData.enableServiceOverloadError
 
 			// Start all expected distributors
 			distributors, _, _ := prepare(t, prepConfig{
@@ -1399,14 +1412,17 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 	tests := map[string]struct {
 		prepareConfig     func(limits *validation.Limits)
 		minExemplarTS     int64
+		maxExemplarTS     int64
 		req               *mimirpb.WriteRequest
 		expectedExemplars []mimirpb.PreallocTimeseries
+		expectedMetrics   string
 	}{
 		"disable exemplars": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxGlobalExemplarsPerUser = 0
 			},
 			minExemplarTS: 0,
+			maxExemplarTS: 0,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
 			}},
@@ -1422,6 +1438,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				limits.MaxGlobalExemplarsPerUser = 1
 			},
 			minExemplarTS: 0,
+			maxExemplarTS: math.MaxInt64,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
@@ -1431,11 +1448,12 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
 			},
 		},
-		"one old, one new, separate series": {
+		"should drop exemplars with timestamp lower than the accepted minimum, when the exemplars are specified in different series": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxGlobalExemplarsPerUser = 1
 			},
 			minExemplarTS: 300000,
+			maxExemplarTS: math.MaxInt64,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
@@ -1447,12 +1465,18 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				}},
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
 			},
+			expectedMetrics: `
+                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+                # TYPE cortex_discarded_exemplars_total counter
+                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+            `,
 		},
-		"multi exemplars": {
+		"should drop exemplars with timestamp lower than the accepted minimum, when multiple exemplars are specified for the same series": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxGlobalExemplarsPerUser = 2
 			},
 			minExemplarTS: 300000,
+			maxExemplarTS: math.MaxInt64,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
@@ -1474,12 +1498,18 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 					},
 				},
 			},
+			expectedMetrics: `
+                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+                # TYPE cortex_discarded_exemplars_total counter
+                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+            `,
 		},
-		"one old, one new, same series": {
+		"should drop exemplars with timestamp lower than the accepted minimum, when multiple exemplars are specified in the same series": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxGlobalExemplarsPerUser = 2
 			},
 			minExemplarTS: 300000,
+			maxExemplarTS: math.MaxInt64,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
@@ -1501,6 +1531,44 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 					},
 				},
 			},
+			expectedMetrics: `
+                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+                # TYPE cortex_discarded_exemplars_total counter
+                cortex_discarded_exemplars_total{reason="exemplar_too_old",user="user"} 1
+            `,
+		},
+		"should drop exemplars with timestamp greater than the accepted maximum, when multiple exemplars are specified in the same series": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 2
+			},
+			minExemplarTS: 0,
+			maxExemplarTS: 100000,
+			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Exemplars: []mimirpb.Exemplar{
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+						},
+					},
+				},
+			}},
+			expectedExemplars: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Exemplars: []mimirpb.Exemplar{
+							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+						},
+					},
+				},
+			},
+			expectedMetrics: `
+                # HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
+                # TYPE cortex_discarded_exemplars_total counter
+                cortex_discarded_exemplars_total{reason="exemplar_too_far_in_future",user="user"} 1
+            `,
 		},
 	}
 	now := mtime.Now()
@@ -1509,15 +1577,22 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			limits := &validation.Limits{}
 			flagext.DefaultValues(limits)
 			tc.prepareConfig(limits)
-			ds, _, _ := prepare(t, prepConfig{
+			ds, _, regs := prepare(t, prepConfig{
 				limits:          limits,
 				numDistributors: 1,
 			})
+
+			// Pre-condition check.
+			require.Len(t, ds, 1)
+			require.Len(t, regs, 1)
+
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, tc.minExemplarTS)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, tc.minExemplarTS, tc.maxExemplarTS)
 				assert.NoError(t, err)
 			}
+
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
+			assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(tc.expectedMetrics), "cortex_discarded_exemplars_total"))
 		})
 	}
 }
@@ -3965,7 +4040,7 @@ func TestDistributorValidation(t *testing.T) {
 	now := model.Now()
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
 
-	for i, tc := range []struct {
+	for name, tc := range map[string]struct {
 		metadata           []*mimirpb.MetricMetadata
 		labels             [][]mimirpb.LabelAdapter
 		samples            []mimirpb.Sample
@@ -3973,8 +4048,7 @@ func TestDistributorValidation(t *testing.T) {
 		expectedStatusCode int32
 		expectedErr        string
 	}{
-		// Test validation passes.
-		{
+		"validation passes": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
 			labels:   [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
@@ -3988,8 +4062,7 @@ func TestDistributorValidation(t *testing.T) {
 			}},
 		},
 
-		// Test validation passes when labels are unsorted.
-		{
+		"validation passes when labels are unsorted": {
 			labels: [][]mimirpb.LabelAdapter{
 				{
 					{Name: "foo", Value: "bar"},
@@ -4001,8 +4074,7 @@ func TestDistributorValidation(t *testing.T) {
 			}},
 		},
 
-		// Test validation fails for samples from the future.
-		{
+		"validation fails for samples from the future": {
 			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(future),
@@ -4012,8 +4084,7 @@ func TestDistributorValidation(t *testing.T) {
 			expectedErr:        fmt.Sprintf(`received a sample whose timestamp is too far in the future, timestamp: %d series: 'testmetric' (err-mimir-too-far-in-future)`, future),
 		},
 
-		// Test maximum labels names per series.
-		{
+		"exceeds maximum labels per series": {
 			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
@@ -4022,8 +4093,35 @@ func TestDistributorValidation(t *testing.T) {
 			expectedStatusCode: http.StatusBadRequest,
 			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
-		// Test multiple validation fails return the first one.
-		{
+		"exceeds maximum labels per series with a metric that exceeds 200 characters when formatted": {
+			labels: [][]mimirpb.LabelAdapter{{
+				{Name: labels.MetricName, Value: "testmetric"},
+				{Name: "foo-with-a-long-long-label", Value: "bar-with-a-long-long-value"},
+				{Name: "foo2-with-a-long-long-label", Value: "bar2-with-a-long-long-value"},
+				{Name: "foo3-with-a-long-long-label", Value: "bar3-with-a-long-long-value"},
+				{Name: "foo4-with-a-long-long-label", Value: "bar4-with-a-long-long-value"},
+			}},
+			samples: []mimirpb.Sample{{
+				TimestampMs: int64(now),
+				Value:       2,
+			}},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 5, limit: 2) series: 'testmetric{foo-with-a-long-long-label="bar-with-a-long-long-value", foo2-with-a-long-long-label="bar2-with-a-long-long-value", foo3-with-a-long-long-label="bar3-with-a-long-long-value", foo4-with-a-lo…'`,
+		},
+		"exceeds maximum labels per series with a metric that exceeds 200 bytes when formatted": {
+			labels: [][]mimirpb.LabelAdapter{{
+				{Name: labels.MetricName, Value: "testmetric"},
+				{Name: "foo", Value: "b"},
+				{Name: "families", Value: "👩‍👦👨‍👧👨‍👩‍👧👩‍👧👩‍👩‍👦‍👦👨‍👩‍👧‍👦👨‍👧‍👦👨‍👩‍👦👪👨‍👦👨‍👦‍👦👨‍👨‍👧👨‍👧‍👧"},
+			}},
+			samples: []mimirpb.Sample{{
+				TimestampMs: int64(now),
+				Value:       2,
+			}},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{families="👩\u200d👦👨\u200d👧👨\u200d👩\u200d👧👩\u200d👧👩\u200d👩\u200d👦\u200d👦👨\u200d👩\u200d👧\u200d👦👨\u200d👧\u200d👦👨\u200d👩\u200d👦👪👨\u200d👦👨\u200d👦\u200d👦👨\u200d👨\u200d👧👨\u200d👧\u200d👧", foo="b"}'`,
+		},
+		"multiple validation failures should return the first failure": {
 			labels: [][]mimirpb.LabelAdapter{
 				{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}},
 				{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}},
@@ -4035,8 +4133,7 @@ func TestDistributorValidation(t *testing.T) {
 			expectedStatusCode: http.StatusBadRequest,
 			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
-		// Test metadata validation fails
-		{
+		"metadata validation failure": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
 			labels:   [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
@@ -4046,8 +4143,7 @@ func TestDistributorValidation(t *testing.T) {
 			expectedStatusCode: http.StatusBadRequest,
 			expectedErr:        `received a metric metadata with no metric name`,
 		},
-		// Test empty exemplar labels fails.
-		{
+		"empty exemplar labels": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
 			labels:   [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
@@ -4063,7 +4159,7 @@ func TestDistributorValidation(t *testing.T) {
 			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")),
 		},
 	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			var limits validation.Limits
 			flagext.DefaultValues(&limits)
 

@@ -123,8 +123,8 @@ push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 .PHONY: fetch-build-image
-fetch-build-image: ## Fetch latest the docker build image. It can be used instead of building the image locally.
-	docker pull $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
+fetch-build-image: ## Fetch latest the docker build image if it isn't already present. It can be used instead of building the image locally.
+	docker image inspect $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) >/dev/null 2>&1 || docker pull $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
 	touch mimir-build-image/.uptodate
 
@@ -196,7 +196,7 @@ GO_FLAGS := -ldflags "\
 		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
 		-X $(MIMIR_VERSION).Revision=$(GIT_REVISION) \
 		-X $(MIMIR_VERSION).Version=$(VERSION) \
-		-extldflags \"-static\" -s -w" -tags netgo
+		-extldflags \"-static\" -s -w" -tags netgo,stringlabels
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
@@ -242,7 +242,7 @@ lint: check-makefiles
 	golangci-lint run
 
 	# Ensure no blocklisted package is imported.
-	GOFLAGS="-tags=requires_docker" faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
+	GOFLAGS="-tags=requires_docker,stringlabels" faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
 		sync/atomic=go.uber.org/atomic,\
 		regexp=github.com/grafana/regexp,\
@@ -297,7 +297,7 @@ lint: check-makefiles
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure packages we imported from Thanos are no longer used.
-	GOFLAGS="-tags=requires_docker" faillint -paths \
+	GOFLAGS="-tags=requires_docker,stringlabels" faillint -paths \
 		"github.com/thanos-io/thanos/pkg/..." \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
@@ -338,12 +338,12 @@ print-go-version: ## Print the go version.
 	@go version | awk '{print $$3}' | sed 's/go//'
 
 test-with-race: ## Run all unit tests with data race detect.
-	go test -tags netgo -timeout 30m -race -count 1 ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 ./...
 
 cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
-	go test -tags netgo -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
 	go tool cover -html=$(COVERFILE) -o cover.html
 	go tool cover -func=cover.html | tail -n1
 
@@ -606,7 +606,7 @@ check-mimir-read-write-mode-docker-compose-yaml: ## Check the jsonnet and docker
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
-	go test -tags=requires_docker ./integration/...
+	go test -tags=requires_docker,stringlabels ./integration/...
 
 web-serve:
 	cd website && hugo --config config.toml --minify -v server

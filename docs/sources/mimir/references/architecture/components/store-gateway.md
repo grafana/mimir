@@ -88,6 +88,8 @@ Under normal conditions, when a store-gateway instance shuts down, it automatica
 
 The auto-forget feature works as follows: when an healthy store-gateway instance identifies an instance in the ring that is unhealthy for longer than 10 times the configured `-store-gateway.sharding-ring.heartbeat-timeout` value, the healthy instance removes the unhealthy instance from the ring.
 
+The store-gateway auto-forget feature can be disabled by setting `-store-gateway.sharding-ring.auto-forget-enabled=false`.
+
 ### Zone-awareness
 
 Store-gateway replication optionally supports [zone-awareness]({{< relref "../../../configure/configure-zone-aware-replication" >}}). When you enable zone-aware replication and the blocks replication factor is greater than 1, each block is replicated across store-gateway instances located in different availability zones.

@@ -1220,6 +1220,102 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 	}
 }
 
+func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.T) {
+	const user = "user-1"
+
+	// Two blocks with overlapping time range
+	sourceBlock1Spec := []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("case", "source_spec_1"),
+			Chunks: []chunks.Meta{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					newSample(1000, 1000, nil, nil),
+					newSample(2000, 2000, nil, nil)})),
+			},
+		},
+	}
+
+	sourceBlock2Spec := []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("case", "source_spec_2"),
+			Chunks: []chunks.Meta{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					newSample(1500, 1500, nil, nil),
+					newSample(2500, 2500, nil, nil)})),
+			},
+		},
+	}
+
+	// Block with sufficient time range so compaction job gets triggered
+	sourceBlock3Spec := []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("case", "source_spec_3"),
+			Chunks: []chunks.Meta{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					newSample(0, 0, nil, nil),
+					newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)})),
+			},
+		},
+	}
+
+	// Compacted block not containing minTime/maxTime from source blocks
+	compactedBlockSpec := []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("case", "compacted_spec"),
+			Chunks: []chunks.Meta{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					newSample(1250, 1250, nil, nil),
+					newSample(2250, 2250, nil, nil)})),
+			},
+		},
+	}
+
+	storageDir := t.TempDir()
+
+	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock1Spec)
+	require.NoError(t, err)
+	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock2Spec)
+	require.NoError(t, err)
+	_, err = block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock3Spec)
+	require.NoError(t, err)
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	cfg := prepareConfig(t)
+	cfg.CompactionRetries = 1 // No need to retry as we're testing for failure
+	c, tsdbCompactor, tsdbPlanner, logs, _ := prepare(t, cfg, bkt)
+
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{meta1, meta2}, nil).Once()
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{}, nil).Once()
+	mockCall := tsdbCompactor.On("Compact", mock.Anything, mock.Anything, mock.Anything)
+	mockCall.RunFn = func(args mock.Arguments) {
+		dir := args.Get(0).(string)
+
+		compactedMeta, err := block.GenerateBlockFromSpec(user, dir, compactedBlockSpec)
+		require.NoError(t, err)
+		f, err := os.OpenFile(filepath.Join(dir, compactedMeta.ULID.String(), "tombstones"), os.O_RDONLY|os.O_CREATE, 0666)
+		require.NoError(t, err)
+		defer f.Close()
+
+		mockCall.ReturnArguments = mock.Arguments{compactedMeta.ULID, nil}
+	}
+
+	// Start the compactor
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Compaction block verification should fail due to invalid output block
+	test.Poll(t, 5*time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.bucketCompactorMetrics.compactionBlocksVerificationFailed)
+	})
+
+	// Stop the compactor.
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	// Check logs for compacted block verification failure
+	assert.Contains(t, logs.String(), "compacted block(s) do not contain minTime 1000 and maxTime 2501 from the source blocks")
+}
+
 func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlanning(t *testing.T) {
 	t.Parallel()
 
