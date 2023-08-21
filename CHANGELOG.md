@@ -72,6 +72,7 @@
 * [ENHANCEMENT] Compactor: Delete bucket-index, markers and debug files if there are no blocks left in the bucket index. This cleanup must be enabled by using `-compactor.no-blocks-file-cleanup-enabled` option. #5648
 * [ENHANCEMENT] Ingester: reduce memory usage of active series tracker. #5665
 * [ENHANCEMENT] Store-gateway: added `-store-gateway.sharding-ring.auto-forget-enabled` configuration parameter to control whether store-gateway auto-forget feature should be enabled or disabled (enabled by default). #5702
+* [ENHANCEMENT] Compactor: added per tenant block upload counters `cortex_block_upload_api_blocks_total`, `cortex_block_upload_api_bytes_total`, and `cortex_block_upload_api_files_total`. #5738
 * [ENHANCEMENT] Compactor: Verify time range of compacted block(s) matches the time range of input blocks. #5760
 * [ENHANCEMENT] Querier: improved observability of calls to ingesters during queries. #5724
 * [ENHANCEMENT] Compactor: block backfilling logging is now more verbose. #5711
