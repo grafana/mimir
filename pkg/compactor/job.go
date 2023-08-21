@@ -133,7 +133,7 @@ func (job *Job) Resolution() int64 {
 	return job.resolution
 }
 
-// UseSplitting returns whether blocks should be splitted into multiple shards when compacted.
+// UseSplitting returns whether blocks should be split into multiple shards when compacted.
 func (job *Job) UseSplitting() bool {
 	return job.useSplitting
 }

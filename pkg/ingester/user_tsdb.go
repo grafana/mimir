@@ -392,13 +392,15 @@ func (u *userTSDB) getOldestUnshippedBlockTime() uint64 {
 }
 
 func (u *userTSDB) isIdle(now time.Time, idle time.Duration) bool {
-	lu := u.lastUpdate.Load()
-
-	return time.Unix(lu, 0).Add(idle).Before(now)
+	return u.getLastUpdate().Add(idle).Before(now)
 }
 
 func (u *userTSDB) setLastUpdate(t time.Time) {
-	u.lastUpdate.Store(t.Unix())
+	u.lastUpdate.Store(t.UnixMilli())
+}
+
+func (u *userTSDB) getLastUpdate() time.Time {
+	return time.UnixMilli(u.lastUpdate.Load())
 }
 
 // Checks if TSDB can be closed.

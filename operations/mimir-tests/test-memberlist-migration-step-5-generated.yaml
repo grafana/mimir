@@ -505,7 +505,7 @@ spec:
       - args:
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local:2379
         - -distributor.ha-tracker.prefix=prom_ha/
         - -distributor.ha-tracker.store=etcd
         - -distributor.health-check-ingesters=true

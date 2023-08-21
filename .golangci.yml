@@ -50,6 +50,7 @@ run:
   # List of build tags, all linters use it.
   build-tags:
     - netgo
+    - stringlabels
     - requires_docker
     - requires_libpcap
 

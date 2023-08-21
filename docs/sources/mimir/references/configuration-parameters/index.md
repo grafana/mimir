@@ -366,6 +366,10 @@ overrides_exporter:
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
+
+# (experimental) Enables optimized marshaling of timeseries.
+# CLI flag: -timeseries-unmarshal-caching-optimization-enabled
+[timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
 ```
 
 ### common
@@ -797,6 +801,10 @@ instance_limits:
   # per-tenant. Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
+
+# (experimental) Enable pooling of buffers used for marshaling write requests.
+# CLI flag: -distributor.write-requests-buffer-pooling-enabled
+[write_requests_buffer_pooling_enabled: <boolean> | default = false]
 ```
 
 ### ingester
@@ -2728,10 +2736,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-native-histogram-buckets
 [max_native_histogram_buckets: <int> | default = 0]
 
-# (advanced) Controls how far into the future incoming samples are accepted
-# compared to the wall clock. Any sample with timestamp `t` will be rejected if
-# `t > (now + validation.create-grace-period)`. Also used by query-frontend to
-# avoid querying too far into the future. 0 to disable.
+# (advanced) Controls how far into the future incoming samples and exemplars are
+# accepted compared to the wall clock. Any sample or exemplar will be rejected
+# if its timestamp is greater than '(now + grace_period)'. This configuration is
+# enforced in the distributor, ingester and query-frontend (to avoid querying
+# too far into the future).
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
 
@@ -2752,6 +2761,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Prometheus server, e.g. remote_write.write_relabel_configs. Labels available
 # during the relabeling phase and cleaned afterwards: __meta_tenant_id
 [metric_relabel_configs: <relabel_config...> | default = ]
+
+# (experimental) If enabled, rate limit errors will be reported to the client
+# with HTTP status code 529 (Service is overloaded). If disabled, status code
+# 429 (Too Many Requests) is used.
+# CLI flag: -distributor.service-overload-status-code-on-rate-limit-enabled
+[service_overload_status_code_on_rate_limit_enabled: <boolean> | default = false]
 
 # The maximum number of in-memory series per tenant, across the cluster before
 # replication. 0 to disable.

@@ -467,7 +467,7 @@ groups:
         }} sees incorrect number of gossip members.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmembersmismatch
     expr: |
-      avg by (cluster, namespace) (memberlist_client_cluster_members_count) != sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor|distributor|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"})
+      avg by (cluster, namespace) (memberlist_client_cluster_members_count) != sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"})
     for: 15m
     labels:
       severity: warning

@@ -152,7 +152,7 @@ In the example that follows, metamonitoring scrapes metrics about Grafana Mimir 
 2. Install the CRDs on your cluster:
 
    ```bash
-   kubectl apply -f production/operator/crds/
+   kubectl create -f production/operator/crds/
    ```
 
 3. Create a YAML file called `custom.yaml` for your Helm values overrides.

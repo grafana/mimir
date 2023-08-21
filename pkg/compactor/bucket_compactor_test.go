@@ -7,6 +7,7 @@ package compactor
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -279,4 +280,76 @@ func TestConvertCompactionResultToForEachJobs(t *testing.T) {
 	require.Len(t, res, 2)
 	require.Equal(t, ulidWithShardIndex{ulid: ulid1, shardIndex: 1}, res[0])
 	require.Equal(t, ulidWithShardIndex{ulid: ulid2, shardIndex: 3}, res[1])
+}
+
+func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
+	const (
+		sourceMinTime = 1000
+		sourceMaxTime = 2500
+	)
+
+	tests := map[string]struct {
+		compactedBlockMinTime int64
+		compactedBlockMaxTime int64
+		shouldErr             bool
+		expectedErrMsg        string
+	}{
+		"should pass with minTime and maxTime matching the source blocks": {
+			compactedBlockMinTime: sourceMinTime,
+			compactedBlockMaxTime: sourceMaxTime,
+			shouldErr:             false,
+		},
+		"should fail with compacted block minTime < source minTime": {
+			compactedBlockMinTime: sourceMinTime - 500,
+			compactedBlockMaxTime: sourceMaxTime,
+			shouldErr:             true,
+			expectedErrMsg:        fmt.Sprintf("compacted block minTime %d is before source minTime %d", sourceMinTime-500, sourceMinTime),
+		},
+		"should fail with compacted block maxTime > source maxTime": {
+			compactedBlockMinTime: sourceMinTime,
+			compactedBlockMaxTime: sourceMaxTime + 500,
+			shouldErr:             true,
+			expectedErrMsg:        fmt.Sprintf("compacted block maxTime %d is after source maxTime %d", sourceMaxTime+500, sourceMaxTime),
+		},
+		"should fail due to minTime and maxTime not found": {
+			compactedBlockMinTime: sourceMinTime + 250,
+			compactedBlockMaxTime: sourceMaxTime - 250,
+			shouldErr:             true,
+			expectedErrMsg:        fmt.Sprintf("compacted block(s) do not contain minTime %d and maxTime %d from the source blocks", sourceMinTime, sourceMaxTime),
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData // Prevent loop variable being captured by func literal
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			tempDir := t.TempDir()
+
+			compactedBlock1, err := block.CreateBlock(
+				context.Background(), tempDir,
+				[]labels.Labels{
+					labels.FromStrings("test", "foo", "a", "1"),
+					labels.FromStrings("test", "foo", "a", "2"),
+					labels.FromStrings("test", "foo", "a", "3"),
+				}, 10, testData.compactedBlockMinTime, testData.compactedBlockMinTime+500, labels.EmptyLabels())
+			require.NoError(t, err)
+
+			compactedBlock2, err := block.CreateBlock(
+				context.Background(), tempDir,
+				[]labels.Labels{
+					labels.FromStrings("test", "foo", "a", "1"),
+					labels.FromStrings("test", "foo", "a", "2"),
+					labels.FromStrings("test", "foo", "a", "3"),
+				}, 10, testData.compactedBlockMaxTime-500, testData.compactedBlockMaxTime, labels.EmptyLabels())
+			require.NoError(t, err)
+
+			err = verifyCompactedBlocksTimeRanges([]ulid.ULID{compactedBlock1, compactedBlock2}, sourceMinTime, sourceMaxTime, tempDir)
+			if testData.shouldErr {
+				require.ErrorContains(t, err, testData.expectedErrMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

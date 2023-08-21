@@ -37,11 +37,6 @@ var unitMap = map[string]string{
 	"MBy":  "megabytes",
 	"GBy":  "gigabytes",
 	"TBy":  "terabytes",
-	"B":    "bytes",
-	"KB":   "kilobytes",
-	"MB":   "megabytes",
-	"GB":   "gigabytes",
-	"TB":   "terabytes",
 
 	// SI
 	"m": "meters",
@@ -56,7 +51,6 @@ var unitMap = map[string]string{
 	"Hz":  "hertz",
 	"1":   "",
 	"%":   "percent",
-	"$":   "dollars",
 }
 
 // The map that translates the "per" unit
