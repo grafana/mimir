@@ -38,7 +38,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
   To upload rules to the ruler using mimirtool, refer to [mimirtool rules].
   To import the dashboards into Grafana, refer to [Import dashboard](/docs/grafana/latest/dashboards/export-import/#import-dashboard)
-.
+  .
 
 ## Notable changes
 
