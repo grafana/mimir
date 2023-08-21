@@ -125,6 +125,8 @@ The following features are currently experimental:
   - Configuring enabled metrics (`-overrides-exporter.enabled-metrics`)
 - Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+- Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
+- Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 
 ## Deprecated features
 
