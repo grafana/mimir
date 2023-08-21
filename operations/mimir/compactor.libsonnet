@@ -37,7 +37,7 @@
 
       // Configure sharding.
       'compactor.ring.store': 'consul',
-      'compactor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'compactor.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'compactor.ring.prefix': '',
       'compactor.ring.wait-stability-min-duration': '1m',  // Wait until ring is stable before switching to ACTIVE.
 
