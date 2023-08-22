@@ -1088,10 +1088,6 @@ func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet,
 	return set
 }
 
-const (
-	minChunksPerRange = 10
-)
-
 // partitionChunks creates a slice of []chunks.Meta for each range of chunks within the same segment file.
 // The partitioning here should be fairly static and not depend on the actual Series() request because
 // the resulting ranges may be used for caching, and we want our cache entries to be reusable between requests.
