@@ -883,7 +883,7 @@ func (s *BucketStore) sendStreamingChunks(
 		return it.Err()
 	}
 
-	// If we never sent an estimate (because there were no batches, or no batch had any chunks), send it now.
+	// If we never sent an estimate (because there were no batches, or no batch had any series), send it now.
 	if !haveSentEstimatedChunks {
 		err := s.sendMessage("streaming chunks estimate", srv, storepb.NewStreamingChunksEstimate(0), &encodeDuration, &sendDuration)
 		if err != nil {

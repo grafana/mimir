@@ -233,7 +233,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 
 			chksBatch := res.GetStreamingChunks()
 			if chksBatch == nil {
-				err = errors.Errorf("received unexpected response type %T, expected streaming chunks estimate or streaming chunks batch", res.Result)
+				err = errors.Errorf("received unexpected response type %T, expected streaming chunks batch", res.Result)
 				return
 			}
 
