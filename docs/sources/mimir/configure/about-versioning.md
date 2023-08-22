@@ -104,7 +104,10 @@ The following features are currently experimental:
     - `ingester.ring.spread-minimizing-join-ring-in-order`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
-  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`, `-querier.streaming-chunks-per-ingester-buffer-size`)
+  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`, `-querier.streaming-chunks-per-ingester-buffer-size`)
+  - Streaming chunks from store-gateway to querier (`-querier.prefer-streaming-chunks-from-store-gateways`, `-querier.streaming-chunks-per-store-gateway-buffer-size`)
+  - Ingester query request minimisation (`-querier.minimize-ingester-requests`, `-querier.minimize-ingester-requests-hedging-delay`)
+  - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)

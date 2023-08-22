@@ -3155,7 +3155,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-estimated-fetched-chunks-per-query-multiplier",
-          "fieldType": "float"
+          "fieldType": "float",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

@@ -439,8 +439,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call. (default 100)
   -querier.max-concurrent int
     	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. (default 20)
-  -querier.max-estimated-fetched-chunks-per-query-multiplier float
-    	Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
   -querier.max-fetched-chunk-bytes-per-query int
     	The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.
   -querier.max-fetched-chunks-per-query int
