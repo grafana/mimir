@@ -63,9 +63,9 @@ func TestNewCircuitBreaker(t *testing.T) {
 	conn := grpc.ClientConn{}
 	reg := prometheus.NewPedanticRegistry()
 	breaker := NewCircuitBreaker("test-1", CircuitBreakerConfig{
-		Enabled:             true,
-		FailureThreshold:    1,
-		CooldownPeriod:      60 * time.Second,
+		Enabled:          true,
+		FailureThreshold: 1,
+		CooldownPeriod:   60 * time.Second,
 	}, NewMetrics(reg), test.NewTestingLogger(t))
 
 	// Initial request that should succeed because the circuit breaker is "closed"
