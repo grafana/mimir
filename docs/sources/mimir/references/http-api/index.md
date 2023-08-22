@@ -427,9 +427,6 @@ GET /ingester/ring
 
 This endpoint displays a web page with the ingesters hash ring status, including the state, health, and last heartbeat time of each ingester.
 
-| [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
-| [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
-
 ### Ingester tenants
 
 ```
