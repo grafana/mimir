@@ -2140,12 +2140,12 @@ circuit_breaker:
   # (experimental) Max number of requests that can fail in a row before the
   # circuit breaker opens
   # CLI flag: -ingester.client.circuit-breaker.failure-threshold
-  [max_consecutive_failures: <int> | default = 10]
+  [failure_threshold: <int> | default = 10]
 
   # (experimental) How long the circuit breaker will stay in the open state
   # before allowing some requests
   # CLI flag: -ingester.client.circuit-breaker.cooldown-period
-  [open_timeout: <duration> | default = 10s]
+  [cooldown_period: <duration> | default = 10s]
 ```
 
 ### grpc_client

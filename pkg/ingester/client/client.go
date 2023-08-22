@@ -83,8 +83,8 @@ func (cfg *Config) Validate() error {
 
 type CircuitBreakerConfig struct {
 	Enabled          bool          `yaml:"enabled" category:"experimental"`
-	FailureThreshold uint64        `yaml:"max_consecutive_failures" category:"experimental"`
-	CooldownPeriod   time.Duration `yaml:"open_timeout" category:"experimental"`
+	FailureThreshold uint64        `yaml:"failure_threshold" category:"experimental"`
+	CooldownPeriod   time.Duration `yaml:"cooldown_period" category:"experimental"`
 }
 
 func (cfg *CircuitBreakerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
