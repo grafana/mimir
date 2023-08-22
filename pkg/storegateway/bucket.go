@@ -820,6 +820,11 @@ func (s *BucketStore) sendStreamingChunks(
 	for it.Next() {
 		set := it.At()
 
+		if len(set.series) == 0 {
+			set.release()
+			continue
+		}
+
 		// We send the estimate before any chunks.
 		if !haveSentEstimatedChunks {
 			seriesInBatch := len(set.series)
@@ -829,17 +834,13 @@ func (s *BucketStore) sendStreamingChunks(
 				chunksInBatch += len(sc.chks)
 			}
 
-			// If this batch has no series, it's safe to skip sending the estimate here, as we won't send any chunks messages below
-			// (and so we'll still send the estimate before sending any chunks for the next batch).
-			if seriesInBatch > 0 {
-				estimate := uint64(totalSeriesCount * chunksInBatch / seriesInBatch)
-				err := s.sendMessage("streaming chunks estimate", srv, storepb.NewStreamingChunksEstimate(estimate), &encodeDuration, &sendDuration)
-				if err != nil {
-					return err
-				}
-
-				haveSentEstimatedChunks = true
+			estimate := uint64(totalSeriesCount * chunksInBatch / seriesInBatch)
+			err := s.sendMessage("streaming chunks estimate", srv, storepb.NewStreamingChunksEstimate(estimate), &encodeDuration, &sendDuration)
+			if err != nil {
+				return err
 			}
+
+			haveSentEstimatedChunks = true
 		}
 
 		for _, sc := range set.series {
