@@ -69,18 +69,22 @@ func TestNewCircuitBreaker(t *testing.T) {
 	}, NewMetrics(reg), test.NewTestingLogger(t))
 
 	// Initial request that should succeed because the circuit breaker is "closed"
-	err := breaker(context.Background(), "methodName", "", "", &conn, success)
+	err := breaker(context.Background(), "/cortex.Ingester/Push", "", "", &conn, success)
 	require.NoError(t, err)
 
 	// Failed request that should put the circuit breaker into "open"
-	err = breaker(context.Background(), "methodName", "", "", &conn, failure)
+	err = breaker(context.Background(), "/cortex.Ingester/Push", "", "", &conn, failure)
 	s, ok := status.FromError(err)
 	require.True(t, ok, "expected to get gRPC status from error")
 	require.Equal(t, codes.Unavailable, s.Code())
 
 	// Subsequent requests should fail with this specific error once "open"
-	err = breaker(context.Background(), "methodName", "", "", &conn, success)
+	err = breaker(context.Background(), "/cortex.Ingester/Push", "", "", &conn, success)
 	require.ErrorIs(t, err, gobreaker.ErrOpenState)
+
+	// Non-ingester methods shouldn't be short-circuited
+	err = breaker(context.Background(), "Different.Method", "", "", &conn, success)
+	require.NoError(t, err)
 
 	// Make sure the metrics match the behavior
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`

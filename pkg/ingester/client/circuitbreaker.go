@@ -20,6 +20,23 @@ const (
 	resultOpen    = "circuit_breaker_open"
 )
 
+var (
+	// Only apply circuit breaking to these methods (all IngesterClient methods).
+	circuitBreakMethods = map[string]struct{}{
+		"/cortex.Ingester/Push":                    {},
+		"/cortex.Ingester/QueryStream":             {},
+		"/cortex.Ingester/QueryExemplars":          {},
+		"/cortex.Ingester/LabelValues":             {},
+		"/cortex.Ingester/LabelNames":              {},
+		"/cortex.Ingester/UserStats":               {},
+		"/cortex.Ingester/AllUserStats":            {},
+		"/cortex.Ingester/MetricsForLabelMatchers": {},
+		"/cortex.Ingester/MetricsMetadata":         {},
+		"/cortex.Ingester/LabelNamesAndValues":     {},
+		"/cortex.Ingester/LabelValuesCardinality":  {},
+	}
+)
+
 func NewCircuitBreaker(addr string, cfg CircuitBreakerConfig, metrics *Metrics, logger log.Logger) grpc.UnaryClientInterceptor {
 	breaker := gobreaker.NewCircuitBreaker(gobreaker.Settings{
 		Name:        addr,
@@ -44,6 +61,11 @@ func NewCircuitBreaker(addr string, cfg CircuitBreakerConfig, metrics *Metrics, 
 	metrics.circuitBreakerResults.WithLabelValues(resultOpen)
 
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		// Don't circuit break non-ingester things like health check endpoints
+		if _, ok := circuitBreakMethods[method]; !ok {
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}
+
 		_, err := breaker.Execute(func() (interface{}, error) {
 			err := invoker(ctx, method, req, reply, cc, opts...)
 			return nil, err
