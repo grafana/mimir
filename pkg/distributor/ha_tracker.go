@@ -209,6 +209,10 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 }
 
 func (h *haTracker) starting(ctx context.Context) (err error) {
+	if !h.cfg.EnableHATracker {
+		return nil
+	}
+
 	keys, err := h.client.List(ctx, "")
 	if err != nil {
 		level.Warn(h.logger).Log("msg", "starting: failed to list replica keys", "err", err)
