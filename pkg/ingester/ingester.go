@@ -2151,6 +2151,13 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	db.DisableCompactions() // we will compact on our own schedule
 
+	// Register metric that reports Head MaxTime in seconds.
+	// (TSDB library already exports prometheus_tsdb_head_max_time metric, but it's unit-neutral.)
+	promauto.With(tsdbPromReg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_max_time_seconds",
+		Help: "Maximum timestamp of the head block.",
+	}, func() float64 { return float64(db.Head().MaxTime()) / 1000 })
+
 	// Run compaction before using this TSDB. If there is data in head that needs to be put into blocks,
 	// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
 	// local blocks compaction may still take place if configured.
