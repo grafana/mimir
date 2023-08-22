@@ -117,6 +117,7 @@
 * [BUGFIX] Alerts: fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts. #5396
 * [BUGFIX] Alerts: Fix `MimirGossipMembersMismatch` to include `admin-api` and custom compactor pods. `admin-api` is a GEM component. #5641 #5797
 * [BUGFIX] Ruler: gracefully shut down rule evaluations. #5778
+* [BUGFIX] Dashboards: fix autoscaling dashboard panels that could show multiple series for a single component. #5810
 
 ### Jsonnet
 
