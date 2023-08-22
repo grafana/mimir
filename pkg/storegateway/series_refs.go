@@ -178,16 +178,14 @@ func (s seriesChunkRefs) numChunks() (n int) {
 
 // seriesChunkRefsRange contains chunks from the same block and the same segment file. They are ordered by their minTime
 type seriesChunkRefsRange struct {
-	blockID     ulid.ULID
-	segmentFile uint32
-	refs        []seriesChunkRef
+	refs []seriesChunkRef
 }
 
 func (g seriesChunkRefsRange) firstRef() chunks.ChunkRef {
 	if len(g.refs) == 0 {
 		return 0
 	}
-	return chunkRef(g.segmentFile, g.refs[0].segFileOffset)
+	return chunkRef(g.refs[0].segmentFile, g.refs[0].segFileOffset)
 }
 
 func (g seriesChunkRefsRange) minTime() int64 {
@@ -229,6 +227,8 @@ func (g seriesChunkRefsRange) Compare(other seriesChunkRefsRange) int {
 
 // seriesChunkRef holds the reference to a chunk in a given block.
 type seriesChunkRef struct {
+	blockID     ulid.ULID
+	segmentFile uint32
 	// The order of these fields matters; having the uint32 on top makes the whole struct 24 bytes; in a different order the struct is 32B
 	segFileOffset uint32
 	// length will be 0 when the length of the chunk isn't known
@@ -1050,7 +1050,7 @@ func clampLastChunkLength(series []symbolizedSeriesChunkRefs, nextSeriesChunkMet
 	)
 
 	// We only compare the segment file of the series because they all come from the same block.
-	if lastRange.segmentFile != uint32(chunkSegmentFile(firstRef)) {
+	if lastSeriesChunk.segmentFile != uint32(chunkSegmentFile(firstRef)) {
 		return
 	}
 	diffWithNextChunk := chunkOffset(firstRef) - lastSeriesChunk.segFileOffset
@@ -1171,15 +1171,15 @@ func metasToRanges(partitions [][]chunks.Meta, blockID ulid.ULID, minT, maxT int
 				minTime:       c.MinTime,
 				maxTime:       c.MaxTime,
 				length:        chunkLen,
+				blockID:       blockID,
+				segmentFile:   uint32(chunkSegmentFile(partition[0].Ref)),
 			})
 		}
 
 		ranges = append(ranges, seriesChunkRefsRange{
-			blockID: blockID,
 			// We have a guarantee that each meta in a partition will be from the same segment file; we can just take the segment file of the first chunk.
 			// The cast to uint32 is safe because the segment file seq must fit in the first 32 bytes of the chunk ref
-			segmentFile: uint32(chunkSegmentFile(partition[0].Ref)),
-			refs:        chunkRefs,
+			refs: chunkRefs,
 		})
 	}
 	return ranges

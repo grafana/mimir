@@ -42,31 +42,31 @@ func TestSeriesChunkRefsRange_Compare(t *testing.T) {
 	}{
 		"sorts ranges with single chunk": {
 			input: []seriesChunkRefsRange{
-				{blockID: ulid.MustNew(0, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 5}}},
-				{blockID: ulid.MustNew(1, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 5}}},
-				{blockID: ulid.MustNew(2, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 3}}},
-				{blockID: ulid.MustNew(3, nil), refs: []seriesChunkRef{{minTime: 4, maxTime: 7}}},
-				{blockID: ulid.MustNew(4, nil), refs: []seriesChunkRef{{minTime: 3, maxTime: 6}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(0, nil), minTime: 2, maxTime: 5}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(1, nil), minTime: 1, maxTime: 5}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(2, nil), minTime: 1, maxTime: 3}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(3, nil), minTime: 4, maxTime: 7}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(4, nil), minTime: 3, maxTime: 6}}},
 			},
 			expected: []seriesChunkRefsRange{
-				{blockID: ulid.MustNew(2, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 3}}},
-				{blockID: ulid.MustNew(1, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 5}}},
-				{blockID: ulid.MustNew(0, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 5}}},
-				{blockID: ulid.MustNew(4, nil), refs: []seriesChunkRef{{minTime: 3, maxTime: 6}}},
-				{blockID: ulid.MustNew(3, nil), refs: []seriesChunkRef{{minTime: 4, maxTime: 7}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(2, nil), minTime: 1, maxTime: 3}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(1, nil), minTime: 1, maxTime: 5}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(0, nil), minTime: 2, maxTime: 5}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(4, nil), minTime: 3, maxTime: 6}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(3, nil), minTime: 4, maxTime: 7}}},
 			},
 		},
 		"sorts ranges with multiple chunks": {
 			input: []seriesChunkRefsRange{
 				// max time of the whole range may not be the max time of the last chunk
-				{blockID: ulid.MustNew(0, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 7}, {minTime: 3, maxTime: 5}}},
-				{blockID: ulid.MustNew(2, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 10}}},
-				{blockID: ulid.MustNew(1, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 5}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(0, nil), minTime: 2, maxTime: 7}, {blockID: ulid.MustNew(0, nil), minTime: 3, maxTime: 5}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(2, nil), minTime: 1, maxTime: 10}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(1, nil), minTime: 2, maxTime: 5}}},
 			},
 			expected: []seriesChunkRefsRange{
-				{blockID: ulid.MustNew(2, nil), refs: []seriesChunkRef{{minTime: 1, maxTime: 10}}},
-				{blockID: ulid.MustNew(1, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 5}}},
-				{blockID: ulid.MustNew(0, nil), refs: []seriesChunkRef{{minTime: 2, maxTime: 7}, {minTime: 3, maxTime: 5}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(2, nil), minTime: 1, maxTime: 10}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(1, nil), minTime: 2, maxTime: 5}}},
+				{refs: []seriesChunkRef{{blockID: ulid.MustNew(0, nil), minTime: 2, maxTime: 7}, {blockID: ulid.MustNew(0, nil), minTime: 3, maxTime: 5}}},
 			},
 		},
 	}
@@ -1462,14 +1462,14 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 			prevChunkRef, prevChunkLen := chunks.ChunkRef(0), uint64(0)
 
 			for k, actualChunksRange := range actualSeries.chunksRanges {
-				assert.Equalf(t, blockID, actualChunksRange.blockID, "blockID [%d, %d, %d]", i, j, k)
 				for l, actualChunk := range actualChunksRange.refs {
 					require.Truef(t, promChunks.Next(), "out of prometheus chunks; left %d chunks: %v", len(actualChunksRange.refs)-l, actualChunksRange.refs[l:])
 					promChunk := promChunks.At()
 					if l == 0 {
 						assert.Equal(t, promChunk.Ref, actualChunksRange.firstRef(), "prom minT [%d, %d, %d]", i, j, k)
 					}
-					assert.Equalf(t, promChunk.Ref, chunkRef(actualChunksRange.segmentFile, actualChunk.segFileOffset), "ref [%d, %d, %d, %d]", i, j, k, l)
+					assert.Equalf(t, blockID, actualChunk.blockID, "blockID [%d, %d, %d]", i, j, k)
+					assert.Equalf(t, promChunk.Ref, chunkRef(actualChunk.segmentFile, actualChunk.segFileOffset), "ref [%d, %d, %d, %d]", i, j, k, l)
 					assert.Equalf(t, promChunk.MinTime, actualChunk.minTime, "minT [%d, %d, %d, %d]", i, j, k, l)
 					assert.Equalf(t, promChunk.MaxTime, actualChunk.maxTime, "maxT [%d, %d, %d, %d]", i, j, k, l)
 					assert.LessOrEqualf(t, uint64(prevChunkRef)+prevChunkLen, uint64(promChunk.Ref),
@@ -1908,9 +1908,9 @@ func TestMetasToRanges(t *testing.T) {
 				{{Ref: chunkRef(1, 58), MinTime: 130, MaxTime: 150}},
 			},
 			expectedRanges: []seriesChunkRefsRange{
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 2, length: 8, minTime: 9, maxTime: 20}, {segFileOffset: 10, length: 13, minTime: 50, maxTime: 88}}},
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 23, length: 22, minTime: 90, maxTime: 100}, {segFileOffset: 45, length: 13, minTime: 101, maxTime: 120}}},
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 58, length: tsdb.EstimatedMaxChunkSize, minTime: 130, maxTime: 150}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 2, length: 8, minTime: 9, maxTime: 20}, {blockID: blockID, segmentFile: 1, segFileOffset: 10, length: 13, minTime: 50, maxTime: 88}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 23, length: 22, minTime: 90, maxTime: 100}, {blockID: blockID, segmentFile: 1, segFileOffset: 45, length: 13, minTime: 101, maxTime: 120}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 58, length: tsdb.EstimatedMaxChunkSize, minTime: 130, maxTime: 150}}},
 			},
 		},
 		"a single input partition": {
@@ -1920,7 +1920,7 @@ func TestMetasToRanges(t *testing.T) {
 				{{Ref: chunkRef(1, 2), MinTime: 9, MaxTime: 20}, {Ref: chunkRef(1, 10), MinTime: 50, MaxTime: 88}},
 			},
 			expectedRanges: []seriesChunkRefsRange{
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 2, length: 8, minTime: 9, maxTime: 20}, {segFileOffset: 10, length: tsdb.EstimatedMaxChunkSize, minTime: 50, maxTime: 88}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 2, length: 8, minTime: 9, maxTime: 20}, {blockID: blockID, segmentFile: 1, segFileOffset: 10, length: tsdb.EstimatedMaxChunkSize, minTime: 50, maxTime: 88}}},
 			},
 		},
 		"doesn't estimate length of chunks when they are from different segment files": {
@@ -1932,9 +1932,9 @@ func TestMetasToRanges(t *testing.T) {
 				{{Ref: chunkRef(2, 4), MinTime: 130, MaxTime: 150}},
 			},
 			expectedRanges: []seriesChunkRefsRange{
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 2, length: 8, minTime: 9, maxTime: 20}, {segFileOffset: 10, length: 13, minTime: 50, maxTime: 88}}},
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 23, length: 22, minTime: 90, maxTime: 100}, {segFileOffset: 45, length: tsdb.EstimatedMaxChunkSize, minTime: 101, maxTime: 120}}},
-				{blockID: blockID, segmentFile: 2, refs: []seriesChunkRef{{segFileOffset: 4, length: tsdb.EstimatedMaxChunkSize, minTime: 130, maxTime: 150}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 2, length: 8, minTime: 9, maxTime: 20}, {blockID: blockID, segmentFile: 1, segFileOffset: 10, length: 13, minTime: 50, maxTime: 88}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 23, length: 22, minTime: 90, maxTime: 100}, {blockID: blockID, segmentFile: 1, segFileOffset: 45, length: tsdb.EstimatedMaxChunkSize, minTime: 101, maxTime: 120}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 2, segFileOffset: 4, length: tsdb.EstimatedMaxChunkSize, minTime: 130, maxTime: 150}}},
 			},
 		},
 		"clamps the length of a chunk if the diff to the next chunk is larger than 16KB": {
@@ -1944,7 +1944,7 @@ func TestMetasToRanges(t *testing.T) {
 				{{Ref: chunkRef(1, 2), MinTime: 9, MaxTime: 20}, {Ref: chunkRef(1, 100_000), MinTime: 50, MaxTime: 88}},
 			},
 			expectedRanges: []seriesChunkRefsRange{
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 2, length: tsdb.EstimatedMaxChunkSize, minTime: 9, maxTime: 20}, {segFileOffset: 100_000, length: tsdb.EstimatedMaxChunkSize, minTime: 50, maxTime: 88}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 2, length: tsdb.EstimatedMaxChunkSize, minTime: 9, maxTime: 20}, {blockID: blockID, segmentFile: 1, segFileOffset: 100_000, length: tsdb.EstimatedMaxChunkSize, minTime: 50, maxTime: 88}}},
 			},
 		},
 		"returns some ranges when some partitions overlap with minT/maxT": {
@@ -1956,8 +1956,8 @@ func TestMetasToRanges(t *testing.T) {
 				{{Ref: chunkRef(1, 58), MinTime: 130, MaxTime: 150}},
 			},
 			expectedRanges: []seriesChunkRefsRange{
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 23, length: 22, minTime: 90, maxTime: 100}, {segFileOffset: 45, length: 13, minTime: 101, maxTime: 120}}},
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 58, length: tsdb.EstimatedMaxChunkSize, minTime: 130, maxTime: 150}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 23, length: 22, minTime: 90, maxTime: 100}, {blockID: blockID, segmentFile: 1, segFileOffset: 45, length: 13, minTime: 101, maxTime: 120}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 58, length: tsdb.EstimatedMaxChunkSize, minTime: 130, maxTime: 150}}},
 			},
 		},
 		"returns some ranges when some partitions overlap at the edge with with minT/maxT": {
@@ -1969,8 +1969,8 @@ func TestMetasToRanges(t *testing.T) {
 				{{Ref: chunkRef(2, 4), MinTime: 130, MaxTime: 150}},
 			},
 			expectedRanges: []seriesChunkRefsRange{
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 23, length: 22, minTime: 90, maxTime: 100}, {segFileOffset: 45, length: tsdb.EstimatedMaxChunkSize, minTime: 101, maxTime: 120}}},
-				{blockID: blockID, segmentFile: 2, refs: []seriesChunkRef{{segFileOffset: 4, length: tsdb.EstimatedMaxChunkSize, minTime: 130, maxTime: 150}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 23, length: 22, minTime: 90, maxTime: 100}, {blockID: blockID, segmentFile: 1, segFileOffset: 45, length: tsdb.EstimatedMaxChunkSize, minTime: 101, maxTime: 120}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 2, segFileOffset: 4, length: tsdb.EstimatedMaxChunkSize, minTime: 130, maxTime: 150}}},
 			},
 		},
 		"still estimates length using chunks that aren't returned in any range": {
@@ -1983,7 +1983,7 @@ func TestMetasToRanges(t *testing.T) {
 				{{Ref: chunkRef(2, 4), MinTime: 130, MaxTime: 150}},
 			},
 			expectedRanges: []seriesChunkRefsRange{
-				{blockID: blockID, segmentFile: 1, refs: []seriesChunkRef{{segFileOffset: 23, length: 22, minTime: 90, maxTime: 100}, {segFileOffset: 45, length: 12, minTime: 101, maxTime: 120}}},
+				{refs: []seriesChunkRef{{blockID: blockID, segmentFile: 1, segFileOffset: 23, length: 22, minTime: 90, maxTime: 100}, {blockID: blockID, segmentFile: 1, segFileOffset: 45, length: 12, minTime: 101, maxTime: 120}}},
 			},
 		},
 	}
@@ -2632,15 +2632,15 @@ func generateSeriesChunksRangesN(blockID ulid.ULID, numChunksPerRange, numRanges
 		refs := make([]seriesChunkRef, numChunksPerRange)
 		for rIdx := range refs {
 			refs[rIdx] = seriesChunkRef{segFileOffset: 10 * uint32(i),
-				minTime: int64(i),
-				maxTime: int64(i),
-				length:  10,
+				minTime:     int64(i),
+				maxTime:     int64(i),
+				length:      10,
+				blockID:     blockID,
+				segmentFile: 1,
 			}
 		}
 		chunksRanges = append(chunksRanges, seriesChunkRefsRange{
-			blockID:     blockID,
-			segmentFile: 1,
-			refs:        refs,
+			refs: refs,
 		})
 	}
 

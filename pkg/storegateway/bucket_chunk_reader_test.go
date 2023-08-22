@@ -25,7 +25,7 @@ import (
 )
 
 func (g seriesChunkRefsRange) refAt(i int) chunks.ChunkRef {
-	return chunkRef(g.segmentFile, g.refs[i].segFileOffset)
+	return chunkRef(g.refs[i].segmentFile, g.refs[i].segFileOffset)
 }
 
 func TestBucketChunkReader_refetchChunks(t *testing.T) {

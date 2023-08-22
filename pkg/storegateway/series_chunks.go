@@ -424,7 +424,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 					seriesChunkIdx++
 					continue
 				}
-				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), sIdx, seriesChunkIdx, chunk.length)
+				err := c.chunkReaders.addLoad(chunk.blockID, chunkRef(chunk.segmentFile, chunk.segFileOffset), sIdx, seriesChunkIdx, chunk.length)
 				if err != nil {
 					c.err = errors.Wrap(err, "preloading chunks")
 					return false

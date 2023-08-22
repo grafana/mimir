@@ -489,13 +489,13 @@ func (b testBlock) toSeriesChunkRefsWithNRangesOverlapping(seriesIndex, numRange
 	ranges := make([]seriesChunkRefsRange, numRanges)
 	chunksPerRange := len(series.refs) / numRanges
 	for i := range ranges {
-		ranges[i].blockID = b.ulid
-		ranges[i].segmentFile = uint32(chunkSegmentFile(series.refs[i*chunksPerRange]))
 		for j := 0; j < chunksPerRange; j++ {
 			ranges[i].refs = append(ranges[i].refs, seriesChunkRef{
 				segFileOffset: chunkOffset(series.refs[i*chunksPerRange+j]),
 				minTime:       series.chks[i*chunksPerRange+j].MinTime,
 				maxTime:       series.chks[i*chunksPerRange+j].MaxTime,
+				blockID:       b.ulid,
+				segmentFile:   uint32(chunkSegmentFile(series.refs[i*chunksPerRange+j])),
 			})
 		}
 	}
@@ -506,6 +506,8 @@ func (b testBlock) toSeriesChunkRefsWithNRangesOverlapping(seriesIndex, numRange
 			segFileOffset: chunkOffset(series.refs[i]),
 			minTime:       series.chks[i].MinTime,
 			maxTime:       series.chks[i].MaxTime,
+			blockID:       b.ulid,
+			segmentFile:   uint32(chunkSegmentFile(series.refs[i])),
 		})
 	}
 
