@@ -440,7 +440,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 		for _, streamingBatchSize := range []int{0, 1, 5, 256} {
 			if ok := t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
 				tcase.req.StreamingChunksBatchSize = uint64(streamingBatchSize)
-				seriesSet, _, _, err := srv.Series(context.Background(), tcase.req)
+				seriesSet, _, _, _, err := srv.Series(context.Background(), tcase.req)
 				require.NoError(t, err)
 
 				assert.Equal(t, len(tcase.expected), len(seriesSet))
@@ -710,7 +710,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 					}
 
 					srv := newBucketStoreTestServer(t, s.store)
-					_, _, _, err := srv.Series(context.Background(), req)
+					_, _, _, _, err := srv.Series(context.Background(), req)
 
 					if testData.expectedErr == "" {
 						assert.NoError(t, err)
@@ -966,7 +966,7 @@ func TestBucketStore_ValueTypes_e2e(t *testing.T) {
 				}
 
 				srv := newBucketStoreTestServer(t, s.store)
-				seriesSet, _, _, err := srv.Series(ctx, req)
+				seriesSet, _, _, _, err := srv.Series(ctx, req)
 				require.NoError(t, err)
 
 				counts := map[storepb.Chunk_Encoding]int{}

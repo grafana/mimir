@@ -259,18 +259,22 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				result.timeseriesBatches = append(result.timeseriesBatches, resp.Timeseries)
 			} else if len(resp.Chunkseries) > 0 {
 				// Enforce the max chunks limits.
-				if chunkLimitErr := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); chunkLimitErr != nil {
-					return ingesterQueryResult{}, chunkLimitErr
+				if err := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
+					return ingesterQueryResult{}, err
+				}
+
+				if err := queryLimiter.AddEstimatedChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
+					return ingesterQueryResult{}, err
 				}
 
 				for _, series := range resp.Chunkseries {
-					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
-						return ingesterQueryResult{}, limitErr
+					if err := queryLimiter.AddSeries(series.Labels); err != nil {
+						return ingesterQueryResult{}, err
 					}
 				}
 
-				if chunkBytesLimitErr := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); chunkBytesLimitErr != nil {
-					return ingesterQueryResult{}, chunkBytesLimitErr
+				if err := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); err != nil {
+					return ingesterQueryResult{}, err
 				}
 
 				result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
@@ -279,13 +283,17 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				streamingSeriesCount += len(resp.StreamingSeries)
 
 				for _, s := range resp.StreamingSeries {
-					if limitErr := queryLimiter.AddSeries(s.Labels); limitErr != nil {
-						return ingesterQueryResult{}, limitErr
+					if err := queryLimiter.AddSeries(s.Labels); err != nil {
+						return ingesterQueryResult{}, err
 					}
 
 					// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.
-					if chunkLimitErr := queryLimiter.AddChunks(int(s.ChunkCount)); chunkLimitErr != nil {
-						return ingesterQueryResult{}, chunkLimitErr
+					if err := queryLimiter.AddChunks(int(s.ChunkCount)); err != nil {
+						return ingesterQueryResult{}, err
+					}
+
+					if err := queryLimiter.AddEstimatedChunks(int(s.ChunkCount)); err != nil {
+						return ingesterQueryResult{}, err
 					}
 
 					labelsBatch = append(labelsBatch, mimirpb.FromLabelAdaptersToLabels(s.Labels))

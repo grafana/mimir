@@ -11,13 +11,14 @@ import (
 )
 
 const (
-	RejectReasonMaxSeries     = "max-fetched-series-per-query"
-	RejectReasonMaxChunkBytes = "max-fetched-chunk-bytes-per-query"
-	RejectReasonMaxChunks     = "max-fetched-chunks-per-query"
+	RejectReasonMaxSeries          = "max-fetched-series-per-query"
+	RejectReasonMaxChunkBytes      = "max-fetched-chunk-bytes-per-query"
+	RejectReasonMaxChunks          = "max-fetched-chunks-per-query"
+	RejectReasonMaxEstimatedChunks = "max-estimated-fetched-chunks-per-query"
 )
 
 var (
-	rejectReasons = []string{RejectReasonMaxSeries, RejectReasonMaxChunkBytes, RejectReasonMaxChunks}
+	rejectReasons = []string{RejectReasonMaxSeries, RejectReasonMaxChunkBytes, RejectReasonMaxChunks, RejectReasonMaxEstimatedChunks}
 )
 
 // QueryMetrics collects metrics on the number of chunks used while serving queries.

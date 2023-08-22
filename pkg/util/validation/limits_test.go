@@ -650,6 +650,31 @@ metric_relabel_configs:
 	})
 }
 
+func TestUnmarshalMaxEstimatedChunksPerQuery(t *testing.T) {
+	testCases := map[string]bool{
+		"-0.1": false,
+		"0":    true,
+		"0.1":  false,
+		"0.9":  false,
+		"1":    true,
+		"1.1":  true,
+	}
+
+	for value, shouldBeValid := range testCases {
+		t.Run(value, func(t *testing.T) {
+			limits := Limits{}
+			cfg := "max_estimated_fetched_chunks_per_query_multiplier: " + value
+			err := yaml.Unmarshal([]byte(cfg), &limits)
+
+			if shouldBeValid {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "invalid value for -querier.max-estimated-fetched-chunks-per-query-multiplier: must be 0 or greater than or equal to 1")
+			}
+		})
+	}
+}
+
 type structExtension struct {
 	Foo int `yaml:"foo" json:"foo"`
 }

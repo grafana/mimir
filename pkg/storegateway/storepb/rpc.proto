@@ -128,8 +128,12 @@ message SeriesResponse {
     /// They are associated with series labels sent as streaming_series earlier in the same Series request.
     /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
     /// Chunks are sent in batches because sending one series' chunks at a time has additional
-    //  CPU overhead for not much memory gains.
+    /// CPU overhead for not much memory gains.
     StreamingChunksBatch streaming_chunks = 6;
+
+    /// streaming_chunks_estimate contains an estimate of the number of chunks expected to be sent as part a streaming
+    /// Series call.
+    StreamingChunksEstimate streaming_chunks_estimate = 7;
   }
 }
 

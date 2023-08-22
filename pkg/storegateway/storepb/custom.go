@@ -55,6 +55,16 @@ func NewStreamingChunksResponse(series *StreamingChunksBatch) *SeriesResponse {
 	}
 }
 
+func NewStreamingChunksEstimate(estimatedChunks uint64) *SeriesResponse {
+	return &SeriesResponse{
+		Result: &SeriesResponse_StreamingChunksEstimate{
+			StreamingChunksEstimate: &StreamingChunksEstimate{
+				EstimatedChunkCount: estimatedChunks,
+			},
+		},
+	}
+}
+
 type emptySeriesSet struct{}
 
 func (emptySeriesSet) Next() bool                       { return false }

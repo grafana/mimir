@@ -61,7 +61,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 		metricNameLabel  = labels.FromStrings(labels.MetricName, metricName)
 		series1Label     = labels.FromStrings(labels.MetricName, metricName, "series", "1")
 		series2Label     = labels.FromStrings(labels.MetricName, metricName, "series", "2")
-		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, nil)
+		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, 0, nil)
 	)
 
 	type valueResult struct {
@@ -512,8 +512,26 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
-			queryLimiter: limiter.NewQueryLimiter(0, 0, 1, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			queryLimiter: limiter.NewQueryLimiter(0, 0, 1, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
 			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 1)),
+		},
+		"max estimated chunks per query limit hit while fetching chunks": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponse(series1Label, minT, 1),
+						mockSeriesResponse(series1Label, minT+1, 2),
+						mockHintsResponse(block1, block2),
+					}}: {block1, block2},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: limiter.NewQueryLimiter(0, 0, 0, 1, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxEstimatedChunksPerQueryLimitMsgFormat, 1)),
 		},
 		"max chunks per query limit hit while fetching chunks during subsequent attempts": {
 			finderResult: bucketindex.Blocks{
@@ -550,7 +568,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
-			queryLimiter: limiter.NewQueryLimiter(0, 0, 3, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			queryLimiter: limiter.NewQueryLimiter(0, 0, 3, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
 			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 3)),
 		},
 		"max series per query limit hit while fetching chunks": {
@@ -568,7 +586,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
-			queryLimiter: limiter.NewQueryLimiter(1, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			queryLimiter: limiter.NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
 			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxSeriesHitMsgFormat, 1)),
 		},
 		"max chunk bytes per query limit hit while fetching chunks": {
@@ -586,7 +604,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 1},
-			queryLimiter: limiter.NewQueryLimiter(0, 8, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			queryLimiter: limiter.NewQueryLimiter(0, 8, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
 			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunkBytesHitMsgFormat, 8)),
 		},
 		"blocks with non-matching shard are filtered out": {
@@ -833,7 +851,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					finder := &blocksFinderMock{}
 					finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
 
-					ctx := limiter.AddQueryLimiterToContext(context.Background(), testData.queryLimiter)
+					ctx, cancel := context.WithCancel(context.Background())
+					t.Cleanup(cancel)
+					ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
 					st, ctx := stats.ContextWithEmptyStats(ctx)
 					q := &blocksStoreQuerier{
 						ctx:         ctx,
@@ -924,10 +944,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 }
 
 func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*storepb.SeriesResponse {
+	chunksEstimate := 0
 	var series, chunks, others, final []*storepb.SeriesResponse
 	for i, mr := range seriesResponses {
 		s := mr.GetSeries()
 		if s != nil {
+			chunksEstimate += len(s.Chunks)
 			series = append(series, mockStreamingSeriesBatchResponse(false, s.Labels))
 			chunks = append(chunks, mockStreamingSeriesChunksResponse(uint64(len(series)-1), s.Chunks))
 			continue
@@ -940,6 +962,7 @@ func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*st
 	final = append(final, others...)
 	// End of stream response goes after the hints and stats.
 	final = append(final, mockStreamingSeriesBatchResponse(true))
+	final = append(final, storepb.NewStreamingChunksEstimate(uint64(chunksEstimate)))
 	final = append(final, chunks...)
 	return final
 }
@@ -953,7 +976,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 
 	var (
 		block            = ulid.MustNew(1, nil)
-		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, nil)
+		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, 0, nil)
 	)
 
 	canceledRequestTests := map[string]bool{
