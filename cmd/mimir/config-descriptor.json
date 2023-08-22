@@ -2108,19 +2108,8 @@
               "desc": "Enable circuit breaking when making requests to ingesters",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ingester.client.circuit-breaker-enabled",
+              "fieldFlag": "ingester.client.circuit-breaker.enabled",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "max_half_open_requests",
-              "required": false,
-              "desc": "Max number of requests allowed when the circuit breaker is in the half-open state",
-              "fieldValue": null,
-              "fieldDefaultValue": 10,
-              "fieldFlag": "ingester.client.circuit-breaker-max-half-open-requests",
-              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
@@ -2130,7 +2119,7 @@
               "desc": "Max number of requests that can fail in a row before the circuit breaker opens",
               "fieldValue": null,
               "fieldDefaultValue": 10,
-              "fieldFlag": "ingester.client.circuit-breaker-max-consecutive-failures",
+              "fieldFlag": "ingester.client.circuit-breaker.failure-threshold",
               "fieldType": "int",
               "fieldCategory": "experimental"
             },
@@ -2141,18 +2130,7 @@
               "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
               "fieldValue": null,
               "fieldDefaultValue": 10000000000,
-              "fieldFlag": "ingester.client.circuit-breaker-open-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "closed_interval",
-              "required": false,
-              "desc": "How often request counts are reset when in the closed state",
-              "fieldValue": null,
-              "fieldDefaultValue": 10000000000,
-              "fieldFlag": "ingester.client.circuit-breaker-closed-interval",
+              "fieldFlag": "ingester.client.circuit-breaker.cooldown-period",
               "fieldType": "duration",
               "fieldCategory": "experimental"
             }
