@@ -897,3 +897,36 @@ func getSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName strin
 
 	return sum
 }
+
+// Test that values are synced to KVStore on starting
+func TestStartingSync(t *testing.T) {
+	cluster := "c1"
+	replica := "r1"
+
+	codec := GetReplicaDescCodec()
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	mock := kv.PrefixClient(kvStore, "prefix")
+	c, err := newHATracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mock},
+		UpdateTimeout:          15 * time.Second,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        time.Millisecond * 2,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
+
+	now := time.Now()
+
+	err = c.starting(context.Background())
+	assert.NoError(t, err)
+
+	err = c.checkReplica(context.Background(), "user", cluster, replica, now)
+	assert.NoError(t, err)
+
+	// Check to see if the value in the trackers cache is correct.
+	checkReplicaTimestamp(t, time.Second, c, "user", cluster, replica, now)
+}

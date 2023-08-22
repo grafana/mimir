@@ -204,8 +204,68 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		t.client = client
 	}
 
-	t.Service = services.NewBasicService(nil, t.loop, nil)
+	t.Service = services.NewBasicService(t.starting, t.loop, nil)
 	return t, nil
+}
+
+func (h *haTracker) starting(ctx context.Context) (err error) {
+	keys, err := h.client.List(ctx, "")
+	if err != nil {
+		level.Warn(h.logger).Log("msg", "starting: failed to list replica keys", "err", err)
+		return err
+	}
+
+	for _, key := range keys {
+		if ctx.Err() != nil {
+			return err
+		}
+
+		value, err := h.client.Get(ctx, key)
+		if err != nil {
+			level.Warn(h.logger).Log("msg", "starting: failed to get replica value", "key", key, "err", err)
+			continue
+		}
+
+		replica, ok := value.(*ReplicaDesc)
+		if !ok {
+			level.Error(h.logger).Log("msg", "starting: got invalid replica descriptor", "key", key)
+			continue
+		}
+
+		segments := strings.SplitN(key, "/", 2)
+
+		// Valid key would look like cluster/replica, and a key without a / such as `ring` would be invalid.
+		if len(segments) != 2 {
+			return nil
+		}
+
+		user := segments[0]
+		cluster := segments[1]
+
+		if replica.DeletedAt > 0 {
+			h.electedReplicaChanges.DeleteLabelValues(user, cluster)
+			h.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
+
+			h.electedLock.Lock()
+			defer h.electedLock.Unlock()
+			userClusters := h.clusters[user]
+			if userClusters != nil {
+				delete(userClusters, cluster)
+				if len(userClusters) == 0 {
+					delete(h.clusters, user)
+				}
+			}
+			return nil
+		}
+
+		// Store the received information into our cache
+		h.electedLock.Lock()
+		h.updateCache(user, cluster, replica)
+		h.electedLock.Unlock()
+		h.electedReplicaPropagationTime.Observe(time.Since(timestamp.Time(replica.ReceivedAt)).Seconds())
+		return nil
+	}
+	return nil
 }
 
 // Follows pattern used by ring for WatchKey.
