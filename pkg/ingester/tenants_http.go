@@ -77,6 +77,7 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 
 	db := i.getTSDB(tenant)
 	if db == nil {
+		w.WriteHeader(http.StatusNotFound)
 		util.WriteTextResponse(w, "TSDB not found for tenant "+tenant)
 		return
 	}

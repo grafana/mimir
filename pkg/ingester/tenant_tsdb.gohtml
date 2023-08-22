@@ -15,7 +15,7 @@
     <li>Number of series: {{.Head.NumSeries}}</li>
     <li>Min Time: {{.Head.MinTime}}</li>
     <li>Max Time: {{.Head.MaxTime}}</li>
-    <li>Appendable Min Valid Time: {{.Head.AppendableMinValidTime}}</li>
+    <li>Appendable Min Valid Time: {{if .Head.AppendableMinValidTime}}{{.Head.AppendableMinValidTime}}{{else}}N/A{{end}}</li>
     <li>Min OOO Time: {{.Head.MinOOOTime}}</li>
     <li>Max OOO Time: {{.Head.MaxOOOTime}}</li>
 </ul>
@@ -33,6 +33,7 @@
         <th>Number of Chunks</th>
         <th>Number of Samples</th>
         <th>Compaction Hints</th>
+        <th>Uploaded</th>
     </tr>
     </thead>
     <tbody style="font-family: monospace;">
@@ -45,6 +46,7 @@
             <td>{{.Stats.NumChunks}}</td>
             <td>{{.Stats.NumSamples}}</td>
             <td>{{.Compaction.Hints}}</td>
+            <td>{{.UploadedOn}}</td>
         </tr>
     {{ end }}
     </tbody>
