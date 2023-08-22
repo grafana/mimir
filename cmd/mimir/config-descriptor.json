@@ -2114,7 +2114,7 @@
             },
             {
               "kind": "field",
-              "name": "max_consecutive_failures",
+              "name": "failure_threshold",
               "required": false,
               "desc": "Max number of requests that can fail in a row before the circuit breaker opens",
               "fieldValue": null,
@@ -2125,7 +2125,7 @@
             },
             {
               "kind": "field",
-              "name": "open_timeout",
+              "name": "cooldown_period",
               "required": false,
               "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
               "fieldValue": null,
