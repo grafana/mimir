@@ -1054,7 +1054,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*cpu.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                        "expr": "sum by (scaledObject) (\n  keda_metrics_adapter_scaler_metrics_value{metric=~\".*cpu.*\"}\n  /\n  on(metric) group_left label_replace(\n      kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n  )\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ scaledObject }}",
@@ -1130,7 +1130,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                        "expr": "sum by (scaledObject) (\n  keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n  /\n  on(metric) group_left label_replace(\n      kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n  )\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ scaledObject }}",
