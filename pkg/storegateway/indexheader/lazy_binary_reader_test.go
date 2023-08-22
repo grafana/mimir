@@ -399,11 +399,16 @@ func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
 
 		sr, err := r.SymbolsReader()
 		require.NoError(t, err)
+
+		wg := sync.WaitGroup{}
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
+
 			<-time.After(1 * time.Second)
-			require.NoError(t, sr.Close())
 
 			closed.Store(true)
+			require.NoError(t, sr.Close()) // sr.Close() unblocks unloadIfIdleSince
 
 			// Multiple close calls should not panic (wg.Done could panic if called too many times).
 			// (It can return error, or not. We don't care).
@@ -415,5 +420,7 @@ func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
 
 		// We should only get here if symbols reader was already closed. If it wasn't, unload unloaded unclosed reader :(
 		require.True(t, closed.Load(), "symbols reader is not closed yet")
+
+		wg.Wait()
 	})
 }
