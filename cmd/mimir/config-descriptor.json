@@ -2094,6 +2094,49 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "circuit_breaker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable circuit breaking when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.client.circuit-breaker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_threshold",
+              "required": false,
+              "desc": "Max number of requests that can fail in a row before the circuit breaker opens",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "ingester.client.circuit-breaker.failure-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "cooldown_period",
+              "required": false,
+              "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.client.circuit-breaker.cooldown-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

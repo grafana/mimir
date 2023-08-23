@@ -2131,6 +2131,21 @@ The `ingester_client` block configures how the distributors connect to the inges
 # distributors, queriers and rulers.
 # The CLI flags prefix for this block configuration is: ingester.client
 [grpc_client_config: <grpc_client>]
+
+circuit_breaker:
+  # (experimental) Enable circuit breaking when making requests to ingesters
+  # CLI flag: -ingester.client.circuit-breaker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Max number of requests that can fail in a row before the
+  # circuit breaker opens
+  # CLI flag: -ingester.client.circuit-breaker.failure-threshold
+  [failure_threshold: <int> | default = 10]
+
+  # (experimental) How long the circuit breaker will stay in the open state
+  # before allowing some requests
+  # CLI flag: -ingester.client.circuit-breaker.cooldown-period
+  [cooldown_period: <duration> | default = 10s]
 ```
 
 ### grpc_client
