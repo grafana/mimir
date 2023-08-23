@@ -1178,6 +1178,22 @@ How to **investigate**:
   {name="rollout-operator",namespace="<namespace>"}
   ```
 
+### MimirIngestedDataTooFarInTheFuture
+
+This alert fires when Mimir ingester accepts a sample with timestamp that is too far in the future.
+This is typically a result of processing of corrupted message, and it can cause rejection of other samples (from "now").
+
+How it **works**:
+
+- The metric exported by ingester computes maximum timestamp from all TSDBs open in ingester.
+- Alert checks this exported metric and fires if maximum timestamp is more than 1h in the future.
+
+How to **investigate**
+
+- Find the tenant with bad sample on ingester's tenants list, where a warning is displayed if Head MaxT is too far in the future.
+- Flush tenant's data to blocks storage.
+- Remove tenant's directory on disk and restart ingester.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
