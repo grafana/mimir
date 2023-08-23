@@ -50,7 +50,6 @@ import (
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
@@ -831,12 +830,12 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 
 	// TODO: Remove in Mimir 2.12.
 	// Take the non-default value (false) from IndexHeader DeprecatedConfig
-	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled != tsdb.DefaultIndexHeaderLazyLoadingEnabled {
+	if !t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled {
 		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingEnabled = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled
 	}
 	// TODO: Remove in Mimir 2.12.
 	// Take the non-default value (1h) from IndexHeader DeprecatedConfig
-	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout != tsdb.DefaultIndexHeaderLazyLoadingIdleTimeout {
+	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout != 60*time.Minute {
 		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingIdleTimeout = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout
 	}
 
