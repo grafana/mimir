@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // Config for a Frontend.
@@ -199,6 +200,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		}
 	}
 
+	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -222,9 +224,12 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	retries := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
 enqueueAgain:
+	level.Debug(spanLogger).Log("msg", "enqueuing request")
+
 	var cancelCh chan<- uint64
 	select {
 	case <-ctx.Done():
+		level.Debug(spanLogger).Log("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
 		return nil, ctx.Err()
 
 	case f.requestsCh <- freq:
@@ -236,27 +241,36 @@ enqueueAgain:
 		} else if enqRes.status == failed {
 			retries--
 			if retries > 0 {
+				level.Debug(spanLogger).Log("msg", "enqueuing request failed, will retry")
 				goto enqueueAgain
 			}
 		}
 
+		level.Debug(spanLogger).Log("msg", "enqueuing request failed, retries are exhausted, aborting")
+
 		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
 	}
 
+	level.Debug(spanLogger).Log("msg", "request enqueued successfully, waiting for response")
+
 	select {
 	case <-ctx.Done():
+		level.Debug(spanLogger).Log("msg", "request context cancelled after enqueuing request, aborting", "err", ctx.Err())
+
 		if cancelCh != nil {
 			select {
 			case cancelCh <- freq.queryID:
 				// cancellation sent.
 			default:
 				// failed to cancel, ignore.
-				level.Warn(f.log).Log("msg", "failed to send cancellation request to scheduler, queue full")
+				level.Warn(spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
 			}
 		}
 		return nil, ctx.Err()
 
 	case resp := <-freq.response:
+		level.Debug(spanLogger).Log("msg", "received response")
+
 		if stats.ShouldTrackHTTPGRPCResponse(resp.HttpResponse) {
 			stats := stats.FromContext(ctx)
 			stats.Merge(resp.Stats) // Safe if stats is nil.
