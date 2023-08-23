@@ -570,7 +570,7 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 			return
 		}
 
-		if ok := t.Run("with small index cache", func(t *testing.T) {
+		t.Run("with small index cache", func(t *testing.T) {
 			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 				MaxItemSize: 50,
 				MaxSize:     100,
@@ -578,9 +578,7 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache2)
 			testBucketStore_e2e(t, ctx, s)
-		}); !ok {
-			return
-		}
+		})
 	})
 }
 
