@@ -4,7 +4,7 @@ Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/latest/)
 
 For the full documentation, visit [Grafana mimir-distributed Helm chart documentation](https://grafana.com/docs/helm-charts/mimir-distributed/latest/).
 
-> **Note:** The documentation version is derived from the Helm chart version which is 5.1.0-weekly.251.
+> **Note:** The documentation version is derived from the Helm chart version which is 5.1.0-weekly.252.
 
 When upgrading from Helm chart version 3.x, please see [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/).
 When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-helm-chart-2.1-to-3.0/) as well.
@@ -13,7 +13,7 @@ When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimi
 
 # mimir-distributed
 
-![Version: 5.1.0-weekly.251](https://img.shields.io/badge/Version-5.1.0--weekly.251-informational?style=flat-square) ![AppVersion: r251](https://img.shields.io/badge/AppVersion-r251-informational?style=flat-square)
+![Version: 5.1.0-weekly.252](https://img.shields.io/badge/Version-5.1.0--weekly.252-informational?style=flat-square) ![AppVersion: r252](https://img.shields.io/badge/AppVersion-r252-informational?style=flat-square)
 
 Grafana Mimir
 
