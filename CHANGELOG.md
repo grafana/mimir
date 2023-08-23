@@ -78,7 +78,7 @@
   * `-log.rate-limit-enabled`
   * `-log.rate-limit-logs-per-second`
   * `-log.rate-limit-logs-per-second-burst`
-* [ENHANCEMENT] Added `cortex_ingester_tsdb_head_max_time_seconds` metric which is a max time of all TSDB Heads open in an ingester. #5786
+* [ENHANCEMENT] Added `cortex_ingester_tsdb_head_min_timestamp_seconds` and `cortex_ingester_tsdb_head_max_timestamp_seconds` metrics which return min and max time of all TSDB Heads open in an ingester. #5786 #5815
 * [ENHANCEMENT] Querier: cancel query requests to ingesters in a zone upon first error received from the zone, to reduce wasted effort spent computing results that won't be used #5764
 * [ENHANCEMENT] Improve tracing of internal HTTP requests sent over httpgrpc #5782
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204

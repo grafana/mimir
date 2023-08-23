@@ -331,6 +331,16 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 			Name: "cortex_ingester_oldest_unshipped_block_timestamp_seconds",
 			Help: "Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.",
 		}, i.getOldestUnshippedBlockMetric)
+
+		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_tsdb_head_min_timestamp_seconds",
+			Help: "Minimum timestamp of the head block across all tenants.",
+		}, i.minTsdbHeadTimestamp)
+
+		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_tsdb_head_max_timestamp_seconds",
+			Help: "Maximum timestamp of the head block across all tenants.",
+		}, i.maxTsdbHeadTimestamp)
 	}
 
 	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(logger), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
@@ -2394,6 +2404,38 @@ func (i *Ingester) getOldestUnshippedBlockMetric() float64 {
 	}
 
 	return float64(oldest / 1000)
+}
+
+func (i *Ingester) minTsdbHeadTimestamp() float64 {
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
+
+	minTime := int64(math.MaxInt64)
+	for _, db := range i.tsdbs {
+		minTime = util_math.Min(minTime, db.db.Head().MinTime())
+	}
+
+	if minTime == math.MaxInt64 {
+		return 0
+	}
+	// convert to seconds
+	return float64(minTime) / 1000
+}
+
+func (i *Ingester) maxTsdbHeadTimestamp() float64 {
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
+
+	maxTime := int64(math.MinInt64)
+	for _, db := range i.tsdbs {
+		maxTime = util_math.Max(maxTime, db.db.Head().MaxTime())
+	}
+
+	if maxTime == math.MinInt64 {
+		return 0
+	}
+	// convert to seconds
+	return float64(maxTime) / 1000
 }
 
 func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
