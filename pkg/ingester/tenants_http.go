@@ -72,7 +72,7 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 
 	nowMillis := time.Now().UnixMilli()
 
-	var tenantStats []tenantStats
+	var tss []tenantStats
 	for _, t := range tenants {
 		db := i.getTSDB(t)
 		if db == nil {
@@ -90,12 +90,12 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 			s.Warning = "maxT too far in the future"
 		}
 
-		tenantStats = append(tenantStats, s)
+		tss = append(tss, s)
 	}
 
 	util.RenderHTTPResponse(w, tenantsPageContent{
 		Now:     time.Now(),
-		Tenants: tenantStats,
+		Tenants: tss,
 	}, tenantsTemplate, req)
 }
 
