@@ -92,20 +92,34 @@ func NewMetricFamilyMap(metrics []*dto.MetricFamily) (MetricFamilyMap, error) {
 	return perMetricName, nil
 }
 
+// SumCounters returns sum of counters or 0, if no counter was found.
 func (mfm MetricFamilyMap) SumCounters(name string) float64 {
 	return sum(mfm[name], counterValue)
 }
 
+// SumGauges returns sum of gauges or 0, if no gauge was found.
 func (mfm MetricFamilyMap) SumGauges(name string) float64 {
 	return sum(mfm[name], gaugeValue)
 }
 
+// MaxGauges returns max of gauges or NaN, if no gauge was found.
 func (mfm MetricFamilyMap) MaxGauges(name string) float64 {
-	return max(mfm[name], gaugeValue)
+	return fold(mfm[name], gaugeValueOrNaN, func(val, res float64) float64 {
+		if val > res {
+			return val
+		}
+		return res
+	})
 }
 
+// MinGauges returns minimum of gauges or NaN if no gauge was found.
 func (mfm MetricFamilyMap) MinGauges(name string) float64 {
-	return min(mfm[name], gaugeValue)
+	return fold(mfm[name], gaugeValueOrNaN, func(val, res float64) float64 {
+		if val < res {
+			return val
+		}
+		return res
+	})
 }
 
 func (mfm MetricFamilyMap) SumHistograms(name string) HistogramData {
@@ -236,6 +250,9 @@ func (d MetricFamiliesPerTenant) foldGauges(out chan<- prometheus.Metric, desc *
 	result := math.NaN()
 	for _, tenantEntry := range d {
 		value := valFn(tenantEntry.metrics)
+		if math.IsNaN(value) {
+			continue
+		}
 		if math.IsNaN(result) {
 			result = value
 		} else {
@@ -249,7 +266,6 @@ func (d MetricFamiliesPerTenant) foldGauges(out chan<- prometheus.Metric, desc *
 	}
 
 	out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result)
-
 }
 
 func (d MetricFamiliesPerTenant) SendMinOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
@@ -277,7 +293,9 @@ func (d MetricFamiliesPerTenant) SendMaxOfGaugesPerTenant(out chan<- prometheus.
 		}
 
 		result := tenantEntry.metrics.MaxGauges(gauge)
-		out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result, tenantEntry.tenant)
+		if !math.IsNaN(result) {
+			out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result, tenantEntry.tenant)
+		}
 	}
 }
 
@@ -444,44 +462,20 @@ func sum(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
 	return result
 }
 
-// max returns the maximum value from all metrics from same metric family (= series with the same metric name, but different labels)
-// Supplied function extracts value.
-func max(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
-	return fold(mf, fn, func(val, res float64) float64 {
-		if val > res {
-			return val
-		}
-		return res
-	})
-}
-
-// min returns the minimum value from all metrics from same metric family (= series with the same metric name, but different labels)
-// Supplied function extracts value.
-func min(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
-	return fold(mf, fn, func(val, res float64) float64 {
-		if val < res {
-			return val
-		}
-		return res
-	})
-}
-
-// fold returns value computed from multiple metrics, using folding function. if there are no metrics, it returns 0.
+// fold returns value computed from multiple metrics, using folding function. if there are no metrics, it returns NaN.
 func fold(mf *dto.MetricFamily, fn func(*dto.Metric) float64, foldFn func(val, res float64) float64) float64 {
 	result := math.NaN()
 
 	for _, m := range mf.GetMetric() {
 		value := fn(m)
+		if math.IsNaN(value) {
+			continue
+		}
 		if math.IsNaN(result) {
 			result = value
 		} else {
 			result = foldFn(value, result)
 		}
-	}
-
-	// If there's no metric, we do return 0 which is the gauge default.
-	if math.IsNaN(result) {
-		return 0
 	}
 
 	return result
@@ -490,6 +484,14 @@ func fold(mf *dto.MetricFamily, fn func(*dto.Metric) float64, foldFn func(val, r
 // This works even if m is nil, m.Counter is nil or m.Counter.Value is nil (it returns 0 in those cases)
 func counterValue(m *dto.Metric) float64 { return m.GetCounter().GetValue() }
 func gaugeValue(m *dto.Metric) float64   { return m.GetGauge().GetValue() }
+
+// gaugeValueOrNaN returns Gauge value or math.NaN.
+func gaugeValueOrNaN(m *dto.Metric) float64 {
+	if m == nil || m.Gauge == nil || m.Gauge.Value == nil {
+		return math.NaN()
+	}
+	return *m.Gauge.Value
+}
 
 // SummaryData keeps all data needed to create summary metric
 type SummaryData struct {
