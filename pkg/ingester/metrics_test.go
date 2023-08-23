@@ -235,10 +235,6 @@ func TestTSDBMetrics(t *testing.T) {
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
 			cortex_ingester_tsdb_exemplar_exemplars_in_storage 30
-
-			# HELP cortex_ingester_tsdb_head_max_time_seconds Maximum timestamp of the head block across all tenants.
-			# TYPE cortex_ingester_tsdb_head_max_time_seconds gauge
-			cortex_ingester_tsdb_head_max_time_seconds 85787000
 	`))
 	require.NoError(t, err)
 }
@@ -453,10 +449,6 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user1"} 3
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user2"} 3
-
-			# HELP cortex_ingester_tsdb_head_max_time_seconds Maximum timestamp of the head block across all tenants.
-			# TYPE cortex_ingester_tsdb_head_max_time_seconds gauge
-			cortex_ingester_tsdb_head_max_time_seconds 85787000
 	`))
 	require.NoError(t, err)
 }
@@ -708,12 +700,6 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of appended out-of-order samples.",
 	})
 	outOfOrderSamplesAppendedTotal.Add(3)
-
-	maxTime := promauto.With(r).NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_head_max_time_seconds",
-		Help: "Maximum timestamp of the head block.",
-	})
-	maxTime.Set(1000 * base)
 
 	return r
 }
