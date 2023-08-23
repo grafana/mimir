@@ -67,9 +67,8 @@ type ReaderPool struct {
 // LazyLoadedHeadersSnapshotConfig stores information needed to track lazy loaded index headers.
 type LazyLoadedHeadersSnapshotConfig struct {
 	// Path stores where lazy loaded blocks will be tracked in a single file per tenant
-	Path                string
-	UserID              string
-	EagerLoadingEnabled bool
+	Path   string
+	UserID string
 }
 
 type lazyLoadedHeadersSnapshot struct {
@@ -95,9 +94,9 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 }
 
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
-func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
+func NewReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
 	var snapshot *lazyLoadedHeadersSnapshot
-	if lazyReaderEnabled && lazyLoadedSnapshotConfig.EagerLoadingEnabled {
+	if indexHeaderConfig.LazyLoadingEnabled && indexHeaderConfig.EagerLoadingStartupEnabled {
 		lazyLoadedSnapshotFileName := filepath.Join(lazyLoadedSnapshotConfig.Path, lazyLoadedHeadersListFileName)
 		var err error
 		snapshot, err = loadLazyLoadedHeadersSnapshot(lazyLoadedSnapshotFileName)
@@ -112,7 +111,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 		}
 	}
 
-	p := newReaderPool(logger, lazyReaderEnabled, lazyReaderIdleTimeout, sparsePersistenceEnabled, lazyLoadingGate, metrics, snapshot)
+	p := newReaderPool(logger, indexHeaderConfig, lazyLoadingGate, metrics, snapshot)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -124,7 +123,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 
 			var lazyLoadC <-chan time.Time
 
-			if lazyLoadedSnapshotConfig.EagerLoadingEnabled {
+			if indexHeaderConfig.EagerLoadingStartupEnabled {
 				tickerLazyLoadPersist := time.NewTicker(time.Minute)
 				defer tickerLazyLoadPersist.Stop()
 
@@ -156,13 +155,13 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTimeout time.Duration, sparsePersistenceEnabled bool, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
+func newReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedHeadersSnapshot *lazyLoadedHeadersSnapshot) *ReaderPool {
 	return &ReaderPool{
 		logger:                   logger,
 		metrics:                  metrics,
-		lazyReaderEnabled:        lazyReaderEnabled,
-		lazyReaderIdleTimeout:    lazyReaderIdleTimeout,
-		sparsePersistenceEnabled: sparsePersistenceEnabled,
+		lazyReaderEnabled:        indexHeaderConfig.LazyLoadingEnabled,
+		lazyReaderIdleTimeout:    indexHeaderConfig.LazyLoadingIdleTimeout,
+		sparsePersistenceEnabled: indexHeaderConfig.SparsePersistenceEnabled,
 		lazyReaders:              make(map[*LazyBinaryReader]struct{}),
 		close:                    make(chan struct{}),
 		preShutdownLoadedBlocks:  lazyLoadedHeadersSnapshot,

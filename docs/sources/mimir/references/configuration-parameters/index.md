@@ -3420,27 +3420,16 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.series-hash-cache-max-size-bytes
   [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
 
-  # (advanced) If enabled, store-gateway will lazy load an index-header only
+  # (deprecated) If enabled, store-gateway will lazy load an index-header only
   # once required by a query.
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-enabled
   [index_header_lazy_loading_enabled: <boolean> | default = true]
 
-  # (advanced) If index-header lazy loading is enabled and this setting is > 0,
-  # the store-gateway will offload unused index-headers after 'idle timeout'
+  # (deprecated) If index-header lazy loading is enabled and this setting is >
+  # 0, the store-gateway will offload unused index-headers after 'idle timeout'
   # inactivity.
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout
   [index_header_lazy_loading_idle_timeout: <duration> | default = 1h]
-
-  # (experimental) Maximum number of concurrent index header loads across all
-  # tenants. If set to 0, concurrency is unlimited.
-  # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-concurrency
-  [index_header_lazy_loading_concurrency: <int> | default = 0]
-
-  # (experimental) If enabled, store-gateway will persist a sparse version of
-  # the index-header to disk on construction and load sparse index-headers from
-  # disk instead of the whole index-header.
-  # CLI flag: -blocks-storage.bucket-store.index-header-sparse-persistence-enabled
-  [index_header_sparse_persistence_enabled: <boolean> | default = false]
 
   # (advanced) Max size - in bytes - of a gap for which the partitioner
   # aggregates together two bucket GET object requests.
@@ -3463,6 +3452,28 @@ bucket_store:
     # is not valid to enable this if index-header lazy loading is disabled.
     # CLI flag: -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
     [eager_loading_startup_enabled: <boolean> | default = false]
+
+    # (advanced) If enabled, store-gateway will lazy load an index-header only
+    # once required by a query.
+    # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-enabled
+    [lazy_loading_enabled: <boolean> | default = true]
+
+    # (advanced) If index-header lazy loading is enabled and this setting is >
+    # 0, the store-gateway will offload unused index-headers after 'idle
+    # timeout' inactivity.
+    # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout
+    [lazy_loading_idle_timeout: <duration> | default = 1h]
+
+    # (experimental) Maximum number of concurrent index header loads across all
+    # tenants. If set to 0, concurrency is unlimited.
+    # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency
+    [lazy_loading_concurrency: <int> | default = 0]
+
+    # (experimental) If enabled, store-gateway will persist a sparse version of
+    # the index-header to disk on construction and load sparse index-headers
+    # from disk instead of the whole index-header.
+    # CLI flag: -blocks-storage.bucket-store.index-header.sparse-persistence-enabled
+    [sparse_persistence_enabled: <boolean> | default = false]
 
     # (advanced) If true, verify the checksum of index headers upon loading them
     # (either on startup or lazily when lazy loading is enabled). Setting to

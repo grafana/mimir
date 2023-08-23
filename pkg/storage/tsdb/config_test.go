@@ -128,12 +128,6 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errInvalidStreamingBatchSize,
 		},
-		"should fail on invalid index-header lazy loading max concurrency": {
-			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
-				cfg.BucketStore.IndexHeaderLazyLoadingConcurrency = -1
-			},
-			expectedErr: errInvalidIndexHeaderLazyLoadingConcurrency,
-		},
 		"should fail if forced compaction is enabled but active series tracker is not": {
 			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
 				cfg.TSDB.EarlyHeadCompactionMinInMemorySeries = 1_000_000

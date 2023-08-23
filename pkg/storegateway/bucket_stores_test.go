@@ -403,8 +403,8 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
-	cfg.BucketStore.IndexHeaderLazyLoadingEnabled = lazyLoadingEnabled
-	cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout = time.Minute
+	cfg.BucketStore.IndexHeader.LazyLoadingEnabled = lazyLoadingEnabled
+	cfg.BucketStore.IndexHeader.LazyLoadingIdleTimeout = time.Minute
 
 	storageDir := t.TempDir()
 
