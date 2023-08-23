@@ -829,8 +829,8 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	// TODO: Remove in Mimir 2.12.
-	// Take value from Indexheader DeprecatedConfig if it is set
-	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled {
+	// Take non default value (index_header_lazy_loading_enabled=false) from Indexheader DeprecatedConfig
+	if !t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled {
 		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingEnabled = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled
 	}
 	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout > 0 {
