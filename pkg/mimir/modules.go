@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -829,13 +830,11 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	// TODO: Remove in Mimir 2.12.
-	// Take the non-default value (default value is false) from IndexHeader deprecated config and if it is set, set it to the new config
-	if !t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled {
+	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled != indexheader.DefaultIndexHeaderLazyLoadingEnabled {
 		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingEnabled = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled
 	}
 	// TODO: Remove in Mimir 2.12.
-	// Take the non-default value (default value is 1h) from IndexHeader deprecated config and if it is set, set it to the new config
-	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout != 60*time.Minute {
+	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout != indexheader.DefaultIndexHeaderLazyLoadingIdleTimeout {
 		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingIdleTimeout = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout
 	}
 

@@ -16,6 +16,11 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
+const (
+	DefaultIndexHeaderLazyLoadingEnabled     = true
+	DefaultIndexHeaderLazyLoadingIdleTimeout = 60 * time.Minute
+)
+
 // NotFoundRangeErr is an error returned by PostingsOffset when there is no posting for given name and value pairs.
 var NotFoundRangeErr = errors.New("range not found") //nolint:revive
 
@@ -74,8 +79,8 @@ type Config struct {
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.UintVar(&cfg.MaxIdleFileHandles, prefix+"max-idle-file-handles", 1, "Maximum number of idle file handles the store-gateway keeps open for each index-header file.")
-	f.BoolVar(&cfg.LazyLoadingEnabled, prefix+"lazy-loading-enabled", true, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
-	f.DurationVar(&cfg.LazyLoadingIdleTimeout, prefix+"lazy-loading-idle-timeout", 60*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
+	f.BoolVar(&cfg.LazyLoadingEnabled, prefix+"lazy-loading-enabled", DefaultIndexHeaderLazyLoadingEnabled, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
+	f.DurationVar(&cfg.LazyLoadingIdleTimeout, prefix+"lazy-loading-idle-timeout", DefaultIndexHeaderLazyLoadingIdleTimeout, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.IntVar(&cfg.LazyLoadingConcurrency, prefix+"lazy-loading-concurrency", 0, "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.")
 	f.BoolVar(&cfg.EagerLoadingStartupEnabled, prefix+"eager-loading-startup-enabled", false, "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.")
 	f.BoolVar(&cfg.SparsePersistenceEnabled, prefix+"sparse-persistence-enabled", false, "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.")
