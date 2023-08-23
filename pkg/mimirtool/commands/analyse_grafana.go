@@ -74,7 +74,7 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string) (*anal
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
 
-	boardLinks, err := c.SearchDashboards(ctx, "", false)
+	boardLinks, err := getAllDashboards(ctx, c)
 	if err != nil {
 		return nil, err
 	}
@@ -106,6 +106,24 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string) (*anal
 	output.MetricsUsed = metricsUsed
 
 	return output, nil
+}
+
+func getAllDashboards(ctx context.Context, c *sdk.Client) ([]sdk.FoundBoard, error) {
+	var currentPage uint = 1
+	var results []sdk.FoundBoard
+	for {
+		nextPageResults, err := c.Search(ctx, sdk.SearchType(sdk.SearchTypeDashboard), sdk.SearchPage(currentPage))
+		if err != nil {
+			return nil, err
+		}
+		// no more pages, we got everything
+		if len(nextPageResults) == 0 {
+			return results, nil
+		}
+		// we found more results, let's keep going
+		results = append(results, nextPageResults...)
+		currentPage += 1
+	}
 }
 
 func unmarshalDashboard(data []byte, link sdk.FoundBoard) (minisdk.Board, error) {
