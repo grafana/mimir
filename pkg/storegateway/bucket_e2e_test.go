@@ -36,7 +36,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -477,17 +476,6 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "chunks"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "chunks"))
 	}
-}
-
-func getMetricsMatchingLabels(mf *dto.MetricFamily, selectors []labels.Label) []*dto.Metric {
-	var result []*dto.Metric
-	for _, m := range mf.GetMetric() {
-		if !util.MatchesSelectors(m, selectors) {
-			continue
-		}
-		result = append(result, m)
-	}
-	return result
 }
 
 func TestBucketStore_e2e(t *testing.T) {
@@ -1020,23 +1008,11 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 	})
 }
 
-func toLabels(t *testing.T, labelValuePairs []string) (result []labels.Label) {
-	t.Helper()
-
-	if len(labelValuePairs)%2 != 0 {
-		t.Fatalf("invalid label name-value pairs %s", strings.Join(labelValuePairs, ""))
-	}
-	for i := 0; i < len(labelValuePairs); i += 2 {
-		result = append(result, labels.Label{Name: labelValuePairs[i], Value: labelValuePairs[i+1]})
-	}
-	return
-}
-
 func numObservationsForSummaries(t *testing.T, summaryName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) uint64 {
 	t.Helper()
 
 	summaryData := &dskit_metrics.SummaryData{}
-	for _, metric := range getMetricsMatchingLabels(metrics[summaryName], toLabels(t, labelValuePairs)) {
+	for _, metric := range dskit_metrics.FindMetricsInFamilyMatchingLabels(metrics[summaryName], labelValuePairs...) {
 		summaryData.AddSummary(metric.GetSummary())
 	}
 	m := &dto.Metric{}
@@ -1048,7 +1024,7 @@ func numObservationsForHistogram(t *testing.T, histogramName string, metrics dsk
 	t.Helper()
 
 	histogramData := &dskit_metrics.HistogramData{}
-	for _, metric := range getMetricsMatchingLabels(metrics[histogramName], toLabels(t, labelValuePairs)) {
+	for _, metric := range dskit_metrics.FindMetricsInFamilyMatchingLabels(metrics[histogramName], labelValuePairs...) {
 		histogramData.AddHistogram(metric.GetHistogram())
 	}
 	m := &dto.Metric{}
