@@ -19,10 +19,10 @@ import (
 
 type tenantsPageContent struct {
 	Now     time.Time
-	Tenants []tenantsStats
+	Tenants []tenantStats
 }
 
-type tenantsStats struct {
+type tenantStats struct {
 	Tenant  string
 	Blocks  int
 	MinTime string
@@ -72,14 +72,14 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 
 	nowMillis := time.Now().UnixMilli()
 
-	var tenantStats []tenantsStats
+	var tenantStats []tenantStats
 	for _, t := range tenants {
 		db := i.getTSDB(t)
 		if db == nil {
 			continue
 		}
 
-		s := tenantsStats{}
+		s := tenantStats{}
 		s.Tenant = t
 		s.Blocks = len(db.Blocks())
 		s.MinTime = formatMillisTime(db.Head().MinTime())
