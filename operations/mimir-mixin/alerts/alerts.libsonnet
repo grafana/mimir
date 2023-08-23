@@ -294,7 +294,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           // Alert if a ruler instance has no rule groups assigned while other instances in the same cell do.
           alert: $.alertName('IngestedDataTooFarInTheFuture'),
-          'for': '15m',
+          'for': '5m',
           expr: |||
             max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
                 cortex_ingester_tsdb_head_max_timestamp_seconds - time()
