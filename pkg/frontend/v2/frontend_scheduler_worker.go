@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/servicediscovery"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -361,6 +362,10 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
 func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *frontendRequest) error {
+	spanLogger, _ := spanlogger.NewWithLogger(req.ctx, w.log, "frontendSchedulerWorker.enqueueRequest")
+	spanLogger.Span.SetTag("scheduler_address", w.conn.Target())
+	defer spanLogger.Span.Finish()
+
 	err := loop.Send(&schedulerpb.FrontendToScheduler{
 		Type:            schedulerpb.ENQUEUE,
 		QueryID:         req.queryID,
@@ -372,12 +377,14 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	w.enqueuedRequests.Inc()
 
 	if err != nil {
+		level.Warn(spanLogger).Log("msg", "received error while enqueuing request", "err", err)
 		req.enqueue <- enqueueResult{status: failed}
 		return err
 	}
 
 	resp, err := loop.Recv()
 	if err != nil {
+		level.Warn(spanLogger).Log("msg", "received error while receiving response", "err", err)
 		req.enqueue <- enqueueResult{status: failed}
 		return err
 	}
@@ -389,19 +396,22 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 
 	case schedulerpb.SHUTTING_DOWN:
 		// Scheduler is shutting down, report failure to enqueue and stop this loop.
+		level.Warn(spanLogger).Log("msg", "scheduler reported that it is shutting down")
 		req.enqueue <- enqueueResult{status: failed}
 		return errors.New("scheduler is shutting down")
 
 	case schedulerpb.ERROR:
+		level.Warn(spanLogger).Log("msg", "scheduler returned error", "err", resp.Error)
 		req.enqueue <- enqueueResult{status: waitForResponse}
 		req.response <- &frontendv2pb.QueryResultRequest{
 			HttpResponse: &httpgrpc.HTTPResponse{
 				Code: http.StatusInternalServerError,
-				Body: []byte(err.Error()),
+				Body: []byte(resp.Error),
 			},
 		}
 
 	case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
+		level.Warn(spanLogger).Log("msg", "scheduler reported it has too many outstanding requests")
 		req.enqueue <- enqueueResult{status: waitForResponse}
 		req.response <- &frontendv2pb.QueryResultRequest{
 			HttpResponse: &httpgrpc.HTTPResponse{
@@ -411,7 +421,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 		}
 
 	default:
-		level.Error(w.log).Log("msg", "unknown response status from the scheduler", "resp", resp, "queryID", req.queryID)
+		level.Error(spanLogger).Log("msg", "unknown response status from the scheduler", "resp", resp, "queryID", req.queryID)
 		req.enqueue <- enqueueResult{status: failed}
 	}
 

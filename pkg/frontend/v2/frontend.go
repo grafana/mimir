@@ -98,6 +98,7 @@ type frontendRequest struct {
 	userID       string
 	statsEnabled bool
 
+	ctx    context.Context
 	cancel context.CancelFunc
 
 	enqueue  chan enqueueResult
@@ -210,6 +211,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		userID:       userID,
 		statsEnabled: stats.IsEnabled(ctx),
 
+		ctx:    ctx,
 		cancel: cancel,
 
 		// Buffer of 1 to ensure response or error can be written to the channel
