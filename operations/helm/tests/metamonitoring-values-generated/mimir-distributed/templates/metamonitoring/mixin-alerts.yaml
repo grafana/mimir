@@ -201,6 +201,20 @@ spec:
       for: 1h
       labels:
         severity: warning
+    - alert: MimirIngestedDataTooFarInTheFuture
+      annotations:
+        message: Mimir ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+          }} has ingested samples with timestamps more than 1h in the future.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesteddatatoofarinthefuture
+      expr: |
+        max by(cluster, namespace, pod) (
+            cortex_ingester_tsdb_head_max_timestamp_seconds - time()
+            and
+            cortex_ingester_tsdb_head_max_timestamp_seconds > 0
+        ) > 60*60
+      for: 5m
+      labels:
+        severity: warning
     - alert: MimirRingMembersMismatch
       annotations:
         message: |

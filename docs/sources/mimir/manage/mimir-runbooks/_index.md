@@ -1181,7 +1181,7 @@ How to **investigate**:
 ### MimirIngestedDataTooFarInTheFuture
 
 This alert fires when Mimir ingester accepts a sample with timestamp that is too far in the future.
-This is typically a result of processing of corrupted message, and it can cause rejection of other samples (from "now").
+This is typically a result of processing of corrupted message, and it can cause rejection of other samples with timestamp close to "now" (real-world time).
 
 How it **works**:
 
