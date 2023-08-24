@@ -1190,7 +1190,7 @@ How it **works**:
 
 How to **investigate**
 
-- Find the tenant with bad sample on ingester's tenants list, where a warning "maximum time too far in the future" is displayed.
+- Find the tenant with bad sample on ingester's tenants list, where a warning "TSDB Head max timestamp too far in the future" is displayed.
 - Flush tenant's data to blocks storage.
 - Remove tenant's directory on disk and restart ingester.
 
