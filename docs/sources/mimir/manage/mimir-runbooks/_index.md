@@ -1190,7 +1190,7 @@ How it **works**:
 
 How to **investigate**
 
-- Find the tenant with bad sample on ingester's tenants list, where a warning is displayed if Head MaxT is too far in the future.
+- Find the tenant with bad sample on ingester's tenants list, where a warning "maxT too far in the future" is displayed.
 - Flush tenant's data to blocks storage.
 - Remove tenant's directory on disk and restart ingester.
 
