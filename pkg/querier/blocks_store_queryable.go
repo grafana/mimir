@@ -739,6 +739,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		blockIDs := blockIDs
 
 		g.Go(func() error {
+			log, reqCtx := spanlogger.NewWithLogger(reqCtx, spanLog, "blocksStoreQuerier.fetchSeriesFromStores")
+			defer log.Span.Finish()
+			log.Span.SetTag("store_gateway_address", c.RemoteAddress())
+
 			// See: https://github.com/prometheus/prometheus/pull/8050
 			// TODO(goutham): we should ideally be passing the hints down to the storage layer
 			// and let the TSDB return us data with no chunks as in prometheus#8050.
@@ -762,7 +766,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					return err
 				}
 
-				level.Warn(spanLog).Log("msg", "failed to fetch series", "remote", c.RemoteAddress(), "err", err)
+				level.Warn(log).Log("msg", "failed to fetch series", "remote", c.RemoteAddress(), "err", err)
 				return nil
 			}
 
@@ -789,7 +793,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 						return err
 					}
 
-					level.Warn(spanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
+					level.Warn(log).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
 					return nil
 				}
 
@@ -861,7 +865,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				reqStats.AddFetchedChunkBytes(uint64(chunkBytes))
 				reqStats.AddFetchedChunks(uint64(chunksFetched))
 
-				level.Debug(spanLog).Log("msg", "received series from store-gateway",
+				level.Debug(log).Log("msg", "received series from store-gateway",
 					"instance", c.RemoteAddress(),
 					"fetched series", len(mySeries),
 					"fetched chunk bytes", chunkBytes,
@@ -873,7 +877,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
 				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
 				streamReader = newStoreGatewayStreamReader(stream, len(myStreamingSeries), queryLimiter, reqStats, q.logger)
-				level.Debug(spanLog).Log("msg", "received streaming series from store-gateway",
+				level.Debug(log).Log("msg", "received streaming series from store-gateway",
 					"instance", c.RemoteAddress(),
 					"fetched series", len(myStreamingSeries),
 					"fetched index bytes", indexBytesFetched,
