@@ -93,7 +93,7 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 }
 
 func TestWriteRequestBufferingClient_PushWithCancelContext(t *testing.T) {
-	serv, conn := setupGrpc(t)
+	_, conn := setupGrpc(t)
 
 	bufferingClient := IngesterClient(newBufferPoolingIngesterClient(NewIngesterClient(conn), conn))
 
@@ -101,8 +101,6 @@ func TestWriteRequestBufferingClient_PushWithCancelContext(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		requestsToSend = append(requestsToSend, createRequest("test", 100+10*i))
 	}
-
-	serv.clearRequests()
 
 	pool := &pool2.TrackedPool{Parent: &sync.Pool{}}
 	slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 512*1024)
