@@ -10,4 +10,5 @@ The following directories and their subdirectories are under the original upstre
 
 ```
 vendor/
+operations/
 ```

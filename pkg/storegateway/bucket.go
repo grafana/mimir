@@ -267,12 +267,11 @@ func NewBucketStore(
 	}
 
 	lazyLoadedSnapshotConfig := indexheader.LazyLoadedHeadersSnapshotConfig{
-		Path:                dir,
-		UserID:              userID,
-		EagerLoadingEnabled: bucketStoreConfig.IndexHeader.IndexHeaderEagerLoadingStartupEnabled,
+		Path:   dir,
+		UserID: userID,
 	}
 	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeaderLazyLoadingEnabled, bucketStoreConfig.IndexHeaderLazyLoadingIdleTimeout, bucketStoreConfig.IndexHeaderSparsePersistenceEnabled, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedSnapshotConfig)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedSnapshotConfig)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")

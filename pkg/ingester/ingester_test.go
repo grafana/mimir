@@ -91,6 +91,8 @@ func TestIngester_Push(t *testing.T) {
 		"cortex_ingester_active_series",
 		"cortex_ingester_active_native_histogram_series",
 		"cortex_ingester_active_native_histogram_buckets",
+		"cortex_ingester_tsdb_head_min_timestamp_seconds",
+		"cortex_ingester_tsdb_head_max_timestamp_seconds",
 	}
 	userID := "test"
 	now := time.Now()
@@ -177,6 +179,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.009
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
 		},
 		"should succeed on valid series with histograms and metadata": {
@@ -248,6 +256,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
 				# TYPE cortex_ingester_active_native_histogram_buckets gauge
 				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.001
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.002
 			`,
 			nativeHistograms: true,
 		},
@@ -342,6 +356,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
 				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
 				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
+
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
 		},
 		"successful push, active series disabled": {
@@ -383,6 +405,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
 				# TYPE cortex_ingester_memory_series_removed_total counter
 				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.009
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
 		},
 		"should soft fail on sample out-of-order": {
@@ -431,6 +459,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
 		},
 		"should soft fail on all samples out of bound in a write request": {
@@ -483,6 +517,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 1575043.969
 			`,
 		},
 		"should soft fail on all samples with histograms out of bound in a write request": {
@@ -536,6 +576,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 1575043.969
 			`,
 			nativeHistograms: true,
 		},
@@ -587,6 +633,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 1575044.969
 			`,
 			nativeHistograms: false,
 		},
@@ -643,6 +695,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 1575043.970
 			`,
 		},
 		"should soft fail on some samples with timestamp too far in future in a write request": {
@@ -699,6 +757,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli()+1)/1000) + `
 			`,
 		},
 		"should soft fail on some histograms with timestamp too far in future in a write request": {
@@ -754,6 +818,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
 				# TYPE cortex_ingester_active_native_histogram_series gauge
 				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
 			`,
 		},
 		"should soft fail on some exemplars with timestamp too far in future in a write request": {
@@ -824,6 +894,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 1
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
 			`,
 		},
 		"should soft fail on two different sample values at the same timestamp": {
@@ -872,6 +948,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 1575043.969
 			`,
 		},
 		"should soft fail on exemplar with unknown series": {
@@ -945,6 +1027,14 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
 				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
 				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
+
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0
+
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0
 			`,
 		},
 		"should succeed with a request containing only metadata": {
@@ -976,6 +1066,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_active_appenders Number of currently active TSDB appender transactions.
 				# TYPE cortex_ingester_tsdb_head_active_appenders gauge
 				cortex_ingester_tsdb_head_active_appenders 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0
 			`,
 		},
 		"should discard metadata when max metadata per user exceeded": {
@@ -1024,6 +1120,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0
 			`,
 		},
 		"should discard metadata when max metadata per metric exceeded": {
@@ -1072,6 +1174,12 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0
 			`,
 		},
 	}
@@ -1208,6 +1316,8 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 		"cortex_ingester_active_series",
 		"cortex_ingester_active_native_histogram_series",
 		"cortex_ingester_active_native_histogram_buckets",
+		"cortex_ingester_tsdb_head_min_timestamp_seconds",
+		"cortex_ingester_tsdb_head_max_timestamp_seconds",
 	}
 
 	registry := prometheus.NewRegistry()
@@ -1226,18 +1336,18 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 	})
 
 	// Push timeseries for each user
-	for _, userID := range []string{"test-1", "test-2"} {
+	for ix, userID := range []string{"test-1", "test-2"} {
 		reqs := []*mimirpb.WriteRequest{
 			mimirpb.ToWriteRequest(
 				metricLabelAdapters,
-				[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+				[]mimirpb.Sample{{Value: 1, TimestampMs: int64(ix)*1000 + 9}},
 				nil,
 				nil,
 				mimirpb.API,
 			),
 			mimirpb.ToWriteRequest(
 				metricLabelAdapters,
-				[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+				[]mimirpb.Sample{{Value: 2, TimestampMs: int64(ix)*1000 + 10}},
 				nil,
 				nil,
 				mimirpb.API,
@@ -1294,6 +1404,12 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 		# TYPE cortex_ingester_active_native_histogram_buckets gauge
 		cortex_ingester_active_native_histogram_buckets{user="test-1"} 8
 		cortex_ingester_active_native_histogram_buckets{user="test-2"} 8
+		# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+		# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+		cortex_ingester_tsdb_head_min_timestamp_seconds 0.007
+		# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+		# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+		cortex_ingester_tsdb_head_max_timestamp_seconds 1.01
 	`
 
 	assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
@@ -2884,7 +3000,7 @@ func TestIngester_QueryStream(t *testing.T) {
 	}()
 
 	// Query back the series using GRPC streaming.
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil))
+	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -3151,7 +3267,7 @@ func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
 	}()
 
 	// Query back the series using GRPC streaming.
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil))
+	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -3238,7 +3354,7 @@ func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg
 	}()
 
 	// Query back the series using GRPC streaming.
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil))
+	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck
 
@@ -3427,7 +3543,7 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 		require.NoError(t, serv.Serve(listener))
 	}()
 
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil))
+	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck
 
@@ -5642,7 +5758,6 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-
 			expectedErr: errMaxInMemorySeriesReached,
 		},
 

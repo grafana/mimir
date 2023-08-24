@@ -102,6 +102,11 @@ The following features are currently experimental:
     - `ingester.ring.token-generation-strategy`
     - `ingester.ring.spread-minimizing-zones`
     - `ingester.ring.spread-minimizing-join-ring-in-order`
+- Ingester client
+  - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
+    - `-ingester.client.circuit-breaker.enabled`
+    - `-ingester.client.circuit-breaker.failure-threshold`
+    - `-ingester.client.circuit-breaker.cooldown-period`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`, `-querier.streaming-chunks-per-ingester-buffer-size`)

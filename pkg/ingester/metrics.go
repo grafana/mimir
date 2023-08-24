@@ -429,7 +429,6 @@ type tsdbMetrics struct {
 	tsdbMmapChunkCorruptionTotal      *prometheus.Desc
 	tsdbMmapChunkQueueOperationsTotal *prometheus.Desc
 	tsdbOOOHistogram                  *prometheus.Desc
-	tsdbMaxTime                       *prometheus.Desc
 
 	tsdbExemplarsTotal          *prometheus.Desc
 	tsdbExemplarsInStorage      *prometheus.Desc
@@ -547,10 +546,6 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			"cortex_ingester_tsdb_sample_out_of_order_delta_seconds",
 			"Delta in seconds by which a sample is considered out-of-order.",
 			nil, nil),
-		tsdbMaxTime: prometheus.NewDesc(
-			"cortex_ingester_tsdb_head_max_time_seconds",
-			"Maximum timestamp of the head block across all tenants.",
-			nil, nil),
 		tsdbLoadedBlocks: prometheus.NewDesc(
 			"cortex_ingester_tsdb_blocks_loaded",
 			"Number of currently loaded data blocks",
@@ -665,7 +660,6 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.tsdbMmapChunkCorruptionTotal
 	out <- sm.tsdbMmapChunkQueueOperationsTotal
 	out <- sm.tsdbOOOHistogram
-	out <- sm.tsdbMaxTime
 	out <- sm.tsdbLoadedBlocks
 	out <- sm.tsdbSymbolTableSize
 	out <- sm.tsdbReloads
@@ -714,7 +708,6 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, sm.tsdbMmapChunkCorruptionTotal, "prometheus_tsdb_mmap_chunk_corruptions_total")
 	data.SendSumOfCountersWithLabels(out, sm.tsdbMmapChunkQueueOperationsTotal, "prometheus_tsdb_chunk_write_queue_operations_total", "operation")
 	data.SendSumOfHistograms(out, sm.tsdbOOOHistogram, "prometheus_tsdb_sample_ooo_delta")
-	data.SendMaxOfGauges(out, sm.tsdbMaxTime, "prometheus_tsdb_head_max_time_seconds")
 	data.SendSumOfGauges(out, sm.tsdbLoadedBlocks, "prometheus_tsdb_blocks_loaded")
 	data.SendSumOfGaugesPerTenant(out, sm.tsdbSymbolTableSize, "prometheus_tsdb_symbol_table_size_bytes")
 	data.SendSumOfCounters(out, sm.tsdbReloads, "prometheus_tsdb_reloads_total")

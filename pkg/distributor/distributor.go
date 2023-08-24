@@ -228,7 +228,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(addr, clientConfig, clientMetrics)
+			return ingester_client.MakeIngesterClient(addr, clientConfig, clientMetrics, log)
 		}
 	}
 
