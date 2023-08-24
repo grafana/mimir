@@ -104,9 +104,8 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			snapshotConfig := LazyLoadedHeadersSnapshotConfig{
-				Path:                tmpDir,
-				UserID:              "anonymous",
-				EagerLoadingEnabled: testData.eagerLoadReaderEnabled,
+				Path:   tmpDir,
+				UserID: "anonymous",
 			}
 			if testData.createLazyLoadedHeadersSnapshotFn != nil {
 				lazyLoadedSnapshot := testData.createLazyLoadedHeadersSnapshotFn(blockID)
@@ -115,10 +114,16 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			}
 
 			metrics := NewReaderPoolMetrics(nil)
-			pool := NewReaderPool(log.NewNopLogger(), testData.lazyReaderEnabled, testData.lazyReaderIdleTimeout, true, gate.NewNoop(), metrics, snapshotConfig)
+			indexHeaderConfig := Config{
+				LazyLoadingEnabled:         testData.lazyReaderEnabled,
+				LazyLoadingIdleTimeout:     testData.lazyReaderIdleTimeout,
+				SparsePersistenceEnabled:   true,
+				EagerLoadingStartupEnabled: testData.eagerLoadReaderEnabled,
+			}
+			pool := NewReaderPool(log.NewNopLogger(), indexHeaderConfig, gate.NewNoop(), metrics, snapshotConfig)
 			defer pool.Close()
 
-			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{IndexHeaderEagerLoadingStartupEnabled: testData.eagerLoadReaderEnabled}, testData.initialSync)
+			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, indexHeaderConfig, testData.initialSync)
 			require.NoError(t, err)
 			defer func() { require.NoError(t, r.Close()) }()
 
@@ -142,7 +147,12 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
-	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, true, gate.NewNoop(), metrics, nil)
+	pool := newReaderPool(log.NewNopLogger(), Config{
+		LazyLoadingEnabled:         true,
+		LazyLoadingIdleTimeout:     idleTimeout,
+		EagerLoadingStartupEnabled: false,
+		SparsePersistenceEnabled:   true,
+	}, gate.NewNoop(), metrics, nil)
 	defer pool.Close()
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{}, false)
@@ -204,7 +214,12 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
-	pool := newReaderPool(log.NewNopLogger(), true, idleTimeout, false, gate.NewNoop(), metrics, nil)
+	pool := newReaderPool(log.NewNopLogger(), Config{
+		LazyLoadingEnabled:         true,
+		LazyLoadingIdleTimeout:     idleTimeout,
+		EagerLoadingStartupEnabled: true,
+		SparsePersistenceEnabled:   false,
+	}, gate.NewNoop(), metrics, nil)
 	defer pool.Close()
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{}, false)

@@ -251,6 +251,8 @@ type Ingester interface {
 	PrepareShutdownHandler(http.ResponseWriter, *http.Request)
 	PushWithCleanup(context.Context, *push.Request) (*mimirpb.WriteResponse, error)
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
+	TenantsHandler(http.ResponseWriter, *http.Request)
+	TenantTSDBHandler(http.ResponseWriter, *http.Request)
 }
 
 // RegisterIngester registers the ingester HTTP and gRPC services.
@@ -267,6 +269,13 @@ func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, i.PushWithCleanup), true, false, "POST") // For testing and debugging.
 	a.RegisterRoute("/ingester/tsdb_metrics", http.HandlerFunc(i.UserRegistryHandler), true, true, "GET")
+
+	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
+		{Dangerous: true, Desc: "Ingester Tenants", Path: "/ingester/tenants"},
+	})
+
+	a.RegisterRoute("/ingester/tenants", http.HandlerFunc(i.TenantsHandler), false, true, "GET")
+	a.RegisterRoute("/ingester/tsdb/{tenant}", http.HandlerFunc(i.TenantTSDBHandler), false, true, "GET")
 }
 
 // RegisterRuler registers routes associated with the Ruler service.
