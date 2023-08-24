@@ -19,7 +19,16 @@ import (
 
 type tenantsPageContent struct {
 	Now     time.Time
-	Tenants []string
+	Tenants []tenantStats
+}
+
+type tenantStats struct {
+	Tenant  string
+	Blocks  int
+	MinTime string
+	MaxTime string
+
+	Warning string
 }
 
 //go:embed tenants.gohtml
@@ -61,9 +70,32 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 	tenants := i.getTSDBUsers()
 	slices.Sort(tenants)
 
+	nowMillis := time.Now().UnixMilli()
+
+	var tss []tenantStats
+	for _, t := range tenants {
+		db := i.getTSDB(t)
+		if db == nil {
+			continue
+		}
+
+		s := tenantStats{}
+		s.Tenant = t
+		s.Blocks = len(db.Blocks())
+		s.MinTime = formatMillisTime(db.Head().MinTime())
+		maxMillis := db.Head().MaxTime()
+		s.MaxTime = formatMillisTime(maxMillis)
+
+		if maxMillis-nowMillis > i.limits.CreationGracePeriod(t).Milliseconds() {
+			s.Warning = "maxT too far in the future"
+		}
+
+		tss = append(tss, s)
+	}
+
 	util.RenderHTTPResponse(w, tenantsPageContent{
 		Now:     time.Now(),
-		Tenants: tenants,
+		Tenants: tss,
 	}, tenantsTemplate, req)
 }
 

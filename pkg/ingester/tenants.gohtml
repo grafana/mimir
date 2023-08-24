@@ -1,4 +1,4 @@
-{{- /*gotype: github.com/grafana/mimir/pkg/ingester.usersPageContent */ -}}
+{{- /*gotype: github.com/grafana/mimir/pkg/ingester.tenantsPageContent */ -}}
 <!DOCTYPE html>
 <html>
 <head>
@@ -12,12 +12,20 @@
     <thead>
     <tr>
         <th>Tenant</th>
+        <th>Blocks</th>
+        <th>Head MinT</th>
+        <th>Head MaxT</th>
+        <th>Warning</th>
     </tr>
     </thead>
     <tbody style="font-family: monospace;">
     {{ range .Tenants }}
         <tr>
-            <td><a href="tsdb/{{ . }}">{{ . }}</a></td>
+            <td><a href="tsdb/{{ .Tenant }}">{{ .Tenant }}</a></td>
+            <td>{{.Blocks}}</td>
+            <td>{{.MinTime}}</td>
+            <td>{{.MaxTime}}</td>
+            <td>{{.Warning}}</td>
         </tr>
     {{ end }}
     </tbody>
