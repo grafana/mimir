@@ -87,7 +87,7 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 		s.MaxTime = formatMillisTime(maxMillis)
 
 		if maxMillis-nowMillis > i.limits.CreationGracePeriod(t).Milliseconds() {
-			s.Warning = "maxT too far in the future"
+			s.Warning = "maximum time too far in the future"
 		}
 
 		tss = append(tss, s)
