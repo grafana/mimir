@@ -322,12 +322,14 @@ local filename = 'mimir-reads.json';
         $.queryPanel(
           [
             |||
-              keda_metrics_adapter_scaler_metrics_value
-              /
-              on(metric) group_left
-              label_replace(
-                  kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s"},
-                  "metric", "$1", "metric_name", "(.+)"
+              sum by (scaledObject) (
+                keda_metrics_adapter_scaler_metrics_value
+                /
+                on(metric) group_left
+                label_replace(
+                    kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s"},
+                    "metric", "$1", "metric_name", "(.+)"
+                )
               )
             ||| % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
           ], [
