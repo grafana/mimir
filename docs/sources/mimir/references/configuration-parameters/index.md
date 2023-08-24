@@ -3574,7 +3574,8 @@ tsdb:
 
   # (advanced) The write buffer size used by the head chunks mapper. Lower
   # values reduce memory utilisation on clusters with a large number of tenants
-  # at the cost of increased disk I/O operations.
+  # at the cost of increased disk I/O operations. The configured buffer size
+  # must be between 65536 and 8388608.
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes
   [head_chunks_write_buffer_size_bytes: <int> | default = 4194304]
 
