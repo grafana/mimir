@@ -377,7 +377,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	w.enqueuedRequests.Inc()
 
 	if err != nil {
-		level.Warn(spanLogger).Log("msg", "received error while enqueuing request", "err", err)
+		level.Warn(spanLogger).Log("msg", "received error while sending request to scheduler", "err", err)
 		req.enqueue <- enqueueResult{status: failed}
 		return err
 	}
