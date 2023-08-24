@@ -122,7 +122,7 @@ func getAllDashboards(ctx context.Context, c *sdk.Client) ([]sdk.FoundBoard, err
 		}
 		// we found more results, let's keep going
 		results = append(results, nextPageResults...)
-		currentPage += 1
+		currentPage++
 	}
 }
 
