@@ -223,6 +223,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 			now := time.Now()
 
 			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
+			c.SetTimeout(10 * time.Second)
 			require.NoError(t, err)
 
 			// Generate the series
