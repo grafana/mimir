@@ -6,6 +6,8 @@
 package querier
 
 import (
+	"math"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,18 +27,19 @@ func TestTimeSeriesSeriesSet(t *testing.T) {
 
 	timeseries := []mimirpb.TimeSeries{
 		{
-			Labels: []mimirpb.LabelAdapter{
-				{
-					Name:  "label1",
-					Value: "value1",
-				},
-			},
+			Labels:  []mimirpb.LabelAdapter{{Name: "label1", Value: "value3"}},
+			Samples: []mimirpb.Sample{{Value: 3.14, TimestampMs: 1234}},
+		},
+		{
+			Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value2"}},
 			Samples: []mimirpb.Sample{
-				{
-					Value:       3.14,
-					TimestampMs: 1234,
-				},
+				{Value: 3.14, TimestampMs: 1234},
+				{Value: 1.618, TimestampMs: 2345},
 			},
+		},
+		{
+			Labels:  []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}},
+			Samples: []mimirpb.Sample{{Value: 3.14, TimestampMs: 1234}},
 		},
 	}
 
@@ -45,6 +48,7 @@ func TestTimeSeriesSeriesSet(t *testing.T) {
 	require.True(t, ss.Next())
 	series := ss.At()
 
+	// Series should sort into alphabetical order by labels.
 	require.Equal(t, labels.FromStrings("label1", "value1"), series.Labels())
 
 	it := series.Iterator(nil)
@@ -52,21 +56,45 @@ func TestTimeSeriesSeriesSet(t *testing.T) {
 	ts, v := it.At()
 	require.Equal(t, 3.14, v)
 	require.Equal(t, int64(1234), ts)
-	require.False(t, ss.Next())
-
-	// Append a new sample to seek to
-	timeseries[0].Samples = append(timeseries[0].Samples, mimirpb.Sample{
-		Value:       1.618,
-		TimestampMs: 2345,
-	})
-	ss = newTimeSeriesSeriesSet(timeseries)
 
 	require.True(t, ss.Next())
+	require.Equal(t, labels.FromStrings("label1", "value2"), ss.At().Labels())
 	it = ss.At().Iterator(it)
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2000))
 	ts, v = it.At()
 	require.Equal(t, 1.618, v)
 	require.Equal(t, int64(2345), ts)
+
+	require.True(t, ss.Next())
+	require.Equal(t, labels.FromStrings("label1", "value3"), ss.At().Labels())
+	require.False(t, ss.Next())
+}
+
+func BenchmarkTimeSeriesSeriesSet(b *testing.B) {
+	const (
+		numSeries           = 8000
+		numSamplesPerSeries = 24 * 240
+	)
+
+	// Generate series.
+	timeseries := []mimirpb.TimeSeries{}
+	for seriesID := 0; seriesID < numSeries; seriesID++ {
+		lbls := mkZLabels("__name__", "test", "series_id", strconv.Itoa(seriesID))
+		var samples []mimirpb.Sample
+		for t := int64(0); t <= numSamplesPerSeries; t += 1 {
+			samples = append(samples, mimirpb.Sample{TimestampMs: t, Value: math.Sin(float64(t))})
+		}
+		timeseries = append(timeseries, mimirpb.TimeSeries{
+			Labels:  lbls,
+			Samples: samples,
+		})
+	}
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		_ = newTimeSeriesSeriesSet(timeseries)
+	}
 }
 
 func TestTimeSeriesIterator(t *testing.T) {
