@@ -288,6 +288,17 @@ jobs:
         with:
           name: Docker Images
           path: ./images.tar
+      - name: Build Mimir with race-detector
+        run: |
+          export IMAGE_TAG_RACE=$(make image-tag-race)
+          export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
+          make BUILD_IN_CONTAINER=false cmd/mimir/.uptodate_race
+          docker save $MIMIR_IMAGE -o ./mimir_race_image
+      - name: Upload archive with race-enabled Mimir
+        uses: actions/upload-artifact@v3
+        with:
+          name: Race-enabled Mimir
+          path: ./mimir_race_image
 
   integration:
     needs: [goversion, build]
@@ -330,14 +341,23 @@ jobs:
           name: Docker Images
       - name: Extract Docker Images from Archive
         run: tar xvf images.tar -C /
-      - name: Load Mimir Image into Docker
+      - name: Load Mimirtool Image into Docker
         run: |
           export IMAGE_TAG=$(make image-tag)
           # skopeo will by default load system-specific version of the image (linux/amd64).
-          skopeo copy oci-archive:/tmp/images/mimir.oci "docker-daemon:grafana/mimir:$IMAGE_TAG"
+          # skopeo copy oci-archive:/tmp/images/mimir.oci "docker-daemon:grafana/mimir:$IMAGE_TAG"
           skopeo copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
           # Print Mimir version and architecture loaded to Docker.
-          docker run "grafana/mimir:$IMAGE_TAG" --version
+          # docker run "grafana/mimir:$IMAGE_TAG" --version
+      - name: Download Archive with Docker Images
+        uses: actions/download-artifact@v3
+        with:
+          name: Race-enabled Mimir
+      - name: Load race-enabled mimir into Docker
+        run: |
+          docker load -i ./mimir_race_image
+          export IMAGE_TAG_RACE=$(make image-tag-race)
+          docker run "grafana/mimir:$IMAGE_TAG_RACE" --version
       - name: Preload Images
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
@@ -345,8 +365,9 @@ jobs:
         run: go run ./tools/pre-pull-images | xargs -n1 -P4 docker pull
       - name: Integration Tests
         run: |
+          export IMAGE_TAG_RACE=$(make image-tag-race)
+          export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
           export IMAGE_TAG=$(make image-tag)
-          export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG"
           export MIMIRTOOL_IMAGE="grafana/mimirtool:$IMAGE_TAG"
           export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
           echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
