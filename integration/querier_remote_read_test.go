@@ -196,6 +196,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 				"-distributor.ingestion-rate-limit": "1048576",
 				"-distributor.ingestion-burst-size": "1048576",
+				"-distributor.remote-timeout":       "10s",
 			})
 
 			// Start dependencies.
