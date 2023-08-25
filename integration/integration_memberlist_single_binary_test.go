@@ -194,6 +194,8 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	// Sanity check the ring membership and give each instance time to see every other instance.
 
 	for _, c := range instances {
+		c.SetBackoff(backoff.Config{MinBackoff: 250 * time.Millisecond, MaxBackoff: 1 * time.Second, MaxRetries: 50})
+
 		// we expect 5*maxMimir to account for ingester, distributor, compactor, store-gateway and store-gateway-client rings
 		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxMimir*5)), "cortex_ring_members"))
 		require.NoError(t, c.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
