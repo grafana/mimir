@@ -74,10 +74,11 @@ DOC_EMBED := $(DOC_SOURCES_PATH)/configure/configure-the-query-frontend-work-wit
 	$(DOC_SOURCES_PATH)/get-started/_index.md \
 	$(DOC_SOURCES_PATH)/set-up/jsonnet/deploy.md
 
-.PHONY: image-tag image-tag-race
+.PHONY: image-tag
 image-tag: ## Print the docker image tag.
 	@echo $(IMAGE_TAG)
 
+.PHONY: image-tag-race
 image-tag-race: ## Print the docker image tag for race-enabled image.
 	@echo $(IMAGE_TAG_RACE)
 
