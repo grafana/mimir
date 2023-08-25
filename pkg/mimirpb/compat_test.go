@@ -645,3 +645,101 @@ func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(_ *testing.T) {
 func TestPrometheusHistogramSpanInSyncWithMimirPbBucketSpan(_ *testing.T) {
 	_ = histogram.Span(BucketSpan{})
 }
+
+func TestCompareLabelAdapters(t *testing.T) {
+	labels := []LabelAdapter{
+		{Name: "aaa", Value: "111"},
+		{Name: "bbb", Value: "222"},
+	}
+
+	tests := []struct {
+		compared []LabelAdapter
+		expected int
+	}{
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "110"},
+				{Name: "bbb", Value: "222"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbb", Value: "233"},
+			},
+			expected: -1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bar", Value: "222"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbc", Value: "222"},
+			},
+			expected: -1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bb", Value: "222"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbbb", Value: "222"},
+			},
+			expected: -1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbb", Value: "222"},
+				{Name: "ccc", Value: "333"},
+				{Name: "ddd", Value: "444"},
+			},
+			expected: -2,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbb", Value: "222"},
+			},
+			expected: 0,
+		},
+		{
+			compared: []LabelAdapter{},
+			expected: 1,
+		},
+	}
+
+	sign := func(a int) int {
+		switch {
+		case a < 0:
+			return -1
+		case a > 0:
+			return 1
+		}
+		return 0
+	}
+
+	for i, test := range tests {
+		got := CompareLabelAdapters(labels, test.compared)
+		require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
+		got = CompareLabelAdapters(test.compared, labels)
+		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
+	}
+}

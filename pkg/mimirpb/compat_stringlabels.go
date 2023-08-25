@@ -66,7 +66,7 @@ func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	return r
 }
 
-// The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
+// CompareLabelAdapters returns be 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
 	l := len(a)
 	if len(b) < l {
