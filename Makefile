@@ -44,9 +44,11 @@ ifneq (,$(findstring refs/tags/, $(GITHUB_REF)))
 	IMAGE_TAG_FROM_GIT_TAG := $(patsubst mimir-%,%,$(GIT_TAG))
 endif
 IMAGE_TAG ?= $(if $(IMAGE_TAG_FROM_GIT_TAG),$(IMAGE_TAG_FROM_GIT_TAG),$(shell ./tools/image-tag))
+IMAGE_TAG_RACE = race-$(IMAGE_TAG)
 GIT_REVISION := $(shell git rev-parse --short HEAD)
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 UPTODATE := .uptodate
+UPTODATE_RACE := .uptodate_race
 
 # path to jsonnetfmt
 JSONNET_FMT := jsonnetfmt
@@ -72,9 +74,12 @@ DOC_EMBED := $(DOC_SOURCES_PATH)/configure/configure-the-query-frontend-work-wit
 	$(DOC_SOURCES_PATH)/get-started/_index.md \
 	$(DOC_SOURCES_PATH)/set-up/jsonnet/deploy.md
 
-.PHONY: image-tag
+.PHONY: image-tag image-tag-race
 image-tag: ## Print the docker image tag.
 	@echo $(IMAGE_TAG)
+
+image-tag-race: ## Print the docker image tag.
+	@echo $(IMAGE_TAG_RACE)
 
 # Support gsed on OSX (installed via brew), falling back to sed. On Linux
 # systems gsed won't be installed, so will use sed as expected.
@@ -98,6 +103,15 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@echo Please use '"make push-multiarch-build-image"' to build and push build image.
 	@echo Please use '"make push-multiarch-mimir"' to build and push Mimir image.
+	@echo
+	@touch $@
+
+%/$(UPTODATE_RACE): GOOS=linux
+%/$(UPTODATE_RACE): %/Dockerfile
+	@echo
+	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true --build-arg=BINARY_SUFFIX=_race -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
+	@echo
+	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
 	@echo
 	@touch $@
 
@@ -151,6 +165,7 @@ MAKE_FILES = $(shell find . $(DONT_FIND) \( -name 'Makefile' -o -name '*.mk' \) 
 # Get a list of directories containing Dockerfiles
 DOCKERFILES := $(shell find . $(DONT_FIND) -type f -name 'Dockerfile' -print)
 UPTODATE_FILES := $(patsubst %/Dockerfile,%/$(UPTODATE),$(DOCKERFILES))
+UPTODATE_RACE_FILES := $(patsubst %/Dockerfile,%/$(UPTODATE_RACE),$(DOCKERFILES))
 DOCKER_IMAGE_DIRS := $(patsubst %/Dockerfile,%,$(DOCKERFILES))
 IMAGE_NAMES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(patsubst %,$(IMAGE_PREFIX)%,$(shell basename $(dir))))
 images: ## Print all image names.
@@ -165,12 +180,20 @@ PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 # for every directory with main.go in it.
 MAIN_GO := $(shell find . $(DONT_FIND) -type f -name 'main.go' -print)
 EXES := $(foreach exeDir,$(patsubst %/main.go, %, $(MAIN_GO)),$(exeDir)/$(notdir $(exeDir)))
+EXES_RACE := $(foreach exeDir,$(patsubst %/main.go, %, $(MAIN_GO)),$(exeDir)/$(addsuffix _race, $(notdir $(exeDir))))
 GO_FILES := $(shell find . $(DONT_FIND) -name cmd -prune -o -name '*.pb.go' -prune -o -type f -name '*.go' -print)
+
 define dep_exe
 $(1): $(dir $(1))/main.go $(GO_FILES) protos
 $(dir $(1))$(UPTODATE): $(1)
 endef
 $(foreach exe, $(EXES), $(eval $(call dep_exe, $(exe))))
+
+define dep_exe_race
+$(1): $(dir $(1))/main.go $(GO_FILES) protos
+$(dir $(1))$(UPTODATE_RACE): $(1)
+endef
+$(foreach exe, $(EXES_RACE), $(eval $(call dep_exe_race, $(exe))))
 
 all: $(UPTODATE_FILES)
 test: protos
@@ -207,7 +230,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -217,6 +240,11 @@ exes: $(EXES)
 
 $(EXES):
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
+
+exes_race: $(EXES_RACE)
+
+$(EXES_RACE):
+	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: ## Generates protobuf files.
 protos: $(PROTO_GOS)
@@ -484,7 +512,7 @@ format-makefiles: $(MAKE_FILES)
 clean: ## Cleanup the docker images, object files and executables.
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
 	$(SUDO) docker volume rm -f mimir-go-pkg mimir-go-cache
-	rm -rf -- $(UPTODATE_FILES) $(EXES) .cache dist
+	rm -rf -- $(UPTODATE_FILES) $(UPTODATE_RACE_FILES) $(EXES) $(EXES_RACE) .cache dist
 	# Remove executables built for multiarch images.
 	find . -type f -name '*_linux_arm64' -perm +u+x -exec rm {} \;
 	find . -type f -name '*_linux_amd64' -perm +u+x -exec rm {} \;

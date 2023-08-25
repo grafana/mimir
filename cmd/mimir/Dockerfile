@@ -9,7 +9,7 @@ RUN        apk add --no-cache ca-certificates tzdata
 ARG        TARGETOS
 ARG        TARGETARCH
 ARG        BINARY_SUFFIX="_${TARGETOS}_${TARGETARCH}"
-# Set to non-empty value to use ${TARGET_SUFFIX} when copying mimir binary, leave unset to use no suffix.
+# Set to non-empty value to use ${BINARY_SUFFIX} when copying mimir binary, leave unset to use no suffix.
 ARG        USE_BINARY_SUFFIX
 COPY       mimir${USE_BINARY_SUFFIX:+${BINARY_SUFFIX}} /bin/mimir
 EXPOSE     8080
