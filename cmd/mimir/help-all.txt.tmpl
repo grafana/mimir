@@ -495,18 +495,22 @@ Usage of ./cmd/mimir/mimir:
     	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.index-cache.redis.write-timeout duration
     	Client write timeout. (default 3s)
-  -blocks-storage.bucket-store.index-header-lazy-loading-concurrency int
-    	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
-    	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
+    	[deprecated] If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
-    	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
-  -blocks-storage.bucket-store.index-header-sparse-persistence-enabled
-    	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.
+    	[deprecated] If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
   -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
     	[experimental] If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.
+  -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
+    	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.
+  -blocks-storage.bucket-store.index-header.lazy-loading-enabled
+    	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
+  -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout duration
+    	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
   -blocks-storage.bucket-store.index-header.max-idle-file-handles uint
     	Maximum number of idle file handles the store-gateway keeps open for each index-header file. (default 1)
+  -blocks-storage.bucket-store.index-header.sparse-persistence-enabled
+    	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.max-chunk-pool-bytes uint
@@ -748,7 +752,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-chunks-end-time-variance float
     	[experimental] How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
   -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes int
-    	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
+    	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. The configured buffer size must be between 65536 and 8388608. (default 4194304)
   -blocks-storage.tsdb.head-chunks-write-queue-size int
     	The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. (default 1000000)
   -blocks-storage.tsdb.head-compaction-concurrency int
@@ -1185,6 +1189,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.service-overload-status-code-on-rate-limit-enabled
     	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.
+  -distributor.write-requests-buffer-pooling-enabled
+    	[experimental] Enable pooling of buffers used for marshaling write requests.
   -enable-go-runtime-metrics
     	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
   -flusher.exit-after-flush
@@ -1215,6 +1221,12 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -ingester.client.circuit-breaker.cooldown-period duration
+    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
+  -ingester.client.circuit-breaker.enabled
+    	[experimental] Enable circuit breaking when making requests to ingesters
+  -ingester.client.circuit-breaker.failure-threshold uint
+    	[experimental] Max number of requests that can fail in a row before the circuit breaker opens (default 10)
   -ingester.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ingester.client.connect-backoff-max-delay duration
@@ -1615,6 +1627,8 @@ Usage of ./cmd/mimir/mimir:
     	Time since the last sample after which a time series is considered stale and ignored by expression evaluations. This config option should be set on query-frontend too when query sharding is enabled. (default 5m0s)
   -querier.max-concurrent int
     	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. (default 20)
+  -querier.max-estimated-fetched-chunks-per-query-multiplier float
+    	[experimental] Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
   -querier.max-fetched-chunk-bytes-per-query int
     	The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.
   -querier.max-fetched-chunks-per-query int
@@ -2583,6 +2597,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
+  -timeseries-unmarshal-caching-optimization-enabled
+    	[experimental] Enables optimized marshaling of timeseries. (default true)
   -usage-stats.enabled
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string

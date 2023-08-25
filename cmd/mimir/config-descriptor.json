@@ -1530,6 +1530,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "write_requests_buffer_pooling_enabled",
+          "required": false,
+          "desc": "Enable pooling of buffers used for marshaling write requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.write-requests-buffer-pooling-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -2079,6 +2090,49 @@
               "fieldFlag": "ingester.client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "circuit_breaker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable circuit breaking when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.client.circuit-breaker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_threshold",
+              "required": false,
+              "desc": "Max number of requests that can fail in a row before the circuit breaker opens",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "ingester.client.circuit-breaker.failure-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "cooldown_period",
+              "required": false,
+              "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.client.circuit-breaker.cooldown-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -3146,6 +3200,17 @@
           "fieldDefaultValue": 2000000,
           "fieldFlag": "querier.max-fetched-chunks-per-query",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "max_estimated_fetched_chunks_per_query_multiplier",
+          "required": false,
+          "desc": "Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-estimated-fetched-chunks-per-query-multiplier",
+          "fieldType": "float",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -7547,7 +7612,7 @@
               "fieldDefaultValue": true,
               "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-enabled",
               "fieldType": "boolean",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7558,29 +7623,7 @@
               "fieldDefaultValue": 3600000000000,
               "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout",
               "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "index_header_lazy_loading_concurrency",
-              "required": false,
-              "desc": "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-concurrency",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "index_header_sparse_persistence_enabled",
-              "required": false,
-              "desc": "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.bucket-store.index-header-sparse-persistence-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7629,6 +7672,50 @@
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.eager-loading-startup-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "lazy_loading_enabled",
+                  "required": false,
+                  "desc": "If enabled, store-gateway will lazy load an index-header only once required by a query.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "lazy_loading_idle_timeout",
+                  "required": false,
+                  "desc": "If index-header lazy loading is enabled and this setting is \u003e 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3600000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "lazy_loading_concurrency",
+                  "required": false,
+                  "desc": "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "sparse_persistence_enabled",
+                  "required": false,
+                  "desc": "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.sparse-persistence-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
                 },
@@ -7779,7 +7866,7 @@
               "kind": "field",
               "name": "head_chunks_write_buffer_size_bytes",
               "required": false,
-              "desc": "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations.",
+              "desc": "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. The configured buffer size must be between 65536 and 8388608.",
               "fieldValue": null,
               "fieldDefaultValue": 4194304,
               "fieldFlag": "blocks-storage.tsdb.head-chunks-write-buffer-size-bytes",
@@ -15414,6 +15501,17 @@
       ],
       "fieldValue": null,
       "fieldDefaultValue": null
+    },
+    {
+      "kind": "field",
+      "name": "timeseries_unmarshal_caching_optimization_enabled",
+      "required": false,
+      "desc": "Enables optimized marshaling of timeseries.",
+      "fieldValue": null,
+      "fieldDefaultValue": true,
+      "fieldFlag": "timeseries-unmarshal-caching-optimization-enabled",
+      "fieldType": "boolean",
+      "fieldCategory": "experimental"
     }
   ],
   "fieldValue": null,

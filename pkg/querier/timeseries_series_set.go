@@ -66,7 +66,7 @@ type byTimeSeriesLabels []mimirpb.TimeSeries
 func (b byTimeSeriesLabels) Len() int      { return len(b) }
 func (b byTimeSeriesLabels) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
 func (b byTimeSeriesLabels) Less(i, j int) bool {
-	return labels.Compare(mimirpb.FromLabelAdaptersToLabels(b[i].Labels), mimirpb.FromLabelAdaptersToLabels(b[j].Labels)) < 0
+	return mimirpb.CompareLabelAdapters(b[i].Labels, b[j].Labels) < 0
 }
 
 // Labels implements the storage.Series interface.

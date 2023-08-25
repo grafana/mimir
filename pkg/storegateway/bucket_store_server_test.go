@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -93,7 +94,7 @@ func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewaySe
 
 // Series calls the store server's Series() endpoint via gRPC and returns the responses collected
 // via the gRPC stream.
-func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings storage.Warnings, hints hintspb.SeriesResponseHints, err error) {
+func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings storage.Warnings, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
 	var (
 		conn               *grpc.ClientConn
 		stream             storepb.Store_SeriesClient
@@ -203,6 +204,24 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 	}
 
 	if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
+		res, err = stream.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// This is expected if there are no matching series: no estimate is sent and the stream is closed.
+				err = nil
+			}
+
+			return
+		}
+
+		estimate := res.GetStreamingChunksEstimate()
+		if estimate == nil {
+			err = fmt.Errorf("expected to get streaming chunks estimate message before all chunks messages, but got %T", res.Result)
+			return
+		}
+
+		estimatedChunks = estimate.EstimatedChunkCount
+
 		// Get the streaming chunks.
 		idx := -1
 		for idx < len(streamingSeriesSet)-1 {
@@ -213,6 +232,11 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			}
 
 			chksBatch := res.GetStreamingChunks()
+			if chksBatch == nil {
+				err = errors.Errorf("received unexpected response type %T, expected streaming chunks batch", res.Result)
+				return
+			}
+
 			for _, chks := range chksBatch.Series {
 				idx++
 				if chksBatch == nil {
@@ -249,7 +273,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		res, err = stream.Recv()
 		for err == nil {
 			if res.GetHints() == nil && res.GetStats() == nil {
-				err = errors.Errorf("got unexpected response type")
+				err = errors.Errorf("got unexpected response type %T", res.Result)
 				break
 			}
 			res, err = stream.Recv()

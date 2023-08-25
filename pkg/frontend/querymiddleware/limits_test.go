@@ -300,11 +300,11 @@ func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
 		creationGracePeriod time.Duration
 		expectedEndTime     time.Time
 	}{
-		"should not manipulate time range if creation grace period is disabled": {
+		"should manipulate time range if creation grace period is set to 0": {
 			reqStartTime:        now.Add(-time.Hour),
 			reqEndTime:          now.Add(2 * time.Hour),
 			creationGracePeriod: 0,
-			expectedEndTime:     now.Add(2 * time.Hour),
+			expectedEndTime:     now,
 		},
 		"should not manipulate time range for a query in now + creation_grace_period": {
 			reqStartTime:        now.Add(-time.Hour),

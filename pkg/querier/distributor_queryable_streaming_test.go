@@ -147,7 +147,7 @@ func createTestStreamReader(batches ...[]client.QueryStreamSeriesChunks) *client
 
 	cleanup := func() {}
 
-	reader := client.NewSeriesChunksStreamReader(mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	reader := client.NewSeriesChunksStreamReader(mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	return reader

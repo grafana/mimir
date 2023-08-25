@@ -560,11 +560,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           |||
-            keda_metrics_adapter_scaler_metrics_value{metric=~".*cpu.*"}
-            /
-            on(metric) group_left label_replace(
-                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                "metric", "$1", "metric_name", "(.+)"
+            sum by (scaledObject) (
+              keda_metrics_adapter_scaler_metrics_value{metric=~".*cpu.*"}
+              /
+              on(metric) group_left label_replace(
+                  kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                  "metric", "$1", "metric_name", "(.+)"
+              )
             )
           ||| % {
             hpa_name: $._config.autoscaling[field].hpa_name,
@@ -588,11 +590,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           |||
-            keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}
-            /
-            on(metric) group_left label_replace(
-                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                "metric", "$1", "metric_name", "(.+)"
+            sum by (scaledObject) (
+              keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}
+              /
+              on(metric) group_left label_replace(
+                  kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                  "metric", "$1", "metric_name", "(.+)"
+              )
             )
           ||| % {
             hpa_name: $._config.autoscaling[field].hpa_name,

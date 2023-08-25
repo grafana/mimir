@@ -366,6 +366,10 @@ overrides_exporter:
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
+
+# (experimental) Enables optimized marshaling of timeseries.
+# CLI flag: -timeseries-unmarshal-caching-optimization-enabled
+[timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
 ```
 
 ### common
@@ -797,6 +801,10 @@ instance_limits:
   # per-tenant. Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
+
+# (experimental) Enable pooling of buffers used for marshaling write requests.
+# CLI flag: -distributor.write-requests-buffer-pooling-enabled
+[write_requests_buffer_pooling_enabled: <boolean> | default = false]
 ```
 
 ### ingester
@@ -2123,6 +2131,21 @@ The `ingester_client` block configures how the distributors connect to the inges
 # distributors, queriers and rulers.
 # The CLI flags prefix for this block configuration is: ingester.client
 [grpc_client_config: <grpc_client>]
+
+circuit_breaker:
+  # (experimental) Enable circuit breaking when making requests to ingesters
+  # CLI flag: -ingester.client.circuit-breaker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Max number of requests that can fail in a row before the
+  # circuit breaker opens
+  # CLI flag: -ingester.client.circuit-breaker.failure-threshold
+  [failure_threshold: <int> | default = 10]
+
+  # (experimental) How long the circuit breaker will stay in the open state
+  # before allowing some requests
+  # CLI flag: -ingester.client.circuit-breaker.cooldown-period
+  [cooldown_period: <duration> | default = 10s]
 ```
 
 ### grpc_client
@@ -2837,6 +2860,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-fetched-chunks-per-query
 [max_fetched_chunks_per_query: <int> | default = 2000000]
 
+# (experimental) Maximum number of chunks estimated to be fetched in a single
+# query from ingesters and long-term storage, as a multiple of
+# -querier.max-fetched-chunks-per-query. This limit is enforced in the querier.
+# Must be greater than or equal to 1, or 0 to disable.
+# CLI flag: -querier.max-estimated-fetched-chunks-per-query-multiplier
+[max_estimated_fetched_chunks_per_query_multiplier: <float> | default = 0]
+
 # The maximum number of unique series for which a query can fetch samples from
 # each ingesters and storage. This limit is enforced in the querier, ruler and
 # store-gateway. 0 to disable
@@ -3400,27 +3430,16 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.series-hash-cache-max-size-bytes
   [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
 
-  # (advanced) If enabled, store-gateway will lazy load an index-header only
+  # (deprecated) If enabled, store-gateway will lazy load an index-header only
   # once required by a query.
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-enabled
   [index_header_lazy_loading_enabled: <boolean> | default = true]
 
-  # (advanced) If index-header lazy loading is enabled and this setting is > 0,
-  # the store-gateway will offload unused index-headers after 'idle timeout'
+  # (deprecated) If index-header lazy loading is enabled and this setting is >
+  # 0, the store-gateway will offload unused index-headers after 'idle timeout'
   # inactivity.
   # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout
   [index_header_lazy_loading_idle_timeout: <duration> | default = 1h]
-
-  # (experimental) Maximum number of concurrent index header loads across all
-  # tenants. If set to 0, concurrency is unlimited.
-  # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-concurrency
-  [index_header_lazy_loading_concurrency: <int> | default = 0]
-
-  # (experimental) If enabled, store-gateway will persist a sparse version of
-  # the index-header to disk on construction and load sparse index-headers from
-  # disk instead of the whole index-header.
-  # CLI flag: -blocks-storage.bucket-store.index-header-sparse-persistence-enabled
-  [index_header_sparse_persistence_enabled: <boolean> | default = false]
 
   # (advanced) Max size - in bytes - of a gap for which the partitioner
   # aggregates together two bucket GET object requests.
@@ -3443,6 +3462,28 @@ bucket_store:
     # is not valid to enable this if index-header lazy loading is disabled.
     # CLI flag: -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
     [eager_loading_startup_enabled: <boolean> | default = false]
+
+    # (advanced) If enabled, store-gateway will lazy load an index-header only
+    # once required by a query.
+    # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-enabled
+    [lazy_loading_enabled: <boolean> | default = true]
+
+    # (advanced) If index-header lazy loading is enabled and this setting is >
+    # 0, the store-gateway will offload unused index-headers after 'idle
+    # timeout' inactivity.
+    # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout
+    [lazy_loading_idle_timeout: <duration> | default = 1h]
+
+    # (experimental) Maximum number of concurrent index header loads across all
+    # tenants. If set to 0, concurrency is unlimited.
+    # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency
+    [lazy_loading_concurrency: <int> | default = 0]
+
+    # (experimental) If enabled, store-gateway will persist a sparse version of
+    # the index-header to disk on construction and load sparse index-headers
+    # from disk instead of the whole index-header.
+    # CLI flag: -blocks-storage.bucket-store.index-header.sparse-persistence-enabled
+    [sparse_persistence_enabled: <boolean> | default = false]
 
     # (advanced) If true, verify the checksum of index headers upon loading them
     # (either on startup or lazily when lazy loading is enabled). Setting to
@@ -3520,7 +3561,8 @@ tsdb:
 
   # (advanced) The write buffer size used by the head chunks mapper. Lower
   # values reduce memory utilisation on clusters with a large number of tenants
-  # at the cost of increased disk I/O operations.
+  # at the cost of increased disk I/O operations. The configured buffer size
+  # must be between 65536 and 8388608.
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes
   [head_chunks_write_buffer_size_bytes: <int> | default = 4194304]
 

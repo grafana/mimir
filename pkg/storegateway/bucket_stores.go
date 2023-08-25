@@ -100,10 +100,10 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	// The number of concurrent index header loads from storegateway are limited.
 	lazyLoadingGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
 	lazyLoadingGate := gate.NewNoop()
-	lazyLoadingMax := cfg.BucketStore.IndexHeaderLazyLoadingConcurrency
+	lazyLoadingMax := cfg.BucketStore.IndexHeader.LazyLoadingConcurrency
 	if lazyLoadingMax != 0 {
-		blockingGate := gate.NewBlocking(cfg.BucketStore.IndexHeaderLazyLoadingConcurrency)
-		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeaderLazyLoadingConcurrency, blockingGate)
+		blockingGate := gate.NewBlocking(cfg.BucketStore.IndexHeader.LazyLoadingConcurrency)
+		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeader.LazyLoadingConcurrency, blockingGate)
 	}
 
 	u := &BucketStores{

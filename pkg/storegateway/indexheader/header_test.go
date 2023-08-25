@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -262,6 +263,45 @@ func TestReadersLabelValuesOffsets(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		setup       func(*Config)
+		expectedErr error
+	}{
+		"should fail on invalid index-header eager loading in startup": {
+			setup: func(cfg *Config) {
+				cfg.EagerLoadingStartupEnabled = true
+				cfg.LazyLoadingEnabled = false
+			},
+			expectedErr: errEagerLoadingStartupEnabledLazyLoadDisabled,
+		},
+		"should fail on invalid index-header lazy loading max concurrency": {
+			setup: func(cfg *Config) {
+				cfg.LazyLoadingConcurrency = -1
+			},
+			expectedErr: errInvalidIndexHeaderLazyLoadingConcurrency,
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData
+
+		t.Run(testName, func(t *testing.T) {
+			indexHeaderConfig := &Config{}
+
+			fs := flag.NewFlagSet("", flag.PanicOnError)
+			indexHeaderConfig.RegisterFlagsWithPrefix(fs, "blocks-storage.bucket-store.index-header.")
+
+			testData.setup(indexHeaderConfig)
+
+			actualErr := indexHeaderConfig.Validate()
+			assert.Equal(t, testData.expectedErr, actualErr)
 		})
 	}
 }

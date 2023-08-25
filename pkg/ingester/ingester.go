@@ -331,6 +331,16 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 			Name: "cortex_ingester_oldest_unshipped_block_timestamp_seconds",
 			Help: "Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.",
 		}, i.getOldestUnshippedBlockMetric)
+
+		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_tsdb_head_min_timestamp_seconds",
+			Help: "Minimum timestamp of the head block across all tenants.",
+		}, i.minTsdbHeadTimestamp)
+
+		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_tsdb_head_max_timestamp_seconds",
+			Help: "Maximum timestamp of the head block across all tenants.",
+		}, i.maxTsdbHeadTimestamp)
 	}
 
 	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(logger), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
@@ -2165,14 +2175,20 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// series during WAL replay.
 	userDB.limiter = i.limiter
 
+	// If head is empty (eg. new TSDB), don't close it right after.
+	lastUpdateTime := time.Now()
 	if db.Head().NumSeries() > 0 {
 		// If there are series in the head, use max time from head. If this time is too old,
 		// TSDB will be eligible for flushing and closing sooner, unless more data is pushed to it quickly.
-		userDB.setLastUpdate(util.TimeFromMillis(db.Head().MaxTime()))
-	} else {
-		// If head is empty (eg. new TSDB), don't close it right after.
-		userDB.setLastUpdate(time.Now())
+		//
+		// If TSDB's maxTime is in the future, ignore it. If we set "lastUpdate" to very distant future, it would prevent
+		// us from detecting TSDB as idle for a very long time.
+		headMaxTime := time.UnixMilli(db.Head().MaxTime())
+		if headMaxTime.Before(lastUpdateTime) {
+			lastUpdateTime = headMaxTime
+		}
 	}
+	userDB.setLastUpdate(lastUpdateTime)
 
 	// Create a new shipper for this database
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
@@ -2388,6 +2404,38 @@ func (i *Ingester) getOldestUnshippedBlockMetric() float64 {
 	}
 
 	return float64(oldest / 1000)
+}
+
+func (i *Ingester) minTsdbHeadTimestamp() float64 {
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
+
+	minTime := int64(math.MaxInt64)
+	for _, db := range i.tsdbs {
+		minTime = util_math.Min(minTime, db.db.Head().MinTime())
+	}
+
+	if minTime == math.MaxInt64 {
+		return 0
+	}
+	// convert to seconds
+	return float64(minTime) / 1000
+}
+
+func (i *Ingester) maxTsdbHeadTimestamp() float64 {
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
+
+	maxTime := int64(math.MinInt64)
+	for _, db := range i.tsdbs {
+		maxTime = util_math.Max(maxTime, db.db.Head().MaxTime())
+	}
+
+	if maxTime == math.MinInt64 {
+		return 0
+	}
+	// convert to seconds
+	return float64(maxTime) / 1000
 }
 
 func (i *Ingester) shipBlocksLoop(ctx context.Context) error {

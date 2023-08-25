@@ -15,7 +15,7 @@
   local useRulerQueryFrontend = $._config.ruler_remote_evaluation_enabled && !$._config.ruler_remote_evaluation_migration_enabled,
 
   ruler_args+:: if !useRulerQueryFrontend then {} else {
-    'ruler.query-frontend.address': 'dns:///ruler-query-frontend.%(namespace)s.svc.cluster.local:9095' % $._config,
+    'ruler.query-frontend.address': 'dns:///ruler-query-frontend.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
 
     // The ruler send a query request to the ruler-query-frontend.
     'ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,

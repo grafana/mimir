@@ -23,11 +23,11 @@
       'ruler.rule-path': '/rules',
 
       // Alertmanager configs
-      'ruler.alertmanager-url': 'http://alertmanager.%s.svc.cluster.local/alertmanager' % $._config.namespace,
+      'ruler.alertmanager-url': 'http://alertmanager.%(namespace)s.svc.%(cluster_domain)s/alertmanager' % $._config,
 
       // Ring Configs
       'ruler.ring.store': 'consul',
-      'ruler.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'ruler.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
 
       'server.http-listen-port': $._config.server_http_port,
     },

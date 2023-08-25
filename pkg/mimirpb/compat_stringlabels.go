@@ -65,3 +65,28 @@ func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	})
 	return r
 }
+
+// The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
+func CompareLabelAdapters(a, b []LabelAdapter) int {
+	l := len(a)
+	if len(b) < l {
+		l = len(b)
+	}
+
+	for i := 0; i < l; i++ {
+		if a[i].Name != b[i].Name {
+			if a[i].Name < b[i].Name {
+				return -1
+			}
+			return 1
+		}
+		if a[i].Value != b[i].Value {
+			if a[i].Value < b[i].Value {
+				return -1
+			}
+			return 1
+		}
+	}
+	// If all labels so far were in common, the set with fewer labels comes first.
+	return len(a) - len(b)
+}

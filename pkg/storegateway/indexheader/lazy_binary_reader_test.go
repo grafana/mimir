@@ -209,7 +209,7 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 					return
 				default:
 					_, err := r.PostingsOffset("a", "1")
-					require.True(t, err == nil || errors.Is(err, errUnloadedWhileLoading))
+					require.True(t, err == nil || errors.Is(err, errUnloadedWhileLoading), "unexpected error: %s", err)
 				}
 			}
 		}()
@@ -382,4 +382,45 @@ func TestLazyBinaryReader_ConcurrentLoadingOfSameIndexReader(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		require.Fail(t, "goroutines did not finish in time")
 	}
+}
+
+func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
+	t.Parallel()
+	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+
+	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+		require.NoError(t, err)
+		require.Nil(t, r.reader)
+		t.Cleanup(func() {
+			require.NoError(t, r.Close())
+		})
+
+		closed := atomic.NewBool(false)
+
+		sr, err := r.SymbolsReader()
+		require.NoError(t, err)
+
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			<-time.After(1 * time.Second)
+
+			closed.Store(true)
+			require.NoError(t, sr.Close()) // sr.Close() unblocks unloadIfIdleSince
+
+			// Multiple close calls should not panic (wg.Done could panic if called too many times).
+			// (It can return error, or not. We don't care).
+			_ = sr.Close()
+			_ = sr.Close()
+		}()
+
+		require.NoError(t, r.unloadIfIdleSince(0))
+
+		// We should only get here if symbols reader was already closed. If it wasn't, unload unloaded unclosed reader :(
+		require.True(t, closed.Load(), "symbols reader is not closed yet")
+
+		wg.Wait()
+	})
 }

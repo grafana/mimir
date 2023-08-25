@@ -504,7 +504,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 				srv := newStoreGatewayTestServer(t, g)
 
 				req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
-				_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+				_, _, hints, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 				require.NoError(t, err)
 
 				for _, b := range hints.QueriedBlocks {
@@ -790,7 +790,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 
 		// Run query and ensure the block is queried.
 		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
-		_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+		_, _, hints, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 		require.NoError(t, err)
 		assert.Len(t, hints.QueriedBlocks, 1)
 
@@ -834,7 +834,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 
 		// Run query and ensure the block is queried.
 		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
-		_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+		_, _, hints, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 		require.NoError(t, err)
 		assert.Len(t, hints.QueriedBlocks, 1)
 
@@ -871,7 +871,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 
 		// Run query and ensure the block is queried.
 		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
-		_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+		_, _, hints, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 		require.NoError(t, err)
 		assert.Len(t, hints.QueriedBlocks, 1)
 
@@ -907,7 +907,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 
 		// Run query and ensure the block is queried.
 		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
-		_, _, hints, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+		_, _, hints, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 		require.NoError(t, err)
 		assert.Len(t, hints.QueriedBlocks, 1)
 
@@ -1075,7 +1075,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 						},
 						StreamingChunksBatchSize: uint64(streamingBatchSize),
 					}
-					seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+					seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 					require.NoError(t, err)
 					assert.Empty(t, warnings)
 					assert.Len(t, seriesSet, numSeries)
@@ -1188,7 +1188,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 						StreamingChunksBatchSize: uint64(streamingBatchSize),
 					}
 
-					seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+					seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 					require.NoError(t, err)
 					assert.Empty(t, warnings)
 
@@ -1275,7 +1275,7 @@ func TestStoreGateway_Series_QueryShardingShouldGuaranteeSeriesShardingConsisten
 					StreamingChunksBatchSize: uint64(streamingBatchSize),
 				}
 
-				seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+				seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 				require.NoError(t, err)
 				assert.Empty(t, warnings)
 				require.Greater(t, len(seriesSet), 0)
@@ -1366,7 +1366,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 						StreamingChunksBatchSize: uint64(streamingBatchSize),
 					}
 
-					seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+					seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 					require.NoError(t, err)
 					assert.Empty(t, warnings)
 
@@ -1479,7 +1479,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 
 					// Query back all the series (1 chunk per series in this test).
 					req.StreamingChunksBatchSize = uint64(streamingBatchSize)
-					seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+					seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
 
 					if testData.expectedErr != nil {
 						require.Error(t, err)

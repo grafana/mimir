@@ -51,10 +51,18 @@ func (c *bufferPoolingIngesterClient) Push(ctx context.Context, in *mimirpb.Writ
 		WriteRequest: in,
 		slabPool:     p,
 	}
-	// We can return all buffers back to slabPool when this method finishes.
-	defer wr.ReturnBuffersToPool()
-
-	return c.pushRawFn(ctx, c.conn, wr, opts...)
+	resp, err := c.pushRawFn(ctx, c.conn, wr, opts...)
+	if err == nil {
+		// We can return all buffers back to slabPool when push method finishes.
+		// However we can only do that if we have actually received reply from server.
+		// It means that our buffers were sent out successfully, and are not used anymore.
+		//
+		// If there was an error (eg. context cancellation), our buffers can still be in
+		// use by gRPC client (eg. enqueued to be sent via network connection), and we can't
+		// return them to the pool.
+		wr.ReturnBuffersToPool()
+	}
+	return resp, err
 }
 
 type poolKey int

@@ -31,6 +31,7 @@ const (
 	MaxChunksPerQuery             ID = "max-chunks-per-query"
 	MaxSeriesPerQuery             ID = "max-series-per-query"
 	MaxChunkBytesPerQuery         ID = "max-chunks-bytes-per-query"
+	MaxEstimatedChunksPerQuery    ID = "max-estimated-chunks-per-query"
 
 	DistributorMaxIngestionRate             ID = "distributor-max-ingestion-rate"
 	DistributorMaxInflightPushRequests      ID = "distributor-max-inflight-push-requests"

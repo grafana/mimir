@@ -81,6 +81,7 @@ type LazyBinaryReader struct {
 	readerMx      sync.RWMutex
 	reader        Reader
 	readerErr     error
+	readerInUse   sync.WaitGroup // Only increased when readerMx is held.
 	readerFactory func() (Reader, error)
 
 	// Keep track of the last time it was used.
@@ -148,121 +149,124 @@ func (r *LazyBinaryReader) Close() error {
 
 // IndexVersion implements Reader.
 func (r *LazyBinaryReader) IndexVersion() (int, error) {
-	r.readerMx.RLock()
-	defer r.readerMx.RUnlock()
-
-	if err := r.load(); err != nil {
+	reader, wg, err := r.getOrLoadReader()
+	if err != nil {
 		return 0, err
 	}
+	defer wg.Done()
 
-	r.usedAt.Store(time.Now().UnixNano())
-	return r.reader.IndexVersion()
+	return reader.IndexVersion()
 }
 
 // PostingsOffset implements Reader.
 func (r *LazyBinaryReader) PostingsOffset(name, value string) (index.Range, error) {
-	r.readerMx.RLock()
-	defer r.readerMx.RUnlock()
-
-	if err := r.load(); err != nil {
+	reader, wg, err := r.getOrLoadReader()
+	if err != nil {
 		return index.Range{}, err
 	}
+	defer wg.Done()
 
-	r.usedAt.Store(time.Now().UnixNano())
-	return r.reader.PostingsOffset(name, value)
+	return reader.PostingsOffset(name, value)
 }
 
 // LookupSymbol implements Reader.
 func (r *LazyBinaryReader) LookupSymbol(o uint32) (string, error) {
-	r.readerMx.RLock()
-	defer r.readerMx.RUnlock()
-
-	if err := r.load(); err != nil {
+	reader, wg, err := r.getOrLoadReader()
+	if err != nil {
 		return "", err
 	}
+	defer wg.Done()
 
-	r.usedAt.Store(time.Now().UnixNano())
-	return r.reader.LookupSymbol(o)
+	return reader.LookupSymbol(o)
 }
 
 // SymbolsReader implements Reader.
 func (r *LazyBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
-	r.readerMx.RLock()
-	defer r.readerMx.RUnlock()
-
-	if err := r.load(); err != nil {
+	reader, wg, err := r.getOrLoadReader()
+	if err != nil {
 		return nil, err
 	}
 
-	r.usedAt.Store(time.Now().UnixNano())
-	return r.reader.SymbolsReader()
+	sr, err := reader.SymbolsReader()
+	if err != nil {
+		wg.Done()
+		return nil, err
+	}
+	return newLazySymbolsReader(sr, wg), nil
 }
 
 // LabelValuesOffsets implements Reader.
 func (r *LazyBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
-	r.readerMx.RLock()
-	defer r.readerMx.RUnlock()
-
-	if err := r.load(); err != nil {
+	reader, wg, err := r.getOrLoadReader()
+	if err != nil {
 		return nil, err
 	}
+	defer wg.Done()
 
-	r.usedAt.Store(time.Now().UnixNano())
-	return r.reader.LabelValuesOffsets(name, prefix, filter)
+	return reader.LabelValuesOffsets(name, prefix, filter)
 }
 
 // LabelNames implements Reader.
 func (r *LazyBinaryReader) LabelNames() ([]string, error) {
-	r.readerMx.RLock()
-	defer r.readerMx.RUnlock()
-
-	if err := r.load(); err != nil {
+	reader, wg, err := r.getOrLoadReader()
+	if err != nil {
 		return nil, err
 	}
+	defer wg.Done()
 
-	r.usedAt.Store(time.Now().UnixNano())
-	return r.reader.LabelNames()
+	return reader.LabelNames()
 }
 
 // EagerLoad attempts to eagerly load this index header.
 func (r *LazyBinaryReader) EagerLoad() {
-	r.readerMx.RLock()
-	defer r.readerMx.RUnlock()
-
-	if err := r.load(); err != nil {
+	_, wg, err := r.getOrLoadReader()
+	if err != nil {
 		level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", err)
 		return
 	}
-
-	r.usedAt.Store(time.Now().UnixNano())
+	wg.Done()
 }
 
-// load ensures the underlying binary index-header reader has been successfully loaded. Returns
-// an error on failure. This function MUST be called with the read lock already acquired.
-func (r *LazyBinaryReader) load() error {
+// getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
+// Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
+// Must be called without lock.
+func (r *LazyBinaryReader) getOrLoadReader() (Reader, *sync.WaitGroup, error) {
+	r.readerMx.RLock()
+	defer r.readerMx.RUnlock()
+
 	// Nothing to do if we already tried loading it.
 	if r.reader != nil {
-		return nil
+		r.usedAt.Store(time.Now().UnixNano())
+		r.readerInUse.Add(1)
+
+		return r.reader, &r.readerInUse, nil
 	}
 	if r.readerErr != nil {
-		return r.readerErr
+		return nil, nil, r.readerErr
 	}
 
-	// Release the read lock, so that load1 can take write lock. Take the read lock again once done.
+	// Release the read lock, so that loadReader can take write lock. Take the read lock again once done.
 	r.readerMx.RUnlock()
-	err := r.load1()
+	err := r.loadReader()
+	// Re-acquire read lock.
 	r.readerMx.RLock()
 
+	if err != nil {
+		return nil, nil, err
+	}
 	// Between the write lock release and the subsequent read lock, the unload() may have run,
 	// so we make sure to catch this edge case.
-	if err == nil && r.reader == nil {
-		err = errUnloadedWhileLoading
+	if r.reader == nil {
+		return nil, nil, errUnloadedWhileLoading
 	}
-	return err
+
+	r.usedAt.Store(time.Now().UnixNano())
+	r.readerInUse.Add(1)
+	return r.reader, &r.readerInUse, nil
 }
 
-// load1 is called from load, after releasing the read lock. load1 will acquire write lock instead.
-func (r *LazyBinaryReader) load1() error {
+// loadReader is called from getOrLoadReader, without any locks.
+func (r *LazyBinaryReader) loadReader() error {
 	// lazyLoadingGate implementation: blocks load if too many are happening at once.
 	// It's important to get permit from the Gate when NOT holding the read-lock, otherwise we risk that multiple goroutines
 	// that enter `load()` will deadlock themselves. (If Start() allows one goroutine to continue, but blocks another one,
@@ -320,6 +324,9 @@ func (r *LazyBinaryReader) unloadIfIdleSince(ts int64) error {
 		return errNotIdle
 	}
 
+	// Wait until all users finished using current reader.
+	r.readerInUse.Wait()
+
 	r.metrics.unloadCount.Inc()
 	if err := r.reader.Close(); err != nil {
 		r.metrics.unloadFailedCount.Inc()
@@ -342,4 +349,27 @@ func (r *LazyBinaryReader) isIdleSince(ts int64) bool {
 	r.readerMx.RUnlock()
 
 	return loaded
+}
+
+type lazySymbolsReader struct {
+	sr   streamindex.SymbolsReader
+	wg   *sync.WaitGroup
+	once sync.Once
+}
+
+func newLazySymbolsReader(sr streamindex.SymbolsReader, wg *sync.WaitGroup) *lazySymbolsReader {
+	return &lazySymbolsReader{
+		sr: sr,
+		wg: wg,
+	}
+}
+
+func (l *lazySymbolsReader) Read(u uint32) (string, error) {
+	return l.sr.Read(u)
+}
+
+func (l *lazySymbolsReader) Close() error {
+	err := l.sr.Close()
+	l.once.Do(l.wg.Done)
+	return err
 }

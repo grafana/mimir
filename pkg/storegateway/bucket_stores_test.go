@@ -403,8 +403,8 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
-	cfg.BucketStore.IndexHeaderLazyLoadingEnabled = lazyLoadingEnabled
-	cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout = time.Minute
+	cfg.BucketStore.IndexHeader.LazyLoadingEnabled = lazyLoadingEnabled
+	cfg.BucketStore.IndexHeader.LazyLoadingIdleTimeout = time.Minute
 
 	storageDir := t.TempDir()
 
@@ -624,7 +624,7 @@ func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, 
 	}
 
 	srv := newBucketStoreTestServer(t, stores)
-	seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(context.Background(), userID), req)
+	seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(context.Background(), userID), req)
 
 	return seriesSet, warnings, err
 }

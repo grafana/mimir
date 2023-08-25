@@ -291,6 +291,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s has no rule groups assigned.' % $._config,
           },
         },
+        {
+          // Alert if a ruler instance has no rule groups assigned while other instances in the same cell do.
+          alert: $.alertName('IngestedDataTooFarInTheFuture'),
+          'for': '5m',
+          expr: |||
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                cortex_ingester_tsdb_head_max_timestamp_seconds - time()
+                and
+                cortex_ingester_tsdb_head_max_timestamp_seconds > 0
+            ) > 60*60
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has ingested samples with timestamps more than 1h in the future.' % $._config,
+          },
+        },
       ] + [
         {
           alert: $.alertName('RingMembersMismatch'),

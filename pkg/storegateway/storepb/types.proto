@@ -55,6 +55,10 @@ message StreamingChunksBatch {
   repeated StreamingChunks series = 1;
 }
 
+message StreamingChunksEstimate {
+  uint64 estimated_chunk_count = 1;
+}
+
 
 message AggrChunk {
   int64 min_time = 1;

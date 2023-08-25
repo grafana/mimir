@@ -242,12 +242,11 @@ func NewBucketStore(
 	}
 
 	lazyLoadedSnapshotConfig := indexheader.LazyLoadedHeadersSnapshotConfig{
-		Path:                dir,
-		UserID:              userID,
-		EagerLoadingEnabled: bucketStoreConfig.IndexHeader.IndexHeaderEagerLoadingStartupEnabled,
+		Path:   dir,
+		UserID: userID,
 	}
 	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeaderLazyLoadingEnabled, bucketStoreConfig.IndexHeaderLazyLoadingIdleTimeout, bucketStoreConfig.IndexHeaderSparsePersistenceEnabled, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedSnapshotConfig)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedSnapshotConfig)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
@@ -611,6 +610,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	if err := s.sendHints(srv, resHints); err != nil {
 		return err
 	}
+
+	streamingSeriesCount := 0
 	if req.StreamingChunksBatchSize > 0 {
 		var (
 			seriesSet       storepb.SeriesSet
@@ -624,17 +625,17 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return err
 		}
 
-		numSeries, err := s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
+		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
 		if err != nil {
 			return err
 		}
 		level.Debug(spanLogger).Log(
 			"msg", "sent streaming series",
-			"num_series", numSeries,
+			"num_series", streamingSeriesCount,
 			"duration", time.Since(seriesLoadStart),
 		)
 
-		if numSeries == 0 {
+		if streamingSeriesCount == 0 {
 			// There is no series to send chunks for.
 			return nil
 		}
@@ -652,7 +653,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		if err != nil {
 			return err
 		}
-		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats)
+		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
 	} else {
 		var seriesSet storepb.SeriesSet
 		seriesSet, err = s.nonStreamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
@@ -758,6 +759,7 @@ func (s *BucketStore) sendStreamingChunks(
 	srv storepb.Store_SeriesServer,
 	it seriesChunksSetIterator,
 	stats *safeQueryStats,
+	totalSeriesCount int,
 ) error {
 	var (
 		encodeDuration           time.Duration
@@ -787,9 +789,34 @@ func (s *BucketStore) sendStreamingChunks(
 	for i := range chunksBuffer {
 		chunksBuffer[i] = &storepb.StreamingChunks{}
 	}
+	haveSentEstimatedChunks := false
 	chunksBatch := &storepb.StreamingChunksBatch{Series: chunksBuffer[:0]}
 	for it.Next() {
 		set := it.At()
+
+		if len(set.series) == 0 {
+			set.release()
+			continue
+		}
+
+		// We send the estimate before any chunks.
+		if !haveSentEstimatedChunks {
+			seriesInBatch := len(set.series)
+			chunksInBatch := 0
+
+			for _, sc := range set.series {
+				chunksInBatch += len(sc.chks)
+			}
+
+			estimate := uint64(totalSeriesCount * chunksInBatch / seriesInBatch)
+			err := s.sendMessage("streaming chunks estimate", srv, storepb.NewStreamingChunksEstimate(estimate), &encodeDuration, &sendDuration)
+			if err != nil {
+				return err
+			}
+
+			haveSentEstimatedChunks = true
+		}
+
 		for _, sc := range set.series {
 			seriesCount++
 			chunksBatch.Series = chunksBatch.Series[:len(chunksBatch.Series)+1]
@@ -829,6 +856,14 @@ func (s *BucketStore) sendStreamingChunks(
 
 	if it.Err() != nil {
 		return it.Err()
+	}
+
+	// If we never sent an estimate (because there were no batches, or no batch had any series), send it now.
+	if !haveSentEstimatedChunks {
+		err := s.sendMessage("streaming chunks estimate", srv, storepb.NewStreamingChunksEstimate(0), &encodeDuration, &sendDuration)
+		if err != nil {
+			return err
+		}
 	}
 
 	return it.Err()

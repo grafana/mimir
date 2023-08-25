@@ -233,9 +233,9 @@ type Compactor interface {
 	//  * Returns empty ulid.ULID{}.
 	Compact(dest string, dirs []string, open []*tsdb.Block) (ulid.ULID, error)
 
-	// CompactWithSplitting merges and splits the input blocks into shardCount number of output blocks,
+	// CompactWithSplitting merges and splits the source blocks into shardCount number of compacted blocks,
 	// and returns slice of block IDs. Position of returned block ID in the result slice corresponds to the shard index.
-	// If given output block has no series, corresponding block ID will be zero ULID value.
+	// If given compacted block has no series, corresponding block ID will be zero ULID value.
 	CompactWithSplitting(dest string, dirs []string, open []*tsdb.Block, shardCount uint64) (result []ulid.ULID, _ error)
 }
 
@@ -276,7 +276,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	// The planner returned some blocks to compact, so we can enrich the logger
 	// with the min/max time between all blocks to compact.
-	jobLogger = log.With(jobLogger, "minTime", minTime(toCompact).String(), "maxTime", maxTime(toCompact).String())
+	toCompactMinTime := minTime(toCompact)
+	toCompactMaxTime := maxTime(toCompact)
+	jobLogger = log.With(jobLogger, "minTime", toCompactMinTime.String(), "maxTime", toCompactMaxTime.String())
 
 	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompact))
 
@@ -293,7 +295,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrapf(err, "download block %s", meta.ULID)
 		}
 
-		// Ensure all input blocks are valid.
+		// Ensure all source blocks are valid.
 		stats, err := block.GatherBlockHealthStats(jobLogger, bdir, meta.MinTime, meta.MaxTime, false)
 		if err != nil {
 			return errors.Wrapf(err, "gather index issues for block %s", bdir)
@@ -361,6 +363,11 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	uploadBegin := time.Now()
 	uploadedBlocks := atomic.NewInt64(0)
 
+	if err = verifyCompactedBlocksTimeRanges(compIDs, toCompactMinTime.UnixMilli(), toCompactMaxTime.UnixMilli(), subDir); err != nil {
+		level.Warn(jobLogger).Log("msg", "compacted blocks verification failed", "err", err)
+		c.metrics.compactionBlocksVerificationFailed.Inc()
+	}
+
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
@@ -389,7 +396,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrap(err, "remove tombstones")
 		}
 
-		// Ensure the output block is valid.
+		// Ensure the compacted block is valid.
 		if err := block.VerifyBlock(jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime, false); err != nil {
 			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
@@ -420,6 +427,51 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	return true, compIDs, nil
+}
+
+// verifyCompactedBlocksTimeRanges does a full run over the compacted blocks
+// and verifies that they satisfy the min/maxTime from the source blocks
+func verifyCompactedBlocksTimeRanges(compIDs []ulid.ULID, sourceBlocksMinTime, sourceBlocksMaxTime int64, subDir string) error {
+	sourceBlocksMinTimeFound := false
+	sourceBlocksMaxTimeFound := false
+
+	for _, compID := range compIDs {
+		// Skip empty block
+		if compID == (ulid.ULID{}) {
+			continue
+		}
+
+		bdir := filepath.Join(subDir, compID.String())
+		meta, err := block.ReadMetaFromDir(bdir)
+		if err != nil {
+			return errors.Wrapf(err, "failed to read meta.json from %s during block time range verification", bdir)
+		}
+
+		// Ensure compacted block min/maxTime within source blocks min/maxTime
+		if meta.MinTime < sourceBlocksMinTime {
+			return fmt.Errorf("invalid minTime for block %s, compacted block minTime %d is before source minTime %d", compID.String(), meta.MinTime, sourceBlocksMinTime)
+		}
+
+		if meta.MaxTime > sourceBlocksMaxTime {
+			return fmt.Errorf("invalid maxTime for block %s, compacted block maxTime %d is after source maxTime %d", compID.String(), meta.MaxTime, sourceBlocksMaxTime)
+		}
+
+		if meta.MinTime == sourceBlocksMinTime {
+			sourceBlocksMinTimeFound = true
+		}
+
+		if meta.MaxTime == sourceBlocksMaxTime {
+			sourceBlocksMaxTimeFound = true
+		}
+	}
+
+	// Check that the minTime and maxTime from the source blocks
+	// are found at least once in the compacted blocks
+	if !sourceBlocksMinTimeFound || !sourceBlocksMaxTimeFound {
+		return fmt.Errorf("compacted block(s) do not contain minTime %d and maxTime %d from the source blocks", sourceBlocksMinTime, sourceBlocksMaxTime)
+	}
+
+	return nil
 }
 
 // convertCompactionResultToForEachJobs filters out empty ULIDs.
@@ -564,13 +616,14 @@ func deleteBlock(bkt objstore.Bucket, id ulid.ULID, bdir string, logger log.Logg
 
 // BucketCompactorMetrics holds the metrics tracked by BucketCompactor.
 type BucketCompactorMetrics struct {
-	groupCompactionRunsStarted   prometheus.Counter
-	groupCompactionRunsCompleted prometheus.Counter
-	groupCompactionRunsFailed    prometheus.Counter
-	groupCompactions             prometheus.Counter
-	blocksMarkedForDeletion      prometheus.Counter
-	blocksMarkedForNoCompact     prometheus.Counter
-	blocksMaxTimeDelta           prometheus.Histogram
+	groupCompactionRunsStarted         prometheus.Counter
+	groupCompactionRunsCompleted       prometheus.Counter
+	groupCompactionRunsFailed          prometheus.Counter
+	groupCompactions                   prometheus.Counter
+	compactionBlocksVerificationFailed prometheus.Counter
+	blocksMarkedForDeletion            prometheus.Counter
+	blocksMarkedForNoCompact           prometheus.Counter
+	blocksMaxTimeDelta                 prometheus.Histogram
 }
 
 // NewBucketCompactorMetrics makes a new BucketCompactorMetrics.
@@ -591,6 +644,10 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 		groupCompactions: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_group_compactions_total",
 			Help: "Total number of group compaction attempts that resulted in new block(s).",
+		}),
+		compactionBlocksVerificationFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_compactor_blocks_verification_failures_total",
+			Help: "Total number of failures when verifying min/max time ranges of compacted blocks.",
 		}),
 		blocksMarkedForDeletion: blocksMarkedForDeletion,
 		blocksMarkedForNoCompact: promauto.With(reg).NewCounter(prometheus.CounterOpts{
