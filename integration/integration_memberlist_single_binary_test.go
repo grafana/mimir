@@ -185,7 +185,10 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	for i := 2; i <= maxMimir; i++ {
 		name := fmt.Sprintf("mimir-%d", i)
 		join := e2e.NetworkContainerHostPort(networkName, firstInstance.Name(), 8000)
-		c := newSingleBinary(name, "", join, nil)
+		c := newSingleBinary(name, "", join, map[string]string{
+			"-memberlist.packet-dial-timeout":  "10s",
+			"-memberlist.packet-write-timeout": "10s",
+		})
 		nextInstances = append(nextInstances, c)
 		instances = append(instances, c)
 	}
