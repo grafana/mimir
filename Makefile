@@ -78,7 +78,7 @@ DOC_EMBED := $(DOC_SOURCES_PATH)/configure/configure-the-query-frontend-work-wit
 image-tag: ## Print the docker image tag.
 	@echo $(IMAGE_TAG)
 
-image-tag-race: ## Print the docker image tag.
+image-tag-race: ## Print the docker image tag for race-enabled image.
 	@echo $(IMAGE_TAG_RACE)
 
 # Support gsed on OSX (installed via brew), falling back to sed. On Linux
