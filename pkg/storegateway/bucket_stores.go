@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -54,8 +53,6 @@ type BucketStores struct {
 
 	// Index cache shared across all tenants.
 	indexCache indexcache.IndexCache
-
-	chunksCache chunkscache.Cache
 
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
@@ -156,12 +153,6 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	if u.indexCache, err = tsdb.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
 		return nil, errors.Wrap(err, "create index cache")
 	}
-
-	chunksCache, err := chunkscache.NewChunksCache(logger, chunksCacheClient, reg)
-	if err != nil {
-		return nil, errors.Wrap(err, "create chunks cache")
-	}
-	u.chunksCache = chunkscache.NewTracingCache(chunksCache, logger)
 
 	if reg != nil {
 		reg.MustRegister(u.metaFetcherMetrics)
@@ -471,10 +462,8 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
-		WithChunksCache(u.chunksCache),
 		WithQueryGate(u.queryGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
-		WithFineGrainedChunksCaching(u.cfg.BucketStore.ChunksCache.FineGrainedChunksCachingEnabled),
 	}
 
 	bs, err := NewBucketStore(

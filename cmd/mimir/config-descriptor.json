@@ -6840,17 +6840,6 @@
                   "fieldFlag": "blocks-storage.bucket-store.chunks-cache.subrange-ttl",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "fine_grained_chunks_caching_enabled",
-                  "required": false,
-                  "desc": "Enable fine-grained caching of chunks in the store-gateway. This reduces the required bandwidth and memory utilization.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -7755,17 +7744,6 @@
               "fieldFlag": "blocks-storage.bucket-store.batch-series-size",
               "fieldType": "int",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "fine_grained_chunks_caching_ranges_per_series",
-              "required": false,
-              "desc": "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled.",
-              "fieldValue": null,
-              "fieldDefaultValue": 1,
-              "fieldFlag": "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
             },
             {
               "kind": "field",

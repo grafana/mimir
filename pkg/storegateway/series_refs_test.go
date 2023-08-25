@@ -1461,7 +1461,6 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				tc.minT,
 				tc.maxT,
 				"t1",
-				1,
 				log.NewNopLogger(),
 			)
 
@@ -1702,54 +1701,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				}},
 			},
 		},
-		"partitions multiple chunks into 2 ranges": {
-			matcher:   labels.MustNewMatcher(labels.MatchRegexp, "a", "3"),
-			batchSize: 1,
-			expectedSeries: []seriesChunkRefsSet{
-				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "3", "b", "1"), chunksRanges: []seriesChunkRefsRange{
-						{refs: []seriesChunkRef{
-							{segFileOffset: 358, length: 49, minTime: 0, maxTime: 124},
-							{segFileOffset: 407, length: 50, minTime: 125, maxTime: 249},
-							{segFileOffset: 457, length: 50, minTime: 250, maxTime: 374},
-							{segFileOffset: 507, length: 50, minTime: 375, maxTime: 499},
-							{segFileOffset: 557, length: 50, minTime: 500, maxTime: 624},
-							{segFileOffset: 607, length: 50, minTime: 625, maxTime: 749},
-							{segFileOffset: 657, length: 50, minTime: 750, maxTime: 874},
-							{segFileOffset: 707, length: 50, minTime: 875, maxTime: 999},
-							{segFileOffset: 757, length: 50, minTime: 1000, maxTime: 1124},
-							{segFileOffset: 807, length: 50, minTime: 1125, maxTime: 1249},
-						}},
-						{refs: []seriesChunkRef{
-							{segFileOffset: 857, length: 50, minTime: 1250, maxTime: 1374},
-							{segFileOffset: 907, length: 50, minTime: 1375, maxTime: 1499},
-							{segFileOffset: 957, length: tsdb.EstimatedMaxChunkSize, minTime: 1500, maxTime: 1559},
-						}},
-					}},
-				}},
-				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "3", "b", "2"), chunksRanges: []seriesChunkRefsRange{
-						{refs: []seriesChunkRef{
-							{segFileOffset: 991, length: 49, minTime: 0, maxTime: 124},
-							{segFileOffset: 1040, length: 50, minTime: 125, maxTime: 249},
-							{segFileOffset: 1090, length: 50, minTime: 250, maxTime: 374},
-							{segFileOffset: 1140, length: 50, minTime: 375, maxTime: 499},
-							{segFileOffset: 1190, length: 50, minTime: 500, maxTime: 624},
-							{segFileOffset: 1240, length: 50, minTime: 625, maxTime: 749},
-							{segFileOffset: 1290, length: 50, minTime: 750, maxTime: 874},
-							{segFileOffset: 1340, length: 50, minTime: 875, maxTime: 999},
-							{segFileOffset: 1390, length: 50, minTime: 1000, maxTime: 1124},
-							{segFileOffset: 1440, length: 50, minTime: 1125, maxTime: 1249},
-						}},
-						{refs: []seriesChunkRef{
-							{segFileOffset: 1490, length: 50, minTime: 1250, maxTime: 1374},
-							{segFileOffset: 1540, length: 50, minTime: 1375, maxTime: 1499},
-							{segFileOffset: 1590, length: tsdb.EstimatedMaxChunkSize, minTime: 1500, maxTime: 1559},
-						}},
-					}},
-				}},
-			},
-		},
 		"doesn't return a series if its chunks are around minT/maxT but not within it": {
 			matcher: labels.MustNewMatcher(labels.MatchRegexp, "a", "4"),
 			minT:    500, maxT: 600, // The chunks for this timeseries are between 0 and 99 and 1000 and 1099
@@ -1796,7 +1747,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				strategy,
 				minT,
 				maxT,
-				2,
 				newSafeQueryStats(),
 				nil,
 				log.NewNopLogger(),
@@ -1898,7 +1848,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					noChunkRefs, // skip chunks since we are testing labels filtering
 					block.meta.MinTime,
 					block.meta.MaxTime,
-					2,
 					newSafeQueryStats(),
 					nil,
 					log.NewNopLogger(),
@@ -1963,7 +1912,6 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							defaultStrategy, // we don't skip chunks, so we can measure impact in loading chunk refs too
 							block.meta.MinTime,
 							block.meta.MaxTime,
-							2,
 							newSafeQueryStats(),
 							nil,
 							log.NewNopLogger(),
@@ -2512,7 +2460,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						noChunkRefs,
 						b.meta.MinTime,
 						b.meta.MaxTime,
-						1,
 						statsColdCache,
 						nil,
 						log.NewNopLogger(),
@@ -2544,7 +2491,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						noChunkRefs,
 						b.meta.MinTime,
 						b.meta.MaxTime,
-						1,
 						statsWarnCache,
 						nil,
 						log.NewNopLogger(),

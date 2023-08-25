@@ -711,19 +711,18 @@ func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 }
 
 type loadingSeriesChunkRefsSetIterator struct {
-	ctx                  context.Context
-	postingsSetIterator  *postingsSetsIterator
-	indexr               *bucketIndexReader
-	indexCache           indexcache.IndexCache
-	stats                *safeQueryStats
-	blockID              ulid.ULID
-	shard                *sharding.ShardSelector
-	seriesHasher         seriesHasher
-	strategy             seriesIteratorStrategy
-	minTime, maxTime     int64
-	tenantID             string
-	chunkRangesPerSeries int
-	logger               log.Logger
+	ctx                 context.Context
+	postingsSetIterator *postingsSetsIterator
+	indexr              *bucketIndexReader
+	indexCache          indexcache.IndexCache
+	stats               *safeQueryStats
+	blockID             ulid.ULID
+	shard               *sharding.ShardSelector
+	seriesHasher        seriesHasher
+	strategy            seriesIteratorStrategy
+	minTime, maxTime    int64
+	tenantID            string
+	logger              log.Logger
 
 	chunkMetasBuffer []chunks.Meta
 
@@ -743,7 +742,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 	seriesHasher seriesHasher,
 	strategy seriesIteratorStrategy,
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
-	chunkRangesPerSeries int,
 	stats *safeQueryStats,
 	reuse *reusedPostingsAndMatchers, // If this is not nil, these posting and matchers are used as it is without fetching new ones.
 	logger log.Logger,
@@ -787,7 +785,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 		minTime,
 		maxTime,
 		tenantID,
-		chunkRangesPerSeries,
 		logger,
 	)
 	if len(pendingMatchers) > 0 {
@@ -877,7 +874,6 @@ func newLoadingSeriesChunkRefsSetIterator(
 	minTime int64,
 	maxTime int64,
 	tenantID string,
-	chunkRangesPerSeries int,
 	logger log.Logger,
 ) *loadingSeriesChunkRefsSetIterator {
 	if strategy.isNoChunkRefsOnEntireBlock() {
@@ -885,20 +881,19 @@ func newLoadingSeriesChunkRefsSetIterator(
 	}
 
 	return &loadingSeriesChunkRefsSetIterator{
-		ctx:                  ctx,
-		postingsSetIterator:  postingsSetIterator,
-		indexr:               indexr,
-		indexCache:           indexCache,
-		stats:                stats,
-		blockID:              blockMeta.ULID,
-		shard:                shard,
-		seriesHasher:         seriesHasher,
-		strategy:             strategy,
-		minTime:              minTime,
-		maxTime:              maxTime,
-		tenantID:             tenantID,
-		logger:               logger,
-		chunkRangesPerSeries: chunkRangesPerSeries,
+		ctx:                 ctx,
+		postingsSetIterator: postingsSetIterator,
+		indexr:              indexr,
+		indexCache:          indexCache,
+		stats:               stats,
+		blockID:             blockMeta.ULID,
+		shard:               shard,
+		seriesHasher:        seriesHasher,
+		strategy:            strategy,
+		minTime:             minTime,
+		maxTime:             maxTime,
+		tenantID:            tenantID,
+		logger:              logger,
 	}
 }
 
@@ -1017,7 +1012,7 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 			}
 		case !s.strategy.isNoChunkRefs():
 			clampLastChunkLength(symbolizedSet.series, metas)
-			series.chunksRanges = metasToRanges(partitionChunks(metas, s.chunkRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
+			series.chunksRanges = metasToRanges([][]chunks.Meta{metas}, s.blockID, s.minTime, s.maxTime)
 		}
 		symbolizedSet.series = append(symbolizedSet.series, series)
 	}
@@ -1092,10 +1087,6 @@ func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet,
 	set.series = set.series[:writeIdx]
 	return set
 }
-
-const (
-	minChunksPerRange = 10
-)
 
 // partitionChunks creates a slice of []chunks.Meta for each range of chunks within the same segment file.
 // The partitioning here should be fairly static and not depend on the actual Series() request because

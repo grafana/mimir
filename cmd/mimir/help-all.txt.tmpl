@@ -307,8 +307,6 @@ Usage of ./cmd/mimir/mimir:
     	TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.chunks-cache.backend string
     	Backend for chunks cache, if not empty. Supported values: memcached, redis.
-  -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled
-    	[experimental] Enable fine-grained caching of chunks in the store-gateway. This reduces the required bandwidth and memory utilization.
   -blocks-storage.bucket-store.chunks-cache.max-get-range-requests int
     	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
@@ -401,8 +399,6 @@ Usage of ./cmd/mimir/mimir:
     	Client write timeout. (default 3s)
   -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
     	TTL for caching individual chunks subranges. (default 24h0m0s)
-  -blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series int
-    	[experimental] This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled. (default 1)
   -blocks-storage.bucket-store.ignore-blocks-within duration
     	Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter. (default 10h0m0s)
   -blocks-storage.bucket-store.ignore-deletion-marks-delay duration
