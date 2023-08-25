@@ -643,6 +643,11 @@ integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
 	go test -tags=requires_docker,stringlabels ./integration/...
 
+integration-tests-race: ## Run all integration tests with race-enabled Mimir docker image.
+integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE)
+integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
+	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
+
 web-serve:
 	cd website && hugo --config config.toml --minify -v server
 
