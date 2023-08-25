@@ -627,7 +627,9 @@
 
 
     // The routes to exclude from alerts.
-    alert_excluded_routes: [],
+    alert_excluded_routes: [
+      'debug_pprof',
+    ],
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',
