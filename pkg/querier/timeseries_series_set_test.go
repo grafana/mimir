@@ -81,7 +81,7 @@ func BenchmarkTimeSeriesSeriesSet(b *testing.B) {
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
 		lbls := mkZLabels("__name__", "test", "series_id", strconv.Itoa(seriesID))
 		var samples []mimirpb.Sample
-		for t := int64(0); t <= numSamplesPerSeries; t += 1 {
+		for t := int64(0); t <= numSamplesPerSeries; t++ {
 			samples = append(samples, mimirpb.Sample{TimestampMs: t, Value: math.Sin(float64(t))})
 		}
 		timeseries = append(timeseries, mimirpb.TimeSeries{
