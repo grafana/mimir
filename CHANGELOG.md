@@ -105,6 +105,7 @@
 * [BUGFIX] Ingester: Don't set "last update time" of TSDB into the future when opening TSDB. This could prevent detecting of idle TSDB for a long time, if sample in distant future was ingested. #5787
 * [BUGFIX] Store-gateway: fix bug when lazy index header could be closed prematurely even when still in use. #5795
 * [BUGFIX] Ruler: gracefully shut down rule evaluations. #5778
+* [BUGFIX] Querier: fix performance when ingesters stream samples. #5836
 
 ### Mixin
 
