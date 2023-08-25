@@ -85,3 +85,8 @@ func FromBuilderToLabelAdapters(builder *labels.Builder, _ []LabelAdapter) []Lab
 func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	return *(*[]LabelAdapter)(unsafe.Pointer(&ls))
 }
+
+// The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
+func CompareLabelAdapters(a, b []LabelAdapter) int {
+	return labels.Compare(FromLabelAdaptersToLabels(a), FromLabelAdaptersToLabels(b))
+}
