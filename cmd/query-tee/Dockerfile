@@ -4,7 +4,8 @@
 # Provenance-includes-copyright: The Cortex Authors.
 
 FROM       alpine:3.18.3
-RUN        apk add --no-cache ca-certificates tzdata
+ARG        EXTRA_PACKAGES
+RUN        apk add --no-cache ca-certificates tzdata $EXTRA_PACKAGES
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
 ARG        TARGETOS
 ARG        TARGETARCH

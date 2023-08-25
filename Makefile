@@ -112,7 +112,8 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 %/$(UPTODATE_RACE): GOOS=linux
 %/$(UPTODATE_RACE): %/Dockerfile
 	@echo
-	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true --build-arg=BINARY_SUFFIX=_race -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
+	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc, but Alpine uses musl libc instead.
+	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true --build-arg=BINARY_SUFFIX=_race --build-arg=EXTRA_PACKAGES="gcompat" -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
 	@echo
