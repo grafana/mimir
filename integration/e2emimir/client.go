@@ -170,13 +170,19 @@ func (c *Client) PushOTLP(timeseries []prompb.TimeSeries) (*http.Response, error
 
 // Query runs an instant query.
 func (c *Client) Query(query string, ts time.Time) (model.Value, error) {
-	value, _, err := c.querierClient.Query(context.Background(), query, ts)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	value, _, err := c.querierClient.Query(ctx, query, ts)
 	return value, err
 }
 
 // Query runs a query range.
 func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration) (model.Value, error) {
-	value, _, err := c.querierClient.QueryRange(context.Background(), query, promv1.Range{
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	value, _, err := c.querierClient.QueryRange(ctx, query, promv1.Range{
 		Start: start,
 		End:   end,
 		Step:  step,
@@ -200,7 +206,9 @@ func (c *Client) QueryRangeRaw(query string, start, end time.Time, step time.Dur
 
 // QueryExemplars runs an exemplar query.
 func (c *Client) QueryExemplars(query string, start, end time.Time) ([]promv1.ExemplarQueryResult, error) {
-	return c.querierClient.QueryExemplars(context.Background(), query, start, end)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	return c.querierClient.QueryExemplars(ctx, query, start, end)
 }
 
 // QuerierAddress returns the address of the querier
@@ -223,19 +231,28 @@ func (c *Client) QueryRawAt(query string, ts time.Time) (*http.Response, []byte,
 
 // Series finds series by label matchers.
 func (c *Client) Series(matches []string, start, end time.Time) ([]model.LabelSet, error) {
-	result, _, err := c.querierClient.Series(context.Background(), matches, start, end)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	result, _, err := c.querierClient.Series(ctx, matches, start, end)
 	return result, err
 }
 
 // LabelValues gets label values
 func (c *Client) LabelValues(label string, start, end time.Time, matches []string) (model.LabelValues, error) {
-	result, _, err := c.querierClient.LabelValues(context.Background(), label, matches, start, end)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	result, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end)
 	return result, err
 }
 
 // LabelNames gets label names
 func (c *Client) LabelNames(start, end time.Time) ([]string, error) {
-	result, _, err := c.querierClient.LabelNames(context.Background(), nil, start, end)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	result, _, err := c.querierClient.LabelNames(ctx, nil, start, end)
 	return result, err
 }
 
