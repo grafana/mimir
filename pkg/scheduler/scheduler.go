@@ -245,9 +245,9 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 				break
 			}
-			enqueueSpan, _ := opentracing.StartSpanFromContextWithTracer(frontendCtx, tracer, "enqueue", opentracing.ChildOf(parentSpanContext))
+			enqueueSpan, reqCtx := opentracing.StartSpanFromContextWithTracer(frontendCtx, tracer, "enqueue", opentracing.ChildOf(parentSpanContext))
 
-			err = s.enqueueRequest(frontendCtx, frontendAddress, msg, enqueueSpan.Context())
+			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
 			switch {
 			case err == nil:
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
@@ -317,9 +317,9 @@ func (s *Scheduler) frontendDisconnected(frontendAddress string) {
 	}
 }
 
-func (s *Scheduler) enqueueRequest(frontendContext context.Context, frontendAddr string, msg *schedulerpb.FrontendToScheduler, parentSpanContext opentracing.SpanContext) error {
+func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr string, msg *schedulerpb.FrontendToScheduler) error {
 	// Create new context for this request, to support cancellation.
-	ctx, cancel := context.WithCancel(frontendContext)
+	ctx, cancel := context.WithCancel(requestContext)
 	shouldCancel := true
 	defer func() {
 		if shouldCancel {
@@ -339,8 +339,8 @@ func (s *Scheduler) enqueueRequest(frontendContext context.Context, frontendAddr
 
 	now := time.Now()
 
-	req.parentSpanContext = parentSpanContext
-	req.queueSpan, req.ctx = opentracing.StartSpanFromContext(ctx, "queued", opentracing.ChildOf(parentSpanContext))
+	req.parentSpanContext = opentracing.SpanFromContext(requestContext).Context()
+	req.queueSpan, req.ctx = opentracing.StartSpanFromContext(ctx, "queued")
 	req.enqueueTime = now
 	req.ctxCancel = cancel
 
