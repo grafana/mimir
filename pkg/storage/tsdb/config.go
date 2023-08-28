@@ -176,7 +176,7 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, lo
 		return err
 	}
 
-	if err := cfg.TSDB.Validate(activeSeriesCfg, logger); err != nil {
+	if err := cfg.TSDB.Validate(activeSeriesCfg); err != nil {
 		return err
 	}
 
@@ -288,7 +288,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Validate the config.
-func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config, logger log.Logger) error {
+func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 	if cfg.ShipInterval > 0 && cfg.ShipConcurrency <= 0 {
 		return errInvalidShipConcurrency
 	}
