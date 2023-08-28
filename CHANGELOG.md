@@ -94,6 +94,7 @@
 * [ENHANCEMENT] Ingester: add UI for listing tenants with TSDB on given ingester and viewing details of tenants's TSDB on given ingester. #5803 #5824
 * [ENHANCEMENT] Querier: improve observability of calls to store-gateways during queries. #5809
 * [ENHANCEMENT] Query-frontend: improve tracing of interactions with query-scheduler. #5818
+* [ENHANCEMENT] Query-scheduler: improve tracing of requests when request is rejected by query-scheduler. #5848
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377
