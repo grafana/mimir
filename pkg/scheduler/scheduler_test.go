@@ -352,7 +352,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	mockTracer := mocktracer.New()
 	opentracing.SetGlobalTracer(mockTracer)
 	sp, _ := opentracing.StartSpanFromContextWithTracer(context.Background(), mockTracer, "client")
-	mockTracer.Inject(sp.Context(), opentracing.HTTPHeaders, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
+	require.NoError(t, mockTracer.Inject(sp.Context(), opentracing.HTTPHeaders, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest)))
 
 	require.NoError(t, fl.Send(&req))
 
