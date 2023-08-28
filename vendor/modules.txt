@@ -567,10 +567,14 @@ github.com/gosimple/slug
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
 <<<<<<< HEAD
+<<<<<<< HEAD
 # github.com/grafana/dskit v0.0.0-20230829141140-06955c011ffd
 =======
 # github.com/grafana/dskit v0.0.0-20230828154006-24b117834dd4
 >>>>>>> cad5a5183 (update dskit in mimir)
+=======
+# github.com/grafana/dskit v0.0.0-20230829145542-36fa07affa4d
+>>>>>>> 527070d02 (update to just use opentracing)
 ## explicit; go 1.19
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache

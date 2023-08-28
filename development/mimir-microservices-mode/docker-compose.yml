@@ -293,18 +293,6 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
-  "prometheus":
-    "command":
-      - "--config.file=/etc/prometheus/prometheus.yaml"
-      - "--enable-feature=exemplar-storage"
-      - "--enable-feature=native-histograms"
-    "image": "prom/prometheus:v2.45.0"
-    "ports":
-      - "9090:9090"
-    "volumes":
-      - "./config:/etc/prometheus"
-      - "../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml"
-      - "../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml"
   "querier":
     "build":
       "context": "."

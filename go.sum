@@ -863,6 +863,7 @@ github.com/gosimple/slug v1.1.1/go.mod h1:ER78kgg1Mv0NQGlXiDe57DpCyfbNywXXZ9mIor
 github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9 h1:LQAhgcUPnzdjU/OjCJaLlPQI7NmQCRlfjMPSA1VegvA=
 github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 <<<<<<< HEAD
+<<<<<<< HEAD
 github.com/grafana/dskit v0.0.0-20230829141140-06955c011ffd h1:RHZuBHWNS2HRJ5XhQK7cKP11EMMJPtJO2xKvQ+ws+PU=
 github.com/grafana/dskit v0.0.0-20230829141140-06955c011ffd/go.mod h1:3u7fr4hmOhuUL9Yc1QP/oa3za73kxvqJnRJH4BA5fOM=
 github.com/grafana/e2e v0.1.1-0.20230828072146-510b1706a292 h1:t+QoVWpA+KIgwMmcNI3TDin2CUWFz3f12GdKWIfB1/g=
@@ -870,6 +871,10 @@ github.com/grafana/e2e v0.1.1-0.20230828072146-510b1706a292/go.mod h1:3UsooRp7yW
 =======
 github.com/grafana/dskit v0.0.0-20230828154006-24b117834dd4 h1:zGUdgINpk8Nlp40LV+JflzolJYE7CRPOm+XxaOa3xJ8=
 github.com/grafana/dskit v0.0.0-20230828154006-24b117834dd4/go.mod h1:Hyv6Ro1wlGM0IVbkr6bkFxoffuc6ugYe4YujE/FG4hE=
+=======
+github.com/grafana/dskit v0.0.0-20230829145542-36fa07affa4d h1:FYLwykmTRIyE4B2p1GwO9dDqK01ss0blaIuUDOnC0h8=
+github.com/grafana/dskit v0.0.0-20230829145542-36fa07affa4d/go.mod h1:Hyv6Ro1wlGM0IVbkr6bkFxoffuc6ugYe4YujE/FG4hE=
+>>>>>>> 527070d02 (update to just use opentracing)
 github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b h1:dzle+89/D0hOxscjZlkb6ovYA52t9hl6h/S+hI8ek1Q=
 github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b/go.mod h1:3UsooRp7yW5/NJQBlXcTsAHOoykEhNUYXkQ3r6ehEEY=
 >>>>>>> cad5a5183 (update dskit in mimir)

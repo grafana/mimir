@@ -347,10 +347,7 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 		if accumulator.End >= extents[i].End {
 			continue
 		}
-		traceID, sampled := tracing.ExtractTraceID(ctx)
-		if sampled {
-			accumulator.TraceId = traceID
-		}
+		accumulator.TraceId, _ = tracing.ExtractSampledTraceID(ctx)
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
 		if err != nil {

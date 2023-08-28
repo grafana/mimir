@@ -147,15 +147,10 @@ func parseTracingConfig() (config, error) {
 
 	if e := os.Getenv(envJaegerSamplerParam); e != "" {
 		if value, err := strconv.ParseFloat(e, 64); err == nil {
-			if cfg.samplerParam >= 0 && cfg.samplerParam <= 1.0 {
-				cfg.samplerParam = value
-			}
-			return cfg, fmt.Errorf(
-				"invalid Param for probabilistic sampler; expecting value between 0 and 1, received %v",
-				value,
-			)
+			cfg.samplerParam = value
+		} else {
+			return cfg, errors.Wrapf(err, "cannot parse env var %s=%s", envJaegerSamplerParam, e)
 		}
-		return cfg, errors.Wrapf(err, "cannot parse env var %s=%s", envJaegerSamplerParam, e)
 	}
 
 	if e := os.Getenv(envJaegerSamplingEndpoint); e != "" {
@@ -165,6 +160,11 @@ func parseTracingConfig() (config, error) {
 	} else if e := os.Getenv(envJaegerAgentHost); e != "" {
 		// Fallback if we know the agent host - try the sampling endpoint there
 		cfg.samplingServerURL = fmt.Sprintf("http://%s:%d/sampling", e, envJaegerDefaultSamplingServerPort)
+	}
+
+	// When sampling server URL is set, we use the remote sampler
+	if cfg.samplingServerURL != "" && cfg.samplerType == "" {
+		cfg.samplerType = "remote"
 	}
 
 	// Parse tags
@@ -193,11 +193,6 @@ func (cfg config) initJaegerTracerProvider(serviceName string) (io.Closer, error
 		return nil, err
 	}
 
-	res, err := NewResource(serviceName, cfg.jaegerTags)
-	if err != nil {
-		return nil, err
-	}
-
 	// Configure sampling strategy
 	sampler := tracesdk.AlwaysSample()
 	if cfg.samplerType == "const" {
@@ -212,6 +207,17 @@ func (cfg config) initJaegerTracerProvider(serviceName string) (io.Closer, error
 	} else if cfg.samplerType != "" {
 		return nil, errors.Errorf("unknown sampler type %q", cfg.samplerType)
 	}
+	customAttrs := cfg.jaegerTags
+	customAttrs = append(customAttrs,
+		attribute.String("samplerType", cfg.samplerType),
+		attribute.Float64("samplerParam", cfg.samplerParam),
+		attribute.String("samplingServerURL", cfg.samplingServerURL),
+	)
+	res, err := NewResource(serviceName, customAttrs)
+	if err != nil {
+		return nil, err
+	}
+
 	tp := tracesdk.NewTracerProvider(
 		tracesdk.WithBatcher(exp),
 		tracesdk.WithResource(res),
