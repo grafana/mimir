@@ -175,12 +175,15 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	minMimir := 3
 	instances := make([]*e2emimir.MimirService, 0)
 
+	// Increase timeout for metrics checks. Needed when testing against race-enabled Mimir.
 	const metricsTimeout = 30 * time.Second
-	backoffConfig := backoff.Config{MinBackoff: 250 * time.Millisecond, MaxBackoff: 1 * time.Second, MaxRetries: 50}
+	flags := map[string]string{
+		"-memberlist.packet-dial-timeout":  "10s",
+		"-memberlist.packet-write-timeout": "10s",
+	}
 
 	// Start the 1st instance. This will provide the initial state to other members.
-	firstInstance := newSingleBinary("mimir-1", "", "", nil)
-	firstInstance.SetBackoff(backoffConfig)
+	firstInstance := newSingleBinary("mimir-1", "", "", flags)
 	firstInstance.SetMetricsTimeout(metricsTimeout)
 
 	require.NoError(t, s.StartAndWaitReady(firstInstance))
@@ -191,12 +194,8 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	for i := 2; i <= maxMimir; i++ {
 		name := fmt.Sprintf("mimir-%d", i)
 		join := e2e.NetworkContainerHostPort(networkName, firstInstance.Name(), 8000)
-		c := newSingleBinary(name, "", join, map[string]string{
-			"-memberlist.packet-dial-timeout":  "10s",
-			"-memberlist.packet-write-timeout": "10s",
-		})
+		c := newSingleBinary(name, "", join, flags)
 		// Increase timeouts for checks.
-		c.SetBackoff(backoffConfig)
 		c.SetMetricsTimeout(metricsTimeout)
 		nextInstances = append(nextInstances, c)
 		instances = append(instances, c)

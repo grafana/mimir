@@ -345,10 +345,7 @@ jobs:
         run: |
           export IMAGE_TAG=$(make image-tag)
           # skopeo will by default load system-specific version of the image (linux/amd64).
-          # skopeo copy oci-archive:/tmp/images/mimir.oci "docker-daemon:grafana/mimir:$IMAGE_TAG"
           skopeo copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
-          # Print Mimir version and architecture loaded to Docker.
-          # docker run "grafana/mimir:$IMAGE_TAG" --version
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v3
         with:
