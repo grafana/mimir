@@ -189,7 +189,9 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 			"-memberlist.packet-dial-timeout":  "10s",
 			"-memberlist.packet-write-timeout": "10s",
 		})
+		// Increase timeouts for checks.
 		c.SetBackoff(backoff.Config{MinBackoff: 250 * time.Millisecond, MaxBackoff: 1 * time.Second, MaxRetries: 50})
+		c.SetMetricsTimeout(5 * time.Second)
 		nextInstances = append(nextInstances, c)
 		instances = append(instances, c)
 	}

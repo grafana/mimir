@@ -603,7 +603,7 @@ github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
 github.com/grafana/dskit/tracing
 github.com/grafana/dskit/user
-# github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
+# github.com/grafana/e2e v0.1.1-0.20230828072146-510b1706a292 => ../e2e
 ## explicit; go 1.17
 github.com/grafana/e2e
 github.com/grafana/e2e/cache
@@ -1484,3 +1484,4 @@ sigs.k8s.io/yaml
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
 # github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
+# github.com/grafana/e2e => ../e2e
