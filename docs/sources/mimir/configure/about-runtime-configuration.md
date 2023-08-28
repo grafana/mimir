@@ -98,4 +98,4 @@ An advanced runtime configuration option controls if ingesters transfer encoded 
 The parameter `ingester_stream_chunks_when_using_blocks` might only be used in runtime configuration.
 A value of `true` transfers encoded chunks, and a value of `false` transfers decoded series.
 
-> **Note:** The parameter `ingester_stream_chunks_when_using_blocks` in the runtime configuration can override the setting of `-ingester.stream-chunks-when-using-blocks` (CLI flag), which is enabled by default. We strongly recommend to keep it enabled, except in rare cases where users observe Grafana Mimir rules evaluation slowing down.
+> **Note:** The parameter `ingester_stream_chunks_when_using_blocks` in the runtime configuration can override the CLI flag `-ingester.stream-chunks-when-using-blocks`, which is enabled by default. We strongly recommend to keep it enabled, except in rare cases where you observe rules evaluation slowing down.
