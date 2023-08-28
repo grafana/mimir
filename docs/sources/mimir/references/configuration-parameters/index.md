@@ -3588,9 +3588,7 @@ tsdb:
 
   # (advanced) Maximum number of CPUs that can simultaneously processes WAL
   # replay. If it is set to 0, then each TSDB is replayed with a concurrency
-  # equal to the number of CPU cores available on the machine. If set to a
-  # positive value it overrides the deprecated
-  # -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.
+  # equal to the number of CPU cores available on the machine.
   # CLI flag: -blocks-storage.tsdb.wal-replay-concurrency
   [wal_replay_concurrency: <int> | default = 0]
 
@@ -3625,10 +3623,6 @@ tsdb:
   # enabled.
   # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
   [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
-
-  # (deprecated) limit the number of concurrently opening TSDB's on startup
-  # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
-  [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 
   # (experimental) Maximum capacity for out of order chunks, in samples between
   # 1 and 255.

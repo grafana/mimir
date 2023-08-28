@@ -8038,39 +8038,34 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 	tests := map[string]struct {
-		walReplayConcurrency               int
-		maxTSDBOpeningConcurrencyOnStartup int
-		tenantCount                        int
-		expectedTSDBOpenConcurrency        int
-		expectedTSDBWALReplayConcurrency   int
+		walReplayConcurrency             int
+		tenantCount                      int
+		expectedTSDBOpenConcurrency      int
+		expectedTSDBWALReplayConcurrency int
 	}{
-		"if -blocks-storage.tsdb.wal-replay-concurrency is 0, -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup is used": {
-			walReplayConcurrency:               0,
-			maxTSDBOpeningConcurrencyOnStartup: 10,
-			tenantCount:                        5,
-			expectedTSDBOpenConcurrency:        10,
-			expectedTSDBWALReplayConcurrency:   0,
+		"if -blocks-storage.tsdb.wal-replay-concurrency is 0, mimir_tsdb.DefaultMaxTSDBOpeningConcurrencyOnStartup is used": {
+			walReplayConcurrency:             0,
+			tenantCount:                      5,
+			expectedTSDBOpenConcurrency:      mimir_tsdb.DefaultMaxTSDBOpeningConcurrencyOnStartup,
+			expectedTSDBWALReplayConcurrency: 0,
 		},
 		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are <= 10 tenants, ignore -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup and parallelize WAL replay on sequential openings": {
-			walReplayConcurrency:               3,
-			maxTSDBOpeningConcurrencyOnStartup: 10,
-			tenantCount:                        5,
-			expectedTSDBOpenConcurrency:        1,
-			expectedTSDBWALReplayConcurrency:   3,
+			walReplayConcurrency:             3,
+			tenantCount:                      5,
+			expectedTSDBOpenConcurrency:      1,
+			expectedTSDBWALReplayConcurrency: 3,
 		},
 		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are > 10 tenants, ignore -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup and parallelize openings with single WAL replay": {
-			walReplayConcurrency:               3,
-			maxTSDBOpeningConcurrencyOnStartup: 10,
-			tenantCount:                        15,
-			expectedTSDBOpenConcurrency:        3,
-			expectedTSDBWALReplayConcurrency:   1,
+			walReplayConcurrency:             3,
+			tenantCount:                      15,
+			expectedTSDBOpenConcurrency:      3,
+			expectedTSDBWALReplayConcurrency: 1,
 		},
 	}
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			tsdbConfig := mimir_tsdb.TSDBConfig{
-				WALReplayConcurrency:                         testData.walReplayConcurrency,
-				DeprecatedMaxTSDBOpeningConcurrencyOnStartup: testData.maxTSDBOpeningConcurrencyOnStartup,
+				WALReplayConcurrency: testData.walReplayConcurrency,
 			}
 			tsdbOpenConcurrency, tsdbWALReplayConcurrency := getOpenTSDBsConcurrencyConfig(tsdbConfig, testData.tenantCount)
 			require.Equal(t, testData.expectedTSDBOpenConcurrency, tsdbOpenConcurrency)
