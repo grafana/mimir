@@ -71,7 +71,9 @@ C     [^\n]
 
 {M}({M}|{D})*                         l.state = sValue; return tMName
 <sValue>\{                            l.state = sLabels; return tBraceOpen
+\{                                    l.state = sLabels; return tBraceOpen
 <sLabels>{L}({L}|{D})*                return tLName
+<sLabels>\"(\\.|[^\\"])*\"            l.state = sLabels; return tQString
 <sLabels>\}                           l.state = sValue; return tBraceClose
 <sLabels>=                            l.state = sLValue; return tEqual
 <sLabels>,                            return tComma

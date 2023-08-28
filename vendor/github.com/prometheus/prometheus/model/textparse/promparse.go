@@ -57,6 +57,7 @@ const (
 	tComment
 	tBlank
 	tMName
+	tQString
 	tBraceOpen
 	tBraceClose
 	tLName
@@ -93,6 +94,8 @@ func (t token) String() string {
 		return "BLANK"
 	case tMName:
 		return "MNAME"
+	case tQString:
+		return "QSTRING"
 	case tBraceOpen:
 		return "BOPEN"
 	case tBraceClose:
@@ -153,6 +156,12 @@ type PromParser struct {
 	ts      int64
 	hasTS   bool
 	start   int
+	// offsets is a list of offsets into series that describe the positions
+	// of the metric name and label names and values for this series.
+	// p.offsets[0] is the start character of the metric name
+	// p.offsets[1] is the end of the metric name
+	// Subsequently, p.offsets is a pair of pair of offsets for the positions
+	// of the label name and value start and end characters.
 	offsets []int
 }
 
@@ -218,9 +227,9 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 	s := string(p.series)
 
 	p.builder.Reset()
-	p.builder.Add(labels.MetricName, s[:p.offsets[0]-p.start])
+	p.builder.Add(labels.MetricName, s[p.offsets[0]-p.start:p.offsets[1]-p.start])
 
-	for i := 1; i < len(p.offsets); i += 4 {
+	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
 		c := p.offsets[i+2] - p.start
@@ -339,12 +348,24 @@ func (p *PromParser) Next() (Entry, error) {
 			return EntryInvalid, p.parseError("linebreak expected after comment", t)
 		}
 		return EntryComment, nil
+	case tBraceOpen:
+		// We found a brace, so make room for the eventual metric name. If these
+		// values aren't updated, then the metric name was not set inside the
+		// braces and we can return an error.
+		if len(p.offsets) == 0 {
+			p.offsets = []int{-1, -1}
+		}
+		if err := p.parseLVals(); err != nil {
+			return EntryInvalid, err
+		}
 
-	case tMName:
-		p.offsets = append(p.offsets, p.l.i)
 		p.series = p.l.b[p.start:p.l.i]
-
+		return p.parseMetricSuffix(p.nextToken())
+	case tMName:
+		p.offsets = append(p.offsets, p.start, p.l.i)
+		p.series = p.l.b[p.start:p.l.i]
 		t2 := p.nextToken()
+		// If there's a brace, consume and parse the label values
 		if t2 == tBraceOpen {
 			if err := p.parseLVals(); err != nil {
 				return EntryInvalid, err
@@ -385,19 +406,36 @@ func (p *PromParser) Next() (Entry, error) {
 	return EntryInvalid, err
 }
 
+// parseLVals parses the contents inside the braces.
 func (p *PromParser) parseLVals() error {
 	t := p.nextToken()
 	for {
+		curTStart := p.l.start
+		curTI := p.l.i
 		switch t {
 		case tBraceClose:
 			return nil
 		case tLName:
+		case tQString:
 		default:
 			return p.parseError("expected label name", t)
 		}
-		p.offsets = append(p.offsets, p.l.start, p.l.i)
 
-		if t := p.nextToken(); t != tEqual {
+		t = p.nextToken()
+		// A quoted string followed by a comma or brace is a metric name. Set the
+		// offsets and continue processing.
+		if t == tComma || t == tBraceClose {
+			if p.offsets[0] != -1 || p.offsets[1] != -1 {
+				return fmt.Errorf("metric name already set while parsing: %q", p.l.b[p.start:p.l.i])
+			}
+			p.offsets[0] = curTStart + 1
+			p.offsets[1] = curTI - 1
+			t = p.nextToken()
+			continue
+		}
+		// We have a label name.
+		p.offsets = append(p.offsets, curTStart, curTI)
+		if t != tEqual {
 			return p.parseError("expected equal", t)
 		}
 		if t := p.nextToken(); t != tLValue {
@@ -416,6 +454,42 @@ func (p *PromParser) parseLVals() error {
 			t = p.nextToken()
 		}
 	}
+}
+
+// parseMetricSuffix parses the end of the line after the metric name and
+// labels. It starts parsing with the provided token.
+func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
+	if t != tValue {
+		return EntryInvalid, p.parseError("expected value after metric", t)
+	}
+	var err error
+	if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
+		return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+	}
+	// Ensure canonical NaN value.
+	if math.IsNaN(p.val) {
+		p.val = math.Float64frombits(value.NormalNaN)
+	}
+	p.hasTS = false
+	switch t := p.nextToken(); t {
+	case tLinebreak:
+		break
+	case tTimestamp:
+		p.hasTS = true
+		if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
+			return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+		}
+		if t2 := p.nextToken(); t2 != tLinebreak {
+			return EntryInvalid, p.parseError("expected next entry after timestamp", t2)
+		}
+	default:
+		return EntryInvalid, p.parseError("expected timestamp or new record", t)
+	}
+
+	if p.offsets[0] == -1 {
+		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
+	}
+	return EntrySeries, nil
 }
 
 var lvalReplacer = strings.NewReplacer(
