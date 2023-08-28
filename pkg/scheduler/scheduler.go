@@ -242,24 +242,24 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			tracer := opentracing.GlobalTracer()
 			parentSpanContext, err := httpgrpcutil.GetParentSpanForRequest(tracer, msg.HttpRequest)
 			if err != nil {
-				return err
-			}
-
-			enqueueSpan, _ := opentracing.StartSpanFromContextWithTracer(frontendCtx, tracer, "enqueue", opentracing.ChildOf(parentSpanContext))
-
-			err = s.enqueueRequest(frontendCtx, frontendAddress, msg, enqueueSpan.Context())
-			switch {
-			case err == nil:
-				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-			case errors.Is(err, queue.ErrTooManyRequests):
-				enqueueSpan.LogKV("error", err.Error())
-				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
-			default:
-				enqueueSpan.LogKV("error", err.Error())
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
-			}
+			} else {
+				enqueueSpan, _ := opentracing.StartSpanFromContextWithTracer(frontendCtx, tracer, "enqueue", opentracing.ChildOf(parentSpanContext))
 
-			enqueueSpan.Finish()
+				err = s.enqueueRequest(frontendCtx, frontendAddress, msg, enqueueSpan.Context())
+				switch {
+				case err == nil:
+					resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+				case errors.Is(err, queue.ErrTooManyRequests):
+					enqueueSpan.LogKV("error", err.Error())
+					resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+				default:
+					enqueueSpan.LogKV("error", err.Error())
+					resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
+				}
+
+				enqueueSpan.Finish()
+			}
 		case schedulerpb.CANCEL:
 			s.cancelRequestAndRemoveFromPending(frontendAddress, msg.QueryID)
 			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
