@@ -169,6 +169,8 @@
 
 ### Mimirtool
 
+* [ENHANCEMENT] Mimirtool uses paging to fetch all dashboards from Grafana when running `mimirtool analyse grafana`. This allows the tool to work correctly when running against Grafana instances with more than a 1000 dashboards. #5825
+
 ### Mimir Continuous Test
 
 ### Query-tee
