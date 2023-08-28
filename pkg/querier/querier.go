@@ -269,11 +269,12 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 			Start: q.mint,
 			End:   q.maxt,
 		}
-	} else {
-		// Make a copy, to avoid changing shared SelectHints.
-		scp := *sp
-		sp = &scp
 	}
+	//else {
+	//	// Make a copy, to avoid changing shared SelectHints.
+	//	scp := *sp
+	//	sp = &scp
+	//}
 
 	level.Debug(log).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
 		util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
