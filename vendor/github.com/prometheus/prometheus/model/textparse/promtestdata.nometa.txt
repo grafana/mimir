@@ -1,10 +1,10 @@
-go_gc_duration_seconds{quantile="0"} 4.9351e-05
-go_gc_duration_seconds{quantile="0.25"} 7.424100000000001e-05
-go_gc_duration_seconds{quantile="0.5"} 8.3835e-05
-go_gc_duration_seconds{quantile="0.75"} 0.000106744
-go_gc_duration_seconds{quantile="1"} 0.002072195
-go_gc_duration_seconds_sum 0.012139815
-go_gc_duration_seconds_count 99
+go.gc_duration_seconds{quantile="0"} 4.9351e-05
+go.gc_duration_seconds{quantile="0.25"} 7.424100000000001e-05
+go.gc_duration_seconds{quantile="0.5"} 8.3835e-05
+go.gc_duration_seconds{quantile="0.75"} 0.000106744
+go.gc_duration_seconds{quantile="1"} 0.002072195
+go.gc_duration_seconds_sum 0.012139815
+go.gc_duration_seconds_count 99
 go_goroutines 33
 go_memstats_alloc_bytes 1.7518624e+07
 go_memstats_alloc_bytes_total 8.3062296e+08
