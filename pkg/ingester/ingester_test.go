@@ -8049,13 +8049,13 @@ func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 			expectedTSDBOpenConcurrency:      mimir_tsdb.DefaultMaxTSDBOpeningConcurrencyOnStartup,
 			expectedTSDBWALReplayConcurrency: 0,
 		},
-		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are <= 10 tenants, ignore -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup and parallelize WAL replay on sequential openings": {
+		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are <= 10 tenants, parallelize WAL replay on sequential openings": {
 			walReplayConcurrency:             3,
 			tenantCount:                      5,
 			expectedTSDBOpenConcurrency:      1,
 			expectedTSDBWALReplayConcurrency: 3,
 		},
-		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are > 10 tenants, ignore -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup and parallelize openings with single WAL replay": {
+		"if -blocks-storage.tsdb.wal-replay-concurrency > 0 and there are > 10 tenants, parallelize openings with single WAL replay": {
 			walReplayConcurrency:             3,
 			tenantCount:                      15,
 			expectedTSDBOpenConcurrency:      3,
