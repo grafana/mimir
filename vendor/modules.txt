@@ -603,7 +603,7 @@ github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
 github.com/grafana/dskit/tracing
 github.com/grafana/dskit/user
-# github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b
+# github.com/grafana/e2e v0.1.1-0.20230828072146-510b1706a292
 ## explicit; go 1.17
 github.com/grafana/e2e
 github.com/grafana/e2e/cache
