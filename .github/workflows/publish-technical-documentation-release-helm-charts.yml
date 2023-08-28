@@ -8,6 +8,7 @@ on:
     - "mimir-distributed-release-[0-9]+.[0-9]+"
     paths:
     - "docs/sources/helm-charts/**"
+    - "operations/helm/charts/mimir-distributed/Chart.yaml"
 
   workflow_dispatch: # for manual testing
 
