@@ -237,16 +237,29 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 		switch msg.GetType() {
 		case schedulerpb.ENQUEUE:
-			err = s.enqueueRequest(frontendCtx, frontendAddress, msg)
+			// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
+			// information, since that is a long-running request.
+			tracer := opentracing.GlobalTracer()
+			parentSpanContext, err := httpgrpcutil.GetParentSpanForRequest(tracer, msg.HttpRequest)
+			if err != nil {
+				return err
+			}
+
+			enqueueSpan, _ := opentracing.StartSpanFromContextWithTracer(frontendCtx, tracer, "enqueue", opentracing.ChildOf(parentSpanContext))
+
+			err = s.enqueueRequest(frontendCtx, frontendAddress, msg, enqueueSpan.Context())
 			switch {
 			case err == nil:
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			case errors.Is(err, queue.ErrTooManyRequests):
+				enqueueSpan.LogKV("error", err.Error())
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 			default:
+				enqueueSpan.LogKV("error", err.Error())
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 			}
 
+			enqueueSpan.Finish()
 		case schedulerpb.CANCEL:
 			s.cancelRequestAndRemoveFromPending(frontendAddress, msg.QueryID)
 			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
@@ -304,7 +317,7 @@ func (s *Scheduler) frontendDisconnected(frontendAddress string) {
 	}
 }
 
-func (s *Scheduler) enqueueRequest(frontendContext context.Context, frontendAddr string, msg *schedulerpb.FrontendToScheduler) error {
+func (s *Scheduler) enqueueRequest(frontendContext context.Context, frontendAddr string, msg *schedulerpb.FrontendToScheduler, parentSpanContext opentracing.SpanContext) error {
 	// Create new context for this request, to support cancellation.
 	ctx, cancel := context.WithCancel(frontendContext)
 	shouldCancel := true
@@ -313,14 +326,6 @@ func (s *Scheduler) enqueueRequest(frontendContext context.Context, frontendAddr
 			cancel()
 		}
 	}()
-
-	// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
-	// information, since that is a long-running request.
-	tracer := opentracing.GlobalTracer()
-	parentSpanContext, err := httpgrpcutil.GetParentSpanForRequest(tracer, msg.HttpRequest)
-	if err != nil {
-		return err
-	}
 
 	userID := msg.GetUserID()
 
@@ -335,7 +340,7 @@ func (s *Scheduler) enqueueRequest(frontendContext context.Context, frontendAddr
 	now := time.Now()
 
 	req.parentSpanContext = parentSpanContext
-	req.queueSpan, req.ctx = opentracing.StartSpanFromContextWithTracer(ctx, tracer, "queued", opentracing.ChildOf(parentSpanContext))
+	req.queueSpan, req.ctx = opentracing.StartSpanFromContext(ctx, "queued", opentracing.ChildOf(parentSpanContext))
 	req.enqueueTime = now
 	req.ctxCancel = cancel
 
