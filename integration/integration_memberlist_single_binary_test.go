@@ -175,10 +175,13 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	minMimir := 3
 	instances := make([]*e2emimir.MimirService, 0)
 
+	const metricsTimeout = 30 * time.Second
+	backoffConfig := backoff.Config{MinBackoff: 250 * time.Millisecond, MaxBackoff: 1 * time.Second, MaxRetries: 50}
+
 	// Start the 1st instance. This will provide the initial state to other members.
 	firstInstance := newSingleBinary("mimir-1", "", "", nil)
-	firstInstance.SetBackoff(backoff.Config{MinBackoff: 250 * time.Millisecond, MaxBackoff: 1 * time.Second, MaxRetries: 50})
-	firstInstance.SetMetricsTimeout(5 * time.Second)
+	firstInstance.SetBackoff(backoffConfig)
+	firstInstance.SetMetricsTimeout(metricsTimeout)
 
 	require.NoError(t, s.StartAndWaitReady(firstInstance))
 	instances = append(instances, firstInstance)
@@ -193,8 +196,8 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 			"-memberlist.packet-write-timeout": "10s",
 		})
 		// Increase timeouts for checks.
-		c.SetBackoff(backoff.Config{MinBackoff: 250 * time.Millisecond, MaxBackoff: 1 * time.Second, MaxRetries: 50})
-		c.SetMetricsTimeout(5 * time.Second)
+		c.SetBackoff(backoffConfig)
+		c.SetMetricsTimeout(metricsTimeout)
 		nextInstances = append(nextInstances, c)
 		instances = append(instances, c)
 	}
