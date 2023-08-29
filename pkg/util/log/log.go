@@ -47,11 +47,28 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
 	}
 	// Must put the level filter last for efficiency.
-	logger = level.NewFilter(logger, logLevel.Option)
+	logger = newFilter(logger, logLevel)
 
 	// Set global logger.
 	Logger = logger
 	return logger
+}
+
+// Pass through Logger and implement the DebugEnabled interface that spanlogger looks for.
+type levelFilter struct {
+	log.Logger
+	debugEnabled bool
+}
+
+func newFilter(logger log.Logger, lvl dslog.Level) log.Logger {
+	return &levelFilter{
+		Logger:       level.NewFilter(logger, lvl.Option),
+		debugEnabled: lvl.String() == "debug", // Using inside knowledge about the hierarchy of possible options.
+	}
+}
+
+func (f *levelFilter) DebugEnabled() bool {
+	return f.debugEnabled
 }
 
 func getWriter(buffered bool) io.Writer {
