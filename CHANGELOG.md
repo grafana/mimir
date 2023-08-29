@@ -1,23 +1,5 @@
 # Changelog
 
-## main / unreleased
-
-### Grafana Mimir
-
-### Mixin
-
-### Jsonnet
-
-### Mimirtool
-
-### Mimir Continuous Test
-
-### Query-tee
-
-### Documentation
-
-### Tools
-
 ## 2.10.0-rc.0
 
 ### Grafana Mimir
