@@ -122,6 +122,8 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 			// In case of really gross queries, like - https://github.com/grafana/jsonnet-libs/blob/e97ab17f67ab40d5fe3af7e59151dd43be03f631/hass-mixin/dashboard.libsonnet#L93
 			if len(sm) > 0 {
 				query = sm[1]
+			} else {
+				continue
 			}
 		}
 		// query_result
