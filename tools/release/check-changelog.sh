@@ -18,7 +18,7 @@ if [ $# -ne 1 ]; then
 fi
 
 # Find all merged PRs.
-GIT_LOG=$(git log --pretty=format:"%s" $1)
+GIT_LOG=$(git log --pretty=format:"%s" $1 -- . ':!integration' ':!operations/helm' ':!CHANGELOG.md' ':!docs')
 PR_LIST=$(echo "$GIT_LOG" | grep -Eo '#[0-9]+')
 PR_LIST_COUNT=$(echo "$PR_LIST" | wc -l | grep -Eo '[0-9]+')
 PR_AUTHORS_COUNT=$(git log --pretty=format:"%an" $1 | sort | uniq -i | wc -l | grep -Eo '[0-9]+')
