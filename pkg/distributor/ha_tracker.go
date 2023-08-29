@@ -215,7 +215,7 @@ func (h *haTracker) starting(ctx context.Context) (err error) {
 
 	keys, err := h.client.List(ctx, "")
 	if err != nil {
-		level.Warn(h.logger).Log("msg", "starting: failed to list replica keys", "err", err)
+		level.Warn(h.logger).Log("msg", "starting: failed to list HA replica keys", "err", err)
 		return err
 	}
 
@@ -226,7 +226,7 @@ func (h *haTracker) starting(ctx context.Context) (err error) {
 
 		value, err := h.client.Get(ctx, key)
 		if err != nil {
-			level.Warn(h.logger).Log("msg", "starting: failed to get replica value", "key", key, "err", err)
+			level.Warn(h.logger).Log("msg", "starting: failed to get HA replica value from KV store", "key", key, "err", err)
 			continue
 		}
 

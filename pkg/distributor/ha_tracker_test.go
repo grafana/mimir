@@ -898,7 +898,7 @@ func getSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName strin
 	return sum
 }
 
-// Test that values are synced to KVStore on starting
+// TestStartingSync tests that values are synced to KVStore on startup
 func TestStartingSync(t *testing.T) {
 	cluster := "c1"
 	replica := "r1"
