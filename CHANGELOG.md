@@ -193,7 +193,7 @@
 ### Tools
 
 * [CHANGE] copyblocks: add support for S3 and the ability to copy between different object storage services. Due to this, the `-source-service` and `-destination-service` flags are now required and the `-service` flag has been removed. #5486
-* [FEATURE] undelete-block-gcs: Added new tool for undeleting blocks on GCS storage. #5610
+* [FEATURE] undelete-block-gcs: Added new tool for undeleting blocks on GCS storage. #5610 #5855
 * [FEATURE] wal-reader: Added new tool for printing entries in TSDB WAL.
 * [ENHANCEMENT] ulidtime: add -seconds flag to print timestamps as Unix timestamps. #5621
 * [ENHANCEMENT] ulidtime: exit with status code 1 if some ULIDs can't be parsed. #5621
