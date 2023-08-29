@@ -1918,9 +1918,9 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 
 _This runbook assumes you've enabled versioning in your GCS bucket and the retention of deleted blocks didn't expire yet._
 
-#### Recover accidentally deleted blocks using `undelete_block_gcs`
+#### Recover accidentally deleted blocks using `undelete-block-gcs`
 
-Step 1: Compile the `undelete_block_gcs` tool, whose sources are available in the Mimir repository at `tools/undelete_block_gcs/`.
+Step 1: Compile the `undelete-block-gcs` tool, whose sources are available in the Mimir repository at `tools/undelete-block-gcs/`.
 
 Step 2: Build a list of TSDB blocks to undelete and store it to a file named `deleted-list`. The file should contain the path of 1 block per line, prefixed by `gs://`. For example:
 
@@ -1930,13 +1930,13 @@ gs://bucket/tenant-1/01H6NCR7HSZ8DHKEG9SSJ0QZKQ
 gs://bucket/tenant-1/01H6NCRBJTY8R1F4FQJ3B1QK9W
 ```
 
-Step 3: Run the `undelete_block_gcs` tool to recover the deleted blocks:
+Step 3: Run the `undelete-block-gcs` tool to recover the deleted blocks:
 
 ```
-cat deleted-list | undelete_block_gcs -concurrency 16
+cat deleted-list | undelete-block-gcs -concurrency 16
 ```
 
-> **Note**: we recommend to try the `undelete_block_gcs` on a single block first, ensure that it gets recovered correctly and then run it against a bigger set of blocks to recover.
+> **Note**: we recommend to try the `undelete-block-gcs` on a single block first, ensure that it gets recovered correctly and then run it against a bigger set of blocks to recover.
 
 #### Recover accidentally deleted blocks using `gsutil`
 
