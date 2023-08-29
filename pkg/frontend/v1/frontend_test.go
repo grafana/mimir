@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go/config"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
@@ -84,8 +85,9 @@ func TestFrontendPropagateTrace(t *testing.T) {
 	}))
 
 	test := func(addr string, _ *Frontend) {
-		sp, ctx := opentracing.StartSpanFromContext(context.Background(), "client")
-		defer sp.Finish()
+		ctx, sp := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "client")
+		defer sp.End()
+
 		traceID, _ := tracing.ExtractTraceID(ctx)
 
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/%s", addr, query), nil)

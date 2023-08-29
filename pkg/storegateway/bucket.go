@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -1240,8 +1241,8 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
 	// ignore the span context so that we can use the context for cancellation
-	span, _ := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
-	defer span.Finish()
+	_, span := otel.Tracer("github.com/grafana/mimir").Start(ctx, "bucket_store_open_blocks_for_reading")
+	defer span.End()
 
 	s.blocksMx.RLock()
 	defer s.blocksMx.RUnlock()

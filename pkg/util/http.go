@@ -23,7 +23,8 @@ import (
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
 	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
+	attribute "go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -143,9 +144,9 @@ const (
 // ParseProtoReader parses a compressed proto from an io.Reader.
 // You can pass in and receive back the decompression buffer for pooling, or pass in nil and ignore the return.
 func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, dst []byte, req proto.Message, compression CompressionType) ([]byte, error) {
-	sp := opentracing.SpanFromContext(ctx)
-	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoRequest[start reading]"))
+	sp := trace.SpanFromContext(ctx)
+	if sp.SpanContext().IsValid() {
+		sp.AddEvent("", trace.WithAttributes(attribute.Event("util.ParseProtoRequest[start reading]")))
 	}
 	body, err := decompressRequest(dst, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
@@ -153,7 +154,7 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 	}
 
 	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoRequest[unmarshal]"), otlog.Int("size", len(body)))
+		sp.AddEvent("", trace.WithAttributes(attribute.Event("util.ParseProtoRequest[unmarshal]"), attribute.Int("size", len(body))))
 	}
 
 	// We re-implement proto.Unmarshal here as it calls XXX_Unmarshal first,
@@ -166,14 +167,14 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 	}
 	if err != nil {
 		if sp != nil {
-			sp.LogFields(otlog.Event("util.ParseProtoRequest[unmarshal done]"), otlog.Error(err))
+			sp.AddEvent("", trace.WithAttributes(attribute.Event("util.ParseProtoRequest[unmarshal done]"), attribute.Error(err)))
 		}
 
 		return nil, err
 	}
 
 	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoRequest[unmarshal done]"))
+		sp.AddEvent("", trace.WithAttributes(attribute.Event("util.ParseProtoRequest[unmarshal done]")))
 	}
 
 	return body, nil
@@ -247,8 +248,9 @@ func decompressFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, compres
 		return buffer.Bytes(), nil
 	case RawSnappy:
 		if sp != nil {
-			sp.LogFields(otlog.Event("util.ParseProtoRequest[decompress]"),
-				otlog.Int("size", len(buffer.Bytes())))
+			sp.AddEvent("", trace.WithAttributes(attribute.Event("util.ParseProtoRequest[decompress]"),
+				attribute.Int("size", len(buffer.Bytes()))))
+
 		}
 		size, err := snappy.DecodedLen(buffer.Bytes())
 		if err != nil {

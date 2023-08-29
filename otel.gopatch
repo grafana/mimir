@@ -1,0 +1,20 @@
+@@
+var a expression
+var b expression
+var s identifier
+var t identifier
+@@
+-s, t := opentracing.StartSpanFromContext(a,b)
+-...
+- defer s.Finish()
++import "go.opentelemetry.io/otel"
++t, s := otel.Tracer("github.com/grafana/mimir").Start(a,b)
++defer s.End()
+
+@@
+var a expression
+var s identifier
+@@
+-s := opentracing.SpanFromContext(a)
++import "go.opentelemetry.io/otel/trace"
++s := trace.SpanFromContext(a)
