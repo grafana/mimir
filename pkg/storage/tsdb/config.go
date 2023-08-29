@@ -94,9 +94,9 @@ const (
 	headStripeSizeHelp            = "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance."
 	headChunksWriteQueueSizeHelp  = "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue."
 
-	headCompactionIntervalFlag                = "blocks-storage.tsdb.head-compaction-interval"
-	maxTSDBOpeningConcurrencyOnStartupFlag    = "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup"
-	defaultMaxTSDBOpeningConcurrencyOnStartup = 10
+	headCompactionIntervalFlag = "blocks-storage.tsdb.head-compaction-interval"
+
+	DefaultMaxTSDBOpeningConcurrencyOnStartup = 10
 
 	maxChunksBytesPoolFlag      = "blocks-storage.bucket-store.max-chunk-pool-bytes"
 	minBucketSizeBytesFlag      = "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes"
@@ -108,7 +108,6 @@ const (
 // Validation errors
 var (
 	errInvalidShipConcurrency                       = errors.New("invalid TSDB ship concurrency")
-	errInvalidOpeningConcurrency                    = errors.New("invalid TSDB opening concurrency")
 	errInvalidCompactionInterval                    = errors.New("invalid TSDB compaction interval")
 	errInvalidCompactionConcurrency                 = errors.New("invalid TSDB compaction concurrency")
 	errInvalidWALSegmentSizeBytes                   = errors.New("invalid TSDB WAL segment size bytes")
@@ -177,7 +176,7 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config, lo
 		return err
 	}
 
-	if err := cfg.TSDB.Validate(activeSeriesCfg, logger); err != nil {
+	if err := cfg.TSDB.Validate(activeSeriesCfg); err != nil {
 		return err
 	}
 
@@ -209,9 +208,6 @@ type TSDBConfig struct {
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
-
-	// DeprecatedMaxTSDBOpeningConcurrencyOnStartup limits the number of concurrently opening TSDB's during startup.
-	DeprecatedMaxTSDBOpeningConcurrencyOnStartup int `yaml:"max_tsdb_opening_concurrency_on_startup" category:"deprecated"` // Deprecated. Remove in Mimir 2.10.
 
 	// If true, user TSDBs are not closed on shutdown. Only for testing.
 	// If false (default), user TSDBs are closed to make sure all resources are released and closed properly.
@@ -265,7 +261,6 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ShipInterval, "blocks-storage.tsdb.ship-interval", 1*time.Minute, "How frequently the TSDB blocks are scanned and new ones are shipped to the storage. 0 means shipping is disabled.")
 	f.IntVar(&cfg.ShipConcurrency, "blocks-storage.tsdb.ship-concurrency", 10, "Maximum number of tenants concurrently shipping blocks to the storage.")
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.tsdb.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
-	f.IntVar(&cfg.DeprecatedMaxTSDBOpeningConcurrencyOnStartup, maxTSDBOpeningConcurrencyOnStartupFlag, defaultMaxTSDBOpeningConcurrencyOnStartup, "limit the number of concurrently opening TSDB's on startup")
 	f.DurationVar(&cfg.HeadCompactionInterval, headCompactionIntervalFlag, 1*time.Minute, "How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes.")
 	f.IntVar(&cfg.HeadCompactionConcurrency, "blocks-storage.tsdb.head-compaction-concurrency", 1, "Maximum number of tenants concurrently compacting TSDB head into a new block")
 	f.DurationVar(&cfg.HeadCompactionIdleTimeout, "blocks-storage.tsdb.head-compaction-idle-timeout", 1*time.Hour, "If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled.")
@@ -274,7 +269,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.StripeSize, "blocks-storage.tsdb.stripe-size", 16384, headStripeSizeHelp)
 	f.BoolVar(&cfg.WALCompressionEnabled, "blocks-storage.tsdb.wal-compression-enabled", false, "True to enable TSDB WAL compression.")
 	f.IntVar(&cfg.WALSegmentSizeBytes, "blocks-storage.tsdb.wal-segment-size-bytes", wlog.DefaultSegmentSize, "TSDB WAL segments files max size (bytes).")
-	f.IntVar(&cfg.WALReplayConcurrency, "blocks-storage.tsdb.wal-replay-concurrency", 0, "Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine. If set to a positive value it overrides the deprecated -"+maxTSDBOpeningConcurrencyOnStartupFlag+" option.")
+	f.IntVar(&cfg.WALReplayConcurrency, "blocks-storage.tsdb.wal-replay-concurrency", 0, "Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine.")
 	f.BoolVar(&cfg.FlushBlocksOnShutdown, "blocks-storage.tsdb.flush-blocks-on-shutdown", false, "True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.")
 	f.DurationVar(&cfg.CloseIdleTSDBTimeout, "blocks-storage.tsdb.close-idle-tsdb-timeout", 13*time.Hour, "If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB.")
 	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
@@ -293,16 +288,9 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Validate the config.
-func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config, logger log.Logger) error {
+func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 	if cfg.ShipInterval > 0 && cfg.ShipConcurrency <= 0 {
 		return errInvalidShipConcurrency
-	}
-
-	if cfg.DeprecatedMaxTSDBOpeningConcurrencyOnStartup <= 0 {
-		return errInvalidOpeningConcurrency
-	}
-	if cfg.DeprecatedMaxTSDBOpeningConcurrencyOnStartup != defaultMaxTSDBOpeningConcurrencyOnStartup {
-		util.WarnDeprecatedConfig(maxTSDBOpeningConcurrencyOnStartupFlag, logger)
 	}
 
 	if cfg.HeadCompactionInterval <= 0 || cfg.HeadCompactionInterval > 15*time.Minute {
