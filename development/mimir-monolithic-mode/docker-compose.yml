@@ -20,9 +20,10 @@ services:
       - .data-minio:/data:delegated
 
   prometheus:
-    profiles:
-      - prometheus
-    image: prom/prometheus:v2.48.1
+    build:
+      context:  /home/owilliams/src/grafana/mimir-prometheus
+      dockerfile: Dockerfile
+    image: mimir-prometheus
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus

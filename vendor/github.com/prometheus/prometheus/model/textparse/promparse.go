@@ -298,7 +298,13 @@ func (p *PromParser) Next() (Entry, error) {
 	case tHelp, tType:
 		switch t2 := p.nextToken(); t2 {
 		case tMName:
-			p.offsets = append(p.offsets, p.l.start, p.l.i)
+			mStart := p.l.start
+			mEnd := p.l.i
+			if p.l.b[mStart] == '"' && p.l.b[mEnd-1] == '"' {
+				mStart++
+				mEnd--
+			}
+			p.offsets = append(p.offsets, mStart, mEnd)
 		default:
 			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 		}

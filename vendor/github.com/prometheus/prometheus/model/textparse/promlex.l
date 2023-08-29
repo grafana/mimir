@@ -66,6 +66,7 @@ C     [^\n]
 #                                     return l.consumeComment()
 <sComment>HELP[\t ]+                  l.state = sMeta1; return tHelp
 <sComment>TYPE[\t ]+                  l.state = sMeta1; return tType
+<sMeta1>\"(\\.|[^\\"])*\"             l.state = sMeta2; return tMName
 <sMeta1>{M}({M}|{D})*                 l.state = sMeta2; return tMName
 <sMeta2>{C}*                          l.state = sInit; return tText
 

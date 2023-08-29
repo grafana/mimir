@@ -40,6 +40,16 @@ if [ ${#PROFILES[@]} -eq 0 ]; then
     PROFILES=("${DEFAULT_PROFILES[@]}")
 fi
 
+# Build prometheus image
+cd /home/owilliams/src/grafana/mimir-prometheus
+make build
+mkdir -p .build/linux-amd64/
+cp promtool .build/linux-amd64/
+cp prometheus .build/linux-amd64/
+cd -
+
 CGO_ENABLED=0 GOOS=linux go build -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir && \
+docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build prometheus && \
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build mimir-1 && \
-docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml "${PROFILES[@]}" up "${ARGS[@]}"
+docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up -d "$@"
+# docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml "${PROFILES[@]}" up "${ARGS[@]}"
