@@ -417,7 +417,16 @@
   // Distributors
   //
 
-  newDistributorScaledObject(name, distributor_cpu_requests, distributor_memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
+  newDistributorScaledObject(
+    name,
+    distributor_cpu_requests,
+    distributor_memory_requests,
+    min_replicas,
+    max_replicas,
+    cpu_target_utilization,
+    memory_target_utilization,
+    use_oom_trigger=false
+  ):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
 
@@ -436,7 +445,7 @@
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        query: memoryHPAQuery % {
+        query: (if use_oom_trigger then oomMemoryHPAQuery else memoryHPAQuery) % {
           container: name,
           namespace: $._config.namespace,
         },
@@ -465,7 +474,7 @@
 
   // Ruler
 
-  local newRulerScaledObject(name) = self.newScaledObject(
+  local newRulerScaledObject(name, use_oom_trigger=false) = self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: $._config.autoscaling_ruler_min_replicas,
       max_replica_count: $._config.autoscaling_ruler_max_replicas,
@@ -489,7 +498,7 @@
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          query: memoryHPAQuery % {
+          query: (if use_oom_trigger then oomMemoryHPAQuery else memoryHPAQuery) % {
             container: name,
             namespace: $._config.namespace,
           },
@@ -516,7 +525,16 @@
 
   // Alertmanager
 
-  newAlertmanagerScaledObject(name, alertmanager_cpu_requests, alertmanager_memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
+  newAlertmanagerScaledObject(
+    name,
+    alertmanager_cpu_requests,
+    alertmanager_memory_requests,
+    min_replicas,
+    max_replicas,
+    cpu_target_utilization,
+    memory_target_utilization,
+    use_oom_trigger=false,
+  ):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
 
@@ -537,7 +555,7 @@
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        query: memoryHPAQuery % {
+        query: (if use_oom_trigger then oomMemoryHPAQuery else memoryHPAQuery) % {
           container: name,
           namespace: $._config.namespace,
         },
