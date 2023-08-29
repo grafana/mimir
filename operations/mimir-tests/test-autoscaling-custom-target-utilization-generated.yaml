@@ -2153,6 +2153,19 @@ spec:
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "178"
     type: prometheus
+  - metadata:
+      metricName: ruler_querier_memory_hpa_default
+      query: |
+        max_over_time(
+          sum(
+            sum by (pod) (container_memory_working_set_bytes{container="ruler-querier",namespace="default"})
+            and
+            max by (pod) (up{container="ruler-querier",namespace="default"}) > 0
+          )[15m:]
+        )
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "955630223"
+    type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
