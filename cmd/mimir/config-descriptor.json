@@ -464,7 +464,7 @@
           "kind": "field",
           "name": "grpc_server_max_concurrent_streams",
           "required": false,
-          "desc": "Limit on the number of concurrent streams for gRPC calls (0 = unlimited)",
+          "desc": "Limit on the number of concurrent streams for gRPC calls per client connection (0 = unlimited)",
           "fieldValue": null,
           "fieldDefaultValue": 100,
           "fieldFlag": "server.grpc-max-concurrent-streams",
