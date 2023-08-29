@@ -56,12 +56,6 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: nil,
 		},
-		"should fail on invalid opening concurrency": {
-			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
-				cfg.TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup = 0
-			},
-			expectedErr: errInvalidOpeningConcurrency,
-		},
 		"should fail on invalid compaction interval": {
 			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
 				cfg.TSDB.HeadCompactionInterval = 0
