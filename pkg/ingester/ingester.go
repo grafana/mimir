@@ -2323,7 +2323,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 }
 
 func getOpenTSDBsConcurrencyConfig(tsdbConfig mimir_tsdb.TSDBConfig, userCount int) (tsdbOpenConcurrency, tsdbWALReplayConcurrency int) {
-	tsdbOpenConcurrency = tsdbConfig.DeprecatedMaxTSDBOpeningConcurrencyOnStartup
+	tsdbOpenConcurrency = mimir_tsdb.DefaultMaxTSDBOpeningConcurrencyOnStartup
 	tsdbWALReplayConcurrency = 0
 	// When WALReplayConcurrency is enabled, we want to ensure the WAL replay at ingester startup
 	// doesn't use more than the configured number of CPU cores. In order to optimize performance
