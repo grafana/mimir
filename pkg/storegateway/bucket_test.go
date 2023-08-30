@@ -989,10 +989,11 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func prepareTestBucket(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) (objstore.BucketReader, string, ulid.ULID, int64, int64) {
+func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
 	tmpDir := tb.TempDir()
+	bucketDir := filepath.Join(tmpDir, "bkt")
 
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	bkt, err := filesystem.NewBucket(bucketDir)
 	assert.NoError(tb, err)
 
 	tb.Cleanup(func() {
@@ -1000,12 +1001,6 @@ func prepareTestBucket(tb test.TB, dataSetup ...func(tb testing.TB, appender sto
 	})
 
 	id, minT, maxT := uploadTestBlock(tb, tmpDir, bkt, dataSetup)
-
-	return bkt, tmpDir, id, minT, maxT
-}
-
-func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
-	bkt, tmpDir, id, minT, maxT := prepareTestBucket(tb, dataSetup...)
 
 	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, true, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 	require.NoError(tb, err)
@@ -1025,11 +1020,16 @@ func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender stor
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
 			chunkObjs:         chunkObjects,
-			bkt:               bkt,
+			bkt:               localBucket{Bucket: bkt, dir: bucketDir},
 			meta:              &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
 	}
+}
+
+type localBucket struct {
+	*filesystem.Bucket
+	dir string
 }
 
 func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []func(tb testing.TB, appender storage.Appender)) (_ ulid.ULID, minT int64, maxT int64) {
@@ -1057,7 +1057,7 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	}, nil)
 	assert.NoError(t, err)
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
-	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
+	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil)) // TODO dimitarvdimitrov why is this here twice?
 
 	return id, h.MinTime(), h.MaxTime()
 }
@@ -1086,7 +1086,8 @@ func appendTestSeries(series int) func(testing.TB, storage.Appender) {
 }
 
 func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
-	compactor, err := tsdb.NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, nil, true)
+	// Put a 3 MiB limit on segment files so we can test with many segment files without creating too big blocks.
+	compactor, err := tsdb.NewLeveledCompactorWithChunkSize(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, 3*1024*1024, nil, true)
 	assert.NoError(t, err)
 
 	assert.NoError(t, os.MkdirAll(dir, 0777))
