@@ -55,8 +55,6 @@ The following features are currently experimental:
     - `-ruler.recording-rules-evaluation-enabled`
     - `-ruler.alerting-rules-evaluation-enabled`
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
-  - Ruler storage cache
-    - `-ruler-storage.cache.*`
 - Distributor
   - Metrics relabeling
   - OTLP ingestion path
@@ -79,7 +77,6 @@ The following features are currently experimental:
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
     - `-overrides-exporter.ring.heartbeat-period=0`
-  - Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
@@ -117,11 +114,7 @@ The following features are currently experimental:
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
-  - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
-  - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
-  - Cardinality query result caching (`-query-frontend.results-cache-ttl-for-cardinality-query`)
-  - Label names and values query result caching (`-query-frontend.results-cache-ttl-for-labels-query`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -132,10 +125,6 @@ The following features are currently experimental:
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
-- Overrides-exporter
-  - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
-  - Configuring enabled metrics (`-overrides-exporter.enabled-metrics`)
-- Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
 - Logger
   - Rate limited logger support
