@@ -8,7 +8,7 @@ package mimir
 import (
 	"context"
 
-	objstoretracing "github.com/thanos-io/objstore/tracing/opentracing"
+	objstoretracing "github.com/thanos-io/objstore/tracing/opentelemetry"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 )

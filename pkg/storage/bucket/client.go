@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
-	objstoretracing "github.com/thanos-io/objstore/tracing/opentracing"
+	objstoretracing "github.com/thanos-io/objstore/tracing/opentelemetry"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
