@@ -19,8 +19,6 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v2"
 
 	"github.com/thanos-io/objstore"
@@ -190,11 +188,8 @@ func (b *Bucket) IsObjNotFoundErr(err error) bool {
 	return errors.Is(err, storage.ErrObjectNotExist)
 }
 
-// IsAccessDeniedErr returns true if access to object is denied.
-func (b *Bucket) IsAccessDeniedErr(err error) bool {
-	if s, ok := status.FromError(err); ok && s.Code() == codes.PermissionDenied {
-		return true
-	}
+// IsCustomerManagedKeyError returns true if the permissions for key used to encrypt the object was revoked.
+func (b *Bucket) IsCustomerManagedKeyError(_ error) bool {
 	return false
 }
 

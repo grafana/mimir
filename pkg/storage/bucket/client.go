@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 	objstoretracing "github.com/thanos-io/objstore/tracing/opentelemetry"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -181,7 +182,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg))
+	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg), otel.Tracer("github.com/grafana/mimir"))
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {

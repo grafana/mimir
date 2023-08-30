@@ -781,7 +781,6 @@ func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
 // setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
 // context used by thanos-io/objstore, in order to get Objstore spans correctly attached to our traces.
 func (t *Mimir) setupObjstoreTracing() {
-	t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, ThanosTracerUnaryInterceptor)
 	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
 }
 
