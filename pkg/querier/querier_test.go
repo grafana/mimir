@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1220,7 +1221,7 @@ func TestConfig_ValidateLimits(t *testing.T) {
 }
 
 func TestClampMaxTime(t *testing.T) {
-	logger := log.NewNopLogger()
+	logger := spanlogger.FromContext(context.Background(), log.NewNopLogger())
 
 	now := time.Now()
 
@@ -1281,7 +1282,7 @@ func TestClampMaxTime(t *testing.T) {
 }
 
 func TestClampMinTime(t *testing.T) {
-	logger := log.NewNopLogger()
+	logger := spanlogger.FromContext(context.Background(), log.NewNopLogger())
 
 	now := time.Now()
 

@@ -10,7 +10,6 @@ import (
 
 	"github.com/dennwc/varint"
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -372,7 +371,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 
 	defer func(startTime time.Time) {
 		spanLog := spanlogger.FromContext(c.ctx, c.logger)
-		level.Debug(spanLog).Log(
+		spanLog.DebugLog(
 			"msg", "loaded chunks",
 			"series_count", c.At().len(),
 			"err", c.Err(),

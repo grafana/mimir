@@ -102,7 +102,7 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 	}
 
 	if !ShouldQueryIngesters(queryIngestersWithin, time.Now(), q.maxt) {
-		level.Debug(spanLog).Log("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
+		spanLog.DebugLog("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
 		return storage.EmptySeriesSet()
 	}
 
@@ -269,7 +269,7 @@ func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorExemplarQuerier.Select")
 	defer spanlog.Finish()
 
-	level.Debug(spanlog).Log(
+	spanlog.DebugLog(
 		"start", util.TimeFromMillis(start).UTC().String(),
 		"end", util.TimeFromMillis(end).UTC().String(),
 		"matchers", util.MultiMatchersStringer(matchers),
@@ -290,6 +290,6 @@ func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 		numExemplars += len(e.Exemplars)
 	}
 
-	level.Debug(spanlog).Log("numSeries", len(ret), "numExemplars", numExemplars)
+	spanlog.DebugLog("numSeries", len(ret), "numExemplars", numExemplars)
 	return ret, nil
 }
