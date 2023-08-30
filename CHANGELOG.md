@@ -5,7 +5,7 @@
 
 ### Grafana Mimir
 
-* [FEATURE] The following features are no longer considered experimental.
+* [FEATURE] The following features are no longer considered experimental. #5872
   * Ruler storage cache (`-ruler-storage.cache.*`)
   * Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
   * Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
