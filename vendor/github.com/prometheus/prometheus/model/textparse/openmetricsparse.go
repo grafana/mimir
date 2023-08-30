@@ -268,7 +268,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				p.text = []byte{}
 			}
 		default:
-			return EntryInvalid, fmt.Errorf("expected text in %s", t.String())
+			return EntryInvalid, fmt.Errorf("expected text in 1 %s", t.String())
 		}
 		switch t {
 		case tType:

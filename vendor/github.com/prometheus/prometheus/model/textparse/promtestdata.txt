@@ -1,4 +1,5 @@
-# TYPE go.gc_duration_seconds summary
+# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
+# TYPE "go.gc_duration_seconds" summary
 go.gc_duration_seconds{quantile="0"} 4.9351e-05
 go.gc_duration_seconds{quantile="0.25"} 7.424100000000001e-05
 go.gc_duration_seconds{quantile="0.5"} 8.3835e-05

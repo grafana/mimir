@@ -90,6 +90,9 @@ func MetricFamilyToOpenMetrics(out io.Writer, in *dto.MetricFamily) (written int
 	if metricType == dto.MetricType_COUNTER && strings.HasSuffix(shortName, "_total") {
 		shortName = name[:len(name)-6]
 	}
+	if !model.IsValidMetricName(model.LabelValue(shortName)) {
+		shortName = fmt.Sprintf(`"%s"`, shortName)
+	}
 
 	// Comments, first HELP, then TYPE.
 	if in.Help != nil {
@@ -303,21 +306,9 @@ func writeOpenMetricsSample(
 	floatValue float64, intValue uint64, useIntValue bool,
 	exemplar *dto.Exemplar,
 ) (int, error) {
-	var written int
-	n, err := w.WriteString(name)
-	written += n
-	if err != nil {
-		return written, err
-	}
-	if suffix != "" {
-		n, err = w.WriteString(suffix)
-		written += n
-		if err != nil {
-			return written, err
-		}
-	}
-	n, err = writeOpenMetricsLabelPairs(
-		w, metric.Label, additionalLabelName, additionalLabelValue,
+	written := 0
+	n, err := writeOpenMetricsLabelPairs(
+		w, name+suffix, metric.Label, additionalLabelName, additionalLabelValue,
 	)
 	written += n
 	if err != nil {
@@ -369,16 +360,45 @@ func writeOpenMetricsSample(
 // in OpenMetrics style.
 func writeOpenMetricsLabelPairs(
 	w enhancedWriter,
+	name string,
 	in []*dto.LabelPair,
 	additionalLabelName string, additionalLabelValue float64,
 ) (int, error) {
-	if len(in) == 0 && additionalLabelName == "" {
-		return 0, nil
-	}
 	var (
 		written   int
 		separator byte = '{'
+		metricInsideBraces = false
 	)
+
+	if name != "" { 
+		if !model.IsValidMetricName(model.LabelValue(name)) {
+			metricInsideBraces = true
+			err := w.WriteByte(separator)
+			written++
+			if err != nil {
+				return written, err
+			}
+			name = fmt.Sprintf(`"%s"`, name)
+			separator = ','
+		}
+		n, err := w.WriteString(name)
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+
+	if len(in) == 0 && additionalLabelName == "" {
+		if metricInsideBraces {
+			err := w.WriteByte('}')
+			written++
+			if err != nil {
+				return written, err
+			}
+		}
+		return written, nil
+	}
+
 	for _, lp := range in {
 		err := w.WriteByte(separator)
 		written++
@@ -451,7 +471,7 @@ func writeExemplar(w enhancedWriter, e *dto.Exemplar) (int, error) {
 	if err != nil {
 		return written, err
 	}
-	n, err = writeOpenMetricsLabelPairs(w, e.Label, "", 0)
+	n, err = writeOpenMetricsLabelPairs(w, "", e.Label, "", 0)
 	written += n
 	if err != nil {
 		return written, err

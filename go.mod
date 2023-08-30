@@ -263,6 +263,8 @@ replace github.com/prometheus/prometheus => /home/owilliams/src/grafana/mimir-pr
 
 replace github.com/prometheus/client_golang => /home/owilliams/src/grafana/client_golang
 
+replace github.com/prometheus/common => /home/owilliams/src/third_party/common
+
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
 // - https://github.com/hashicorp/memberlist/pull/260

@@ -72,6 +72,9 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (written int, err e
 	if name == "" {
 		return 0, fmt.Errorf("MetricFamily has no name: %s", in)
 	}
+	if !model.IsValidMetricName(model.LabelValue(name)) {
+		name = fmt.Sprintf(`"%s"`, name)
+	}
 
 	// Try the interface upgrade. If it doesn't work, we'll use a
 	// bufio.Writer from the sync.Pool.
