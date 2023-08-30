@@ -583,7 +583,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
-	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
+	spanCtx, span := otel.Tracer("github.com/grafana/mimir").Start(ctx, "store_query_gate_ismyturn")
 	err = s.queryGate.Start(spanCtx)
 	span.Finish()
 	if err != nil {

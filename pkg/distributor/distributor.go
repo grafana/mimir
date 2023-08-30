@@ -1136,9 +1136,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	// Get clientIP(s) from Context and add it to localCtx
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
 	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
-	if sp := opentracing.SpanFromContext(ctx); sp != nil {
-		localCtx = opentracing.ContextWithSpan(localCtx, sp)
-	}
+	sp := trace.SpanFromContext(ctx)
+	localCtx = trace.ContextWithSpan(localCtx, sp)
 
 	// All tokens, stored in order: series, metadata.
 	keys := make([]uint32, len(seriesKeys)+len(metadataKeys))

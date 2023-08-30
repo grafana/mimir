@@ -8,22 +8,22 @@ package mimir
 import (
 	"context"
 
-	"github.com/opentracing/opentracing-go"
 	objstoretracing "github.com/thanos-io/objstore/tracing/opentracing"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 )
 
 // ThanosTracerUnaryInterceptor injects the opentracing global tracer into the context
 // in order to get it picked up by Thanos components.
 func ThanosTracerUnaryInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	return handler(objstoretracing.ContextWithTracer(ctx, opentracing.GlobalTracer()), req)
+	return handler(objstoretracing.ContextWithTracer(ctx, otel.Tracer("github.com/grafana/mimir")), req)
 }
 
 // ThanosTracerStreamInterceptor injects the opentracing global tracer into the context
 // in order to get it picked up by Thanos components.
 func ThanosTracerStreamInterceptor(srv interface{}, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	return handler(srv, wrappedServerStream{
-		ctx:          objstoretracing.ContextWithTracer(ss.Context(), opentracing.GlobalTracer()),
+		ctx:          objstoretracing.ContextWithTracer(ss.Context(), otel.Tracer("github.com/grafana/mimir")),
 		ServerStream: ss,
 	})
 }

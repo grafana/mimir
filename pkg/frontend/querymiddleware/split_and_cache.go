@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -572,8 +573,8 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 			// get correct aggregation of statistics for partial queries.
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
 			if recordSpan {
-				var span opentracing.Span
-				span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
+				var span trace.Span
+				childCtx, span = trace.Tracer("github.com/grafana/mimir").Start(childCtx, "doRequests")
 				req.LogToSpan(span)
 				defer span.Finish()
 			}

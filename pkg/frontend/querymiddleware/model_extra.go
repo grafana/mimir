@@ -94,7 +94,7 @@ func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 }
 
 // LogToSpan logs the current `PrometheusRangeQueryRequest` parameters to the specified span.
-func (q *PrometheusRangeQueryRequest) LogToSpan(sp opentracing.Span) {
+func (q *PrometheusRangeQueryRequest) LogToSpan(sp trace.Span) {
 	sp.AddEvent("", trace.WithAttributes(
 		attribute.String("query", q.GetQuery()),
 		attribute.String("start", timestamp.Time(q.GetStart()).String()),
@@ -157,7 +157,7 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {
+func (r *PrometheusInstantQueryRequest) LogToSpan(sp trace.Span) {
 	sp.AddEvent("", trace.WithAttributes(
 		attribute.String("query", r.GetQuery()),
 		attribute.String("time", timestamp.Time(r.GetTime()).String())))

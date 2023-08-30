@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
+	"go.opentelemetry.io/otel"
 )
 
 func TestQueryTrackerUnlimitedMaxConcurrency(t *testing.T) {
@@ -35,7 +36,7 @@ func TestActivityDescription(t *testing.T) {
 	defer func() { _ = closers.Close() }()
 	opentracing.SetGlobalTracer(tr)
 
-	_, ctxWithTrace := opentracing.StartSpanFromContext(ctx, "operation")
+	ctxWithTrace, _ := otel.Tracer("github.com/grafana/mimir").Start(ctx, "operation")
 	{
 		activity := generateActivityDescription(ctxWithTrace, "query string")
 		assert.Contains(t, activity, "traceID=")

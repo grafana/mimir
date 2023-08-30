@@ -18,3 +18,116 @@ var s identifier
 -s := opentracing.SpanFromContext(a)
 +import "go.opentelemetry.io/otel/trace"
 +s := trace.SpanFromContext(a)
+
+@@
+var foo,x identifier
+@@
+-import foo "github.com/opentracing/opentracing-go/log"
++import foo "go.opentelemetry.io/otel/attribute"
+foo.x
+
+@@
+@@
+- otlog
++ attribute
+
+@@
+var span identifier
+var x expression
+@@
+- span.LogFields(...)
++import "go.opentelemetry.io/otel/trace"
++ span.AddEvent("", trace.WithAttributes(...))
+
+@@
+var sp identifier
+var a expression
+@@
+-if sp := opentracing.SpanFromContext(a); sp != nil {
+-...
+-}
++import "go.opentelemetry.io/otel/trace"
++sp := trace.SpanFromContext(a)
++...
+
+@@
+var ctx identifier
+var a expression
+var b expression
+@@
+-ctx = opentracing.ContextWithSpan(a, b)
++import "go.opentelemetry.io/otel/trace"
++ctx = trace.ContextWithSpan(a, b)
+
+@@
+@@
+-otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())
++import "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
++otelgrpc.StreamServerInterceptor()
+
+@@
+@@
+-opentracing.SpanFromContext(...)
++import "go.opentelemetry.io/otel/trace"
++trace.SpanFromContext(...)
+
+@@
+var i identifier
+@@
+-var i opentracing.Span
++import "go.opentelemetry.io/otel/trace"
++var i trace.Span
+
+@@
+var i expression
+var j expression
+@@
+-i, j = opentracing.StartSpanFromContext(...)
++import "go.opentelemetry.io/otel/trace"
++j, i = trace.Tracer("github.com/grafana/mimir").Start(...)
+
+@@
+var i identifier
+var j identifier
+@@
+-i, j = opentracing.StartSpanFromContext(...)
++import "go.opentelemetry.io/otel"
++j, i = otel.Tracer("github.com/grafana/mimir").Start(...)
+
+@@
+var i identifier
+var j identifier
+@@
+-i, j := opentracing.StartSpanFromContext(...)
++import "go.opentelemetry.io/otel"
++j, i := otel.Tracer("github.com/grafana/mimir").Start(...)
+
+@@
+@@
+-opentracing.Span
++import "go.opentelemetry.io/otel/trace"
++trace.Span
+
+@@
+@@
+-otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())
++import "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
++otelgrpc.UnaryClientInterceptor()
+
+@@
+@@
+
+-import "github.com/opentracing-contrib/go-stdlib/nethttp"
++import "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+-nethttp.Transport{}
++otelhttp.Transport{}
+
+@@
+@@
+
+-import "github.com/opentracing/opentracing-go"
++import "go.opentelemetry.io/otel"
+
+-opentracing.GlobalTracer()
++otel.Tracer("github.com/grafana/mimir")

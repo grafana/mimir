@@ -114,7 +114,7 @@ type Request interface {
 	WithEstimatedSeriesCountHint(uint64) Request
 	proto.Message
 	// LogToSpan writes information about this request to an OpenTracing span
-	LogToSpan(opentracing.Span)
+	LogToSpan(trace.Span)
 }
 
 // Response represents a query range response.

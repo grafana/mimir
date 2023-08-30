@@ -195,7 +195,7 @@ func (e MsgSizeTooLargeErr) Is(err error) bool {
 	return ok1 || ok2
 }
 
-func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) (body []byte, err error) {
+func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) (body []byte, err error) {
 	defer func() {
 		if err != nil && len(body) > maxSize {
 			err = MsgSizeTooLargeErr{Actual: len(body), Limit: maxSize}
@@ -213,7 +213,7 @@ func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, 
 	return
 }
 
-func decompressFromReader(dst []byte, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
+func decompressFromReader(dst []byte, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
 	var (
 		buf  bytes.Buffer
 		body []byte
@@ -239,7 +239,7 @@ func decompressFromReader(dst []byte, reader io.Reader, expectedSize, maxSize in
 	return body, err
 }
 
-func decompressFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
+func decompressFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
 	if len(buffer.Bytes()) > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: len(buffer.Bytes()), Limit: maxSize}
 	}

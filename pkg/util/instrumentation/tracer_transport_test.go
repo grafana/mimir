@@ -78,7 +78,7 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 	}
 }
 
-func spanTraceID(sp opentracing.Span) string {
+func spanTraceID(sp trace.Span) string {
 	traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
 	return traceID
 }
