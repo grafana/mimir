@@ -7,6 +7,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 func BenchmarkGetNextRequest(b *testing.B) {
@@ -112,6 +114,114 @@ func BenchmarkQueueRequest(b *testing.B) {
 				}
 			}
 		}
+	}
+}
+
+func BenchmarkConcurrentQueueOperations(b *testing.B) {
+	queueLength := promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"})
+	discardedRequests := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+	req := "the query request"
+	maxQueriers := 0 // TODO: test with limit enforced?
+
+	for _, numTenants := range []int{1, 10, 1000} {
+		b.Run(fmt.Sprintf("%v tenants", numTenants), func(b *testing.B) {
+			for _, numProducers := range []int{10, 25} { // Query-frontends run 5 parallel streams per scheduler by default, and we typically see 2-5 frontends running at any one time.
+				b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
+					for _, numConsumers := range []int{16, 160, 1600} { // Queriers run with parallelism of 8 when query sharding is enabled.
+						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
+							queue := NewRequestQueue(100, 0, queueLength, discardedRequests)
+							start := make(chan struct{})
+							producersAndConsumers, ctx := errgroup.WithContext(context.Background())
+
+							requestCount := func(total int, instanceCount int, instanceIdx int) int {
+								count := total / instanceCount
+								totalCountWithoutAdjustment := count * instanceCount
+
+								if totalCountWithoutAdjustment >= total {
+									return count
+								}
+
+								additionalRequests := total - totalCountWithoutAdjustment
+
+								if instanceIdx < additionalRequests {
+									// If we can't perfectly spread requests across all instances, assign remaining requests to the first instances.
+									return count + 1
+								} else {
+									return count
+								}
+							}
+
+							// TODO: limit the rate of production?
+							startProducer := func(producerIdx int) error {
+								requestCount := requestCount(b.N, numProducers, producerIdx)
+								tenantId := producerIdx % numTenants
+								<-start
+
+								for i := 0; i < requestCount; i++ {
+									for {
+										err := queue.EnqueueRequest(strconv.Itoa(tenantId), req, maxQueriers, func() {})
+										if err == nil {
+											break
+										}
+
+										// Keep retrying if we've hit the max queue length.
+										if !errors.Is(err, ErrTooManyRequests) {
+											return err
+										}
+									}
+
+									tenantId = (tenantId + 1) % numTenants
+								}
+
+								return nil
+							}
+
+							for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
+								producerIdx := producerIdx
+								producersAndConsumers.Go(func() error {
+									return startProducer(producerIdx)
+								})
+							}
+
+							startConsumer := func(consumerIdx int) error {
+								requestCount := requestCount(b.N, numConsumers, consumerIdx)
+								lastTenantIndex := FirstUser()
+								querierID := fmt.Sprintf("consumer-%v", consumerIdx)
+								queue.RegisterQuerierConnection(querierID)
+								defer queue.UnregisterQuerierConnection(querierID)
+
+								<-start
+
+								for i := 0; i < requestCount; i++ {
+									_, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, querierID)
+									if err != nil {
+										return err
+									}
+
+									lastTenantIndex = idx
+								}
+
+								return nil
+							}
+
+							for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
+								consumerIdx := consumerIdx
+								producersAndConsumers.Go(func() error {
+									return startConsumer(consumerIdx)
+								})
+							}
+
+							b.ResetTimer()
+							close(start)
+							err := producersAndConsumers.Wait()
+							if err != nil {
+								require.NoError(b, err)
+							}
+						})
+					}
+				})
+			}
+		})
 	}
 }
 
