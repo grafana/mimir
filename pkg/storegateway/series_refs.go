@@ -836,7 +836,7 @@ const (
 	// By default, the strategy is to fetch series labels AND chunk refs
 	// for time ranges overlapping mint and maxt provided.
 	// To change the default behavior, use the flags below this.
-	defaultStrategy seriesIteratorStrategy = 0
+	defaultStrategy = overlapMintMaxt
 
 	// noChunkRefs flag when used by itself fetches only series labels for series in the entire block.
 	noChunkRefs seriesIteratorStrategy = 0b00000001
