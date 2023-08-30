@@ -1057,7 +1057,6 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	}, nil)
 	assert.NoError(t, err)
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
-	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil)) // TODO dimitarvdimitrov why is this here twice?
 
 	return id, h.MinTime(), h.MaxTime()
 }
