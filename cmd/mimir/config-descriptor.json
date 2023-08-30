@@ -5050,7 +5050,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.query-sharding-target-series-per-shard",
-          "fieldType": "int"
+          "fieldType": "int",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -14447,8 +14448,7 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "overrides-exporter.ring.enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldType": "boolean"
             },
             {
               "kind": "block",
