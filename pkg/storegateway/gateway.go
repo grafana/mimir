@@ -342,7 +342,7 @@ func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValues
 
 func requestActivity(ctx context.Context, name string, req interface{}) string {
 	user := getUserIDFromGRPCContext(ctx)
-	traceID, _ := tracing.ExtractSampledTraceID(ctx)
+	traceID, _ := tracing.ExtractOtelSampledTraceID(ctx)
 	return fmt.Sprintf("%s: user=%q trace=%q request=%v", name, user, traceID, req)
 }
 

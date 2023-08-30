@@ -7,10 +7,8 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
 	"go.opentelemetry.io/otel"
 )
 
@@ -32,9 +30,13 @@ func TestActivityDescription(t *testing.T) {
 	assert.Equal(t, "query=query string", generateActivityDescription(ctx, "query string"))
 	assert.Equal(t, "tenant=user query=query string", generateActivityDescription(user.InjectOrgID(ctx, "user"), "query string"))
 
-	tr, closers := jaeger.NewTracer("test", jaeger.NewConstSampler(true), jaeger.NewNullReporter())
-	defer func() { _ = closers.Close() }()
-	opentracing.SetGlobalTracer(tr)
+	exp := tracetest.NewNullReporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+	tp.Close()
+	otel.SetTracerProvider(tp)
 
 	ctxWithTrace, _ := otel.Tracer("github.com/grafana/mimir").Start(ctx, "operation")
 	{

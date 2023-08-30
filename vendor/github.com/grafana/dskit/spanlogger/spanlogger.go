@@ -2,16 +2,16 @@ package spanlogger
 
 import (
 	"context"
-	"fmt"
 
 	"go.uber.org/atomic" // Really just need sync/atomic but there is a lint rule preventing it.
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
+	otlog "github.com/opentracing/opentracing-go/log"
+
 	"github.com/grafana/dskit/tracing"
-	"go.opentelemetry.io/otel"
-	attribute "go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type loggerCtxMarker struct{}
@@ -39,7 +39,7 @@ type SpanLogger struct {
 	resolver   TenantResolver             // passed in
 	baseLogger log.Logger                 // passed in
 	logger     atomic.Pointer[log.Logger] // initialized on first use
-	trace.Span
+	opentracing.Span
 	sampled      bool
 	debugEnabled bool
 }
@@ -47,11 +47,11 @@ type SpanLogger struct {
 // New makes a new SpanLogger with a log.Logger to send logs to. The provided context will have the logger attached
 // to it and can be retrieved with FromContext.
 func New(ctx context.Context, logger log.Logger, method string, resolver TenantResolver, kvps ...interface{}) (*SpanLogger, context.Context) {
-	ctx, span := otel.Tracer("").Start(ctx, method)
+	span, ctx := opentracing.StartSpanFromContext(ctx, method)
 	if ids, err := resolver.TenantIDs(ctx); err == nil && len(ids) > 0 {
-		span.SetAttributes(attribute.StringSlice(TenantIDsTagName, ids))
+		span.SetTag(TenantIDsTagName, ids)
 	}
-	_, sampled := tracing.ExtractOtelSampledTraceID(ctx)
+	_, sampled := tracing.ExtractSampledTraceID(ctx)
 	l := &SpanLogger{
 		ctx:          ctx,
 		resolver:     resolver,
@@ -77,10 +77,13 @@ func FromContext(ctx context.Context, fallback log.Logger, resolver TenantResolv
 	if !ok {
 		logger = fallback
 	}
-
-	sp := trace.SpanFromContext(ctx)
-	_, sampled := tracing.ExtractOtelSampledTraceID(ctx)
-
+	sampled := false
+	sp := opentracing.SpanFromContext(ctx)
+	if sp == nil {
+		sp = opentracing.NoopTracer{}.StartSpan("noop")
+	} else {
+		_, sampled = tracing.ExtractSampledTraceID(ctx)
+	}
 	return &SpanLogger{
 		ctx:          ctx,
 		baseLogger:   logger,
@@ -102,7 +105,6 @@ func debugEnabled(logger log.Logger) bool {
 
 // Log implements gokit's Logger interface; sends logs to underlying logger and
 // also puts the on the spans.
-// Log is expecting attribute key values pairs
 func (s *SpanLogger) Log(kvps ...interface{}) error {
 	s.getLogger().Log(kvps...)
 	return s.spanLog(kvps...)
@@ -124,30 +126,12 @@ func (s *SpanLogger) spanLog(kvps ...interface{}) error {
 	if !s.sampled {
 		return nil
 	}
-	fields, err := convertKVToAttributes(kvps...)
+	fields, err := otlog.InterleavedKVToFields(kvps...)
 	if err != nil {
 		return err
 	}
-	s.Span.SetAttributes(fields...)
+	s.Span.LogFields(fields...)
 	return nil
-}
-
-// convertKVToAttributes converts keyValues to a slice of attribute.KeyValue
-func convertKVToAttributes(keyValues ...interface{}) ([]attribute.KeyValue, error) {
-	if len(keyValues)%2 != 0 {
-		return nil, fmt.Errorf("non-even keyValues len: %d", len(keyValues))
-	}
-	fields := make([]attribute.KeyValue, len(keyValues)/2)
-	for i := 0; i*2 < len(keyValues); i++ {
-		key, ok := keyValues[i*2].(string)
-		if !ok {
-			return nil, fmt.Errorf("non-string key (pair #%d): %T", i, keyValues[i*2])
-		}
-		value := keyValues[i*2+1]
-		// here to simplify the attribute value type, we convert everything into string
-		fields[i] = attribute.String(key, fmt.Sprintf("%v", value))
-	}
-	return fields, nil
 }
 
 // Error sets error flag and logs the error on the span, if non-nil. Returns the err passed in.
@@ -155,8 +139,8 @@ func (s *SpanLogger) Error(err error) error {
 	if err == nil || !s.sampled {
 		return err
 	}
-	s.RecordError(err, trace.WithStackTrace(true))
-	s.Span.AddEvent("error", trace.WithAttributes(attribute.String("msg", err.Error())))
+	ext.Error.Set(s.Span, true)
+	s.Span.LogFields(otlog.Error(err))
 	return err
 }
 
@@ -172,7 +156,7 @@ func (s *SpanLogger) getLogger() log.Logger {
 		logger = log.With(logger, "user", userID)
 	}
 
-	traceID, ok := tracing.ExtractOtelSampledTraceID(s.ctx)
+	traceID, ok := tracing.ExtractSampledTraceID(s.ctx)
 	if ok {
 		logger = log.With(logger, "traceID", traceID)
 	}

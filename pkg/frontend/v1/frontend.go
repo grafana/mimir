@@ -217,7 +217,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		req := reqWrapper.(*request)
 
 		f.queueDuration.Observe(time.Since(req.enqueueTime).Seconds())
-		req.queueSpan.Finish()
+		req.queueSpan.End()
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.

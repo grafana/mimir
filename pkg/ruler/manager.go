@@ -24,7 +24,10 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
-	ot "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
 
@@ -308,10 +311,11 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			// Jaeger complains the passed-in context has an invalid span ID, so start a new root span
 			// TODO: Here we start a completely new span, but pay attention when span is started, the sampling is decided,
 			// the default sampling rate for remote sampling in otel is alwasy sampled.
-			sp := ot.GlobalTracer().StartSpan("notify", ot.Tag{Key: "organization", Value: userID})
-			defer sp.Finish()
-			ctx = ot.ContextWithSpan(ctx, sp)
-			_ = ot.GlobalTracer().Inject(sp.Context(), ot.HTTPHeaders, ot.HTTPHeadersCarrier(req.Header))
+			ctx, sp := otel.Tracer("").Start(ctx, "notify", trace.WithAttributes(
+				attribute.String("organization", userID),
+			))
+			defer sp.End()
+			otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 			return ctxhttp.Do(ctx, client, req)
 		},
 	}, log.With(r.logger, "user", userID))

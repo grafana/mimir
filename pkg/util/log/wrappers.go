@@ -49,7 +49,7 @@ func WithContext(ctx context.Context, l log.Logger) log.Logger {
 		l = WithUserIDs(userIDs, l)
 	}
 
-	traceID, ok := tracing.ExtractSampledTraceID(ctx)
+	traceID, ok := tracing.ExtractOtelSampledTraceID(ctx)
 	if !ok {
 		return l
 	}

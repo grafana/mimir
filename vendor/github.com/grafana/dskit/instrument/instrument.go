@@ -10,10 +10,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/tracing"
@@ -72,7 +72,7 @@ func (c *HistogramCollector) After(ctx context.Context, method, statusCode strin
 // 'histogram' parameter must be castable to prometheus.ExemplarObserver or function will panic
 // (this will always work for a HistogramVec).
 func ObserveWithExemplar(ctx context.Context, histogram prometheus.Observer, seconds float64) {
-	if traceID, ok := tracing.ExtractOtelSampledTraceID(ctx); ok {
+	if traceID, ok := tracing.ExtractSampledTraceID(ctx); ok {
 		histogram.(prometheus.ExemplarObserver).ObserveWithExemplar(
 			seconds,
 			prometheus.Labels{"traceID": traceID},
@@ -152,18 +152,19 @@ func (c *JobCollector) After(_ context.Context, method, statusCode string, start
 // CollectedRequest runs a tracked request. It uses the given Collector to monitor requests.
 //
 // If `f` returns no error we log "200" as status code, otherwise "500". Pass in a function
-// for `toStatusCode` to overwrite this behaviour. It will also emit an otel span if
+// for `toStatusCode` to overwrite this behaviour. It will also emit an OpenTracing span if
 // you have a global tracer configured.
 func CollectedRequest(ctx context.Context, method string, col Collector, toStatusCode func(error) string, f func(context.Context) error) error {
 	if toStatusCode == nil {
 		toStatusCode = ErrorCode
 	}
-	newCtx, sp := otel.Tracer("").Start(ctx, method, trace.WithSpanKind(trace.SpanKindClient))
+	sp, newCtx := opentracing.StartSpanFromContext(ctx, method)
+	ext.SpanKindRPCClient.Set(sp)
 	if userID, err := user.ExtractUserID(ctx); err == nil {
-		sp.SetAttributes(attribute.String("user", userID))
+		sp.SetTag("user", userID)
 	}
 	if orgID, err := user.ExtractOrgID(ctx); err == nil {
-		sp.SetAttributes(attribute.String("organization", orgID))
+		sp.SetTag("organization", orgID)
 	}
 
 	start := time.Now()
@@ -173,11 +174,11 @@ func CollectedRequest(ctx context.Context, method string, col Collector, toStatu
 
 	if err != nil {
 		if !grpcutil.IsCanceled(err) {
-			sp.RecordError(err, trace.WithStackTrace(true))
+			ext.Error.Set(sp, true)
 		}
-		sp.AddEvent("error", trace.WithAttributes(attribute.String("msg", err.Error())))
+		sp.LogFields(otlog.Error(err))
 	}
-	sp.End()
+	sp.Finish()
 
 	return err
 }
