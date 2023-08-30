@@ -12,7 +12,6 @@
     autoscaling_ruler_querier_max_replicas: error 'you must set autoscaling_ruler_querier_max_replicas in the _config',
     autoscaling_ruler_querier_cpu_target_utilization: 1,
     autoscaling_ruler_querier_memory_target_utilization: 1,
-    autoscaling_ruler_querier_use_oom_trigger: false,
 
     autoscaling_distributor_enabled: false,
     autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
@@ -37,7 +36,6 @@
     autoscaling_ruler_query_frontend_max_replicas: error 'you must set autoscaling_ruler_query_frontend_max_replicas in the _config',
     autoscaling_ruler_query_frontend_cpu_target_utilization: 1,
     autoscaling_ruler_query_frontend_memory_target_utilization: 1,
-    autoscaling_ruler_query_frontend_use_oom_trigger: false,
 
     autoscaling_alertmanager_enabled: false,
     autoscaling_alertmanager_min_replicas: error 'you must set autoscaling_alertmanager_min_replicas in the _config',
@@ -196,6 +194,8 @@
   // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
   // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
   // of containers there are running at any given time, without suffering the PromQL lookback period.
+  // If a pod is terminated because it OOMs, we still want to scale up -- add the memory resource request of OOMing
+  //  pods to the memory metric calculation.
   local memoryHPAQuery = |||
     max_over_time(
       sum(
@@ -204,11 +204,6 @@
         max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
       )[15m:]
     )
-  |||,
-
-  // If a pod is terminated because it OOMs, we still want to scale up -- add the memory resource request of OOMing
-  //  pods to the memory metric calculation.
-  local oomMemoryHPAQuery = memoryHPAQuery + |||
     +
     max_over_time(
       (
@@ -221,6 +216,7 @@
     )
   |||,
 
+
   newQueryFrontendScaledObject(
     name,
     cpu_requests,
@@ -229,7 +225,6 @@
     max_replicas,
     cpu_target_utilization,
     memory_target_utilization,
-    use_oom_trigger=false
   ):: self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: min_replicas,
@@ -249,7 +244,7 @@
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          query: (if use_oom_trigger then oomMemoryHPAQuery else memoryHPAQuery) % {
+          query: memoryHPAQuery % {
             container: name,
             namespace: $._config.namespace,
           },
@@ -348,7 +343,6 @@
     cpu_target_utilization,
     memory_target_utilization,
     weight=1,
-    use_oom_trigger=false
   ):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
@@ -366,7 +360,7 @@
       {
         metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        query: (if use_oom_trigger then oomMemoryHPAQuery else memoryHPAQuery) % {
+        query: memoryHPAQuery % {
           container: name,
           namespace: $._config.namespace,
         },
@@ -386,7 +380,6 @@
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
       memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
-      use_oom_trigger=$._config.autoscaling_ruler_querier_use_oom_trigger,
     ),
 
   ruler_querier_deployment: overrideSuperIfExists(
@@ -403,7 +396,6 @@
       max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas,
       cpu_target_utilization=$._config.autoscaling_ruler_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_query_frontend_memory_target_utilization,
-      use_oom_trigger=$._config.autoscaling_ruler_query_frontend_use_oom_trigger,
     ),
   ruler_query_frontend_deployment: overrideSuperIfExists(
     'ruler_query_frontend_deployment',
@@ -425,7 +417,6 @@
     max_replicas,
     cpu_target_utilization,
     memory_target_utilization,
-    use_oom_trigger=false
   ):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
@@ -445,7 +436,7 @@
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        query: (if use_oom_trigger then oomMemoryHPAQuery else memoryHPAQuery) % {
+        query: memoryHPAQuery % {
           container: name,
           namespace: $._config.namespace,
         },
@@ -474,7 +465,7 @@
 
   // Ruler
 
-  local newRulerScaledObject(name, use_oom_trigger=false) = self.newScaledObject(
+  local newRulerScaledObject(name) = self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: $._config.autoscaling_ruler_min_replicas,
       max_replica_count: $._config.autoscaling_ruler_max_replicas,
@@ -498,7 +489,7 @@
         {
           metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          query: (if use_oom_trigger then oomMemoryHPAQuery else memoryHPAQuery) % {
+          query: memoryHPAQuery % {
             container: name,
             namespace: $._config.namespace,
           },
@@ -533,7 +524,6 @@
     max_replicas,
     cpu_target_utilization,
     memory_target_utilization,
-    use_oom_trigger=false,
   ):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
@@ -555,7 +545,7 @@
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-        query: (if use_oom_trigger then oomMemoryHPAQuery else memoryHPAQuery) % {
+        query: memoryHPAQuery % {
           container: name,
           namespace: $._config.namespace,
         },
