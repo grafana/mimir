@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"go.opentelemetry.io/otel/trace"
 

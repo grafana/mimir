@@ -22,7 +22,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
-	"github.com/opentracing/opentracing-go"
 	attribute "go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/yaml.v3"

@@ -23,7 +23,6 @@ import (
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/munnerz/goautoneg"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -113,7 +112,7 @@ type Request interface {
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
 	WithEstimatedSeriesCountHint(uint64) Request
 	proto.Message
-	// LogToSpan writes information about this request to an OpenTracing span
+	// LogToSpan writes information about this request to an otel span
 	LogToSpan(trace.Span)
 }
 

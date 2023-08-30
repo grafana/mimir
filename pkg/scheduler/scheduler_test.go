@@ -257,8 +257,9 @@ func TestTracingContext(t *testing.T) {
 		FrontendAddress: "frontend-12345",
 	}
 
-	_, sp := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "client")
-	otel.Tracer("github.com/grafana/mimir").Inject(sp.Context(), opentracing.HTTPHeaders, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
+	ctx, _ := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "client")
+	propagators := otel.GetTextMapPropagator()
+	propagators.Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
 
 	frontendToScheduler(t, frontendLoop, req)
 

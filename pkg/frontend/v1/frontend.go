@@ -164,14 +164,9 @@ func (f *Frontend) cleanupInactiveUserMetrics(user string) {
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
 func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
-	tracer, span := otel.Tracer("github.com/grafana/mimir"), trace.SpanFromContext(ctx)
-	if tracer != nil && span != nil {
-		carrier := (*httpgrpcutil.HttpgrpcHeadersCarrier)(req)
-		err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, carrier)
-		if err != nil {
-			return nil, err
-		}
-	}
+	propagators := otel.GetTextMapPropagator()
+	carrier := (*httpgrpcutil.HttpgrpcHeadersCarrier)(req)
+	propagators.Inject(ctx, carrier)
 
 	request := request{
 		request:     req,

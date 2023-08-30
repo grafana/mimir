@@ -15,7 +15,6 @@ import (
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	attribute "go.opentelemetry.io/otel/attribute"

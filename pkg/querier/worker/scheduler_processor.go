@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -169,13 +168,11 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 
 			tracer := otel.Tracer("github.com/grafana/mimir")
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
-			parentSpanContext, _ := httpgrpcutil.GetParentSpanForRequest(tracer, request.HttpRequest)
-			if parentSpanContext != nil {
-				queueSpan, spanCtx := opentracing.StartSpanFromContextWithTracer(ctx, tracer, "querier_processor_runRequest", opentracing.ChildOf(parentSpanContext))
-				defer queueSpan.Finish()
+			parentSpanContext := httpgrpcutil.GetParentSpanForRequest(request.HttpRequest)
+			spanCtx, queueSpan := tracer.Start(parentSpanContext, "querier_processor_runRequest")
+			defer queueSpan.End()
 
-				ctx = spanCtx
-			}
+			ctx = spanCtx
 			logger := util_log.WithContext(ctx, sp.log)
 
 			sp.runRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, request.HttpRequest)

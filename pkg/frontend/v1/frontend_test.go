@@ -23,7 +23,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tracing"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"

@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"

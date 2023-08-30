@@ -25,8 +25,6 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"

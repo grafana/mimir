@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -205,7 +205,7 @@ type schedulerRequest struct {
 	queueSpan trace.Span
 
 	// This is only used for testing.
-	parentSpanContext opentracing.SpanContext
+	parentSpanContext context.Context
 }
 
 // FrontendLoop handles connection from frontend.
@@ -335,11 +335,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 
 	// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
 	// information, since that is a long-running request.
-	tracer := otel.Tracer("github.com/grafana/mimir")
-	parentSpanContext, err := httpgrpcutil.GetParentSpanForRequest(tracer, msg.HttpRequest)
-	if err != nil {
-		return err
-	}
+	parentSpanContext := httpgrpcutil.GetParentSpanForRequest(msg.HttpRequest)
 
 	userID := msg.GetUserID()
 
@@ -353,8 +349,10 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 
 	now := time.Now()
 
-	req.parentSpanContext = opentracing.SpanFromContext(requestContext).Context()
-	req.queueSpan, req.ctx = opentracing.StartSpanFromContext(ctx, "queued")
+	req.parentSpanContext = parentSpanContext
+
+	req.ctx, req.queueSpan = otel.Tracer("github.com/grafana/mimir").Start(parentSpanContext, "queued")
+
 	req.enqueueTime = now
 	req.ctxCancel = cancel
 

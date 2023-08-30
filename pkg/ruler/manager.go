@@ -306,6 +306,8 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 				return nil, err
 			}
 			// Jaeger complains the passed-in context has an invalid span ID, so start a new root span
+			// TODO: Here we start a completely new span, but pay attention when span is started, the sampling is decided,
+			// the default sampling rate for remote sampling in otel is alwasy sampled.
 			sp := ot.GlobalTracer().StartSpan("notify", ot.Tag{Key: "organization", Value: userID})
 			defer sp.Finish()
 			ctx = ot.ContextWithSpan(ctx, sp)

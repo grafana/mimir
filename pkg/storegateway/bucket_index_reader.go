@@ -21,7 +21,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"

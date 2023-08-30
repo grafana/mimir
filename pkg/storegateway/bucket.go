@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
