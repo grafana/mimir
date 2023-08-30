@@ -48,7 +48,7 @@ func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 
 	t.Run("invalid tenant IDs", func(t *testing.T) {
 		upstream := &mockMetadataSupplier{}
-		supplier := NewMetadataSupplier(upstream, test.NewTestingLogger(t))
+		supplier := NewMetadataSupplier(upstream, defaultConcurrency, test.NewTestingLogger(t))
 		_, err := supplier.MetricsMetadata(context.Background())
 
 		assert.ErrorIs(t, err, user.ErrNoOrgID)
@@ -61,7 +61,7 @@ func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 			},
 		}
 
-		supplier := NewMetadataSupplier(upstream, test.NewTestingLogger(t))
+		supplier := NewMetadataSupplier(upstream, defaultConcurrency, test.NewTestingLogger(t))
 		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a"))
 
 		require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 			},
 		}
 
-		supplier := NewMetadataSupplier(upstream, test.NewTestingLogger(t))
+		supplier := NewMetadataSupplier(upstream, defaultConcurrency, test.NewTestingLogger(t))
 		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a|team-b"))
 
 		require.NoError(t, err)
@@ -94,7 +94,7 @@ func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 			},
 		}
 
-		supplier := NewMetadataSupplier(upstream, test.NewTestingLogger(t))
+		supplier := NewMetadataSupplier(upstream, defaultConcurrency, test.NewTestingLogger(t))
 		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a|team-b"))
 
 		require.NoError(t, err)
