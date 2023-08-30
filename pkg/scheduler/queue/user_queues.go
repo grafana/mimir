@@ -170,16 +170,16 @@ func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (ch
 			continue
 		}
 
-		q := q.userQueues[u]
+		userQueue := q.userQueues[u]
 
-		if q.queriers != nil {
-			if _, ok := q.queriers[querierID]; !ok {
+		if userQueue.queriers != nil {
+			if _, ok := userQueue.queriers[querierID]; !ok {
 				// This querier is not handling the user.
 				continue
 			}
 		}
 
-		return q.ch, u, uid
+		return userQueue.ch, u, uid
 	}
 	return nil, "", uid
 }
