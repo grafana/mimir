@@ -14,6 +14,7 @@ jobs:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
       helm_version: v3.8.2
+      k8s_version: v1.20.8
 
   prepare:
     runs-on: ubuntu-latest
