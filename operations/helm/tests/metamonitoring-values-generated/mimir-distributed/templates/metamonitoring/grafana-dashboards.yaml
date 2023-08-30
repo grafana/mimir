@@ -26967,7 +26967,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 4,
+                      "span": 3,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -27062,7 +27062,7 @@ data:
                          }
                       ],
                       "spaceLength": 10,
-                      "span": 4,
+                      "span": 3,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -27123,7 +27123,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler does not work properly.\n\n",
+                      "description": "### Scaling metric (memory): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
                       "fill": 1,
                       "id": 13,
                       "legend": {
@@ -27145,7 +27145,83 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 4,
+                      "span": 3,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "{{ scaledObject }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Scaling metric (memory): Desired replicas",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler does not work properly.\n\n",
+                      "fill": 1,
+                      "id": 14,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 3,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
