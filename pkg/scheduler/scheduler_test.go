@@ -32,9 +32,14 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 const testMaxOutstandingPerTenant = 5
+
+func TestMain(m *testing.M) {
+	util_test.VerifyNoLeakTestMain(m)
+}
 
 func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedulerpb.SchedulerForFrontendClient, schedulerpb.SchedulerForQuerierClient) {
 	cfg := Config{}

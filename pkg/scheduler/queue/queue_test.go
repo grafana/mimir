@@ -20,7 +20,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
+
+func TestMain(m *testing.M) {
+	util_test.VerifyNoLeakTestMain(m)
+}
 
 func BenchmarkGetNextRequest(b *testing.B) {
 	const maxOutstandingPerTenant = 2
