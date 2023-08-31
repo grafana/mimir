@@ -1012,7 +1012,7 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 			}
 		case !s.strategy.isNoChunkRefs():
 			clampLastChunkLength(symbolizedSet.series, metas)
-			series.chunksRanges = metasToRanges([][]chunks.Meta{metas}, s.blockID, s.minTime, s.maxTime)
+			series.chunksRanges = metasToRanges(partitionChunks(metas, 1, 1), s.blockID, s.minTime, s.maxTime)
 		}
 		symbolizedSet.series = append(symbolizedSet.series, series)
 	}
