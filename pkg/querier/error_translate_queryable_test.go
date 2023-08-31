@@ -89,7 +89,7 @@ func TestApiStatusCodes(t *testing.T) {
 
 		{
 			err:            context.DeadlineExceeded,
-			expectedString: "timeout",
+			expectedString: context.DeadlineExceeded.Error(),
 			expectedCode:   500,
 		},
 

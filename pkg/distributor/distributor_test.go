@@ -279,7 +279,7 @@ func TestDistributor_Push(t *testing.T) {
 			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
 			timeOut:        true,
 			expectedError: httpgrpc.Errorf(http.StatusInternalServerError,
-				"exceeded configured distributor remote timeout: failed pushing to ingester: timeout"),
+				"exceeded configured distributor remote timeout: failed pushing to ingester: %s", context.DeadlineExceeded),
 			metricNames: []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
