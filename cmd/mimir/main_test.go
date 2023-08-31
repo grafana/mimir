@@ -6,16 +6,25 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
@@ -459,4 +468,51 @@ func TestFieldCategoryOverridesNotStale(t *testing.T) {
 	})
 
 	require.Empty(t, overrides, "There are category overrides for configuration options that no longer exist")
+}
+
+func BenchmarkServerRateLimiting(b *testing.B) {
+	limit := atomic.NewInt64(1000)
+	s := grpc.NewServer(
+		grpc.UnaryInterceptor(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+			defer limit.Inc()
+			if limit.Dec() < 0 {
+				return nil, errors.New("rate-limited")
+			}
+			return handler(ctx, req)
+		}),
+	)
+	grpc_health_v1.RegisterHealthServer(s, grpcutil.NewHealthCheckFrom())
+
+	grpcListen, err := net.Listen("tcp", "localhost:0")
+	require.NoError(b, err)
+	go s.Serve(grpcListen)
+	b.Cleanup(func() {
+		_ = grpcListen.Close()
+	})
+
+	clientConn, err := grpc.Dial(grpcListen.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(b, err)
+	client := grpc_health_v1.NewHealthClient(clientConn)
+
+	// Create a 10KiB request to test whether we're reading the request or not with the different rate-limiters.
+	req := &grpc_health_v1.HealthCheckRequest{Service: strings.Repeat("x", 10*1024)}
+	ctx := context.Background()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sendRequests := make(chan struct{})
+		requestsSent := &sync.WaitGroup{}
+
+		const numRequests = 10_000
+		requestsSent.Add(numRequests)
+
+		for j := 0; j < numRequests; j++ {
+			go func() {
+				defer requestsSent.Done()
+				<-sendRequests
+				_, _ = client.Check(ctx, req)
+			}()
+		}
+		close(sendRequests)
+		requestsSent.Wait()
+	}
 }
