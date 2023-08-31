@@ -196,20 +196,20 @@ func (q *RequestQueue) stopping(_ error) error {
 	return nil
 }
 
-func (q *RequestQueue) RegisterQuerierConnection(querier string) {
+func (q *RequestQueue) RegisterQuerierConnection(querierID string) {
 	q.connectedQuerierWorkers.Inc()
 
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
-	q.queues.addQuerierConnection(querier)
+	q.queues.addQuerierConnection(querierID)
 }
 
-func (q *RequestQueue) UnregisterQuerierConnection(querier string) {
+func (q *RequestQueue) UnregisterQuerierConnection(querierID string) {
 	q.connectedQuerierWorkers.Dec()
 
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
-	q.queues.removeQuerierConnection(querier, time.Now())
+	q.queues.removeQuerierConnection(querierID, time.Now())
 }
 
 func (q *RequestQueue) NotifyQuerierShutdown(querierID string) {
