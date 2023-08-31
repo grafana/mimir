@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/mimir/pkg/mimirtool/backfill"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/grafana/mimir/pkg/mimirtool/backfill"
 )
 
 func TestTimeSeriesIterator(t *testing.T) {
