@@ -153,7 +153,7 @@ FindQueue:
 
 			q.queueLength.WithLabelValues(userID).Dec()
 
-			// Tell close() we've processed a request.
+			// Tell stopping() we've processed a request.
 			q.cond.Broadcast()
 
 			return request, last, nil
