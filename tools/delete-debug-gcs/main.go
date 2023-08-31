@@ -80,10 +80,10 @@ func worker(client *storage.Client, ch chan string) {
 
 		ctx := context.Background()
 		if err := objToDelete.Delete(ctx); err != nil {
-			log.Printf("Failed to delete %s: %v\n", p, err)
+			log.Printf("Failed to delete %s: %v\n", line, err)
 			continue
 		}
 
-		log.Println("Deleted", p)
+		log.Println("Deleted", line)
 	}
 }
