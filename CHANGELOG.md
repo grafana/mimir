@@ -188,10 +188,6 @@
 * [ENHANCEMENT] Increase the default rollout speed for store-gateway when lazy loading is disabled. #5823
 * [BUGFIX] Fix compilation when index, chunks or metadata caches are disabled. #5710
 
-### Mimirtool
-
-### Mimir Continuous Test
-
 ### Query-tee
 
 * [CHANGE] Proxy `Content-Type` response header from backend. Previously `Content-Type: text/plain; charset=utf-8` was returned on all requests. #5183
