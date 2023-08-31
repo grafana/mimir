@@ -29,7 +29,6 @@
 | Percentages (unit is `1`)                                | Append `_ratio` (for gauges only)                                                                                                | `system.memory.utilization` with unit `1` → `system_memory_utilization_ratio`             |
 | Percentages (unit is `%`)                                | Replace `%` with `percent` `_percent`                                                                                            | `storage.filesystem.utilization` with unit `%` → `storage_filesystem_utilization_percent` |
 | Rates (unit contains `/`)                                | Replace `/` with `per`                                                                                                           | `astro.light.speed` with unit `m/s` → `astro_light_speed_meters_per_second`               |
-| Dollars (unit is `$`)                                    | Replace `$` with `dollars`                                                                                                       | `crypto.dogecoin.value` with unit `$` → `crypto_dogecoin_value_dollars`                   |
 | Counter                                                  | Append `_total`                                                                                                                  | `system.processes.created` → `system_processes_created_total`                             |
 
 List of standard OpenTelemetry units that will be translated to [Prometheus standard base units](https://prometheus.io/docs/practices/naming/#base-units):
@@ -54,11 +53,6 @@ List of standard OpenTelemetry units that will be translated to [Prometheus stan
 | `MBy`              | `megabytes`                   |
 | `GBy`              | `gigabytes`                   |
 | `TBy`              | `terabytes`                   |
-| `B`                | `bytes`                       |
-| `KB`               | `kilobytes`                   |
-| `MB`               | `megabytes`                   |
-| `GB`               | `gigabytes`                   |
-| `TB`               | `terabytes`                   |
 | **SI Units**       |                               |
 | `m`                | `meters`                      |
 | `V`                | `volts`                       |
@@ -70,7 +64,6 @@ List of standard OpenTelemetry units that will be translated to [Prometheus stan
 | `Cel`              | `celsius`                     |
 | `Hz`               | `hertz`                       |
 | `%`                | `percent`                     |
-| `$`                | `dollars`                     |
 
 > **Note**
 > Prometheus also recommends using base units (no kilobytes, or milliseconds, for example) but these functions will not attempt to convert non-base units to base units.
