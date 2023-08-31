@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"flag"
 	"fmt"
@@ -43,6 +44,8 @@ func init() {
 	prometheus.MustRegister(version.NewCollector("mimir"))
 	prometheus.MustRegister(version.NewCollector("cortex"))
 	prometheus.MustRegister(configHash)
+
+	context.DeadlineExceeded = timeoutError{}
 }
 
 const (
@@ -310,3 +313,9 @@ func expandEnvironmentVariables(config []byte) []byte {
 		return v
 	}))
 }
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
