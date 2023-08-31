@@ -152,20 +152,20 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								if instanceIdx < additionalRequests {
 									// If we can't perfectly spread requests across all instances, assign remaining requests to the first instances.
 									return count + 1
-								} else {
-									return count
 								}
+
+								return count
 							}
 
 							// TODO: limit the rate of production?
 							startProducer := func(producerIdx int) error {
 								requestCount := requestCount(b.N, numProducers, producerIdx)
-								tenantId := producerIdx % numTenants
+								tenantID := producerIdx % numTenants
 								<-start
 
 								for i := 0; i < requestCount; i++ {
 									for {
-										err := queue.EnqueueRequest(strconv.Itoa(tenantId), req, maxQueriers, func() {})
+										err := queue.EnqueueRequest(strconv.Itoa(tenantID), req, maxQueriers, func() {})
 										if err == nil {
 											break
 										}
@@ -176,7 +176,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 										}
 									}
 
-									tenantId = (tenantId + 1) % numTenants
+									tenantID = (tenantID + 1) % numTenants
 								}
 
 								return nil
