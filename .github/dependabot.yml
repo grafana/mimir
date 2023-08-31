@@ -11,119 +11,68 @@ updates:
       interval: "weekly"
       time: "06:00"
     open-pull-requests-limit: 5 
+    groups:
+      github-action:
+        update-types:
+        - "minor"
+        - "patch"
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: "weekly"
       time: "06:02"
     open-pull-requests-limit: 5 
+    groups:
+      golang:
+        update-types:
+        - "patch"
   - package-ecosystem: docker
     directory: /mimir-build-image/
     schedule:
       interval: "daily"
       time: "06:04"
-    groups:
-      docker-dependencies-update:
-        update-types:
-        - "minor" 
-        - "patch"
-        - "major"
   - package-ecosystem: docker
     directory: /cmd/metaconvert/
     schedule:
       interval: "daily"
       time: "06:04"
-    groups:
-      docker-dependencies-update: 
-        update-types: 
-        - "minor"
-        - "patch"
-        - "major"
   - package-ecosystem: docker
     directory: /cmd/mimir/
     schedule:
       interval: "daily"
       time: "06:04"
-    groups:
-      docker-dependencies-update:
-        update-types:
-        - "minor"
-        - "patch"
-        - "major"
   - package-ecosystem: docker
     directory: /cmd/mimir-continuous-test/
     schedule:
       interval: "daily"
       time: "06:04"
-    groups:
-      docker-dependencies-update:
-        update-types:
-        - "minor"  
-        - "patch"
-        - "major"
   - package-ecosystem: docker
     directory: /cmd/mimirtool/
     schedule:
       interval: "daily"
       time: "06:04"
-    groups:
-      docker-dependencies-update: 
-        update-types:
-        - "minor"
-        - "patch"
-        - "major"
   - package-ecosystem: docker
     directory: /cmd/query-tee/
     schedule:
       interval: "daily"
       time: "06:04"
-    groups:
-      docker-dependencies-update:
-        update-types:
-        - "minor"
-        - "patch"
-        - "major"
   - package-ecosystem: docker
     directory: /development/mimir-microservices-mode/
     schedule:
       interval: "daily"
       time: "06:04"
-    groups:
-      docker-dependencies-update:
-        update-types:
-        - "minor"
-        - "patch"
-        - "major"
   - package-ecosystem: docker
     directory: /development/mimir-monolithic-mode/
     schedule:
       interval: "daily"
       time: "06:04"
-    groups:
-      docker-dependencies-update:
-        update-types:
-        - "minor"
-        - "patch"
-        - "major"
   - package-ecosystem: docker
     directory: /development/mimir-monolithic-mode-with-swift-storage/
     schedule:
       interval: "daily"
       time: "06:04"
-    groups:
-      docker-dependencies-update:
-        update-types:
-        - "minor"
-        - "patch"
-        - "major"
   - package-ecosystem: docker
     directory: /development/mimir-read-write-mode/
     schedule:
       interval: "daily"
       time: "06:04"
-    groups:
-      docker-dependencies-update:
-        update-types:
-        - "minor"
-        - "patch"
-        - "major"
