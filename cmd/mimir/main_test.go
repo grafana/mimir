@@ -18,13 +18,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/grpcutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/tap"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
@@ -470,18 +470,28 @@ func TestFieldCategoryOverridesNotStale(t *testing.T) {
 	require.Empty(t, overrides, "There are category overrides for configuration options that no longer exist")
 }
 
+type healthServer struct {
+	grpc_health_v1.UnimplementedHealthServer
+	limit *atomic.Int64
+}
+
+func (s *healthServer) Check(context.Context, *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+	s.limit.Inc()
+	return &grpc_health_v1.HealthCheckResponse{}, nil
+}
+
 func BenchmarkServerRateLimiting(b *testing.B) {
 	limit := atomic.NewInt64(1000)
 	s := grpc.NewServer(
-		grpc.UnaryInterceptor(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-			defer limit.Inc()
+		grpc.InTapHandle(func(ctx context.Context, info *tap.Info) (context.Context, error) {
 			if limit.Dec() < 0 {
+				limit.Inc()
 				return nil, errors.New("rate-limited")
 			}
-			return handler(ctx, req)
+			return ctx, nil
 		}),
 	)
-	grpc_health_v1.RegisterHealthServer(s, grpcutil.NewHealthCheckFrom())
+	grpc_health_v1.RegisterHealthServer(s, &healthServer{limit: limit})
 
 	grpcListen, err := net.Listen("tcp", "localhost:0")
 	require.NoError(b, err)
