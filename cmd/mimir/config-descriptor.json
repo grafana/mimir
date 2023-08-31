@@ -9280,6 +9280,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "tenant-federation.enabled",
           "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "max_concurrent",
+          "required": false,
+          "desc": "The number of workers used for each tenant federated query. This setting limits the maximum number of per-tenant queries executed at a time for a tenant federated query.",
+          "fieldValue": null,
+          "fieldDefaultValue": 16,
+          "fieldFlag": "tenant-federation.max-concurrent",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
