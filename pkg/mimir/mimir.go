@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goregexp "regexp" //lint:ignore faillint the Prometheus client library requires us to pass a regexp from this package
 	"strconv"
 	"strings"
 	"time"
@@ -716,14 +717,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		os.Exit(0)
 	}
 
-	if cfg.EnableGoRuntimeMetrics {
-		// unregister default Go collector
-		reg.Unregister(collectors.NewGoCollector())
-		// register Go collector with all available runtime metrics
-		reg.MustRegister(collectors.NewGoCollector(
-			collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
-		))
-	}
+	setUpGoRuntimeMetrics(cfg, reg)
 
 	// Swap out the default resolver to support multiple tenant IDs separated by a '|'
 	if cfg.TenantFederation.Enabled {
@@ -765,6 +759,26 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	}
 
 	return mimir, nil
+}
+
+func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
+	rules := []collectors.GoRuntimeMetricsRule{
+		// Enable the mutex wait time metric.
+		{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
+	}
+
+	if cfg.EnableGoRuntimeMetrics {
+		// Enable all available runtime metrics.
+		rules = append(rules, collectors.MetricsAll)
+	}
+
+	// Unregister the default Go collector...
+	reg.Unregister(collectors.NewGoCollector())
+
+	// ...and replace it with our own that adds our extra rules.
+	reg.MustRegister(collectors.NewGoCollector(
+		collectors.WithGoCollectorRuntimeMetrics(rules...),
+	))
 }
 
 // setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
