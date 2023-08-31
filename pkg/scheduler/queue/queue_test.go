@@ -181,23 +181,3 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	// We expect that querier-2 got the request only after querier-1 forget delay is passed.
 	assert.GreaterOrEqual(t, waitTime.Milliseconds(), forgetDelay.Milliseconds())
 }
-
-func assertChanReceived(t *testing.T, c chan struct{}, timeout time.Duration, msg string, args ...interface{}) {
-	t.Helper()
-
-	select {
-	case <-c:
-	case <-time.After(timeout):
-		t.Fatalf(msg, args...)
-	}
-}
-func assertChanNotReceived(t *testing.T, c chan struct{}, wait time.Duration, msg string, args ...interface{}) {
-	t.Helper()
-
-	select {
-	case <-c:
-		t.Fatalf(msg, args...)
-	case <-time.After(wait):
-		// OK!
-	}
-}
