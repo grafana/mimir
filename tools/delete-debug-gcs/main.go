@@ -77,14 +77,8 @@ func worker(client *storage.Client, ch chan string) {
 		}
 
 		objToDelete := bucket.Object(p)
-		ctx := context.Background()
-		attrs, err := objToDelete.Attrs(ctx)
-		if err != nil {
-			log.Printf("object.Attrs: %v\n", err)
-			continue
-		}
-		objToDelete = objToDelete.If(storage.Conditions{GenerationMatch: attrs.Generation})
 
+		ctx := context.Background()
 		if err := objToDelete.Delete(ctx); err != nil {
 			log.Printf("Failed to delete %s: %v\n", p, err)
 			continue
