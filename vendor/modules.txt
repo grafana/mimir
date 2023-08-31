@@ -1016,7 +1016,7 @@ github.com/thanos-io/objstore/providers/filesystem
 github.com/thanos-io/objstore/providers/gcs
 github.com/thanos-io/objstore/providers/s3
 github.com/thanos-io/objstore/providers/swift
-github.com/thanos-io/objstore/tracing/opentelemetry
+github.com/thanos-io/objstore/tracing/opentracing
 # github.com/uber/jaeger-client-go v2.30.0+incompatible
 ## explicit
 github.com/uber/jaeger-client-go
