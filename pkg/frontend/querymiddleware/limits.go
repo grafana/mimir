@@ -114,7 +114,7 @@ func newLimitsMiddleware(l Limits, logger log.Logger) Middleware {
 
 func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, l.logger, "limits")
-	defer log.Finish()
+	defer log.End()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {

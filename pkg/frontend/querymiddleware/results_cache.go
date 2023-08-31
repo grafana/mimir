@@ -408,7 +408,7 @@ func toExtent(ctx context.Context, req Request, res Response, queryTime time.Tim
 	if err != nil {
 		return Extent{}, err
 	}
-	traceID, sampled := tracing.ExtractTraceID(ctx)
+	traceID, sampled := tracing.ExtractOtelTraceID(ctx)
 	if !sampled {
 		traceID = ""
 	}

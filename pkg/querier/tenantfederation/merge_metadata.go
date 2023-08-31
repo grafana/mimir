@@ -39,7 +39,7 @@ type mergeMetadataSupplier struct {
 
 func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeMetadataSupplier.MetricsMetadata")
-	defer spanlog.Finish()
+	defer spanlog.End()
 
 	tenantIDs, err := m.resolver.TenantIDs(ctx)
 	if err != nil {

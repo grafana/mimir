@@ -245,8 +245,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 		case schedulerpb.ENQUEUE:
 			// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
 			// information, since that is a long-running request.
-			tracer := opentracing.GlobalTracer()
-			parentSpanContext, err := httpgrpcutil.GetParentSpanForRequest(tracer, msg.HttpRequest)
+			parentSpanContext := httpgrpcutil.GetParentSpanForRequest(msg.HttpRequest)
 			if err != nil {
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 				break
@@ -265,7 +264,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 			}
 
-			enqueueSpan.Finish()
+			enqueueSpan.End()
 		case schedulerpb.CANCEL:
 			s.cancelRequestAndRemoveFromPending(frontendAddress, msg.QueryID)
 			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
@@ -325,7 +324,7 @@ func (s *Scheduler) frontendDisconnected(frontendAddress string) {
 
 func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr string, msg *schedulerpb.FrontendToScheduler) error {
 	// Create new context for this request, to support cancellation.
-	ctx, cancel := context.WithCancel(requestContext)
+	_, cancel := context.WithCancel(requestContext)
 	shouldCancel := true
 	defer func() {
 		if shouldCancel {
@@ -417,7 +416,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		r := req.(*schedulerRequest)
 
 		s.queueDuration.Observe(time.Since(r.enqueueTime).Seconds())
-		r.queueSpan.Finish()
+		r.queueSpan.End()
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.

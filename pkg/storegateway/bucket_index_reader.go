@@ -90,7 +90,7 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 		if returnErr != nil {
 			span.AddEvent("", trace.WithAttributes(attribute.Error(returnErr)))
 		}
-		span.Finish()
+		span.End()
 	}()
 	promise, loaded = r.expandedPostingsPromise(ctx, ms, stats)
 	returnRefs, pendingMatchers, cached, returnErr = promise(ctx)

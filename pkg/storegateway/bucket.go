@@ -584,7 +584,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
 	spanCtx, span := otel.Tracer("github.com/grafana/mimir").Start(ctx, "store_query_gate_ismyturn")
 	err = s.queryGate.Start(spanCtx)
-	span.Finish()
+	span.End()
 	if err != nil {
 		return errors.Wrapf(err, "failed to wait for turn")
 	}

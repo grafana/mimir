@@ -322,7 +322,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 
 	now := time.Now()
 	req.enqueueTime = now
-	_, req.queueSpan = trace.Tracer("github.com/grafana/mimir").Start(ctx, "queued")
+	_, req.queueSpan = otel.Tracer("").Start(ctx, "queued")
 
 	// aggregate the max queriers limit in the case of a multi tenant query
 	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, f.limits.MaxQueriersPerUser)

@@ -110,7 +110,7 @@ type distributorQuerier struct {
 // The bool passed is ignored because the series is always sorted.
 func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
-	defer spanlog.Finish()
+	defer spanlog.End()
 
 	minT, maxT := q.mint, q.maxt
 	if sp != nil {
@@ -223,7 +223,7 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 
 func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
-	defer log.Span.Finish()
+	defer log.Span.End()
 
 	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", log)
 
@@ -269,7 +269,7 @@ type distributorExemplarQuerier struct {
 // Select querys for exemplars, prometheus' storage.ExemplarQuerier's Select function takes the time range as two int64 values.
 func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorExemplarQuerier.Select")
-	defer spanlog.Finish()
+	defer spanlog.End()
 
 	level.Debug(spanlog).Log(
 		"start", util.TimeFromMillis(start).UTC().String(),

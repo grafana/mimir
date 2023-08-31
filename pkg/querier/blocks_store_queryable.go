@@ -349,7 +349,7 @@ func (q *blocksStoreQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 
 func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.LabelNames")
-	defer spanLog.Span.Finish()
+	defer spanLog.Span.End()
 
 	minT, maxT := q.minT, q.maxT
 
@@ -391,7 +391,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 
 func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.LabelValues")
-	defer spanLog.Span.Finish()
+	defer spanLog.Span.End()
 
 	minT, maxT := q.minT, q.maxT
 
@@ -436,7 +436,7 @@ func (q *blocksStoreQuerier) Close() error {
 
 func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.selectSorted")
-	defer spanLog.Span.Finish()
+	defer spanLog.Span.End()
 
 	minT, maxT := sp.Start, sp.End
 
@@ -740,8 +740,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 		g.Go(func() error {
 			log, reqCtx := spanlogger.NewWithLogger(reqCtx, spanLog, "blocksStoreQuerier.fetchSeriesFromStores")
-			defer log.Span.Finish()
-			log.Span.SetTag("store_gateway_address", c.RemoteAddress())
+			defer log.Span.End()
+			log.Span.SetAttributes("store_gateway_address", c.RemoteAddress())
 
 			// See: https://github.com/prometheus/prometheus/pull/8050
 			// TODO(goutham): we should ideally be passing the hints down to the storage layer

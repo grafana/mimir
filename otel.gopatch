@@ -84,7 +84,7 @@ var j expression
 @@
 -i, j = opentracing.StartSpanFromContext(...)
 +import "go.opentelemetry.io/otel/trace"
-+j, i = trace.Tracer("github.com/grafana/mimir").Start(...)
++j, i = otel.Tracer("").Start(...)
 
 @@
 var i identifier
@@ -132,3 +132,7 @@ var j identifier
 
 -opentracing.GlobalTracer()
 +otel.Tracer("github.com/grafana/mimir")
+
+@@
+@@
+-SetTag

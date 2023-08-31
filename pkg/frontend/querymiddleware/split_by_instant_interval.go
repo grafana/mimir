@@ -105,7 +105,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "splitInstantQueryByIntervalMiddleware.Do")
-	defer spanLog.Span.Finish()
+	defer spanLog.Span.End()
 
 	tenantsIds, err := tenant.TenantIDs(ctx)
 	if err != nil {

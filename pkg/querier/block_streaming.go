@@ -172,7 +172,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 			close(s.chunkCountEstimateChan)
 			close(s.seriesChunksChan)
 			close(s.errorChan)
-			log.Finish()
+			log.End()
 		}()
 
 		if err := s.readStream(log); err != nil {

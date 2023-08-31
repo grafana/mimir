@@ -201,7 +201,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelFunc) (ingesterQueryResult, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
 		cleanup := func() {
-			log.Span.Finish()
+			log.Span.End()
 			cancelContext()
 		}
 
@@ -219,8 +219,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 			}
 		}()
 
-		log.Span.SetTag("ingester_address", ing.Addr)
-		log.Span.SetTag("ingester_zone", ing.Zone)
+		log.Span.SetAttributes("ingester_address", ing.Addr)
+		log.Span.SetAttributes("ingester_zone", ing.Zone)
 
 		client, err := d.ingesterPool.GetClientFor(ing.Addr)
 		if err != nil {

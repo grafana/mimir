@@ -4,19 +4,17 @@ package instrumentation
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/tracing"
 	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/config"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 )
 
 func TestTracerTransportPropagatesTrace(t *testing.T) {
@@ -47,19 +45,17 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 
 			observedTraceID := make(chan string, 2)
 			handler := middleware.Tracer{}.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				sp := trace.SpanFromContext(r.Context())
-				defer sp.Finish()
-
-				observedTraceID <- spanTraceID(sp)
+				id, _ := tracing.ExtractOtelSampledTraceID(r.Context())
+				observedTraceID <- id
 				tc.handlerAssert(t, r)
 			}))
 			srv := httptest.NewServer(handler)
 			defer srv.Close()
 
-			ctx, sp := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "client")
+			ctx, sp := otel.Tracer("").Start(context.Background(), "client")
 			defer sp.End()
 
-			traceID := spanTraceID(sp)
+			traceID, _ := tracing.ExtractOtelSampledTraceID(ctx)
 
 			req, err := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
 			require.NoError(t, err)
@@ -75,11 +71,6 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 			assert.Equal(t, traceID, <-observedTraceID)
 		})
 	}
-}
-
-func spanTraceID(sp trace.Span) string {
-	traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
-	return traceID
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

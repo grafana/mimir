@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/multierr"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -112,11 +113,11 @@ func OTLPHandler(
 		}
 
 		log, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.OTLPHandler.decodeAndConvert")
-		defer log.Span.Finish()
+		defer log.Span.End()
 
-		log.SetTag("content_type", contentType)
-		log.SetTag("content_encoding", contentEncoding)
-		log.SetTag("content_length", r.ContentLength)
+		log.SetAttributes(attribute.String("content_type", contentType))
+		log.SetAttributes(attribute.String("content_encoding", contentEncoding))
+		log.SetAttributes(attribute.Int("content_length", int(r.ContentLength)))
 
 		otlpReq, err := decoderFunc(body)
 		if err != nil {

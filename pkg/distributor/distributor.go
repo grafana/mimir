@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
@@ -716,8 +717,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		span := trace.SpanFromContext(ctx)
 		if span.SpanContext().IsValid() {
-			span.SetTag("cluster", cluster)
-			span.SetTag("replica", replica)
+			span.SetAttributes(attribute.String("cluster", cluster))
+			span.SetAttributes(attribute.String("replica", replica))
 		}
 
 		numSamples := 0
@@ -1116,7 +1117,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	span := trace.SpanFromContext(ctx)
 	if span != nil {
-		span.SetTag("organization", userID)
+		span.SetAttributes(attribute.String("organization", userID))
 	}
 
 	seriesKeys := d.getTokensForSeries(userID, req.Timeseries)
