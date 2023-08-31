@@ -11,21 +11,12 @@ updates:
       interval: "weekly"
       time: "06:00"
     open-pull-requests-limit: 5 
-    groups:
-      github-action:
-        update-types:
-        - "minor"
-        - "patch"
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: "weekly"
       time: "06:02"
     open-pull-requests-limit: 5 
-    groups:
-      golang:
-        update-types:
-        - "patch"
   - package-ecosystem: docker
     directory: /mimir-build-image/
     schedule:
