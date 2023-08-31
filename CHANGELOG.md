@@ -194,6 +194,7 @@
 * [ENHANCEMENT] Add _config.commonConfig to allow adding common configuration parameters for all Mimir components. #5703
 * [ENHANCEMENT] Update rollout-operator to `v0.7.0`. #5718
 * [ENHANCEMENT] Increase the default rollout speed for store-gateway when lazy loading is disabled. #5823
+* [ENHANCEMENT] Double the amount of rule groups for each user tier. #5896
 * [BUGFIX] Fix compilation when index, chunks or metadata caches are disabled. #5710
 
 ### Mimirtool
