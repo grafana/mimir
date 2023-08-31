@@ -8,6 +8,7 @@ package queue
 import (
 	"math/rand"
 	"sort"
+	"sync"
 	"time"
 
 	"golang.org/x/exp/slices"
@@ -37,8 +38,6 @@ type queues struct {
 	// this list when there are ""'s at the end of it.
 	users []string
 
-	maxUserQueueSize int
-
 	// How long to wait before removing a querier which has got disconnected
 	// but hasn't notified about a graceful shutdown.
 	forgetDelay time.Duration
@@ -48,6 +47,8 @@ type queues struct {
 
 	// Sorted list of querier names, used when creating per-user shard.
 	sortedQueriers []string
+
+	channelPool sync.Pool
 }
 
 type userQueue struct {
@@ -68,12 +69,14 @@ type userQueue struct {
 
 func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 	return &queues{
-		userQueues:       map[string]*userQueue{},
-		users:            nil,
-		maxUserQueueSize: maxUserQueueSize,
-		forgetDelay:      forgetDelay,
-		queriers:         map[string]*querier{},
-		sortedQueriers:   nil,
+		userQueues:     map[string]*userQueue{},
+		users:          nil,
+		forgetDelay:    forgetDelay,
+		queriers:       map[string]*querier{},
+		sortedQueriers: nil,
+		channelPool: sync.Pool{New: func() any {
+			return make(chan Request, maxUserQueueSize)
+		}},
 	}
 }
 
@@ -94,6 +97,8 @@ func (q *queues) deleteQueue(userID string) {
 	for ix := len(q.users) - 1; ix >= 0 && q.users[ix] == ""; ix-- {
 		q.users = q.users[:ix]
 	}
+
+	q.channelPool.Put(uq.ch)
 }
 
 // Returns existing or new queue for user.
@@ -114,7 +119,7 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) chan Request {
 
 	if uq == nil {
 		uq = &userQueue{
-			ch:    make(chan Request, q.maxUserQueueSize),
+			ch:    q.channelPool.Get().(chan Request),
 			seed:  util.ShuffleShardSeed(userID, ""),
 			index: -1,
 		}
