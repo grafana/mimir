@@ -63,14 +63,17 @@ type RequestQueue struct {
 
 	queueLength       *prometheus.GaugeVec   // Per user and reason.
 	discardedRequests *prometheus.CounterVec // Per user.
+
+	enqueueDuration prometheus.Histogram
 }
 
-func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, queueLength *prometheus.GaugeVec, discardedRequests *prometheus.CounterVec) *RequestQueue {
+func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, queueLength *prometheus.GaugeVec, discardedRequests *prometheus.CounterVec, enqueueDuration prometheus.Histogram) *RequestQueue {
 	q := &RequestQueue{
 		queues:                  newUserQueues(maxOutstandingPerTenant, forgetDelay),
 		connectedQuerierWorkers: atomic.NewInt32(0),
 		queueLength:             queueLength,
 		discardedRequests:       discardedRequests,
+		enqueueDuration:         enqueueDuration,
 	}
 
 	q.cond = contextCond{Cond: sync.NewCond(&q.mtx)}
@@ -85,6 +88,11 @@ func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, que
 //
 // If request is successfully enqueued, successFn is called with the lock held, before any querier can receive the request.
 func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers int, successFn func()) error {
+	start := time.Now()
+	defer func() {
+		q.enqueueDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
 
