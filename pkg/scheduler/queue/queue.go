@@ -215,7 +215,6 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 		}
 
-		// TODO: old logic stopped when queue was empty or there were no workers, but I'm not sure that's quite right - should we wait for both?
 		if stopping && (queues.len() == 0 || q.connectedQuerierWorkers.Load() == 0) {
 			// Tell any waiting GetNextRequestForQuerier calls that nothing is coming.
 			for firstAvailableQuerier != nil {
