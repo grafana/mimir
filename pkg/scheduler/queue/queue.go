@@ -175,8 +175,8 @@ func (q *RequestQueue) dispatcherLoop() {
 			// Make sure we haven't already sent a query to this querier.
 			if !querier.haveUsed {
 				querier.send(nextRequestForQuerier{
-					next: querier.lastUserIndex,
-					err:  querier.ctx.Err(),
+					lastUserIndex: querier.lastUserIndex,
+					err:           querier.ctx.Err(),
 				})
 
 				waitingQueriers.Remove(querier.element)
@@ -246,7 +246,7 @@ func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querier *availab
 		return false
 	}
 
-	// Pick next request from the queue.
+	// Pick next request from the queue. The queue is guaranteed not to be empty because we remove empty queues.
 	request := <-queue
 	if len(queue) == 0 {
 		queues.deleteQueue(userID)
@@ -255,9 +255,9 @@ func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querier *availab
 	q.queueLength.WithLabelValues(userID).Dec()
 
 	querier.send(nextRequestForQuerier{
-		req:  request,
-		next: querier.lastUserIndex,
-		err:  querier.ctx.Err(),
+		req:           request,
+		lastUserIndex: querier.lastUserIndex,
+		err:           querier.ctx.Err(),
 	})
 
 	return true
@@ -302,7 +302,7 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 	select {
 	case q.availableQueriers <- querier:
 		result := <-querier.processed
-		return result.req, result.next, result.err
+		return result.req, result.lastUserIndex, result.err
 	case <-q.stopCompleted:
 		return nil, last, ErrStopped
 	}
@@ -393,7 +393,7 @@ func (q *availableQuerier) listenForContextCancellation(dispatcherStopped chan s
 }
 
 type nextRequestForQuerier struct {
-	req  Request
-	next UserIndex
-	err  error
+	req           Request
+	lastUserIndex UserIndex
+	err           error
 }
