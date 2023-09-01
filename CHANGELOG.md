@@ -12,7 +12,10 @@
 
 ### Jsonnet
 
+* [ENHANCEMENT] Double the amount of rule groups for each user tier. #5897
+
 ### Mimirtool
+
 * [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
 
 ### Mimir Continuous Test
