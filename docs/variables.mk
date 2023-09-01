@@ -10,7 +10,8 @@ endif
 # List of projects to provide to the make-docs script.
 PROJECTS := mimir:$(MIMIR_DOCS_VERSION):mimir-$(MIMIR_DOCS_VERSION) helm-charts/mimir-distributed
 
-export REPOS_PATH := $(realpath $(GIT_ROOT)/..)
+GIT_ROOT_PARENT := $(realpath $(GIT_ROOT)/..)
+export REPOS_PATH := $(GIT_ROOT_PARENT)
 
 # Use the doc-validator image defined in CI by default.
 export DOC_VALIDATOR_IMAGE := $(shell sed -n 's, *image: \(grafana/doc-validator.*\),\1,p' "$(GIT_ROOT)/.github/workflows/test-build-deploy.yml")

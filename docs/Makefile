@@ -7,7 +7,7 @@ MAKEFLAGS += --no-builtin-rule
 
 include docs.mk
 
-$(REPOS_PATH)/mimir-$(MIMIR_DOCS_VERSION):
+$(GIT_ROOT_PARENT)/mimir-$(MIMIR_DOCS_VERSION):
 	git worktree add -f $@ origin/$(MIMIR_DOCS_BRANCH)
 
-docs: $(realpath $(GIT_ROOT)/..)/mimir-$(MIMIR_DOCS_VERSION)
+docs: $(GIT_ROOT_PARENT)/mimir-$(MIMIR_DOCS_VERSION)
