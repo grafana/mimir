@@ -234,34 +234,41 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v3
 
-      - name: Determine Mimir version targeted by Helm chart documentation and the source branch that provides that version
+      - name: Determine Mimir version targeted by Helm chart documentation
         id: mimir_version
         run: |
-          MIMIR_DOCS_VERSION=$(sed -ne '/^---$/,/^---$/{ s/^ *MIMIR_DOCS_VERSION: "\([^"]\{1,\}\)"/\1/p; }' docs/sources/helm-charts/mimir-distributed/_index.md)
+          MIMIR_VERSION=$(sed -ne '/^---$/,/^---$/{ s/^ *MIMIR_DOCS_VERSION: "\([^"]\{1,\}\)"/\1/p; }' docs/sources/helm-charts/mimir-distributed/_index.md)
+          echo "version=${MIMIR_VERSION}" | tee "${GITHUB_OUTPUT}"
 
-          echo "version=${MIMIR_DOCS_VERSION}" | tee "${GITHUB_OUTPUT}"
-          if [[ "${MIMIR_DOCS_VERSION}" = next ]]; then
-            echo 'branch=main' >> "${GITHUB_OUTPUT}"
+      - name: Determine Mimir branch for targeted version
+        id: mimir_branch
+        env:
+          MIMIR_VERSION: ${{ steps.mimir_version.outputs.version }}
+        run: |
+          if [[ "${MIMIR_VERSION}" = next ]]; then
+            echo 'branch=main' | tee "${GITHUB_OUTPUT}"
           else
-            MIMIR_DOCS_VERSION_WITHOUT_PREFIX="${MIMIR_DOCS_VERSION#v}"
-            echo "branch=release-${MIMIR_DOCS_VERSION_WITHOUT_PREFIX%.x}" | tee "${GITHUB_OUTPUT}"
+            MIMIR_VERSION_WITHOUT_PREFIX="${MIMIR_VERSION#v}"
+            echo "branch=release-${MIMIR_VERSION_WITHOUT_PREFIX%.x}" | tee "${GITHUB_OUTPUT}"
           fi
 
       - name: Check out ${{ steps.mimir_version.outputs.branch }} documentation
         uses: actions/checkout@v3
         with:
-          ref: ${{ steps.mimir_version.outputs.branch }}
+          path: ${{ steps.mimir_branch.outputs.branch }}
+          ref: ${{ steps.mimir_branch.outputs.branch }}
 
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
 
       - name: Build website
         env:
-          MIMIR_BRANCH: ${{ steps.mimir_version.outputs.branch }}
+          MIMIR_BRANCH: ${{ steps.mimir_branch.outputs.branch }}
           MIMIR_VERSION: ${{ steps.mimir_version.outputs.version }}
         run: |
+          set -x
           docker run \
-            -v "${PWD}/${MIMIR_BRANCH}/docs/sources/mimir:/hugo/content/docs/mimir/${MIMIR_VERSION}" \
+            -v "${GITHUB_WORKSPACE}/${MIMIR_BRANCH}/docs/sources/mimir:/hugo/content/docs/mimir/${MIMIR_VERSION}" \
             -v "${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/latest" \
             -e HUGO_REFLINKSERRORLEVEL=ERROR \
             --rm \
