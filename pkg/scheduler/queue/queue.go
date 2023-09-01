@@ -158,7 +158,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 			qe.processed <- struct{}{}
 		case r := <-q.enqueueRequests:
-			err := q.handleNewRequest(queues, r)
+			err := q.handleEnqueueRequest(queues, r)
 			r.processed <- err
 
 			if err == nil {
@@ -215,7 +215,7 @@ func (q *RequestQueue) dispatcherLoop() {
 	}
 }
 
-func (q *RequestQueue) handleNewRequest(queues *queues, r enqueueRequest) error {
+func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) error {
 	queue := queues.getOrAddQueue(r.userID, r.maxQueriers)
 	if queue == nil {
 		// This can only happen if userID is "".
