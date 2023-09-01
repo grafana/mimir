@@ -161,13 +161,12 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 			qe.processed <- struct{}{}
 		case r := <-q.enqueueRequests:
-			firstRequest, err := q.handleEnqueueRequest(queues, r)
+			err := q.handleEnqueueRequest(queues, r)
 			r.processed <- err
 
 			if err == nil {
-				// If this isn't the first request for this tenant, we know none of the waiting queriers can process this request, so there's no point checking again:
-				// if any of the waiting queriers could process this request, they would have taken earlier requests in this tenant's queue already.
-				needToDispatchQueries = firstRequest
+				// TODO: might be able to be much smarter here and try to find a querier that can take the request directly
+				needToDispatchQueries = true
 			}
 		case querier := <-q.availableQueriers:
 			if !q.dispatchRequestToQuerier(queues, querier) {
@@ -219,27 +218,24 @@ func (q *RequestQueue) dispatcherLoop() {
 	}
 }
 
-// handleEnqueueRequest stores a new request in the tenant's queue, and returns true if this was the first request for this tenant,
-// or false otherwise.
-func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) (bool, error) {
+func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) error {
 	queue := queues.getOrAddQueue(r.userID, r.maxQueriers)
 	if queue == nil {
 		// This can only happen if userID is "".
-		return false, errors.New("no queue found")
+		return errors.New("no queue found")
 	}
 
 	select {
 	case queue <- r.req:
-		firstRequest := len(queue) == 1
 		q.queueLength.WithLabelValues(r.userID).Inc()
 		// Call the successFn here to ensure we call it before sending this request to a waiting querier.
 		if r.successFn != nil {
 			r.successFn()
 		}
-		return firstRequest, nil
+		return nil
 	default:
 		q.discardedRequests.WithLabelValues(r.userID).Inc()
-		return false, ErrTooManyRequests
+		return ErrTooManyRequests
 	}
 }
 
