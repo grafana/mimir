@@ -61,7 +61,7 @@ type seriesStripe struct {
 	mu                                   sync.RWMutex
 	refs                                 map[storage.SeriesRef]seriesEntry
 	active                               uint32            // Number of active entries in this stripe. Only decreased during purge or clear.
-	activeMatching                       []uint32          // Number of active entries in this stripe matching each matcher of the configured Matchers.
+	activeMatching                       map[uint16]uint32 // Number of active entries in this stripe matching each matcher of the configured Matchers.
 	activeNativeHistograms               uint32            // Number of active entries (only native histograms) in this stripe. Only decreased during purge or clear.
 	activeMatchingNativeHistograms       map[uint16]uint32 // Number of active entries (only native histograms) in this stripe matching each matcher of the configured Matchers.
 	activeNativeHistogramBuckets         uint32            // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
@@ -330,9 +330,7 @@ func (s *seriesStripe) clear() {
 	s.active = 0
 	s.activeNativeHistograms = 0
 	s.activeNativeHistogramBuckets = 0
-	for i := range s.activeMatching {
-		s.activeMatching[i] = 0
-	}
+	s.activeMatching = reinitMap()
 	s.activeMatchingNativeHistograms = reinitMap()
 	s.activeMatchingNativeHistogramBuckets = reinitMap()
 }
@@ -348,7 +346,7 @@ func (s *seriesStripe) reinitialize(asm *Matchers) {
 	s.activeNativeHistograms = 0
 	s.activeNativeHistogramBuckets = 0
 	s.matchers = asm
-	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
+	s.activeMatching = reinitMap()
 	s.activeMatchingNativeHistograms = reinitMap()
 	s.activeMatchingNativeHistogramBuckets = reinitMap()
 }
@@ -366,7 +364,7 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 	s.active = 0
 	s.activeNativeHistograms = 0
 	s.activeNativeHistogramBuckets = 0
-	s.activeMatching = resizeAndClear(len(s.activeMatching), s.activeMatching)
+	s.activeMatching = reinitMap()
 	s.activeMatchingNativeHistograms = reinitMap()
 	s.activeMatchingNativeHistogramBuckets = reinitMap()
 
@@ -402,21 +400,6 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 	} else {
 		s.oldestEntryTs.Store(oldest)
 	}
-}
-
-func resizeAndClear(l int, prev []uint32) []uint32 {
-	if cap(prev) < l {
-		if l == 0 {
-			return nil
-		}
-		return make([]uint32, l)
-	}
-
-	p := prev[:l]
-	for i := 0; i < l; i++ {
-		p[i] = 0
-	}
-	return p
 }
 
 func reinitMap() map[uint16]uint32 {
