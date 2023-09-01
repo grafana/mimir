@@ -29,9 +29,6 @@ func TestMain(m *testing.M) {
 }
 
 func BenchmarkConcurrentQueueOperations(b *testing.B) {
-	queueLength := promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"})
-	discardedRequests := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
-	enqueueDuration := promauto.With(nil).NewHistogram(prometheus.HistogramOpts{})
 	req := "the query request"
 	maxQueriers := 0 // TODO: test with limit enforced?
 
@@ -41,7 +38,11 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 				b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
 					for _, numConsumers := range []int{16, 160, 1600} { // Queriers run with parallelism of 8 when query sharding is enabled.
 						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
+							queueLength := promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"})
+							discardedRequests := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+							enqueueDuration := promauto.With(nil).NewHistogram(prometheus.HistogramOpts{})
 							queue := NewRequestQueue(100, 0, queueLength, discardedRequests, enqueueDuration)
+
 							start := make(chan struct{})
 							producersAndConsumers, ctx := errgroup.WithContext(context.Background())
 							require.NoError(b, queue.starting(ctx))
