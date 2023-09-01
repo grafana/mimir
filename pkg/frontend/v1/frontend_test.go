@@ -135,6 +135,7 @@ func TestFrontendCheckReady(t *testing.T) {
 				requestQueue: queue.NewRequestQueue(5, 0,
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 				),
 			}
 			for i := 0; i < tt.connectedClients; i++ {
