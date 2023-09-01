@@ -1563,6 +1563,8 @@ compactor:
   podDisruptionBudget:
     maxUnavailable: 1
 
+  podManagementPolicy: OrderedReady
+
   # -- The name of the PriorityClass for compactor pods
   priorityClassName: null
 
