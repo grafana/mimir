@@ -16,6 +16,7 @@
   * Configuring enabled metrics in overrides exporter (`-overrides-exporter.enabled-metrics`)
   * Per-tenant results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 * [FEATURE] Querier: add experimental CLI flag `-tenant-federation.max-concurrent` to adjust the max number of per-tenant queries that can be run at a time when executing a single multi-tenant query. #5874
+* [BUGFIX] Store-gateway: fix chunks corruption bug introduced in rc.0. #5875
 
 ## 2.10.0-rc.0
 
@@ -38,7 +39,7 @@
   * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` is deprecated, use the new configuration `-blocks-storage.bucket-store.index-header.lazy-loading-enabled`
   * `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` is deprecated, use the new configuration `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout`
   * `-blocks-storage.bucket-store.index-header-lazy-loading-concurrency` is deprecated, use the new configuration `-blocks-storage.bucket-store.index-header.lazy-loading-concurrency`
-* [CHANGE] Store-gateway: remove experimental fine-grained chunks caching. The following experimental configuration parameters have been removed `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`, `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`. #5816
+* [CHANGE] Store-gateway: remove experimental fine-grained chunks caching. The following experimental configuration parameters have been removed `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`, `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`. #5816 #5875
 * [CHANGE] Ingester: remove deprecated `blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`. #5850
 * [FEATURE] Introduced `distributor.service_overload_status_code_on_rate_limit_enabled` flag for configuring status code to 529 instead of 429 upon rate limit exhaustion. #5752
 * [FEATURE] Cardinality API: Add a new `count_method` parameter which enables counting active series #5136
