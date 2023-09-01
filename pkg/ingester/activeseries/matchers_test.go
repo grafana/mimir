@@ -109,6 +109,9 @@ func BenchmarkMatchesSeries(b *testing.B) {
 		return builder.Labels()
 	}
 
+	b.ResetTimer()
+	b.ReportAllocs()
+
 	for i, trackerCount := range trackerCounts {
 		for _, bc := range []struct {
 			total, matching int

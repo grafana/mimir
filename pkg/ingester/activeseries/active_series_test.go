@@ -643,9 +643,10 @@ func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) 
 
 func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 	for _, tt := range []struct {
-		nRounds   int // Number of times we update the same series
-		nSeries   int // Number of series we create
-		nMatchers int
+		nRounds        int // Number of times we update the same series
+		nSeries        int // Number of series we create
+		nMatchers      int // Number of matchers that will match a series
+		nMatchersEmpty int // Number of matchers that will match no series
 	}{
 		{
 			nRounds: 0, // Just benchmarking NewActiveSeries.
@@ -657,6 +658,11 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 			nMatchers: 100,
 		},
 		{
+			nRounds:        0, // Benchmarking NewActiveSeries with empty matchers.
+			nSeries:        0,
+			nMatchersEmpty: 100,
+		},
+		{
 			nRounds: 1,
 			nSeries: 100000,
 		},
@@ -664,6 +670,23 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 			nRounds:   1,
 			nSeries:   100000,
 			nMatchers: 100,
+		},
+		{
+			nRounds:        1,
+			nSeries:        100000,
+			nMatchersEmpty: 100,
+		},
+		{
+			nRounds:        1,
+			nSeries:        100000,
+			nMatchers:      100,
+			nMatchersEmpty: 100,
+		},
+		{
+			nRounds:        1,
+			nSeries:        100000,
+			nMatchers:      100,
+			nMatchersEmpty: 1000,
 		},
 		{
 			nRounds: 1,
@@ -682,8 +705,25 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 			nSeries:   100000,
 			nMatchers: 100,
 		},
+		{
+			nRounds:        10,
+			nSeries:        100000,
+			nMatchersEmpty: 100,
+		},
+		{
+			nRounds:        10,
+			nSeries:        100000,
+			nMatchers:      100,
+			nMatchersEmpty: 100,
+		},
+		{
+			nRounds:        10,
+			nSeries:        100000,
+			nMatchers:      100,
+			nMatchersEmpty: 1000,
+		},
 	} {
-		b.Run(fmt.Sprintf("rounds=%d series=%d matchers=%d", tt.nRounds, tt.nSeries, tt.nMatchers), func(b *testing.B) {
+		b.Run(fmt.Sprintf("rounds=%d series=%d matchers=%d emptymatchers=%d", tt.nRounds, tt.nSeries, tt.nMatchers, tt.nMatchersEmpty), func(b *testing.B) {
 			// Prepare series
 			const nLabels = 10
 			builder := labels.NewScratchBuilder(nLabels)
@@ -703,6 +743,9 @@ func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
 			m := map[string]string{}
 			for i := 0; i < tt.nMatchers; i++ {
 				m[fmt.Sprintf("matcher%d", i)] = fmt.Sprintf(`{abcdefghijabcdefghi0=~.*%d}`, i)
+			}
+			for i := 0; i < tt.nMatchersEmpty; i++ {
+				m[fmt.Sprintf("emptymatcher%d", i)] = fmt.Sprintf(`{abcdefghijabcdefghixyz0=~.*%d}`, i)
 			}
 			asm := NewMatchers(mustNewCustomTrackersConfigFromMap(b, m))
 
