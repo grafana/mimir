@@ -198,6 +198,12 @@ tenant_federation:
   # CLI flag: -tenant-federation.enabled
   [enabled: <boolean> | default = false]
 
+  # (experimental) The number of workers used for each tenant federated query.
+  # This setting limits the maximum number of per-tenant queries executed at a
+  # time for a tenant federated query.
+  # CLI flag: -tenant-federation.max-concurrent
+  [max_concurrent: <int> | default = 16]
+
 activity_tracker:
   # File where ongoing activities are stored. If empty, activity tracking is
   # disabled.

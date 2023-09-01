@@ -15,6 +15,7 @@
   * Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
   * Configuring enabled metrics in overrides exporter (`-overrides-exporter.enabled-metrics`)
   * Per-tenant results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
+* [FEATURE] Querier: add experimental CLI flag `-tenant-federation.max-concurrent` to adjust the max number of per-tenant queries that can be run at a time when executing a single multi-tenant query. #5874
 * [BUGFIX] Store-gateway: fix chunks corruption bug introduced in rc.0. #5875
 
 ## 2.10.0-rc.0
