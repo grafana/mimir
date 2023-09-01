@@ -27035,7 +27035,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Scaling metric\nThis panel shows the result of the query that is used as the scaling metric, and the target and threshold used.\nThe desired number of replicas is computed by HPA as: <scaling metric> / <target per replica>.\n\n",
+                      "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
                       "fill": 1,
                       "id": 12,
                       "legend": {
@@ -27055,36 +27055,24 @@ data:
                       "pointradius": 5,
                       "points": false,
                       "renderer": "flot",
-                      "seriesOverrides": [
-                         {
-                            "alias": "Target per replica",
-                            "yaxis": 2
-                         }
-                      ],
+                      "seriesOverrides": [ ],
                       "spaceLength": 10,
                       "span": 4,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "keda_metrics_adapter_scaler_metrics_value +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "keda_metrics_adapter_scaler_metrics_value{metric!~\".*memory.*\"}\n/\non(metric) group_left label_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"},\n    \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                             "format": "time_series",
                             "intervalFactor": 2,
-                            "legendFormat": "Scaling metric",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-ruler-querier\"}",
-                            "format": "time_series",
-                            "intervalFactor": 2,
-                            "legendFormat": "Target per replica",
+                            "legendFormat": "{{ scaledObject }}",
                             "legendLink": null
                          }
                       ],
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Scaling metric",
+                      "title": "Scaling metric (CPU): Desired replicas",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -27113,7 +27101,7 @@ data:
                             "logBase": 1,
                             "max": null,
                             "min": null,
-                            "show": true
+                            "show": false
                          }
                       ]
                    },

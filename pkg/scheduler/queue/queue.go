@@ -69,6 +69,8 @@ type RequestQueue struct {
 
 	queueLength       *prometheus.GaugeVec   // Per user and reason.
 	discardedRequests *prometheus.CounterVec // Per user.
+
+	enqueueDuration prometheus.Histogram
 }
 
 type querierOperation struct {
@@ -94,13 +96,14 @@ type enqueueRequest struct {
 	processed   chan error
 }
 
-func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, queueLength *prometheus.GaugeVec, discardedRequests *prometheus.CounterVec) *RequestQueue {
+func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, queueLength *prometheus.GaugeVec, discardedRequests *prometheus.CounterVec, enqueueDuration prometheus.Histogram) *RequestQueue {
 	q := &RequestQueue{
 		maxOutstandingPerTenant: maxOutstandingPerTenant,
 		forgetDelay:             forgetDelay,
 		connectedQuerierWorkers: atomic.NewInt32(0),
 		queueLength:             queueLength,
 		discardedRequests:       discardedRequests,
+		enqueueDuration:         enqueueDuration,
 	}
 
 	q.Service = services.NewTimerService(forgetCheckPeriod, q.starting, q.forgetDisconnectedQueriers, q.stop).WithName("request queue")
@@ -269,6 +272,11 @@ func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querier *availab
 //
 // If request is successfully enqueued, successFn is called before any querier can receive the request.
 func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers int, successFn func()) error {
+	start := time.Now()
+	defer func() {
+		q.enqueueDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	// TODO: pool these?
 	r := enqueueRequest{
 		userID:      userID,

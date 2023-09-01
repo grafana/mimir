@@ -133,11 +133,15 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_discarded_requests_total",
 		Help: "Total number of query requests discarded.",
 	}, []string{"user"})
-	s.requestQueue = queue.NewRequestQueue(cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, s.queueLength, s.discardedRequests)
+	enqueueDuration := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+		Name: "cortex_query_scheduler_enqueue_duration_seconds",
+		Help: "Time spent by requests waiting to join the queue or be rejected.",
+	})
+	s.requestQueue = queue.NewRequestQueue(cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, s.queueLength, s.discardedRequests, enqueueDuration)
 
 	s.queueDuration = promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_query_scheduler_queue_duration_seconds",
-		Help:    "Time spend by requests in queue before getting picked up by a querier.",
+		Help:    "Time spent by requests in queue before getting picked up by a querier.",
 		Buckets: prometheus.DefBuckets,
 	})
 	s.connectedQuerierClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{

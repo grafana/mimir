@@ -16,6 +16,7 @@ if [ ! -e "${SCRIPT_DIR}/.config" ]; then
   echo "CLUSTER=\"<cluster-to-query>\""
   echo "MIMIR_NAMESPACE=\"<namespace-where-mimir-is-running>\""
   echo "ALERTMANAGER_NAMESPACE=\"<namespace-where-alertmanager-is-running>\""
+  echo "MIMIR_USER=\"<mimir-tenant-id>\""
   echo ""
   exit 1
 fi
@@ -66,6 +67,7 @@ docker run \
   --env "CLUSTER=${CLUSTER}" \
   --env "MIMIR_NAMESPACE=${MIMIR_NAMESPACE}" \
   --env "ALERTMANAGER_NAMESPACE=${ALERTMANAGER_NAMESPACE}" \
+  --env "MIMIR_USER=${MIMIR_USER}" \
   -v "${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards:/input" \
   -v "${SCRIPT_DIR}/../../../docs/sources/mimir/manage/monitor-grafana-mimir/dashboards:/output" \
   -v "${SCRIPT_DIR}:/sources" \

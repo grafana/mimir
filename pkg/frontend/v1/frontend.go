@@ -101,12 +101,17 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		}, []string{"user"}),
 		queueDuration: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_query_frontend_queue_duration_seconds",
-			Help:    "Time spend by requests queued.",
+			Help:    "Time spent by requests in queue before getting picked up by a querier.",
 			Buckets: prometheus.DefBuckets,
 		}),
 	}
 
-	f.requestQueue = queue.NewRequestQueue(cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests)
+	enqueueDuration := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+		Name: "cortex_query_frontend_enqueue_duration_seconds",
+		Help: "Time spent by requests waiting to join the queue or be rejected.",
+	})
+
+	f.requestQueue = queue.NewRequestQueue(cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests, enqueueDuration)
 	f.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(f.cleanupInactiveUserMetrics)
 
 	var err error
