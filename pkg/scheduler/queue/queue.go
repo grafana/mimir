@@ -293,6 +293,7 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 		querierID:     querierID,
 		lastUserIndex: last,
 		processed:     make(chan nextRequestForQuerier),
+		done:          make(chan struct{}),
 	}
 
 	select {
@@ -353,8 +354,10 @@ type availableQuerier struct {
 	querierID     string
 	lastUserIndex UserIndex
 	processed     chan nextRequestForQuerier
-	haveUsed      bool // Must be set to true after sending a message to processed, to ensure we only ever try to send one message to processed.
-	element       *list.Element
+	done          chan struct{}
+
+	haveUsed bool // Must be set to true after sending a message to processed, to ensure we only ever try to send one message to processed.
+	element  *list.Element
 }
 
 func (q *availableQuerier) send(req nextRequestForQuerier) {
@@ -365,6 +368,7 @@ func (q *availableQuerier) send(req nextRequestForQuerier) {
 	q.processed <- req
 	q.haveUsed = true
 	close(q.processed)
+	close(q.done)
 }
 
 func (q *availableQuerier) listenForContextCancellation(dispatcherStopped chan struct{}, notifyOnCancellation chan *availableQuerier) {
@@ -379,6 +383,8 @@ func (q *availableQuerier) listenForContextCancellation(dispatcherStopped chan s
 			}
 		case <-dispatcherStopped:
 			// Same as above.
+		case <-q.done:
+			// We've sent a request to this querier, we can stop monitoring the context now.
 		}
 	}()
 }
