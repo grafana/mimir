@@ -225,7 +225,7 @@ func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) er
 	select {
 	case queue <- r.req:
 		q.queueLength.WithLabelValues(r.userID).Inc()
-		// Call the successFn before sending this request to a waiting querier.
+		// Call the successFn here to ensure we call it before sending this request to a waiting querier.
 		if r.successFn != nil {
 			r.successFn()
 		}
