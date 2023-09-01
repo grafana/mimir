@@ -140,15 +140,18 @@ func (q *RequestQueue) dispatcherLoop() {
 			case registerConnection:
 				q.connectedQuerierWorkers.Inc()
 				queues.addQuerierConnection(qe.querierID)
+				needToDispatchQueries = true // TODO: only do this if resharding actually happened
 			case unregisterConnection:
 				q.connectedQuerierWorkers.Dec()
 				queues.removeQuerierConnection(qe.querierID, time.Now())
+				needToDispatchQueries = true // TODO: only do this if resharding actually happened
 			case notifyShutdown:
 				queues.notifyQuerierShutdown(qe.querierID)
+				needToDispatchQueries = true // TODO: only do this if resharding actually happened
 			case forgetDisconnected:
 				if queues.forgetDisconnectedQueriers(time.Now()) > 0 {
 					// Removing some queriers may have caused a resharding.
-					needToDispatchQueries = true
+					needToDispatchQueries = true // TODO: only do this if resharding actually happened
 				}
 			default:
 				panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
