@@ -13,6 +13,7 @@
 ### Jsonnet
 
 ### Mimirtool
+* [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
 
 ### Mimir Continuous Test
 
