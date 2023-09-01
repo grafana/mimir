@@ -343,11 +343,11 @@ rollout_operator:
 > ```
 
 {{% docs/reference %}}
-[Planning Grafana Mimir capacity]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/run-production-environment/planning-capacity"
-[Ingesters failure and data loss]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/references/architecture/components/ingester#ingesters-failure-and-data-loss"
-[Collecting metrics and logs from Grafana Mimir]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs"
-[Store-gateway: Blocks sharding and replication]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/references/architecture/components/store-gateway#blocks-sharding-and-replication"
-[replication across availability zones]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/configure/configure-zone-aware-replication"
-[Configure Grafana Mimir object storage backend]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/configure/configure-object-storage-backend"
-[Installing Grafana Mimir dashboards and alerts]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/monitor-grafana-mimir/installing-dashboards-and-alerts"
+[Planning Grafana Mimir capacity]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/operators-guide/run-production-environment/planning-capacity"
+[Ingesters failure and data loss]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/ingester#ingesters-failure-and-data-loss"
+[Collecting metrics and logs from Grafana Mimir]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs"
+[Store-gateway: Blocks sharding and replication]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/store-gateway#blocks-sharding-and-replication"
+[replication across availability zones]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-zone-aware-replication"
+[Configure Grafana Mimir object storage backend]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-object-storage-backend"
+[Installing Grafana Mimir dashboards and alerts]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/operators-guide/monitor-grafana-mimir/installing-dashboards-and-alerts"
 {{% /docs/reference %}}

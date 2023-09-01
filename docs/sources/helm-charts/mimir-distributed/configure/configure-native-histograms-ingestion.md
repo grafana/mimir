@@ -36,6 +36,6 @@ remote_write:
 ```
 
 {{% docs/reference %}}
-[remote write API]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/references/http-api#remote-write"
-[Grafana Mimir query sharding]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/references/architecture/query-sharding"
+[remote write API]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/http-api#remote-write"
+[Grafana Mimir query sharding]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/query-sharding"
 {{% /docs/reference %}}

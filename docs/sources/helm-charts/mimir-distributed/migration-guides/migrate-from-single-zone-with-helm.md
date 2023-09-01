@@ -790,9 +790,9 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 1. Upgrade the installation with the `helm` command using your regular command line flags.
 
 {{% docs/reference %}}
-[zone-aware replication]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/configure/configure-zone-aware-replication"
-[alertmanager]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/references/architecture/components/alertmanager"
-[store-gateway]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/references/architecture/components/store-gateway"
-[ingester]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/references/architecture/components/ingester"
-[shuffle sharding]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/configure/configure-shuffle-sharding"
+[zone-aware replication]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-zone-aware-replication"
+[alertmanager]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/alertmanager"
+[store-gateway]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/store-gateway"
+[ingester]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/ingester"
+[shuffle sharding]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-shuffle-sharding"
 {{% /docs/reference %}}

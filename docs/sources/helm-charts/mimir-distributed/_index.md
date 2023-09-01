@@ -8,7 +8,7 @@ keywords:
   - Grafana Enterprise Metrics
   - Grafana metrics
 cascade:
-  MIMIR DOCS VERSION: "v2.9.x"
+  MIMIR_DOCS_VERSION: "v2.9.x"
   gem_docs_version: "v2.9.x"
 ---
 
@@ -21,5 +21,5 @@ The mimir-distributed Helm chart for [Grafana Mimir] and [Grafana Enterprise Met
 {{< section menuTitle="true" >}}
 
 {{% docs/reference %}}
-[Grafana Mimir]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>"
+[Grafana Mimir]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>"
 {{% /docs/reference %}}

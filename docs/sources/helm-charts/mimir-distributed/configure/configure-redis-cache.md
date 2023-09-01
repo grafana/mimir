@@ -49,5 +49,5 @@ mimir:
 ```
 
 {{% docs/reference %}}
-[the configuration parameters reference]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/references/configuration-parameters#redis"
+[the configuration parameters reference]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/configuration-parameters#redis"
 {{% /docs/reference %}}

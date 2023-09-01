@@ -536,5 +536,5 @@ The example is generated with the following steps:
    Lines starting with "`-`" were removed and lines starting with "`+`" were added. The change to the annotation `checksum/config` means the pods will be restarted when this change is applied.
 
 {{% docs/reference %}}
-[configuration parameters]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/references/configuration-parameters"
+[configuration parameters]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/configuration-parameters"
 {{% /docs/reference %}}

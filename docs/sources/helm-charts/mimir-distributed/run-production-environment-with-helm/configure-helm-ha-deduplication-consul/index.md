@@ -165,6 +165,6 @@ The most important thing is you will not find `__replica__` label (or any label 
 config) anymore. This means you have configured the deduplication successfully.
 
 {{% docs/reference %}}
-[Configure high availability]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/configure/configure-high-availability-deduplication"
-[distributor]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/references/architecture/components/distributor"
+[Configure high availability]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-high-availability-deduplication"
+[distributor]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/distributor"
 {{% /docs/reference %}}
