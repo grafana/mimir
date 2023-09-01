@@ -289,9 +289,15 @@ func (q *queues) forgetDisconnectedQueriers(now time.Time) int {
 }
 
 func (q *queues) recomputeUserQueriers() {
-	scratchpad := make([]string, 0, len(q.sortedQueriers))
+	// Only allocate the scratchpad the first time we need it.
+	// If shuffle-sharding is disabled, we never need this.
+	var scratchpad []string
 
 	for _, uq := range q.userQueues {
+		if uq.maxQueriers > 0 && uq.maxQueriers < len(q.sortedQueriers) && scratchpad == nil {
+			scratchpad = make([]string, 0, len(q.sortedQueriers))
+		}
+
 		uq.queriers = shuffleQueriersForUser(uq.seed, uq.maxQueriers, q.sortedQueriers, scratchpad)
 	}
 }
