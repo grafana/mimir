@@ -6,17 +6,27 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/tap"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
@@ -465,4 +475,115 @@ func TestFieldCategoryOverridesNotStale(t *testing.T) {
 	})
 
 	require.Empty(t, overrides, "There are category overrides for configuration options that no longer exist")
+}
+
+const limit = 5
+
+type healthServer struct {
+	grpc_health_v1.UnimplementedHealthServer
+	inflight atomic.Int64
+	max      atomic.Int64
+}
+
+var checkInflightKey = int(1)
+
+func (s *healthServer) Check(ctx context.Context, _ *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+	checkInflight := ctx.Value(checkInflightKey).(bool)
+	if checkInflight {
+		v := s.inflight.Inc()
+		defer s.inflight.Dec()
+
+		if v > limit {
+			return nil, errors.New("rate-limited")
+		}
+	}
+
+	v := s.inflight.Load()
+	for {
+		m := s.max.Load()
+		if v > m && !s.max.CompareAndSwap(m, v) {
+			continue
+		}
+		break
+	}
+
+	time.Sleep(1 * time.Millisecond)
+	return &grpc_health_v1.HealthCheckResponse{}, nil
+}
+
+func BenchmarkServerRateLimiting(b *testing.B) {
+	for name, setup := range map[string]func(inflight *atomic.Int64) *grpc.Server{
+		"interceptor": func(inflight *atomic.Int64) *grpc.Server {
+			return grpc.NewServer(
+				grpc.UnaryInterceptor(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+					in := inflight.Inc()
+					defer inflight.Dec()
+					if in >= limit {
+						return nil, errors.New("rate-limited")
+					}
+
+					return handler(context.WithValue(ctx, checkInflightKey, false), req)
+				}),
+			)
+		},
+
+		"tap": func(inflight *atomic.Int64) *grpc.Server {
+			return grpc.NewServer(
+				grpc.InTapHandle(func(ctx context.Context, info *tap.Info) (context.Context, error) {
+					v := inflight.Load()
+					if v >= limit {
+						return nil, errors.New("rate-limited")
+					}
+
+					return context.WithValue(ctx, checkInflightKey, true), nil
+				}),
+			)
+		},
+	} {
+		b.Run(name, func(b *testing.B) {
+			hs := &healthServer{}
+			s := setup(&hs.inflight)
+
+			grpc_health_v1.RegisterHealthServer(s, hs)
+
+			grpcListen, err := net.Listen("tcp", "localhost:0")
+			require.NoError(b, err)
+			go s.Serve(grpcListen)
+			b.Cleanup(func() {
+				_ = grpcListen.Close()
+			})
+
+			clientConn, err := grpc.Dial(grpcListen.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+			require.NoError(b, err)
+			client := grpc_health_v1.NewHealthClient(clientConn)
+
+			// Create a 10KiB request to test whether we're reading the request or not with the different rate-limiters.
+			req := &grpc_health_v1.HealthCheckRequest{Service: strings.Repeat("x", 10*1024)}
+			ctx := context.Background()
+
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				hs.max.Store(0)
+				var responses, errs atomic.Int64
+
+				const requests = 1000
+				_ = concurrency.ForEachJob(ctx, 1000, 10, func(ctx context.Context, idx int) error {
+					_, err = client.Check(ctx, req)
+					if err == nil {
+						responses.Inc()
+					} else {
+						errs.Inc()
+					}
+					return nil
+				})
+
+				if responses.Load()+errs.Load() != requests {
+					b.Fatal("invalid number of total responses", responses.Load(), errs.Load())
+				}
+
+				//fmt.Println("responses:", responses.Load(), "errors:", errs.Load(), "total:", responses.Load()+errs.Load(), "max concurrent:", hs.max.Load())
+			}
+		})
+	}
 }
