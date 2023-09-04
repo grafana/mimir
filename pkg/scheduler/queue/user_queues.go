@@ -6,9 +6,9 @@
 package queue
 
 import (
+	"container/list"
 	"math/rand"
 	"sort"
-	"sync"
 	"time"
 
 	"golang.org/x/exp/slices"
@@ -38,6 +38,8 @@ type queues struct {
 	// this list when there are ""'s at the end of it.
 	users []string
 
+	maxUserQueueSize int
+
 	// How long to wait before removing a querier which has got disconnected
 	// but hasn't notified about a graceful shutdown.
 	forgetDelay time.Duration
@@ -47,12 +49,10 @@ type queues struct {
 
 	// Sorted list of querier names, used when creating per-user shard.
 	sortedQueriers []string
-
-	channelPool sync.Pool
 }
 
 type userQueue struct {
-	ch chan Request
+	requests *list.List
 
 	// If not nil, only these queriers can handle user requests. If nil, all queriers can.
 	// We set this to nil if number of available queriers <= maxQueriers.
@@ -69,14 +69,12 @@ type userQueue struct {
 
 func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 	return &queues{
-		userQueues:     map[string]*userQueue{},
-		users:          nil,
-		forgetDelay:    forgetDelay,
-		queriers:       map[string]*querier{},
-		sortedQueriers: nil,
-		channelPool: sync.Pool{New: func() any {
-			return make(chan Request, maxUserQueueSize)
-		}},
+		userQueues:       map[string]*userQueue{},
+		users:            nil,
+		maxUserQueueSize: maxUserQueueSize,
+		forgetDelay:      forgetDelay,
+		queriers:         map[string]*querier{},
+		sortedQueriers:   nil,
 	}
 }
 
@@ -97,15 +95,13 @@ func (q *queues) deleteQueue(userID string) {
 	for ix := len(q.users) - 1; ix >= 0 && q.users[ix] == ""; ix-- {
 		q.users = q.users[:ix]
 	}
-
-	q.channelPool.Put(uq.ch)
 }
 
 // Returns existing or new queue for user.
 // MaxQueriers is used to compute which queriers should handle requests for this user.
 // If maxQueriers is <= 0, all queriers can handle this user's requests.
 // If maxQueriers has changed since the last call, queriers for this are recomputed.
-func (q *queues) getOrAddQueue(userID string, maxQueriers int) chan Request {
+func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 	// Empty user is not allowed, as that would break our users list ("" is used for free spot).
 	if userID == "" {
 		return nil
@@ -119,9 +115,9 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) chan Request {
 
 	if uq == nil {
 		uq = &userQueue{
-			ch:    q.channelPool.Get().(chan Request),
-			seed:  util.ShuffleShardSeed(userID, ""),
-			index: -1,
+			requests: list.New(),
+			seed:     util.ShuffleShardSeed(userID, ""),
+			index:    -1,
 		}
 		q.userQueues[userID] = uq
 
@@ -146,13 +142,13 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) chan Request {
 		uq.queriers = shuffleQueriersForUser(uq.seed, maxQueriers, q.sortedQueriers, nil)
 	}
 
-	return uq.ch
+	return uq.requests
 }
 
 // Finds next queue for the querier. To support fair scheduling between users, client is expected
 // to pass last user index returned by this function as argument. Is there was no previous
 // last user index, use -1.
-func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (chan Request, string, int) {
+func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*list.List, string, int) {
 	uid := lastUserIndex
 
 	// Ensure the querier is not shutting down. If the querier is shutting down, we shouldn't forward
@@ -184,7 +180,7 @@ func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (ch
 			}
 		}
 
-		return userQueue.ch, u, uid
+		return userQueue.requests, u, uid
 	}
 	return nil, "", uid
 }

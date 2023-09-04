@@ -227,18 +227,20 @@ func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) er
 		return errors.New("no queue found")
 	}
 
-	select {
-	case queue <- r.req:
-		q.queueLength.WithLabelValues(r.userID).Inc()
-		// Call the successFn here to ensure we call it before sending this request to a waiting querier.
-		if r.successFn != nil {
-			r.successFn()
-		}
-		return nil
-	default:
+	if queue.Len()+1 > queues.maxUserQueueSize {
 		q.discardedRequests.WithLabelValues(r.userID).Inc()
 		return ErrTooManyRequests
 	}
+
+	queue.PushBack(r.req)
+	q.queueLength.WithLabelValues(r.userID).Inc()
+
+	// Call the successFn here to ensure we call it before sending this request to a waiting querier.
+	if r.successFn != nil {
+		r.successFn()
+	}
+
+	return nil
 }
 
 // dispatchRequestToQuerier finds and forwards a request to a querier, if a suitable request is available.
@@ -252,8 +254,11 @@ func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querier *querier
 	}
 
 	// Pick next request from the queue. The queue is guaranteed not to be empty because we remove empty queues.
-	request := <-queue
-	if len(queue) == 0 {
+	queueElement := queue.Front()
+	request := queueElement.Value
+	queue.Remove(queueElement)
+
+	if queue.Len() == 0 {
 		queues.deleteQueue(userID)
 	}
 
