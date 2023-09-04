@@ -13,7 +13,10 @@
 ### Jsonnet
 
 ### Mimirtool
+
 * [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
+* [BUGFIX] Fix panic when analyzing a grafana dashboard with multiline queries. #5911
+* [ENHANCEMENT] Extract metric name from queries that have a `__name__` matcher. #5911
 
 ### Mimir Continuous Test
 
