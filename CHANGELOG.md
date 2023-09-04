@@ -16,6 +16,8 @@
   * Configuring enabled metrics in overrides exporter (`-overrides-exporter.enabled-metrics`)
   * Per-tenant results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 * [FEATURE] Querier: add experimental CLI flag `-tenant-federation.max-concurrent` to adjust the max number of per-tenant queries that can be run at a time when executing a single multi-tenant query. #5874
+* [FEATURE] Alertmanager: Add Microsoft Teams as a supported integration. #5840
+* [ENHANCEMENT] Alertmanager: update to alertmanager 0.26.0. #5840
 * [BUGFIX] Store-gateway: fix chunks corruption bug introduced in rc.0. #5875
 * [BUGFIX] Update Minio object storage client from 7.0.62 to 7.0.63 to fix auto-detection of AWS GovCloud environments. #5905
 
