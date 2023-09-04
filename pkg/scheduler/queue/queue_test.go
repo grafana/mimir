@@ -80,7 +80,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 											break
 										}
 
-										// Keep retrying if we've hit the max queue length.
+										// Keep retrying if we've hit the max queue length, otherwise give up immediately.
 										if !errors.Is(err, ErrTooManyRequests) {
 											return err
 										}
