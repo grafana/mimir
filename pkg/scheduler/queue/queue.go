@@ -60,7 +60,7 @@ type RequestQueue struct {
 
 	connectedQuerierWorkers *atomic.Int32
 
-	stopRequested     chan struct{} // Closed by stop() to wake up dispatcherLoop() in response to a stop request.
+	stopRequested     chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted     chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 	querierOperations chan querierOperation
 	enqueueRequests   chan enqueueRequest
