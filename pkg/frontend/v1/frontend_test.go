@@ -26,7 +26,6 @@ import (
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,7 +37,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
-	"github.com/grafana/mimir/pkg/scheduler/queue"
 )
 
 const (
@@ -130,18 +128,22 @@ func TestFrontendCheckReady(t *testing.T) {
 		{"no url, no clients is not ready", 0, "not ready: number of queriers connected to query-frontend is 0", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &Frontend{
-				log: log.NewNopLogger(),
-				requestQueue: queue.NewRequestQueue(5, 0,
-					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-				),
+			cfg := Config{
+				MaxOutstandingPerTenant: 5,
+				QuerierForgetDelay:      0,
 			}
+
+			f, err := New(cfg, limits{}, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
+			defer func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), f))
+			}()
+
 			for i := 0; i < tt.connectedClients; i++ {
 				f.requestQueue.RegisterQuerierConnection("test")
 			}
-			err := f.CheckReady(context.Background())
+			err = f.CheckReady(context.Background())
 			errMsg := ""
 
 			if err != nil {
