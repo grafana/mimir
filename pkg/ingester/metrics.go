@@ -12,6 +12,7 @@ import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -49,7 +50,8 @@ type ingesterMetrics struct {
 	maxIngestionRate        prometheus.GaugeFunc
 	ingestionRate           prometheus.GaugeFunc
 	maxInflightPushRequests prometheus.GaugeFunc
-	inflightRequests        prometheus.Summary
+	inflightRequests        prometheus.GaugeFunc
+	inflightRequestsSummary prometheus.Summary
 
 	// Head compactions metrics.
 	compactionsTriggered   prometheus.Counter
@@ -80,6 +82,7 @@ func newIngesterMetrics(
 	activeSeriesEnabled bool,
 	instanceLimitsFn func() *InstanceLimits,
 	ingestionRate *util_math.EwmaRate,
+	inflightRequests *atomic.Int64,
 ) *ingesterMetrics {
 	const (
 		instanceLimits     = "cortex_ingester_instance_limits"
@@ -231,10 +234,20 @@ func newIngesterMetrics(
 			return 0
 		}),
 
-		inflightRequests: promauto.With(r).NewSummary(prometheus.SummaryOpts{
-			Name:       "cortex_ingester_inflight_push_requests",
+		inflightRequests: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_inflight_push_requests",
+			Help: "Current number of inflight push requests in ingester.",
+		}, func() float64 {
+			if inflightRequests != nil {
+				return float64(inflightRequests.Load())
+			}
+			return 0
+		}),
+
+		inflightRequestsSummary: promauto.With(r).NewSummary(prometheus.SummaryOpts{
+			Name:       "cortex_ingester_inflight_push_requests_summary",
 			Help:       "Number of inflight requests sampled at a regular interval. Quantile buckets keep track of inflight requests over the last 60s.",
-			Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001},
+			Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001, 1.00: 0.001},
 			MaxAge:     time.Minute,
 			AgeBuckets: 6,
 		}),

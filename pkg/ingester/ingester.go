@@ -336,7 +336,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		return nil, err
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
-	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate)
+	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 	i.activeGroups = activeGroupsCleanupService
 
 	if registerer != nil {
@@ -396,7 +396,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	if err != nil {
 		return nil, err
 	}
-	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil)
+	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
 	i.shipperIngesterID = "flusher"
 
@@ -539,7 +539,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	for {
 		select {
 		case <-inflightRequestsTicker.C:
-			i.metrics.inflightRequests.Observe(float64(i.inflightPushRequests.Load()))
+			i.metrics.inflightRequestsSummary.Observe(float64(i.inflightPushRequests.Load()))
 		case <-metadataPurgeTicker.C:
 			i.purgeUserMetricsMetadata()
 		case <-ingestionRateTicker.C:
