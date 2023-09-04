@@ -143,18 +143,18 @@ func (q *RequestQueue) dispatcherLoop() {
 			case registerConnection:
 				q.connectedQuerierWorkers.Inc()
 				queues.addQuerierConnection(qe.querierID)
-				needToDispatchQueries = true // TODO: only do this if resharding actually happened
+				needToDispatchQueries = true
 			case unregisterConnection:
 				q.connectedQuerierWorkers.Dec()
 				queues.removeQuerierConnection(qe.querierID, time.Now())
-				needToDispatchQueries = true // TODO: only do this if resharding actually happened
+				needToDispatchQueries = true
 			case notifyShutdown:
 				queues.notifyQuerierShutdown(qe.querierID)
-				needToDispatchQueries = true // TODO: only do this if resharding actually happened
+				needToDispatchQueries = true
 			case forgetDisconnected:
 				if queues.forgetDisconnectedQueriers(time.Now()) > 0 {
 					// Removing some queriers may have caused a resharding.
-					needToDispatchQueries = true // TODO: only do this if resharding actually happened
+					needToDispatchQueries = true
 				}
 			default:
 				panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
@@ -277,7 +277,6 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 		q.enqueueDuration.Observe(time.Since(start).Seconds())
 	}()
 
-	// TODO: pool these?
 	r := enqueueRequest{
 		userID:      userID,
 		req:         req,
@@ -298,7 +297,6 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 // By passing user index from previous call of this method, querier guarantees that it iterates over all users fairly.
 // If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
 func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
-	// TODO: pool these?
 	querier := &querierConnection{
 		ctx:           ctx,
 		querierID:     querierID,
@@ -352,7 +350,7 @@ func (q *RequestQueue) runQuerierOperation(querierID string, operation querierOp
 	case q.querierOperations <- op:
 		<-op.processed
 	case <-q.stopCompleted:
-		// TODO: return error?
+		// The dispatcher stopped before it could process the operation. There's nothing more to do.
 	}
 }
 
