@@ -3,5 +3,5 @@
   "extends": [
     "config:base"
   ],
-  "prHourlyLimit": 8
+  "prHourlyLimit": 4
 }
