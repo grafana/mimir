@@ -36,7 +36,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 		b.Run(fmt.Sprintf("%v tenants", numTenants), func(b *testing.B) {
 			for _, numProducers := range []int{10, 25} { // Query-frontends run 5 parallel streams per scheduler by default, and we typically see 2-5 frontends running at any one time.
 				b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
-					for _, numConsumers := range []int{16, 160, 1600} { // Queriers run with parallelism of 8 when query sharding is enabled.
+					for _, numConsumers := range []int{16, 160, 1600} { // Queriers run with parallelism of 16 when query sharding is enabled.
 						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
 							queueLength := promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"})
 							discardedRequests := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
