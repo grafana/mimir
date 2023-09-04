@@ -7,6 +7,11 @@
   "prHourlyLimit": 4,
   "packageRules": [
     {
+      "matchBaseBranches": ["^release-[0-9|.]+$"],
+      "packagePatterns": ["*"],
+      "enabled": false
+    },
+    {
       "groupName": "docker-dependencies",
       "matchPackageNames": [
         "k8s.gcr.io/kustomize/kustomize",
