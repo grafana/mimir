@@ -75,7 +75,6 @@ type RequestQueue struct {
 type querierOperation struct {
 	querierID string
 	operation querierOperationType
-	processed chan struct{}
 }
 
 type querierOperationType int
@@ -160,7 +159,6 @@ func (q *RequestQueue) dispatcherLoop() {
 			default:
 				panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
 			}
-			qe.processed <- struct{}{}
 		case r := <-q.enqueueRequests:
 			err := q.handleEnqueueRequest(queues, r)
 			r.processed <- err
@@ -347,12 +345,11 @@ func (q *RequestQueue) runQuerierOperation(querierID string, operation querierOp
 	op := querierOperation{
 		querierID: querierID,
 		operation: operation,
-		processed: make(chan struct{}),
 	}
 
 	select {
 	case q.querierOperations <- op:
-		<-op.processed
+		// The dispatcher has received the operation. There's nothing more to do.
 	case <-q.stopCompleted:
 		// The dispatcher stopped before it could process the operation. There's nothing more to do.
 	}
