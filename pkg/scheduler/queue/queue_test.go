@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 
 func BenchmarkConcurrentQueueOperations(b *testing.B) {
 	req := "the query request"
-	maxQueriers := 0 // TODO: test with limit enforced?
+	maxQueriers := 0
 
 	for _, numTenants := range []int{1, 10, 1000} {
 		b.Run(fmt.Sprintf("%v tenants", numTenants), func(b *testing.B) {
@@ -68,8 +68,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								return count
 							}
 
-							// TODO: limit the rate of production?
-							startProducer := func(producerIdx int) error {
+							runProducer := func(producerIdx int) error {
 								requestCount := requestCount(b.N, numProducers, producerIdx)
 								tenantID := producerIdx % numTenants
 								<-start
@@ -96,11 +95,11 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 							for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
 								producerIdx := producerIdx
 								producersAndConsumers.Go(func() error {
-									return startProducer(producerIdx)
+									return runProducer(producerIdx)
 								})
 							}
 
-							startConsumer := func(consumerIdx int) error {
+							runConsumer := func(consumerIdx int) error {
 								requestCount := requestCount(b.N, numConsumers, consumerIdx)
 								lastTenantIndex := FirstUser()
 								querierID := fmt.Sprintf("consumer-%v", consumerIdx)
@@ -124,7 +123,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 							for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
 								consumerIdx := consumerIdx
 								producersAndConsumers.Go(func() error {
-									return startConsumer(consumerIdx)
+									return runConsumer(consumerIdx)
 								})
 							}
 
