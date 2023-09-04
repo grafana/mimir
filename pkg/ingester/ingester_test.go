@@ -5720,9 +5720,10 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 
 func TestIngester_PushInstanceLimits(t *testing.T) {
 	tests := map[string]struct {
-		limits      InstanceLimits
-		reqs        map[string][]*mimirpb.WriteRequest
-		expectedErr error
+		limits            InstanceLimits
+		reqs              map[string][]*mimirpb.WriteRequest
+		expectedErr       error
+		expectedAcceptErr error
 	}{
 		"should succeed creating one user and series": {
 			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1},
@@ -5739,7 +5740,8 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: nil,
+			expectedErr:       nil,
+			expectedAcceptErr: nil,
 		},
 
 		"should fail creating two series": {
@@ -5764,7 +5766,8 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: errMaxInMemorySeriesReached,
+			expectedErr:       errMaxInMemorySeriesReached,
+			expectedAcceptErr: nil, // We can't check for this error in AcceptPushRequest, it depends on the request.
 		},
 
 		"should fail creating two users": {
@@ -5791,7 +5794,8 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: errMaxTenantsReached,
+			expectedErr:       errMaxTenantsReached,
+			expectedAcceptErr: nil, // We can't check for this error in AcceptPushRequest, it depends on the request.
 		},
 
 		"should fail pushing samples in two requests due to rate limit": {
@@ -5816,7 +5820,8 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: errMaxIngestionRateReached,
+			expectedErr:       errMaxIngestionRateReached,
+			expectedAcceptErr: errMaxIngestionRateReached,
 		},
 	}
 
@@ -5830,6 +5835,13 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 
 			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 			require.NoError(t, err)
+
+			err = i.AcceptPushRequest()
+			require.Error(t, err) // Can't accept push request when not started yet.
+			s, ok := status.FromError(err)
+			require.True(t, ok, "expected to be able to convert to gRPC status")
+			assert.Equal(t, codes.Unavailable, s.Code())
+
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
@@ -5853,6 +5865,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 
 				for _, req := range testData.reqs[uid] {
 					pushIdx++
+					acceptErr := i.AcceptPushRequest()
 					_, err := i.Push(ctx, req)
 
 					if pushIdx < totalPushes {
@@ -5868,6 +5881,12 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 							assert.Equal(t, codes.Unavailable, s.Code())
 						} else {
 							assert.NoError(t, err)
+						}
+
+						if testData.expectedAcceptErr != nil {
+							assert.ErrorIs(t, acceptErr, testData.expectedAcceptErr)
+						} else {
+							assert.NoError(t, acceptErr)
 						}
 					}
 
@@ -5995,6 +6014,10 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
 		var optional middleware.OptionalLogging
 
+		// This also increases cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"}.
+		err = i.AcceptPushRequest()
+		require.ErrorIs(t, err, errMaxInflightRequestsReached)
+
 		_, err := i.Push(ctx, req)
 		require.ErrorIs(t, err, errMaxInflightRequestsReached)
 		require.ErrorAs(t, err, &optional)
@@ -6013,7 +6036,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_instance_rejected_requests_total Requests rejected for hitting per-instance limits
 		# TYPE cortex_ingester_instance_rejected_requests_total counter
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 1
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 2
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0

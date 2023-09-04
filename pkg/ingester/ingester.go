@@ -719,6 +719,36 @@ type pushStats struct {
 	perMetricSeriesLimitCount int
 }
 
+// AcceptPushRequest returns error if push request cannot be accepted at the moment.
+// When this method returns error, it increases relevant metrics.
+func (i *Ingester) AcceptPushRequest() error {
+	if err := i.checkRunning(); err != nil {
+		return util_log.DoNotLogError{Err: err}
+	}
+
+	il := i.getInstanceLimits()
+	if il == nil {
+		return nil
+	}
+
+	if il.MaxInflightPushRequests > 0 {
+		inflight := i.inflightPushRequests.Load()
+		if inflight >= il.MaxInflightPushRequests {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+			return errMaxInflightRequestsReached
+		}
+	}
+
+	if il.MaxIngestionRate > 0 {
+		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
+			return errMaxIngestionRateReached
+		}
+	}
+
+	return nil
+}
+
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
 func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
@@ -741,16 +771,16 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		}
 	}
 
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	if il != nil && il.MaxIngestionRate > 0 {
 		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
 			return nil, errMaxIngestionRateReached
 		}
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := pushReq.WriteRequest()

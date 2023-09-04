@@ -32,6 +32,8 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/tap"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -220,6 +222,15 @@ func (t *Mimir) initSanityCheck() (services.Service, error) {
 }
 
 func (t *Mimir) initServer() (services.Service, error) {
+	// This allows us to reject gRPC requests early -- before they are fully read into memory, only based on method name.
+	t.Cfg.Server.GRPCOptions = append(t.Cfg.Server.GRPCOptions, grpc.InTapHandle(func(ctx context.Context, info *tap.Info) (context.Context, error) {
+		var err error
+		if info.FullMethodName == "/cortex.Ingester/Push" && t.Ingester != nil {
+			err = t.Ingester.AcceptPushRequest()
+		}
+		return ctx, err
+	}))
+
 	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)
 	serv, err := server.New(t.Cfg.Server)
