@@ -464,7 +464,7 @@
           "kind": "field",
           "name": "grpc_server_max_concurrent_streams",
           "required": false,
-          "desc": "Limit on the number of concurrent streams for gRPC calls (0 = unlimited)",
+          "desc": "Limit on the number of concurrent streams for gRPC calls per client connection (0 = unlimited)",
           "fieldValue": null,
           "fieldDefaultValue": 100,
           "fieldFlag": "server.grpc-max-concurrent-streams",
@@ -7921,7 +7921,7 @@
               "kind": "field",
               "name": "wal_replay_concurrency",
               "required": false,
-              "desc": "Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine. If set to a positive value it overrides the deprecated -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.",
+              "desc": "Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "blocks-storage.tsdb.wal-replay-concurrency",
@@ -7982,17 +7982,6 @@
               "fieldFlag": "blocks-storage.tsdb.series-hash-cache-max-size-bytes",
               "fieldType": "int",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "max_tsdb_opening_concurrency_on_startup",
-              "required": false,
-              "desc": "limit the number of concurrently opening TSDB's on startup",
-              "fieldValue": null,
-              "fieldDefaultValue": 10,
-              "fieldFlag": "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -9295,6 +9284,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "tenant-federation.enabled",
           "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "max_concurrent",
+          "required": false,
+          "desc": "The number of workers used for each tenant federated query. This setting limits the maximum number of per-tenant queries executed at a time for a tenant federated query.",
+          "fieldValue": null,
+          "fieldDefaultValue": 16,
+          "fieldFlag": "tenant-federation.max-concurrent",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

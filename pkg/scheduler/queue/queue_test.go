@@ -31,6 +31,7 @@ func BenchmarkGetNextRequest(b *testing.B) {
 		queue := NewRequestQueue(maxOutstandingPerTenant, 0,
 			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+			promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		)
 		queues = append(queues, queue)
 
@@ -88,6 +89,7 @@ func BenchmarkQueueRequest(b *testing.B) {
 		q := NewRequestQueue(maxOutstandingPerTenant, 0,
 			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+			promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		)
 
 		for ix := 0; ix < queriers; ix++ {
@@ -120,7 +122,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 
 	queue := NewRequestQueue(1, forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}))
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
 
 	// Start the queue service.
 	ctx := context.Background()

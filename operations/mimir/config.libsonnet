@@ -367,9 +367,9 @@
         ingestion_rate: 10000,
         ingestion_burst_size: 200000,
 
-        // 700 rules
+        // 1400 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 35,
+        ruler_max_rule_groups_per_tenant: 70,
 
         // No retention for now.
         compactor_blocks_retention_period: '0',
@@ -383,9 +383,9 @@
         ingestion_rate: 30000,
         ingestion_burst_size: 300000,
 
-        // 1000 rules
+        // 2000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 50,
+        ruler_max_rule_groups_per_tenant: 100,
       },
 
       small_user:: {
@@ -396,9 +396,9 @@
         ingestion_rate: 100000,
         ingestion_burst_size: 1000000,
 
-        // 1400 rules
+        // 2800 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 70,
+        ruler_max_rule_groups_per_tenant: 140,
       },
 
       medium_user:: {
@@ -409,9 +409,9 @@
         ingestion_rate: 350000,  // 350K
         ingestion_burst_size: 3500000,  // 3.5M
 
-        // 1800 rules
+        // 3600 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 90,
+        ruler_max_rule_groups_per_tenant: 180,
       },
 
       big_user:: {
@@ -422,9 +422,9 @@
         ingestion_rate: 700000,  // 700K
         ingestion_burst_size: 7000000,  // 7M
 
-        // 2200 rules
+        // 4400 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 110,
+        ruler_max_rule_groups_per_tenant: 220,
       },
 
       super_user:: {
@@ -435,9 +435,9 @@
         ingestion_rate: 1500000,  // 1.5M
         ingestion_burst_size: 15000000,  // 15M
 
-        // 2600 rules
+        // 5200 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 130,
+        ruler_max_rule_groups_per_tenant: 260,
 
         compactor_split_and_merge_shards: 2,
         compactor_tenant_shard_size: 2,
@@ -453,9 +453,9 @@
         ingestion_rate: 2250000,  // 2.25M
         ingestion_burst_size: 22500000,  // 22.5M
 
-        // 3000 rules
+        // 6000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 150,
+        ruler_max_rule_groups_per_tenant: 300,
 
         compactor_split_and_merge_shards: 2,
         compactor_tenant_shard_size: 2,
@@ -470,9 +470,9 @@
         ingestion_rate: 3500000,  // 3.5M
         ingestion_burst_size: 35000000,  // 35M
 
-        // 3500 rules
+        // 7000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 175,
+        ruler_max_rule_groups_per_tenant: 350,
 
         compactor_split_and_merge_shards: 4,
         compactor_tenant_shard_size: 4,
@@ -487,9 +487,9 @@
         ingestion_rate: 4500000,  // 4.5M
         ingestion_burst_size: 45000000,  // 45M
 
-        // 4000 rules
+        // 8000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 200,
+        ruler_max_rule_groups_per_tenant: 400,
 
         compactor_split_and_merge_shards: 4,
         compactor_tenant_shard_size: 4,

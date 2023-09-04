@@ -788,7 +788,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	// Note that we don't .Finish() the span in this method on purpose
 	spanlog := spanlogger.FromContext(ctx, i.logger)
-	level.Debug(spanlog).Log("event", "acquired append lock")
+	spanlog.DebugLog("event", "acquired append lock")
 
 	var (
 		startAppend = time.Now()
@@ -807,7 +807,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	// Walk the samples, appending them to the users database
 	app := db.Appender(ctx).(extendedAppender)
-	level.Debug(spanlog).Log("event", "got appender for timeseries", "series", len(req.Timeseries))
+	spanlog.DebugLog("event", "got appender for timeseries", "series", len(req.Timeseries))
 
 	var activeSeries *activeseries.ActiveSeries
 	if i.cfg.ActiveSeriesMetrics.Enabled {
@@ -833,7 +833,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	// At this point all samples have been added to the appender, so we can track the time it took.
 	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
 
-	level.Debug(spanlog).Log(
+	spanlog.DebugLog(
 		"event", "start commit",
 		"succeededSamplesCount", stats.succeededSamplesCount,
 		"failedSamplesCount", stats.failedSamplesCount,
@@ -848,7 +848,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	commitDuration := time.Since(startCommit)
 	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
+	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if stats.succeededSamplesCount > 0 {
@@ -2323,7 +2323,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 }
 
 func getOpenTSDBsConcurrencyConfig(tsdbConfig mimir_tsdb.TSDBConfig, userCount int) (tsdbOpenConcurrency, tsdbWALReplayConcurrency int) {
-	tsdbOpenConcurrency = tsdbConfig.DeprecatedMaxTSDBOpeningConcurrencyOnStartup
+	tsdbOpenConcurrency = mimir_tsdb.DefaultMaxTSDBOpeningConcurrencyOnStartup
 	tsdbWALReplayConcurrency = 0
 	// When WALReplayConcurrency is enabled, we want to ensure the WAL replay at ingester startup
 	// doesn't use more than the configured number of CPU cores. In order to optimize performance

@@ -198,6 +198,12 @@ tenant_federation:
   # CLI flag: -tenant-federation.enabled
   [enabled: <boolean> | default = false]
 
+  # (experimental) The number of workers used for each tenant federated query.
+  # This setting limits the maximum number of per-tenant queries executed at a
+  # time for a tenant federated query.
+  # CLI flag: -tenant-federation.max-concurrent
+  [max_concurrent: <int> | default = 16]
+
 activity_tracker:
   # File where ongoing activities are stored. If empty, activity tracking is
   # disabled.
@@ -539,8 +545,8 @@ grpc_tls_config:
 # CLI flag: -server.grpc-max-send-msg-size-bytes
 [grpc_server_max_send_msg_size: <int> | default = 104857600]
 
-# (advanced) Limit on the number of concurrent streams for gRPC calls (0 =
-# unlimited)
+# (advanced) Limit on the number of concurrent streams for gRPC calls per client
+# connection (0 = unlimited)
 # CLI flag: -server.grpc-max-concurrent-streams
 [grpc_server_max_concurrent_streams: <int> | default = 100]
 
@@ -3588,9 +3594,7 @@ tsdb:
 
   # (advanced) Maximum number of CPUs that can simultaneously processes WAL
   # replay. If it is set to 0, then each TSDB is replayed with a concurrency
-  # equal to the number of CPU cores available on the machine. If set to a
-  # positive value it overrides the deprecated
-  # -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.
+  # equal to the number of CPU cores available on the machine.
   # CLI flag: -blocks-storage.tsdb.wal-replay-concurrency
   [wal_replay_concurrency: <int> | default = 0]
 
@@ -3625,10 +3629,6 @@ tsdb:
   # enabled.
   # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
   [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
-
-  # (deprecated) limit the number of concurrently opening TSDB's on startup
-  # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
-  [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
 
   # (experimental) Maximum capacity for out of order chunks, in samples between
   # 1 and 255.

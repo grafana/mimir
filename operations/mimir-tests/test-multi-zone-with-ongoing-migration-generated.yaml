@@ -1138,7 +1138,7 @@ spec:
         - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
-        - -ruler.max-rule-groups-per-tenant=35
+        - -ruler.max-rule-groups-per-tenant=70
         - -ruler.max-rules-per-rule-group=20
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules

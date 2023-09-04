@@ -158,7 +158,7 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_mmap_chunk_corruptions_total counter
 			cortex_ingester_tsdb_mmap_chunk_corruptions_total 2577406
 
-			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk corruptions.
+			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk operations.
 			# TYPE cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total counter
 			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="add"} 150
 			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="complete"} 120
@@ -378,7 +378,7 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_mmap_chunk_corruptions_total counter
 			cortex_ingester_tsdb_mmap_chunk_corruptions_total 2577406
 
-			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk corruptions.
+			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk operations.
 			# TYPE cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total counter
 			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="add"} 150
 			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="complete"} 120
