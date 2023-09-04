@@ -296,21 +296,19 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 // If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
 func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
 	querierConn := &querierConnection{
+		ctx:           ctx,
 		querierID:     querierID,
 		lastUserIndex: last,
 		processed:     make(chan nextRequestForQuerier),
-		done:          make(chan struct{}),
 	}
-
-	defer close(querierConn.done)
 
 	select {
 	case q.availableQuerierConnections <- querierConn:
+		// The dispatcher now knows we're waiting. Either we'll get a request to send to a querier, or we'll cancel.
 		select {
 		case result := <-querierConn.processed:
 			return result.req, result.lastUserIndex, result.err
 		case <-ctx.Done():
-			// The deferred close of querierConn.done above informs the dispatcher that we're no longer waiting for a response, so we can return straight away.
 			return nil, last, ctx.Err()
 		}
 	case <-ctx.Done():
@@ -365,10 +363,10 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 }
 
 type querierConnection struct {
+	ctx           context.Context
 	querierID     string
 	lastUserIndex UserIndex
 	processed     chan nextRequestForQuerier
-	done          chan struct{} // Closed by GetNextRequestForQuerier when it is no longer waiting for a response.
 
 	haveUsed bool // Must be set to true after sending a message to processed, to ensure we only ever try to send one message to processed.
 	element  *list.Element
@@ -388,7 +386,7 @@ func (q *querierConnection) send(req nextRequestForQuerier) bool {
 	select {
 	case q.processed <- req:
 		return true
-	case <-q.done:
+	case <-q.ctx.Done():
 		return false
 	}
 }
