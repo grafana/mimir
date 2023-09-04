@@ -3,5 +3,15 @@
   "extends": [
     "config:base"
   ],
-  "prHourlyLimit": 4
+  "prHourlyLimit": 4,
+  "packageRules": [
+    {
+      "groupName": "docker-dependencies",
+      "matchPackageNames": [
+        "k8s.gcr.io/kustomize/kustomize",
+        "alpine/helm",
+        "alpine"
+      ]
+    }
+  ]
 }
