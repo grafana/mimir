@@ -16,9 +16,11 @@
 
 ### Mimirtool
 
+* [ENHANCEMENT] Mimirtool uses paging to fetch all dashboards from Grafana when running `mimirtool analyse grafana`. This allows the tool to work correctly when running against Grafana instances with more than a 1000 dashboards. #5825
+* [ENHANCEMENT] Extract metric name from queries that have a `__name__` matcher. #5911
+* [BUGFIX] Mimirtool no longer parses label names as metric names when handling templating variables that are populated using `label_values(<label_name>)` when running `mimirtool analyse grafana`. #5832
 * [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
 * [BUGFIX] Fix panic when analyzing a grafana dashboard with multiline queries. #5911
-* [ENHANCEMENT] Extract metric name from queries that have a `__name__` matcher. #5911
 
 ### Mimir Continuous Test
 
@@ -202,13 +204,6 @@
 * [ENHANCEMENT] Update rollout-operator to `v0.7.0`. #5718
 * [ENHANCEMENT] Increase the default rollout speed for store-gateway when lazy loading is disabled. #5823
 * [BUGFIX] Fix compilation when index, chunks or metadata caches are disabled. #5710
-
-### Mimirtool
-
-* [ENHANCEMENT] Mimirtool uses paging to fetch all dashboards from Grafana when running `mimirtool analyse grafana`. This allows the tool to work correctly when running against Grafana instances with more than a 1000 dashboards. #5825
-* [BUGFIX] Mimirtool no longer parses label names as metric names when handling templating variables that are populated using `label_values(<label_name>)` when running `mimirtool analyse grafana`. #5832
-
-### Mimir Continuous Test
 
 ### Query-tee
 
