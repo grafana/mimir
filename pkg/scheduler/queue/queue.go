@@ -139,6 +139,8 @@ func (q *RequestQueue) dispatcherLoop() {
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			stopping = true
 		case qe := <-q.querierOperations:
+			// These operations may cause a resharding, so we should always try to dispatch queries afterwards.
+			// In the future, we could make this smarter: detect when a resharding actually happened and only trigger dispatching queries in those cases.
 			switch qe.operation {
 			case registerConnection:
 				q.connectedQuerierWorkers.Inc()
