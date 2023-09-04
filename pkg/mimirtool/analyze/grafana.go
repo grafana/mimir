@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	lvRegexp = regexp.MustCompile(`label_values\(([a-zA-Z0-9_]+)`)
+	lvRegexp = regexp.MustCompile(`label_values\((.+),`)
 	qrRegexp = regexp.MustCompile(`query_result\((.+)\)`)
 )
 
