@@ -170,11 +170,11 @@ func (q *RequestQueue) dispatcherLoop() {
 				// TODO: might be able to be much smarter here and try to find a querier that can take the request directly
 				needToDispatchQueries = true
 			}
-		case querier := <-q.availableQuerierConnections:
-			if !q.dispatchRequestToQuerier(queues, querier) {
-				// No requests available for this querier right now. Add it to the list to try later.
-				querier.element = waitingQuerierConnections.PushBack(querier)
-				querier.listenForContextCancellation(q.stopCompleted, q.cancelledQuerierConnections)
+		case querierConn := <-q.availableQuerierConnections:
+			if !q.dispatchRequestToQuerier(queues, querierConn) {
+				// No requests available for this querier connection right now. Add it to the list to try later.
+				querierConn.element = waitingQuerierConnections.PushBack(querierConn)
+				querierConn.listenForContextCancellation(q.stopCompleted, q.cancelledQuerierConnections)
 			}
 		case querier := <-q.cancelledQuerierConnections:
 			// Make sure we haven't already sent a query to this querier.
@@ -192,10 +192,10 @@ func (q *RequestQueue) dispatcherLoop() {
 			currentElement := waitingQuerierConnections.Front()
 
 			for currentElement != nil && queues.len() > 0 {
-				querier := currentElement.Value.(*querierConnection)
+				querierConn := currentElement.Value.(*querierConnection)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
-				if q.dispatchRequestToQuerier(queues, querier) {
+				if q.dispatchRequestToQuerier(queues, querierConn) {
 					waitingQuerierConnections.Remove(currentElement)
 				}
 
@@ -208,8 +208,8 @@ func (q *RequestQueue) dispatcherLoop() {
 			currentElement := waitingQuerierConnections.Front()
 
 			for currentElement != nil {
-				querier := currentElement.Value.(*querierConnection)
-				querier.send(nextRequestForQuerier{err: ErrStopped})
+				querierConn := currentElement.Value.(*querierConnection)
+				querierConn.send(nextRequestForQuerier{err: ErrStopped})
 				currentElement = currentElement.Next()
 			}
 
@@ -245,9 +245,9 @@ func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) er
 
 // dispatchRequestToQuerier finds and forwards a request to a querier, if a suitable request is available.
 // Returns true if this querier should be removed from the list of waiting queriers (eg. because a request has been forwarded to it), false otherwise.
-func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querier *querierConnection) bool {
-	queue, userID, idx := queues.getNextQueueForQuerier(querier.lastUserIndex.last, querier.querierID)
-	querier.lastUserIndex.last = idx
+func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querierConn *querierConnection) bool {
+	queue, userID, idx := queues.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
+	querierConn.lastUserIndex.last = idx
 	if queue == nil {
 		// Nothing available for this querier, try again next time.
 		return false
@@ -264,10 +264,10 @@ func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querier *querier
 
 	q.queueLength.WithLabelValues(userID).Dec()
 
-	querier.send(nextRequestForQuerier{
+	querierConn.send(nextRequestForQuerier{
 		req:           request,
-		lastUserIndex: querier.lastUserIndex,
-		err:           querier.ctx.Err(),
+		lastUserIndex: querierConn.lastUserIndex,
+		err:           querierConn.ctx.Err(),
 	})
 
 	return true
@@ -304,7 +304,7 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 // By passing user index from previous call of this method, querier guarantees that it iterates over all users fairly.
 // If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
 func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
-	querier := &querierConnection{
+	querierConn := &querierConnection{
 		ctx:           ctx,
 		querierID:     querierID,
 		lastUserIndex: last,
@@ -313,8 +313,8 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 	}
 
 	select {
-	case q.availableQuerierConnections <- querier:
-		result := <-querier.processed
+	case q.availableQuerierConnections <- querierConn:
+		result := <-querierConn.processed
 		return result.req, result.lastUserIndex, result.err
 	case <-q.stopCompleted:
 		return nil, last, ErrStopped
