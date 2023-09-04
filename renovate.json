@@ -3,7 +3,7 @@
   "extends": [
     "config:base"
   ],
-  "baseBranches": ["main", "^release-[0-9]+.[0-9]+"],
+  "baseBranches": ["main", "^release-[0-9]+\.[0-9]+"],
   "prHourlyLimit": 4,
   "packageRules": [
     {
