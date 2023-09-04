@@ -21,6 +21,10 @@
 * [BUGFIX] Store-gateway: fix chunks corruption bug introduced in rc.0. #5875
 * [BUGFIX] Update Minio object storage client from 7.0.62 to 7.0.63 to fix auto-detection of AWS GovCloud environments. #5905
 
+### Mimirtool
+
+* [ENHANCEMENT] Mimirtool uses paging to fetch all dashboards from Grafana when running `mimirtool analyse grafana`. This allows the tool to work correctly when running against Grafana instances with more than a 1000 dashboards. #5825
+
 ## 2.10.0-rc.0
 
 ### Grafana Mimir
