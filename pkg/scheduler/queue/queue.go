@@ -103,6 +103,14 @@ func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, que
 		queueLength:             queueLength,
 		discardedRequests:       discardedRequests,
 		enqueueDuration:         enqueueDuration,
+
+		stopRequested: make(chan struct{}),
+		stopCompleted: make(chan struct{}),
+
+		// These channels must not be buffered so that we can detect when dispatcherLoop() has finished.
+		querierOperations:           make(chan querierOperation),
+		enqueueRequests:             make(chan enqueueRequest),
+		availableQuerierConnections: make(chan *querierConnection),
 	}
 
 	q.Service = services.NewTimerService(forgetCheckPeriod, q.starting, q.forgetDisconnectedQueriers, q.stop).WithName("request queue")
@@ -111,13 +119,6 @@ func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, que
 }
 
 func (q *RequestQueue) starting(_ context.Context) error {
-	q.stopRequested = make(chan struct{})
-	q.stopCompleted = make(chan struct{})
-
-	// These channels must not be buffered so that we can detect when dispatcherLoop() has finished.
-	q.querierOperations = make(chan querierOperation)
-	q.enqueueRequests = make(chan enqueueRequest)
-	q.availableQuerierConnections = make(chan *querierConnection)
 
 	go q.dispatcherLoop()
 
