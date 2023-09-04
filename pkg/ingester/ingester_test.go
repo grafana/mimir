@@ -5885,6 +5885,10 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 
 						if testData.expectedAcceptErr != nil {
 							assert.ErrorIs(t, acceptErr, testData.expectedAcceptErr)
+
+							s, ok := status.FromError(err)
+							require.True(t, ok, "expected to be able to convert to gRPC status")
+							assert.Equal(t, codes.Unavailable, s.Code())
 						} else {
 							assert.NoError(t, acceptErr)
 						}

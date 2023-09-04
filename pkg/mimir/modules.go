@@ -226,6 +226,7 @@ func (t *Mimir) initServer() (services.Service, error) {
 	t.Cfg.Server.GRPCOptions = append(t.Cfg.Server.GRPCOptions, grpc.InTapHandle(func(ctx context.Context, info *tap.Info) (context.Context, error) {
 		var err error
 		if info.FullMethodName == "/cortex.Ingester/Push" && t.Ingester != nil {
+			// All errors returned by AcceptPushRequest can be converted to gRPC status.Status.
 			err = t.Ingester.AcceptPushRequest()
 		}
 		return ctx, err

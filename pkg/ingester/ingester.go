@@ -721,6 +721,7 @@ type pushStats struct {
 
 // AcceptPushRequest returns error if push request cannot be accepted at the moment.
 // When this method returns error, it increases relevant metrics.
+// All errors returned by this method can be converted via to status.Status by using status.FromError.
 func (i *Ingester) AcceptPushRequest() error {
 	if err := i.checkRunning(); err != nil {
 		return util_log.DoNotLogError{Err: err}
