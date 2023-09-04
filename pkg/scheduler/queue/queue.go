@@ -60,12 +60,12 @@ type RequestQueue struct {
 
 	connectedQuerierWorkers *atomic.Int32
 
-	stopRequested     chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
-	stopCompleted     chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
-	querierOperations chan querierOperation
-	enqueueRequests   chan enqueueRequest
-	availableQueriers chan *availableQuerier
-	cancelledQueriers chan *availableQuerier
+	stopRequested               chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
+	stopCompleted               chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
+	querierOperations           chan querierOperation
+	enqueueRequests             chan enqueueRequest
+	availableQuerierConnections chan *querierConnection
+	cancelledQuerierConnections chan *querierConnection
 
 	queueLength       *prometheus.GaugeVec   // Per user and reason.
 	discardedRequests *prometheus.CounterVec // Per user.
@@ -118,8 +118,8 @@ func (q *RequestQueue) starting(_ context.Context) error {
 	// These channels must not be buffered so that we can detect when dispatcherLoop() has finished.
 	q.querierOperations = make(chan querierOperation)
 	q.enqueueRequests = make(chan enqueueRequest)
-	q.availableQueriers = make(chan *availableQuerier)
-	q.cancelledQueriers = make(chan *availableQuerier)
+	q.availableQuerierConnections = make(chan *querierConnection)
+	q.cancelledQuerierConnections = make(chan *querierConnection)
 
 	go q.dispatcherLoop()
 
@@ -129,7 +129,7 @@ func (q *RequestQueue) starting(_ context.Context) error {
 func (q *RequestQueue) dispatcherLoop() {
 	stopping := false
 	queues := newUserQueues(q.maxOutstandingPerTenant, q.forgetDelay)
-	waitingQueriers := list.New()
+	waitingQuerierConnections := list.New()
 
 	for {
 		needToDispatchQueries := false
@@ -168,13 +168,13 @@ func (q *RequestQueue) dispatcherLoop() {
 				// TODO: might be able to be much smarter here and try to find a querier that can take the request directly
 				needToDispatchQueries = true
 			}
-		case querier := <-q.availableQueriers:
+		case querier := <-q.availableQuerierConnections:
 			if !q.dispatchRequestToQuerier(queues, querier) {
 				// No requests available for this querier right now. Add it to the list to try later.
-				querier.element = waitingQueriers.PushBack(querier)
-				querier.listenForContextCancellation(q.stopCompleted, q.cancelledQueriers)
+				querier.element = waitingQuerierConnections.PushBack(querier)
+				querier.listenForContextCancellation(q.stopCompleted, q.cancelledQuerierConnections)
 			}
-		case querier := <-q.cancelledQueriers:
+		case querier := <-q.cancelledQuerierConnections:
 			// Make sure we haven't already sent a query to this querier.
 			if !querier.haveUsed {
 				querier.send(nextRequestForQuerier{
@@ -182,19 +182,19 @@ func (q *RequestQueue) dispatcherLoop() {
 					err:           querier.ctx.Err(),
 				})
 
-				waitingQueriers.Remove(querier.element)
+				waitingQuerierConnections.Remove(querier.element)
 			}
 		}
 
 		if needToDispatchQueries {
-			currentElement := waitingQueriers.Front()
+			currentElement := waitingQuerierConnections.Front()
 
 			for currentElement != nil && queues.len() > 0 {
-				querier := currentElement.Value.(*availableQuerier)
+				querier := currentElement.Value.(*querierConnection)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
 				if q.dispatchRequestToQuerier(queues, querier) {
-					waitingQueriers.Remove(currentElement)
+					waitingQuerierConnections.Remove(currentElement)
 				}
 
 				currentElement = nextElement
@@ -203,10 +203,10 @@ func (q *RequestQueue) dispatcherLoop() {
 
 		if stopping && (queues.len() == 0 || q.connectedQuerierWorkers.Load() == 0) {
 			// Tell any waiting GetNextRequestForQuerier calls that nothing is coming.
-			currentElement := waitingQueriers.Front()
+			currentElement := waitingQuerierConnections.Front()
 
 			for currentElement != nil {
-				querier := currentElement.Value.(*availableQuerier)
+				querier := currentElement.Value.(*querierConnection)
 				querier.send(nextRequestForQuerier{err: ErrStopped})
 				currentElement = currentElement.Next()
 			}
@@ -241,7 +241,7 @@ func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) er
 
 // dispatchRequestToQuerier finds and forwards a request to a querier, if a suitable request is available.
 // Returns true if this querier should be removed from the list of waiting queriers (eg. because a request has been forwarded to it), false otherwise.
-func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querier *availableQuerier) bool {
+func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querier *querierConnection) bool {
 	queue, userID, idx := queues.getNextQueueForQuerier(querier.lastUserIndex.last, querier.querierID)
 	querier.lastUserIndex.last = idx
 	if queue == nil {
@@ -299,7 +299,7 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 // If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
 func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
 	// TODO: pool these?
-	querier := &availableQuerier{
+	querier := &querierConnection{
 		ctx:           ctx,
 		querierID:     querierID,
 		lastUserIndex: last,
@@ -308,7 +308,7 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 	}
 
 	select {
-	case q.availableQueriers <- querier:
+	case q.availableQuerierConnections <- querier:
 		result := <-querier.processed
 		return result.req, result.lastUserIndex, result.err
 	case <-q.stopCompleted:
@@ -360,7 +360,7 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 	return float64(q.connectedQuerierWorkers.Load())
 }
 
-type availableQuerier struct {
+type querierConnection struct {
 	ctx           context.Context
 	querierID     string
 	lastUserIndex UserIndex
@@ -371,7 +371,7 @@ type availableQuerier struct {
 	element  *list.Element
 }
 
-func (q *availableQuerier) send(req nextRequestForQuerier) {
+func (q *querierConnection) send(req nextRequestForQuerier) {
 	if q.haveUsed {
 		panic("bug: should not try to send multiple messages to a querier")
 	}
@@ -382,7 +382,7 @@ func (q *availableQuerier) send(req nextRequestForQuerier) {
 	close(q.done)
 }
 
-func (q *availableQuerier) listenForContextCancellation(dispatcherStopped chan struct{}, notifyOnCancellation chan *availableQuerier) {
+func (q *querierConnection) listenForContextCancellation(dispatcherStopped chan struct{}, notifyOnCancellation chan *querierConnection) {
 	go func() {
 		select {
 		case <-q.ctx.Done():
