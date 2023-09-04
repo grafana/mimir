@@ -1,155 +1,169 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/grafana/cortex-tools/blob/main/pkg/analyse/grafana.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
 
 package analyze
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 )
 
-func TestParseQuery(t *testing.T) {
-	tests := []struct {
-		query           string
-		expectedMetrics map[string]struct{}
-		shouldError     bool
-		errorMsg        string
-	}{
-		{
-			query: `sum(rate(my_metric[$__interval])) by (my_label) > 0`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `sum(rate(my_metric[$interval])) by (my_label) > 0`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `sum(rate(my_metric[$resolution])) by (my_label) > 0`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `sum(rate(my_metric[$__rate_interval])) by (my_label) > 0`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `sum(rate(my_metric[$__range])) by (my_label) > 0`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `sum(rate(my_metric[$agregation_window])) by (my_label) > 0`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `sum(my_metric)`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `my_metric`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `my_metric{label=${value}}`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `my_metric{label=${value:format}}`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `my_metric{label=$value}`,
-			expectedMetrics: map[string]struct{}{
-				"my_metric": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `$my_metric{label=$value}`,
-			expectedMetrics: map[string]struct{}{
-				"variable": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `${my_metric}{label=$value}`,
-			expectedMetrics: map[string]struct{}{
-				"variable": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-		{
-			query: `${my_metric:format}{label=$value}`,
-			expectedMetrics: map[string]struct{}{
-				"variable": {},
-			},
-			shouldError: false,
-			errorMsg:    "",
-		},
-	}
-
-	for _, test := range tests {
+func TestMetricsFromTemplating(t *testing.T) {
+	t.Run("multiline query_result", func(t *testing.T) {
 		metrics := make(map[string]struct{})
-		err := parseQuery(test.query, metrics)
-
-		if test.shouldError && err == nil {
-			t.Errorf("Expected error, but got no error for query: %s", test.query)
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query: `query_result(
+  quantile_over_time(0.95, foo{lbl="$var"}[$__range])
+)`,
+				},
+			},
 		}
 
-		if !test.shouldError && err != nil {
-			t.Errorf("Unexpected error for query: %s: %v", test.query, err)
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Len(t, metrics, 1)
+		require.Equal(t, map[string]struct{}{"foo": {}}, metrics)
+	})
+
+	t.Run("query is a metric containing 'query_result'", func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query:      `foo_bar_query_result_total{}`,
+				},
+			},
 		}
 
-		if len(metrics) != len(test.expectedMetrics) {
-			t.Errorf("For query %s: Expected %d metrics, but got %d", test.query, len(test.expectedMetrics), len(metrics))
-		} else {
-			for m := range metrics {
-				if _, ok := test.expectedMetrics[m]; !ok {
-					t.Errorf("For query %s: Unexpected metric found: %s", test.query, m)
-				}
-			}
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Len(t, metrics, 1)
+		require.Equal(t, map[string]struct{}{"foo_bar_query_result_total": {}}, metrics)
+	})
+
+	t.Run("query is a metric containing 'label_values'", func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query:      `foo_bar_label_values_total{}`,
+				},
+			},
 		}
-	}
+
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Len(t, metrics, 1)
+		require.Equal(t, map[string]struct{}{"foo_bar_label_values_total": {}}, metrics)
+	})
+
+	t.Run(`label_values query with invalid metric name in __name__`, func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query:      `label_values({__name__=~"$prefix\\\\_?last_updated_time_seconds", job=~"$job", instance=~"$instance"}, entity)`,
+				},
+			},
+		}
+
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Empty(t, metrics)
+	})
+
+	t.Run(`label_values query with metric name in  __name__ label`, func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query:      `label_values({__name__=~"metric", job=~"$job", instance=~"$instance"}, entity)`,
+				},
+			},
+		}
+
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Len(t, metrics, 1)
+		require.Equal(t, map[string]struct{}{"metric": {}}, metrics)
+	})
+
+	t.Run(`label_values query with multiline metric`, func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query: `label_values(
+	metric,
+	label
+)`,
+				},
+			},
+		}
+
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Len(t, metrics, 1)
+		require.Equal(t, map[string]struct{}{"metric": {}}, metrics)
+	})
+
+	t.Run(`label_values query with no metric selector single line`, func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query:      `label_values(entity)`,
+				},
+			},
+		}
+
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Empty(t, metrics)
+	})
+
+	t.Run(`label_values query with no metric selector multiline `, func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query: `label_values(
+	entity
+)`,
+				},
+			},
+		}
+
+		errs := metricsFromTemplating(in, metrics)
+		require.Empty(t, errs)
+		require.Empty(t, metrics)
+	})
 }

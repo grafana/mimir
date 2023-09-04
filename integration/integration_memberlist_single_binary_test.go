@@ -175,8 +175,17 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	minMimir := 3
 	instances := make([]*e2emimir.MimirService, 0)
 
+	// Increase timeout for metrics checks. Needed when testing against race-enabled Mimir.
+	const metricsTimeout = 30 * time.Second
+	flags := map[string]string{
+		"-memberlist.packet-dial-timeout":  "10s",
+		"-memberlist.packet-write-timeout": "10s",
+	}
+
 	// Start the 1st instance. This will provide the initial state to other members.
-	firstInstance := newSingleBinary("mimir-1", "", "", nil)
+	firstInstance := newSingleBinary("mimir-1", "", "", flags)
+	firstInstance.SetMetricsTimeout(metricsTimeout)
+
 	require.NoError(t, s.StartAndWaitReady(firstInstance))
 	instances = append(instances, firstInstance)
 
@@ -185,18 +194,19 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	for i := 2; i <= maxMimir; i++ {
 		name := fmt.Sprintf("mimir-%d", i)
 		join := e2e.NetworkContainerHostPort(networkName, firstInstance.Name(), 8000)
-		c := newSingleBinary(name, "", join, nil)
+		c := newSingleBinary(name, "", join, flags)
+		// Increase timeouts for checks.
+		c.SetMetricsTimeout(metricsTimeout)
 		nextInstances = append(nextInstances, c)
 		instances = append(instances, c)
 	}
 	require.NoError(t, s.StartAndWaitReady(nextInstances...))
 
 	// Sanity check the ring membership and give each instance time to see every other instance.
-
 	for _, c := range instances {
 		// we expect 5*maxMimir to account for ingester, distributor, compactor, store-gateway and store-gateway-client rings
-		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxMimir*5)), "cortex_ring_members"))
-		require.NoError(t, c.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
+		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxMimir*5)), "cortex_ring_members"), "instance: %s", c.Name())
+		require.NoError(t, c.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"), "instance: %s", c.Name())
 	}
 
 	// Scale down as fast as possible but cleanly, in order to send out tombstones.

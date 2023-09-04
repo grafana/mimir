@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
+	"path"
 	"sort"
 	"testing"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	promtsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -25,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -1082,8 +1086,8 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			iterator := newLimitingSeriesChunkRefsSetIterator(
 				newSliceSeriesChunkRefsSetIterator(testCase.upstreamErr, testCase.sets...),
-				&limiter{limit: testCase.chunksLimit},
-				&limiter{limit: testCase.seriesLimit},
+				&staticLimiter{limit: testCase.chunksLimit},
+				&staticLimiter{limit: testCase.seriesLimit},
 			)
 
 			sets := readAllSeriesChunkRefsSet(iterator)
@@ -1098,7 +1102,7 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 }
 
 func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
-	newTestBlock := prepareTestBlock(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
+	defaultTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
 		for i := 0; i < 100; i++ {
 			_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
 			assert.NoError(t, err)
@@ -1106,16 +1110,34 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		assert.NoError(t, appender.Commit())
 	})
 
-	testCases := map[string]struct {
+	const largerTestBlockSeriesCount = 100_000
+	largerTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
+		for i := 0; i < largerTestBlockSeriesCount; i++ {
+			const numSamples = 240 // Write enough samples to have two chunks per series
+			for j := 0; j < numSamples; j++ {
+				_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10+j), float64(j))
+				assert.NoError(t, err)
+			}
+		}
+		assert.NoError(t, appender.Commit())
+	})
+
+	type testCase struct {
+		blockFactory func() *bucketBlock // if nil, defaultTestBlockFactory is used
 		shard        *sharding.ShardSelector
 		matchers     []*labels.Matcher
 		seriesHasher seriesHasher
-		skipChunks   bool
+		strategy     seriesIteratorStrategy
 		minT, maxT   int64
 		batchSize    int
 
 		expectedSets []seriesChunkRefsSet
-	}{
+	}
+
+	sharedSeriesHasher := cachedSeriesHasher{hashcache.NewSeriesHashCache(1000).GetBlockCache("")}
+	sharedSeriesHasher2 := cachedSeriesHasher{hashcache.NewSeriesHashCache(1000).GetBlockCache("")}
+
+	testCases := map[string]testCase{
 		"loads one batch": {
 			minT:      0,
 			maxT:      10000,
@@ -1123,19 +1145,10 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("l1", "v1"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{minTime: 10, maxTime: 10, segFileOffset: 26, length: 208},
-					}}}},
-					{lset: labels.FromStrings("l1", "v2"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{minTime: 20, maxTime: 20, segFileOffset: 234, length: 208},
-					}}}},
-					{lset: labels.FromStrings("l1", "v3"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{minTime: 30, maxTime: 30, segFileOffset: 442, length: 208},
-					}}}},
-					{lset: labels.FromStrings("l1", "v4"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						// For the rest of the chunks we could take the diff with the next series' chunk, but for the last we use the default estimate.
-						{minTime: 40, maxTime: 40, segFileOffset: 650, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("l1", "v1")},
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+					{lset: labels.FromStrings("l1", "v4")},
 				}},
 			},
 		},
@@ -1146,29 +1159,21 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("l1", "v1"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{minTime: 10, maxTime: 10, segFileOffset: 26, length: 208},
-					}}}},
-					{lset: labels.FromStrings("l1", "v2"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{minTime: 20, maxTime: 20, segFileOffset: 234, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("l1", "v1")},
+					{lset: labels.FromStrings("l1", "v2")},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("l1", "v3"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{minTime: 30, maxTime: 30, segFileOffset: 442, length: 208},
-					}}}},
-					{lset: labels.FromStrings("l1", "v4"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{minTime: 40, maxTime: 40, segFileOffset: 650, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("l1", "v3")},
+					{lset: labels.FromStrings("l1", "v4")},
 				}},
 			},
 		},
 		"skips chunks": {
-			skipChunks: true,
-			minT:       0,
-			maxT:       40,
-			batchSize:  100,
-			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			strategy:  noChunkRefs,
+			minT:      0,
+			maxT:      40,
+			batchSize: 100,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1")},
@@ -1192,12 +1197,8 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("l1", "v3"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{minTime: 30, maxTime: 30, segFileOffset: 442, length: 208},
-					}}}},
-					{lset: labels.FromStrings("l1", "v4"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{minTime: 40, maxTime: 40, segFileOffset: 650, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("l1", "v3")},
+					{lset: labels.FromStrings("l1", "v4")},
 				}},
 			},
 		},
@@ -1228,21 +1229,16 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("l1", "v3"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						// We select only one series, but there are other series which aren't returned because of the shard.
-						// We still use those series' chunk refs to estimate lengths of other series. So in this case
-						// the last chunk didn't use the default estimation.
-						{minTime: 30, maxTime: 30, segFileOffset: 442, length: 208},
-					}}}},
+					{lset: labels.FromStrings("l1", "v3")},
 				}},
 			},
 		},
 		"ignores mixT/maxT when skipping chunks": {
-			minT:       0,
-			maxT:       10,
-			skipChunks: true,
-			batchSize:  4,
-			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			minT:      0,
+			maxT:      10,
+			strategy:  noChunkRefs,
+			batchSize: 4,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1")},
@@ -1252,23 +1248,169 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				}},
 			},
 		},
+		"works with many series in a single batch": {
+			blockFactory: largerTestBlockFactory,
+			minT:         0,
+			maxT:         math.MaxInt64,
+			batchSize:    largerTestBlockSeriesCount,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", ".*")},
+			expectedSets: func() []seriesChunkRefsSet {
+				set := newSeriesChunkRefsSet(largerTestBlockSeriesCount, true)
+				for i := 0; i < largerTestBlockSeriesCount; i++ {
+					set.series = append(set.series, seriesChunkRefs{lset: labels.FromStrings("l1", fmt.Sprintf("v%d", i))})
+				}
+				// The order of series in the block is by their labels, so we need to sort what we generated.
+				sort.Slice(set.series, func(i, j int) bool {
+					return labels.Compare(set.series[i].lset, set.series[j].lset) < 0
+				})
+				return []seriesChunkRefsSet{set}
+			}(),
+		},
+		"works with many series in many batches batch": {
+			blockFactory: largerTestBlockFactory,
+			minT:         0,
+			maxT:         math.MaxInt64,
+			batchSize:    5000,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", ".*")},
+			expectedSets: func() []seriesChunkRefsSet {
+				series := make([]seriesChunkRefs, 0, largerTestBlockSeriesCount)
+				for i := 0; i < largerTestBlockSeriesCount; i++ {
+					series = append(series, seriesChunkRefs{lset: labels.FromStrings("l1", fmt.Sprintf("v%d", i))})
+				}
+				// The order of series in the block is by their labels, so we need to sort what we generated.
+				sort.Slice(series, func(i, j int) bool {
+					return labels.Compare(series[i].lset, series[j].lset) < 0
+				})
+
+				const numBatches = largerTestBlockSeriesCount / 5000
+				sets := make([]seriesChunkRefsSet, numBatches)
+				for setIdx := 0; setIdx < numBatches; setIdx++ {
+					sets[setIdx].series = series[setIdx*largerTestBlockSeriesCount/numBatches : (setIdx+1)*largerTestBlockSeriesCount/numBatches]
+				}
+				return sets
+			}(),
+		},
+		"skip chunks with streaming on block 1": {
+			minT:      0,
+			maxT:      25,
+			batchSize: 100,
+			strategy:  noChunkRefs | overlapMintMaxt,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1")},
+					{lset: labels.FromStrings("l1", "v2")},
+				}},
+			},
+		},
+		"skip chunks with streaming on block 2": {
+			minT:      15,
+			maxT:      35,
+			batchSize: 100,
+			strategy:  noChunkRefs | overlapMintMaxt,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+				}},
+			},
+		},
+
+		// If the first test case stored incorrect hashes in the cache, the second test case would fail.
+		"doesn't pollute the series hash cache with incorrect hashes (pt. 1)": {
+			minT:         15,
+			maxT:         45,
+			seriesHasher: sharedSeriesHasher,
+			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			batchSize:    100,
+			strategy:     noChunkRefs | overlapMintMaxt,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-5]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+				}},
+			},
+		},
+		"doesn't pollute the series hash cache with incorrect hashes (pt. 2)": {
+			minT:         15,
+			maxT:         45,
+			seriesHasher: sharedSeriesHasher,
+			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			batchSize:    100,
+			strategy:     noChunkRefs | overlapMintMaxt,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-5]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+				}},
+			},
+		},
+		"doesn't pollute the series hash cache with incorrect hashes (without streaming; pt. 1)": {
+			minT:         15,
+			maxT:         45,
+			seriesHasher: sharedSeriesHasher2,
+			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			batchSize:    100,
+			strategy:     overlapMintMaxt,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-5]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+				}},
+			},
+		},
+		"doesn't pollute the series hash cache with incorrect hashes (without streaming; pt. 2)": {
+			minT:         15,
+			maxT:         45,
+			seriesHasher: sharedSeriesHasher2,
+			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			batchSize:    100,
+			strategy:     overlapMintMaxt,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-5]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+				}},
+			},
+		},
 	}
 
-	for testName, testCase := range testCases {
-		testName, testCase := testName, testCase
-		t.Run(testName, func(t *testing.T) {
-			t.Parallel()
+	sortedTestCases := make([]struct {
+		name string
+		tc   testCase
+	}, 0, len(testCases))
+	for name, tc := range testCases {
+		sortedTestCases = append(sortedTestCases, struct {
+			name string
+			tc   testCase
+		}{name, tc})
+	}
+	sort.Slice(sortedTestCases, func(i, j int) bool {
+		return sortedTestCases[i].name < sortedTestCases[j].name
+	})
 
+	for _, testCase := range sortedTestCases {
+		testName, tc := testCase.name, testCase.tc
+		t.Run(testName, func(t *testing.T) {
 			// Setup
-			block := newTestBlock()
+			blockFactory := defaultTestBlockFactory
+			if tc.blockFactory != nil {
+				blockFactory = tc.blockFactory
+			}
+			block := blockFactory()
 			indexr := block.indexReader(selectAllStrategy{})
-			postings, _, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
+			postings, _, err := indexr.ExpandedPostings(context.Background(), tc.matchers, newSafeQueryStats())
 			require.NoError(t, err)
 			postingsIterator := newPostingsSetsIterator(
 				postings,
-				testCase.batchSize,
+				tc.batchSize,
 			)
-			hasher := testCase.seriesHasher
+			hasher := tc.seriesHasher
 			if hasher == nil {
 				hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
 			}
@@ -1279,29 +1421,81 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				noopCache{},
 				newSafeQueryStats(),
 				block.meta,
-				testCase.shard,
+				tc.shard,
 				hasher,
-				testCase.skipChunks,
-				testCase.minT,
-				testCase.maxT,
+				tc.strategy,
+				tc.minT,
+				tc.maxT,
 				"t1",
-				1,
 				log.NewNopLogger(),
 			)
 
 			// Tests
 			sets := readAllSeriesChunkRefsSet(loadingIterator)
 			assert.NoError(t, loadingIterator.Err())
-			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, testCase.expectedSets, sets)
+			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, tc.strategy, tc.expectedSets, sets)
 		})
 	}
 }
 
-func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, expected, actual []seriesChunkRefsSet) {
+type chunksMetaIterator struct {
+	at     int
+	chunks []chunks.Meta
+}
+
+func newPromIndexSeriesIterator(chunks []chunks.Meta) *chunksMetaIterator {
+	return &chunksMetaIterator{
+		chunks: chunks,
+		at:     -1,
+	}
+}
+
+func (i *chunksMetaIterator) At() chunks.Meta {
+	return i.chunks[i.at]
+}
+
+func (i *chunksMetaIterator) Next() bool {
+	if i.at >= len(i.chunks)-1 {
+		return false
+	}
+	i.at++
+	return true
+}
+
+func lookupSeriesChunkMetas(t testing.TB, series labels.Labels, promReader promtsdb.IndexReader) []chunks.Meta {
+	matchers := make([]*labels.Matcher, 0, series.Len())
+	series.Range(func(l labels.Label) {
+		matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, l.Name, l.Value))
+	})
+	postings, err := promReader.PostingsForMatchers(false, matchers...)
+	require.NoError(t, err)
+
+	require.Truef(t, postings.Next(), "selecting from prometheus returned no series for %s", util.MatchersStringer(matchers))
+
+	var metas []chunks.Meta
+	err = promReader.Series(postings.At(), &labels.ScratchBuilder{}, &metas)
+	require.NoError(t, err)
+
+	require.Falsef(t, postings.Next(), "selecting %s returned more series than expected", util.MatchersStringer(matchers))
+	return metas
+}
+
+func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir string, minT, maxT int64, strategy seriesIteratorStrategy, expected, actual []seriesChunkRefsSet) {
 	t.Helper()
 	if !assert.Len(t, actual, len(expected)) {
 		return
 	}
+	if !strategy.isOverlapMintMaxt() {
+		// Adjust minT and maxT because we will use them to filter out chunks returned by prometheus
+		minT, maxT = math.MinInt64, math.MaxInt64
+	}
+
+	promBlock, err := promtsdb.OpenBlock(log.NewNopLogger(), path.Join(blockDir, blockID.String()), nil)
+	require.NoError(t, err)
+
+	promIndexReader, err := promBlock.Index()
+	require.NoError(t, err)
+
 	for i, actualSet := range actual {
 		expectedSet := expected[i]
 		if !assert.Equalf(t, expectedSet.len(), actualSet.len(), "%d", i) {
@@ -1310,21 +1504,33 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, expected, a
 		for j, actualSeries := range actualSet.series {
 			expectedSeries := expectedSet.series[j]
 			assert.Truef(t, labels.Equal(actualSeries.lset, expectedSeries.lset), "[%d, %d]: expected labels %s got %s", i, j, expectedSeries.lset, actualSeries.lset)
-			if !assert.Lenf(t, actualSeries.chunksRanges, len(expectedSeries.chunksRanges), "chunk ranges len [%d, %d]", i, j) {
-				continue
-			}
+
+			promChunks := newPromIndexSeriesIterator(lookupSeriesChunkMetas(t, actualSeries.lset, promIndexReader))
+			prevChunkRef, prevChunkLen := chunks.ChunkRef(0), uint64(0)
+
 			for k, actualChunksRange := range actualSeries.chunksRanges {
-				expectedRange := expectedSeries.chunksRanges[k]
-				assert.Equalf(t, expectedRange.firstRef(), actualChunksRange.firstRef(), "first ref [%d, %d, %d]", i, j, k)
 				assert.Equalf(t, blockID, actualChunksRange.blockID, "blockID [%d, %d, %d]", i, j, k)
-				require.Lenf(t, actualChunksRange.refs, len(expectedRange.refs), "chunks len [%d, %d, %d]", i, j, k)
 				for l, actualChunk := range actualChunksRange.refs {
-					expectedChunk := expectedRange.refs[l]
-					assert.Equalf(t, int(expectedChunk.segFileOffset), int(actualChunk.segFileOffset), "ref [%d, %d, %d, %d]", i, j, k, l)
-					assert.Equalf(t, expectedChunk.minTime, actualChunk.minTime, "minT [%d, %d, %d, %d]", i, j, k, l)
-					assert.Equalf(t, expectedChunk.maxTime, actualChunk.maxTime, "maxT [%d, %d, %d, %d]", i, j, k, l)
-					assert.Equalf(t, int(expectedChunk.length), int(actualChunk.length), "length [%d, %d, %d, %d]", i, j, k, l)
+					assert.True(t, promChunks.Next())
+					promChunk := promChunks.At()
+					if l == 0 {
+						assert.Equal(t, promChunk.Ref, actualChunksRange.firstRef(), "prom minT [%d, %d, %d]", i, j, k)
+					}
+					assert.Equalf(t, promChunk.Ref, chunkRef(actualChunksRange.segmentFile, actualChunk.segFileOffset), "ref [%d, %d, %d, %d]", i, j, k, l)
+					assert.Equalf(t, promChunk.MinTime, actualChunk.minTime, "minT [%d, %d, %d, %d]", i, j, k, l)
+					assert.Equalf(t, promChunk.MaxTime, actualChunk.maxTime, "maxT [%d, %d, %d, %d]", i, j, k, l)
+					assert.LessOrEqualf(t, uint64(prevChunkRef)+prevChunkLen, uint64(promChunk.Ref),
+						"estimated length shouldn't extend into the next chunk [%d, %d, %d, %d]", i, j, k, l)
+					assert.LessOrEqualf(t, actualChunk.length, uint32(tsdb.EstimatedMaxChunkSize),
+						"chunks can be larger than 16KB, but the estimted length should be capped to 16KB to limit the impact of bugs in estimations [%d, %d, %d, %d]", i, j, k, l)
+
+					prevChunkRef, prevChunkLen = promChunk.Ref, uint64(actualChunk.length)
 				}
+			}
+			for !strategy.isNoChunkRefs() && promChunks.Next() {
+				// There shouldn't be extra chunks returned by prometheus that are inside minT/maxT.
+				c := promChunks.At()
+				assert.False(t, c.OverlapsClosedInterval(minT, maxT))
 			}
 		}
 	}
@@ -1410,22 +1616,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			batchSize: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 8, minTime: 0, maxTime: 124, length: 49},
-						{segFileOffset: 57, minTime: 125, maxTime: 199, length: 38},
-					}}}},
-					{lset: labels.FromStrings("a", "1", "b", "2"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 95, minTime: 0, maxTime: 124, length: 49},
-						{segFileOffset: 144, minTime: 125, maxTime: 199, length: 38},
-					}}}},
-					{lset: labels.FromStrings("a", "2", "b", "1"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 182, minTime: 200, maxTime: 332, length: 52},
-						{segFileOffset: 234, minTime: 333, maxTime: 399, length: 36},
-					}}}},
-					{lset: labels.FromStrings("a", "2", "b", "2"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 270, minTime: 200, maxTime: 332, length: 52},
-						{segFileOffset: 322, minTime: 333, maxTime: 399, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
+					{lset: labels.FromStrings("a", "2", "b", "1")},
+					{lset: labels.FromStrings("a", "2", "b", "2")},
 				}},
 			},
 		},
@@ -1434,29 +1628,16 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			batchSize: 1,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 8, minTime: 0, maxTime: 124, length: 49},
-						// Since we don't know the ref of the next chunk we use the default estimation for the last chunk
-						{segFileOffset: 57, minTime: 125, maxTime: 199, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("a", "1", "b", "1")},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "2"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 95, minTime: 0, maxTime: 124, length: 49},
-						{segFileOffset: 144, minTime: 125, maxTime: 199, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "2", "b", "1"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 182, minTime: 200, maxTime: 332, length: 52},
-						{segFileOffset: 234, minTime: 333, maxTime: 399, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("a", "2", "b", "1")},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "2", "b", "2"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 270, minTime: 200, maxTime: 332, length: 52},
-						{segFileOffset: 322, minTime: 333, maxTime: 399, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("a", "2", "b", "2")},
 				}},
 			},
 		},
@@ -1465,14 +1646,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			batchSize: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 8, minTime: 0, maxTime: 124, length: 49},
-						{segFileOffset: 57, minTime: 125, maxTime: 199, length: 38},
-					}}}},
-					{lset: labels.FromStrings("a", "1", "b", "2"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 95, minTime: 0, maxTime: 124, length: 49},
-						{segFileOffset: 144, minTime: 125, maxTime: 199, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
 				}},
 			},
 		},
@@ -1481,16 +1656,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			batchSize: 1,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 8, minTime: 0, maxTime: 124, length: 49},
-						{segFileOffset: 57, minTime: 125, maxTime: 199, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("a", "1", "b", "1")},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "2"), chunksRanges: []seriesChunkRefsRange{{refs: []seriesChunkRef{
-						{segFileOffset: 95, minTime: 0, maxTime: 124, length: 49},
-						{segFileOffset: 144, minTime: 125, maxTime: 199, length: tsdb.EstimatedMaxChunkSize},
-					}}}},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
 				}},
 			},
 		},
@@ -1526,54 +1695,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				}},
 			},
 		},
-		"partitions multiple chunks into 2 ranges": {
-			matcher:   labels.MustNewMatcher(labels.MatchRegexp, "a", "3"),
-			batchSize: 1,
-			expectedSeries: []seriesChunkRefsSet{
-				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "3", "b", "1"), chunksRanges: []seriesChunkRefsRange{
-						{refs: []seriesChunkRef{
-							{segFileOffset: 358, length: 49, minTime: 0, maxTime: 124},
-							{segFileOffset: 407, length: 50, minTime: 125, maxTime: 249},
-							{segFileOffset: 457, length: 50, minTime: 250, maxTime: 374},
-							{segFileOffset: 507, length: 50, minTime: 375, maxTime: 499},
-							{segFileOffset: 557, length: 50, minTime: 500, maxTime: 624},
-							{segFileOffset: 607, length: 50, minTime: 625, maxTime: 749},
-							{segFileOffset: 657, length: 50, minTime: 750, maxTime: 874},
-							{segFileOffset: 707, length: 50, minTime: 875, maxTime: 999},
-							{segFileOffset: 757, length: 50, minTime: 1000, maxTime: 1124},
-							{segFileOffset: 807, length: 50, minTime: 1125, maxTime: 1249},
-						}},
-						{refs: []seriesChunkRef{
-							{segFileOffset: 857, length: 50, minTime: 1250, maxTime: 1374},
-							{segFileOffset: 907, length: 50, minTime: 1375, maxTime: 1499},
-							{segFileOffset: 957, length: tsdb.EstimatedMaxChunkSize, minTime: 1500, maxTime: 1559},
-						}},
-					}},
-				}},
-				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "3", "b", "2"), chunksRanges: []seriesChunkRefsRange{
-						{refs: []seriesChunkRef{
-							{segFileOffset: 991, length: 49, minTime: 0, maxTime: 124},
-							{segFileOffset: 1040, length: 50, minTime: 125, maxTime: 249},
-							{segFileOffset: 1090, length: 50, minTime: 250, maxTime: 374},
-							{segFileOffset: 1140, length: 50, minTime: 375, maxTime: 499},
-							{segFileOffset: 1190, length: 50, minTime: 500, maxTime: 624},
-							{segFileOffset: 1240, length: 50, minTime: 625, maxTime: 749},
-							{segFileOffset: 1290, length: 50, minTime: 750, maxTime: 874},
-							{segFileOffset: 1340, length: 50, minTime: 875, maxTime: 999},
-							{segFileOffset: 1390, length: 50, minTime: 1000, maxTime: 1124},
-							{segFileOffset: 1440, length: 50, minTime: 1125, maxTime: 1249},
-						}},
-						{refs: []seriesChunkRef{
-							{segFileOffset: 1490, length: 50, minTime: 1250, maxTime: 1374},
-							{segFileOffset: 1540, length: 50, minTime: 1375, maxTime: 1499},
-							{segFileOffset: 1590, length: tsdb.EstimatedMaxChunkSize, minTime: 1500, maxTime: 1559},
-						}},
-					}},
-				}},
-			},
-		},
 		"doesn't return a series if its chunks are around minT/maxT but not within it": {
 			matcher: labels.MustNewMatcher(labels.MatchRegexp, "a", "4"),
 			minT:    500, maxT: 600, // The chunks for this timeseries are between 0 and 99 and 1000 and 1099
@@ -1603,6 +1724,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				maxT = testCase.maxT
 			}
 
+			var strategy seriesIteratorStrategy
+			if testCase.skipChunks {
+				strategy |= noChunkRefs
+			}
 			iterator, err := openBlockSeriesChunkRefsSetsIterator(
 				ctx,
 				testCase.batchSize,
@@ -1613,17 +1738,17 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				[]*labels.Matcher{testCase.matcher},
 				nil,
 				cachedSeriesHasher{hashCache},
-				testCase.skipChunks,
+				strategy,
 				minT,
 				maxT,
-				2,
 				newSafeQueryStats(),
 				nil,
+				log.NewNopLogger(),
 			)
 			require.NoError(t, err)
 
 			actualSeriesSets := readAllSeriesChunkRefsSet(iterator)
-			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, testCase.expectedSeries, actualSeriesSets)
+			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, minT, maxT, strategy, testCase.expectedSeries, actualSeriesSets)
 			if testCase.expectedErr != "" {
 				assert.ErrorContains(t, iterator.Err(), "test limit exceeded")
 			} else {
@@ -1714,12 +1839,12 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 					testCase.matchers,
 					nil,
 					cachedSeriesHasher{hashCache},
-					true, // skip chunks since we are testing labels filtering
+					noChunkRefs, // skip chunks since we are testing labels filtering
 					block.meta.MinTime,
 					block.meta.MaxTime,
-					2,
 					newSafeQueryStats(),
 					nil,
+					log.NewNopLogger(),
 				)
 				require.NoError(t, err)
 				allSets := readAllSeriesChunkRefsSet(iterator)
@@ -1765,6 +1890,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 					hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
 
 					b.ResetTimer()
+					b.ReportAllocs()
 
 					for i := 0; i < b.N; i++ {
 						iterator, err := openBlockSeriesChunkRefsSetsIterator(
@@ -1777,12 +1903,12 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							testCase.matchers,
 							nil,
 							cachedSeriesHasher{hashCache},
-							false, // we don't skip chunks, so we can measure impact in loading chunk refs too
+							defaultStrategy, // we don't skip chunks, so we can measure impact in loading chunk refs too
 							block.meta.MinTime,
 							block.meta.MaxTime,
-							2,
 							newSafeQueryStats(),
 							nil,
+							log.NewNopLogger(),
 						)
 						require.NoError(b, err)
 
@@ -2325,11 +2451,11 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						true,
+						noChunkRefs,
 						b.meta.MinTime,
 						b.meta.MaxTime,
-						1,
 						statsColdCache,
+						nil,
 						log.NewNopLogger(),
 					)
 
@@ -2356,11 +2482,11 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						testCase.matchers,
 						testCase.shard,
 						seriesHasher,
-						true,
+						noChunkRefs,
 						b.meta.MinTime,
 						b.meta.MaxTime,
-						1,
 						statsWarnCache,
+						nil,
 						log.NewNopLogger(),
 					)
 					require.NoError(t, err)
@@ -2442,6 +2568,46 @@ func TestPostingsSetsIterator(t *testing.T) {
 	}
 }
 
+func TestReusedPostingsAndMatchers(t *testing.T) {
+	postingsList := [][]storage.SeriesRef{
+		nil,
+		{},
+		{1, 2, 3},
+	}
+	matchersList := [][]*labels.Matcher{
+		nil,
+		{},
+		{labels.MustNewMatcher(labels.MatchEqual, "a", "b")},
+	}
+
+	for _, firstPostings := range postingsList {
+		for _, firstMatchers := range matchersList {
+			for _, secondPostings := range postingsList {
+				for _, secondMatchers := range matchersList {
+					r := reusedPostingsAndMatchers{}
+					require.False(t, r.isSet())
+
+					verify := func() {
+						r.set(firstPostings, firstMatchers)
+						require.True(t, r.isSet())
+						if firstPostings == nil {
+							require.Equal(t, []storage.SeriesRef{}, r.ps)
+						} else {
+							require.Equal(t, firstPostings, r.ps)
+						}
+						require.Equal(t, firstMatchers, r.matchers)
+					}
+					verify()
+
+					// This should not overwrite the first set.
+					r.set(secondPostings, secondMatchers)
+					verify()
+				}
+			}
+		}
+	}
+}
+
 type mockSeriesHasher struct {
 	cached map[storage.SeriesRef]uint64
 	hashes map[string]uint64
@@ -2491,12 +2657,12 @@ func (s *sliceSeriesChunkRefsSetIterator) Err() error {
 	return nil
 }
 
-type limiter struct {
+type staticLimiter struct {
 	limit   int
 	current atomic.Uint64
 }
 
-func (l *limiter) Reserve(num uint64) error {
+func (l *staticLimiter) Reserve(num uint64) error {
 	if l.current.Add(num) > uint64(l.limit) {
 		return errors.New("test limit exceeded")
 	}

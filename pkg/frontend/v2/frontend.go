@@ -18,21 +18,21 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // Config for a Frontend.
@@ -66,12 +66,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
 }
 
-func (cfg *Config) Validate(log log.Logger) error {
+func (cfg *Config) Validate() error {
 	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.SchedulerAddress != "" {
 		return fmt.Errorf("scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
 	}
 
-	return cfg.GRPCClientConfig.Validate(log)
+	return cfg.GRPCClientConfig.Validate()
 }
 
 // Frontend implements GrpcRoundTripper. It queues HTTP requests,
@@ -98,6 +98,7 @@ type frontendRequest struct {
 	userID       string
 	statsEnabled bool
 
+	ctx    context.Context
 	cancel context.CancelFunc
 
 	enqueue  chan enqueueResult
@@ -200,6 +201,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		}
 	}
 
+	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -209,6 +211,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		userID:       userID,
 		statsEnabled: stats.IsEnabled(ctx),
 
+		ctx:    ctx,
 		cancel: cancel,
 
 		// Buffer of 1 to ensure response or error can be written to the channel
@@ -223,9 +226,12 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	retries := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
 enqueueAgain:
+	level.Debug(spanLogger).Log("msg", "enqueuing request")
+
 	var cancelCh chan<- uint64
 	select {
 	case <-ctx.Done():
+		level.Debug(spanLogger).Log("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
 		return nil, ctx.Err()
 
 	case f.requestsCh <- freq:
@@ -237,27 +243,36 @@ enqueueAgain:
 		} else if enqRes.status == failed {
 			retries--
 			if retries > 0 {
+				level.Debug(spanLogger).Log("msg", "enqueuing request failed, will retry")
 				goto enqueueAgain
 			}
 		}
 
+		level.Debug(spanLogger).Log("msg", "enqueuing request failed, retries are exhausted, aborting")
+
 		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
 	}
 
+	level.Debug(spanLogger).Log("msg", "request enqueued successfully, waiting for response")
+
 	select {
 	case <-ctx.Done():
+		level.Debug(spanLogger).Log("msg", "request context cancelled after enqueuing request, aborting", "err", ctx.Err())
+
 		if cancelCh != nil {
 			select {
 			case cancelCh <- freq.queryID:
 				// cancellation sent.
 			default:
 				// failed to cancel, ignore.
-				level.Warn(f.log).Log("msg", "failed to send cancellation request to scheduler, queue full")
+				level.Warn(spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
 			}
 		}
 		return nil, ctx.Err()
 
 	case resp := <-freq.response:
+		level.Debug(spanLogger).Log("msg", "received response")
+
 		if stats.ShouldTrackHTTPGRPCResponse(resp.HttpResponse) {
 			stats := stats.FromContext(ctx)
 			stats.Merge(resp.Stats) // Safe if stats is nil.

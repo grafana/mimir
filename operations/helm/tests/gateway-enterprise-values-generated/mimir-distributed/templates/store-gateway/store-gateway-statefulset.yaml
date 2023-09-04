@@ -14,9 +14,10 @@ metadata:
     rollout-group: store-gateway
     zone: zone-a
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 1
   selector:
     matchLabels:
@@ -139,6 +140,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
             - name: "GOMEMLIMIT"
               value: "536870912"
           envFrom:
@@ -158,9 +161,10 @@ metadata:
     rollout-group: store-gateway
     zone: zone-b
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 1
   selector:
     matchLabels:
@@ -283,6 +287,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
             - name: "GOMEMLIMIT"
               value: "536870912"
           envFrom:
@@ -302,9 +308,10 @@ metadata:
     rollout-group: store-gateway
     zone: zone-c
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 1
   selector:
     matchLabels:
@@ -427,6 +434,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
             - name: "GOMEMLIMIT"
               value: "536870912"
           envFrom:

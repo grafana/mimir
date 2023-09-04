@@ -1,9 +1,9 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/distributor/
-title: "Grafana Mimir distributor"
-menuTitle: "Distributor"
-description: "The distributor validates time-series data and sends the data to ingesters."
+description: The distributor validates time-series data and sends the data to ingesters.
+menuTitle: Distributor
+title: Grafana Mimir distributor
 weight: 20
 ---
 
@@ -11,7 +11,7 @@ weight: 20
 
 The distributor is a stateless component that receives time-series data from Prometheus or the Grafana agent.
 The distributor validates the data for correctness and ensures that it is within the configured limits for a given tenant.
-The distributor then divides the data into batches and sends it to multiple [ingesters]({{< relref "ingester.md" >}}) in parallel, shards the series among ingesters, and replicates each series by the configured replication factor. By default, the configured replication factor is three.
+The distributor then divides the data into batches and sends it to multiple [ingesters]({{< relref "./ingester" >}}) in parallel, shards the series among ingesters, and replicates each series by the configured replication factor. By default, the configured replication factor is three.
 
 ## Validation
 
@@ -35,7 +35,7 @@ The distributor validation includes the following checks:
 - Each exemplar has a timestamp and at least one non-empty label name and value pair.
 - Each exemplar has no more than 128 labels.
 
-> **Note:** For each tenant, you can override the validation checks by modifying the overrides section of the [runtime configuration]({{< relref "../../../configure/about-runtime-configuration.md" >}}).
+> **Note:** For each tenant, you can override the validation checks by modifying the overrides section of the [runtime configuration]({{< relref "../../../configure/about-runtime-configuration" >}}).
 
 ## Rate limiting
 
@@ -67,8 +67,8 @@ Use the following flags to configure the rate limits:
 
 ### Configuration
 
-The distributors form a [hash ring]({{< relref "../hash-ring/index.md" >}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
-To configure the distributors' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings.md" >}}).
+The distributors form a [hash ring]({{< relref "../hash-ring" >}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
+To configure the distributors' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings" >}}).
 
 ## High-availability tracker
 
@@ -79,7 +79,7 @@ The distributor includes an HA tracker.
 When the HA tracker is enabled, the distributor deduplicates incoming series from Prometheus HA pairs.
 This enables you to have multiple HA replicas of the same Prometheus servers that write the same series to Mimir and then deduplicates the series in the Mimir distributor.
 
-For more information about HA deduplication and how to configure it, refer to [configure HA deduplication]({{< relref "../../../configure/configure-high-availability-deduplication.md" >}}).
+For more information about HA deduplication and how to configure it, refer to [configure HA deduplication]({{< relref "../../../configure/configure-high-availability-deduplication" >}}).
 
 ## Sharding and replication
 
@@ -92,7 +92,7 @@ For each incoming series, the distributor computes a hash using the metric name,
 The computed hash is called a _token_.
 The distributor looks up the token in the hash ring to determine which ingesters to write a series to.
 
-For more information, see [hash ring]({{< relref "../hash-ring/index.md" >}}).
+For more information, see [hash ring]({{< relref "../hash-ring" >}}).
 
 #### Quorum consistency
 

@@ -12,9 +12,9 @@ weight: 60
 You can monitor Grafana Mimir or Grafana Enterprise Metrics itself, by collecting metrics and logs from Mimir or GEM that is running on a Kubernetes cluster. This is called _metamonitoring_.
 
 > **Note:** In Grafana, you can create dashboards and receive alerts about those metrics and logs. To set up dashboards and alerts,
-> see [Installing Grafana Mimir dashboards and alerts](/docs/mimir/{{< param "mimir_docs_version" >}}/operators-guide/monitor-grafana-mimir/installing-dashboards-and-alerts/) or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations/integration-mimir/).
+> see [Installing Grafana Mimir dashboards and alerts](/docs/mimir/{{< param "mimir_docs_version" >}}/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/) or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations/integration-mimir/).
 
-Alternatively, to monitor the health of your system without using the Helm chart, see [Collect metrics and logs without the Helm chart](/docs/mimir/{{< param "mimir_docs_version" >}}/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-without-the-helm-chart).
+Alternatively, to monitor the health of your system without using the Helm chart, see [Collect metrics and logs without the Helm chart](/docs/mimir/{{< param "mimir_docs_version" >}}/manage/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-without-the-helm-chart).
 
 ## Configure the Grafana Agent operator via the Helm chart
 

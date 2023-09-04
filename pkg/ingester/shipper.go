@@ -27,84 +27,73 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
-type metrics struct {
-	dirSyncs                 prometheus.Counter
-	dirSyncFailures          prometheus.Counter
+// shipperMetrics holds the shipper metrics. Mimir runs 1 shipper for each tenant but
+// the metrics instance is shared across all tenants.
+type shipperMetrics struct {
 	uploads                  prometheus.Counter
 	uploadFailures           prometheus.Counter
 	lastSuccessfulUploadTime prometheus.Gauge
 }
 
-func newMetrics(reg prometheus.Registerer) *metrics {
-	var m metrics
-
-	m.dirSyncs = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_dir_syncs_total",
-		Help: "Total number of dir syncs",
-	})
-	m.dirSyncFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_dir_sync_failures_total",
-		Help: "Total number of failed dir syncs",
-	})
-	m.uploads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_uploads_total",
-		Help: "Total number of uploaded blocks",
-	})
-	m.uploadFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_upload_failures_total",
-		Help: "Total number of block upload failures",
-	})
-	m.lastSuccessfulUploadTime = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "thanos_shipper_last_successful_upload_time",
-		Help: "Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket.",
-	})
-
-	return &m
+func newShipperMetrics(reg prometheus.Registerer) *shipperMetrics {
+	return &shipperMetrics{
+		uploads: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_shipper_uploads_total",
+			Help: "Total number of uploaded TSDB blocks",
+		}),
+		uploadFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_shipper_upload_failures_total",
+			Help: "Total number of TSDB block upload failures",
+		}),
+		lastSuccessfulUploadTime: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_shipper_last_successful_upload_timestamp_seconds",
+			Help: "Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.",
+		}),
+	}
 }
 
 type ShipperConfigProvider interface {
 	OutOfOrderBlocksExternalLabelEnabled(userID string) bool
 }
 
-// Shipper watches a directory for matching files and directories and uploads
+// shipper watches a directory for matching files and directories and uploads
 // them to a remote data store.
-// Shipper implements BlocksUploader interface.
-type Shipper struct {
+// shipper implements BlocksUploader interface.
+type shipper struct {
 	logger      log.Logger
 	cfgProvider ShipperConfigProvider
 	userID      string
 	dir         string
-	metrics     *metrics
+	metrics     *shipperMetrics
 	bucket      objstore.Bucket
-	source      metadata.SourceType
+	source      block.SourceType
 }
 
-// NewShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
+// newShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
 // remote if necessary. It attaches the Thanos metadata section in each meta JSON file.
 // If uploadCompacted is enabled, it also uploads compacted blocks which are already in filesystem.
-func NewShipper(
+func newShipper(
 	logger log.Logger,
 	cfgProvider ShipperConfigProvider,
 	userID string,
-	r prometheus.Registerer,
+	metrics *shipperMetrics,
 	dir string,
 	bucket objstore.Bucket,
-	source metadata.SourceType,
-) *Shipper {
+	source block.SourceType,
+) *shipper {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	return &Shipper{
+	return &shipper{
 		logger:      logger,
 		cfgProvider: cfgProvider,
 		userID:      userID,
 		dir:         dir,
 		bucket:      bucket,
-		metrics:     newMetrics(r),
+		metrics:     metrics,
 		source:      source,
 	}
 }
@@ -113,7 +102,7 @@ func NewShipper(
 // to the object bucket once.
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
-func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
+func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
 	shippedBlocks, err := readShippedBlocks(s.dir)
 	if err != nil {
 		// If we encounter any error, proceed with an new list of shipped blocks.
@@ -186,7 +175,6 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 		level.Warn(s.logger).Log("msg", "updating meta file failed", "err", err)
 	}
 
-	s.metrics.dirSyncs.Inc()
 	if uploadErrs > 0 {
 		s.metrics.uploadFailures.Add(float64(uploadErrs))
 		return shipped, errors.Errorf("failed to sync %v blocks", uploadErrs)
@@ -198,7 +186,7 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 // upload method uploads the block to blocks storage. Block is uploaded with updated meta.json file with extra details.
 // This updated version of meta.json is however not persisted locally on the disk, to avoid race condition when TSDB
 // library could actually unload the block if it found meta.json file missing.
-func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
+func (s *shipper) upload(ctx context.Context, meta *block.Meta) error {
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
 	meta.Thanos.Source = s.source
@@ -215,7 +203,7 @@ func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 
 // blockMetasFromOldest returns the block meta of each block found in dir
 // sorted by minTime asc.
-func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
+func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 	fis, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, errors.Wrap(err, "read dir")
@@ -237,7 +225,7 @@ func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
 		if !fi.IsDir() {
 			continue
 		}
-		m, err := metadata.ReadFromDir(dir)
+		m, err := block.ReadMetaFromDir(dir)
 		if err != nil {
 			return nil, errors.Wrapf(err, "read metadata for block %v", dir)
 		}

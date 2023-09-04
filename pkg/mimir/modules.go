@@ -16,10 +16,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/dns"
+	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/runtimeconfig"
+	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
@@ -30,8 +32,6 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
-	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
-	"github.com/weaveworks/common/server"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -278,6 +279,14 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 		t.Cfg.LimitsConfig.QueryIngestersWithin = model.Duration(t.Cfg.Querier.QueryIngestersWithin)
 	}
 
+	// DeprecatedCacheUnalignedRequests is moving from a global config that can in the frontend yaml to a limit config
+	// We need to preserve the option in the frontend yaml for two releases
+	// If the frontend config is configured by the user, the default limit is overwritten
+	// TODO: Remove in Mimir 2.12.0
+	if t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests != querymiddleware.DefaultDeprecatedCacheUnalignedRequests {
+		t.Cfg.LimitsConfig.ResultsCacheForUnalignedQueryEnabled = t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests
+	}
+
 	// make sure to set default limits before we start loading configuration into memory
 	validation.SetDefaultLimitsForYAMLUnmarshalling(t.Cfg.LimitsConfig)
 	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Ingester.DefaultLimits)
@@ -353,6 +362,11 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, Write, All)
 
+	t.Cfg.Distributor.PreferStreamingChunksFromIngesters = t.Cfg.Querier.PreferStreamingChunksFromIngesters
+	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
+	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
+	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
+
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.Ring, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
@@ -395,9 +409,9 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		// single tenant. This allows for a less impactful enabling of tenant
 		// federation.
 		const bypassForSingleQuerier = true
-		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, util_log.Logger))
-		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, util_log.Logger)
-		t.MetadataSupplier = tenantfederation.NewMetadataSupplier(t.MetadataSupplier, util_log.Logger)
+		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger))
+		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
+		t.MetadataSupplier = tenantfederation.NewMetadataSupplier(t.MetadataSupplier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
 	}
 	return nil, nil
 }
@@ -455,7 +469,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
-	// Create a internal HTTP handler that is configured with the Prometheus API routes and points
+	// Create an internal HTTP handler that is configured with the Prometheus API routes and points
 	// to a Prometheus API struct instantiated with the Mimir Queryable.
 	internalQuerierRouter := api.NewQuerierHandler(
 		t.Cfg.API,
@@ -482,7 +496,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		internalQuerierRouter = t.Server.HTTPServer.Handler
 	} else {
 		// Monolithic mode requires a query-frontend endpoint for the worker. If no frontend and scheduler endpoint
-		// is configured, Mimir will default to using frontend on localhost on it's own GRPC listening port.
+		// is configured, Mimir will default to using frontend on localhost on it's own gRPC listening port.
 		if !t.Cfg.Worker.IsFrontendOrSchedulerConfigured() {
 			address := fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
 			level.Info(util_log.Logger).Log("msg", "The querier worker has not been configured with either the query-frontend or query-scheduler address. Because Mimir is running in monolithic mode, it's attempting an automatic worker configuration. If queries are unresponsive, consider explicitly configuring the query-frontend or query-scheduler address for querier worker.", "address", address)
@@ -500,7 +514,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		internalQuerierRouter = t.API.AuthMiddleware.Wrap(internalQuerierRouter)
 	}
 
-	// If neither query-frontend or query-scheduler is in use, then no worker is needed.
+	// If neither query-frontend nor query-scheduler is in use, then no worker is needed.
 	if !t.Cfg.Worker.IsFrontendOrSchedulerConfigured() {
 		return nil, nil
 	}
@@ -534,7 +548,7 @@ func (t *Mimir) initStoreQueryables() (services.Service, error) {
 }
 
 func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
-	t.ActiveGroupsCleanup = util.NewActiveGroupsCleanupService(3*time.Minute, t.Cfg.Ingester.ActiveSeriesMetricsIdleTimeout, t.Cfg.MaxSeparateMetricsGroupsPerUser)
+	t.ActiveGroupsCleanup = util.NewActiveGroupsCleanupService(3*time.Minute, t.Cfg.Ingester.ActiveSeriesMetrics.IdleTimeout, t.Cfg.MaxSeparateMetricsGroupsPerUser)
 	return t.ActiveGroupsCleanup, nil
 }
 
@@ -721,7 +735,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			// This makes this label more consistent and hopefully less confusing to users.
 			const bypassForSingleQuerier = false
 
-			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, util_log.Logger)
+			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
 
 			regularQueryFunc := rules.EngineQueryFunc(eng, queryable)
 			federatedQueryFunc := rules.EngineQueryFunc(eng, federatedQueryable)
@@ -815,6 +829,15 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
+	// TODO: Remove in Mimir 2.12.
+	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled != indexheader.DefaultIndexHeaderLazyLoadingEnabled {
+		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingEnabled = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled
+	}
+	// TODO: Remove in Mimir 2.12.
+	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout != indexheader.DefaultIndexHeaderLazyLoadingIdleTimeout {
+		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingIdleTimeout = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout
+	}
+
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.ActivityTracker)
 	if err != nil {
 		return nil, err
@@ -827,9 +850,6 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initMemberlistKV() (services.Service, error) {
-	reg := t.Registerer
-	t.Cfg.MemberlistKV.MetricsRegisterer = reg
-
 	// Append to the list of codecs instead of overwriting the value to allow third parties to inject their own codecs.
 	t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetCodec())
 
@@ -837,11 +857,11 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 		"cortex_",
 		prometheus.WrapRegistererWith(
 			prometheus.Labels{"component": "memberlist"},
-			reg,
+			t.Registerer,
 		),
 	)
 	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger, dnsProvider, reg)
+	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger, dnsProvider, t.Registerer)
 	t.API.RegisterMemberlistKV(t.Cfg.Server.PathPrefix, t.MemberlistKV)
 
 	// Update the config.

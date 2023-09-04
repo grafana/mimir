@@ -4,6 +4,7 @@ package continuoustest
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func TestVerifySamplesSum(t *testing.T) {
 
 func testVerifySamplesSumFloats(t *testing.T, generateValue generateValueFunc, testLabel string) {
 	// Round to millis since that's the precision of Prometheus timestamps.
-	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
+	now := time.Now().Round(time.Millisecond).UTC()
 
 	tests := map[string]struct {
 		samples                 []model.SamplePair
@@ -139,7 +140,14 @@ func testVerifySamplesSumFloats(t *testing.T, generateValue generateValueFunc, t
 
 func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, testLabel string) {
 	// Round to millis since that's the precision of Prometheus timestamps.
-	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
+	now := time.Now().Round(time.Millisecond).UTC()
+
+	if strings.HasSuffix(testLabel, "histogram_int_gauge") {
+		// If you don't do this, should_return_error_if_there's_a_missing_series will sometimes fail when the last histogram has an expected value of 0, making the number of series irrelevant to the expected sum which will be 0. This causes the error to happen on the second iteration with lastMatchingIndex as 2 instead of the usual first iteration with lastMatchingIndex as -1. So while it still fails with the expected error, the test fails as the lastMatchingIndex is unexpected. To fix this, we make sure the timestamp for the last histogram does not result in an expected value of 0.
+		for generateHistogramIntValue(now.Add(30*time.Second), true) == 0 {
+			now = now.Add(1 * time.Second)
+		}
+	}
 
 	tests := map[string]struct {
 		histograms              []model.SampleHistogramPair

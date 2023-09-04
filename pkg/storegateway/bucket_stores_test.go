@@ -44,8 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
-	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -117,11 +115,11 @@ func TestBucketStores_InitialSync(t *testing.T) {
 
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
-			cortex_bucket_stores_gate_queries_concurrent_max 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
-			cortex_bucket_stores_gate_queries_in_flight 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
 		"cortex_bucket_store_block_loads_total",
@@ -250,11 +248,11 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
-			cortex_bucket_stores_gate_queries_concurrent_max 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
-			cortex_bucket_stores_gate_queries_in_flight 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
 		"cortex_bucket_store_block_loads_total",
@@ -405,8 +403,8 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
-	cfg.BucketStore.IndexHeaderLazyLoadingEnabled = lazyLoadingEnabled
-	cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout = time.Minute
+	cfg.BucketStore.IndexHeader.LazyLoadingEnabled = lazyLoadingEnabled
+	cfg.BucketStore.IndexHeader.LazyLoadingIdleTimeout = time.Minute
 
 	storageDir := t.TempDir()
 
@@ -477,27 +475,27 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	// Generate a single block with 1 series and a lot of samples.
 	seriesWithOutOfOrderChunks := labels.FromStrings("case", "out_of_order", labels.MetricName, metricName)
 	seriesWithOverlappingChunks := labels.FromStrings("case", "overlapping", labels.MetricName, metricName)
-	specs := []*mimir_testutil.BlockSeriesSpec{
+	specs := []*block.SeriesSpec{
 		// Series with out of order chunks.
 		{
 			Labels: seriesWithOutOfOrderChunks,
 			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}}),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
 			},
 		},
 		// Series with out of order and overlapping chunks.
 		{
 			Labels: seriesWithOverlappingChunks,
 			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}}),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
 			},
 		},
 	}
 
 	storageDir := t.TempDir()
-	_, err := mimir_testutil.GenerateBlockFromSpec(userID, filepath.Join(storageDir, userID), specs)
+	_, err := block.GenerateBlockFromSpec(userID, filepath.Join(storageDir, userID), specs)
 	require.NoError(t, err)
 
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
@@ -626,7 +624,7 @@ func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, 
 	}
 
 	srv := newBucketStoreTestServer(t, stores)
-	seriesSet, warnings, _, err := srv.Series(setUserIDToGRPCContext(context.Background(), userID), req)
+	seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(context.Background(), userID), req)
 
 	return seriesSet, warnings, err
 }
@@ -759,7 +757,7 @@ func (u *userShardingStrategy) FilterUsers(context.Context, []string) ([]string,
 	return u.users, nil
 }
 
-func (u *userShardingStrategy) FilterBlocks(_ context.Context, userID string, metas map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
+func (u *userShardingStrategy) FilterBlocks(_ context.Context, userID string, metas map[ulid.ULID]*block.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
 	if util.StringsContain(u.users, userID) {
 		return nil
 	}
@@ -984,4 +982,11 @@ func generateSeries(card []int) []labels.Labels {
 	rec(0)
 
 	return series
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

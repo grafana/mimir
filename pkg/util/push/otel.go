@@ -12,13 +12,13 @@ import (
 
 	kitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/middleware"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -76,7 +77,8 @@ func OTLPHandler(
 
 		reader := r.Body
 		// Handle compression.
-		switch r.Header.Get("Content-Encoding") {
+		contentEncoding := r.Header.Get("Content-Encoding")
+		switch contentEncoding {
 		case "gzip":
 			gr, err := gzip.NewReader(reader)
 			if err != nil {
@@ -88,7 +90,7 @@ func OTLPHandler(
 			// No compression.
 
 		default:
-			return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", r.Header.Get("Content-Encoding"))
+			return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", contentEncoding)
 		}
 
 		// Protect against a large input.
@@ -109,15 +111,43 @@ func OTLPHandler(
 			return body, err
 		}
 
+		log, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.OTLPHandler.decodeAndConvert")
+		defer log.Span.Finish()
+
+		log.SetTag("content_type", contentType)
+		log.SetTag("content_encoding", contentEncoding)
+		log.SetTag("content_length", r.ContentLength)
+
 		otlpReq, err := decoderFunc(body)
 		if err != nil {
 			return body, err
 		}
 
+		level.Debug(log).Log("msg", "decoding complete, starting conversion")
+
 		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
 			return body, err
 		}
+
+		metricCount := len(metrics)
+		sampleCount := 0
+		histogramCount := 0
+		exemplarCount := 0
+
+		for _, m := range metrics {
+			sampleCount += len(m.Samples)
+			histogramCount += len(m.Histograms)
+			exemplarCount += len(m.Exemplars)
+		}
+
+		level.Debug(log).Log(
+			"msg", "OTLP to Prometheus conversion complete",
+			"metric_count", metricCount,
+			"sample_count", sampleCount,
+			"histogram_count", histogramCount,
+			"exemplar_count", exemplarCount,
+		)
 
 		req.Timeseries = metrics
 		return body, nil

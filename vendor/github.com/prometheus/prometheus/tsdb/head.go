@@ -136,6 +136,8 @@ type Head struct {
 	stats *HeadStats
 	reg   prometheus.Registerer
 
+	writeNotified wlog.WriteNotified
+
 	memTruncationInProcess atomic.Bool
 }
 
@@ -166,6 +168,8 @@ type HeadOptions struct {
 	ChunkEndTimeVariance float64
 	ChunkWriteQueueSize  int
 
+	SamplesPerChunk int
+
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
@@ -189,6 +193,8 @@ type HeadOptions struct {
 const (
 	// DefaultOutOfOrderCapMax is the default maximum size of an in-memory out-of-order chunk.
 	DefaultOutOfOrderCapMax int64 = 32
+	// DefaultSamplesPerChunk provides a default target number of samples per chunk.
+	DefaultSamplesPerChunk = 120
 )
 
 func DefaultHeadOptions() *HeadOptions {
@@ -199,6 +205,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkWriteBufferSize:          chunks.DefaultWriteBufferSize,
 		ChunkEndTimeVariance:          0,
 		ChunkWriteQueueSize:           chunks.DefaultWriteQueueSize,
+		SamplesPerChunk:               DefaultSamplesPerChunk,
 		StripeSize:                    DefaultStripeSize,
 		SeriesCallback:                &noopSeriesLifecycleCallback{},
 		IsolationDisabled:             defaultIsolationDisabled,
@@ -223,7 +230,7 @@ type SeriesLifecycleCallback interface {
 	// PostCreation is called after creating a series to indicate a creation of series.
 	PostCreation(labels.Labels)
 	// PostDeletion is called after deletion of series.
-	PostDeletion(...labels.Labels)
+	PostDeletion(map[chunks.HeadSeriesRef]labels.Labels)
 }
 
 // NewHead opens the head block in dir.
@@ -997,8 +1004,8 @@ func (h *Head) DisableNativeHistograms() {
 	h.opts.EnableNativeHistograms.Store(false)
 }
 
-// PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.
-func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.PostingsStats {
+// PostingsCardinalityStats returns highest cardinality stats by label and value names.
+func (h *Head) PostingsCardinalityStats(statsByLabelName string, limit int) *index.PostingsStats {
 	h.cardinalityMutex.Lock()
 	defer h.cardinalityMutex.Unlock()
 	currentTime := time.Duration(time.Now().Unix()) * time.Second
@@ -1009,7 +1016,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 	if h.cardinalityCache != nil {
 		return h.cardinalityCache
 	}
-	h.cardinalityCache = h.postings.Stats(statsByLabelName)
+	h.cardinalityCache = h.postings.Stats(statsByLabelName, limit)
 	h.lastPostingsStatsCall = time.Duration(time.Now().Unix()) * time.Second
 
 	return h.cardinalityCache
@@ -1239,9 +1246,9 @@ func (h *Head) truncateWAL(mint int64) error {
 			return true
 		}
 		h.deletedMtx.Lock()
-		_, ok := h.deleted[id]
+		keepUntil, ok := h.deleted[id]
 		h.deletedMtx.Unlock()
-		return ok
+		return ok && keepUntil > last
 	}
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
@@ -1262,7 +1269,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	// longer need to track deleted series that are before it.
 	h.deletedMtx.Lock()
 	for ref, segment := range h.deleted {
-		if segment < first {
+		if segment <= last {
 			delete(h.deleted, ref)
 		}
 	}
@@ -1349,12 +1356,12 @@ type Stats struct {
 
 // Stats returns important current HEAD statistics. Note that it is expensive to
 // calculate these.
-func (h *Head) Stats(statsByLabelName string) *Stats {
+func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	return &Stats{
 		NumSeries:         h.NumSeries(),
 		MaxTime:           h.MaxTime(),
 		MinTime:           h.MinTime(),
-		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName),
+		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName, limit),
 	}
 }
 
@@ -1741,16 +1748,17 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
 func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ int, _, _ int64, minMmapFile int) {
 	var (
-		deleted                  = map[storage.SeriesRef]struct{}{}
-		deletedForCallback       = []labels.Labels{}
-		rmChunks                 = 0
-		actualMint         int64 = math.MaxInt64
-		minOOOTime         int64 = math.MaxInt64
+		deleted                     = map[storage.SeriesRef]struct{}{}
+		rmChunks                    = 0
+		actualMint            int64 = math.MaxInt64
+		minOOOTime            int64 = math.MaxInt64
+		deletedFromPrevStripe       = 0
 	)
 	minMmapFile = math.MaxInt32
 	// Run through all series and truncate old chunks. Mark those with no
 	// chunks left as deleted and store their ID.
 	for i := 0; i < s.size; i++ {
+		deletedForCallback := make(map[chunks.HeadSeriesRef]labels.Labels, deletedFromPrevStripe)
 		s.locks[i].Lock()
 
 		for hash, all := range s.hashes[i] {
@@ -1804,7 +1812,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 				deleted[storage.SeriesRef(series.ref)] = struct{}{}
 				s.hashes[i].del(hash, series.lset)
 				delete(s.series[j], series.ref)
-				deletedForCallback = append(deletedForCallback, series.lset)
+				deletedForCallback[series.ref] = series.lset
 
 				if i != j {
 					s.locks[j].Unlock()
@@ -1816,8 +1824,8 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 
 		s.locks[i].Unlock()
 
-		s.seriesLifecycleCallback.PostDeletion(deletedForCallback...)
-		deletedForCallback = deletedForCallback[:0]
+		s.seriesLifecycleCallback.PostDeletion(deletedForCallback)
+		deletedFromPrevStripe = len(deletedForCallback)
 	}
 
 	if actualMint == math.MaxInt64 {
@@ -2105,9 +2113,9 @@ func (mc *mmappedChunk) OverlapsClosedInterval(mint, maxt int64) bool {
 
 type noopSeriesLifecycleCallback struct{}
 
-func (noopSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
-func (noopSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
-func (noopSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}
+func (noopSeriesLifecycleCallback) PreCreation(labels.Labels) error                     { return nil }
+func (noopSeriesLifecycleCallback) PostCreation(labels.Labels)                          {}
+func (noopSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
 func (h *Head) Size() int64 {
 	var walSize, wblSize int64

@@ -2,7 +2,7 @@
 aliases:
   - ../operators-guide/configure/configure-otel-collector/
 description: Learn how to write metrics from OpenTelemetry Collector into Mimir
-menuTitle: OTel Collector
+menuTitle: OpenTelemetry Collector
 title: Configure the OpenTelemetry Collector to write metrics into Mimir
 weight: 150
 ---
@@ -108,6 +108,8 @@ service:
 ## Format considerations
 
 We follow the official [OTLP Metric points to Prometheus](https://opentelemetry.io/docs/reference/specification/compatibility/prometheus_and_openmetrics/#otlp-metric-points-to-prometheus) specification.
+
+By default, Grafana Mimir does not accept [OpenTelemetry Exponential Histogram](https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram) metrics. For Grafana Mimir to accept them, ingestion of Prometheus Native Histogram metrics must first be enabled following the instructions in [Configure native histogram ingestion]({{< relref "./configure-native-histograms-ingestion" >}}). After this is done, Grafana Mimir will accept OpenTelemetry Exponential Histograms, and convert them into Prometheus Native Histograms following the conventions described in the [Exponential Histograms specification](https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/#exponential-histograms).
 
 You might experience the following common issues:
 

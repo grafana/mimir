@@ -11,15 +11,13 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
+	"github.com/grafana-tools/sdk"
 	"github.com/prometheus/common/model"
 	"golang.org/x/exp/slices"
-
-	"github.com/grafana-tools/sdk"
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
@@ -30,10 +28,8 @@ type GrafanaAnalyzeCommand struct {
 	apiKey      string
 	readTimeout time.Duration
 	folders     folderTitles
-	folderIDs   folderIDs
 
-	outputFile    string
-	datasourceUID string
+	outputFile string
 }
 
 type folderTitles []string
@@ -51,25 +47,7 @@ func (f folderTitles) IsCumulative() bool {
 	return true
 }
 
-type folderIDs []string
-
-func (f *folderIDs) Set(value string) error {
-	*f = append(*f, value)
-	return nil
-}
-
-func (f folderIDs) String() string {
-	return strings.Join(f, ",")
-}
-
-func (f folderIDs) IsCumulative() bool {
-	return true
-}
-
 func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-	output := &analyze.MetricsInGrafana{}
-	output.OverallMetrics = make(map[string]struct{})
-
 	ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
 	defer cancel()
 
@@ -78,29 +56,33 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	var params []sdk.SearchParam
-	if len(cmd.folderIDs) > 0 {
-		for _, folderIdStr := range cmd.folderIDs {
-			if folderIdInt, err := strconv.Atoi(folderIdStr); err == nil {
-				params = append(params, sdk.SearchFolderID(folderIdInt))
-			}
-		}
+	output, err := AnalyzeGrafana(ctx, c, cmd.folders)
+	if err != nil {
+		return err
 	}
-	params = append(params,
-		sdk.SearchType(sdk.SearchTypeDashboard),
-		sdk.SearchQuery(""),
-		sdk.SearchStarred(false),
-	)
-
-	boardLinks, err := c.Search(ctx, params...)
+	err = writeOut(output, cmd.outputFile)
 	if err != nil {
 		return err
 	}
 
-	filterOnFolders := len(cmd.folders) > 0
+	return nil
+}
+
+// AnalyzeGrafana analyze grafana's dashboards and return the list metrics used in them.
+func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string) (*analyze.MetricsInGrafana, error) {
+
+	output := &analyze.MetricsInGrafana{}
+	output.OverallMetrics = make(map[string]struct{})
+
+	boardLinks, err := getAllDashboards(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+
+	filterOnFolders := len(folders) > 0
 
 	for _, link := range boardLinks {
-		if filterOnFolders && !slices.Contains(cmd.folders, link.FolderTitle) {
+		if filterOnFolders && !slices.Contains(folders, link.FolderTitle) {
 			continue
 		}
 		data, _, err := c.GetRawDashboardByUID(ctx, link.UID)
@@ -113,15 +95,35 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
 			continue
 		}
-		analyze.ParseMetricsInBoard(output, board, cmd.datasourceUID)
+		analyze.ParseMetricsInBoard(output, board)
 	}
 
-	err = writeOut(output, cmd.outputFile)
-	if err != nil {
-		return err
+	var metricsUsed model.LabelValues
+	for metric := range output.OverallMetrics {
+		metricsUsed = append(metricsUsed, model.LabelValue(metric))
 	}
+	sort.Sort(metricsUsed)
+	output.MetricsUsed = metricsUsed
 
-	return nil
+	return output, nil
+}
+
+func getAllDashboards(ctx context.Context, c *sdk.Client) ([]sdk.FoundBoard, error) {
+	var currentPage uint = 1
+	var results []sdk.FoundBoard
+	for {
+		nextPageResults, err := c.Search(ctx, sdk.SearchType(sdk.SearchTypeDashboard), sdk.SearchPage(currentPage))
+		if err != nil {
+			return nil, err
+		}
+		// no more pages, we got everything
+		if len(nextPageResults) == 0 {
+			return results, nil
+		}
+		// we found more results, let's keep going
+		results = append(results, nextPageResults...)
+		currentPage++
+	}
 }
 
 func unmarshalDashboard(data []byte, link sdk.FoundBoard) (minisdk.Board, error) {
@@ -134,13 +136,6 @@ func unmarshalDashboard(data []byte, link sdk.FoundBoard) (minisdk.Board, error)
 }
 
 func writeOut(mig *analyze.MetricsInGrafana, outputFile string) error {
-	var metricsUsed model.LabelValues
-	for metric := range mig.OverallMetrics {
-		metricsUsed = append(metricsUsed, model.LabelValue(metric))
-	}
-	sort.Sort(metricsUsed)
-
-	mig.MetricsUsed = metricsUsed
 	out, err := json.MarshalIndent(mig, "", "  ")
 	if err != nil {
 		return err

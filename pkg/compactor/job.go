@@ -16,7 +16,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // Job holds a compaction job, which consists of a group of blocks that should be compacted together.
@@ -26,7 +25,7 @@ type Job struct {
 	key            string
 	labels         labels.Labels
 	resolution     int64
-	metasByMinTime []*metadata.Meta
+	metasByMinTime []*block.Meta
 	useSplitting   bool
 	shardingKey    string
 
@@ -58,7 +57,7 @@ func (job *Job) Key() string {
 }
 
 // AppendMeta the block with the given meta to the job.
-func (job *Job) AppendMeta(meta *metadata.Meta) error {
+func (job *Job) AppendMeta(meta *block.Meta) error {
 	if !labels.Equal(job.labels, labels.FromMap(meta.Thanos.Labels)) {
 		return errors.New("block and group labels do not match")
 	}
@@ -118,8 +117,8 @@ func (job *Job) MinCompactionLevel() int {
 }
 
 // Metas returns the metadata for each block that is part of this job, ordered by the block's MinTime
-func (job *Job) Metas() []*metadata.Meta {
-	out := make([]*metadata.Meta, len(job.metasByMinTime))
+func (job *Job) Metas() []*block.Meta {
+	out := make([]*block.Meta, len(job.metasByMinTime))
 	copy(out, job.metasByMinTime)
 	return out
 }
@@ -134,7 +133,7 @@ func (job *Job) Resolution() int64 {
 	return job.resolution
 }
 
-// UseSplitting returns whether blocks should be splitted into multiple shards when compacted.
+// UseSplitting returns whether blocks should be split into multiple shards when compacted.
 func (job *Job) UseSplitting() bool {
 	return job.useSplitting
 }
@@ -157,7 +156,7 @@ func (job *Job) String() string {
 // elapsed for the input job. If the wait period has not elapsed, then this function
 // also returns the Meta of the first source block encountered for which the wait
 // period has not elapsed yet.
-func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, userBucket objstore.Bucket) (bool, *metadata.Meta, error) {
+func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, userBucket objstore.Bucket) (bool, *block.Meta, error) {
 	if waitPeriod <= 0 {
 		return true, nil, nil
 	}

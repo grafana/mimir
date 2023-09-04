@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/prometheus/common/model"
@@ -22,10 +24,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 	"golang.org/x/exp/slices"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -267,7 +266,7 @@ type mergeQueryableScenario struct {
 
 func (s *mergeQueryableScenario) init() (storage.Querier, error) {
 	// initialize with default tenant label
-	q := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, log.NewNopLogger())
+	q := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, defaultConcurrency, log.NewNopLogger())
 
 	// inject tenants into context
 	ctx := context.Background()
@@ -346,7 +345,7 @@ type labelValuesScenario struct {
 func TestMergeQueryable_Querier(t *testing.T) {
 	t.Run("querying without a tenant specified should error", func(t *testing.T) {
 		queryable := &mockTenantQueryableWithFilter{logger: log.NewNopLogger()}
-		q := NewQueryable(queryable, false /* bypassWithSingleQuerier */, log.NewNopLogger())
+		q := NewQueryable(queryable, false /* bypassWithSingleQuerier */, defaultConcurrency, log.NewNopLogger())
 		// Create a context with no tenant specified.
 		ctx := context.Background()
 
@@ -900,7 +899,7 @@ func TestTracingMergeQueryable(t *testing.T) {
 	// set a multi tenant resolver
 	tenant.WithDefaultResolver(tenant.NewMultiResolver())
 	filter := mockTenantQueryableWithFilter{}
-	q := NewQueryable(&filter, false, log.NewNopLogger())
+	q := NewQueryable(&filter, false, defaultConcurrency, log.NewNopLogger())
 	// retrieve querier if set
 	querier, err := q.Querier(ctx, mint, maxt)
 	require.NoError(t, err)

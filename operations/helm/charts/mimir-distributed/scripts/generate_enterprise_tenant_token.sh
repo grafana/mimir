@@ -24,7 +24,7 @@ ADMIN_API_HOST="localhost"
 TENANT="test-tenant"
 
 echo "# Getting API TOKEN from tokengen job"
-API_TOKEN=$(kubectl logs -f "job/${HELM_INSTALL_NAME}-mimir-tokengen" | grep Token | awk '{print $2}')
+API_TOKEN=$(kubectl logs -f "job/${HELM_INSTALL_NAME}-tokengen" | grep Token | awk '{print $2}')
 echo "Succesfully found token: ${API_TOKEN}"
 
 echo "# Creating Test Tenant"

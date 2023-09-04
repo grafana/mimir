@@ -16,12 +16,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
@@ -46,8 +45,8 @@ var (
 )
 
 type Config struct {
-	Enabled          bool   `yaml:"enabled" category:"experimental"`
-	InstallationMode string `yaml:"installation_mode" category:"experimental"`
+	Enabled          bool   `yaml:"enabled"`
+	InstallationMode string `yaml:"installation_mode"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet

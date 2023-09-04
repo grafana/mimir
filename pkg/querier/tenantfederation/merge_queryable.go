@@ -12,15 +12,14 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/weaveworks/common/user"
 	"golang.org/x/exp/slices"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -37,8 +36,8 @@ import (
 // If the label "__tenant_id__" is already existing, its value is overwritten
 // by the tenant ID and the previous value is exposed through a new label
 // prefixed with "original_". This behaviour is not implemented recursively.
-func NewQueryable(upstream storage.Queryable, byPassWithSingleQuerier bool, logger log.Logger) storage.Queryable {
-	return NewMergeQueryable(defaultTenantLabel, tenantQuerierCallback(upstream), byPassWithSingleQuerier, logger)
+func NewQueryable(upstream storage.Queryable, byPassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) storage.Queryable {
+	return NewMergeQueryable(defaultTenantLabel, tenantQuerierCallback(upstream), byPassWithSingleQuerier, maxConcurrency, logger)
 }
 
 func tenantQuerierCallback(queryable storage.Queryable) MergeQuerierCallback {
@@ -81,12 +80,13 @@ type MergeQuerierCallback func(ctx context.Context, mint int64, maxt int64) (ids
 // If the label `idLabelName` is already existing, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
-func NewMergeQueryable(idLabelName string, callback MergeQuerierCallback, byPassWithSingleQuerier bool, logger log.Logger) storage.Queryable {
+func NewMergeQueryable(idLabelName string, callback MergeQuerierCallback, byPassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) storage.Queryable {
 	return &mergeQueryable{
 		logger:                  logger,
 		idLabelName:             idLabelName,
 		callback:                callback,
 		bypassWithSingleQuerier: byPassWithSingleQuerier,
+		maxConcurrency:          maxConcurrency,
 	}
 }
 
@@ -95,6 +95,7 @@ type mergeQueryable struct {
 	idLabelName             string
 	bypassWithSingleQuerier bool
 	callback                MergeQuerierCallback
+	maxConcurrency          int
 }
 
 // Querier returns a new mergeQuerier, which aggregates results from multiple
@@ -114,11 +115,12 @@ func (m *mergeQueryable) Querier(ctx context.Context, mint int64, maxt int64) (s
 	}
 
 	return &mergeQuerier{
-		logger:      m.logger,
-		ctx:         ctx,
-		idLabelName: m.idLabelName,
-		queriers:    queriers,
-		ids:         ids,
+		logger:         m.logger,
+		ctx:            ctx,
+		idLabelName:    m.idLabelName,
+		queriers:       queriers,
+		ids:            ids,
+		maxConcurrency: m.maxConcurrency,
 	}, nil
 }
 
@@ -129,11 +131,12 @@ func (m *mergeQueryable) Querier(ctx context.Context, mint int64, maxt int64) (s
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively
 type mergeQuerier struct {
-	logger      log.Logger
-	ctx         context.Context
-	queriers    []storage.Querier
-	idLabelName string
-	ids         []string
+	logger         log.Logger
+	ctx            context.Context
+	queriers       []storage.Querier
+	idLabelName    string
+	ids            []string
+	maxConcurrency int
 }
 
 // LabelValues returns all potential values for a label name.  It is not safe
@@ -247,7 +250,7 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(f stringSliceFunc, te
 		return nil
 	}
 
-	err := concurrency.ForEachJob(m.ctx, len(jobs), maxConcurrency, run)
+	err := concurrency.ForEachJob(m.ctx, len(jobs), m.maxConcurrency, run)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -325,7 +328,7 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 		return nil
 	}
 
-	err := concurrency.ForEachJob(ctx, len(jobs), maxConcurrency, run)
+	err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}

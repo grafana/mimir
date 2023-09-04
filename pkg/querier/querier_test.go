@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -24,14 +25,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestMain(m *testing.M) {
+	test.VerifyNoLeakTestMain(m)
+}
 
 const (
 	chunkOffset     = 1 * time.Hour
@@ -210,7 +216,7 @@ func TestQuerier(t *testing.T) {
 				// No samples returned by ingesters.
 				distributor := &mockDistributor{}
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryResponse{}, nil)
-				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
+				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 				overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 				require.NoError(t, err)
@@ -238,8 +244,8 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 
 	// Mock distributor to return chunks containing samples outside the queried range.
 	distributor := &mockDistributor{}
-	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		&client.QueryStreamResponse{
+	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				// Series with data points only before queryStart.
 				{
@@ -356,8 +362,8 @@ func TestBatchMergeChunks(t *testing.T) {
 
 	// Mock distributor to return chunks that need merging.
 	distributor := &mockDistributor{}
-	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		&client.QueryStreamResponse{
+	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				// Series with chunks in the 1,2 order, that need merge
 				{
@@ -594,7 +600,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 			// We don't need to query any data for this test, so an empty store is fine.
 			distributor := &mockDistributor{}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 			require.NoError(t, err)
@@ -614,10 +620,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 				// Assert on the time range of the actual executed query (5s delta).
 				delta := float64(5000)
 				require.Len(t, distributor.Calls, 1)
-				assert.InDelta(t, util.TimeToMillis(c.expectedStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
-				assert.InDelta(t, util.TimeToMillis(c.expectedEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+				assert.InDelta(t, util.TimeToMillis(c.expectedStartTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+				assert.InDelta(t, util.TimeToMillis(c.expectedEndTime), int64(distributor.Calls[0].Arguments.Get(3).(model.Time)), delta)
 			} else {
-				// Ensure no query has been executed executed (because skipped).
+				// Ensure no query has been executed (because skipped).
 				assert.Len(t, distributor.Calls, 0)
 			}
 		})
@@ -790,7 +796,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 			t.Run("query range", func(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
+				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 				require.NoError(t, err)
@@ -808,10 +814,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					// Assert on the time range of the actual executed query (5s delta).
 					delta := float64(5000)
 					require.Len(t, distributor.Calls, 1)
-					assert.InDelta(t, util.TimeToMillis(testData.expectedQueryStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
-					assert.InDelta(t, util.TimeToMillis(testData.expectedQueryEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+					assert.InDelta(t, util.TimeToMillis(testData.expectedQueryStartTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+					assert.InDelta(t, util.TimeToMillis(testData.expectedQueryEndTime), int64(distributor.Calls[0].Arguments.Get(3).(model.Time)), delta)
 				} else {
-					// Ensure no query has been executed executed (because skipped).
+					// Ensure no query has been executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
 				}
 			})
@@ -843,7 +849,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
 					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
 				} else {
-					// Ensure no query has been executed executed (because skipped).
+					// Ensure no query has been executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
 				}
 			})
@@ -872,7 +878,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(args.Get(2).(model.Time)), delta)
 					assert.Equal(t, matchers, args.Get(3).([]*labels.Matcher))
 				} else {
-					// Ensure no query has been executed executed (because skipped).
+					// Ensure no query has been executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
 				}
 			})
@@ -896,7 +902,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
 					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
 				} else {
-					// Ensure no query has been executed executed (because skipped).
+					// Ensure no query has been executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
 				}
 			})
@@ -1021,8 +1027,8 @@ func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matc
 
 var errDistributorError = fmt.Errorf("errDistributorError")
 
-func (m *errDistributor) QueryStream(context.Context, model.Time, model.Time, ...*labels.Matcher) (*client.QueryStreamResponse, error) {
-	return nil, errDistributorError
+func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
+	return client.CombinedQueryStreamResponse{}, errDistributorError
 }
 func (m *errDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
 	return nil, errDistributorError
@@ -1041,7 +1047,7 @@ func (m *errDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMetada
 	return nil, errDistributorError
 }
 
-func (m *errDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
+func (m *errDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, errDistributorError
 }
 
@@ -1051,8 +1057,8 @@ func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Ma
 	return nil, errors.New("method is not implemented")
 }
 
-func (d *emptyDistributor) QueryStream(context.Context, model.Time, model.Time, ...*labels.Matcher) (*client.QueryStreamResponse, error) {
-	return &client.QueryStreamResponse{}, nil
+func (d *emptyDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
+	return client.CombinedQueryStreamResponse{}, nil
 }
 
 func (d *emptyDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
@@ -1075,7 +1081,7 @@ func (d *emptyDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMeta
 	return nil, nil
 }
 
-func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
+func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, nil
 }
 

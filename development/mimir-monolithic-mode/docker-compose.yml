@@ -2,7 +2,7 @@ version: '3.4'
 services:
 
   consul:
-    image: consul
+    image: consul:1.15  # latest tag not supported
     command: [ "agent", "-dev" ,"-client=0.0.0.0", "-log-level=info" ]
     ports:
       - 8500:8500
@@ -20,7 +20,7 @@ services:
       - .data-minio:/data:delegated
 
   prometheus:
-    image: prom/prometheus:v2.40.6
+    image: prom/prometheus:v2.45.0
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus

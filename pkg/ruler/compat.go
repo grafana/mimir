@@ -13,6 +13,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -23,8 +25,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
@@ -43,15 +43,15 @@ type PusherAppender struct {
 
 	ctx             context.Context
 	pusher          Pusher
-	labels          []labels.Labels
+	labels          [][]mimirpb.LabelAdapter
 	samples         []mimirpb.Sample
-	histogramLabels []labels.Labels
+	histogramLabels [][]mimirpb.LabelAdapter
 	histograms      []mimirpb.Histogram
 	userID          string
 }
 
 func (a *PusherAppender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	a.labels = append(a.labels, l)
+	a.labels = append(a.labels, mimirpb.FromLabelsToLabelAdapters(l))
 	a.samples = append(a.samples, mimirpb.Sample{
 		TimestampMs: t,
 		Value:       v,
@@ -68,7 +68,7 @@ func (a *PusherAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ 
 }
 
 func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	a.histogramLabels = append(a.histogramLabels, l)
+	a.histogramLabels = append(a.histogramLabels, mimirpb.FromLabelsToLabelAdapters(l))
 	var hp mimirpb.Histogram
 	if h != nil {
 		hp = mimirpb.FromHistogramToHistogramProto(t, h)
@@ -295,7 +295,7 @@ func DefaultTenantManagerFactory(
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,
 			NotifyFunc:                 rules.SendAlerts(notifier, cfg.ExternalURL.String()),
-			Logger:                     log.With(logger, "user", userID),
+			Logger:                     log.With(logger, "component", "ruler", "insight", true, "user", userID),
 			Registerer:                 reg,
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,

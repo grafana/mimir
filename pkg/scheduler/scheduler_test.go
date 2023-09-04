@@ -17,14 +17,15 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go/config"
-	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -52,7 +53,7 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 		_ = services.StopAndAwaitTerminated(context.Background(), s)
 	})
 
-	l, err := net.Listen("tcp", "")
+	l, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
 	go func() {
@@ -339,16 +340,28 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 	// One more query from the same user will trigger an error.
 	fl := initFrontendLoop(t, frontendClient, "extra-frontend")
-	require.NoError(t, fl.Send(&schedulerpb.FrontendToScheduler{
+
+	req := schedulerpb.FrontendToScheduler{
 		Type:        schedulerpb.ENQUEUE,
 		QueryID:     0,
 		UserID:      "test",
 		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
-	}))
+	}
+
+	// Inject span context to the request so we can check handling of max outstanding requests.
+	mockTracer := mocktracer.New()
+	opentracing.SetGlobalTracer(mockTracer)
+	sp, _ := opentracing.StartSpanFromContextWithTracer(context.Background(), mockTracer, "client")
+	require.NoError(t, mockTracer.Inject(sp.Context(), opentracing.HTTPHeaders, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest)))
+
+	require.NoError(t, fl.Send(&req))
 
 	msg, err := fl.Recv()
 	require.NoError(t, err)
 	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, msg.Status)
+
+	spans := mockTracer.FinishedSpans()
+	require.Greater(t, len(spans), 0, "expected at least one span even if rejected by queue full")
 }
 
 func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
@@ -362,7 +375,7 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 		frontendGrpcServer := grpc.NewServer()
 		frontendv2pb.RegisterFrontendForQuerierServer(frontendGrpcServer, fm)
 
-		l, err := net.Listen("tcp", "")
+		l, err := net.Listen("tcp", "localhost:0")
 		require.NoError(t, err)
 
 		frontendAddress = l.Addr().String()

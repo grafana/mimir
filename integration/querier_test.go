@@ -28,14 +28,22 @@ import (
 )
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
-	testQuerierWithBlocksStorageRunningInMicroservicesMode(t, generateFloatSeries)
+	for _, streamingEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("streaming=%t", streamingEnabled), func(t *testing.T) {
+			testQuerierWithBlocksStorageRunningInMicroservicesMode(t, streamingEnabled, generateFloatSeries)
+		})
+	}
 }
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesModeWithHistograms(t *testing.T) {
-	testQuerierWithBlocksStorageRunningInMicroservicesMode(t, generateHistogramSeries)
+	for _, streamingEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("streaming=%t", streamingEnabled), func(t *testing.T) {
+			testQuerierWithBlocksStorageRunningInMicroservicesMode(t, streamingEnabled, generateHistogramSeries)
+		})
+	}
 }
 
-func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, seriesGenerator func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)) {
+func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, streamingEnabled bool, seriesGenerator func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)) {
 	tests := map[string]struct {
 		tenantShardSize      int
 		indexCacheBackend    string
@@ -162,6 +170,8 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
 				"-query-frontend.query-stats-enabled":                          "true",
 				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
+				"-querier.prefer-streaming-chunks-from-ingesters":              strconv.FormatBool(streamingEnabled),
+				"-querier.prefer-streaming-chunks-from-store-gateways":         strconv.FormatBool(streamingEnabled),
 			})
 
 			// Start store-gateways.
@@ -239,15 +249,21 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			// thanos_store_index_cache_requests_total: ExpandedPostings: 5, Postings: 2, Series: 2
 			instantQueriesCount++
 
+			comparingFunction := e2e.Equals
+			if streamingEnabled {
+				// Some metrics can be higher when streaming is enabled. The exact number is not deterministic in every case.
+				comparingFunction = e2e.GreaterOrEqual
+			}
+
 			// Check the in-memory index cache metrics (in the store-gateway).
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9), "thanos_store_index_cache_requests_total")) // 5 + 2 + 2
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(0), "thanos_store_index_cache_hits_total"))     // no cache hit cause the cache was empty
+			require.NoError(t, storeGateways.WaitSumMetrics(comparingFunction(9), "thanos_store_index_cache_requests_total")) // 5 + 2 + 2
+			require.NoError(t, storeGateways.WaitSumMetrics(comparingFunction(0), "thanos_store_index_cache_hits_total"))     // no cache hit cause the cache was empty
 
 			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items"))             // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items_added_total")) // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
 			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9*2), "thanos_memcached_operations_total")) // one set for each get
+				require.NoError(t, storeGateways.WaitSumMetrics(comparingFunction(9*2), "thanos_memcached_operations_total")) // one set for each get
 			}
 
 			// Query back again the 1st series from storage. This time it should use the index cache.
@@ -257,14 +273,14 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			assert.Equal(t, expectedVector1, result.(model.Vector))
 			expectedFetchedSeries++ // Storage only.
 
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9+2), "thanos_store_index_cache_requests_total"))
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "thanos_store_index_cache_hits_total")) // this time has used the index cache
+			require.NoError(t, storeGateways.WaitSumMetrics(comparingFunction(9+2), "thanos_store_index_cache_requests_total"))
+			require.NoError(t, storeGateways.WaitSumMetrics(comparingFunction(2), "thanos_store_index_cache_hits_total")) // this time has used the index cache
 
 			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items"))             // as before
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items_added_total")) // as before
 			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9*2+2), "thanos_memcached_operations_total")) // as before + 2 gets (expanded postings and series)
+				require.NoError(t, storeGateways.WaitSumMetrics(comparingFunction(9*2+2), "thanos_memcached_operations_total")) // as before + 2 gets (expanded postings and series)
 			}
 
 			// Query range. We expect 1 data point with a value of 3 (number of series).
@@ -868,77 +884,83 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	const blockRangePeriod = 5 * time.Second
 
-	s, err := e2e.NewScenario(networkName)
-	require.NoError(t, err)
-	defer s.Close()
+	for _, streamingEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("streaming enabled: %v", streamingEnabled), func(t *testing.T) {
+			s, err := e2e.NewScenario(networkName)
+			require.NoError(t, err)
+			defer s.Close()
 
-	// Configure the blocks storage to frequently compact TSDB head
-	// and ship blocks to the storage.
-	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-		"-blocks-storage.tsdb.block-ranges-period":   blockRangePeriod.String(),
-		"-blocks-storage.tsdb.ship-interval":         "1s",
-		"-blocks-storage.bucket-store.sync-interval": "1s",
-		"-blocks-storage.tsdb.retention-period":      ((blockRangePeriod * 2) - 1).String(),
-		"-querier.max-fetched-series-per-query":      "3",
-	})
+			// Configure the blocks storage to frequently compact TSDB head
+			// and ship blocks to the storage.
+			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+				"-blocks-storage.tsdb.block-ranges-period":             blockRangePeriod.String(),
+				"-blocks-storage.tsdb.ship-interval":                   "1s",
+				"-blocks-storage.bucket-store.sync-interval":           "1s",
+				"-blocks-storage.tsdb.retention-period":                ((blockRangePeriod * 2) - 1).String(),
+				"-querier.max-fetched-series-per-query":                "3",
+				"-querier.prefer-streaming-chunks-from-ingesters":      strconv.FormatBool(streamingEnabled),
+				"-querier.prefer-streaming-chunks-from-store-gateways": strconv.FormatBool(streamingEnabled),
+			})
 
-	// Start dependencies.
-	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-	memcached := e2ecache.NewMemcached()
-	require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
+			// Start dependencies.
+			consul := e2edb.NewConsul()
+			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			memcached := e2ecache.NewMemcached()
+			require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
-	// Add the memcached address to the flags.
-	flags["-blocks-storage.bucket-store.index-cache.memcached.addresses"] = "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort)
+			// Add the memcached address to the flags.
+			flags["-blocks-storage.bucket-store.index-cache.memcached.addresses"] = "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort)
 
-	// Start Mimir components.
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags)
-	require.NoError(t, s.StartAndWaitReady(distributor, ingester, storeGateway))
+			// Start Mimir components.
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+			storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags)
+			require.NoError(t, s.StartAndWaitReady(distributor, ingester, storeGateway))
 
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-	require.NoError(t, s.StartAndWaitReady(querier))
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+			require.NoError(t, s.StartAndWaitReady(querier))
 
-	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "user-1")
-	require.NoError(t, err)
+			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "user-1")
+			require.NoError(t, err)
 
-	// Push some series to Mimir.
-	series1Name := "series_1"
-	series2Name := "series_2"
-	series3Name := "series_3"
-	series4Name := "series_4"
-	series1Timestamp := time.Now()
-	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series3Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series4Timestamp := series1Timestamp.Add(blockRangePeriod * 3)
+			// Push some series to Mimir.
+			series1Name := "series_1"
+			series2Name := "series_2"
+			series3Name := "series_3"
+			series4Name := "series_4"
+			series1Timestamp := time.Now()
+			series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
+			series3Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
+			series4Timestamp := series1Timestamp.Add(blockRangePeriod * 3)
 
-	series1, _, _ := generateFloatSeries(series1Name, series1Timestamp, prompb.Label{Name: series1Name, Value: series1Name})
-	series2, _, _ := generateHistogramSeries(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
-	series3, _, _ := generateFloatSeries(series3Name, series3Timestamp, prompb.Label{Name: series3Name, Value: series3Name})
-	series4, _, _ := generateHistogramSeries(series4Name, series4Timestamp, prompb.Label{Name: series4Name, Value: series4Name})
+			series1, _, _ := generateFloatSeries(series1Name, series1Timestamp, prompb.Label{Name: series1Name, Value: series1Name})
+			series2, _, _ := generateHistogramSeries(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
+			series3, _, _ := generateFloatSeries(series3Name, series3Timestamp, prompb.Label{Name: series3Name, Value: series3Name})
+			series4, _, _ := generateHistogramSeries(series4Name, series4Timestamp, prompb.Label{Name: series4Name, Value: series4Name})
 
-	res, err := c.Push(series1)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
-	res, err = c.Push(series2)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
+			res, err := c.Push(series1)
+			require.NoError(t, err)
+			require.Equal(t, 200, res.StatusCode)
+			res, err = c.Push(series2)
+			require.NoError(t, err)
+			require.Equal(t, 200, res.StatusCode)
 
-	result, err := c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series2Timestamp.Add(1*time.Hour), blockRangePeriod)
-	require.NoError(t, err)
-	require.Equal(t, model.ValMatrix, result.Type())
+			result, err := c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series2Timestamp.Add(1*time.Hour), blockRangePeriod)
+			require.NoError(t, err)
+			require.Equal(t, model.ValMatrix, result.Type())
 
-	res, err = c.Push(series3)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
-	res, err = c.Push(series4)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
+			res, err = c.Push(series3)
+			require.NoError(t, err)
+			require.Equal(t, 200, res.StatusCode)
+			res, err = c.Push(series4)
+			require.NoError(t, err)
+			require.Equal(t, 200, res.StatusCode)
 
-	_, err = c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series4Timestamp.Add(1*time.Hour), blockRangePeriod)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
+			_, err = c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series4Timestamp.Add(1*time.Hour), blockRangePeriod)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
+		})
+	}
 }
 
 func TestHashCollisionHandling(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/weaveworks/common/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
@@ -99,7 +99,7 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, infl
 	ctx, cancel := context.WithCancel(c.Context())
 	defer cancel()
 
-	for {
+	for ctx.Err() == nil {
 		request, err := c.Recv()
 		if err != nil {
 			return err
@@ -133,9 +133,19 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, infl
 			return fmt.Errorf("unknown request type: %v", request.Type)
 		}
 	}
+
+	return ctx.Err()
 }
 
 func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.HTTPRequest, statsEnabled bool, sendHTTPResponse func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error) {
+	// Create a per-request context and cancel it once we're done processing the request.
+	// This is important for queries that stream chunks from ingesters to the querier, as SeriesChunksStreamReader relies
+	// on the context being cancelled to abort streaming and terminate a goroutine if the query is aborted. Requests that
+	// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
+	// net/http package.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	var stats *querier_stats.Stats
 	if statsEnabled {
 		stats, ctx = querier_stats.ContextWithEmptyStats(ctx)

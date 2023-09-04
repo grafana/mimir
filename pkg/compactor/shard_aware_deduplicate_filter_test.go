@@ -18,7 +18,6 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
@@ -344,19 +343,19 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 			f := NewShardAwareDeduplicateFilter()
 			m := newTestFetcherMetrics()
 
-			metas := make(map[ulid.ULID]*metadata.Meta, len(tcase.input))
+			metas := make(map[ulid.ULID]*block.Meta, len(tcase.input))
 
 			inputLen := len(tcase.input)
 			for id, metaInfo := range tcase.input {
-				metas[id] = &metadata.Meta{
+				metas[id] = &block.Meta{
 					BlockMeta: tsdb.BlockMeta{
 						ULID: id,
 						Compaction: tsdb.BlockMetaCompaction{
 							Sources: metaInfo.sources,
 						},
 					},
-					Thanos: metadata.Thanos{
-						Downsample: metadata.ThanosDownsample{
+					Thanos: block.ThanosMeta{
+						Downsample: block.ThanosDownsample{
 							Resolution: metaInfo.resolution,
 						},
 						Labels: map[string]string{
@@ -366,7 +365,7 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 				}
 			}
 
-			expected := make(map[ulid.ULID]*metadata.Meta, len(tcase.expected))
+			expected := make(map[ulid.ULID]*block.Meta, len(tcase.expected))
 			for _, id := range tcase.expected {
 				m := metas[id]
 				require.NotNil(t, m)
@@ -396,21 +395,21 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 	var (
 		reg   prometheus.Registerer
 		count uint64
-		cases []map[ulid.ULID]*metadata.Meta
 	)
 
 	dedupFilter := NewShardAwareDeduplicateFilter()
 	synced := extprom.NewTxGaugeVec(reg, prometheus.GaugeOpts{}, []string{"state"})
 
 	for blocksNum := 10; blocksNum <= 10000; blocksNum *= 10 {
+		var cases []map[ulid.ULID]*block.Meta
 		// blocksNum number of blocks with all of them unique ULID and unique 100 sources.
-		cases = append(cases, make(map[ulid.ULID]*metadata.Meta, blocksNum))
+		cases = append(cases, make(map[ulid.ULID]*block.Meta, blocksNum))
 		for i := 0; i < blocksNum; i++ {
 
 			id := ulid.MustNew(count, nil)
 			count++
 
-			cases[0][id] = &metadata.Meta{
+			cases[0][id] = &block.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID: id,
 				},
@@ -424,19 +423,19 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 
 		// Case for running 3x resolution as they can be run concurrently.
 		// blocksNum number of blocks. all of them with unique ULID and unique 100 cases.
-		cases = append(cases, make(map[ulid.ULID]*metadata.Meta, 3*blocksNum))
+		cases = append(cases, make(map[ulid.ULID]*block.Meta, 3*blocksNum))
 
 		for i := 0; i < blocksNum; i++ {
 			for _, res := range []int64{0, 5 * 60 * 1000, 60 * 60 * 1000} {
 
 				id := ulid.MustNew(count, nil)
 				count++
-				cases[1][id] = &metadata.Meta{
+				cases[1][id] = &block.Meta{
 					BlockMeta: tsdb.BlockMeta{
 						ULID: id,
 					},
-					Thanos: metadata.Thanos{
-						Downsample: metadata.ThanosDownsample{Resolution: res},
+					Thanos: block.ThanosMeta{
+						Downsample: block.ThanosDownsample{Resolution: res},
 					},
 				}
 				for j := 0; j < 100; j++ {

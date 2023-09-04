@@ -26,26 +26,6 @@ func TestTSDBMetrics(t *testing.T) {
 	tsdbMetrics.setRegistryForUser("user3", populateTSDBMetrics(999))
 
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
-			# HELP cortex_ingester_shipper_dir_syncs_total Total number of TSDB dir syncs
-			# TYPE cortex_ingester_shipper_dir_syncs_total counter
-			# 12345 + 85787 + 999
-			cortex_ingester_shipper_dir_syncs_total 99131
-
-			# HELP cortex_ingester_shipper_dir_sync_failures_total Total number of failed TSDB dir syncs
-			# TYPE cortex_ingester_shipper_dir_sync_failures_total counter
-			# 2*(12345 + 85787 + 999)
-			cortex_ingester_shipper_dir_sync_failures_total 198262
-
-			# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
-			# TYPE cortex_ingester_shipper_uploads_total counter
-			# 3*(12345 + 85787 + 999)
-			cortex_ingester_shipper_uploads_total 297393
-
-			# HELP cortex_ingester_shipper_upload_failures_total Total number of TSDB block upload failures
-			# TYPE cortex_ingester_shipper_upload_failures_total counter
-			# 4*(12345 + 85787 + 999)
-			cortex_ingester_shipper_upload_failures_total 396524
-
 			# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
 			# TYPE cortex_ingester_tsdb_compactions_total counter
 			cortex_ingester_tsdb_compactions_total 693917
@@ -178,7 +158,7 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_mmap_chunk_corruptions_total counter
 			cortex_ingester_tsdb_mmap_chunk_corruptions_total 2577406
 
-			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk corruptions.
+			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk operations.
 			# TYPE cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total counter
 			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="add"} 150
 			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="complete"} 120
@@ -270,26 +250,6 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 	tsdbMetrics.removeRegistryForUser("user3")
 
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
-			# HELP cortex_ingester_shipper_dir_syncs_total Total number of TSDB dir syncs
-			# TYPE cortex_ingester_shipper_dir_syncs_total counter
-			# 12345 + 85787 + 999
-			cortex_ingester_shipper_dir_syncs_total 99131
-
-			# HELP cortex_ingester_shipper_dir_sync_failures_total Total number of failed TSDB dir syncs
-			# TYPE cortex_ingester_shipper_dir_sync_failures_total counter
-			# 2*(12345 + 85787 + 999)
-			cortex_ingester_shipper_dir_sync_failures_total 198262
-
-			# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
-			# TYPE cortex_ingester_shipper_uploads_total counter
-			# 3*(12345 + 85787 + 999)
-			cortex_ingester_shipper_uploads_total 297393
-
-			# HELP cortex_ingester_shipper_upload_failures_total Total number of TSDB block upload failures
-			# TYPE cortex_ingester_shipper_upload_failures_total counter
-			# 4*(12345 + 85787 + 999)
-			cortex_ingester_shipper_upload_failures_total 396524
-
 			# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
 			# TYPE cortex_ingester_tsdb_compactions_total counter
 			cortex_ingester_tsdb_compactions_total 693917
@@ -418,7 +378,7 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_mmap_chunk_corruptions_total counter
 			cortex_ingester_tsdb_mmap_chunk_corruptions_total 2577406
 
-			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk corruptions.
+			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk operations.
 			# TYPE cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total counter
 			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="add"} 150
 			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="complete"} 120
@@ -495,31 +455,6 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 
 func populateTSDBMetrics(base float64) *prometheus.Registry {
 	r := prometheus.NewRegistry()
-
-	// Thanos shipper.
-	dirSyncs := promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_dir_syncs_total",
-		Help: "Total number of dir syncs",
-	})
-	dirSyncs.Add(1 * base)
-
-	dirSyncFailures := promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_dir_sync_failures_total",
-		Help: "Total number of failed dir syncs",
-	})
-	dirSyncFailures.Add(2 * base)
-
-	uploads := promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_uploads_total",
-		Help: "Total number of uploaded blocks",
-	})
-	uploads.Add(3 * base)
-
-	uploadFailures := promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: "thanos_shipper_upload_failures_total",
-		Help: "Total number of block upload failures",
-	})
-	uploadFailures.Add(4 * base)
 
 	// TSDB Head
 	headSeries := promauto.With(r).NewGauge(prometheus.GaugeOpts{

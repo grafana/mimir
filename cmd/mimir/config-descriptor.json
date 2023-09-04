@@ -44,7 +44,7 @@
       "fieldDefaultValue": 0,
       "fieldFlag": "shutdown-delay",
       "fieldType": "duration",
-      "fieldCategory": "experimental"
+      "fieldCategory": "advanced"
     },
     {
       "kind": "field",
@@ -229,6 +229,33 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "cert",
+              "required": false,
+              "desc": "Server TLS certificate. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "key",
+              "required": false,
+              "desc": "Server TLS key. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_ca",
+              "required": false,
+              "desc": "Root certificate authority used to verify client certificates. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "cert_file",
               "required": false,
               "desc": "HTTP server cert path.",
@@ -281,6 +308,33 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "cert",
+              "required": false,
+              "desc": "Server TLS certificate. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "key",
+              "required": false,
+              "desc": "Server TLS key. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_ca",
+              "required": false,
+              "desc": "Root certificate authority used to verify client certificates. This configuration parameter is YAML only.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
             {
               "kind": "field",
               "name": "cert_file",
@@ -410,7 +464,7 @@
           "kind": "field",
           "name": "grpc_server_max_concurrent_streams",
           "required": false,
-          "desc": "Limit on the number of concurrent streams for gRPC calls (0 = unlimited)",
+          "desc": "Limit on the number of concurrent streams for gRPC calls per client connection (0 = unlimited)",
           "fieldValue": null,
           "fieldDefaultValue": 100,
           "fieldFlag": "server.grpc-max-concurrent-streams",
@@ -1476,6 +1530,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "write_requests_buffer_pooling_enabled",
+          "required": false,
+          "desc": "Enable pooling of buffers used for marshaling write requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.write-requests-buffer-pooling-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -1496,7 +1561,7 @@
           "fieldDefaultValue": false,
           "fieldFlag": "querier.iterators",
           "fieldType": "boolean",
-          "fieldCategory": "advanced"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -1507,7 +1572,7 @@
           "fieldDefaultValue": true,
           "fieldFlag": "querier.batch-iterators",
           "fieldType": "boolean",
-          "fieldCategory": "advanced"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -1642,6 +1707,72 @@
         },
         {
           "kind": "field",
+          "name": "prefer_streaming_chunks_from_ingesters",
+          "required": false,
+          "desc": "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.prefer-streaming-chunks-from-ingesters",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "prefer_streaming_chunks_from_store_gateways",
+          "required": false,
+          "desc": "Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.prefer-streaming-chunks-from-store-gateways",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "streaming_chunks_per_ingester_series_buffer_size",
+          "required": false,
+          "desc": "Number of series to buffer per ingester when streaming chunks from ingesters.",
+          "fieldValue": null,
+          "fieldDefaultValue": 256,
+          "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "streaming_chunks_per_store_gateway_series_buffer_size",
+          "required": false,
+          "desc": "Number of series to buffer per store-gateway when streaming chunks from store-gateways.",
+          "fieldValue": null,
+          "fieldDefaultValue": 256,
+          "fieldFlag": "querier.streaming-chunks-per-store-gateway-buffer-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "minimize_ingester_requests",
+          "required": false,
+          "desc": "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.minimize-ingester-requests",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "minimize_ingester_requests_hedging_delay",
+          "required": false,
+          "desc": "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 3000000000,
+          "fieldFlag": "querier.minimize-ingester-requests-hedging-delay",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
@@ -1767,7 +1898,7 @@
               "kind": "field",
               "name": "backoff_on_ratelimits",
               "required": false,
-              "desc": "Enable backoff and retry when we hit ratelimits.",
+              "desc": "Enable backoff and retry when we hit rate limits.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ingester.client.backoff-on-ratelimits",
@@ -1819,9 +1950,31 @@
             },
             {
               "kind": "field",
+              "name": "initial_stream_window_size",
+              "required": false,
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "ingester.client.initial-stream-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_connection_window_size",
+              "required": false,
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "ingester.client.initial-connection-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+              "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ingester.client.tls-enabled",
@@ -1904,6 +2057,82 @@
               "fieldFlag": "ingester.client.tls-min-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_timeout",
+              "required": false,
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "ingester.client.connect-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_base_delay",
+              "required": false,
+              "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingester.client.connect-backoff-base-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_max_delay",
+              "required": false,
+              "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "ingester.client.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "circuit_breaker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable circuit breaking when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.client.circuit-breaker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_threshold",
+              "required": false,
+              "desc": "Max number of requests that can fail in a row before the circuit breaker opens",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "ingester.client.circuit-breaker.failure-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "cooldown_period",
+              "required": false,
+              "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.client.circuit-breaker.cooldown-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -2303,7 +2532,7 @@
               "kind": "field",
               "name": "tokens_file_path",
               "required": false,
-              "desc": "File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.",
+              "desc": "File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup. Must be empty if -ingester.ring.token-generation-strategy is set to \"spread-minimizing\".",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingester.ring.tokens-file-path",
@@ -2432,14 +2661,36 @@
             },
             {
               "kind": "field",
-              "name": "readiness_check_ring_health",
+              "name": "token_generation_strategy",
               "required": false,
-              "desc": "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.",
+              "desc": "Specifies the strategy used for generating tokens for ingesters. Supported values are: random,spread-minimizing.",
+              "fieldValue": null,
+              "fieldDefaultValue": "random",
+              "fieldFlag": "ingester.ring.token-generation-strategy",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "spread_minimizing_join_ring_in_order",
+              "required": false,
+              "desc": "True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to \"spread-minimizing\".",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ingester.ring.readiness-check-ring-health",
+              "fieldFlag": "ingester.ring.spread-minimizing-join-ring-in-order",
               "fieldType": "boolean",
-              "fieldCategory": "deprecated"
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "spread_minimizing_zones",
+              "required": false,
+              "desc": "Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when \"token-generation-strategy\" is set to \"spread-minimizing\".",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingester.ring.spread-minimizing-zones",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -2575,6 +2826,39 @@
           "fieldFlag": "ingester.ignore-series-limit-for-metric-names",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "read_path_cpu_utilization_limit",
+          "required": false,
+          "desc": "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.read-path-cpu-utilization-limit",
+          "fieldType": "float",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "read_path_memory_utilization_limit",
+          "required": false,
+          "desc": "Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.read-path-memory-utilization-limit",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_utilization_based_limiter_cpu_samples",
+          "required": false,
+          "desc": "Enable logging of utilization based limiter CPU samples.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.log-utilization-based-limiter-cpu-samples",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -2611,23 +2895,21 @@
           "kind": "field",
           "name": "request_rate",
           "required": false,
-          "desc": "Per-tenant request rate limit in requests per second. 0 to disable.",
+          "desc": "Per-tenant push request rate limit in requests per second. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "distributor.request-rate-limit",
-          "fieldType": "float",
-          "fieldCategory": "experimental"
+          "fieldType": "float"
         },
         {
           "kind": "field",
           "name": "request_burst_size",
           "required": false,
-          "desc": "Per-tenant allowed request burst size. 0 to disable.",
+          "desc": "Per-tenant allowed push request burst size. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "distributor.request-burst-size",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         },
         {
           "kind": "field",
@@ -2754,7 +3036,7 @@
           "kind": "field",
           "name": "creation_grace_period",
           "required": false,
-          "desc": "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t \u003e (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable.",
+          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).",
           "fieldValue": null,
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "validation.create-grace-period",
@@ -2776,7 +3058,7 @@
           "kind": "field",
           "name": "ingestion_tenant_shard_size",
           "required": false,
-          "desc": "The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.",
+          "desc": "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "distributor.ingestion-tenant-shard-size",
@@ -2790,6 +3072,17 @@
           "fieldValue": null,
           "fieldDefaultValue": null,
           "fieldType": "relabel_config...",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "service_overload_status_code_on_rate_limit_enabled",
+          "required": false,
+          "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.service-overload-status-code-on-rate-limit-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
@@ -2910,6 +3203,17 @@
         },
         {
           "kind": "field",
+          "name": "max_estimated_fetched_chunks_per_query_multiplier",
+          "required": false,
+          "desc": "Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-estimated-fetched-chunks-per-query-multiplier",
+          "fieldType": "float",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_fetched_series_per_query",
           "required": false,
           "desc": "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable",
@@ -3017,8 +3321,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 4096,
           "fieldFlag": "query-frontend.query-sharding-max-regexp-size-bytes",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         },
         {
           "kind": "field",
@@ -3073,6 +3376,39 @@
           "fieldFlag": "query-frontend.results-cache-ttl-for-out-of-order-time-window",
           "fieldType": "duration",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "results_cache_ttl_for_cardinality_query",
+          "required": false,
+          "desc": "Time to live duration for cached cardinality query results. The value 0 disables the cache.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.results-cache-ttl-for-cardinality-query",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "results_cache_ttl_for_labels_query",
+          "required": false,
+          "desc": "Time to live duration for cached label names and label values query results. The value 0 disables the cache.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.results-cache-ttl-for-labels-query",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cache_unaligned_requests",
+          "required": false,
+          "desc": "Cache requests that are not step-aligned.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.cache-unaligned-requests",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -3350,7 +3686,7 @@
           "kind": "field",
           "name": "alertmanager_notification_rate_limit_per_integration",
           "required": false,
-          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord.",
+          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams.",
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldFlag": "alertmanager.notification-rate-limit-per-integration",
@@ -3533,7 +3869,7 @@
               "kind": "field",
               "name": "backoff_on_ratelimits",
               "required": false,
-              "desc": "Enable backoff and retry when we hit ratelimits.",
+              "desc": "Enable backoff and retry when we hit rate limits.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "querier.frontend-client.backoff-on-ratelimits",
@@ -3585,9 +3921,31 @@
             },
             {
               "kind": "field",
+              "name": "initial_stream_window_size",
+              "required": false,
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "querier.frontend-client.initial-stream-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_connection_window_size",
+              "required": false,
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "querier.frontend-client.initial-connection-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+              "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "querier.frontend-client.tls-enabled",
@@ -3669,6 +4027,39 @@
               "fieldDefaultValue": "",
               "fieldFlag": "querier.frontend-client.tls-min-version",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_timeout",
+              "required": false,
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "querier.frontend-client.connect-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_base_delay",
+              "required": false,
+              "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "querier.frontend-client.connect-backoff-base-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_max_delay",
+              "required": false,
+              "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "querier.frontend-client.connect-backoff-max-delay",
+              "fieldType": "duration",
               "fieldCategory": "advanced"
             }
           ],
@@ -3847,7 +4238,7 @@
               "kind": "field",
               "name": "backoff_on_ratelimits",
               "required": false,
-              "desc": "Enable backoff and retry when we hit ratelimits.",
+              "desc": "Enable backoff and retry when we hit rate limits.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "query-frontend.grpc-client-config.backoff-on-ratelimits",
@@ -3899,9 +4290,31 @@
             },
             {
               "kind": "field",
+              "name": "initial_stream_window_size",
+              "required": false,
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "query-frontend.grpc-client-config.initial-stream-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_connection_window_size",
+              "required": false,
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "query-frontend.grpc-client-config.initial-connection-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+              "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "query-frontend.grpc-client-config.tls-enabled",
@@ -3983,6 +4396,39 @@
               "fieldDefaultValue": "",
               "fieldFlag": "query-frontend.grpc-client-config.tls-min-version",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_timeout",
+              "required": false,
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "query-frontend.grpc-client-config.connect-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_base_delay",
+              "required": false,
+              "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "query-frontend.grpc-client-config.connect-backoff-base-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_max_delay",
+              "required": false,
+              "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "query-frontend.grpc-client-config.connect-backoff-max-delay",
+              "fieldType": "duration",
               "fieldCategory": "advanced"
             }
           ],
@@ -4367,6 +4813,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "connection_pool_timeout",
+                  "required": false,
+                  "desc": "Maximum duration to wait to get a connection from pool.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 4000000000,
+                  "fieldFlag": "query-frontend.results-cache.redis.connection-pool-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "min_idle_connections",
                   "required": false,
                   "desc": "Minimum number of idle connections.",
@@ -4592,25 +5049,13 @@
         },
         {
           "kind": "field",
-          "name": "cache_unaligned_requests",
-          "required": false,
-          "desc": "Cache requests that are not step-aligned.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.cache-unaligned-requests",
-          "fieldType": "boolean",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
           "name": "query_sharding_target_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.query-sharding-target-series-per-shard",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         },
         {
           "kind": "field",
@@ -4733,13 +5178,35 @@
             },
             {
               "kind": "field",
+              "name": "list_objects_version",
+              "required": false,
+              "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.s3.list-objects-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.s3.storage-class",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "native_aws_auth_enabled",
+              "required": false,
+              "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.s3.native-aws-auth-enabled",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
             {
@@ -5207,8 +5674,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "blocks-storage.storage-prefix",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "block",
@@ -5601,6 +6067,17 @@
                       "fieldDefaultValue": 100,
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.connection-pool-size",
                       "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "connection_pool_timeout",
+                      "required": false,
+                      "desc": "Maximum duration to wait to get a connection from pool.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.redis.connection-pool-timeout",
+                      "fieldType": "duration",
                       "fieldCategory": "advanced"
                     },
                     {
@@ -6131,6 +6608,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "connection_pool_timeout",
+                      "required": false,
+                      "desc": "Maximum duration to wait to get a connection from pool.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.redis.connection-pool-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "min_idle_connections",
                       "required": false,
                       "desc": "Minimum number of idle connections.",
@@ -6352,17 +6840,6 @@
                   "fieldFlag": "blocks-storage.bucket-store.chunks-cache.subrange-ttl",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "fine_grained_chunks_caching_enabled",
-                  "required": false,
-                  "desc": "Enable fine-grained caching of chunks in the store-gateway. This reduces the required bandwidth and memory utilization.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -6688,6 +7165,17 @@
                       "fieldDefaultValue": 100,
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size",
                       "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "connection_pool_timeout",
+                      "required": false,
+                      "desc": "Maximum duration to wait to get a connection from pool.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.redis.connection-pool-timeout",
+                      "fieldType": "duration",
                       "fieldCategory": "advanced"
                     },
                     {
@@ -7124,7 +7612,7 @@
               "fieldDefaultValue": true,
               "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-enabled",
               "fieldType": "boolean",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7135,7 +7623,7 @@
               "fieldDefaultValue": 3600000000000,
               "fieldFlag": "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout",
               "fieldType": "duration",
-              "fieldCategory": "advanced"
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7175,6 +7663,72 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.max-idle-file-handles",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "eager_loading_startup_enabled",
+                  "required": false,
+                  "desc": "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.eager-loading-startup-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "lazy_loading_enabled",
+                  "required": false,
+                  "desc": "If enabled, store-gateway will lazy load an index-header only once required by a query.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "lazy_loading_idle_timeout",
+                  "required": false,
+                  "desc": "If index-header lazy loading is enabled and this setting is \u003e 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3600000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "lazy_loading_concurrency",
+                  "required": false,
+                  "desc": "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "sparse_persistence_enabled",
+                  "required": false,
+                  "desc": "If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.sparse-persistence-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "verify_on_load",
+                  "required": false,
+                  "desc": "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.verify-on-load",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
@@ -7193,22 +7747,11 @@
             },
             {
               "kind": "field",
-              "name": "fine_grained_chunks_caching_ranges_per_series",
-              "required": false,
-              "desc": "This option controls into how many ranges the chunks of each series from each block are split. This value is effectively the number of chunks cache items per series per block when -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled is enabled.",
-              "fieldValue": null,
-              "fieldDefaultValue": 1,
-              "fieldFlag": "blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "series_selection_strategy",
               "required": false,
               "desc": "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): speculative, worst-case, worst-case-small-posting-lists, all.",
               "fieldValue": null,
-              "fieldDefaultValue": "all",
+              "fieldDefaultValue": "worst-case",
               "fieldFlag": "blocks-storage.bucket-store.series-selection-strategy",
               "fieldType": "string",
               "fieldCategory": "experimental"
@@ -7225,7 +7768,7 @@
                   "required": false,
                   "desc": "This option is only used when blocks-storage.bucket-store.series-selection-strategy=worst-case. Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 1,
+                  "fieldDefaultValue": 0.75,
                   "fieldFlag": "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference",
                   "fieldType": "float",
                   "fieldCategory": "experimental"
@@ -7290,7 +7833,7 @@
               "kind": "field",
               "name": "head_compaction_interval",
               "required": false,
-              "desc": "How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, while subsequent checks will happen at the configured interval. Block is only created if data covers smallest block range. The configured interval must be between 0 and 15 minutes.",
+              "desc": "How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes.",
               "fieldValue": null,
               "fieldDefaultValue": 60000000000,
               "fieldFlag": "blocks-storage.tsdb.head-compaction-interval",
@@ -7323,7 +7866,7 @@
               "kind": "field",
               "name": "head_chunks_write_buffer_size_bytes",
               "required": false,
-              "desc": "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations.",
+              "desc": "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. The configured buffer size must be between 65536 and 8388608.",
               "fieldValue": null,
               "fieldDefaultValue": 4194304,
               "fieldFlag": "blocks-storage.tsdb.head-chunks-write-buffer-size-bytes",
@@ -7378,7 +7921,7 @@
               "kind": "field",
               "name": "wal_replay_concurrency",
               "required": false,
-              "desc": "Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine. If set to a positive value it overrides the deprecated -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup option.",
+              "desc": "Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "blocks-storage.tsdb.wal-replay-concurrency",
@@ -7439,17 +7982,6 @@
               "fieldFlag": "blocks-storage.tsdb.series-hash-cache-max-size-bytes",
               "fieldType": "int",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "max_tsdb_opening_concurrency_on_startup",
-              "required": false,
-              "desc": "limit the number of concurrently opening TSDB's on startup",
-              "fieldValue": null,
-              "fieldDefaultValue": 10,
-              "fieldFlag": "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -7526,6 +8058,28 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-force",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "early_head_compaction_min_in_memory_series",
+              "required": false,
+              "desc": "When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -ingester.active-series-metrics-idle-timeout time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -ingester.active-series-metrics-idle-timeout time ago (unless out of order ingestion is enabled). The ingester checks every -blocks-storage.tsdb.head-compaction-interval whether an early compaction is required. Use 0 to disable it.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.tsdb.early-head-compaction-min-in-memory-series",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "early_head_compaction_min_estimated_series_reduction_percentage",
+              "required": false,
+              "desc": "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             }
           ],
@@ -7624,10 +8178,9 @@
           "required": false,
           "desc": "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 1500000000000,
           "fieldFlag": "compactor.first-level-compaction-wait-period",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -7683,6 +8236,17 @@
           "fieldFlag": "compactor.max-compaction-time",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "no_blocks_file_cleanup_enabled",
+          "required": false,
+          "desc": "If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.no-blocks-file-cleanup-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -8593,6 +9157,16 @@
             },
             {
               "kind": "field",
+              "name": "auto_forget_enabled",
+              "required": false,
+              "desc": "When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "store-gateway.sharding-ring.auto-forget-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
               "name": "wait_stability_min_duration",
               "required": false,
               "desc": "Minimum time to wait for ring stability at startup, if set to positive value.",
@@ -8710,6 +9284,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "tenant-federation.enabled",
           "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "max_concurrent",
+          "required": false,
+          "desc": "The number of workers used for each tenant federated query. This setting limits the maximum number of per-tenant queries executed at a time for a tenant federated query.",
+          "fieldValue": null,
+          "fieldDefaultValue": 16,
+          "fieldFlag": "tenant-federation.max-concurrent",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -8881,7 +9466,7 @@
               "kind": "field",
               "name": "backoff_on_ratelimits",
               "required": false,
-              "desc": "Enable backoff and retry when we hit ratelimits.",
+              "desc": "Enable backoff and retry when we hit rate limits.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ruler.client.backoff-on-ratelimits",
@@ -8933,9 +9518,31 @@
             },
             {
               "kind": "field",
+              "name": "initial_stream_window_size",
+              "required": false,
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "ruler.client.initial-stream-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_connection_window_size",
+              "required": false,
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "ruler.client.initial-connection-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+              "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ruler.client.tls-enabled",
@@ -9018,6 +9625,39 @@
               "fieldFlag": "ruler.client.tls-min-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_timeout",
+              "required": false,
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "ruler.client.connect-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_base_delay",
+              "required": false,
+              "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ruler.client.connect-backoff-base-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_max_delay",
+              "required": false,
+              "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "ruler.client.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -9040,7 +9680,7 @@
           "required": false,
           "desc": "How frequently the configured rule groups are re-synced from the object storage.",
           "fieldValue": null,
-          "fieldDefaultValue": 60000000000,
+          "fieldDefaultValue": 600000000000,
           "fieldFlag": "ruler.poll-interval",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -9791,7 +10431,7 @@
                   "kind": "field",
                   "name": "backoff_on_ratelimits",
                   "required": false,
-                  "desc": "Enable backoff and retry when we hit ratelimits.",
+                  "desc": "Enable backoff and retry when we hit rate limits.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "ruler.query-frontend.grpc-client-config.backoff-on-ratelimits",
@@ -9843,9 +10483,31 @@
                 },
                 {
                   "kind": "field",
+                  "name": "initial_stream_window_size",
+                  "required": false,
+                  "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.initial-stream-window-size",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "initial_connection_window_size",
+                  "required": false,
+                  "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.initial-connection-window-size",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_enabled",
                   "required": false,
-                  "desc": "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+                  "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-enabled",
@@ -9927,6 +10589,39 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler.query-frontend.grpc-client-config.tls-min-version",
                   "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.connect-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_backoff_base_delay",
+                  "required": false,
+                  "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000000,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.connect-backoff-base-delay",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_backoff_max_delay",
+                  "required": false,
+                  "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.connect-backoff-max-delay",
+                  "fieldType": "duration",
                   "fieldCategory": "advanced"
                 }
               ],
@@ -10067,13 +10762,35 @@
             },
             {
               "kind": "field",
+              "name": "list_objects_version",
+              "required": false,
+              "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.s3.list-objects-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.s3.storage-class",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "native_aws_auth_enabled",
+              "required": false,
+              "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.s3.native-aws-auth-enabled",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
             {
@@ -10541,8 +11258,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "ruler-storage.storage-prefix",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "block",
@@ -10884,6 +11600,17 @@
                   "fieldDefaultValue": 100,
                   "fieldFlag": "ruler-storage.cache.redis.connection-pool-size",
                   "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connection_pool_timeout",
+                  "required": false,
+                  "desc": "Maximum duration to wait to get a connection from pool.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 4000000000,
+                  "fieldFlag": "ruler-storage.cache.redis.connection-pool-timeout",
+                  "fieldType": "duration",
                   "fieldCategory": "advanced"
                 },
                 {
@@ -11704,7 +12431,7 @@
               "kind": "field",
               "name": "backoff_on_ratelimits",
               "required": false,
-              "desc": "Enable backoff and retry when we hit ratelimits.",
+              "desc": "Enable backoff and retry when we hit rate limits.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "alertmanager.alertmanager-client.backoff-on-ratelimits",
@@ -11756,9 +12483,31 @@
             },
             {
               "kind": "field",
+              "name": "initial_stream_window_size",
+              "required": false,
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "alertmanager.alertmanager-client.initial-stream-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_connection_window_size",
+              "required": false,
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "alertmanager.alertmanager-client.initial-connection-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+              "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "alertmanager.alertmanager-client.tls-enabled",
@@ -11840,6 +12589,39 @@
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager.alertmanager-client.tls-min-version",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_timeout",
+              "required": false,
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "alertmanager.alertmanager-client.connect-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_base_delay",
+              "required": false,
+              "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "alertmanager.alertmanager-client.connect-backoff-base-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_max_delay",
+              "required": false,
+              "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "alertmanager.alertmanager-client.connect-backoff-max-delay",
+              "fieldType": "duration",
               "fieldCategory": "advanced"
             }
           ],
@@ -11968,13 +12750,35 @@
             },
             {
               "kind": "field",
+              "name": "list_objects_version",
+              "required": false,
+              "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.s3.list-objects-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.s3.storage-class",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "native_aws_auth_enabled",
+              "required": false,
+              "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager-storage.s3.native-aws-auth-enabled",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
             {
@@ -12442,8 +13246,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "alertmanager-storage.storage-prefix",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "block",
@@ -12981,7 +13784,7 @@
               "kind": "field",
               "name": "backoff_on_ratelimits",
               "required": false,
-              "desc": "Enable backoff and retry when we hit ratelimits.",
+              "desc": "Enable backoff and retry when we hit rate limits.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "query-scheduler.grpc-client-config.backoff-on-ratelimits",
@@ -13033,9 +13836,31 @@
             },
             {
               "kind": "field",
+              "name": "initial_stream_window_size",
+              "required": false,
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "query-scheduler.grpc-client-config.initial-stream-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_connection_window_size",
+              "required": false,
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "query-scheduler.grpc-client-config.initial-connection-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+              "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "query-scheduler.grpc-client-config.tls-enabled",
@@ -13117,6 +13942,39 @@
               "fieldDefaultValue": "",
               "fieldFlag": "query-scheduler.grpc-client-config.tls-min-version",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_timeout",
+              "required": false,
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "query-scheduler.grpc-client-config.connect-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_base_delay",
+              "required": false,
+              "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "query-scheduler.grpc-client-config.connect-backoff-base-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_max_delay",
+              "required": false,
+              "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "query-scheduler.grpc-client-config.connect-backoff-max-delay",
+              "fieldType": "duration",
               "fieldCategory": "advanced"
             }
           ],
@@ -13549,8 +14407,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-scheduler.max-used-instances",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         }
       ],
       "fieldValue": null,
@@ -13570,8 +14427,7 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "usage-stats.enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -13581,8 +14437,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "custom",
           "fieldFlag": "usage-stats.installation-mode",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         }
       ],
       "fieldValue": null,
@@ -14033,6 +14888,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "enabled_metrics",
+          "required": false,
+          "desc": "Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.",
+          "fieldValue": null,
+          "fieldDefaultValue": "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant",
+          "fieldFlag": "overrides-exporter.enabled-metrics",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -14140,13 +15006,35 @@
                 },
                 {
                   "kind": "field",
+                  "name": "list_objects_version",
+                  "required": false,
+                  "desc": "Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.s3.list-objects-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "storage_class",
                   "required": false,
-                  "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR",
+                  "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.s3.storage-class",
                   "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "native_aws_auth_enabled",
+                  "required": false,
+                  "desc": "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "common.storage.s3.native-aws-auth-enabled",
+                  "fieldType": "boolean",
                   "fieldCategory": "experimental"
                 },
                 {
@@ -14613,6 +15501,17 @@
       ],
       "fieldValue": null,
       "fieldDefaultValue": null
+    },
+    {
+      "kind": "field",
+      "name": "timeseries_unmarshal_caching_optimization_enabled",
+      "required": false,
+      "desc": "Enables optimized marshaling of timeseries.",
+      "fieldValue": null,
+      "fieldDefaultValue": true,
+      "fieldFlag": "timeseries-unmarshal-caching-optimization-enabled",
+      "fieldType": "boolean",
+      "fieldCategory": "experimental"
     }
   ],
   "fieldValue": null,

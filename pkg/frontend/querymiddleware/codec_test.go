@@ -19,14 +19,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/user"
 	jsoniter "github.com/json-iterator/go"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -63,27 +63,27 @@ func TestRequest(t *testing.T) {
 			},
 		},
 		{
-			url:         "api/v1/query_range?start=foo",
+			url:         "/api/v1/query_range?start=foo",
 			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"start\": cannot parse \"foo\" to a valid timestamp"),
 		},
 		{
-			url:         "api/v1/query_range?start=123&end=bar",
+			url:         "/api/v1/query_range?start=123&end=bar",
 			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"end\": cannot parse \"bar\" to a valid timestamp"),
 		},
 		{
-			url:         "api/v1/query_range?start=123&end=0",
+			url:         "/api/v1/query_range?start=123&end=0",
 			expectedErr: errEndBeforeStart,
 		},
 		{
-			url:         "api/v1/query_range?start=123&end=456&step=baz",
+			url:         "/api/v1/query_range?start=123&end=456&step=baz",
 			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"step\": cannot parse \"baz\" to a valid duration"),
 		},
 		{
-			url:         "api/v1/query_range?start=123&end=456&step=-1",
+			url:         "/api/v1/query_range?start=123&end=456&step=-1",
 			expectedErr: errNegativeStep,
 		},
 		{
-			url:         "api/v1/query_range?start=0&end=11001&step=1",
+			url:         "/api/v1/query_range?start=0&end=11001&step=1",
 			expectedErr: errStepTooSmall,
 		},
 	} {

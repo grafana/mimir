@@ -70,46 +70,36 @@ local filename = 'mimir-queries.json';
         $.panel('Query results cache hit ratio') +
         $.queryPanel(
           |||
-            # Query metrics before and after migration to new memcached backend.
-            sum (
-              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_hits_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+            # Query the new metric introduced in Mimir 2.10.
+            (
+              sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{%(frontend)s}[$__rate_interval]))
+              /
+              sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{%(frontend)s}[$__rate_interval]))
             )
-            /
-            sum (
-              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
+            # Otherwise fallback to the previous general-purpose metrics.
+            or
+            (
+              label_replace(
+                # Query metrics before and after migration to new memcached backend.
+                sum (
+                  rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
+                  or
+                  rate(thanos_cache_memcached_hits_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+                )
+                /
+                sum (
+                  rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
+                  or
+                  rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
+                ),
+                "request_type", "query_range", "", "")
             )
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
           },
-          'Hit ratio',
+          '{{request_type}}',
         ) +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
-      )
-      .addPanel(
-        $.panel('Query results cache misses') +
-        $.queryPanel(
-          |||
-            # Query metrics before and after migration to new memcached backend.
-            sum (
-              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_requests_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-            )
-            -
-            sum (
-              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_hits_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
-            )
-          ||| % {
-            frontend: $.jobMatcher($._config.job_names.query_frontend),
-          },
-          'Missed query results per second'
-        ),
       )
       .addPanel(
         $.panel('Query results cache skipped') +
@@ -192,6 +182,17 @@ local filename = 'mimir-queries.json';
         $.panel('Consistency checks failed') +
         $.failurePanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Failure Rate') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+      )
+      .addPanel(
+        $.panel('Rejected queries') +
+        $.queryPanel('sum by (reason) (rate(cortex_querier_queries_rejected_total{%(job_matcher)s}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{%(job_matcher)s, route=~"%(routes_regex)s"}[$__rate_interval]))' % { job_matcher: $.jobMatcher($._config.job_names.querier), routes_regex: $.queries.query_http_routes_regex }, '{{reason}}') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        $.panelDescription(
+          'Rejected queries',
+          |||
+            The proportion of all queries received by queriers that were rejected for some reason.
+          |||
+        ),
       )
     )
     .addRow(
@@ -302,9 +303,18 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('')
       .addPanel(
-        $.panel('Blocks currently loaded') +
+        $.panel('Blocks currently owned') +
         $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway), '{{%s}}' % $._config.per_instance_label) +
-        { fill: 0 }
+        { fill: 0 } +
+        $.panelDescription(
+          'Blocks currently owned',
+          |||
+            This panel shows the number of blocks owned by each store-gateway replica.
+            For each owned block, the store-gateway keeps its index-header on disk, and
+            eventually loaded in memory (if index-header lazy loading is disabled, or lazy loading
+            is enabled and the index-header was loaded).
+          |||
+        ),
       )
       .addPanel(
         $.panel('Blocks loaded / sec') +
@@ -333,6 +343,16 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.panel('Index-header lazy load duration') +
         $.latencyPanel('cortex_bucket_store_indexheader_lazy_load_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.store_gateway)),
+      )
+      .addPanel(
+        $.panel('Index-header lazy load gate latency') +
+        $.latencyPanel('cortex_bucket_stores_gate_duration_seconds', '{%s,gate="index_header"}' % $.jobMatcher($._config.job_names.store_gateway)) +
+        $.panelDescription(
+          'Index-header lazy load gate latency',
+          |||
+            Time spent waiting for a turn to load an index header. This time is not included in "Index-header lazy load duration."
+          |||
+        )
       )
     )
     .addRow(

@@ -18,6 +18,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/golang/groupcache/singleflight"
+	"github.com/grafana/dskit/multierror"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,10 +27,6 @@ import (
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/dskit/multierror"
-	"github.com/grafana/dskit/runutil"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
@@ -116,7 +114,7 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 }
 
 type MetadataFetcher interface {
-	Fetch(ctx context.Context) (metas map[ulid.ULID]*metadata.Meta, partial map[ulid.ULID]error, err error)
+	Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, partial map[ulid.ULID]error, err error)
 }
 
 // GaugeVec hides something like a Prometheus GaugeVec or an extprom.TxGaugeVec.
@@ -124,9 +122,9 @@ type GaugeVec interface {
 	WithLabelValues(lvs ...string) prometheus.Gauge
 }
 
-// Filter allows filtering or modifying metas from the provided map or returns error.
+// MetadataFilter allows filtering or modifying metas from the provided map or returns error.
 type MetadataFilter interface {
-	Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec) error
+	Filter(ctx context.Context, metas map[ulid.ULID]*Meta, synced GaugeVec) error
 }
 
 // MetaFetcher is a struct that synchronizes filtered metadata of all block in the object storage with the local state.
@@ -143,7 +141,7 @@ type MetaFetcher struct {
 	g        singleflight.Group
 
 	mtx    sync.Mutex
-	cached map[ulid.ULID]*metadata.Meta
+	cached map[ulid.ULID]*Meta
 }
 
 // NewMetaFetcher returns a MetaFetcher.
@@ -165,7 +163,7 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 		concurrency: concurrency,
 		bkt:         bkt,
 		cacheDir:    cacheDir,
-		cached:      map[ulid.ULID]*metadata.Meta{},
+		cached:      map[ulid.ULID]*Meta{},
 		metrics:     NewFetcherMetrics(reg, nil),
 		filters:     filters,
 	}, nil
@@ -177,30 +175,42 @@ var (
 )
 
 // loadMeta returns metadata from object storage or error.
-// It returns `ErrorSyncMetaNotFound` and `ErrorSyncMetaCorrupted` sentinel errors in those cases.
-func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*metadata.Meta, error) {
+// It returns ErrorSyncMetaNotFound and ErrorSyncMetaCorrupted sentinel errors in those cases.
+func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error) {
 	var (
 		metaFile       = path.Join(id.String(), MetaFilename)
 		cachedBlockDir = filepath.Join(f.cacheDir, id.String())
 	)
 
-	// TODO(bwplotka): If that causes problems (obj store rate limits), add longer ttl to cached items.
-	// For 1y and 100 block sources this generates ~1.5-3k HEAD RPM. AWS handles 330k RPM per prefix.
-	ok, err := f.bkt.Exists(ctx, metaFile)
-	if err != nil {
-		return nil, errors.Wrapf(err, "meta.json file exists: %v", metaFile)
-	}
-	if !ok {
-		return nil, ErrorSyncMetaNotFound
-	}
-
+	// Block meta.json file is immutable, so we lookup the cache as first thing without issuing
+	// any API call to the object storage. This significantly reduce the pressure on the object
+	// storage.
+	//
+	// Details of all possible cases:
+	//
+	// - The block upload is in progress: the meta.json file is guaranteed to be uploaded at last.
+	//   When we'll try to read it from object storage (later on), it will fail with ErrorSyncMetaNotFound
+	//   which is correctly handled by the caller (partial block).
+	//
+	// - The block upload is completed: this is the normal case. meta.json file still exists in the
+	//   object storage and it's expected to match the locally cached one (because it's immutable by design).
+	// - The block has been marked for deletion: the deletion hasn't started yet, so the full block (including
+	//   the meta.json file) is still in the object storage. This case is not different than the previous one.
+	//
+	// - The block deletion is in progress: loadMeta() function may return the cached meta.json while it should
+	//   return ErrorSyncMetaNotFound. This is a race condition that could happen even if we check the meta.json
+	//   file in the storage, because the deletion could start right after we check it but before the MetaFetcher
+	//   completes its sync.
+	//
+	// - The block has been deleted: the loadMeta() function will not be called at all, because the block
+	//   was not discovered while iterating the bucket since all its files were already deleted.
 	if m, seen := f.cached[id]; seen {
 		return m, nil
 	}
 
 	// Best effort load from local dir.
 	if f.cacheDir != "" {
-		m, err := metadata.ReadFromDir(cachedBlockDir)
+		m, err := ReadMetaFromDir(cachedBlockDir)
 		if err == nil {
 			return m, nil
 		}
@@ -229,12 +239,12 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*metadata.Met
 		return nil, errors.Wrapf(err, "read meta file: %v", metaFile)
 	}
 
-	m := &metadata.Meta{}
+	m := &Meta{}
 	if err := json.Unmarshal(metaContent, m); err != nil {
 		return nil, errors.Wrapf(ErrorSyncMetaCorrupted, "meta.json %v unmarshal: %v", metaFile, err)
 	}
 
-	if m.Version != metadata.TSDBVersion1 {
+	if m.Version != TSDBVersion1 {
 		return nil, errors.Errorf("unexpected meta file: %s version: %d", metaFile, m.Version)
 	}
 
@@ -252,19 +262,22 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*metadata.Met
 }
 
 type response struct {
-	metas   map[ulid.ULID]*metadata.Meta
+	metas   map[ulid.ULID]*Meta
 	partial map[ulid.ULID]error
+
 	// If metaErr > 0 it means incomplete view, so some metas, failed to be loaded.
 	metaErrs multierror.MultiError
 
-	noMetas        float64
-	corruptedMetas float64
+	// Track the number of blocks not returned because of various reasons.
+	noMetasCount           float64
+	corruptedMetasCount    float64
+	markedForDeletionCount float64
 }
 
-func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
+func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool) (interface{}, error) {
 	var (
 		resp = response{
-			metas:   make(map[ulid.ULID]*metadata.Meta),
+			metas:   make(map[ulid.ULID]*Meta),
 			partial: make(map[ulid.ULID]error),
 		}
 		eg  errgroup.Group
@@ -272,6 +285,19 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 		mtx sync.Mutex
 	)
 	level.Debug(f.logger).Log("msg", "fetching meta data", "concurrency", f.concurrency)
+
+	// Get the list of blocks marked for deletion so that we'll exclude them (if required).
+	var markedForDeletion map[ulid.ULID]struct{}
+	if excludeMarkedForDeletion {
+		var err error
+
+		markedForDeletion, err = ListBlockDeletionMarks(ctx, f.bkt)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Run workers.
 	for i := 0; i < f.concurrency; i++ {
 		eg.Go(func() error {
 			for id := range ch {
@@ -285,11 +311,11 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 
 				if errors.Is(errors.Cause(err), ErrorSyncMetaNotFound) {
 					mtx.Lock()
-					resp.noMetas++
+					resp.noMetasCount++
 					mtx.Unlock()
 				} else if errors.Is(errors.Cause(err), ErrorSyncMetaCorrupted) {
 					mtx.Lock()
-					resp.corruptedMetas++
+					resp.corruptedMetasCount++
 					mtx.Unlock()
 				} else {
 					mtx.Lock()
@@ -315,6 +341,12 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 				return nil
 			}
 
+			// If requested, skip any block marked for deletion.
+			if _, marked := markedForDeletion[id]; excludeMarkedForDeletion && marked {
+				resp.markedForDeletionCount++
+				return nil
+			}
+
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -334,7 +366,7 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 	}
 
 	// Only for complete view of blocks update the cache.
-	cached := make(map[ulid.ULID]*metadata.Meta, len(resp.metas))
+	cached := make(map[ulid.ULID]*Meta, len(resp.metas))
 	for id, m := range resp.metas {
 		cached[id] = m
 	}
@@ -379,7 +411,22 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context) (interface{}, error) {
 // It's caller responsibility to not change the returned metadata files. Maps can be modified.
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
-func (f *MetaFetcher) Fetch(ctx context.Context) (_ map[ulid.ULID]*metadata.Meta, _ map[ulid.ULID]error, err error) {
+func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
+	metas, partials, err = f.fetch(ctx, false)
+	return
+}
+
+// FetchWithoutMarkedForDeletion returns all block metas as well as partial blocks (blocks without or with corrupted meta file) from the bucket.
+// This function excludes all blocks for deletion (no deletion delay applied).
+// It's caller responsibility to not change the returned metadata files. Maps can be modified.
+//
+// Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
+func (f *MetaFetcher) FetchWithoutMarkedForDeletion(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
+	metas, partials, err = f.fetch(ctx, true)
+	return
+}
+
+func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
 	start := time.Now()
 	defer func() {
 		f.metrics.SyncDuration.Observe(time.Since(start).Seconds())
@@ -393,7 +440,7 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (_ map[ulid.ULID]*metadata.Meta
 	// Run this in thread safe run group.
 	v, err := f.g.Do("", func() (i interface{}, err error) {
 		// NOTE: First go routine context will go through.
-		return f.fetchMetadata(ctx)
+		return f.fetchMetadata(ctx, excludeMarkedForDeletion)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -401,14 +448,17 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (_ map[ulid.ULID]*metadata.Meta
 	resp := v.(response)
 
 	// Copy as same response might be reused by different goroutines.
-	metas := make(map[ulid.ULID]*metadata.Meta, len(resp.metas))
+	metas := make(map[ulid.ULID]*Meta, len(resp.metas))
 	for id, m := range resp.metas {
 		metas[id] = m
 	}
 
 	f.metrics.Synced.WithLabelValues(FailedMeta).Set(float64(len(resp.metaErrs)))
-	f.metrics.Synced.WithLabelValues(NoMeta).Set(resp.noMetas)
-	f.metrics.Synced.WithLabelValues(CorruptedMeta).Set(resp.corruptedMetas)
+	f.metrics.Synced.WithLabelValues(NoMeta).Set(resp.noMetasCount)
+	f.metrics.Synced.WithLabelValues(CorruptedMeta).Set(resp.corruptedMetasCount)
+	if excludeMarkedForDeletion {
+		f.metrics.Synced.WithLabelValues(MarkedForDeletionMeta).Set(resp.markedForDeletionCount)
+	}
 
 	for _, filter := range f.filters {
 		// NOTE: filter can update synced metric accordingly to the reason of the exclude.
@@ -435,7 +485,7 @@ func (f *MetaFetcher) countCached() int {
 	return len(f.cached)
 }
 
-// Special label that will have an ULID of the meta.json being referenced to.
+// BlockIDLabel is a special label that will have an ULID of the meta.json being referenced to.
 const BlockIDLabel = "__block_id"
 
 // IgnoreDeletionMarkFilter is a filter that filters out the blocks that are marked for deletion after a given delay.
@@ -449,7 +499,7 @@ type IgnoreDeletionMarkFilter struct {
 	bkt         objstore.InstrumentedBucketReader
 
 	mtx             sync.Mutex
-	deletionMarkMap map[ulid.ULID]*metadata.DeletionMark
+	deletionMarkMap map[ulid.ULID]*DeletionMark
 }
 
 // NewIgnoreDeletionMarkFilter creates IgnoreDeletionMarkFilter.
@@ -463,11 +513,11 @@ func NewIgnoreDeletionMarkFilter(logger log.Logger, bkt objstore.InstrumentedBuc
 }
 
 // DeletionMarkBlocks returns block ids that were marked for deletion.
-func (f *IgnoreDeletionMarkFilter) DeletionMarkBlocks() map[ulid.ULID]*metadata.DeletionMark {
+func (f *IgnoreDeletionMarkFilter) DeletionMarkBlocks() map[ulid.ULID]*DeletionMark {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
 
-	deletionMarkMap := make(map[ulid.ULID]*metadata.DeletionMark, len(f.deletionMarkMap))
+	deletionMarkMap := make(map[ulid.ULID]*DeletionMark, len(f.deletionMarkMap))
 	for id, meta := range f.deletionMarkMap {
 		deletionMarkMap[id] = meta
 	}
@@ -477,8 +527,8 @@ func (f *IgnoreDeletionMarkFilter) DeletionMarkBlocks() map[ulid.ULID]*metadata.
 
 // Filter filters out blocks that are marked for deletion after a given delay.
 // It also returns the blocks that can be deleted since they were uploaded delay duration before current time.
-func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec) error {
-	deletionMarkMap := make(map[ulid.ULID]*metadata.DeletionMark)
+func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*Meta, synced GaugeVec) error {
+	deletionMarkMap := make(map[ulid.ULID]*DeletionMark)
 
 	// Make a copy of block IDs to check, in order to avoid concurrency issues
 	// between the scheduler and workers.
@@ -497,12 +547,12 @@ func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.UL
 		eg.Go(func() error {
 			var lastErr error
 			for id := range ch {
-				m := &metadata.DeletionMark{}
-				if err := metadata.ReadMarker(ctx, f.logger, f.bkt, id.String(), m); err != nil {
-					if errors.Is(errors.Cause(err), metadata.ErrorMarkerNotFound) {
+				m := &DeletionMark{}
+				if err := ReadMarker(ctx, f.logger, f.bkt, id.String(), m); err != nil {
+					if errors.Is(errors.Cause(err), ErrorMarkerNotFound) {
 						continue
 					}
-					if errors.Is(errors.Cause(err), metadata.ErrorUnmarshalMarker) {
+					if errors.Is(errors.Cause(err), ErrorUnmarshalMarker) {
 						level.Warn(f.logger).Log("msg", "found partial deletion-mark.json; if we will see it happening often for the same block, consider manually deleting deletion-mark.json from the object storage", "block", id, "err", err)
 						continue
 					}

@@ -13,6 +13,7 @@ metadata:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  podManagementPolicy: {{ .Values.store_gateway.podManagementPolicy }}
   replicas: {{ $rolloutZone.replicas }}
   selector:
     matchLabels:
@@ -165,6 +166,13 @@ spec:
             {{- end }}
             {{- with .Values.store_gateway.env }}
               {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.store_gateway.resources }}
+            {{- if $cpu_request }}
+              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+              {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            - name: "GOMAXPROCS"
+              value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
             {{- end }}
             {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
             {{- if $mem_request }}

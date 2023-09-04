@@ -13,10 +13,10 @@ import (
 	"strings"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/regexp"
+	objstoretracing "github.com/thanos-io/objstore/tracing/opentracing"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -119,7 +119,7 @@ func (cfg *StorageBackendConfig) Validate() error {
 type Config struct {
 	StorageBackendConfig `yaml:",inline"`
 
-	StoragePrefix string `yaml:"storage_prefix" category:"experimental"`
+	StoragePrefix string `yaml:"storage_prefix"`
 
 	// Not used internally, meant to allow callers to wrap Buckets
 	// created using this config
@@ -181,7 +181,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	instrumentedClient := objstore.NewTracingBucket(bucketWithMetrics(backendClient, name, reg))
+	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg))
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {
@@ -199,8 +199,14 @@ func bucketWithMetrics(bucketClient objstore.Bucket, name string, reg prometheus
 		return bucketClient
 	}
 
-	return objstore.BucketWithMetrics(
-		"", // bucket label value
+	// Thanos objstore no longer includes a "thanos_" prefix but all our dashboards
+	// rely on object storage related metrics including a "thanos_" prefix.
+	reg = prometheus.WrapRegistererWithPrefix("thanos_", reg)
+	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": name}, reg)
+
+	return objstore.WrapWithMetrics(
 		bucketClient,
-		prometheus.WrapRegistererWith(prometheus.Labels{"component": name}, reg))
+		reg,
+		"", // bucket label value
+	)
 }

@@ -11,21 +11,20 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"runtime"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/tracing"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/usage"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -54,19 +53,27 @@ const (
 var testMode = false
 
 type mainFlags struct {
-	ballastBytes         int `category:"advanced"`
-	mutexProfileFraction int `category:"advanced"`
-	blockProfileRate     int `category:"advanced"`
-	printVersion         bool
-	printModules         bool
-	printHelp            bool
-	printHelpAll         bool
+	ballastBytes                  int     `category:"advanced"`
+	mutexProfileFraction          int     `category:"advanced"`
+	blockProfileRate              int     `category:"advanced"`
+	useBufferedLogger             bool    `category:"advanced"`
+	rateLimitedLogsEnabled        bool    `category:"experimental"`
+	rateLimitedLogsPerSecond      float64 `category:"experimental"`
+	rateLimitedLogsPerSecondBurst int     `category:"experimental"`
+	printVersion                  bool
+	printModules                  bool
+	printHelp                     bool
+	printHelpAll                  bool
 }
 
 func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 	fs.IntVar(&mf.ballastBytes, "mem-ballast-size-bytes", 0, "Size of memory ballast to allocate.")
 	fs.IntVar(&mf.mutexProfileFraction, "debug.mutex-profile-fraction", 0, "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.")
 	fs.IntVar(&mf.blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
+	fs.BoolVar(&mf.useBufferedLogger, "log.buffered", false, "Use a buffered logger to reduce write contention.")
+	fs.BoolVar(&mf.rateLimitedLogsEnabled, "log.rate-limit-enabled", false, "Use rate limited logger to reduce the number of logged messages per second.")
+	fs.Float64Var(&mf.rateLimitedLogsPerSecond, "log.rate-limit-logs-per-second", 10000, "Maximum number of messages per second to be logged.")
+	fs.IntVar(&mf.rateLimitedLogsPerSecondBurst, "log.rate-limit-logs-per-second-burst", 25000, "Burst size, i.e., maximum number of messages that can be logged in a second, temporarily exceeding the configured maximum logs per second.")
 	fs.BoolVar(&mf.printVersion, "version", false, "Print application version and exit.")
 	fs.BoolVar(&mf.printModules, "modules", false, "List available values that can be used as target.")
 	fs.BoolVar(&mf.printHelp, "help", false, "Print basic help.")
@@ -95,7 +102,7 @@ func main() {
 			if testMode {
 				return
 			}
-			os.Exit(1)
+			exit(1)
 		}
 	}
 
@@ -111,7 +118,7 @@ func main() {
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		fmt.Fprintln(flag.CommandLine.Output(), "Run with -help to get a list of available parameters")
 		if !testMode {
-			os.Exit(2)
+			exit(2)
 		}
 	}
 
@@ -120,11 +127,11 @@ func main() {
 		flag.CommandLine.SetOutput(os.Stdout)
 		if err := usage.Usage(mainFlags.printHelpAll, &mainFlags, &cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
-			os.Exit(1)
+			exit(1)
 		}
 
 		if !testMode {
-			os.Exit(2)
+			exit(2)
 		}
 		return
 	}
@@ -137,7 +144,7 @@ func main() {
 	if err := mimir.InheritCommonFlagValues(util_log.Logger, flag.CommandLine, cfg.Common, &cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "error inheriting common flag values: %v\n", err)
 		if !testMode {
-			os.Exit(1)
+			exit(1)
 		}
 	}
 
@@ -146,7 +153,7 @@ func main() {
 	if err := cfg.Validate(util_log.Logger); err != nil {
 		fmt.Fprintf(os.Stderr, "error validating config: %v\n", err)
 		if !testMode {
-			os.Exit(1)
+			exit(1)
 		}
 	}
 
@@ -164,10 +171,15 @@ func main() {
 		runtime.SetBlockProfileRate(mainFlags.blockProfileRate)
 	}
 
-	util_log.InitLogger(&cfg.Server)
+	reg := prometheus.DefaultRegisterer
+	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, mainFlags.useBufferedLogger, util_log.RateLimitedLoggerCfg{
+		Enabled:            mainFlags.rateLimitedLogsEnabled,
+		LogsPerSecond:      mainFlags.rateLimitedLogsPerSecond,
+		LogsPerSecondBurst: mainFlags.rateLimitedLogsPerSecondBurst,
+		Registry:           reg,
+	})
 
-	// Allocate a block of memory to alter GC behaviour. See https://github.com/golang/go/issues/23044
-	ballast := make([]byte, mainFlags.ballastBytes)
+	var ballast = util.AllocateBallast(mainFlags.ballastBytes)
 
 	// In testing mode skip JAEGER setup to avoid panic due to
 	// "duplicate metrics collector registration attempted"
@@ -188,10 +200,7 @@ func main() {
 		}
 	}
 
-	// Initialise seed for randomness usage.
-	rand.Seed(time.Now().UnixNano())
-
-	t, err := mimir.New(cfg, prometheus.DefaultRegisterer)
+	t, err := mimir.New(cfg, reg)
 	util_log.CheckFatal("initializing application", err)
 
 	if mainFlags.printModules {
@@ -219,6 +228,13 @@ func main() {
 
 	runtime.KeepAlive(ballast)
 	util_log.CheckFatal("running application", err)
+}
+
+func exit(code int) {
+	if err := util_log.Flush(); err != nil {
+		fmt.Fprintln(os.Stderr, "Could not flush logger", err)
+	}
+	os.Exit(code)
 }
 
 // Parse -config.file and -config.expand-env option via separate flag set, to avoid polluting default one and calling flag.Parse on it twice.

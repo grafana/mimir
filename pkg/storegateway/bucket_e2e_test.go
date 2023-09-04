@@ -32,13 +32,9 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
-	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -48,15 +44,10 @@ var (
 
 type swappableCache struct {
 	indexcache.IndexCache
-	chunkscache.Cache
 }
 
 func (c *swappableCache) SwapIndexCacheWith(cache indexcache.IndexCache) {
 	c.IndexCache = cache
-}
-
-func (c *swappableCache) SwapChunksCacheWith(cache chunkscache.Cache) {
-	c.Cache = cache
 }
 
 type storeSuite struct {
@@ -68,8 +59,11 @@ type storeSuite struct {
 	logger log.Logger
 }
 
+// When nonOverlappingBlocks is false, prepareTestBlocks creates 2 blocks per block range.
+// When nonOverlappingBlocks is true, it shifts the 2nd block ahead by 2hrs for every block range.
+// This way the first and the last blocks created have no overlapping blocks.
 func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt objstore.Bucket,
-	series []labels.Labels, extLset labels.Labels) (minTime, maxTime int64) {
+	series []labels.Labels, extLset labels.Labels, nonOverlappingBlocks bool) (minTime, maxTime int64) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
@@ -85,15 +79,20 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 
 		// Create two blocks per time slot. Only add 10 samples each so only one chunk
 		// gets created each. This way we can easily verify we got 10 chunks per series below.
-		id1, err := testhelper.CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset)
+		id1, err := block.CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset)
 		assert.NoError(t, err)
-		id2, err := testhelper.CreateBlock(ctx, dir, series[4:], 10, mint, maxt, extLset)
+		if nonOverlappingBlocks {
+			mint = maxt
+			maxt = timestamp.FromTime(now.Add(2 * time.Hour))
+			maxTime = maxt
+		}
+		id2, err := block.CreateBlock(ctx, dir, series[4:], 10, mint, maxt, extLset)
 		assert.NoError(t, err)
 
 		dir1, dir2 := filepath.Join(dir, id1.String()), filepath.Join(dir, id2.String())
 
 		// Replace labels to the meta of the second block.
-		meta, err := metadata.ReadFromDir(dir2)
+		meta, err := block.ReadMetaFromDir(dir2)
 		assert.NoError(t, err)
 		meta.Thanos.Labels = map[string]string{"ext2": "value2"}
 		assert.NoError(t, meta.WriteToDir(logger, dir2))
@@ -116,9 +115,12 @@ type prepareStoreConfig struct {
 	seriesLimiterFactory SeriesLimiterFactory
 	series               []labels.Labels
 	indexCache           indexcache.IndexCache
-	chunksCache          chunkscache.Cache
 	metricsRegistry      *prometheus.Registry
 	postingsStrategy     postingsSelectionStrategy
+	// When nonOverlappingBlocks is false, prepare store creates 2 blocks per block range.
+	// When nonOverlappingBlocks is true, it shifts the 2nd block ahead by 2hrs for every block range.
+	// This way the first and the last blocks created have no overlapping blocks.
+	nonOverlappingBlocks bool
 }
 
 func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareStoreConfig {
@@ -141,7 +143,6 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		indexCache:           noopCache{},
 		postingsStrategy:     selectAllStrategy{},
-		chunksCache:          chunkscache.NoopCache{},
 		series: []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"),
 			labels.FromStrings("a", "1", "b", "2"),
@@ -166,12 +167,12 @@ func withManyParts() prepareStoreConfigOption {
 func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
-	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset)
+	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset, cfg.nonOverlappingBlocks)
 
 	s := &storeSuite{
 		logger:          log.NewNopLogger(),
 		metricsRegistry: cfg.metricsRegistry,
-		cache:           &swappableCache{IndexCache: cfg.indexCache, Cache: cfg.chunksCache},
+		cache:           &swappableCache{IndexCache: cfg.indexCache},
 		minTime:         minTime,
 		maxTime:         maxTime,
 	}
@@ -180,24 +181,28 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	assert.NoError(t, err)
 
 	// Have our options in the beginning so tests can override logger and index cache if they need to
-	storeOpts := []BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache), WithChunksCache(s.cache)}
+	storeOpts := []BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache)}
 
 	store, err := NewBucketStore(
 		"tenant",
 		objstore.WithNoopInstr(bkt),
 		metaFetcher,
 		cfg.tempDir,
-		cfg.maxSeriesPerBatch,
-		1,
+		mimir_tsdb.BucketStoreConfig{
+			StreamingBatchSize:          cfg.maxSeriesPerBatch,
+			BlockSyncConcurrency:        20,
+			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			IndexHeader: indexheader.Config{
+				EagerLoadingStartupEnabled: true,
+				LazyLoadingEnabled:         true,
+				LazyLoadingIdleTimeout:     time.Minute,
+				SparsePersistenceEnabled:   true,
+			},
+		},
 		cfg.postingsStrategy,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		20,
-		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-		indexheader.Config{},
-		true,
-		time.Minute,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(s.metricsRegistry),
 		storeOpts...,
@@ -220,10 +225,16 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	return s
 }
 
+type testBucketStoreCase struct {
+	req              *storepb.SeriesRequest
+	expected         [][]mimirpb.LabelAdapter
+	expectedChunkLen int
+}
+
 // TODO(bwplotka): Benchmark Series.
 //
 //nolint:revive
-func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
+func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, additionalCases ...testBucketStoreCase) {
 	t.Helper()
 
 	mint, maxt := s.store.TimeRange()
@@ -241,11 +252,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 	srv := newBucketStoreTestServer(t, s.store)
 
 	// TODO(bwplotka): Add those test cases to TSDB querier_test.go as well, there are no tests for matching.
-	for i, tcase := range []struct {
-		req              *storepb.SeriesRequest
-		expected         [][]mimirpb.LabelAdapter
-		expectedChunkLen int
-	}{
+	testCases := []testBucketStoreCase{
 		{
 			req: &storepb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
@@ -418,20 +425,24 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
 			},
 		},
-	} {
-		if ok := t.Run(fmt.Sprint(i), func(t *testing.T) {
-			seriesSet, _, _, err := srv.Series(context.Background(), tcase.req)
-			require.NoError(t, err)
+	}
+	for i, tcase := range append(testCases, additionalCases...) {
+		for _, streamingBatchSize := range []int{0, 1, 5, 256} {
+			if ok := t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
+				tcase.req.StreamingChunksBatchSize = uint64(streamingBatchSize)
+				seriesSet, _, _, _, err := srv.Series(context.Background(), tcase.req)
+				require.NoError(t, err)
 
-			assert.Equal(t, len(tcase.expected), len(seriesSet))
+				assert.Equal(t, len(tcase.expected), len(seriesSet))
 
-			for i, s := range seriesSet {
-				assert.Equal(t, tcase.expected[i], s.Labels)
-				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
+				for i, s := range seriesSet {
+					assert.Equal(t, tcase.expected[i], s.Labels)
+					assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
+				}
+				assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
+			}); !ok {
+				return
 			}
-			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
-		}); !ok {
-			return
 		}
 	}
 }
@@ -458,17 +469,6 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 	}
 }
 
-func getMetricsMatchingLabels(mf *dto.MetricFamily, selectors []labels.Label) []*dto.Metric {
-	var result []*dto.Metric
-	for _, m := range mf.GetMetric() {
-		if !util.MatchesSelectors(m, selectors) {
-			continue
-		}
-		result = append(result, m)
-	}
-	return result
-}
-
 func TestBucketStore_e2e(t *testing.T) {
 	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -478,7 +478,6 @@ func TestBucketStore_e2e(t *testing.T) {
 
 		if ok := t.Run("no caches", func(t *testing.T) {
 			s.cache.SwapIndexCacheWith(noopCache{})
-			s.cache.SwapChunksCacheWith(chunkscache.NoopCache{})
 			testBucketStore_e2e(t, ctx, s)
 		}); !ok {
 			return
@@ -492,6 +491,69 @@ func TestBucketStore_e2e(t *testing.T) {
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s)
+		}); !ok {
+			return
+		}
+
+		t.Run("with small index cache", func(t *testing.T) {
+			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
+				MaxItemSize: 50,
+				MaxSize:     100,
+			})
+			assert.NoError(t, err)
+			s.cache.SwapIndexCacheWith(indexCache2)
+			testBucketStore_e2e(t, ctx, s)
+		})
+	})
+}
+
+func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		s := newSuite(func(config *prepareStoreConfig) {
+			config.nonOverlappingBlocks = true
+		})
+
+		_, maxt := s.store.TimeRange()
+		additionalCases := []testBucketStoreCase{
+			{ // This tests if the first phase of streaming that sends only the series is filtering the series by chunk time range.
+				// The request time range overlaps with 2 blocks with 4 timeseries each, but only the 2nd block
+				// has some overlapping data that should be returned.
+				req: &storepb.SeriesRequest{
+					Matchers: []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
+					},
+					// A block spans 120 mins. So 121 grabs the second to last block.
+					MinTime: maxt - 121*int64(time.Minute/time.Millisecond),
+					MaxTime: maxt,
+				},
+				expectedChunkLen: 1,
+				expected: [][]mimirpb.LabelAdapter{
+					{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+					{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
+					{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}},
+					{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}},
+				},
+			},
+		}
+
+		if ok := t.Run("no caches", func(t *testing.T) {
+			s.cache.SwapIndexCacheWith(noopCache{})
+			testBucketStore_e2e(t, ctx, s, additionalCases...)
+		}); !ok {
+			return
+		}
+
+		if ok := t.Run("with large, sufficient index cache", func(t *testing.T) {
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
+				MaxItemSize: 1e5,
+				MaxSize:     2e5,
+			})
+			assert.NoError(t, err)
+			s.cache.SwapIndexCacheWith(indexCache)
+			testBucketStore_e2e(t, ctx, s, additionalCases...)
 		}); !ok {
 			return
 		}
@@ -543,8 +605,8 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 }
 
 func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
-	// The query will fetch 2 series from 6 blocks, so we do expect to hit a total of 12 chunks.
-	expectedChunks := uint64(2 * 6)
+	// The query will fetch 4 series from 3 blocks each, so we do expect to hit a total of 12 chunks.
+	expectedChunks := uint64(4 * 3)
 
 	cases := map[string]struct {
 		maxChunksLimit uint64
@@ -554,6 +616,10 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 	}{
 		"should succeed if the max chunks limit is not exceeded": {
 			maxChunksLimit: expectedChunks,
+		},
+		"should succeed if the max series limit is not exceeded": {
+			// The streaming case should not count the series twice.
+			maxSeriesLimit: 4,
 		},
 		"should fail if the max chunks limit is exceeded - 422": {
 			maxChunksLimit: expectedChunks - 1,
@@ -570,36 +636,41 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 
 	for testName, testData := range cases {
 		t.Run(testName, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			bkt := objstore.NewInMemBucket()
+			for _, streamingBatchSize := range []int{0, 1, 5} {
+				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+					ctx, cancel := context.WithCancel(context.Background())
+					defer cancel()
+					bkt := objstore.NewInMemBucket()
 
-			prepConfig := defaultPrepareStoreConfig(t)
-			prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
-			prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
+					prepConfig := defaultPrepareStoreConfig(t)
+					prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
+					prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
 
-			s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
-			assert.NoError(t, s.store.SyncBlocks(ctx))
+					s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
+					assert.NoError(t, s.store.SyncBlocks(ctx))
 
-			req := &storepb.SeriesRequest{
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
-				},
-				MinTime: timestamp.FromTime(minTime),
-				MaxTime: timestamp.FromTime(maxTime),
-			}
+					req := &storepb.SeriesRequest{
+						Matchers: []storepb.LabelMatcher{
+							{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
+						},
+						MinTime:                  timestamp.FromTime(minTime),
+						MaxTime:                  timestamp.FromTime(maxTime),
+						StreamingChunksBatchSize: uint64(streamingBatchSize),
+					}
 
-			srv := newBucketStoreTestServer(t, s.store)
-			_, _, _, err := srv.Series(context.Background(), req)
+					srv := newBucketStoreTestServer(t, s.store)
+					_, _, _, _, err := srv.Series(context.Background(), req)
 
-			if testData.expectedErr == "" {
-				assert.NoError(t, err)
-			} else {
-				assert.Error(t, err)
-				assert.True(t, strings.Contains(err.Error(), testData.expectedErr))
-				status, ok := status.FromError(err)
-				assert.Equal(t, true, ok)
-				assert.Equal(t, testData.expectedCode, status.Code())
+					if testData.expectedErr == "" {
+						assert.NoError(t, err)
+					} else {
+						assert.Error(t, err)
+						assert.True(t, strings.Contains(err.Error(), testData.expectedErr))
+						status, ok := status.FromError(err)
+						assert.Equal(t, true, ok)
+						assert.Equal(t, testData.expectedCode, status.Code())
+					}
+				})
 			}
 		})
 	}
@@ -821,41 +892,46 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 }
 
 func TestBucketStore_ValueTypes_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	for _, streamingBatchSize := range []int{0, 1, 5} {
+		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+			foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 
-		s := newSuite()
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
 
-		mint, maxt := s.store.TimeRange()
-		assert.Equal(t, s.minTime, mint)
-		assert.Equal(t, s.maxTime, maxt)
+				s := newSuite()
 
-		req := &storepb.SeriesRequest{
-			MinTime: mint,
-			MaxTime: maxt,
-			Matchers: []storepb.LabelMatcher{
-				{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
-			},
-			SkipChunks: false,
-		}
+				mint, maxt := s.store.TimeRange()
+				assert.Equal(t, s.minTime, mint)
+				assert.Equal(t, s.maxTime, maxt)
 
-		srv := newBucketStoreTestServer(t, s.store)
-		seriesSet, _, _, err := srv.Series(ctx, req)
-		require.NoError(t, err)
+				req := &storepb.SeriesRequest{
+					MinTime: mint,
+					MaxTime: maxt,
+					Matchers: []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
+					},
+					StreamingChunksBatchSize: uint64(streamingBatchSize),
+				}
 
-		counts := map[storepb.Chunk_Encoding]int{}
-		for _, series := range seriesSet {
-			for _, chunk := range series.Chunks {
-				counts[chunk.Raw.Type]++
-			}
-		}
-		for _, chunkType := range []storepb.Chunk_Encoding{storepb.Chunk_XOR, storepb.Chunk_Histogram, storepb.Chunk_FloatHistogram} {
-			count, ok := counts[chunkType]
-			assert.True(t, ok, fmt.Sprintf("value type %s is not present", storepb.Chunk_Encoding_name[int32(chunkType)]))
-			assert.NotEmpty(t, count)
-		}
-	})
+				srv := newBucketStoreTestServer(t, s.store)
+				seriesSet, _, _, _, err := srv.Series(ctx, req)
+				require.NoError(t, err)
+
+				counts := map[storepb.Chunk_Encoding]int{}
+				for _, series := range seriesSet {
+					for _, chunk := range series.Chunks {
+						counts[chunk.Raw.Type]++
+					}
+				}
+				for _, chunkType := range []storepb.Chunk_Encoding{storepb.Chunk_XOR, storepb.Chunk_Histogram, storepb.Chunk_FloatHistogram} {
+					count, ok := counts[chunkType]
+					assert.True(t, ok, fmt.Sprintf("value type %s is not present", storepb.Chunk_Encoding_name[int32(chunkType)]))
+					assert.NotEmpty(t, count)
+				}
+			})
+		})
+	}
 }
 
 func emptyToNil(values []string) []string {
@@ -893,23 +969,11 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 	})
 }
 
-func toLabels(t *testing.T, labelValuePairs []string) (result labels.Labels) {
-	t.Helper()
-
-	if len(labelValuePairs)%2 != 0 {
-		t.Fatalf("invalid label name-value pairs %s", strings.Join(labelValuePairs, ""))
-	}
-	for i := 0; i < len(labelValuePairs); i += 2 {
-		result = append(result, labels.Label{Name: labelValuePairs[i], Value: labelValuePairs[i+1]})
-	}
-	return
-}
-
 func numObservationsForSummaries(t *testing.T, summaryName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) uint64 {
 	t.Helper()
 
 	summaryData := &dskit_metrics.SummaryData{}
-	for _, metric := range getMetricsMatchingLabels(metrics[summaryName], toLabels(t, labelValuePairs)) {
+	for _, metric := range dskit_metrics.FindMetricsInFamilyMatchingLabels(metrics[summaryName], labelValuePairs...) {
 		summaryData.AddSummary(metric.GetSummary())
 	}
 	m := &dto.Metric{}
@@ -921,7 +985,7 @@ func numObservationsForHistogram(t *testing.T, histogramName string, metrics dsk
 	t.Helper()
 
 	histogramData := &dskit_metrics.HistogramData{}
-	for _, metric := range getMetricsMatchingLabels(metrics[histogramName], toLabels(t, labelValuePairs)) {
+	for _, metric := range dskit_metrics.FindMetricsInFamilyMatchingLabels(metrics[histogramName], labelValuePairs...) {
 		histogramData.AddHistogram(metric.GetHistogram())
 	}
 	m := &dto.Metric{}

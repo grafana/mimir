@@ -70,7 +70,7 @@ func NewConcreteService(
 		retryBackoff: backoff.New(context.Background(), backoff.Config{
 			MinBackoff: 300 * time.Millisecond,
 			MaxBackoff: 600 * time.Millisecond,
-			MaxRetries: 50, // Sometimes the CI is slow ¯\_(ツ)_/¯
+			MaxRetries: 100, // Sometimes the CI is slow ¯\_(ツ)_/¯
 		}),
 	}
 }
@@ -550,7 +550,8 @@ func (w *LinePrefixLogger) Write(p []byte) (n int, err error) {
 type HTTPService struct {
 	*ConcreteService
 
-	httpPort int
+	metricsTimeout time.Duration
+	httpPort       int
 }
 
 func NewHTTPService(
@@ -563,8 +564,13 @@ func NewHTTPService(
 ) *HTTPService {
 	return &HTTPService{
 		ConcreteService: NewConcreteService(name, image, command, readiness, append(otherPorts, httpPort)...),
+		metricsTimeout:  time.Second,
 		httpPort:        httpPort,
 	}
+}
+
+func (s *HTTPService) SetMetricsTimeout(timeout time.Duration) {
+	s.metricsTimeout = timeout
 }
 
 func (s *HTTPService) Metrics() (_ string, err error) {
@@ -574,7 +580,7 @@ func (s *HTTPService) Metrics() (_ string, err error) {
 	// Fetch metrics.
 	// Use an IPv4 address instead of "localhost" hostname because our port mapping assumes IPv4
 	// (a port published by a Docker container could be different between IPv4 and IPv6).
-	res, err := DoGet(fmt.Sprintf("http://127.0.0.1:%d/metrics", localPort))
+	res, err := DoGetWithTimeout(fmt.Sprintf("http://127.0.0.1:%d/metrics", localPort), s.metricsTimeout)
 	if err != nil {
 		return "", err
 	}

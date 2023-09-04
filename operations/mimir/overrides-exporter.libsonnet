@@ -26,6 +26,7 @@
   overrides_exporter_port:: containerPort.newNamed(name='http-metrics', containerPort=$._config.server_http_port),
 
   overrides_exporter_args::
+    $._config.commonConfig +
     $._config.limitsConfig +
     $._config.overridesExporterRingConfig +
     $.mimirRuntimeConfigFile +
@@ -35,6 +36,8 @@
       'server.http-listen-port': $._config.server_http_port,
     },
 
+  overrides_exporter_container_env_map:: {},
+
   local container = $.core.v1.container,
   overrides_exporter_container::
     container.new(name, $._images.overrides_exporter) +
@@ -42,6 +45,7 @@
       $.overrides_exporter_port,
     ]) +
     container.withArgsMixin($.util.mapToFlags($.overrides_exporter_args)) +
+    (if std.length($.overrides_exporter_container_env_map) > 0 then container.withEnvMap(std.prune($.overrides_exporter_container_env_map)) else {}) +
     $.util.resourcesRequests('0.5', '0.5Gi') +
     $.util.readinessProbe +
     container.mixin.readinessProbe.httpGet.withPort($.overrides_exporter_port.name),
@@ -54,4 +58,7 @@
 
   overrides_exporter_service: if !$._config.overrides_exporter_enabled then null else
     $.util.serviceFor($.overrides_exporter_deployment, $._config.service_ignored_labels),
+
+  overrides_exporter_pdb: if !$._config.overrides_exporter_enabled then null else
+    $.newMimirPdb(name),
 }

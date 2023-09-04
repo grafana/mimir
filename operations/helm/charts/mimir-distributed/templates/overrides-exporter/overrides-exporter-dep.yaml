@@ -82,10 +82,10 @@ spec:
             {{- toYaml .Values.overrides_exporter.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- with .Values.overrides_exporter.env }}
-              {{ toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

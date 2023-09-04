@@ -14,11 +14,26 @@ jobs:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
       helm_version: v3.8.2
+      kind_kubectl_version: v1.20.8
+      kind_node_image: kindest/node:v1.20.15
+
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - name: Get build image from Makefile
+        id: build_image_step
+        run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+    outputs:
+      build_image: ${{ steps.build_image_step.outputs.build_image }}
 
   conftest:
     runs-on: ubuntu-latest
+    needs:
+      - prepare
     container:
-      image: grafana/mimir-build-image:charleskorn-golangci-lint-upgrade-beafb9184
+      image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -29,7 +44,7 @@ jobs:
       - name: Lint Rego Policies
         run: make BUILD_IN_CONTAINER=false check-conftest-fmt
 
-      - name: Conftest Verify
+      - name: Run conftest policy unit tests
         env:
           TEMP_DIR: ${{ runner.temp }}/conftest
         run: make BUILD_IN_CONTAINER=false conftest-verify

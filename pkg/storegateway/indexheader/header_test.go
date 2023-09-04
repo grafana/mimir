@@ -7,11 +7,13 @@ package indexheader
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"path/filepath"
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/gate"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -24,8 +26,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -36,7 +36,7 @@ var implementations = []struct {
 	{
 		name: "stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
-			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -46,10 +46,10 @@ var implementations = []struct {
 		name: "lazy stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
 			readerFactory := func() (Reader, error) {
-				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			}
 
-			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
+			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -84,17 +84,17 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 		labels.FromStrings("a", "1", "longer-string", "2"),
 	}
 
-	idIndexV2, err := testhelper.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	idIndexV2, err := block.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), nil))
 
-	metaIndexV1, err := metadata.ReadFromDir("./testdata/index_format_v1")
+	metaIndexV1, err := block.ReadMetaFromDir("./testdata/index_format_v1")
 	require.NoError(t, err)
 	test.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, metaIndexV1.ULID.String()))
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, metaIndexV1.ULID.String()), metadata.Thanos{
+	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(tmpDir, metaIndexV1.ULID.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}, &metaIndexV1.BlockMeta)
 
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 	require.Equal(t, expRanges[labels.Label{Name: "", Value: ""}].End, ptr.End)
 }
 
-func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *metadata.Meta {
+func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *block.Meta {
 	/* Copy index 6MB block index version 2. It was generated via thanosbench. Meta.json:
 		{
 		"ulid": "01DRBP4RNVZ94135ZA6B10EMRR",
@@ -233,13 +233,13 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 	}
 	*/
 
-	m, err := metadata.ReadFromDir("./testdata/index_format_v2")
+	m, err := block.ReadMetaFromDir("./testdata/index_format_v2")
 	require.NoError(t, err)
 	test.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), metadata.Thanos{
+	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}, &m.BlockMeta)
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), nil))
@@ -263,6 +263,45 @@ func TestReadersLabelValuesOffsets(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		setup       func(*Config)
+		expectedErr error
+	}{
+		"should fail on invalid index-header eager loading in startup": {
+			setup: func(cfg *Config) {
+				cfg.EagerLoadingStartupEnabled = true
+				cfg.LazyLoadingEnabled = false
+			},
+			expectedErr: errEagerLoadingStartupEnabledLazyLoadDisabled,
+		},
+		"should fail on invalid index-header lazy loading max concurrency": {
+			setup: func(cfg *Config) {
+				cfg.LazyLoadingConcurrency = -1
+			},
+			expectedErr: errInvalidIndexHeaderLazyLoadingConcurrency,
+		},
+	}
+
+	for testName, testData := range tests {
+		testData := testData
+
+		t.Run(testName, func(t *testing.T) {
+			indexHeaderConfig := &Config{}
+
+			fs := flag.NewFlagSet("", flag.PanicOnError)
+			indexHeaderConfig.RegisterFlagsWithPrefix(fs, "blocks-storage.bucket-store.index-header.")
+
+			testData.setup(indexHeaderConfig)
+
+			actualErr := indexHeaderConfig.Validate()
+			assert.Equal(t, testData.expectedErr, actualErr)
 		})
 	}
 }
@@ -304,7 +343,7 @@ func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, bl
 		}
 	}
 
-	id, err := testhelper.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	id, err := block.CreateBlock(ctx, tmpDir, series, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id.String()), nil))
 

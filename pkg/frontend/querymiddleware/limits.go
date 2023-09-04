@@ -13,11 +13,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"
@@ -83,8 +82,17 @@ type Limits interface {
 	// if out of order ingestion is disabled.
 	ResultsCacheTTL(userID string) time.Duration
 
-	// ResultsCacheForOutOfOrderWindowTTL returns TTL for cached results for query that falls into out-of-order ingestion window.
+	// ResultsCacheTTLForOutOfOrderTimeWindow returns TTL for cached results for query that falls into out-of-order ingestion window.
 	ResultsCacheTTLForOutOfOrderTimeWindow(userID string) time.Duration
+
+	// ResultsCacheTTLForCardinalityQuery returns TTL for cached results for cardinality queries.
+	ResultsCacheTTLForCardinalityQuery(userID string) time.Duration
+
+	// ResultsCacheTTLForLabelsQuery returns TTL for cached results for label names and values queries.
+	ResultsCacheTTLForLabelsQuery(userID string) time.Duration
+
+	// ResultsCacheForUnalignedQueryEnabled returns whether to cache results for queries that are not step-aligned
+	ResultsCacheForUnalignedQueryEnabled(userID string) bool
 }
 
 type limitsMiddleware struct {
@@ -148,18 +156,16 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 
 	// Enforce the max end time.
 	creationGracePeriod := validation.LargestPositiveNonZeroDurationPerTenant(tenantIDs, l.CreationGracePeriod)
-	if creationGracePeriod > 0 {
-		maxEndTime := util.TimeToMillis(time.Now().Add(creationGracePeriod))
-		if r.GetEnd() > maxEndTime {
-			// Replace the end time in the request.
-			level.Debug(log).Log(
-				"msg", "the end time of the query has been manipulated because of the 'creation grace period' setting",
-				"original", util.FormatTimeMillis(r.GetEnd()),
-				"updated", util.FormatTimeMillis(maxEndTime),
-				"creationGracePeriod", creationGracePeriod)
+	maxEndTime := util.TimeToMillis(time.Now().Add(creationGracePeriod))
+	if r.GetEnd() > maxEndTime {
+		// Replace the end time in the request.
+		level.Debug(log).Log(
+			"msg", "the end time of the query has been manipulated because of the 'creation grace period' setting",
+			"original", util.FormatTimeMillis(r.GetEnd()),
+			"updated", util.FormatTimeMillis(maxEndTime),
+			"creationGracePeriod", creationGracePeriod)
 
-			r = r.WithStartEnd(r.GetStart(), maxEndTime)
-		}
+		r = r.WithStartEnd(r.GetStart(), maxEndTime)
 	}
 
 	// Enforce max query size, in bytes.

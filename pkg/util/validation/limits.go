@@ -8,6 +8,7 @@ package validation
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -26,30 +27,31 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag                 = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag               = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag                   = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag                 = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag                  = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag              = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag                  = "querier.max-fetched-series-per-query"
-	maxLabelNamesPerSeriesFlag             = "validation.max-label-names-per-series"
-	maxLabelNameLengthFlag                 = "validation.max-length-label-name"
-	maxLabelValueLengthFlag                = "validation.max-length-label-value"
-	maxMetadataLengthFlag                  = "validation.max-metadata-length"
-	maxNativeHistogramBucketsFlag          = "validation.max-native-histogram-buckets"
-	creationGracePeriodFlag                = "validation.create-grace-period"
-	maxPartialQueryLengthFlag              = "querier.max-partial-query-length"
-	maxTotalQueryLengthFlag                = "query-frontend.max-total-query-length"
-	maxQueryExpressionSizeBytesFlag        = "query-frontend.max-query-expression-size-bytes"
-	requestRateFlag                        = "distributor.request-rate-limit"
-	requestBurstSizeFlag                   = "distributor.request-burst-size"
-	ingestionRateFlag                      = "distributor.ingestion-rate-limit"
-	ingestionBurstSizeFlag                 = "distributor.ingestion-burst-size"
-	HATrackerMaxClustersFlag               = "distributor.ha-tracker.max-clusters"
-	resultsCacheTTLFlag                    = "query-frontend.results-cache-ttl"
-	resultsCacheTTLForOutOfOrderWindowFlag = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
-	QueryIngestersWithinFlag               = "querier.query-ingesters-within"
+	MaxSeriesPerMetricFlag                   = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag                 = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag                     = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag                   = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag                    = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag                = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag                    = "querier.max-fetched-series-per-query"
+	MaxEstimatedChunksPerQueryMultiplierFlag = "querier.max-estimated-fetched-chunks-per-query-multiplier"
+	maxLabelNamesPerSeriesFlag               = "validation.max-label-names-per-series"
+	maxLabelNameLengthFlag                   = "validation.max-length-label-name"
+	maxLabelValueLengthFlag                  = "validation.max-length-label-value"
+	maxMetadataLengthFlag                    = "validation.max-metadata-length"
+	maxNativeHistogramBucketsFlag            = "validation.max-native-histogram-buckets"
+	creationGracePeriodFlag                  = "validation.create-grace-period"
+	maxPartialQueryLengthFlag                = "querier.max-partial-query-length"
+	maxTotalQueryLengthFlag                  = "query-frontend.max-total-query-length"
+	maxQueryExpressionSizeBytesFlag          = "query-frontend.max-query-expression-size-bytes"
+	requestRateFlag                          = "distributor.request-rate-limit"
+	requestBurstSizeFlag                     = "distributor.request-burst-size"
+	ingestionRateFlag                        = "distributor.ingestion-rate-limit"
+	ingestionBurstSizeFlag                   = "distributor.ingestion-burst-size"
+	HATrackerMaxClustersFlag                 = "distributor.ha-tracker.max-clusters"
+	resultsCacheTTLFlag                      = "query-frontend.results-cache-ttl"
+	resultsCacheTTLForOutOfOrderWindowFlag   = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
+	QueryIngestersWithinFlag                 = "querier.query-ingesters-within"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -66,25 +68,25 @@ func (e LimitError) Error() string {
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	RequestRate               float64             `yaml:"request_rate" json:"request_rate" category:"experimental"`
-	RequestBurstSize          int                 `yaml:"request_burst_size" json:"request_burst_size" category:"experimental"`
-	IngestionRate             float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionBurstSize        int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
-	AcceptHASamples           bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
-	HAClusterLabel            string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
-	HAReplicaLabel            string              `yaml:"ha_replica_label" json:"ha_replica_label"`
-	HAMaxClusters             int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
-	DropLabels                flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
-	MaxLabelNameLength        int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
-	MaxLabelValueLength       int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
-	MaxLabelNamesPerSeries    int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
-	MaxMetadataLength         int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
-	MaxNativeHistogramBuckets int                 `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
-	CreationGracePeriod       model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
-	EnforceMetadataMetricName bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
-	IngestionTenantShardSize  int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
-	MetricRelabelConfigs      []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
-
+	RequestRate                                 float64             `yaml:"request_rate" json:"request_rate"`
+	RequestBurstSize                            int                 `yaml:"request_burst_size" json:"request_burst_size"`
+	IngestionRate                               float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
+	IngestionBurstSize                          int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	AcceptHASamples                             bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HAClusterLabel                              string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
+	HAReplicaLabel                              string              `yaml:"ha_replica_label" json:"ha_replica_label"`
+	HAMaxClusters                               int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	DropLabels                                  flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
+	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
+	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
+	MaxLabelNamesPerSeries                      int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
+	MaxMetadataLength                           int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
+	MaxNativeHistogramBuckets                   int                 `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
+	CreationGracePeriod                         model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
+	EnforceMetadataMetricName                   bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
+	IngestionTenantShardSize                    int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
+	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
+	ServiceOverloadStatusCodeOnRateLimitEnabled bool                `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
 	// Ingester enforced limits.
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
@@ -106,25 +108,29 @@ type Limits struct {
 	SeparateMetricsGroupLabel string `yaml:"separate_metrics_group_label" json:"separate_metrics_group_label" category:"experimental"`
 
 	// Querier enforced limits.
-	MaxChunksPerQuery               int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
-	MaxFetchedSeriesPerQuery        int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
-	MaxFetchedChunkBytesPerQuery    int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
-	MaxQueryLookback                model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
-	MaxPartialQueryLength           model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
-	MaxQueryParallelism             int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
-	MaxLabelsQueryLength            model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
-	MaxCacheFreshness               model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
-	MaxQueriersPerTenant            int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
-	QueryShardingTotalShards        int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
-	QueryShardingMaxShardedQueries  int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
-	QueryShardingMaxRegexpSizeBytes int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes" category:"experimental"`
-	SplitInstantQueriesByInterval   model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
-	QueryIngestersWithin            model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
+	MaxChunksPerQuery                    int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
+	MaxEstimatedChunksPerQueryMultiplier float64        `yaml:"max_estimated_fetched_chunks_per_query_multiplier" json:"max_estimated_fetched_chunks_per_query_multiplier" category:"experimental"`
+	MaxFetchedSeriesPerQuery             int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
+	MaxFetchedChunkBytesPerQuery         int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
+	MaxQueryLookback                     model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
+	MaxPartialQueryLength                model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
+	MaxQueryParallelism                  int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
+	MaxLabelsQueryLength                 model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
+	MaxCacheFreshness                    model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
+	MaxQueriersPerTenant                 int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
+	QueryShardingTotalShards             int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
+	QueryShardingMaxShardedQueries       int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
+	QueryShardingMaxRegexpSizeBytes      int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
+	SplitInstantQueriesByInterval        model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
+	QueryIngestersWithin                 model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 
 	// Query-frontend limits.
 	MaxTotalQueryLength                    model.Duration `yaml:"max_total_query_length" json:"max_total_query_length"`
 	ResultsCacheTTL                        model.Duration `yaml:"results_cache_ttl" json:"results_cache_ttl" category:"experimental"`
 	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window" category:"experimental"`
+	ResultsCacheTTLForCardinalityQuery     model.Duration `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query" category:"experimental"`
+	ResultsCacheTTLForLabelsQuery          model.Duration `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query" category:"experimental"`
+	ResultsCacheForUnalignedQueryEnabled   bool           `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
 	MaxQueryExpressionSizeBytes            int            `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes" category:"experimental"`
 
 	// Cardinality
@@ -180,9 +186,9 @@ type Limits struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
-	f.Float64Var(&l.RequestRate, requestRateFlag, 0, "Per-tenant request rate limit in requests per second. 0 to disable.")
-	f.IntVar(&l.RequestBurstSize, requestBurstSizeFlag, 0, "Per-tenant allowed request burst size. 0 to disable.")
+	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
+	f.Float64Var(&l.RequestRate, requestRateFlag, 0, "Per-tenant push request rate limit in requests per second. 0 to disable.")
+	f.IntVar(&l.RequestBurstSize, requestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
 	f.Float64Var(&l.IngestionRate, ingestionRateFlag, 10000, "Per-tenant ingestion rate limit in samples per second.")
 	f.IntVar(&l.IngestionBurstSize, ingestionBurstSizeFlag, 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
@@ -196,8 +202,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxMetadataLength, maxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
 	f.IntVar(&l.MaxNativeHistogramBuckets, maxNativeHistogramBucketsFlag, 0, "Maximum number of buckets per native histogram sample. 0 to disable the limit.")
 	_ = l.CreationGracePeriod.Set("10m")
-	f.Var(&l.CreationGracePeriod, creationGracePeriodFlag, "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable.")
+	f.Var(&l.CreationGracePeriod, creationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
+	f.BoolVar(&l.ServiceOverloadStatusCodeOnRateLimitEnabled, "distributor.service-overload-status-code-on-rate-limit-enabled", false, "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.")
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
@@ -213,6 +220,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
+	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
 	f.Var(&l.MaxPartialQueryLength, maxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
@@ -259,6 +267,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
 	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
+	f.Var(&l.ResultsCacheTTLForCardinalityQuery, "query-frontend.results-cache-ttl-for-cardinality-query", "Time to live duration for cached cardinality query results. The value 0 disables the cache.")
+	f.Var(&l.ResultsCacheTTLForLabelsQuery, "query-frontend.results-cache-ttl-for-labels-query", "Time to live duration for cached label names and label values query results. The value 0 disables the cache.")
+	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.IntVar(&l.MaxQueryExpressionSizeBytes, maxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
 
 	// Store-gateway.
@@ -319,6 +330,15 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	return l.validate()
 }
 
+// RegisterExtensionsDefaults registers the default values for extensions into l.
+// This is especially handy for those downstream projects that wish to have control
+// over the exact moment in which the registration happens (e.g. during service
+// dependency initialization).
+func (l *Limits) RegisterExtensionsDefaults() {
+	_, getExtensions := newLimitsWithExtensions((*plainLimits)(l))
+	l.extensions = getExtensions()
+}
+
 func (l *Limits) MarshalJSON() ([]byte, error) {
 	return json.Marshal(limitsToStructWithExtensionFields(l))
 }
@@ -330,8 +350,12 @@ func (l *Limits) MarshalYAML() (interface{}, error) {
 func (l *Limits) validate() error {
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
-			return fmt.Errorf("invalid metric_relabel_configs")
+			return errors.New("invalid metric_relabel_configs")
 		}
+	}
+
+	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
+		return errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
 	}
 
 	return nil
@@ -420,6 +444,11 @@ func (o *Overrides) AcceptHASamples(userID string) bool {
 	return o.getOverridesForUser(userID).AcceptHASamples
 }
 
+// ServiceOverloadStatusCodeOnRateLimitEnabled return whether the distributor uses status code 529 instead of 429 when the rate limit is exceeded.
+func (o *Overrides) ServiceOverloadStatusCodeOnRateLimitEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).ServiceOverloadStatusCodeOnRateLimitEnabled
+}
+
 // HAClusterLabel returns the cluster label to look for when deciding whether to accept a sample from a Prometheus HA replica.
 func (o *Overrides) HAClusterLabel(userID string) string {
 	return o.getOverridesForUser(userID).HAClusterLabel
@@ -481,6 +510,11 @@ func (o *Overrides) MaxGlobalSeriesPerMetric(userID string) int {
 
 func (o *Overrides) MaxChunksPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxChunksPerQuery
+}
+
+func (o *Overrides) MaxEstimatedChunksPerQuery(userID string) int {
+	overridesForUser := o.getOverridesForUser(userID)
+	return int(overridesForUser.MaxEstimatedChunksPerQueryMultiplier * float64(overridesForUser.MaxChunksPerQuery))
 }
 
 // MaxFetchedSeriesPerQuery returns the maximum number of series allowed per query when fetching
@@ -828,6 +862,18 @@ func (o *Overrides) ResultsCacheTTLForOutOfOrderTimeWindow(user string) time.Dur
 	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForOutOfOrderTimeWindow)
 }
 
+func (o *Overrides) ResultsCacheTTLForCardinalityQuery(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForCardinalityQuery)
+}
+
+func (o *Overrides) ResultsCacheTTLForLabelsQuery(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForLabelsQuery)
+}
+
+func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).ResultsCacheForUnalignedQueryEnabled
+}
+
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
 	if o.tenantLimits != nil {
 		l := o.tenantLimits.ByUserID(userID)
@@ -836,6 +882,16 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 		}
 	}
 	return o.defaultLimits
+}
+
+// AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants
+func AllTrueBooleansPerTenant(tenantIDs []string, f func(string) bool) bool {
+	for _, tenantID := range tenantIDs {
+		if !f(tenantID) {
+			return false
+		}
+	}
+	return true
 }
 
 // SmallestPositiveIntPerTenant is returning the minimal positive value of the
@@ -908,6 +964,20 @@ func LargestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) 
 	return *result
 }
 
+// MinDurationPerTenant is returning the minimum duration per tenant. Without
+// tenants given it will return a time.Duration(0).
+func MinDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
+	result := time.Duration(0)
+	for idx, tenantID := range tenantIDs {
+		v := f(tenantID)
+
+		if idx == 0 || v < result {
+			result = v
+		}
+	}
+	return result
+}
+
 // MaxDurationPerTenant is returning the maximum duration per tenant. Without
 // tenants given it will return a time.Duration(0).
 func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
@@ -958,6 +1028,9 @@ func MustRegisterExtension[E interface{ Default() E }](name string) func(*Limits
 			// Call e.Default() here every time instead of storing it when the extension is being registered, as it might change over time.
 			// Especially when the default values are initialized after package initialization phase, where this is registered.
 			return e.Default()
+		}
+		if l.extensions[name] == nil {
+			return zeroE
 		}
 		return l.extensions[name].(E)
 	}

@@ -329,6 +329,9 @@ func (c *memcachedClient) GetMulti(ctx context.Context, keys []string, opts ...O
 	options := toMemcacheOptions(opts...)
 	batches, err := c.getMultiBatched(ctx, keys, options...)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
 		level.Warn(c.logger).Log("msg", "failed to fetch items from memcached", "numKeys", len(keys), "firstKey", keys[0], "err", err)
 
 		// In case we have both results and an error, it means some batch requests

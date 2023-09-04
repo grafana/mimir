@@ -30,8 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
-	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -66,25 +64,25 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 	}()
 
 	// Create a few blocks to compact and upload them to the bucket.
-	metas := make([]*metadata.Meta, 0, numBlocks)
+	metas := make([]*block.Meta, 0, numBlocks)
 	expectedSeries := make([]series, numBlocks)
 
 	for i := 0; i < numBlocks; i++ {
-		spec := testutil.BlockSeriesSpec{
+		spec := block.SeriesSpec{
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					sample{10, 0, test.GenerateTestHistogram(1), nil},
 					sample{20, 0, test.GenerateTestHistogram(2), nil},
-				}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					sample{30, 0, test.GenerateTestHistogram(3), nil},
 					sample{40, 0, test.GenerateTestHistogram(4), nil},
-				}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					sample{50, 0, test.GenerateTestHistogram(5), nil},
 					sample{2*time.Hour.Milliseconds() - 1, 0, test.GenerateTestHistogram(6), nil},
-				}),
+				})),
 			},
 		}
 
@@ -99,7 +97,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		}
 		expectedSeries[i] = series{lbls: spec.Labels, samples: samples}
 
-		meta, err := testutil.GenerateBlockFromSpec(userID, inDir, []*testutil.BlockSeriesSpec{&spec})
+		meta, err := block.GenerateBlockFromSpec(userID, inDir, []*block.SeriesSpec{&spec})
 		require.NoError(t, err)
 
 		require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bktClient, filepath.Join(inDir, meta.ULID.String()), meta))
@@ -191,14 +189,14 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 }
 
 func isMarkedForDeletionDueToCompaction(t *testing.T, blockPath string) bool {
-	deletionMarkFilePath := filepath.Join(blockPath, metadata.DeletionMarkFilename)
+	deletionMarkFilePath := filepath.Join(blockPath, block.DeletionMarkFilename)
 	b, err := os.ReadFile(deletionMarkFilePath)
 	if os.IsNotExist(err) {
 		return false
 	}
 	require.NoError(t, err)
 
-	deletionMark := &metadata.DeletionMark{}
+	deletionMark := &block.DeletionMark{}
 	require.NoError(t, json.Unmarshal(b, deletionMark))
 
 	return deletionMark.Details == "source of compacted block"
@@ -230,4 +228,11 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

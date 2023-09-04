@@ -19,7 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 const (
@@ -56,7 +55,7 @@ func NewBucketIndexMetadataFetcher(
 }
 
 // Fetch implements block.MetadataFetcher. Not goroutine-safe.
-func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*metadata.Meta, partial map[ulid.ULID]error, err error) {
+func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*block.Meta, partial map[ulid.ULID]error, err error) {
 	f.metrics.ResetTx()
 
 	start := time.Now()
@@ -96,7 +95,7 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 	}
 
 	// Build block metas out of the index.
-	metas = make(map[ulid.ULID]*metadata.Meta, len(idx.Blocks))
+	metas = make(map[ulid.ULID]*block.Meta, len(idx.Blocks))
 	for _, b := range idx.Blocks {
 		metas[b.ID] = b.ThanosMeta()
 	}

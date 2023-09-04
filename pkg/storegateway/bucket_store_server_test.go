@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -93,15 +94,19 @@ func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewaySe
 
 // Series calls the store server's Series() endpoint via gRPC and returns the responses collected
 // via the gRPC stream.
-func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings storage.Warnings, hints hintspb.SeriesResponseHints, err error) {
+func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings storage.Warnings, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
 	var (
-		conn   *grpc.ClientConn
-		stream storepb.Store_SeriesClient
-		res    *storepb.SeriesResponse
+		conn               *grpc.ClientConn
+		stream             storepb.Store_SeriesClient
+		res                *storepb.SeriesResponse
+		streamingSeriesSet []*storepb.StreamingSeries
 	)
 
 	// Create a gRPC connection to the server.
-	conn, err = grpc.Dial(s.serverListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err = grpc.Dial(s.serverListener.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024*1024*1024)),
+	)
 	if err != nil {
 		return
 	}
@@ -143,6 +148,10 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		}
 
 		if recvSeries := res.GetSeries(); recvSeries != nil {
+			if !req.SkipChunks && req.StreamingChunksBatchSize > 0 {
+				err = errors.New("got a normal series when streaming was enabled")
+				return
+			}
 			var recvSeriesData []byte
 
 			// We use a pool for the chunks and may use other pools in the future.
@@ -162,6 +171,115 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			}
 
 			seriesSet = append(seriesSet, copiedSeries)
+		}
+
+		if recvSeries := res.GetStreamingSeries(); recvSeries != nil {
+			if req.StreamingChunksBatchSize == 0 || req.SkipChunks {
+				err = errors.New("got a streaming series when streaming was disabled")
+				return
+			}
+
+			var recvSeriesData []byte
+
+			// We prefer to stay on the safest side at this stage
+			// so we do a marshal+unmarshal to copy the whole series.
+			recvSeriesData, err = recvSeries.Marshal()
+			if err != nil {
+				err = errors.Wrap(err, "marshal received series")
+				return
+			}
+
+			copiedSeries := &storepb.StreamingSeriesBatch{}
+			if err = copiedSeries.Unmarshal(recvSeriesData); err != nil {
+				err = errors.Wrap(err, "unmarshal received series")
+				return
+			}
+
+			streamingSeriesSet = append(streamingSeriesSet, copiedSeries.Series...)
+
+			if recvSeries.IsEndOfSeriesStream {
+				break
+			}
+		}
+	}
+
+	if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
+		res, err = stream.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// This is expected if there are no matching series: no estimate is sent and the stream is closed.
+				err = nil
+			}
+
+			return
+		}
+
+		estimate := res.GetStreamingChunksEstimate()
+		if estimate == nil {
+			err = fmt.Errorf("expected to get streaming chunks estimate message before all chunks messages, but got %T", res.Result)
+			return
+		}
+
+		estimatedChunks = estimate.EstimatedChunkCount
+
+		// Get the streaming chunks.
+		idx := -1
+		for idx < len(streamingSeriesSet)-1 {
+			// We don't expect EOF errors here.
+			res, err = stream.Recv()
+			if err != nil {
+				return
+			}
+
+			chksBatch := res.GetStreamingChunks()
+			if chksBatch == nil {
+				err = errors.Errorf("received unexpected response type %T, expected streaming chunks batch", res.Result)
+				return
+			}
+
+			for _, chks := range chksBatch.Series {
+				idx++
+				if chksBatch == nil {
+					err = errors.Errorf("expected streaming chunks, got something else")
+					return
+				}
+				if chks.SeriesIndex != uint64(idx) {
+					err = errors.Errorf("mismatch in series ref when getting streaming chunks, exp %d, got %d", idx, chks.SeriesIndex)
+					return
+				}
+
+				// We prefer to stay on the safest side at this stage
+				// so we do a marshal+unmarshal to copy the whole chunks.
+				var data []byte
+				data, err = chks.Marshal()
+				if err != nil {
+					err = errors.Wrap(err, "marshal received series")
+					return
+				}
+
+				copiedChunks := &storepb.StreamingChunks{}
+				if err = copiedChunks.Unmarshal(data); err != nil {
+					err = errors.Wrap(err, "unmarshal received series")
+					return
+				}
+
+				seriesSet = append(seriesSet, &storepb.Series{
+					Labels: streamingSeriesSet[idx].Labels,
+					Chunks: copiedChunks.Chunks,
+				})
+			}
+		}
+
+		res, err = stream.Recv()
+		for err == nil {
+			if res.GetHints() == nil && res.GetStats() == nil {
+				err = errors.Errorf("got unexpected response type %T", res.Result)
+				break
+			}
+			res, err = stream.Recv()
+		}
+		if errors.Is(err, io.EOF) {
+			err = nil
 		}
 	}
 

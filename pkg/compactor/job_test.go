@@ -18,41 +18,40 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 func TestJob_MinCompactionLevel(t *testing.T) {
 	job := NewJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
-	require.NoError(t, job.AppendMeta(&metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(1, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}))
+	require.NoError(t, job.AppendMeta(&block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(1, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}))
 	assert.Equal(t, 2, job.MinCompactionLevel())
 
-	require.NoError(t, job.AppendMeta(&metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(2, nil), Compaction: tsdb.BlockMetaCompaction{Level: 3}}}))
+	require.NoError(t, job.AppendMeta(&block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(2, nil), Compaction: tsdb.BlockMetaCompaction{Level: 3}}}))
 	assert.Equal(t, 2, job.MinCompactionLevel())
 
-	require.NoError(t, job.AppendMeta(&metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(3, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}))
+	require.NoError(t, job.AppendMeta(&block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(3, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}))
 	assert.Equal(t, 1, job.MinCompactionLevel())
 }
 
 func TestJobWaitPeriodElapsed(t *testing.T) {
 	type jobBlock struct {
-		meta     *metadata.Meta
+		meta     *block.Meta
 		attrs    objstore.ObjectAttributes
 		attrsErr error
 	}
 
 	// Blocks with compaction level 1.
-	meta1 := &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(1, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
-	meta2 := &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(2, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	meta1 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(1, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	meta2 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(2, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
 
 	// Blocks with compaction level 2.
-	meta3 := &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(3, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
-	meta4 := &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(4, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
+	meta3 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(3, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
+	meta4 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(4, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
 
 	tests := map[string]struct {
 		waitPeriod      time.Duration
 		jobBlocks       []jobBlock
 		expectedElapsed bool
-		expectedMeta    *metadata.Meta
+		expectedMeta    *block.Meta
 		expectedErr     string
 	}{
 		"wait period disabled": {

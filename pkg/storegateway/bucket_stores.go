@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -55,8 +54,6 @@ type BucketStores struct {
 	// Index cache shared across all tenants.
 	indexCache indexcache.IndexCache
 
-	chunksCache chunkscache.Cache
-
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
 
@@ -65,6 +62,9 @@ type BucketStores struct {
 
 	// Gate used to limit query concurrency across all tenants.
 	queryGate gate.Gate
+
+	// Gate used to limit concurrency on loading index-headers across all tenants.
+	lazyLoadingGate gate.Gate
 
 	// Keeps a bucket store for each tenant.
 	storesMu sync.RWMutex
@@ -90,10 +90,21 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
 
+	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
+
 	// The number of concurrent queries against the tenants BucketStores are limited.
-	queryGateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
+	queryGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "query"}, gateReg)
 	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
+
+	// The number of concurrent index header loads from storegateway are limited.
+	lazyLoadingGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
+	lazyLoadingGate := gate.NewNoop()
+	lazyLoadingMax := cfg.BucketStore.IndexHeader.LazyLoadingConcurrency
+	if lazyLoadingMax != 0 {
+		blockingGate := gate.NewBlocking(cfg.BucketStore.IndexHeader.LazyLoadingConcurrency)
+		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeader.LazyLoadingConcurrency, blockingGate)
+	}
 
 	u := &BucketStores{
 		logger:             logger,
@@ -105,6 +116,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
+		lazyLoadingGate:    lazyLoadingGate,
 		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
 		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncBackoffConfig: backoff.Config{
@@ -141,12 +153,6 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	if u.indexCache, err = tsdb.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
 		return nil, errors.Wrap(err, "create index cache")
 	}
-
-	chunksCache, err := chunkscache.NewChunksCache(logger, chunksCacheClient, reg)
-	if err != nil {
-		return nil, errors.Wrap(err, "create chunks cache")
-	}
-	u.chunksCache = chunkscache.NewTracingCache(chunksCache, logger)
 
 	if reg != nil {
 		reg.MustRegister(u.metaFetcherMetrics)
@@ -456,9 +462,8 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
-		WithChunksCache(u.chunksCache),
 		WithQueryGate(u.queryGate),
-		WithFineGrainedChunksCaching(u.cfg.BucketStore.ChunksCache.FineGrainedChunksCachingEnabled),
+		WithLazyLoadingGate(u.lazyLoadingGate),
 	}
 
 	bs, err := NewBucketStore(
@@ -466,8 +471,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		userBkt,
 		fetcher,
 		u.syncDirForUser(userID),
-		u.cfg.BucketStore.StreamingBatchSize,
-		u.cfg.BucketStore.ChunkRangesPerSeries,
+		u.cfg.BucketStore,
 		selectPostingsStrategy(u.logger, u.cfg.BucketStore.SeriesSelectionStrategyName, u.cfg.BucketStore.SelectionStrategies.WorstCaseSeriesPreference),
 		NewChunksLimiterFactory(func() uint64 {
 			return uint64(u.limits.MaxChunksPerQuery(userID))
@@ -476,11 +480,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 			return uint64(u.limits.MaxFetchedSeriesPerQuery(userID))
 		}),
 		u.partitioners,
-		u.cfg.BucketStore.BlockSyncConcurrency,
-		u.cfg.BucketStore.PostingOffsetsInMemSampling,
-		u.cfg.BucketStore.IndexHeader,
-		u.cfg.BucketStore.IndexHeaderLazyLoadingEnabled,
-		u.cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout,
 		u.seriesHashCache,
 		u.bucketStoreMetrics,
 		bucketStoreOpts...,

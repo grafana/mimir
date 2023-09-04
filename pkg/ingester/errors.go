@@ -9,7 +9,14 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/prometheus/model/labels"
+)
+
+var (
+	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
+	tooBusyError = httpgrpc.Errorf(http.StatusServiceUnavailable,
+		"the ingester is currently too busy to process queries, try again later")
 )
 
 type validationError struct {

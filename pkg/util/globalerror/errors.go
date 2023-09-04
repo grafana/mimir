@@ -31,6 +31,7 @@ const (
 	MaxChunksPerQuery             ID = "max-chunks-per-query"
 	MaxSeriesPerQuery             ID = "max-series-per-query"
 	MaxChunkBytesPerQuery         ID = "max-chunks-bytes-per-query"
+	MaxEstimatedChunksPerQuery    ID = "max-estimated-chunks-per-query"
 
 	DistributorMaxIngestionRate             ID = "distributor-max-ingestion-rate"
 	DistributorMaxInflightPushRequests      ID = "distributor-max-inflight-push-requests"
@@ -61,6 +62,7 @@ const (
 	SampleOutOfOrder         ID = "sample-out-of-order"
 	SampleDuplicateTimestamp ID = "sample-duplicate-timestamp"
 	ExemplarSeriesMissing    ID = "exemplar-series-missing"
+	ExemplarTooFarInFuture   ID = "exemplar-too-far-in-future"
 
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
@@ -85,6 +87,25 @@ func (id ID) MessageWithPerInstanceLimitConfig(msg, flag string, addFlags ...str
 func (id ID) MessageWithPerTenantLimitConfig(msg, flag string, addFlags ...string) string {
 	flagsList, plural := buildFlagsList(flag, addFlags...)
 	return fmt.Sprintf("%s (%s%s). To adjust the related per-tenant limit%s, configure %s, or contact your service administrator.", msg, errPrefix, id, plural, flagsList)
+}
+
+// MessageWithStrategyAndPerTenantLimitConfig returns the provided msg, appending the error id and a
+// suggestion on which strategy to follow to try not hitting the limit, plus which configuration
+// flag(s) to otherwise change the per-tenant limit.
+func (id ID) MessageWithStrategyAndPerTenantLimitConfig(msg, strategy, flag string, addFlags ...string) string {
+	flagsList, plural := buildFlagsList(flag, addFlags...)
+	return fmt.Sprintf("%s (%s%s). %s. Otherwise, to adjust the related per-tenant limit%s, configure %s, or contact your service administrator.",
+		msg, errPrefix, id, strategy, plural, flagsList)
+}
+
+// LabelValue returns the error ID converted to a form suitable for use as a Prometheus label value.
+func (id ID) LabelValue() string {
+	return strings.ReplaceAll(string(id), "-", "_")
+}
+
+// Error implements error.
+func (id ID) Error() string {
+	return string(id)
 }
 
 func buildFlagsList(flag string, addFlags ...string) (string, string) {

@@ -13,14 +13,13 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/internal/base"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/internal/shared"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 )
 
 // ClientOptions contains the optional parameters when creating a Client.
-type ClientOptions struct {
-	azcore.ClientOptions
-}
+type ClientOptions base.ClientOptions
 
 // Client represents a URL to an Azure Storage blob; the blob may be a block blob, append blob, or page blob.
 type Client struct {
@@ -99,6 +98,11 @@ func NewClientFromConnectionString(connectionString string, options *ClientOptio
 // URL returns the URL endpoint used by the BlobClient object.
 func (c *Client) URL() string {
 	return c.svc.URL()
+}
+
+// ServiceClient returns the embedded service client for this client.
+func (c *Client) ServiceClient() *service.Client {
+	return c.svc
 }
 
 // CreateContainer is a lifecycle method to creates a new container under the specified account.

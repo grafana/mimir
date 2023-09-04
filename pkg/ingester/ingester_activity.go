@@ -10,7 +10,7 @@ import (
 	"strconv"
 
 	"github.com/grafana/dskit/tenant"
-	"github.com/weaveworks/common/tracing"
+	"github.com/grafana/dskit/tracing"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -167,6 +167,24 @@ func (i *ActivityTrackerWrapper) UserRegistryHandler(writer http.ResponseWriter,
 	i.ing.UserRegistryHandler(writer, request)
 }
 
+func (i *ActivityTrackerWrapper) TenantsHandler(w http.ResponseWriter, r *http.Request) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(r.Context(), "Ingester/TenantsHandler", nil)
+	})
+	defer i.tracker.Delete(ix)
+
+	i.ing.TenantsHandler(w, r)
+}
+
+func (i *ActivityTrackerWrapper) TenantTSDBHandler(w http.ResponseWriter, r *http.Request) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(r.Context(), "Ingester/TenantTSDBHandler", nil)
+	})
+	defer i.tracker.Delete(ix)
+
+	i.ing.TenantTSDBHandler(w, r)
+}
+
 func requestActivity(ctx context.Context, name string, req interface{}) string {
 	userID, _ := tenant.TenantID(ctx)
 	traceID, _ := tracing.ExtractSampledTraceID(ctx)
@@ -225,7 +243,12 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 		labelMatcherToString(sb, m)
 		sb.WriteString(",")
 	}
-	sb.WriteString("},}")
+	sb.WriteString("},")
+
+	b = b[:0]
+	sb.WriteString("StreamingChunksBatchSize:")
+	sb.Write(strconv.AppendUint(b, req.StreamingChunksBatchSize, 10))
+	sb.WriteString(",}")
 }
 
 func labelMatcherToString(sb *bytes.Buffer, m *client.LabelMatcher) {

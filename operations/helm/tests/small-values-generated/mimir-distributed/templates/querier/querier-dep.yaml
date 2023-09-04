@@ -89,6 +89,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "6"
           envFrom:
       nodeSelector:
         {}

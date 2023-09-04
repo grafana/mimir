@@ -32,7 +32,10 @@
       ), byContainerPort
     ),
 
-  mimir_read_env_map:: $.querier_env_map,
+  mimir_read_env_map:: $.querier_env_map {
+    // Do not inherit GOMAXPROCS from querier because mimir-read runs more components.
+    GOMAXPROCS: null,
+  },
 
   mimir_read_container:: if !$._config.is_read_write_deployment_mode then null else
     container.new('mimir-read', $._images.mimir_read) +
@@ -40,7 +43,7 @@
     container.withArgsMixin($.util.mapToFlags($.mimir_read_args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
-    container.withEnvMap($.mimir_read_env_map) +
+    (if std.length($.mimir_read_env_map) > 0 then container.withEnvMap(std.prune($.mimir_read_env_map)) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
 
@@ -63,4 +66,7 @@
     // Must be an headless to ensure any gRPC client using it (ruler remote evaluations)
     // correctly balances requests across all mimir-read pods.
     service.mixin.spec.withClusterIp('None'),
+
+  mimir_read_pdb: if !$._config.is_read_write_deployment_mode then null else
+    $.newMimirPdb('mimir-read'),
 }

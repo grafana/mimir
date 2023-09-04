@@ -9,14 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -96,7 +95,7 @@ func (m *mockExemplarQuerier) matches(res exemplar.QueryResult, matchers []*labe
 func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 	t.Run("error getting tenant IDs", func(t *testing.T) {
 		upstream := &mockExemplarQueryable{}
-		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(context.Background())
 		assert.ErrorIs(t, err, user.ErrNoOrgID)
@@ -106,7 +105,7 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 	t.Run("error getting upstream querier", func(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), "123")
 		upstream := &mockExemplarQueryable{err: errors.New("unable to get querier")}
-		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(ctx)
 		assert.Error(t, err)
@@ -117,7 +116,7 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), "123")
 		querier := &mockExemplarQuerier{}
 		upstream := &mockExemplarQueryable{queriers: map[string]storage.ExemplarQuerier{"123": querier}}
-		federated := NewExemplarQueryable(upstream, true, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, true, defaultConcurrency, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(ctx)
 		assert.NoError(t, err)
@@ -128,7 +127,7 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), "123")
 		querier := &mockExemplarQuerier{}
 		upstream := &mockExemplarQueryable{queriers: map[string]storage.ExemplarQuerier{"123": querier}}
-		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(ctx)
 		require.NoError(t, err)
@@ -147,7 +146,7 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 			"123": querier1,
 			"456": querier2,
 		}}
-		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(ctx)
 		require.NoError(t, err)
@@ -209,7 +208,7 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 			"456": &mockExemplarQuerier{res: res2},
 		}}
 
-		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
 		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123|456"))
 		require.NoError(t, err)
 
@@ -234,7 +233,7 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 			"456": &mockExemplarQuerier{res: res2},
 		}}
 
-		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
 		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123|456"))
 		require.NoError(t, err)
 
@@ -264,7 +263,7 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 			"456": &mockExemplarQuerier{res: res2},
 		}}
 
-		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
 		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123|456"))
 		require.NoError(t, err)
 
@@ -285,7 +284,7 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 			"456": &mockExemplarQuerier{res: res2},
 		}}
 
-		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
 		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123|456"))
 		require.NoError(t, err)
 
@@ -307,7 +306,7 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 			"456": &mockExemplarQuerier{err: errors.New("timeout running exemplar query")},
 		}}
 
-		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
 		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123|456"))
 		require.NoError(t, err)
 

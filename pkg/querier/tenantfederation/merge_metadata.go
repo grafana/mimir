@@ -10,8 +10,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/scrape"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -21,18 +21,20 @@ import (
 // metadata for all tenant IDs that are part of the request and merges the results.
 //
 // No deduplication of metadata is done before being returned.
-func NewMetadataSupplier(next querier.MetadataSupplier, logger log.Logger) querier.MetadataSupplier {
+func NewMetadataSupplier(next querier.MetadataSupplier, maxConcurrency int, logger log.Logger) querier.MetadataSupplier {
 	return &mergeMetadataSupplier{
-		next:     next,
-		logger:   logger,
-		resolver: tenant.NewMultiResolver(),
+		next:           next,
+		maxConcurrency: maxConcurrency,
+		resolver:       tenant.NewMultiResolver(),
+		logger:         logger,
 	}
 }
 
 type mergeMetadataSupplier struct {
-	next     querier.MetadataSupplier
-	resolver tenant.Resolver
-	logger   log.Logger
+	next           querier.MetadataSupplier
+	resolver       tenant.Resolver
+	maxConcurrency int
+	logger         log.Logger
 }
 
 func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
@@ -62,7 +64,7 @@ func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context) ([]scrape.M
 		return nil
 	}
 
-	err = concurrency.ForEachJob(ctx, len(tenantIDs), maxConcurrency, run)
+	err = concurrency.ForEachJob(ctx, len(tenantIDs), m.maxConcurrency, run)
 	if err != nil {
 		return nil, err
 	}

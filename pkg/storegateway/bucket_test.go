@@ -56,14 +56,11 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
-	"github.com/grafana/mimir/pkg/storegateway/chunkscache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -81,9 +78,9 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 	defer func() { assert.NoError(t, bkt.Close()) }()
 
 	blockID := ulid.MustNew(1, nil)
-	meta := &metadata.Meta{
+	meta := &block.Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: blockID},
-		Thanos: metadata.Thanos{
+		Thanos: block.ThanosMeta{
 			Labels: map[string]string{}, // this is empty in Mimir
 		},
 	}
@@ -175,7 +172,7 @@ func TestBucketBlockSet_remove(t *testing.T) {
 	}
 
 	for _, in := range input {
-		var m metadata.Meta
+		var m block.Meta
 		m.ULID = in.id
 		m.MinTime = in.mint
 		m.MaxTime = in.maxt
@@ -194,7 +191,7 @@ func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 
 	b := &bucketBlock{
-		meta: &metadata.Meta{
+		meta: &block.Meta{
 			BlockMeta: tsdb.BlockMeta{
 				ULID: ulid.MustNew(1, nil),
 			},
@@ -992,10 +989,11 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func prepareTestBucket(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) (objstore.BucketReader, string, ulid.ULID, int64, int64) {
+func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
 	tmpDir := tb.TempDir()
+	bucketDir := filepath.Join(tmpDir, "bkt")
 
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	bkt, err := filesystem.NewBucket(bucketDir)
 	assert.NoError(tb, err)
 
 	tb.Cleanup(func() {
@@ -1004,13 +1002,7 @@ func prepareTestBucket(tb test.TB, dataSetup ...func(tb testing.TB, appender sto
 
 	id, minT, maxT := uploadTestBlock(tb, tmpDir, bkt, dataSetup)
 
-	return bkt, tmpDir, id, minT, maxT
-}
-
-func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
-	bkt, tmpDir, id, minT, maxT := prepareTestBucket(tb, dataSetup...)
-
-	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, true, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 	require.NoError(tb, err)
 
 	return func() *bucketBlock {
@@ -1028,11 +1020,16 @@ func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender stor
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
 			chunkObjs:         chunkObjects,
-			bkt:               bkt,
-			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
+			bkt:               localBucket{Bucket: bkt, dir: bucketDir},
+			meta:              &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
 	}
+}
+
+type localBucket struct {
+	*filesystem.Bucket
+	dir string
 }
 
 func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []func(tb testing.TB, appender storage.Appender)) (_ ulid.ULID, minT int64, maxT int64) {
@@ -1054,12 +1051,11 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	assert.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "tmp"), os.ModePerm))
 	id := createBlockFromHead(t, filepath.Join(tmpDir, "tmp"), h)
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, "tmp", id.String()), metadata.Thanos{
+	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(tmpDir, "tmp", id.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}, nil)
 	assert.NoError(t, err)
-	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
 
 	return id, h.MinTime(), h.MaxTime()
@@ -1089,7 +1085,8 @@ func appendTestSeries(series int) func(testing.TB, storage.Appender) {
 }
 
 func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
-	compactor, err := tsdb.NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, nil, true)
+	// Put a 3 MiB limit on segment files so we can test with many segment files without creating too big blocks.
+	compactor, err := tsdb.NewLeveledCompactorWithChunkSize(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, 3*1024*1024, nil, true)
 	assert.NoError(t, err)
 
 	assert.NoError(t, os.MkdirAll(dir, 0777))
@@ -1166,11 +1163,10 @@ func loadSeries(ctx context.Context, tb test.TB, postings []storage.SeriesRef, i
 		indexr.block.meta,
 		nil,
 		nil,
-		true,
+		noChunkRefs,
 		0,
 		0,
 		"",
-		1,
 		log.NewNopLogger(),
 	)
 	series := make([]labels.Labels, 0, len(postings))
@@ -1327,9 +1323,9 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	)
 
 	extLset := labels.FromStrings("ext1", "1")
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: extLset.Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
 	blockDir := filepath.Join(tmpDir, "tmp")
@@ -1361,7 +1357,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		series = append(series, bSeries...)
 		expectedQueriesBlocks = append(expectedQueriesBlocks, hintspb.Block{Id: id.String()})
 
-		meta, err := metadata.InjectThanos(logger, filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(logger, filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 
 		assert.NoError(t, meta.WriteToDir(logger, filepath.Join(blockDir, id.String())))
@@ -1411,40 +1407,49 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				ExpectedSeries: series[:seriesCut],
 			})
 		}
-		runTestServerSeries(t, st, bCases...)
 
+		streamingBatchSizes := []int{0}
 		if !t.IsBenchmark() {
-			if !skipChunk {
-				assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
-				assert.Zero(t, chunksSlicePool.(*pool.TrackedPool).Balance.Load())
+			streamingBatchSizes = []int{0, 1, 5}
+		}
+		for _, streamingBatchSize := range streamingBatchSizes {
+			t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t test.TB) {
+				runTestServerSeries(t, st, streamingBatchSize, bCases...)
 
-				assert.Greater(t, int(seriesChunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
-				assert.Greater(t, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
-			}
+				if !t.IsBenchmark() {
+					if !skipChunk {
+						assert.Zero(t, seriesChunksSlicePool.(*pool.TrackedPool).Balance.Load())
+						assert.Zero(t, chunksSlicePool.(*pool.TrackedPool).Balance.Load())
 
-			for _, b := range st.blocks {
-				// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
-				assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
-			}
+						assert.Greater(t, int(seriesChunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
+						assert.Greater(t, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
+					}
 
-			// Check exposed metrics.
-			assertHistograms := map[string]bool{
-				"cortex_bucket_store_series_request_stage_duration_seconds":         true,
-				"cortex_bucket_store_series_batch_preloading_load_duration_seconds": st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
-				"cortex_bucket_store_series_batch_preloading_wait_duration_seconds": st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
-				"cortex_bucket_store_series_refs_fetch_duration_seconds":            true,
-			}
+					for _, b := range st.blocks {
+						// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
+						assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
+					}
 
-			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
-			require.NoError(t, err)
+					// Check exposed metrics.
+					assertHistograms := map[string]bool{
+						"cortex_bucket_store_series_request_stage_duration_seconds":         true,
+						"cortex_bucket_store_series_batch_preloading_load_duration_seconds": st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
+						"cortex_bucket_store_series_batch_preloading_wait_duration_seconds": st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
+						"cortex_bucket_store_series_refs_fetch_duration_seconds":            true,
+					}
 
-			for metricName, expected := range assertHistograms {
-				if count := metrics.SumHistograms(metricName).Count(); expected {
-					assert.Greater(t, count, uint64(0), "metric name: %s", metricName)
-				} else {
-					assert.Equal(t, uint64(0), count, "metric name: %s", metricName)
+					metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+					require.NoError(t, err)
+
+					for metricName, expected := range assertHistograms {
+						if count := metrics.SumHistograms(metricName).Count(); expected {
+							assert.Greater(t, count, uint64(0), "metric name: %s", metricName)
+						} else {
+							assert.Equal(t, uint64(0), count, "metric name: %s", metricName)
+						}
+					}
 				}
-			}
+			})
 		}
 	}
 
@@ -1461,7 +1466,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			maxSeriesPerBatch: 10000,
 		},
 		"with series streaming and caches (1K per batch)": {
-			options:           []BucketStoreOption{WithLogger(logger), WithIndexCache(newInMemoryIndexCache(t)), WithChunksCache(newInMemoryChunksCache())},
+			options:           []BucketStoreOption{WithLogger(logger), WithIndexCache(newInMemoryIndexCache(t))},
 			maxSeriesPerBatch: 1000,
 		},
 	}
@@ -1473,17 +1478,21 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			ibkt,
 			f,
 			tmpDir,
-			testData.maxSeriesPerBatch,
-			1,
+			mimir_tsdb.BucketStoreConfig{
+				StreamingBatchSize:          testData.maxSeriesPerBatch,
+				BlockSyncConcurrency:        1,
+				PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+				IndexHeader: indexheader.Config{
+					EagerLoadingStartupEnabled: false,
+					LazyLoadingEnabled:         false,
+					LazyLoadingIdleTimeout:     0,
+					SparsePersistenceEnabled:   true,
+				},
+			},
 			selectAllStrategy{},
 			newStaticChunksLimiterFactory(0),
 			newStaticSeriesLimiterFactory(0),
 			newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-			1,
-			mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-			indexheader.Config{},
-			false,
-			0,
 			hashcache.NewSeriesHashCache(1024*1024),
 			NewBucketStoreMetrics(reg),
 			testData.options...,
@@ -1558,18 +1567,18 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	marshalledHints, err := types.MarshalAny(hints)
 	require.NoError(t, err)
 
-	req := &storepb.SeriesRequest{
-		MinTime: math.MinInt64,
-		MaxTime: math.MaxInt64,
-		Matchers: []storepb.LabelMatcher{
-			{Type: storepb.LabelMatcher_EQ, Name: labels.MetricName, Value: "test_metric"},
-		},
-		Hints: marshalledHints,
-	}
-
-	runRequest := func(t *testing.T, store *BucketStore) {
+	runRequest := func(t *testing.T, store *BucketStore, streamBatchSize int) {
+		req := &storepb.SeriesRequest{
+			MinTime: math.MinInt64,
+			MaxTime: math.MaxInt64,
+			Matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_EQ, Name: labels.MetricName, Value: "test_metric"},
+			},
+			Hints:                    marshalledHints,
+			StreamingChunksBatchSize: uint64(streamBatchSize),
+		}
 		srv := newBucketStoreTestServer(t, store)
-		seriesSet, warnings, _, err := srv.Series(context.Background(), req)
+		seriesSet, warnings, _, _, err := srv.Series(context.Background(), req)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(warnings), "%v", warnings)
 		require.Equal(t, len(expectedSeries), len(seriesSet))
@@ -1584,57 +1593,65 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	// Run the test with different batch sizes.
 	for _, batchSize := range []int{len(expectedSeries) / 100, len(expectedSeries) * 2} {
 		t.Run(fmt.Sprintf("batch size: %d", batchSize), func(t *testing.T) {
-			// Reset the memory pool tracker.
-			seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
+			for _, streamBatchSize := range []int{0, 10} {
+				t.Run(fmt.Sprintf("streamBatchSize:%d", streamBatchSize), func(t *testing.T) {
+					// Reset the memory pool tracker.
+					seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-			metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
-			assert.NoError(t, err)
+					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
+					assert.NoError(t, err)
 
-			// Create the bucket store.
-			store, err := NewBucketStore(
-				"test-user",
-				instrumentedBucket,
-				metaFetcher,
-				tmpDir,
-				batchSize,
-				1,
-				selectAllStrategy{},
-				newStaticChunksLimiterFactory(0),
-				newStaticSeriesLimiterFactory(0),
-				newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-				1,
-				mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-				indexheader.Config{},
-				false, // Lazy index-header loading disabled.
-				0,
-				hashcache.NewSeriesHashCache(1024*1024),
-				NewBucketStoreMetrics(nil),
-				WithLogger(logger),
-			)
-			require.NoError(t, err)
-			require.NoError(t, store.SyncBlocks(ctx))
+					// Create the bucket store.
+					store, err := NewBucketStore(
+						"test-user",
+						instrumentedBucket,
+						metaFetcher,
+						tmpDir,
+						mimir_tsdb.BucketStoreConfig{
+							StreamingBatchSize:          batchSize,
+							BlockSyncConcurrency:        1,
+							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+							IndexHeader: indexheader.Config{
+								EagerLoadingStartupEnabled: false,
+								LazyLoadingEnabled:         false,
+								LazyLoadingIdleTimeout:     0,
+								SparsePersistenceEnabled:   true,
+							},
+						},
+						selectAllStrategy{},
+						newStaticChunksLimiterFactory(0),
+						newStaticSeriesLimiterFactory(0),
+						newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+						hashcache.NewSeriesHashCache(1024*1024),
+						NewBucketStoreMetrics(nil),
+						WithLogger(logger),
+					)
+					require.NoError(t, err)
+					require.NoError(t, store.SyncBlocks(ctx))
 
-			// Run workers.
-			wg := sync.WaitGroup{}
-			wg.Add(numWorkers)
+					// Run workers.
+					wg := sync.WaitGroup{}
+					wg.Add(numWorkers)
 
-			for c := 0; c < numWorkers; c++ {
-				go func() {
-					defer wg.Done()
+					for c := 0; c < numWorkers; c++ {
+						go func() {
+							defer wg.Done()
 
-					for r := 0; r < numRequestsPerWorker; r++ {
-						runRequest(t, store)
+							for r := 0; r < numRequestsPerWorker; r++ {
+								runRequest(t, store, streamBatchSize)
+							}
+						}()
 					}
-				}()
+
+					// Wait until all workers have done.
+					wg.Wait()
+
+					// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
+					// pool have put back.
+					assert.Greater(t, seriesChunkRefsSetPool.(*pool.TrackedPool).Gets.Load(), int64(0))
+					assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*pool.TrackedPool).Balance.Load())
+				})
 			}
-
-			// Wait until all workers have done.
-			wg.Wait()
-
-			// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
-			// pool have put back.
-			assert.Greater(t, seriesChunkRefsSetPool.(*pool.TrackedPool).Gets.Load(), int64(0))
-			assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*pool.TrackedPool).Balance.Load())
 		})
 	}
 }
@@ -1648,9 +1665,9 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	defer func() { assert.NoError(t, bkt.Close()) }()
 
 	logger := log.NewNopLogger()
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{
@@ -1691,7 +1708,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		blockDir := filepath.Join(tmpDir, "tmp")
 		id := createBlockFromHead(t, blockDir, h)
 
-		meta, err := metadata.InjectThanos(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
 
@@ -1704,7 +1721,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, true, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
 	}
 
@@ -1729,7 +1746,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		blockDir := filepath.Join(tmpDir, "tmp2")
 		id := createBlockFromHead(t, blockDir, h)
 
-		meta, err := metadata.InjectThanos(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
 
@@ -1742,35 +1759,37 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, true, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
 	}
 
 	store := &BucketStore{
-		userID:          "test",
-		bkt:             objstore.WithNoopInstr(bkt),
-		logger:          logger,
-		indexCache:      indexCache,
-		chunksCache:     chunkscache.NoopCache{},
-		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), false, 0, indexheader.NewReaderPoolMetrics(nil)),
-		metrics:         NewBucketStoreMetrics(nil),
-		blockSet:        &bucketBlockSet{blocks: []*bucketBlock{b1, b2}},
+		userID:     "test",
+		bkt:        objstore.WithNoopInstr(bkt),
+		logger:     logger,
+		indexCache: indexCache,
+		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), indexheader.Config{
+			LazyLoadingEnabled:       false,
+			LazyLoadingIdleTimeout:   0,
+			SparsePersistenceEnabled: true,
+		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil), indexheader.LazyLoadedHeadersSnapshotConfig{}),
+		metrics:  NewBucketStoreMetrics(nil),
+		blockSet: &bucketBlockSet{blocks: []*bucketBlock{b1, b2}},
 		blocks: map[ulid.ULID]*bucketBlock{
 			b1.meta.ULID: b1,
 			b2.meta.ULID: b2,
 		},
-		postingsStrategy:         selectAllStrategy{},
-		queryGate:                gate.NewNoop(),
-		chunksLimiterFactory:     newStaticChunksLimiterFactory(0),
-		seriesLimiterFactory:     newStaticSeriesLimiterFactory(0),
-		maxSeriesPerBatch:        65536,
-		numChunksRangesPerSeries: 1,
+		postingsStrategy:     selectAllStrategy{},
+		queryGate:            gate.NewNoop(),
+		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
+		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
+		maxSeriesPerBatch:    65536,
 	}
 
 	srv := newBucketStoreTestServer(t, store)
 
 	t.Run("invoke series for one block. Fill the cache on the way.", func(t *testing.T) {
-		seriesSet, warnings, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
+		seriesSet, warnings, _, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
 			Matchers: []storepb.LabelMatcher{
@@ -1786,7 +1805,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		assert.Equal(t, numSeries, len(seriesSet))
 	})
 	t.Run("invoke series for second block. This should revoke previous cache.", func(t *testing.T) {
-		seriesSet, warnings, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
+		seriesSet, warnings, _, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
 			Matchers: []storepb.LabelMatcher{
@@ -1804,7 +1823,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	t.Run("remove second block. Cache stays. Ask for first again.", func(t *testing.T) {
 		assert.NoError(t, store.removeBlock(b2.meta.ULID))
 
-		seriesSet, warnings, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
+		seriesSet, warnings, _, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
 			Matchers: []storepb.LabelMatcher{
@@ -1881,7 +1900,11 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 
 	tb, store, seriesSet1, seriesSet2, block1, block2, cleanup := setupStoreForHintsTest(t, 5000)
 	tb.Cleanup(cleanup)
-	runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
+	for _, streamingBatchSize := range []int{0, 1, 5} {
+		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+			runTestServerSeries(tb, store, streamingBatchSize, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
+		})
+	}
 }
 
 func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
@@ -1909,22 +1932,25 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		instrBkt,
 		fetcher,
 		tmpDir,
-		5000,
-		1,
+		mimir_tsdb.BucketStoreConfig{
+			StreamingBatchSize:          5000,
+			BlockSyncConcurrency:        10,
+			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			IndexHeader: indexheader.Config{
+				EagerLoadingStartupEnabled: false,
+				LazyLoadingEnabled:         false,
+				LazyLoadingIdleTimeout:     0,
+				SparsePersistenceEnabled:   true,
+			},
+		},
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		10,
-		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-		indexheader.Config{},
-		false,
-		0,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
-		WithChunksCache(newInMemoryChunksCache()),
 	)
 	assert.NoError(t, err)
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
@@ -1942,7 +1968,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	}
 
 	srv := newBucketStoreTestServer(t, store)
-	_, _, _, err = srv.Series(context.Background(), req)
+	_, _, _, _, err = srv.Series(context.Background(), req)
 	assert.Error(t, err)
 	assert.Equal(t, true, regexp.MustCompile(".*unmarshal series request hints.*").MatchString(err.Error()))
 }
@@ -1964,17 +1990,21 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 		instrBkt,
 		fetcher,
 		tmpDir,
-		5000,
-		1,
+		mimir_tsdb.BucketStoreConfig{
+			StreamingBatchSize:          5000,
+			BlockSyncConcurrency:        10,
+			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			IndexHeader: indexheader.Config{
+				EagerLoadingStartupEnabled: false,
+				LazyLoadingEnabled:         false,
+				LazyLoadingIdleTimeout:     0,
+				SparsePersistenceEnabled:   true,
+			},
+		},
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		10,
-		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-		indexheader.Config{},
-		false,
-		0,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -1995,9 +2025,16 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	cancel()
 
 	srv := newBucketStoreTestServer(t, store)
-	_, _, _, err = srv.Series(ctx, req)
+	_, _, _, _, err = srv.Series(ctx, req)
 	assert.Error(t, err)
 	s, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Canceled, s.Code())
+
+	req.StreamingChunksBatchSize = 10
+	_, _, _, _, err = srv.Series(ctx, req)
+	assert.Error(t, err)
+	s, ok = status.FromError(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.Canceled, s.Code())
 }
@@ -2019,17 +2056,21 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 		instrBkt,
 		fetcher,
 		tmpDir,
-		5000,
-		1,
+		mimir_tsdb.BucketStoreConfig{
+			StreamingBatchSize:          5000,
+			BlockSyncConcurrency:        10,
+			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			IndexHeader: indexheader.Config{
+				EagerLoadingStartupEnabled: false,
+				LazyLoadingEnabled:         false,
+				LazyLoadingIdleTimeout:     0,
+				SparsePersistenceEnabled:   true,
+			},
+		},
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		10,
-		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-		indexheader.Config{},
-		false,
-		0,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -2047,7 +2088,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 	}
 
 	srv := newBucketStoreTestServer(t, store)
-	_, _, _, err = srv.Series(context.Background(), req)
+	_, _, _, _, err = srv.Series(context.Background(), req)
 	assert.Error(t, err)
 	s, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -2087,7 +2128,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	encoding chunkenc.Encoding) {
 	tmpDir := t.TempDir()
 
-	// Create a block with 1 series but an high number of samples,
+	// Create a block with 1 series but a high number of samples,
 	// so that they will span across multiple chunks.
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.EnableNativeHistograms.Store(true)
@@ -2110,12 +2151,12 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	blk := createBlockFromHead(t, headOpts.ChunkDirRoot, h)
 
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(headOpts.ChunkDirRoot, blk.String()), thanosMeta, nil)
+	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(headOpts.ChunkDirRoot, blk.String()), thanosMeta, nil)
 	assert.NoError(t, err)
 
 	// Create a bucket and upload the block there.
@@ -2140,22 +2181,25 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 		instrBkt,
 		fetcher,
 		tmpDir,
-		5000,
-		1,
+		mimir_tsdb.BucketStoreConfig{
+			StreamingBatchSize:          5000,
+			BlockSyncConcurrency:        10,
+			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			IndexHeader: indexheader.Config{
+				EagerLoadingStartupEnabled: false,
+				LazyLoadingEnabled:         false,
+				LazyLoadingIdleTimeout:     0,
+				SparsePersistenceEnabled:   true,
+			},
+		},
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(100000/MaxSamplesPerChunk),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		10,
-		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-		indexheader.Config{},
-		false,
-		0,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
-		WithChunksCache(newInMemoryChunksCache()),
 	)
 	assert.NoError(t, err)
 	assert.NoError(t, store.SyncBlocks(context.Background()))
@@ -2163,56 +2207,72 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	srv := newBucketStoreTestServer(t, store)
 
 	tests := map[string]struct {
-		reqMinTime      int64
-		reqMaxTime      int64
-		expectedSamples int
+		reqMinTime             int64
+		reqMaxTime             int64
+		expectedSamples        int
+		expectedChunksEstimate uint64
 	}{
 		"query the entire block": {
-			reqMinTime:      math.MinInt64,
-			reqMaxTime:      math.MaxInt64,
-			expectedSamples: 10000,
+			reqMinTime:             math.MinInt64,
+			reqMaxTime:             math.MaxInt64,
+			expectedSamples:        10000,
+			expectedChunksEstimate: uint64(math.Ceil(10000.0 / MaxSamplesPerChunk)),
 		},
 		"query the beginning of the block": {
-			reqMinTime:      0,
-			reqMaxTime:      100,
-			expectedSamples: MaxSamplesPerChunk,
+			reqMinTime:             0,
+			reqMaxTime:             100,
+			expectedSamples:        MaxSamplesPerChunk,
+			expectedChunksEstimate: 1,
 		},
 		"query the middle of the block": {
-			reqMinTime:      4000,
-			reqMaxTime:      4050,
-			expectedSamples: MaxSamplesPerChunk,
+			reqMinTime:             4000,
+			reqMaxTime:             4050,
+			expectedSamples:        MaxSamplesPerChunk,
+			expectedChunksEstimate: 1,
 		},
 		"query the end of the block": {
-			reqMinTime:      9800,
-			reqMaxTime:      10000,
-			expectedSamples: (MaxSamplesPerChunk * 2) + (10000 % MaxSamplesPerChunk),
+			reqMinTime:             9800,
+			reqMaxTime:             10000,
+			expectedSamples:        (MaxSamplesPerChunk * 2) + (10000 % MaxSamplesPerChunk),
+			expectedChunksEstimate: 3,
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &storepb.SeriesRequest{
-				MinTime: testData.reqMinTime,
-				MaxTime: testData.reqMaxTime,
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "test"},
-				},
+			for _, streamingBatchSize := range []int{0, 1, 5} {
+				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+					req := &storepb.SeriesRequest{
+						MinTime: testData.reqMinTime,
+						MaxTime: testData.reqMaxTime,
+						Matchers: []storepb.LabelMatcher{
+							{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "test"},
+						},
+						StreamingChunksBatchSize: uint64(streamingBatchSize),
+					}
+
+					seriesSet, _, _, estimatedChunks, err := srv.Series(context.Background(), req)
+					assert.NoError(t, err)
+					assert.True(t, len(seriesSet) == 1)
+
+					// Count the number of samples in the returned chunks.
+					numSamples := 0
+					for _, rawChunk := range seriesSet[0].Chunks {
+						decodedChunk, err := chunkenc.FromData(encoding, rawChunk.Raw.Data)
+						assert.NoError(t, err)
+
+						numSamples += decodedChunk.NumSamples()
+					}
+
+					if streamingBatchSize == 0 {
+						require.Zero(t, estimatedChunks)
+					} else {
+						require.Equal(t, testData.expectedChunksEstimate, estimatedChunks)
+					}
+
+					assert.True(t, testData.expectedSamples == numSamples, "expected: %d, actual: %d", testData.expectedSamples, numSamples)
+				})
 			}
-
-			seriesSet, _, _, err := srv.Series(context.Background(), req)
-			assert.NoError(t, err)
-			assert.True(t, len(seriesSet) == 1)
-
-			// Count the number of samples in the returned chunks.
-			numSamples := 0
-			for _, rawChunk := range seriesSet[0].Chunks {
-				decodedChunk, err := chunkenc.FromData(encoding, rawChunk.Raw.Data)
-				assert.NoError(t, err)
-
-				numSamples += decodedChunk.NumSamples()
-			}
-
-			assert.True(t, testData.expectedSamples == numSamples, "expected: %d, actual: %d", testData.expectedSamples, numSamples)
 		})
 	}
 }
@@ -2234,14 +2294,14 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	// Create two blocks. Some series exists in both blocks, some don't.
 	// Samples for the overlapping series are equal between the two blocks
 	// (simulate the case of uncompacted blocks from ingesters).
-	_, err := testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
+	_, err := block.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
-	_, err = testhelper.CreateBlock(ctx, bktDir, []labels.Labels{
+	_, err = block.CreateBlock(ctx, bktDir, []labels.Labels{
 		labels.FromStrings(labels.MetricName, "series_1"),
 		labels.FromStrings(labels.MetricName, "series_2"),
 		labels.FromStrings(labels.MetricName, "series_3"),
@@ -2297,38 +2357,47 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 						instrBkt,
 						fetcher,
 						tmpDir,
-						batchSize,
-						1,
+						mimir_tsdb.BucketStoreConfig{
+							StreamingBatchSize:          batchSize,
+							BlockSyncConcurrency:        10,
+							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+							IndexHeader: indexheader.Config{
+								EagerLoadingStartupEnabled: false,
+								LazyLoadingEnabled:         false,
+								LazyLoadingIdleTimeout:     0,
+								SparsePersistenceEnabled:   true,
+							},
+						},
 						selectAllStrategy{},
 						newStaticChunksLimiterFactory(testData.chunksLimit),
 						newStaticSeriesLimiterFactory(testData.seriesLimit),
 						newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-						10,
-						mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-						indexheader.Config{},
-						false,
-						0,
 						hashcache.NewSeriesHashCache(1024*1024),
 						NewBucketStoreMetrics(nil),
 					)
 					assert.NoError(t, err)
 					assert.NoError(t, store.SyncBlocks(ctx))
 
-					req := &storepb.SeriesRequest{
-						MinTime:  minTime,
-						MaxTime:  maxTime,
-						Matchers: testData.reqMatchers,
-					}
-
 					srv := newBucketStoreTestServer(t, store)
-					seriesSet, _, _, err := srv.Series(ctx, req)
+					for _, streamingBatchSize := range []int{0, 1, 5} {
+						t.Run(fmt.Sprintf("streamingBatchSize: %d", streamingBatchSize), func(t *testing.T) {
+							req := &storepb.SeriesRequest{
+								MinTime:                  minTime,
+								MaxTime:                  maxTime,
+								Matchers:                 testData.reqMatchers,
+								StreamingChunksBatchSize: uint64(streamingBatchSize),
+							}
 
-					if testData.expectedErr != "" {
-						require.Error(t, err)
-						assert.ErrorContains(t, err, testData.expectedErr)
-					} else {
-						require.NoError(t, err)
-						assert.Len(t, seriesSet, testData.expectedSeries)
+							seriesSet, _, _, _, err := srv.Series(ctx, req)
+
+							if testData.expectedErr != "" {
+								require.Error(t, err)
+								assert.ErrorContains(t, err, testData.expectedErr)
+							} else {
+								require.NoError(t, err)
+								assert.Len(t, seriesSet, testData.expectedSeries)
+							}
+						})
 					}
 				})
 			}
@@ -2364,9 +2433,9 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 
 	prependLabels := labels.FromStrings("ext1", "1")
 	// Inject the Thanos meta to each block in the storage.
-	thanosMeta := metadata.Thanos{
+	thanosMeta := block.ThanosMeta{
 		Labels: prependLabels.Map(),
-		Source: metadata.TestSource,
+		Source: block.TestSource,
 	}
 
 	// Create TSDB blocks.
@@ -2390,7 +2459,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	assert.NoError(t, head2.Close())
 
 	for _, blockID := range []ulid.ULID{block1, block2} {
-		_, err := metadata.InjectThanos(logger, filepath.Join(bktDir, blockID.String()), thanosMeta, nil)
+		_, err := block.InjectThanosMeta(logger, filepath.Join(bktDir, blockID.String()), thanosMeta, nil)
 		assert.NoError(t, err)
 	}
 
@@ -2401,23 +2470,27 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(tb, err)
 
-	opts = append([]BucketStoreOption{WithLogger(logger), WithIndexCache(indexCache), WithChunksCache(newInMemoryChunksCache())}, opts...)
+	opts = append([]BucketStoreOption{WithLogger(logger), WithIndexCache(indexCache)}, opts...)
 	store, err := NewBucketStore(
 		"tenant",
 		instrBkt,
 		fetcher,
 		tmpDir,
-		maxSeriesPerBatch,
-		1,
+		mimir_tsdb.BucketStoreConfig{
+			StreamingBatchSize:          maxSeriesPerBatch,
+			BlockSyncConcurrency:        10,
+			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			IndexHeader: indexheader.Config{
+				EagerLoadingStartupEnabled: false,
+				LazyLoadingEnabled:         false,
+				LazyLoadingIdleTimeout:     0,
+				SparsePersistenceEnabled:   true,
+			},
+		},
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		10,
-		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-		indexheader.Config{},
-		false,
-		0,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		opts...,
@@ -2680,7 +2753,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	var w *wlog.WL
 	var err error
 	if opts.WithWAL {
-		w, err = wlog.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), true)
+		w, err = wlog.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), wlog.CompressionSnappy)
 		assert.NoError(t, err)
 	} else {
 		assert.NoError(t, os.MkdirAll(filepath.Join(opts.TSDBDir, "wal"), os.ModePerm))
@@ -2798,14 +2871,15 @@ type seriesCase struct {
 }
 
 // runTestServerSeries runs tests against given cases.
-func runTestServerSeries(t test.TB, store *BucketStore, cases ...*seriesCase) {
+func runTestServerSeries(t test.TB, store *BucketStore, streamingBatchSize int, cases ...*seriesCase) {
 	for _, c := range cases {
 		t.Run(c.Name, func(t test.TB) {
 			srv := newBucketStoreTestServer(t, store)
 
+			c.Req.StreamingChunksBatchSize = uint64(streamingBatchSize)
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
-				seriesSet, warnings, hints, err := srv.Series(context.Background(), c.Req)
+				seriesSet, warnings, hints, _, err := srv.Series(context.Background(), c.Req)
 				require.NoError(t, err)
 				require.Equal(t, len(c.ExpectedWarnings), len(warnings), "%v", warnings)
 				require.Equal(t, len(c.ExpectedSeries), len(seriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)

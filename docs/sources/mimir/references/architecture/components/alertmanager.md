@@ -1,16 +1,18 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/alertmanager/
-title: "(Optional) Grafana Mimir Alertmanager"
-menuTitle: "(Optional) Alertmanager"
-description: "The Alertmanager groups alert notifications and routes them to various notification channels."
+description:
+  The Alertmanager groups alert notifications and routes them to various
+  notification channels.
+menuTitle: (Optional) Alertmanager
+title: (Optional) Grafana Mimir Alertmanager
 weight: 100
 ---
 
 # (Optional) Grafana Mimir Alertmanager
 
 The Mimir Alertmanager adds multi-tenancy support and horizontal scalability to the [Prometheus Alertmanager](https://prometheus.io/docs/alerting/alertmanager/).
-The Mimir Alertmanager is an optional component that accepts alert notifications from the [Mimir ruler]({{< relref "ruler/index.md" >}}).
+The Mimir Alertmanager is an optional component that accepts alert notifications from the [Mimir ruler]({{< relref "./ruler" >}}).
 The Alertmanager deduplicates and groups alert notifications, and routes them to a notification channel, such as email, PagerDuty, or OpsGenie.
 
 ## Multi-tenancy
@@ -68,7 +70,7 @@ You can overwrite the default fallback configuration via the `-alertmanager.conf
 
 ### Tenant limits
 
-The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../../references/configuration-parameters/index.md#limits" >}}).
+The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../configuration-parameters#limits" >}}).
 Each Mimir Alertmanager limit configuration parameter has an `alertmanager` prefix.
 
 ## Alertmanager UI
@@ -78,7 +80,7 @@ The Mimir Alertmanager exposes the same web UI as the Prometheus Alertmanager at
 When running Grafana Mimir with multi-tenancy enabled, the Alertmanager requires that any HTTP request include the tenant ID header.
 Tenants only see alerts sent to their Alertmanager.
 
-For a complete reference of the tenant ID header and Alertmanager endpoints, refer to [HTTP API]({{< relref "../../../references/http-api/index.md" >}}).
+For a complete reference of the tenant ID header and Alertmanager endpoints, refer to [HTTP API]({{< relref "../../http-api" >}}).
 
 You can configure the HTTP path prefix for the UI and the HTTP API:
 
@@ -110,11 +112,11 @@ The Mimir Alertmanager adds some custom template functions to the default ones o
 The Alertmanager shards and replicates alerts by tenant.
 Sharding requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
 
-Grafana Mimir Alertmanager replicas use a [hash ring]({{< relref "../hash-ring/index.md" >}}) that is stored in the KV store to discover their peers.
+Grafana Mimir Alertmanager replicas use a [hash ring]({{< relref "../hash-ring" >}}) that is stored in the KV store to discover their peers.
 This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
 If the Mimir Alertmanager replica receiving the HTTP request doesn't own the tenant to which the request belongs, the request is internally routed to the appropriate replica.
 
-To configure the Alertmanagers' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings.md" >}}).
+To configure the Alertmanagers' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings" >}}).
 
 > **Note:** When running with a single tenant, scaling the number of replicas to be greater than the replication factor offers no benefits as the Mimir Alertmanager shards by tenant and not individual alerts.
 
@@ -132,7 +134,7 @@ In the event of a cluster outage, this fallback mechanism recovers the backup of
 
 ## Ruler configuration
 
-You must configure the [ruler]({{< relref "ruler/index.md" >}}) with the addresses of Alertmanagers via the `-ruler.alertmanager-url` flag.
+You must configure the [ruler]({{< relref "./ruler" >}}) with the addresses of Alertmanagers via the `-ruler.alertmanager-url` flag.
 
 Point the address to Alertmanager’s API.
 You can configure Alertmanager’s API prefix via the `-http.alertmanager-http-prefix` flag, which defaults to `/alertmanager`.

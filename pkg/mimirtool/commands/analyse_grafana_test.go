@@ -30,6 +30,10 @@ var dashboardMetrics = []string{
 	"workqueue_queue_duration_seconds_bucket",
 }
 
+var expectedParseErrors = []string{
+	"unsupported panel type: \"text\"",
+}
+
 func TestParseMetricsInBoard(t *testing.T) {
 	var board minisdk.Board
 	output := &analyze.MetricsInGrafana{}
@@ -43,6 +47,7 @@ func TestParseMetricsInBoard(t *testing.T) {
 
 	analyze.ParseMetricsInBoard(output, board, "")
 	assert.Equal(t, dashboardMetrics, output.Dashboards[0].Metrics)
+	assert.Equal(t, expectedParseErrors, output.Dashboards[0].ParseErrors)
 }
 
 func BenchmarkParseMetricsInBoard(b *testing.B) {

@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -33,15 +35,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
-	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -94,18 +93,18 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 		for j := 0; j < len(a.Samples); j++ {
 			expected := a.Samples[j]
 			actual := b.Samples[j]
-			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Value, actual.Value, j, a.Labels, "sample")
+			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Value, actual.Value, j, a.Labels, "sample", 1e-12)
 		}
 
 		for j := 0; j < len(a.Histograms); j++ {
 			expected := a.Histograms[j]
 			actual := b.Histograms[j]
-			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram")
+			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram", 1e-12)
 		}
 	}
 }
 
-func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string) {
+func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string, tolerance float64) {
 	require.Equalf(t, expectedTs, actualTs, "%s timestamp at position %d for series %s", sampleType, j, labels)
 
 	if value.IsStaleNaN(expectedVal) {
@@ -119,7 +118,7 @@ func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expected
 		}
 		// InEpsilon means the relative error (see https://en.wikipedia.org/wiki/Relative_error#Example) must be less than epsilon (here 1e-12).
 		// The relative error is calculated using: abs(actual-expected) / abs(expected)
-		require.InEpsilonf(t, expectedVal, actualVal, 1e-12, "%s value at position %d with timestamp %d for series %s", sampleType, j, expectedTs, labels)
+		require.InEpsilonf(t, expectedVal, actualVal, tolerance, "%s value at position %d with timestamp %d for series %s", sampleType, j, expectedTs, labels)
 	}
 }
 
@@ -2081,7 +2080,24 @@ func newSeriesInner(metric labels.Labels, from, to time.Time, step time.Duration
 }
 
 func generateTestHistogram(v float64) *histogram.FloatHistogram {
-	h := util_test.GenerateTestFloatHistogram(int(v))
+	//based on util_test.GenerateTestFloatHistogram(int(v)) but without converting to int
+	h := &histogram.FloatHistogram{
+		Count:         10 + (v * 8),
+		ZeroCount:     2 + v,
+		ZeroThreshold: 0.001,
+		Sum:           18.4 * (v + 1),
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{v + 1, v + 2, v + 1, v + 1},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []float64{v + 1, v + 2, v + 1, v + 1},
+	}
 	if value.IsStaleNaN(v) {
 		h.Sum = v
 	}

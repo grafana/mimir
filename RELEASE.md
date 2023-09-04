@@ -4,7 +4,8 @@ This document describes the Mimir release process as well as release shepherd re
 
 ## Release schedule
 
-A new Grafana Mimir release is cut approximately every 6 weeks. The following table contains past releases and tentative dates for upcoming releases:
+A new Grafana Mimir release is cut approximately once every quarter, at the beginning of March, June, September and December.
+The following table contains past releases and tentative dates for upcoming releases:
 
 | Version | Date       | Release shepherd   |
 | ------- | ---------- | ------------------ |
@@ -17,8 +18,9 @@ A new Grafana Mimir release is cut approximately every 6 weeks. The following ta
 | 2.6.0   | 2023-01-16 | Nick Pillitteri    |
 | 2.7.0   | 2023-03-06 | Vernon Miller      |
 | 2.8.0   | 2023-04-17 | Jon Kartago Lamida |
-| 2.9.0   | 2023-05-29 | _To be announced_  |
-| 2.10.0  | 2023-07-10 | _To be announced_  |
+| 2.9.0   | 2023-05-29 | Felix Beuke        |
+| 2.10.0  | 2023-09-06 | Oleg Zaytsev       |
+| 2.11.0  | 2023-12-06 | _To be announced_  |
 
 ## Release shepherd responsibilities
 
@@ -32,7 +34,7 @@ The process formally starts with the initial pre-release, but some preparations 
   Following their best judgement, the shepherd should try to expedite bug fixes that are still in progress but should make it into the release.
   On the other hand, the shepherd may hold back merging last-minute invasive and risky changes that are better suited for the next minor release.
 - There may be some actions left to address when cutting this release.
-  The release shepherd is responsible for going through TODOs in the repository and verifying that nothing is that is due this release is forgotten.
+  The release shepherd is responsible for going through TODOs in the repository and verifying that nothing that is due this release is forgotten.
 - On the planned release date, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called `release-<major>.<minor>` starting at the commit tagged for the pre-release.
   New branch `release-<major>-<minor>` should be branched out from latest weekly release `r<xxx>`, where <xxx> is the weekly release number.
   In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.

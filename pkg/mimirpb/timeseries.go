@@ -14,6 +14,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/zeropool"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -62,6 +63,12 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
+func (p *WriteRequest) ClearTimeseriesUnmarshalData() {
+	for idx := range p.Timeseries {
+		p.Timeseries[idx].clearUnmarshalData()
+	}
+}
+
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
 type PreallocTimeseries struct {
 	*TimeSeries
@@ -71,12 +78,129 @@ type PreallocTimeseries struct {
 	// If it is set to a non-nil value then it must be returned to the yoloSlicePool on cleanup,
 	// if it is set to nil then it can be ignored because the backing byte slice came from somewhere else.
 	yoloSlice *[]byte
+
+	// Original data used for unmarshalling this PreallocTimeseries. When set, Marshal methods will return it
+	// instead of doing full marshalling again. This assumes that this instance hasn't changed.
+	marshalledData []byte
 }
 
-// Unmarshal implements proto.Message.
+// RemoveLabel removes the label labelName from this timeseries, if it exists.
+func (p *PreallocTimeseries) RemoveLabel(labelName string) {
+	for i := 0; i < len(p.Labels); i++ {
+		pair := p.Labels[i]
+		if pair.Name == labelName {
+			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
+			p.clearUnmarshalData()
+			return
+		}
+	}
+}
+
+func (p *PreallocTimeseries) SetLabels(lbls []LabelAdapter) {
+	p.Labels = lbls
+
+	// We can't reuse raw unmarshalled data for the timeseries after setting new labels.
+	// (Maybe we could, if labels are exactly the same, but it's expensive to check.)
+	p.clearUnmarshalData()
+}
+
+// RemoveEmptyLabelValues remove labels with value=="" from this timeseries, updating the slice in-place.
+func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
+	modified := false
+	for i := len(p.Labels) - 1; i >= 0; i-- {
+		if p.Labels[i].Value == "" {
+			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
+			modified = true
+		}
+	}
+	if modified {
+		p.clearUnmarshalData()
+	}
+}
+
+// SortLabelsIfNeeded sorts labels if they were not sorted before.
+func (p *PreallocTimeseries) SortLabelsIfNeeded() {
+	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
+	// we can avoid extra memory allocations (mostly interface-related) this way.
+	sorted := true
+	last := ""
+	for _, l := range p.Labels {
+		if last > l.Name {
+			sorted = false
+			break
+		}
+		last = l.Name
+	}
+
+	if sorted {
+		return
+	}
+
+	slices.SortFunc(p.Labels, func(a, b LabelAdapter) bool {
+		return a.Name < b.Name
+	})
+	p.clearUnmarshalData()
+}
+
+func (p *PreallocTimeseries) ClearExemplars() {
+	ClearExemplars(p.TimeSeries)
+	p.clearUnmarshalData()
+}
+
+// DeleteExemplarByMovingLast deletes the exemplar by moving the last one on top and shortening the slice
+func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
+	last := len(p.Exemplars) - 1
+	if ix < last {
+		p.Exemplars[ix] = p.Exemplars[last]
+	}
+	p.Exemplars = p.Exemplars[:last]
+	p.clearUnmarshalData()
+}
+
+// clearUnmarshalData removes cached unmarshalled version of the message.
+func (p *PreallocTimeseries) clearUnmarshalData() {
+	p.marshalledData = nil
+}
+
+var TimeseriesUnmarshalCachingEnabled = true
+
+// Unmarshal implements proto.Message. Input data slice is retained.
 func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
+	if TimeseriesUnmarshalCachingEnabled {
+		p.marshalledData = dAtA
+	}
 	p.TimeSeries = TimeseriesFromPool()
 	return p.TimeSeries.Unmarshal(dAtA)
+}
+
+func (p *PreallocTimeseries) Size() int {
+	if p.marshalledData != nil {
+		return len(p.marshalledData)
+	}
+	return p.TimeSeries.Size()
+}
+
+func (p *PreallocTimeseries) Marshal() ([]byte, error) {
+	if p.marshalledData != nil {
+		return p.marshalledData, nil
+	}
+	return p.TimeSeries.Marshal()
+}
+
+func (p *PreallocTimeseries) MarshalTo(buf []byte) (int, error) {
+	if p.marshalledData != nil && len(buf) >= len(p.marshalledData) {
+		copy(buf, p.marshalledData)
+		return len(p.marshalledData), nil
+	}
+	return p.TimeSeries.MarshalTo(buf)
+}
+
+func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
+	if p.marshalledData != nil && len(buf) >= len(p.marshalledData) {
+		copy(buf, p.marshalledData)
+		return len(p.marshalledData), nil
+	}
+	return p.TimeSeries.MarshalToSizedBuffer(buf)
 }
 
 // LabelAdapter is a labels.Label that can be marshalled to/from protos.
@@ -336,6 +460,8 @@ func ReusePreallocTimeseries(ts *PreallocTimeseries) {
 		reuseYoloSlice(ts.yoloSlice)
 		ts.yoloSlice = nil
 	}
+
+	ts.marshalledData = nil
 }
 
 func yoloSliceFromPool() *[]byte {
