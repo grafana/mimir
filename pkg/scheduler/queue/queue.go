@@ -65,7 +65,6 @@ type RequestQueue struct {
 	querierOperations           chan querierOperation
 	enqueueRequests             chan enqueueRequest
 	availableQuerierConnections chan *querierConnection
-	cancelledQuerierConnections chan *querierConnection
 
 	queueLength       *prometheus.GaugeVec   // Per user and reason.
 	discardedRequests *prometheus.CounterVec // Per user.
@@ -119,7 +118,6 @@ func (q *RequestQueue) starting(_ context.Context) error {
 	q.querierOperations = make(chan querierOperation)
 	q.enqueueRequests = make(chan enqueueRequest)
 	q.availableQuerierConnections = make(chan *querierConnection)
-	q.cancelledQuerierConnections = make(chan *querierConnection)
 
 	go q.dispatcherLoop()
 
@@ -174,17 +172,6 @@ func (q *RequestQueue) dispatcherLoop() {
 			if !q.dispatchRequestToQuerier(queues, querierConn) {
 				// No requests available for this querier connection right now. Add it to the list to try later.
 				querierConn.element = waitingQuerierConnections.PushBack(querierConn)
-				querierConn.listenForContextCancellation(q.stopCompleted, q.cancelledQuerierConnections)
-			}
-		case querier := <-q.cancelledQuerierConnections:
-			// Make sure we haven't already sent a query to this querier.
-			if !querier.haveUsed {
-				querier.send(nextRequestForQuerier{
-					lastUserIndex: querier.lastUserIndex,
-					err:           querier.ctx.Err(),
-				})
-
-				waitingQuerierConnections.Remove(querier.element)
 			}
 		}
 
@@ -209,7 +196,7 @@ func (q *RequestQueue) dispatcherLoop() {
 
 			for currentElement != nil {
 				querierConn := currentElement.Value.(*querierConnection)
-				querierConn.send(nextRequestForQuerier{err: ErrStopped})
+				_ = querierConn.send(nextRequestForQuerier{err: ErrStopped}) // If GetNextRequestForQuerier is already gone, we don't care, so ignore the result.
 				currentElement = currentElement.Next()
 			}
 
@@ -255,20 +242,24 @@ func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querierConn *que
 
 	// Pick next request from the queue. The queue is guaranteed not to be empty because we remove empty queues.
 	queueElement := queue.Front()
-	request := queueElement.Value
-	queue.Remove(queueElement)
 
-	if queue.Len() == 0 {
-		queues.deleteQueue(userID)
-	}
-
-	q.queueLength.WithLabelValues(userID).Dec()
-
-	querierConn.send(nextRequestForQuerier{
-		req:           request,
+	requestSent := querierConn.send(nextRequestForQuerier{
+		req:           queueElement.Value,
 		lastUserIndex: querierConn.lastUserIndex,
-		err:           querierConn.ctx.Err(),
+		err:           nil,
 	})
+
+	if requestSent {
+		// If GetNextRequestForQuerier received the request, remove it from the queue.
+		// (GetNextRequestForQuerier might have already returned if its context was cancelled.)
+		queue.Remove(queueElement)
+
+		if queue.Len() == 0 {
+			queues.deleteQueue(userID)
+		}
+
+		q.queueLength.WithLabelValues(userID).Dec()
+	}
 
 	return true
 }
@@ -305,17 +296,25 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 // If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
 func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
 	querierConn := &querierConnection{
-		ctx:           ctx,
 		querierID:     querierID,
 		lastUserIndex: last,
 		processed:     make(chan nextRequestForQuerier),
 		done:          make(chan struct{}),
 	}
 
+	defer close(querierConn.done)
+
 	select {
 	case q.availableQuerierConnections <- querierConn:
-		result := <-querierConn.processed
-		return result.req, result.lastUserIndex, result.err
+		select {
+		case result := <-querierConn.processed:
+			return result.req, result.lastUserIndex, result.err
+		case <-ctx.Done():
+			// The deferred close of querierConn.done above informs the dispatcher that we're no longer waiting for a response, so we can return straight away.
+			return nil, last, ctx.Err()
+		}
+	case <-ctx.Done():
+		return nil, last, ctx.Err()
 	case <-q.stopCompleted:
 		return nil, last, ErrStopped
 	}
@@ -366,43 +365,32 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 }
 
 type querierConnection struct {
-	ctx           context.Context
 	querierID     string
 	lastUserIndex UserIndex
 	processed     chan nextRequestForQuerier
-	done          chan struct{}
+	done          chan struct{} // Closed by GetNextRequestForQuerier when it is no longer waiting for a response.
 
 	haveUsed bool // Must be set to true after sending a message to processed, to ensure we only ever try to send one message to processed.
 	element  *list.Element
 }
 
-func (q *querierConnection) send(req nextRequestForQuerier) {
+// send sends req to the GetNextRequestForQuerier call that is waiting for a new query.
+// Returns true if sending succeeds, or false otherwise (eg. because the GetNextRequestForQuerier call has already returned due to a context
+// cancellation).
+func (q *querierConnection) send(req nextRequestForQuerier) bool {
 	if q.haveUsed {
 		panic("bug: should not try to send multiple messages to a querier")
 	}
 
-	q.processed <- req
 	q.haveUsed = true
-	close(q.processed)
-	close(q.done)
-}
+	defer close(q.processed)
 
-func (q *querierConnection) listenForContextCancellation(dispatcherStopped chan struct{}, notifyOnCancellation chan *querierConnection) {
-	go func() {
-		select {
-		case <-q.ctx.Done():
-			select {
-			case notifyOnCancellation <- q:
-				// dispatcherLoop() knows we've been cancelled now, it'll inform GetNextRequestForQuerier().
-			case <-dispatcherStopped:
-				// dispatcherLoop() stopped before we could tell it we've been cancelled, but that's OK - dispatcherLoop() makes sure to abort any waiting GetNextRequestForQuerier() calls.
-			}
-		case <-dispatcherStopped:
-			// Same as above.
-		case <-q.done:
-			// We've sent a request to this querier, we can stop monitoring the context now.
-		}
-	}()
+	select {
+	case q.processed <- req:
+		return true
+	case <-q.done:
+		return false
+	}
 }
 
 type nextRequestForQuerier struct {
