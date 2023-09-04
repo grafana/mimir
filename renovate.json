@@ -10,7 +10,8 @@
       "matchPackageNames": [
         "k8s.gcr.io/kustomize/kustomize",
         "alpine/helm",
-        "alpine"
+        "alpine",
+        "memcached"
       ]
     }
   ]
