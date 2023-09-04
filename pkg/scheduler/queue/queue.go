@@ -165,7 +165,6 @@ func (q *RequestQueue) dispatcherLoop() {
 			r.processed <- err
 
 			if err == nil {
-				// TODO: might be able to be much smarter here and try to find a querier that can take the request directly
 				needToDispatchQueries = true
 			}
 		case querierConn := <-q.availableQuerierConnections:
