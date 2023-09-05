@@ -1038,10 +1038,10 @@ instance_limits:
 # CLI flag: -ingester.limit-inflight-requests-using-grpc-handlers
 [limit_inflight_requests_using_grpc_tap_handle: <boolean> | default = false]
 
-# (advanced) Log a subset of errors once in this many times. 0 = log all of
-# them.
+# (experimental) Each error will be logged once in this many times. Use 0 to log
+# all of them.
 # CLI flag: -ingester.error-sample-rate
-[error_sample_rate: <int> | default = 10]
+[error_sample_rate: <int> | default = 0]
 ```
 
 ### querier

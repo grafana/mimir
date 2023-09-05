@@ -19,6 +19,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -162,4 +163,96 @@ func formatMaxMetadataPerMetricError(limits *validation.Overrides, labels labels
 		validation.MaxMetadataPerMetricFlag,
 	))
 	return makeMetricLimitError(labels, err)
+}
+
+type ingesterErrSamplers struct {
+	sampleTimestampTooOld             *log.Sampler
+	sampleTimestampTooOldOOOEnabled   *log.Sampler
+	sampleTimestampTooFarInFuture     *log.Sampler
+	sampleOutOfOrder                  *log.Sampler
+	sampleDuplicateTimestamp          *log.Sampler
+	maxSeriesPerMetricLimitExceeded   *log.Sampler
+	maxMetadataPerMetricLimitExceeded *log.Sampler
+	maxSeriesPerUserLimitExceeded     *log.Sampler
+	maxMetadataPerUserLimitExceeded   *log.Sampler
+}
+
+func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
+	if freq == 0 {
+		return ingesterErrSamplers{}
+	}
+	return ingesterErrSamplers{
+		sampleTimestampTooOld:             log.NewSampler(freq),
+		sampleTimestampTooOldOOOEnabled:   log.NewSampler(freq),
+		sampleTimestampTooFarInFuture:     log.NewSampler(freq),
+		sampleOutOfOrder:                  log.NewSampler(freq),
+		sampleDuplicateTimestamp:          log.NewSampler(freq),
+		maxSeriesPerMetricLimitExceeded:   log.NewSampler(freq),
+		maxMetadataPerMetricLimitExceeded: log.NewSampler(freq),
+		maxSeriesPerUserLimitExceeded:     log.NewSampler(freq),
+		maxMetadataPerUserLimitExceeded:   log.NewSampler(freq),
+	}
+}
+
+func (i ingesterErrSamplers) WrapSampleTimestampTooOldError(err error) error {
+	if i.sampleTimestampTooOld == nil {
+		return err
+	}
+	return i.sampleTimestampTooOld.WrapError(err)
+}
+
+func (i ingesterErrSamplers) WrapSampleTimestampTooOldOOOEnabledError(err error) error {
+	if i.sampleTimestampTooOldOOOEnabled == nil {
+		return err
+	}
+	return i.sampleTimestampTooOldOOOEnabled.WrapError(err)
+}
+
+func (i ingesterErrSamplers) WrapSampleTimestampTooFarInFutureError(err error) error {
+	if i.sampleTimestampTooFarInFuture == nil {
+		return err
+	}
+	return i.sampleTimestampTooFarInFuture.WrapError(err)
+}
+
+func (i ingesterErrSamplers) WrapSampleOutOfOrderError(err error) error {
+	if i.sampleOutOfOrder == nil {
+		return err
+	}
+	return i.sampleOutOfOrder.WrapError(err)
+}
+
+func (i ingesterErrSamplers) WrapSampleDuplicateTimestampError(err error) error {
+	if i.sampleDuplicateTimestamp == nil {
+		return err
+	}
+	return i.sampleDuplicateTimestamp.WrapError(err)
+}
+
+func (i ingesterErrSamplers) WrapMaxSeriesPerMetricLimitExceededError(err error) error {
+	if i.maxSeriesPerMetricLimitExceeded == nil {
+		return err
+	}
+	return i.maxSeriesPerMetricLimitExceeded.WrapError(err)
+}
+
+func (i ingesterErrSamplers) WrapMaxMetadataPerMetricLimitExceededError(err error) error {
+	if i.maxMetadataPerMetricLimitExceeded == nil {
+		return err
+	}
+	return i.maxMetadataPerMetricLimitExceeded.WrapError(err)
+}
+
+func (i ingesterErrSamplers) WrapMaxSeriesPerUserLimitExceededError(err error) error {
+	if i.maxSeriesPerUserLimitExceeded == nil {
+		return err
+	}
+	return i.maxSeriesPerUserLimitExceeded.WrapError(err)
+}
+
+func (i ingesterErrSamplers) WrapMaxMetadataPerUserLimitExceededError(err error) error {
+	if i.maxMetadataPerUserLimitExceeded == nil {
+		return err
+	}
+	return i.maxMetadataPerUserLimitExceeded.WrapError(err)
 }

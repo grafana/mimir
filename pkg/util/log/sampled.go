@@ -24,7 +24,7 @@ func (s sampledError) Error() string {
 
 func (s sampledError) Unwrap() error { return s.err }
 
-// This method is called by common logging module.
+// ShouldLog is called by common logging module.
 func (s sampledError) ShouldLog(_ context.Context, _ time.Duration) bool {
 	return s.sampler == nil || s.sampler.Sample()
 }
@@ -43,12 +43,12 @@ func NewSampler(freq int64) *Sampler {
 
 func (s *Sampler) Sample() bool {
 	count := s.count.Inc()
-	return count%s.freq == 0
+	return (count-1)%s.freq == 0
 }
 
 func (s *Sampler) WrapError(err error) error {
 	if s == nil {
 		return err
 	}
-	return sampledError{sampler: s, err: err}
+	return sampledError{err: err, sampler: s}
 }

@@ -2875,12 +2875,12 @@
           "kind": "field",
           "name": "error_sample_rate",
           "required": false,
-          "desc": "Log a subset of errors once in this many times. 0 = log all of them.",
+          "desc": "Each error will be logged once in this many times. Use 0 to log all of them.",
           "fieldValue": null,
-          "fieldDefaultValue": 10,
+          "fieldDefaultValue": 0,
           "fieldFlag": "ingester.error-sample-rate",
           "fieldType": "int",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
