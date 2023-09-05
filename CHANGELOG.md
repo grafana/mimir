@@ -13,6 +13,7 @@
 ### Jsonnet
 
 * [ENHANCEMENT] Double the amount of rule groups for each user tier. #5897
+* [ENHANCEMENT] Set `maxUnavailable` to 0 for most deployments, to ensure they don't become completely unavailable during a rollout. #5924
 
 ### Mimirtool
 
