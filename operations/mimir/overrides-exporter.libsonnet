@@ -54,7 +54,9 @@
   overrides_exporter_deployment: if !$._config.overrides_exporter_enabled then null else
     deployment.new(name, 1, [$.overrides_exporter_container], { name: name }) +
     $.mimirVolumeMounts +
-    deployment.mixin.metadata.withLabels({ name: name }),
+    deployment.mixin.metadata.withLabels({ name: name }) +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   overrides_exporter_service: if !$._config.overrides_exporter_enabled then null else
     $.util.serviceFor($.overrides_exporter_deployment, $._config.service_ignored_labels),
