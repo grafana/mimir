@@ -8,7 +8,7 @@ var t identifier
 -...
 - defer s.Finish()
 +import "go.opentelemetry.io/otel"
-+t, s := otel.Tracer("github.com/grafana/mimir").Start(a,b)
++t, s := otel.Tracer("").Start(a,b)
 +defer s.End()
 
 @@
@@ -60,9 +60,24 @@ var b expression
 +ctx = trace.ContextWithSpan(a, b)
 
 @@
+var otgrpc identifier
 @@
--otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())
+-import otgrpc "github.com/opentracing-contrib/go-grpc"
 +import "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+
+-otgrpc.OpenTracingClientInterceptor(...)
++otelgrpc.UnaryClientInterceptor()
+
+@@
+var otgrpc identifier
+@@
+-otgrpc.OpenTracingStreamClientInterceptor(...)
++otelgrpc.StreamClientInterceptor()
+
+@@
+var otgrpc identifier
+@@
+-otgrpc.OpenTracingStreamServerInterceptor(...)
 +otelgrpc.StreamServerInterceptor()
 
 @@
@@ -84,7 +99,7 @@ var j expression
 @@
 -i, j = opentracing.StartSpanFromContext(...)
 +import "go.opentelemetry.io/otel/trace"
-+j, i = otel.Tracer("").Start(...)
++j, i = trace.Tracer("github.com/grafana/mimir").Start(...)
 
 @@
 var i identifier
@@ -92,7 +107,7 @@ var j identifier
 @@
 -i, j = opentracing.StartSpanFromContext(...)
 +import "go.opentelemetry.io/otel"
-+j, i = otel.Tracer("github.com/grafana/mimir").Start(...)
++j, i = otel.Tracer("").Start(...)
 
 @@
 var i identifier
@@ -100,7 +115,7 @@ var j identifier
 @@
 -i, j := opentracing.StartSpanFromContext(...)
 +import "go.opentelemetry.io/otel"
-+j, i := otel.Tracer("github.com/grafana/mimir").Start(...)
++j, i := otel.Tracer("").Start(...)
 
 @@
 @@
@@ -108,12 +123,6 @@ var j identifier
 -opentracing.Span
 +import "go.opentelemetry.io/otel/trace"
 +trace.Span
-
-@@
-@@
--otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())
-+import "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-+otelgrpc.UnaryClientInterceptor()
 
 @@
 @@
@@ -131,8 +140,23 @@ var j identifier
 +import "go.opentelemetry.io/otel"
 
 -opentracing.GlobalTracer()
-+otel.Tracer("github.com/grafana/mimir")
++otel.Tracer("")
+
+@@
+var foo,x identifier
+@@
+-import foo "github.com/opentracing/opentracing-go"
++import foo "go.opentelemetry.io/otel"
+foo.x
 
 @@
 @@
--SetTag
+-opentracing.Span
++trace.Span
+
+@@
+var foo identifier
+@@
+-foo.LogKV(...)
++"go.opentelemetry.io/otel/attribute"
++foo.SetAttributes(attribute.String(...))

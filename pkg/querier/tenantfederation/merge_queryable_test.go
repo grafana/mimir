@@ -17,7 +17,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -25,10 +24,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 const (
@@ -917,24 +918,24 @@ func TestTracingMergeQueryable(t *testing.T) {
 
 	spans := exp.GetSpans().Snapshots()
 	require.Equal(t,
-		[]attribute.KeyValue{attribute.StringSlice(TenantIDsTagName, []string{"team-a"})},
+		[]attribute.KeyValue{attribute.StringSlice(spanlogger.TenantIDsTagName, []string{"team-a"})},
 		spans[0].Attributes())
-	// assertSpanExists(t, spans, "mergeQuerier.Select", expectedTag{spanlogger.TenantIDsTagName,
-	// 	[]string{"team-a", "team-b"}})
-	// assertSpanExists(t, spans, "mockTenantQuerier.select", expectedTag{spanlogger.TenantIDsTagName,
-	// 	[]string{"team-a"}})
-	// assertSpanExists(t, spans, "mockTenantQuerier.select", expectedTag{spanlogger.TenantIDsTagName,
-	// 	[]string{"team-b"}})
+	assertSpanExists(t, spans, "mergeQuerier.Select", expectedTag{spanlogger.TenantIDsTagName,
+		[]string{"team-a", "team-b"}})
+	assertSpanExists(t, spans, "mockTenantQuerier.select", expectedTag{spanlogger.TenantIDsTagName,
+		[]string{"team-a"}})
+	assertSpanExists(t, spans, "mockTenantQuerier.select", expectedTag{spanlogger.TenantIDsTagName,
+		[]string{"team-b"}})
 }
 
 func assertSpanExists(t *testing.T,
-	actualSpans []*mocktracer.MockSpan,
+	actualSpans []sdktrace.ReadOnlySpan,
 	name string,
 	tag expectedTag) {
 	t.Helper()
 
 	for _, span := range actualSpans {
-		if span.OperationName == name && containsTags(span, tag) {
+		if span.Name() == name && containsTags(span, tag) {
 			return
 		}
 	}
@@ -944,16 +945,26 @@ func assertSpanExists(t *testing.T,
 		name, tag, extractNameWithTags(actualSpans))
 }
 
-func extractNameWithTags(actualSpans []*mocktracer.MockSpan) []spanWithTags {
+func extractNameWithTags(actualSpans []sdktrace.ReadOnlySpan) []spanWithTags {
 	result := make([]spanWithTags, len(actualSpans))
 	for i, span := range actualSpans {
-		result[i] = spanWithTags{span.OperationName, span.Tags()}
+		attributes := map[string]interface{}{}
+		for _, spanAttr := range span.Attributes() {
+			attributes[string(spanAttr.Key)] = spanAttr.Value.AsInterface()
+		}
+		result[i] = spanWithTags{span.Name(), attributes}
 	}
 	return result
 }
 
-func containsTags(span *mocktracer.MockSpan, expectedTag expectedTag) bool {
-	return reflect.DeepEqual(span.Tag(expectedTag.key), expectedTag.values)
+func containsTags(span sdktrace.ReadOnlySpan, expectedTag expectedTag) bool {
+	attributes := span.Attributes()
+	for _, attr := range attributes {
+		if string(attr.Key) == expectedTag.key {
+			return reflect.DeepEqual(attr.Value.AsStringSlice(), expectedTag.values)
+		}
+	}
+	return false
 }
 
 type spanWithTags struct {

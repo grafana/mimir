@@ -174,7 +174,7 @@ func (d *Distributor) doQuorum(userID string, w http.ResponseWriter, r *http.Req
 	err = ring.DoBatch(r.Context(), RingOp, d.alertmanagerRing, []uint32{shardByUser(userID)}, func(am ring.InstanceDesc, _ []int) error {
 		// Use a background context to make sure all alertmanagers get the request even if we return early.
 		localCtx := user.InjectOrgID(context.Background(), userID)
-		localCtx, sp := otel.Tracer("github.com/grafana/mimir").Start(localCtx, "Distributor.doQuorum")
+		localCtx, sp := otel.Tracer("").Start(localCtx, "Distributor.doQuorum")
 		defer sp.End()
 
 		resp, err := d.doRequest(localCtx, am, &httpgrpc.HTTPRequest{
@@ -242,7 +242,7 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 		Headers: httpToHttpgrpcHeaders(r.Header),
 	}
 
-	ctx, sp := otel.Tracer("github.com/grafana/mimir").Start(r.Context(), "Distributor.doUnary")
+	ctx, sp := otel.Tracer("").Start(r.Context(), "Distributor.doUnary")
 	defer sp.End()
 
 	// Until we have a mechanism to combine the results from multiple alertmanagers,

@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/user"
-	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"

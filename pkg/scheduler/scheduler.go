@@ -22,12 +22,12 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
@@ -250,17 +250,20 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 				break
 			}
-			enqueueSpan, reqCtx := opentracing.StartSpanFromContextWithTracer(frontendCtx, tracer, "enqueue", opentracing.ChildOf(parentSpanContext))
+
+			_, enqueueSpan := otel.Tracer("").Start(parentSpanContext, "enqueue")
+			reqCtx := trace.ContextWithSpan(frontendCtx, enqueueSpan)
 
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
 			switch {
 			case err == nil:
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			case errors.Is(err, queue.ErrTooManyRequests):
-				enqueueSpan.LogKV("error", err.Error())
+				enqueueSpan.SetAttributes(attribute.String("error", err.Error()))
+				enqueueSpan.RecordError(err)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 			default:
-				enqueueSpan.LogKV("error", err.Error())
+				enqueueSpan.SetAttributes(attribute.String("error", err.Error()))
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 			}
 
@@ -324,17 +327,13 @@ func (s *Scheduler) frontendDisconnected(frontendAddress string) {
 
 func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr string, msg *schedulerpb.FrontendToScheduler) error {
 	// Create new context for this request, to support cancellation.
-	_, cancel := context.WithCancel(requestContext)
+	ctx, cancel := context.WithCancel(requestContext)
 	shouldCancel := true
 	defer func() {
 		if shouldCancel {
 			cancel()
 		}
 	}()
-
-	// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
-	// information, since that is a long-running request.
-	parentSpanContext := httpgrpcutil.GetParentSpanForRequest(msg.HttpRequest)
 
 	userID := msg.GetUserID()
 
@@ -347,10 +346,8 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	}
 
 	now := time.Now()
-
-	req.parentSpanContext = parentSpanContext
-
-	req.ctx, req.queueSpan = otel.Tracer("github.com/grafana/mimir").Start(parentSpanContext, "queued")
+	req.parentSpanContext = requestContext
+	req.ctx, req.queueSpan = otel.Tracer("").Start(ctx, "queued")
 
 	req.enqueueTime = now
 	req.ctxCancel = cancel

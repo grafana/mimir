@@ -11,7 +11,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptrace"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +27,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go/config"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -38,7 +36,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 )
 
 const (
@@ -71,9 +68,20 @@ func TestFrontend(t *testing.T) {
 }
 
 func TestFrontendPropagateTrace(t *testing.T) {
-	closer, err := config.Configuration{}.InitGlobalTracer("test")
-	require.NoError(t, err)
-	defer closer.Close()
+	// exp := tracetest.NewInMemoryExporter()
+	// tp := sdktrace.NewTracerProvider(
+	// 	sdktrace.WithBatcher(exp),
+	// 	sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	// )
+	// otel.SetTracerProvider(tp)
+	// defer tp.Shutdown(context.Background())
+
+	// otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator([]propagation.TextMapPropagator{
+	// 	// w3c Propagator is the default propagator for opentelemetry
+	// 	propagation.TraceContext{}, propagation.Baggage{},
+	// 	// jaeger Propagator is for opentracing backwards compatibility
+	// 	jaegerpropagator.Jaeger{},
+	// }...))
 
 	observedTraceID := make(chan string, 2)
 
@@ -81,12 +89,12 @@ func TestFrontendPropagateTrace(t *testing.T) {
 		traceID, _ := tracing.ExtractOtelTraceID(r.Context())
 		observedTraceID <- traceID
 
-		_, err = w.Write([]byte(responseBody))
+		_, err := w.Write([]byte(responseBody))
 		require.NoError(t, err)
 	}))
 
 	test := func(addr string, _ *Frontend) {
-		ctx, sp := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "client")
+		ctx, sp := otel.Tracer("").Start(context.Background(), "client")
 		defer sp.End()
 
 		traceID, _ := tracing.ExtractOtelTraceID(ctx)
@@ -98,12 +106,7 @@ func TestFrontendPropagateTrace(t *testing.T) {
 		require.NoError(t, err)
 
 		client := http.Client{
-			Transport: otelhttp.NewTransport(
-				http.DefaultTransport,
-				otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
-					return otelhttptrace.NewClientTrace(ctx)
-				}),
-			),
+			Transport: otelhttp.NewTransport(nil),
 		}
 
 		resp, err := client.Do(req)

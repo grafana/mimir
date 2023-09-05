@@ -19,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/exp/slices"
 
@@ -55,7 +56,7 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 		}
 
 		s := trace.SpanFromContext(ctx)
-		s.LogKV("series", len(result.Timeseries))
+		s.SetAttributes(attribute.Int("series", len(result.Timeseries)))
 
 		return nil
 	})
@@ -86,12 +87,11 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 		}
 
 		s := trace.SpanFromContext(ctx)
-		s.LogKV(
-			"chunk-series", len(result.Chunkseries),
-			"time-series", len(result.Timeseries),
-			"streaming-series", len(result.StreamingSeries),
+		s.SetAttributes(
+			attribute.Int("chunk-series", len(result.Chunkseries)),
+			attribute.Int("time-series", len(result.Timeseries)),
+			attribute.Int("streaming-series", len(result.StreamingSeries)),
 		)
-
 		return nil
 	})
 
@@ -219,8 +219,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 			}
 		}()
 
-		log.Span.SetAttributes("ingester_address", ing.Addr)
-		log.Span.SetAttributes("ingester_zone", ing.Zone)
+		log.Span.SetAttributes(
+			attribute.String("ingester_address", ing.Addr),
+			attribute.String("ingester_zone", ing.Zone),
+		)
 
 		client, err := d.ingesterPool.GetClientFor(ing.Addr)
 		if err != nil {

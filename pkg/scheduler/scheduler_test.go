@@ -23,8 +23,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go/config"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -32,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_test "github.com/grafana/mimir/pkg/util/test"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 const testMaxOutstandingPerTenant = 5
@@ -245,9 +247,13 @@ func TestTracingContext(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 
-	closer, err := config.Configuration{}.InitGlobalTracer("test")
-	require.NoError(t, err)
-	defer closer.Close()
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+
+	otel.SetTracerProvider(tp)
 
 	req := &schedulerpb.FrontendToScheduler{
 		Type:            schedulerpb.ENQUEUE,
@@ -257,7 +263,9 @@ func TestTracingContext(t *testing.T) {
 		FrontendAddress: "frontend-12345",
 	}
 
-	ctx, _ := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "client")
+	ctx, _ := otel.Tracer("").Start(context.Background(), "client")
+	defer tp.Shutdown(ctx)
+
 	propagators := otel.GetTextMapPropagator()
 	propagators.Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
 
@@ -268,7 +276,7 @@ func TestTracingContext(t *testing.T) {
 	require.Equal(t, 1, len(scheduler.pendingRequests))
 
 	for _, r := range scheduler.pendingRequests {
-		require.NotNil(t, r.parentSpanContext)
+		require.True(t, trace.SpanFromContext(r.parentSpanContext).SpanContext().IsValid())
 	}
 }
 
@@ -354,18 +362,29 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	}
 
 	// Inject span context to the request so we can check handling of max outstanding requests.
-	mockTracer := mocktracer.New()
-	opentracing.SetGlobalTracer(mockTracer)
-	sp, _ := opentracing.StartSpanFromContextWithTracer(context.Background(), mockTracer, "client")
-	require.NoError(t, mockTracer.Inject(sp.Context(), opentracing.HTTPHeaders, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest)))
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+	defer tp.Shutdown(context.Background())
+	otel.SetTracerProvider(tp)
+
+	ctx, sp := otel.Tracer("").Start(context.Background(), "client")
+
+	propagators := otel.GetTextMapPropagator()
+	propagators.Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
 
 	require.NoError(t, fl.Send(&req))
 
 	msg, err := fl.Recv()
+
 	require.NoError(t, err)
 	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, msg.Status)
 
-	spans := mockTracer.FinishedSpans()
+	sp.End()
+	require.NoError(t, tp.ForceFlush(ctx))
+	spans := exp.GetSpans().Snapshots()
 	require.Greater(t, len(spans), 0, "expected at least one span even if rejected by queue full")
 }
 

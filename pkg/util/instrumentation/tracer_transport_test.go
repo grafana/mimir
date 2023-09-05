@@ -13,8 +13,9 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go/config"
 	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestTracerTransportPropagatesTrace(t *testing.T) {
@@ -39,9 +40,14 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			closer, err := config.Configuration{}.InitGlobalTracer("test")
-			require.NoError(t, err)
-			defer closer.Close()
+			exp := tracetest.NewInMemoryExporter()
+			tp := sdktrace.NewTracerProvider(
+				sdktrace.WithBatcher(exp),
+				sdktrace.WithSampler(sdktrace.AlwaysSample()),
+			)
+
+			otel.SetTracerProvider(tp)
+			defer tp.Shutdown(context.Background())
 
 			observedTraceID := make(chan string, 2)
 			handler := middleware.Tracer{}.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -412,7 +412,7 @@ func findFormatter(contentType string) formatter {
 }
 
 func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
-	_, sp := otel.Tracer("github.com/grafana/mimir").Start(ctx, "APIResponse.ToHTTPResponse")
+	_, sp := otel.Tracer("").Start(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.End()
 
 	a, ok := res.(*PrometheusResponse)

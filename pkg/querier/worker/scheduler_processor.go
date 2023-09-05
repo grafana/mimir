@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -166,13 +167,14 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 			// We need to inject user into context for sending response back.
 			ctx = user.InjectOrgID(ctx, request.UserID)
 
-			tracer := otel.Tracer("github.com/grafana/mimir")
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
 			parentSpanContext := httpgrpcutil.GetParentSpanForRequest(request.HttpRequest)
-			spanCtx, queueSpan := tracer.Start(parentSpanContext, "querier_processor_runRequest")
-			defer queueSpan.End()
+			if trace.SpanFromContext(parentSpanContext).SpanContext().IsValid() {
+				_, queueSpan := otel.Tracer("").Start(parentSpanContext, "querier_processor_runRequest")
+				ctx = trace.ContextWithSpan(ctx, queueSpan)
+				defer queueSpan.End()
+			}
 
-			ctx = spanCtx
 			logger := util_log.WithContext(ctx, sp.log)
 
 			sp.runRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, request.HttpRequest)

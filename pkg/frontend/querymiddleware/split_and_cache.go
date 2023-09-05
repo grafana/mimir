@@ -343,7 +343,10 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 		hashedKeys = append(hashedKeys, hashed)
 		hashedKeysIdx[hashed] = idx
 
-		spanLog.LogKV("key", key, "hashedKey", hashed)
+		spanLog.SetAttributes(
+			attribute.String("key", key),
+			attribute.String("hashedKey", hashed),
+		)
 	}
 
 	// Lookup the cache.

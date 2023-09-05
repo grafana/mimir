@@ -80,7 +80,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 		request = request.WithEstimatedSeriesCountHint(estimatedCardinality)
 		spanLog.AddEvent("", trace.WithAttributes(
 			attribute.Bool("estimate available", true),
-			attribute.Uint64("estimated cardinality", estimatedCardinality)))
+			attribute.Int64("estimated cardinality", int64(estimatedCardinality))))
 
 	} else {
 		spanLog.AddEvent("", trace.WithAttributes(attribute.Bool("estimate available", false)))

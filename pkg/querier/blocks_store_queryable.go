@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
@@ -741,7 +742,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		g.Go(func() error {
 			log, reqCtx := spanlogger.NewWithLogger(reqCtx, spanLog, "blocksStoreQuerier.fetchSeriesFromStores")
 			defer log.Span.End()
-			log.Span.SetAttributes("store_gateway_address", c.RemoteAddress())
+			log.Span.SetAttributes(attribute.String("store_gateway_address", c.RemoteAddress()))
 
 			// See: https://github.com/prometheus/prometheus/pull/8050
 			// TODO(goutham): we should ideally be passing the hints down to the storage layer
