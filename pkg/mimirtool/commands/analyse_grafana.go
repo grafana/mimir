@@ -24,12 +24,29 @@ import (
 )
 
 type GrafanaAnalyzeCommand struct {
-	address     string
-	apiKey      string
-	readTimeout time.Duration
-	folders     folderTitles
+	address       string
+	apiKey        string
+	readTimeout   time.Duration
+	folders       folderTitles
+	folderIDs     folderIDs
+	datasourceUID string
 
 	outputFile string
+}
+
+type folderIDs []string
+
+func (f *folderIDs) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
+func (f folderIDs) String() string {
+	return strings.Join(f, ",")
+}
+
+func (f folderIDs) IsCumulative() bool {
+	return true
 }
 
 type folderTitles []string
@@ -56,7 +73,7 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	output, err := AnalyzeGrafana(ctx, c, cmd.folders)
+	output, err := AnalyzeGrafana(ctx, c, cmd.folders, cmd.folderIDs, cmd.datasourceUID)
 	if err != nil {
 		return err
 	}
@@ -69,7 +86,7 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeGrafana analyze grafana's dashboards and return the list metrics used in them.
-func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string) (*analyze.MetricsInGrafana, error) {
+func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, folderIDs []string, datasourceUID string) (*analyze.MetricsInGrafana, error) {
 
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
@@ -80,9 +97,13 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string) (*anal
 	}
 
 	filterOnFolders := len(folders) > 0
+	filterOnFolderIDs := len(folderIDs) > 0
 
 	for _, link := range boardLinks {
 		if filterOnFolders && !slices.Contains(folders, link.FolderTitle) {
+			continue
+		}
+		if filterOnFolderIDs && !slices.Contains(folderIDs, link.FolderUID) {
 			continue
 		}
 		data, _, err := c.GetRawDashboardByUID(ctx, link.UID)
@@ -95,7 +116,7 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string) (*anal
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
 			continue
 		}
-		analyze.ParseMetricsInBoard(output, board)
+		analyze.ParseMetricsInBoard(output, board, datasourceUID)
 	}
 
 	var metricsUsed model.LabelValues

@@ -23,7 +23,7 @@ type DashboardAnalyzeCommand struct {
 }
 
 func (cmd *DashboardAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-	output, err := AnalyzeDashboards(cmd.DashFilesList)
+	output, err := AnalyzeDashboards(cmd.DashFilesList, cmd.datasourceUID)
 	if err != nil {
 		return err
 	}
@@ -36,7 +36,7 @@ func (cmd *DashboardAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeDashboards analyze the given list of dashboard files and return the list metrics used in them.
-func AnalyzeDashboards(dashFilesList []string) (*analyze.MetricsInGrafana, error) {
+func AnalyzeDashboards(dashFilesList []string, datasourceUID string) (*analyze.MetricsInGrafana, error) {
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
 
@@ -50,7 +50,7 @@ func AnalyzeDashboards(dashFilesList []string) (*analyze.MetricsInGrafana, error
 			fmt.Fprintf(os.Stderr, "%s for %s\n", err, file)
 			continue
 		}
-		analyze.ParseMetricsInBoard(output, board, cmd.datasourceUID)
+		analyze.ParseMetricsInBoard(output, board, datasourceUID)
 	}
 	return output, nil
 }
