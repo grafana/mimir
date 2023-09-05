@@ -48,15 +48,12 @@ func (f folderTitles) IsCumulative() bool {
 }
 
 func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
-	defer cancel()
-
 	c, err := sdk.NewClient(cmd.address, cmd.apiKey, sdk.DefaultHTTPClient)
 	if err != nil {
 		return err
 	}
 
-	output, err := AnalyzeGrafana(ctx, c, cmd.folders)
+	output, err := AnalyzeGrafana(context.Background(), c, cmd.folders, cmd.readTimeout)
 	if err != nil {
 		return err
 	}
@@ -69,7 +66,7 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeGrafana analyze grafana's dashboards and return the list metrics used in them.
-func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string) (*analyze.MetricsInGrafana, error) {
+func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTimeout time.Duration) (*analyze.MetricsInGrafana, error) {
 
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
@@ -85,7 +82,10 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string) (*anal
 		if filterOnFolders && !slices.Contains(folders, link.FolderTitle) {
 			continue
 		}
-		data, _, err := c.GetRawDashboardByUID(ctx, link.UID)
+		fetchCtx, cancel := context.WithTimeout(context.Background(), readTimeout)
+		defer cancel()
+
+		data, _, err := c.GetRawDashboardByUID(fetchCtx, link.UID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
 			continue
