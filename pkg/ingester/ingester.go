@@ -993,14 +993,14 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		case errMaxSeriesPerUserLimitExceeded:
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(func() error {
-				return makeLimitError(i.limiter.formatMaxSeriesPerUserError(userID))
+				return formatMaxSeriesPerUserError(i.limiter, userID)
 			})
 			return true
 
 		case errMaxSeriesPerMetricLimitExceeded:
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(func() error {
-				return makeMetricLimitError(mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), i.limiter.formatMaxSeriesPerMetricError(userID))
+				return formatMaxSeriesPerMetricError(i.limiter, mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), userID)
 			})
 			return true
 		}
@@ -2962,46 +2962,6 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func newIngestErrSample(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return fmt.Errorf("%v. The affected sample has timestamp %s and is from series %s", errID.Message(errMsg), timestamp.Time().UTC().Format(time.RFC3339Nano), mimirpb.FromLabelAdaptersToLabels(labels).String())
-}
-
-func newIngestErrSampleTimestampTooOld(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErrSample(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
-}
-
-func newIngestErrSampleTimestampTooOldOOOEnabled(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) error {
-	return newIngestErrSample(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
-}
-
-func newIngestErrSampleTimestampTooFarInFuture(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErrSample(globalerror.SampleTooFarInFuture, "received a sample whose timestamp is too far in the future", timestamp, labels)
-}
-
-func newIngestErrSampleOutOfOrder(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErrSample(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
-}
-
-func newIngestErrSampleDuplicateTimestamp(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErrSample(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
-}
-
-func newIngestErrExemplar(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
-	return fmt.Errorf("%v. The affected exemplar is %s with timestamp %s for series %s",
-		errID.Message(errMsg),
-		mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
-		timestamp.Time().UTC().Format(time.RFC3339Nano),
-		mimirpb.FromLabelAdaptersToLabels(seriesLabels).String())
-}
-
-func newIngestErrExemplarMissingSeries(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
-	return newIngestErrExemplar(globalerror.ExemplarSeriesMissing, "the exemplar has been rejected because the related series has not been ingested yet", timestamp, seriesLabels, exemplarLabels)
-}
-
-func newIngestErrExemplarTimestampTooFarInFuture(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
-	return newIngestErrExemplar(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
 }
 
 func wrappedTSDBIngestExemplarOtherErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
