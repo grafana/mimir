@@ -6,13 +6,11 @@
 package ingester
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -95,42 +93,6 @@ func (l *Limiter) AssertMaxMetricsWithMetadataPerUser(userID string, metrics int
 	}
 
 	return errMaxMetadataPerUserLimitExceeded
-}
-
-func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
-	globalLimit := l.limits.MaxGlobalSeriesPerUser(userID)
-
-	return errors.New(globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
-		validation.MaxSeriesPerUserFlag,
-	))
-}
-
-func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
-	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
-
-	return errors.New(globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
-		validation.MaxSeriesPerMetricFlag,
-	))
-}
-
-func (l *Limiter) formatMaxMetadataPerUserError(userID string) error {
-	globalLimit := l.limits.MaxGlobalMetricsWithMetadataPerUser(userID)
-
-	return errors.New(globalerror.MaxMetadataPerUser.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
-		validation.MaxMetadataPerUserFlag,
-	))
-}
-
-func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
-	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
-
-	return errors.New(globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
-		validation.MaxMetadataPerMetricFlag,
-	))
 }
 
 func (l *Limiter) maxSeriesPerMetric(userID string) int {
