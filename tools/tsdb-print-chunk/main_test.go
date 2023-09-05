@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -25,12 +24,12 @@ func TestTSDBPrintChunk(t *testing.T) {
 	spec := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
-			must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			must(chunks.ChunkFromSamples([]chunks.Sample{
 				sample{10, 11, nil, nil},
 				sample{20, 12, nil, nil},
 				sample{30, 13, nil, nil},
 			})),
-			must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			must(chunks.ChunkFromSamples([]chunks.Sample{
 				sample{40, 0, test.GenerateTestHistogram(1), nil},
 				sample{50, 0, test.GenerateTestHistogram(2), nil},
 				sample{60, 0, test.GenerateTestHistogram(3), nil},
