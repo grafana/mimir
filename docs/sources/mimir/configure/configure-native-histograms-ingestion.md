@@ -9,9 +9,11 @@ weight: 160
 
 Prometheus native histograms ingestion is an **experimental** feature of Grafana Mimir.
 
-You can configure native histograms ingestion over the Prometheus [remote write API]({{< relref "../references/http-api#remote-write" >}}) endpoint globally or per tenant.
+You can configure native histograms ingestion via the Prometheus [remote write API]({{< relref "../references/http-api#remote-write" >}}) endpoint globally or per tenant.
 
-> **Note:** To enable support for querying native histograms together with [Grafana Mimir query sharding]({{< relref "../references/architecture/query-sharding" >}}), make sure that the flag `-query-frontend.query-result-response-format` is set to its default `protobuf` value on query frontends.
+{{% admonition type="note" %}}
+To enable support for querying native histograms together with [Grafana Mimir query sharding]({{< relref "../references/architecture/query-sharding" >}}), make sure that the flag `-query-frontend.query-result-response-format` is set to its default `protobuf` value on query frontends.
+{{% /admonition %}}
 
 ## Configure native histograms globally
 
