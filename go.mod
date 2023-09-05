@@ -7,6 +7,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.1.0
+	github.com/failsafe-go/failsafe-go v0.0.0-20230906024226-6f6961f2c246
 	github.com/felixge/fgprof v0.9.3
 	github.com/go-kit/log v0.2.1
 	github.com/go-openapi/strfmt v0.21.7
@@ -35,7 +36,6 @@ require (
 	github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
-	github.com/sony/gobreaker v0.5.1-0.20230503171616-f4dfee680910
 	github.com/spf13/afero v1.9.5
 	github.com/stretchr/testify v1.8.4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
@@ -116,6 +116,7 @@ require (
 	github.com/aws/smithy-go v1.11.1 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bits-and-blooms/bitset v1.8.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect

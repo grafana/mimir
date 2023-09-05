@@ -277,6 +277,9 @@ github.com/benbjohnson/clock
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
+# github.com/bits-and-blooms/bitset v1.8.0
+## explicit; go 1.16
+github.com/bits-and-blooms/bitset
 # github.com/cenkalti/backoff/v3 v3.2.2
 ## explicit; go 1.12
 github.com/cenkalti/backoff/v3
@@ -342,6 +345,13 @@ github.com/efficientgo/core/testutil/internal
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
+# github.com/failsafe-go/failsafe-go v0.0.0-20230906024226-6f6961f2c246
+## explicit; go 1.18
+github.com/failsafe-go/failsafe-go
+github.com/failsafe-go/failsafe-go/circuitbreaker
+github.com/failsafe-go/failsafe-go/internal
+github.com/failsafe-go/failsafe-go/internal/util
+github.com/failsafe-go/failsafe-go/spi
 # github.com/fatih/color v1.15.0
 ## explicit; go 1.17
 github.com/fatih/color
@@ -985,9 +995,6 @@ github.com/sirupsen/logrus
 # github.com/soheilhy/cmux v0.1.5
 ## explicit; go 1.11
 github.com/soheilhy/cmux
-# github.com/sony/gobreaker v0.5.1-0.20230503171616-f4dfee680910
-## explicit; go 1.12
-github.com/sony/gobreaker
 # github.com/spf13/afero v1.9.5
 ## explicit; go 1.16
 github.com/spf13/afero

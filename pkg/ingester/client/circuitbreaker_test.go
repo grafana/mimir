@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/sony/gobreaker"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -20,32 +20,32 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func TestIsSuccessful(t *testing.T) {
+func TestIsFailure(t *testing.T) {
 	t.Run("no error", func(t *testing.T) {
-		require.True(t, isSuccessful(nil))
+		require.False(t, isFailure(nil))
 	})
 
 	t.Run("context cancelled", func(t *testing.T) {
-		require.True(t, isSuccessful(context.Canceled))
-		require.True(t, isSuccessful(fmt.Errorf("%w", context.Canceled)))
+		require.False(t, isFailure(context.Canceled))
+		require.False(t, isFailure(fmt.Errorf("%w", context.Canceled)))
 	})
 
 	t.Run("gRPC context cancelled", func(t *testing.T) {
 		err := status.Error(codes.Canceled, "cancelled!")
-		require.True(t, isSuccessful(err))
-		require.True(t, isSuccessful(fmt.Errorf("%w", err)))
+		require.False(t, isFailure(err))
+		require.False(t, isFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC deadline exceeded", func(t *testing.T) {
 		err := status.Error(codes.DeadlineExceeded, "broken!")
-		require.False(t, isSuccessful(err))
-		require.False(t, isSuccessful(fmt.Errorf("%w", err)))
+		require.True(t, isFailure(err))
+		require.True(t, isFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC unavailable", func(t *testing.T) {
 		err := status.Error(codes.Unavailable, "broken!")
-		require.False(t, isSuccessful(err))
-		require.False(t, isSuccessful(fmt.Errorf("%w", err)))
+		require.True(t, isFailure(err))
+		require.True(t, isFailure(fmt.Errorf("%w", err)))
 	})
 }
 
@@ -63,9 +63,10 @@ func TestNewCircuitBreaker(t *testing.T) {
 	conn := grpc.ClientConn{}
 	reg := prometheus.NewPedanticRegistry()
 	breaker := NewCircuitBreaker("test-1", CircuitBreakerConfig{
-		Enabled:          true,
-		FailureThreshold: 1,
-		CooldownPeriod:   60 * time.Second,
+		Enabled:                   true,
+		FailureThreshold:          1,
+		FailureExecutionThreshold: 1,
+		CooldownPeriod:            60 * time.Second,
 	}, NewMetrics(reg), test.NewTestingLogger(t))
 
 	// Initial request that should succeed because the circuit breaker is "closed"
@@ -80,7 +81,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 
 	// Subsequent requests should fail with this specific error once "open"
 	err = breaker(context.Background(), "/cortex.Ingester/Push", "", "", &conn, success)
-	require.ErrorIs(t, err, gobreaker.ErrOpenState)
+	require.ErrorIs(t, err, circuitbreaker.ErrCircuitBreakerOpen)
 
 	// Non-ingester methods shouldn't be short-circuited
 	err = breaker(context.Background(), "Different.Method", "", "", &conn, success)
