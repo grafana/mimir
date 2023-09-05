@@ -58,7 +58,7 @@ func TestNewIngestErrMsgs(t *testing.T) {
 func TestErrorWithStatus(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
-	validationErr := NewErrorWithStatus(err, http.StatusBadRequest)
+	validationErr := newErrorWithStatus(err, http.StatusBadRequest)
 	require.Error(t, validationErr)
 	stat, ok := status.FromError(validationErr)
 	require.True(t, ok)

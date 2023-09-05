@@ -431,7 +431,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: NewErrorWithStatus(annotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 10}}},
 			},
@@ -489,7 +489,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: NewErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -548,7 +548,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: NewErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -667,7 +667,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: NewErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
 			},
@@ -726,7 +726,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: NewErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{
 					{Value: 1, Timestamp: model.Time(now.UnixMilli())},
@@ -782,7 +782,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: NewErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
 					{Timestamp: model.Time(now.UnixMilli()), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(0))},
@@ -846,7 +846,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: NewErrorWithStatus(annotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{
 					Metric: metricLabelSet,
@@ -920,7 +920,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: NewErrorWithStatus(annotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -979,7 +979,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:              NewErrorWithStatus(annotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), http.StatusBadRequest),
+			expectedErr:              newErrorWithStatus(annotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), http.StatusBadRequest),
 			expectedIngested:         nil,
 			expectedMetadataIngested: nil,
 			additionalMetrics: []string{
@@ -5653,7 +5653,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = i.Push(ctx, req)
-	require.Equal(t, NewErrorWithStatus(annotateWithUser(errTSDBForcedCompaction, userID), http.StatusServiceUnavailable), err)
+	require.Equal(t, newErrorWithStatus(annotateWithUser(errTSDBForcedCompaction, userID), http.StatusServiceUnavailable), err)
 
 	// Ingestion is successful after a flush.
 	ok, _ = db.changeState(forceCompacting, active)
@@ -8044,94 +8044,405 @@ func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 	}
 }
 
-func TestIngester_SampledErrorLog(t *testing.T) {
-	errorSampleRate := 5
-	ingesterCfg := defaultIngesterTestConfig(t)
-	ingesterCfg.IngesterRing.ReplicationFactor = 1
-	ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
-	ing, err := prepareIngesterWithBlocksStorage(t, ingesterCfg, nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
-	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-
-	// Wait until it's healthy
-	test.Poll(t, time.Second, 1, func() interface{} {
-		return ing.lifecycler.HealthyInstancesCount()
-	})
-
-	logger := newLoggerWithCounter(t, bytes.NewBuffer(nil))
-	serverLog := middleware.GRPCServerLog{
-		Log: logger,
-	}
-	grpcOptions := []grpc.ServerOption{
-		grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
-		grpc.ChainUnaryInterceptor(serverLog.UnaryServerInterceptor),
-	}
-
-	server := grpc.NewServer(grpcOptions...)
-	defer server.GracefulStop()
-	client.RegisterIngesterServer(server, ing)
-
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-
-	go func() {
-		require.NoError(t, server.Serve(listener))
-	}()
-
-	client, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
-	require.NoError(t, err)
-	defer client.Close()
-
-	userID := "1"
-	timestamp := int64(1575043969)
-	delta := int64(86400 * 1000)
+func TestIngester_PushWithSampledErrors(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	request := []*mimirpb.WriteRequest{
-		mimirpb.ToWriteRequest(
-			[][]mimirpb.LabelAdapter{metricLabelAdapters},
-			[]mimirpb.Sample{{Value: 2, TimestampMs: timestamp}},
-			nil,
-			nil,
-			mimirpb.API,
-		),
-		// Write request with 1 series and 2 samples.
-		{
-			Timeseries: []mimirpb.PreallocTimeseries{
+	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
+	metricNames := []string{
+		"cortex_discarded_samples_total",
+	}
+	userID := "test"
+	errorSampleRate := 5
+	now := time.Now()
+
+	tests := map[string]struct {
+		reqs                      []*mimirpb.WriteRequest
+		expectedErr               error
+		expectedIngested          model.Matrix
+		expectedMetadataIngested  []*mimirpb.MetricMetadata
+		expectedExemplarsIngested []mimirpb.TimeSeries
+		expectedMetrics           string
+		disableActiveSeries       bool
+		maxExemplars              int
+		maxMetadataPerUser        int
+		maxMetadataPerMetric      int
+		nativeHistograms          bool
+		expectedSampling          bool
+	}{
+		"should soft fail on sample out-of-order": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+			},
+			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedSampling: true,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 10}}},
+			},
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 10
+			`,
+		},
+		"should soft fail on all samples out of bound in a write request": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				// Write request with 1 series and 2 samples.
 				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels:  metricLabelAdapters,
-						Samples: []mimirpb.Sample{{Value: 0, TimestampMs: timestamp - delta}, {Value: 1, TimestampMs: timestamp - delta}},
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:  metricLabelAdapters,
+								Samples: []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
+							},
+						},
+					},
+				},
+			},
+			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedSampling: true,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
+			},
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 20
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+			`,
+		},
+		"should soft fail on all samples with histograms out of bound in a write request": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				// Write request with 1 series and 3 samples.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:     metricLabelAdapters,
+								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
+							},
+						},
+					},
+				},
+			},
+			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedSampling: true,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
+			},
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 30
+			`,
+			nativeHistograms: true,
+		},
+		"should soft fail on some samples out of bound in a write request": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				// Write request with 1 series and 2 samples.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: metricLabelAdapters,
+								Samples: []mimirpb.Sample{
+									{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)},
+									{Value: 1, TimestampMs: 1575043969 - (86000 * 1000)},
+									{Value: 3, TimestampMs: 1575043969 + 1}},
+							},
+						},
+					},
+				},
+			},
+			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedSampling: true,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
+			},
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 20
+			`,
+		},
+		"should soft fail on some samples with timestamp too far in future in a write request": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli()}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: metricLabelAdapters,
+								Samples: []mimirpb.Sample{
+									{Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
+									{Value: 3, TimestampMs: now.UnixMilli() + 1}},
+							},
+						},
+					},
+				},
+			},
+			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedSampling: true,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{
+					{Value: 1, Timestamp: model.Time(now.UnixMilli())},
+					{Value: 3, Timestamp: model.Time(now.UnixMilli() + 1)},
+				}},
+			},
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 10
+			`,
+		},
+		"should soft fail on some histograms with timestamp too far in future in a write request": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: metricLabelAdapters,
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(now.UnixMilli(), util_test.GenerateTestHistogram(0)),
+									mimirpb.FromHistogramToHistogramProto(now.UnixMilli()+(86400*1000), util_test.GenerateTestHistogram(1))},
+							},
+						},
+					},
+				},
+			},
+			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedSampling: true,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Timestamp: model.Time(now.UnixMilli()), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(0))},
+				}},
+			},
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 10
+			`,
+		},
+		"should soft fail on some exemplars with timestamp too far in future in a write request": {
+			maxExemplars: 1,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: metricLabelAdapters,
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: now.UnixMilli()}},
+								Exemplars: []mimirpb.Exemplar{
+									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, Value: 1, TimestampMs: now.UnixMilli()},
+									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}, Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), http.StatusBadRequest),
+			expectedSampling: false,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(now.UnixMilli())},
+					},
+				},
+			},
+			expectedExemplarsIngested: []mimirpb.TimeSeries{
+				{
+					Labels: metricLabelAdapters,
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, TimestampMs: now.UnixMilli(), Value: 1},
 					},
 				},
 			},
 		},
+		"should soft fail on two different sample values at the same timestamp": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 1575043969}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+			},
+			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedSampling: true,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
+			},
+			expectedMetrics: `
+                # HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 10
+			`,
+		},
+		"should soft fail on exemplar with unknown series": {
+			maxExemplars: 1,
+			reqs: []*mimirpb.WriteRequest{
+				// Ingesting an exemplar requires a sample to create the series first
+				// This is not done here.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Exemplars: []mimirpb.Exemplar{
+									{
+										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										TimestampMs: 1000,
+										Value:       1000,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErr:              newErrorWithStatus(annotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), http.StatusBadRequest),
+			expectedSampling:         false,
+			expectedIngested:         nil,
+			expectedMetadataIngested: nil,
+		},
 	}
 
-	ctx := user.InjectOrgID(context.Background(), userID)
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
 
-	expectedError := wrapWithUser(ing.limiter.samplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(timestamp-delta), metricLabelAdapters)), userID)
-	require.Error(t, expectedError)
-	fmt.Println(expectedError)
+			ingesterCfg := defaultIngesterTestConfig(t)
+			ingesterCfg.IngesterRing.ReplicationFactor = 1
+			ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
+			limits := defaultLimitsTestConfig()
+			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
+			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
+			limits.MaxGlobalMetadataPerMetric = testData.maxMetadataPerMetric
+			limits.NativeHistogramsIngestionEnabled = testData.nativeHistograms
 
-	res, err := client.Push(ctx, request[0])
-	require.NoError(t, err)
-	require.NotNil(t, res)
-	// We push 2 times more too old samples than errorSampleRate causeing err-mimir-sample-timestamp-too-old errors.
-	for i := 0; i < 2*errorSampleRate; i++ {
-		res, err = client.Push(ctx, request[1])
-		require.Error(t, err)
-		require.ErrorContains(t, err, expectedError.Error())
-		status, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Errorf(t, expectedError, status.Message())
+			i, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, "", registry)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+			// Wait until the ingester is healthy
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
+			})
+
+			logger := newLoggerWithCounter(t, bytes.NewBuffer(nil))
+			serverLog := middleware.GRPCServerLog{
+				Log: logger,
+			}
+			grpcOptions := []grpc.ServerOption{
+				grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
+				grpc.ChainUnaryInterceptor(serverLog.UnaryServerInterceptor),
+			}
+
+			server := grpc.NewServer(grpcOptions...)
+			defer server.GracefulStop()
+			client.RegisterIngesterServer(server, i)
+
+			listener, err := net.Listen("tcp", "localhost:0")
+			require.NoError(t, err)
+
+			go func() {
+				require.NoError(t, server.Serve(listener))
+			}()
+
+			client, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+			require.NoError(t, err)
+			defer client.Close()
+
+			ctx := user.InjectOrgID(context.Background(), userID)
+
+			// Push timeseries
+
+			for idx, req := range testData.reqs {
+				// We expect no error on any request except the last one
+				// which may error (and in that case we assert on it)
+				if idx < len(testData.reqs)-1 {
+					_, err := client.Push(ctx, req)
+					assert.NoError(t, err)
+				} else {
+					// We push 2 times more samples than errorSampleRate causing the expected error.
+					for i := 0; i < 2*errorSampleRate; i++ {
+						_, err = client.Push(ctx, req)
+						require.Error(t, err)
+						status, ok := status.FromError(err)
+						require.True(t, ok)
+						require.Errorf(t, testData.expectedErr, status.Message())
+					}
+				}
+			}
+
+			if testData.expectedSampling {
+				// If sampling is expected, we expect to see only 2 log entries realted to the expected error.
+				require.Equal(t, 2, logger.count(testData.expectedErr.Error()))
+			} else {
+				// Otherwise we expect to see all log entries.
+				require.Equal(t, 2*errorSampleRate, logger.count(testData.expectedErr.Error()))
+			}
+
+			// Check tracked Prometheus metrics
+			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), metricNames...)
+			assert.NoError(t, err)
+		})
 	}
-
-	// We expect to see 2 log entries realted to err-mimir-sample-timestamp-too-old
-	require.Equal(t, 2, logger.count(expectedError.Error()))
 }
 
-func TestIngester_SampledValidationErrorLog(t *testing.T) {
+func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	limits := defaultLimitsTestConfig()
 	limits.MaxGlobalSeriesPerUser = 1
 
@@ -8217,31 +8528,114 @@ func TestIngester_SampledValidationErrorLog(t *testing.T) {
 	require.Equal(t, 2, logger.count(expectedError.Error()))
 }
 
-type loggerWithCounter struct {
+func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
+	limits := defaultLimitsTestConfig()
+	limits.MaxGlobalSeriesPerMetric = 1
+	limits.MaxGlobalMetadataPerMetric = 1
+
+	// create a data dir that survives an ingester restart
+	dataDir := t.TempDir()
+
+	errorSampleRate := 5
+	ingesterCfg := defaultIngesterTestConfig(t)
+	ingesterCfg.IngesterRing.ReplicationFactor = 1
+	ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, dataDir, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+	// Wait until it's healthy
+	test.Poll(t, time.Second, 1, func() interface{} {
+		return ing.lifecycler.HealthyInstancesCount()
+	})
+
+	logger := newLoggerWithCounter(t, bytes.NewBuffer(nil))
+	serverLog := middleware.GRPCServerLog{
+		Log: logger,
+	}
+	grpcOptions := []grpc.ServerOption{
+		grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
+		grpc.ChainUnaryInterceptor(serverLog.UnaryServerInterceptor),
+	}
+
+	server := grpc.NewServer(grpcOptions...)
+	defer server.GracefulStop()
+	client.RegisterIngesterServer(server, ing)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	go func() {
+		require.NoError(t, server.Serve(listener))
+	}()
+
+	client, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	require.NoError(t, err)
+	defer client.Close()
+
+	userID := "1"
+	timestamp := int64(1575043969)
+	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "bar"}}
+	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "biz"}}
+	sample1 := mimirpb.Sample{
+		TimestampMs: timestamp + 1,
+		Value:       1,
+	}
+	sample2 := mimirpb.Sample{
+		TimestampMs: timestamp + 2,
+		Value:       2,
+	}
+	sample3 := mimirpb.Sample{
+		TimestampMs: timestamp + 3,
+		Value:       3,
+	}
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	// Append only one series first, expect no error.
+	res, err := client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1}, []mimirpb.Sample{sample1}, nil, nil, mimirpb.API))
+	require.NoError(t, err)
+	require.NotNil(t, res)
+
+	expectedError := wrapWithUser(ing.limiter.samplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerMetricError(ing.limiter.limits, mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters2), userID)), userID)
+	require.Error(t, expectedError)
+
+	// We push series hitting the max series limit too old samples than 2 times more than errorSampleRate.
+	for i := 0; i < 2*errorSampleRate; i++ {
+		// Append 2 series first, expect max-series-per-user error.
+		res, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
+		require.Error(t, err)
+		status, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Errorf(t, expectedError, status.Message())
+	}
+
+	// We expect to see 2 log entries realted to err-mimir-sample-timestamp-too-old
+	require.Equal(t, 2, logger.count(expectedError.Error()))
+}
+
+type loggerWithBuffer struct {
 	logger log.Logger
 	buf    *bytes.Buffer
 }
 
-func newLoggerWithCounter(t *testing.T, buf *bytes.Buffer) *loggerWithCounter {
+func newLoggerWithCounter(t *testing.T, buf *bytes.Buffer) *loggerWithBuffer {
 	var lvl dslog.Level
 	require.NoError(t, lvl.Set("info"))
 	logger := dslog.NewGoKitWithWriter(dslog.LogfmtFormat, buf)
 	level.NewFilter(logger, lvl.Option)
-	return &loggerWithCounter{
+	return &loggerWithBuffer{
 		logger: logger,
 		buf:    buf,
 	}
 }
 
-func (l *loggerWithCounter) Log(keyvals ...interface{}) error {
-	err := l.logger.Log(keyvals...)
-	if err != nil {
-
-	}
-	return nil
+func (l *loggerWithBuffer) Log(keyvals ...interface{}) error {
+	return l.logger.Log(keyvals...)
 }
 
-func (l *loggerWithCounter) count(msg string) int {
+func (l *loggerWithBuffer) count(msg string) int {
 	msg = strings.ReplaceAll(msg, "\"", "\\\"")
 	return bytes.Count(l.buf.Bytes(), []byte(msg))
 }
