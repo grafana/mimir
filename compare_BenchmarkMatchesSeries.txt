@@ -1,0 +1,118 @@
+goos: linux
+goarch: amd64
+pkg: github.com/grafana/mimir/pkg/ingester/activeseries
+cpu: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+                                                              │ BenchmarkMatchesSeries_before.txt │   BenchmarkMatchesSeries_after.txt   │
+                                                              │              sec/op               │    sec/op     vs base                │
+MatchesSeries/TrackerCount:_10,_Labels:_1,_Matching:_0-16                             546.4n ± 5%    564.6n ± 4%        ~ (p=0.063 n=10)
+MatchesSeries/TrackerCount:_10,_Labels:_1,_Matching:_1-16                             575.6n ± 3%    610.0n ± 3%   +5.98% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_10,_Labels:_10,_Matching:_1-16                            632.1n ± 3%    663.6n ± 2%   +4.98% (p=0.001 n=10)
+MatchesSeries/TrackerCount:_10,_Labels:_10,_Matching:_2-16                            678.8n ± 4%    693.8n ± 2%        ~ (p=0.105 n=10)
+MatchesSeries/TrackerCount:_10,_Labels:_10,_Matching:_5-16                            766.1n ± 3%    800.5n ± 1%   +4.49% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_10,_Labels:_25,_Matching:_1-16                            1.025µ ± 6%    1.069µ ± 4%        ~ (p=0.093 n=10)
+MatchesSeries/TrackerCount:_10,_Labels:_25,_Matching:_2-16                            1.040µ ± 3%    1.085µ ± 3%   +4.33% (p=0.003 n=10)
+MatchesSeries/TrackerCount:_10,_Labels:_25,_Matching:_5-16                            1.126µ ± 1%    1.207µ ± 1%   +7.19% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_10,_Labels:_100,_Matching:_1-16                           2.798µ ± 1%    2.996µ ± 1%   +7.06% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_10,_Labels:_100,_Matching:_2-16                           2.816µ ± 2%    3.031µ ± 1%   +7.65% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_10,_Labels:_100,_Matching:_5-16                           3.179µ ± 7%    3.287µ ± 1%        ~ (p=0.118 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_1,_Matching:_0-16                            1.042µ ± 4%    1.010µ ± 1%   -3.07% (p=0.030 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_1,_Matching:_1-16                            1.030µ ± 2%    1.063µ ± 1%   +3.25% (p=0.002 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_10,_Matching:_1-16                           1.501µ ± 1%    1.583µ ± 2%   +5.46% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_10,_Matching:_2-16                           1.532µ ± 8%    1.610µ ± 2%   +5.13% (p=0.027 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_10,_Matching:_5-16                           1.649µ ± 2%    1.772µ ± 3%   +7.49% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_25,_Matching:_1-16                           2.502µ ± 2%    2.684µ ± 2%   +7.27% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_25,_Matching:_2-16                           2.523µ ± 1%    2.632µ ± 3%   +4.30% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_25,_Matching:_5-16                           2.814µ ± 1%    2.839µ ± 1%        ~ (p=0.072 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_100,_Matching:_1-16                          7.904µ ± 1%    8.335µ ± 1%   +5.47% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_100,_Matching:_2-16                          7.934µ ± 1%    8.486µ ± 3%   +6.95% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_100,_Labels:_100,_Matching:_5-16                          7.967µ ± 2%    8.393µ ± 2%   +5.35% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_1,_Matching:_0-16                           5.346µ ± 2%    5.304µ ± 2%        ~ (p=0.315 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_1,_Matching:_1-16                           5.485µ ± 2%    5.512µ ± 2%        ~ (p=0.305 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_10,_Matching:_1-16                          9.539µ ± 2%   10.001µ ± 3%   +4.84% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_10,_Matching:_2-16                          9.614µ ± 1%   10.263µ ± 3%   +6.76% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_10,_Matching:_5-16                          9.753µ ± 2%   10.036µ ± 3%   +2.91% (p=0.018 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_25,_Matching:_1-16                          17.27µ ± 1%    17.52µ ± 1%   +1.45% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_25,_Matching:_2-16                          17.51µ ± 2%    17.48µ ± 1%        ~ (p=0.684 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_25,_Matching:_5-16                          20.70µ ± 2%    17.02µ ± 1%  -17.79% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_100,_Matching:_1-16                         59.53µ ± 2%    57.63µ ± 1%   -3.19% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_100,_Matching:_2-16                         58.85µ ± 1%    57.03µ ± 1%   -3.09% (p=0.000 n=10)
+MatchesSeries/TrackerCount:_1000,_Labels:_100,_Matching:_5-16                         57.25µ ± 1%    56.53µ ± 1%   -1.25% (p=0.035 n=10)
+geomean                                                                               3.653µ         3.752µ        +2.71%
+
+                                                              │ BenchmarkMatchesSeries_before.txt │  BenchmarkMatchesSeries_after.txt   │
+                                                              │               B/op                │    B/op     vs base                 │
+MatchesSeries/TrackerCount:_10,_Labels:_1,_Matching:_0-16                            0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_1,_Matching:_1-16                            0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_10,_Matching:_1-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_10,_Matching:_2-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_10,_Matching:_5-16                           8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_25,_Matching:_1-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_25,_Matching:_2-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_25,_Matching:_5-16                           8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_100,_Matching:_1-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_100,_Matching:_2-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_100,_Matching:_5-16                          8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_1,_Matching:_0-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_1,_Matching:_1-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_10,_Matching:_1-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_10,_Matching:_2-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_10,_Matching:_5-16                          8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_25,_Matching:_1-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_25,_Matching:_2-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_25,_Matching:_5-16                          8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_100,_Matching:_1-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_100,_Matching:_2-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_100,_Matching:_5-16                         8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_1,_Matching:_0-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_1,_Matching:_1-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_10,_Matching:_1-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_10,_Matching:_2-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_10,_Matching:_5-16                         8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_25,_Matching:_1-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_25,_Matching:_2-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_25,_Matching:_5-16                         8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_100,_Matching:_1-16                        0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_100,_Matching:_2-16                        0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_100,_Matching:_5-16                        8.000 ± 0%     8.000 ± 0%       ~ (p=1.000 n=10) ¹
+geomean                                                                                         ²               +0.00%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                                                              │ BenchmarkMatchesSeries_before.txt │  BenchmarkMatchesSeries_after.txt   │
+                                                              │             allocs/op             │ allocs/op   vs base                 │
+MatchesSeries/TrackerCount:_10,_Labels:_1,_Matching:_0-16                            0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_1,_Matching:_1-16                            0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_10,_Matching:_1-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_10,_Matching:_2-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_10,_Matching:_5-16                           1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_25,_Matching:_1-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_25,_Matching:_2-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_25,_Matching:_5-16                           1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_100,_Matching:_1-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_100,_Matching:_2-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_10,_Labels:_100,_Matching:_5-16                          1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_1,_Matching:_0-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_1,_Matching:_1-16                           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_10,_Matching:_1-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_10,_Matching:_2-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_10,_Matching:_5-16                          1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_25,_Matching:_1-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_25,_Matching:_2-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_25,_Matching:_5-16                          1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_100,_Matching:_1-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_100,_Matching:_2-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_100,_Labels:_100,_Matching:_5-16                         1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_1,_Matching:_0-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_1,_Matching:_1-16                          0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_10,_Matching:_1-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_10,_Matching:_2-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_10,_Matching:_5-16                         1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_25,_Matching:_1-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_25,_Matching:_2-16                         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_25,_Matching:_5-16                         1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_100,_Matching:_1-16                        0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_100,_Matching:_2-16                        0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MatchesSeries/TrackerCount:_1000,_Labels:_100,_Matching:_5-16                        1.000 ± 0%     1.000 ± 0%       ~ (p=1.000 n=10) ¹
+geomean                                                                                         ²               +0.00%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean

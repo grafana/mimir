@@ -1,0 +1,61 @@
+goos: linux
+goarch: amd64
+pkg: github.com/grafana/mimir/pkg/ingester/activeseries
+cpu: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+                                                                                     │ BenchmarkActiveSeries_UpdateSeries$_before.txt │ BenchmarkActiveSeries_UpdateSeries$_after.txt │
+                                                                                     │                     sec/op                     │        sec/op         vs base                 │
+ActiveSeries_UpdateSeries/rounds=0_series=0_matchers=0_emptymatchers=0-16                                                10.18µ ±  1%            20.38µ ± 1%  +100.26% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=0_series=0_matchers=100_emptymatchers=0-16                                              53.84µ ±  1%            20.94µ ± 1%   -61.12% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=0_series=0_matchers=0_emptymatchers=100-16                                              54.53µ ±  1%            21.26µ ± 3%   -61.02% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=0_emptymatchers=0-16                                           21.94m ±  7%            21.33m ± 9%         ~ (p=0.247 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=100_emptymatchers=0-16                                         177.1m ±  2%            180.4m ± 3%         ~ (p=0.075 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=0_emptymatchers=100-16                                         148.2m ±  4%            139.2m ± 2%    -6.10% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=100_emptymatchers=100-16                                       292.2m ±  8%            294.1m ± 6%         ~ (p=0.579 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=100_emptymatchers=1000-16                                       1.457 ±  1%             1.470 ± 6%         ~ (p=0.105 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=1000000_matchers=0_emptymatchers=0-16                                          482.0m ± 46%            490.4m ± 7%         ~ (p=0.529 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=0_emptymatchers=0-16                                          63.46m ±  4%            62.60m ± 3%         ~ (p=0.218 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=1000000_matchers=0_emptymatchers=0-16                                          1.598 ±  2%             1.570 ± 3%         ~ (p=0.075 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=100_emptymatchers=0-16                                        213.5m ±  3%            214.2m ± 2%         ~ (p=0.796 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=0_emptymatchers=100-16                                        183.6m ±  3%            178.9m ± 3%    -2.59% (p=0.015 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=100_emptymatchers=100-16                                      330.6m ±  3%            341.3m ± 3%    +3.25% (p=0.019 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=100_emptymatchers=1000-16                                      1.518 ±  2%             1.521 ± 5%         ~ (p=0.912 n=10)
+geomean                                                                                                                  45.35m                  41.71m         -8.02%
+
+                                                                                     │ BenchmarkActiveSeries_UpdateSeries$_before.txt │ BenchmarkActiveSeries_UpdateSeries$_after.txt │
+                                                                                     │                      B/op                      │         B/op           vs base                │
+ActiveSeries_UpdateSeries/rounds=0_series=0_matchers=0_emptymatchers=0-16                                                24.62Ki ± 0%            37.25Ki ± 0%  +51.27% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=0_series=0_matchers=100_emptymatchers=0-16                                             180.62Ki ± 0%            37.25Ki ± 0%  -79.38% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=0_series=0_matchers=0_emptymatchers=100-16                                             180.62Ki ± 0%            37.25Ki ± 0%  -79.38% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=0_emptymatchers=0-16                                           18.10Mi ± 0%            18.11Mi ± 0%   +0.07% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=100_emptymatchers=0-16                                         18.25Mi ± 0%            18.25Mi ± 0%        ~ (p=0.684 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=0_emptymatchers=100-16                                         18.26Mi ± 0%            18.12Mi ± 0%   -0.77% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=100_emptymatchers=100-16                                       18.43Mi ± 0%            18.25Mi ± 0%   -1.03% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=100_emptymatchers=1000-16                                      19.88Mi ± 0%            18.25Mi ± 0%   -8.21% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=1000000_matchers=0_emptymatchers=0-16                                          272.6Mi ± 0%            272.6Mi ± 0%        ~ (p=0.684 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=0_emptymatchers=0-16                                          18.10Mi ± 0%            18.12Mi ± 0%   +0.10% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=1000000_matchers=0_emptymatchers=0-16                                         272.5Mi ± 0%            272.6Mi ± 0%        ~ (p=0.280 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=100_emptymatchers=0-16                                        18.25Mi ± 0%            18.25Mi ± 0%   -0.04% (p=0.029 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=0_emptymatchers=100-16                                        18.25Mi ± 0%            18.12Mi ± 0%   -0.74% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=100_emptymatchers=100-16                                      18.43Mi ± 0%            18.24Mi ± 0%   -0.99% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=100_emptymatchers=1000-16                                     19.88Mi ± 0%            18.24Mi ± 0%   -8.24% (p=0.000 n=10)
+geomean                                                                                                                  9.167Mi                 7.531Mi       -17.85%
+
+                                                                                     │ BenchmarkActiveSeries_UpdateSeries$_before.txt │ BenchmarkActiveSeries_UpdateSeries$_after.txt │
+                                                                                     │                   allocs/op                    │     allocs/op       vs base                   │
+ActiveSeries_UpdateSeries/rounds=0_series=0_matchers=0_emptymatchers=0-16                                                  129.0 ± 0%           513.0 ± 0%  +297.67% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=0_series=0_matchers=100_emptymatchers=0-16                                                513.0 ± 0%           513.0 ± 0%         ~ (p=1.000 n=10) ¹
+ActiveSeries_UpdateSeries/rounds=0_series=0_matchers=0_emptymatchers=100-16                                                513.0 ± 0%           513.0 ± 0%         ~ (p=1.000 n=10) ¹
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=0_emptymatchers=0-16                                            104.3k ± 0%          104.7k ± 0%    +0.37% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=100_emptymatchers=0-16                                          104.7k ± 0%          105.7k ± 0%    +0.97% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=0_emptymatchers=100-16                                          104.7k ± 0%          104.7k ± 0%         ~ (p=0.404 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=100_emptymatchers=100-16                                        104.7k ± 0%          105.7k ± 0%    +0.93% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=100000_matchers=100_emptymatchers=1000-16                                       104.7k ± 0%          105.7k ± 0%    +0.96% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=1_series=1000000_matchers=0_emptymatchers=0-16                                           1.037M ± 0%          1.037M ± 0%    +0.03% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=0_emptymatchers=0-16                                           104.3k ± 0%          104.7k ± 0%    +0.38% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=1000000_matchers=0_emptymatchers=0-16                                          1.037M ± 0%          1.037M ± 0%    +0.04% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=100_emptymatchers=0-16                                         104.7k ± 0%          105.7k ± 0%    +0.94% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=0_emptymatchers=100-16                                         104.7k ± 0%          104.7k ± 0%         ~ (p=0.184 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=100_emptymatchers=100-16                                       104.7k ± 0%          105.7k ± 0%    +0.95% (p=0.000 n=10)
+ActiveSeries_UpdateSeries/rounds=10_series=100000_matchers=100_emptymatchers=1000-16                                      104.7k ± 0%          105.6k ± 0%    +0.94% (p=0.000 n=10)
+geomean                                                                                                                   44.72k               49.24k        +10.12%
+¹ all samples are equal
