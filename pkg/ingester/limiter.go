@@ -6,19 +6,23 @@
 package ingester
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
 	// These errors are only internal, to change the API error messages, see Limiter's methods below.
-	errMaxSeriesPerMetricLimitExceeded = errors.New("per-metric series limit exceeded")
-	errMaxSeriesPerUserLimitExceeded   = errors.New("per-user series limit exceeded")
+	errMaxSeriesPerMetricLimitExceeded   = errors.New("per-metric series limit exceeded")
+	errMaxMetadataPerMetricLimitExceeded = errors.New("per-metric metadata limit exceeded")
+	errMaxSeriesPerUserLimitExceeded     = errors.New("per-user series limit exceeded")
+	errMaxMetadataPerUserLimitExceeded   = errors.New("per-user metric metadata limit exceeded")
 )
 
 // RingCount is the interface exposed by a ring implementation which allows
@@ -53,32 +57,80 @@ func NewLimiter(
 	}
 }
 
-// IsWithinMaxSeriesPerMetric returns true if limit has not been reached compared to the current
-// number of series in input; otherwise returns false.
-func (l *Limiter) IsWithinMaxSeriesPerMetric(userID string, series int) bool {
-	actualLimit := l.maxSeriesPerMetric(userID)
-	return series < actualLimit
+// AssertMaxSeriesPerMetric limit has not been reached compared to the current
+// number of series in input and returns an error if so.
+func (l *Limiter) AssertMaxSeriesPerMetric(userID string, series int) error {
+	if actualLimit := l.maxSeriesPerMetric(userID); series < actualLimit {
+		return nil
+	}
+
+	return errMaxSeriesPerMetricLimitExceeded
 }
 
-// IsWithinMaxMetadataPerMetric returns true if limit has not been reached compared to the current
-// number of metadata per metric in input; otherwise returns false.
-func (l *Limiter) IsWithinMaxMetadataPerMetric(userID string, metadata int) bool {
-	actualLimit := l.maxMetadataPerMetric(userID)
-	return metadata < actualLimit
+// AssertMaxMetadataPerMetric limit has not been reached compared to the current
+// number of metadata per metric in input and returns an error if so.
+func (l *Limiter) AssertMaxMetadataPerMetric(userID string, metadata int) error {
+	if actualLimit := l.maxMetadataPerMetric(userID); metadata < actualLimit {
+		return nil
+	}
+
+	return errMaxMetadataPerMetricLimitExceeded
 }
 
-// IsWithinMaxSeriesPerUser returns true if limit has not been reached compared to the current
-// number of series in input; otherwise returns false.
-func (l *Limiter) IsWithinMaxSeriesPerUser(userID string, series int) bool {
-	actualLimit := l.maxSeriesPerUser(userID)
-	return series < actualLimit
+// AssertMaxSeriesPerUser limit has not been reached compared to the current
+// number of series in input and returns an error if so.
+func (l *Limiter) AssertMaxSeriesPerUser(userID string, series int) error {
+	if actualLimit := l.maxSeriesPerUser(userID); series < actualLimit {
+		return nil
+	}
+
+	return errMaxSeriesPerUserLimitExceeded
 }
 
-// IsWithinMaxMetricsWithMetadataPerUser returns true if limit has not been reached compared to the current
-// number of metrics with metadata in input; otherwise returns false.
-func (l *Limiter) IsWithinMaxMetricsWithMetadataPerUser(userID string, metrics int) bool {
-	actualLimit := l.maxMetadataPerUser(userID)
-	return metrics < actualLimit
+// AssertMaxMetricsWithMetadataPerUser limit has not been reached compared to the current
+// number of metrics with metadata in input and returns an error if so.
+func (l *Limiter) AssertMaxMetricsWithMetadataPerUser(userID string, metrics int) error {
+	if actualLimit := l.maxMetadataPerUser(userID); metrics < actualLimit {
+		return nil
+	}
+
+	return errMaxMetadataPerUserLimitExceeded
+}
+
+func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
+	globalLimit := l.limits.MaxGlobalSeriesPerUser(userID)
+
+	return errors.New(globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
+		validation.MaxSeriesPerUserFlag,
+	))
+}
+
+func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
+	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
+
+	return errors.New(globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
+		validation.MaxSeriesPerMetricFlag,
+	))
+}
+
+func (l *Limiter) formatMaxMetadataPerUserError(userID string) error {
+	globalLimit := l.limits.MaxGlobalMetricsWithMetadataPerUser(userID)
+
+	return errors.New(globalerror.MaxMetadataPerUser.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
+		validation.MaxMetadataPerUserFlag,
+	))
+}
+
+func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
+	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
+
+	return errors.New(globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
+		validation.MaxMetadataPerMetricFlag,
+	))
 }
 
 func (l *Limiter) maxSeriesPerMetric(userID string) int {
