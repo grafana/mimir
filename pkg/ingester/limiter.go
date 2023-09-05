@@ -97,24 +97,6 @@ func (l *Limiter) AssertMaxMetricsWithMetadataPerUser(userID string, metrics int
 	return errMaxMetadataPerUserLimitExceeded
 }
 
-// FormatError returns the input error enriched with the actual limits for the given user.
-// It acts as pass-through if the input error is unknown.
-func (l *Limiter) FormatError(userID string, err error) error {
-	//nolint:errorlint // We don't expect wrapped errors.
-	switch err {
-	case errMaxSeriesPerUserLimitExceeded:
-		return l.formatMaxSeriesPerUserError(userID)
-	case errMaxSeriesPerMetricLimitExceeded:
-		return l.formatMaxSeriesPerMetricError(userID)
-	case errMaxMetadataPerUserLimitExceeded:
-		return l.formatMaxMetadataPerUserError(userID)
-	case errMaxMetadataPerMetricLimitExceeded:
-		return l.formatMaxMetadataPerMetricError(userID)
-	default:
-		return err
-	}
-}
-
 func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
 	globalLimit := l.limits.MaxGlobalSeriesPerUser(userID)
 

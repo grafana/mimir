@@ -6,7 +6,6 @@
 package ingester
 
 import (
-	"errors"
 	"math"
 	"testing"
 
@@ -520,40 +519,6 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 			assert.Equal(t, testData.expected, actual)
 		})
 	}
-}
-
-func TestLimiter_FormatError(t *testing.T) {
-	// Mock the ring
-	ring := &ringCountMock{}
-	ring.On("InstancesCount").Return(3)
-	ring.On("ZonesCount").Return(1)
-
-	// Mock limits
-	limits, err := validation.NewOverrides(validation.Limits{
-		MaxGlobalSeriesPerUser:              100,
-		MaxGlobalSeriesPerMetric:            20,
-		MaxGlobalMetricsWithMetadataPerUser: 10,
-		MaxGlobalMetadataPerMetric:          3,
-	}, nil)
-	require.NoError(t, err)
-
-	limiter := NewLimiter(limits, ring, 3, false)
-
-	actual := limiter.FormatError("user-1", errMaxSeriesPerUserLimitExceeded)
-	assert.ErrorContains(t, actual, "per-user series limit of 100 exceeded")
-
-	actual = limiter.FormatError("user-1", errMaxSeriesPerMetricLimitExceeded)
-	assert.ErrorContains(t, actual, "per-metric series limit of 20 exceeded")
-
-	actual = limiter.FormatError("user-1", errMaxMetadataPerUserLimitExceeded)
-	assert.ErrorContains(t, actual, "per-user metric metadata limit of 10 exceeded")
-
-	actual = limiter.FormatError("user-1", errMaxMetadataPerMetricLimitExceeded)
-	assert.ErrorContains(t, actual, "per-metric metadata limit of 3 exceeded")
-
-	input := errors.New("unknown error")
-	actual = limiter.FormatError("user-1", input)
-	assert.Equal(t, input, actual)
 }
 
 type ringCountMock struct {
