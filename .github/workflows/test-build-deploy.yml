@@ -229,21 +229,7 @@ jobs:
           ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   test-docs:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v3
-      - name: Run Git Config
-        run: git config --global --add safe.directory '*'
-      - name: "Build website"
-        run: |
-          docker run \
-            -v ${PWD}/docs/sources/mimir:/hugo/content/docs/mimir/latest \
-            -v ${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/latest \
-            -e HUGO_REFLINKSERRORLEVEL=ERROR \
-            --rm \
-            grafana/docs-base:latest \
-              /bin/bash -c 'make hugo'
+    uses: ./.github/workflows/test-docs.yml
 
   build:
     runs-on: ubuntu-latest
