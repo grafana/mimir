@@ -312,28 +312,28 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 		ringReplicationFactor    int
 		ringIngesterCount        int
 		series                   int
-		expected                 error
+		expected                 bool
 	}{
 		"limit is disabled": {
 			maxGlobalSeriesPerMetric: 0,
 			ringReplicationFactor:    1,
 			ringIngesterCount:        1,
 			series:                   100,
-			expected:                 nil,
+			expected:                 true,
 		},
 		"current number of series is below the limit": {
 			maxGlobalSeriesPerMetric: 1000,
 			ringReplicationFactor:    3,
 			ringIngesterCount:        10,
 			series:                   299,
-			expected:                 nil,
+			expected:                 true,
 		},
 		"current number of series is above the limit": {
 			maxGlobalSeriesPerMetric: 1000,
 			ringReplicationFactor:    3,
 			ringIngesterCount:        10,
 			series:                   300,
-			expected:                 errMaxSeriesPerMetricLimitExceeded,
+			expected:                 false,
 		},
 	}
 
@@ -365,28 +365,28 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 		ringReplicationFactor      int
 		ringIngesterCount          int
 		metadata                   int
-		expected                   error
+		expected                   bool
 	}{
 		"limit is disabled": {
 			maxGlobalMetadataPerMetric: 0,
 			ringReplicationFactor:      1,
 			ringIngesterCount:          1,
 			metadata:                   100,
-			expected:                   nil,
+			expected:                   true,
 		},
 		"current number of metadata is below the limit": {
 			maxGlobalMetadataPerMetric: 1000,
 			ringReplicationFactor:      3,
 			ringIngesterCount:          10,
 			metadata:                   299,
-			expected:                   nil,
+			expected:                   true,
 		},
 		"current number of metadata is above the limit": {
 			maxGlobalMetadataPerMetric: 1000,
 			ringReplicationFactor:      3,
 			ringIngesterCount:          10,
 			metadata:                   300,
-			expected:                   errMaxMetadataPerMetricLimitExceeded,
+			expected:                   false,
 		},
 	}
 
@@ -419,28 +419,28 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 		ringReplicationFactor  int
 		ringIngesterCount      int
 		series                 int
-		expected               error
+		expected               bool
 	}{
 		"limit is disabled": {
 			maxGlobalSeriesPerUser: 0,
 			ringReplicationFactor:  1,
 			ringIngesterCount:      1,
 			series:                 100,
-			expected:               nil,
+			expected:               true,
 		},
 		"current number of series is below the limit": {
 			maxGlobalSeriesPerUser: 1000,
 			ringReplicationFactor:  3,
 			ringIngesterCount:      10,
 			series:                 299,
-			expected:               nil,
+			expected:               true,
 		},
 		"current number of series is above the limit": {
 			maxGlobalSeriesPerUser: 1000,
 			ringReplicationFactor:  3,
 			ringIngesterCount:      10,
 			series:                 300,
-			expected:               errMaxSeriesPerUserLimitExceeded,
+			expected:               false,
 		},
 	}
 
@@ -473,28 +473,28 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 		ringReplicationFactor    int
 		ringIngesterCount        int
 		metadata                 int
-		expected                 error
+		expected                 bool
 	}{
 		"limit is disabled": {
 			maxGlobalMetadataPerUser: 0,
 			ringReplicationFactor:    1,
 			ringIngesterCount:        1,
 			metadata:                 100,
-			expected:                 nil,
+			expected:                 true,
 		},
 		"current number of metadata is below the limit": {
 			maxGlobalMetadataPerUser: 1000,
 			ringReplicationFactor:    3,
 			ringIngesterCount:        10,
 			metadata:                 299,
-			expected:                 nil,
+			expected:                 true,
 		},
 		"current number of metadata is above the limit": {
 			maxGlobalMetadataPerUser: 1000,
 			ringReplicationFactor:    3,
 			ringIngesterCount:        10,
 			metadata:                 300,
-			expected:                 errMaxMetadataPerUserLimitExceeded,
+			expected:                 false,
 		},
 	}
 

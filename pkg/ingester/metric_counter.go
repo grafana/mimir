@@ -57,9 +57,9 @@ func (m *metricCounter) getShard(metricName string) *metricCounterShard {
 	return shard
 }
 
-func (m *metricCounter) canAddSeriesFor(userID, metric string) error {
+func (m *metricCounter) canAddSeriesFor(userID, metric string) bool {
 	if _, ok := m.ignoredMetrics[metric]; ok {
-		return nil
+		return true
 	}
 
 	shard := m.getShard(metric)
