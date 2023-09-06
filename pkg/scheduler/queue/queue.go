@@ -128,32 +128,27 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
 
-	querierWait := false
-
-FindQueue:
-	// We need to wait if there are no users, or no pending requests for given querier.
-	for (q.queues.len() == 0 || querierWait) && ctx.Err() == nil && !q.stopped {
-		querierWait = false
-		q.cond.Wait(ctx)
-	}
-
-	if q.stopped {
-		return nil, last, ErrStopped
-	}
-
-	if err := ctx.Err(); err != nil {
-		return nil, last, err
-	}
-
 	for {
-		queue, userID, idx := q.queues.getNextQueueForQuerier(last.last, querierID)
-		last.last = idx
-		if queue == nil {
-			break
+		if q.stopped {
+			return nil, last, ErrStopped
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, last, err
 		}
 
-		// Pick next request from the queue.
+		for q.queues.len() == 0 {
+			// there are no user request queues registered, wait for broadcast
+			q.cond.Wait(ctx)
+		}
+
 		for {
+			queue, userID, idx := q.queues.getNextQueueForQuerier(last.last, querierID)
+			last.last = idx
+			if queue == nil {
+				break
+			}
+
+			// wait for next request from the queue
 			request := <-queue
 			if len(queue) == 0 {
 				q.queues.deleteQueue(userID)
@@ -161,17 +156,13 @@ FindQueue:
 
 			q.queueLength.WithLabelValues(userID).Dec()
 
-			// Tell close() we've processed a request.
+			// tell q.stopping() we have processed a request; when the service is stopping
+			// this fn will continue to be called until queues are cleared
 			q.cond.Broadcast()
 
 			return request, last, nil
 		}
 	}
-
-	// There are no unexpired requests, so we can get back
-	// and wait for more requests.
-	querierWait = true
-	goto FindQueue
 }
 
 func (q *RequestQueue) forgetDisconnectedQueriers(_ context.Context) error {
