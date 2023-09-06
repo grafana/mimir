@@ -1219,7 +1219,7 @@ func TestIngester_Push(t *testing.T) {
 				if idx < len(testData.reqs)-1 {
 					assert.NoError(t, err)
 				} else {
-					assert.Equal(t, err, testData.expectedErr)
+					assert.Equal(t, testData.expectedErr, err)
 				}
 			}
 
