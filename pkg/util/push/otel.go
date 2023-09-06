@@ -186,7 +186,7 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 					Unit:             metric.Unit(),
 				}
 				metadata[metaDataPos] = &entry
-				metaDataPos += 1
+				metaDataPos++
 			}
 		}
 	}
