@@ -130,8 +130,15 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 		}
 
 		if datasourceUID != "" && templateVar.Datasource != nil {
-			if templateVar.Datasource.UID != datasourceUID {
+			// legacy DS
+			if templateVar.Datasource.LegacyName != "" && templateVar.Datasource.LegacyName != datasourceUID {
+				log.Debugln("metricsFromTemplating", "Legacy Datasource", templateVar.Datasource.LegacyName, "not matching target ds", datasourceUID)
 				continue
+			} else {
+				if templateVar.Datasource.UID != "" && templateVar.Datasource.UID != datasourceUID {
+					log.Debugln("metricsFromTemplating", "Datasource UID", templateVar.Datasource.UID, "not matching target ds", datasourceUID)
+					continue
+				}
 			}
 		}
 
@@ -176,9 +183,17 @@ func getCustomPanelTargets(panel minisdk.Panel, datasourceUID string) *[]minisdk
 	}
 	if datasourceUID != "" {
 		if panel.Datasource != nil {
-			// we'll filter mixed targets later
-			if panel.Datasource.Type != "datasource" && panel.Datasource.UID != datasourceUID {
+			// legacy datasource ("datasource":"xxxxx")
+			if panel.Datasource.LegacyName != "" && panel.Datasource.LegacyName != datasourceUID {
+				log.Debugln("getCustomPanelTargets", "Legacy datasource", panel.Datasource.LegacyName, "not matching target ds", datasourceUID)
 				return nil
+			} else {
+				// normal datasource (with type and uid)
+				// we'll filter mixed targets later
+				if panel.Datasource.Type != "datasource" && panel.Datasource.UID != "" && panel.Datasource.UID != datasourceUID {
+					log.Debugln("getCustomPanelTargets", "Datasource UID", panel.Datasource.UID, "not matching target ds", datasourceUID)
+					return nil
+				}
 			}
 		} else {
 			// if datasourceUID is defined we'll filter out null datasource too
@@ -231,9 +246,17 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}, queries 
 			continue
 		}
 		// filter datasource in mixed targets
-		if datasourceUID != "" && panel.Datasource != nil {
-			if panel.Datasource.Type == "datasource" && target.Datasource.UID != datasourceUID {
+		if datasourceUID != "" && target.Datasource != nil {
+			// legacy datasource ("datasource":"xxxxx")
+			if target.Datasource.LegacyName != "" && target.Datasource.LegacyName != datasourceUID {
+				log.Debugln("metricsFromPanel", "Legacy datasource", target.Datasource.LegacyName, "not matching target ds", datasourceUID)
 				continue
+			} else {
+				// mixed target in normal datasource
+				if target.Datasource.Type == "datasource" && target.Datasource.UID != "" && target.Datasource.UID != datasourceUID {
+					log.Debugln("metricsFromPanel", "Datasource UID", target.Datasource.UID, "not matching target ds", datasourceUID)
+					continue
+				}
 			}
 		}
 		query := target.Expr

@@ -9,6 +9,8 @@ package minisdk
 import (
 	"encoding/json"
 	"fmt"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // Each panel may be one of these types.
@@ -117,11 +119,20 @@ type Target struct {
 // GetTargets is iterate over all panel targets. It just returns nil if
 // no targets defined for panel of concrete type.
 func (p *Panel) GetTargets(datasourceUID string) *[]Target {
+	// filtering datasources
 	if datasourceUID != "" {
 		if p.Datasource != nil {
-			// we'll filter mixed targets later
-			if p.Datasource.Type != "datasource" && p.Datasource.UID != datasourceUID {
+			// legacy datasource ("datasource":"xxxxx")
+			if p.Datasource.LegacyName != "" && p.Datasource.LegacyName != datasourceUID {
+				log.Debugln("GetTargets", "Legacy datasource", p.Datasource.LegacyName, "not matching target ds", datasourceUID)
 				return nil
+			} else {
+				// normal datasource (with type and uid)
+				// we'll filter mixed targets later
+				if p.Datasource.Type != "datasource" && p.Datasource.UID != "" && p.Datasource.UID != datasourceUID {
+					log.Debugln("GetTargets", "Datasource UID", p.Datasource.UID, "not matching target ds", datasourceUID)
+					return nil
+				}
 			}
 		} else {
 			// if datasourceUID is defined we'll filter out null datasource too

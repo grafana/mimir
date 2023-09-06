@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
@@ -52,6 +54,12 @@ func AnalyzeDashboards(dashFilesList []string, datasourceUID string) (*analyze.M
 		}
 		analyze.ParseMetricsInBoard(output, board, datasourceUID)
 	}
+	var metricsUsed model.LabelValues
+	for metric := range output.OverallMetrics {
+		metricsUsed = append(metricsUsed, model.LabelValue(metric))
+	}
+	sort.Sort(metricsUsed)
+	output.MetricsUsed = metricsUsed
 	return output, nil
 }
 
