@@ -53,30 +53,30 @@ func NewLimiter(
 	}
 }
 
-// AssertMaxSeriesPerMetric returns true if limit has not been reached compared to the current
+// IsWithinMaxSeriesPerMetric returns true if limit has not been reached compared to the current
 // number of series in input; otherwise returns false.
-func (l *Limiter) AssertMaxSeriesPerMetric(userID string, series int) bool {
+func (l *Limiter) IsWithinMaxSeriesPerMetric(userID string, series int) bool {
 	actualLimit := l.maxSeriesPerMetric(userID)
 	return series < actualLimit
 }
 
-// AssertMaxMetadataPerMetric returns true if limit has not been reached compared to the current
+// IsWithinMaxMetadataPerMetric returns true if limit has not been reached compared to the current
 // number of metadata per metric in input; otherwise returns false.
-func (l *Limiter) AssertMaxMetadataPerMetric(userID string, metadata int) bool {
+func (l *Limiter) IsWithinMaxMetadataPerMetric(userID string, metadata int) bool {
 	actualLimit := l.maxMetadataPerMetric(userID)
 	return metadata < actualLimit
 }
 
-// AssertMaxSeriesPerUser returns true if limit has not been reached compared to the current
+// IsWithinMaxSeriesPerUser returns true if limit has not been reached compared to the current
 // number of series in input; otherwise returns false.
-func (l *Limiter) AssertMaxSeriesPerUser(userID string, series int) bool {
+func (l *Limiter) IsWithinMaxSeriesPerUser(userID string, series int) bool {
 	actualLimit := l.maxSeriesPerUser(userID)
 	return series < actualLimit
 }
 
-// AssertMaxMetricsWithMetadataPerUser returns true if limit has not been reached compared to the current
+// IsWithinMaxMetricsWithMetadataPerUser returns true if limit has not been reached compared to the current
 // number of metrics with metadata in input; otherwise returns false.
-func (l *Limiter) AssertMaxMetricsWithMetadataPerUser(userID string, metrics int) bool {
+func (l *Limiter) IsWithinMaxMetricsWithMetadataPerUser(userID string, metrics int) bool {
 	actualLimit := l.maxMetadataPerUser(userID)
 	return metrics < actualLimit
 }

@@ -45,7 +45,7 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 	set, ok := mm.metricToMetadata[metric]
 	if !ok {
 		// Verify that the user can create more metric metadata given we don't have a set for that metric name.
-		if !mm.limiter.AssertMaxMetricsWithMetadataPerUser(mm.userID, len(mm.metricToMetadata)) {
+		if !mm.limiter.IsWithinMaxMetricsWithMetadataPerUser(mm.userID, len(mm.metricToMetadata)) {
 			mm.metrics.discardedMetadataPerUserMetadataLimit.WithLabelValues(mm.userID).Inc()
 			return formatMaxMetadataPerUserError(mm.limiter.limits, mm.userID)
 		}
@@ -53,7 +53,7 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 		mm.metricToMetadata[metric] = set
 	}
 
-	if !mm.limiter.AssertMaxMetadataPerMetric(mm.userID, len(set)) {
+	if !mm.limiter.IsWithinMaxMetadataPerMetric(mm.userID, len(set)) {
 		mm.metrics.discardedMetadataPerMetricMetadataLimit.WithLabelValues(mm.userID).Inc()
 		return formatMaxMetadataPerMetricError(mm.limiter.limits, labels.FromStrings(labels.MetricName, metric), mm.userID)
 	}

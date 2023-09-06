@@ -353,7 +353,7 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 			require.NoError(t, err)
 
 			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
-			actual := limiter.AssertMaxSeriesPerMetric("test", testData.series)
+			actual := limiter.IsWithinMaxSeriesPerMetric("test", testData.series)
 
 			assert.Equal(t, testData.expected, actual)
 		})
@@ -406,7 +406,7 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 			require.NoError(t, err)
 
 			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
-			actual := limiter.AssertMaxMetadataPerMetric("test", testData.metadata)
+			actual := limiter.IsWithinMaxMetadataPerMetric("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
 		})
@@ -460,7 +460,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			require.NoError(t, err)
 
 			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
-			actual := limiter.AssertMaxSeriesPerUser("test", testData.series)
+			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series)
 
 			assert.Equal(t, testData.expected, actual)
 		})
@@ -514,7 +514,7 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 			require.NoError(t, err)
 
 			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
-			actual := limiter.AssertMaxMetricsWithMetadataPerUser("test", testData.metadata)
+			actual := limiter.IsWithinMaxMetricsWithMetadataPerUser("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
 		})
