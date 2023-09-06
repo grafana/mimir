@@ -94,7 +94,7 @@ func TestRewrite(t *testing.T) {
 		require.NoError(t, ir2.Series(p.At(), &builder, &chks))
 		for _, chkMeta := range chks {
 			require.NoError(t, err)
-			require.True(t, chkMeta.MinTime > 600 || chkMeta.MaxTime < 600)
+			require.True(t, chkMeta.MinTime > excludeTime || chkMeta.MaxTime < excludeTime)
 		}
 		resultChunks += len(chks)
 	}
