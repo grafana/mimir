@@ -59,9 +59,18 @@ func TestRewrite(t *testing.T) {
 
 	defer cw.Close()
 
+	tocalChunks := 0
+	ignoredChunks := 0
 	require.NoError(t, rewrite(log.NewNopLogger(), ir, cr, iw, cw, m, []ignoreFnType{func(mint, maxt int64, prev *chunks.Meta, curr *chunks.Meta) (bool, error) {
-		return curr.MaxTime == 696, nil
+		tocalChunks++
+		if curr.MinTime <= 600 && 600 <= curr.MaxTime {
+			ignoredChunks++
+			return true, nil
+		}
+		return false, nil
 	}}))
+	require.NotZero(t, tocalChunks)   // Sanity check.
+	require.NotZero(t, ignoredChunks) // Sanity check.
 
 	require.NoError(t, iw.Close())
 	require.NoError(t, cw.Close())
@@ -74,13 +83,19 @@ func TestRewrite(t *testing.T) {
 	all, err := ir2.Postings(index.AllPostingsKey())
 	require.NoError(t, err)
 
+	rewrittenChunks := 0
 	for p := ir2.SortedPostings(all); p.Next(); {
 		var builder labels.ScratchBuilder
 		var chks []chunks.Meta
 
 		require.NoError(t, ir2.Series(p.At(), &builder, &chks))
-		require.Equal(t, 1, len(chks))
+		for _, chkMeta := range chks {
+			require.NoError(t, err)
+			require.True(t, chkMeta.MinTime > 600 || chkMeta.MaxTime < 600)
+		}
+		rewrittenChunks += len(chks)
 	}
+	require.Equal(t, tocalChunks-ignoredChunks, rewrittenChunks)
 }
 
 func ULID(i int) ulid.ULID { return ulid.MustNew(uint64(i), nil) }
