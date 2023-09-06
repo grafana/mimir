@@ -2136,12 +2136,12 @@
             },
             {
               "kind": "field",
-              "name": "period",
+              "name": "thresholding_period",
               "required": false,
               "desc": "Moving window of time that the percentage of failed requests is computed over",
               "fieldValue": null,
               "fieldDefaultValue": 60000000000,
-              "fieldFlag": "ingester.client.circuit-breaker.period",
+              "fieldFlag": "ingester.client.circuit-breaker.thresholding-period",
               "fieldType": "duration",
               "fieldCategory": "experimental"
             },

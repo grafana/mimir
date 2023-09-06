@@ -66,6 +66,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 		Enabled:                   true,
 		FailureThreshold:          1,
 		FailureExecutionThreshold: 1,
+		ThresholdingPeriod:        60 * time.Second,
 		CooldownPeriod:            60 * time.Second,
 	}, NewMetrics(reg), test.NewTestingLogger(t))
 

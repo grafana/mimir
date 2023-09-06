@@ -40,7 +40,7 @@ var (
 
 func NewCircuitBreaker(addr string, cfg CircuitBreakerConfig, metrics *Metrics, logger log.Logger) grpc.UnaryClientInterceptor {
 	breaker := circuitbreaker.Builder[any]().
-		WithFailureRateThreshold(cfg.FailureThreshold, cfg.FailureExecutionThreshold, cfg.Period).
+		WithFailureRateThreshold(cfg.FailureThreshold, cfg.FailureExecutionThreshold, cfg.ThresholdingPeriod).
 		WithDelay(cfg.CooldownPeriod).
 		OnFailure(func(event failsafe.ExecutionCompletedEvent[any]) {
 			metrics.circuitBreakerResults.WithLabelValues(resultError).Inc()

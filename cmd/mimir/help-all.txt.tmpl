@@ -1227,7 +1227,7 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
   -ingester.client.circuit-breaker.failure-threshold uint
     	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
-  -ingester.client.circuit-breaker.period duration
+  -ingester.client.circuit-breaker.thresholding-period duration
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
