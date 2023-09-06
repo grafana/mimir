@@ -170,6 +170,7 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 		metadataLength += resourceMetricsSlice.At(i).ScopeMetrics().Len()
 	}
 	var metadata = make([]*mimirpb.MetricMetadata, metadataLength)
+	var metaDataPos = 0
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
@@ -184,7 +185,8 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
-				metadata = append(metadata, &entry)
+				metadata[metaDataPos] = &entry
+				metaDataPos += 1
 			}
 		}
 	}
