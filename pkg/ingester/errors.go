@@ -116,7 +116,8 @@ func newIngestErrExemplar(errID globalerror.ID, errMsg string, timestamp model.T
 		errID.Message(errMsg),
 		mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
 		timestamp.Time().UTC().Format(time.RFC3339Nano),
-		mimirpb.FromLabelAdaptersToLabels(seriesLabels).String())
+		mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
+	)
 }
 
 func newIngestErrExemplarMissingSeries(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
