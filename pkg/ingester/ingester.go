@@ -966,49 +966,49 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		case storage.ErrOutOfBounds:
 			stats.sampleOutOfBoundsCount++
 			updateFirstPartial(func() error {
-				return i.limiter.samplers.WrapSampleTimestampTooOldError(newIngestErrSampleTimestampTooOld(model.Time(timestamp), labels))
+				return i.limiter.samplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(timestamp), labels))
 			})
 			return true
 
 		case storage.ErrOutOfOrderSample:
 			stats.sampleOutOfOrderCount++
 			updateFirstPartial(func() error {
-				return i.limiter.samplers.WrapSampleOutOfOrderError(newIngestErrSampleOutOfOrder(model.Time(timestamp), labels))
+				return i.limiter.samplers.sampleOutOfOrder.WrapError(newIngestErrSampleOutOfOrder(model.Time(timestamp), labels))
 			})
 			return true
 
 		case storage.ErrTooOldSample:
 			stats.sampleTooOldCount++
 			updateFirstPartial(func() error {
-				return i.limiter.samplers.WrapSampleTimestampTooOldOOOEnabledError(newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow))
+				return i.limiter.samplers.sampleTimestampTooOldOOOEnabled.WrapError(newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow))
 			})
 			return true
 
 		case globalerror.SampleTooFarInFuture:
 			stats.sampleTooFarInFutureCount++
 			updateFirstPartial(func() error {
-				return i.limiter.samplers.WrapSampleTimestampTooFarInFutureError(newIngestErrSampleTimestampTooFarInFuture(model.Time(timestamp), labels))
+				return i.limiter.samplers.sampleTimestampTooFarInFuture.WrapError(newIngestErrSampleTimestampTooFarInFuture(model.Time(timestamp), labels))
 			})
 			return true
 
 		case storage.ErrDuplicateSampleForTimestamp:
 			stats.newValueForTimestampCount++
 			updateFirstPartial(func() error {
-				return i.limiter.samplers.WrapSampleDuplicateTimestampError(newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels))
+				return i.limiter.samplers.sampleDuplicateTimestamp.WrapError(newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels))
 			})
 			return true
 
 		case errMaxSeriesPerUserLimitExceeded:
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(func() error {
-				return i.limiter.samplers.WrapMaxSeriesPerUserLimitExceededError(formatMaxSeriesPerUserError(i.limiter.limits, userID))
+				return i.limiter.samplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerUserError(i.limiter.limits, userID))
 			})
 			return true
 
 		case errMaxSeriesPerMetricLimitExceeded:
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(func() error {
-				return i.limiter.samplers.WrapMaxSeriesPerMetricLimitExceededError(formatMaxSeriesPerMetricError(i.limiter.limits, mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), userID))
+				return i.limiter.samplers.maxSeriesPerMetricLimitExceeded.WrapError(formatMaxSeriesPerMetricError(i.limiter.limits, mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), userID))
 			})
 			return true
 		}

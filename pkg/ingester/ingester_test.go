@@ -1216,10 +1216,10 @@ func TestIngester_Push(t *testing.T) {
 
 				// We expect no error on any request except the last one
 				// which may error (and in that case we assert on it)
-				if idx < len(testData.reqs)-1 || testData.expectedErr == nil {
+				if idx < len(testData.reqs)-1 {
 					assert.NoError(t, err)
 				} else {
-					assert.ErrorContains(t, err, testData.expectedErr.Error())
+					assert.Equal(t, err, testData.expectedErr)
 				}
 			}
 
