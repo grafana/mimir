@@ -127,8 +127,8 @@ func newIngestErrExemplarTimestampTooFarInFuture(timestamp model.Time, seriesLab
 	return newIngestErrExemplar(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
 }
 
-func formatMaxSeriesPerUserError(limiter *Limiter, userID string) error {
-	globalLimit := limiter.limits.MaxGlobalSeriesPerUser(userID)
+func formatMaxSeriesPerUserError(limits *validation.Overrides, userID string) error {
+	globalLimit := limits.MaxGlobalSeriesPerUser(userID)
 	err := errors.New(globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
 		validation.MaxSeriesPerUserFlag,
@@ -136,8 +136,8 @@ func formatMaxSeriesPerUserError(limiter *Limiter, userID string) error {
 	return makeLimitError(err)
 }
 
-func formatMaxSeriesPerMetricError(limiter *Limiter, labels labels.Labels, userID string) error {
-	globalLimit := limiter.limits.MaxGlobalSeriesPerMetric(userID)
+func formatMaxSeriesPerMetricError(limits *validation.Overrides, labels labels.Labels, userID string) error {
+	globalLimit := limits.MaxGlobalSeriesPerMetric(userID)
 	err := errors.New(globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
 		validation.MaxSeriesPerMetricFlag,
@@ -145,8 +145,8 @@ func formatMaxSeriesPerMetricError(limiter *Limiter, labels labels.Labels, userI
 	return makeMetricLimitError(labels, err)
 }
 
-func formatMaxMetadataPerUserError(limiter *Limiter, userID string) error {
-	globalLimit := limiter.limits.MaxGlobalMetricsWithMetadataPerUser(userID)
+func formatMaxMetadataPerUserError(limits *validation.Overrides, userID string) error {
+	globalLimit := limits.MaxGlobalMetricsWithMetadataPerUser(userID)
 	err := errors.New(globalerror.MaxMetadataPerUser.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
 		validation.MaxMetadataPerUserFlag,
@@ -154,8 +154,8 @@ func formatMaxMetadataPerUserError(limiter *Limiter, userID string) error {
 	return makeLimitError(err)
 }
 
-func formatMaxMetadataPerMetricError(limiter *Limiter, labels labels.Labels, userID string) error {
-	globalLimit := limiter.limits.MaxGlobalMetadataPerMetric(userID)
+func formatMaxMetadataPerMetricError(limits *validation.Overrides, labels labels.Labels, userID string) error {
+	globalLimit := limits.MaxGlobalMetadataPerMetric(userID)
 	err := errors.New(globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
 		validation.MaxMetadataPerMetricFlag,

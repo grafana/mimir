@@ -273,7 +273,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	// Total series limit.
-	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, int(u.Head().NumSeries())) {
+	if !u.limiter.AssertMaxSeriesPerUser(u.userID, int(u.Head().NumSeries())) {
 		return errMaxSeriesPerUserLimitExceeded
 	}
 
