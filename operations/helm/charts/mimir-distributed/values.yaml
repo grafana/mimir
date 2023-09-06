@@ -2347,6 +2347,7 @@ nginx:
         proxy_read_timeout 300;
         server {
           listen 8080;
+          listen [::]:8080;
 
           {{- if .Values.nginx.basicAuth.enabled }}
           auth_basic           "Mimir";
