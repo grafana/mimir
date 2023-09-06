@@ -69,8 +69,8 @@ func TestRewrite(t *testing.T) {
 		}
 		return false, nil
 	}}))
-	require.NotZero(t, tocalChunks)   // Sanity check.
-	require.NotZero(t, ignoredChunks) // Sanity check.
+	require.Greater(t, ignoredChunks, 0)           // Sanity check.
+	require.Greater(t, tocalChunks, ignoredChunks) // Sanity check.
 
 	require.NoError(t, iw.Close())
 	require.NoError(t, cw.Close())
