@@ -2140,7 +2140,7 @@
               "required": false,
               "desc": "Moving window of time that the percentage of failed requests is computed over",
               "fieldValue": null,
-              "fieldDefaultValue": 10000000000,
+              "fieldDefaultValue": 60000000000,
               "fieldFlag": "ingester.client.circuit-breaker.period",
               "fieldType": "duration",
               "fieldCategory": "experimental"

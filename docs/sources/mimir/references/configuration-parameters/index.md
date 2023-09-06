@@ -2156,7 +2156,7 @@ circuit_breaker:
   # (experimental) Moving window of time that the percentage of failed requests
   # is computed over
   # CLI flag: -ingester.client.circuit-breaker.period
-  [period: <duration> | default = 10s]
+  [period: <duration> | default = 1m]
 
   # (experimental) How long the circuit breaker will stay in the open state
   # before allowing some requests
