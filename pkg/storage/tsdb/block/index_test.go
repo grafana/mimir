@@ -21,6 +21,8 @@ import (
 )
 
 func TestRewrite(t *testing.T) {
+	const excludeTime int64 = 600
+
 	ctx := context.Background()
 
 	tmpDir := t.TempDir()
@@ -59,18 +61,19 @@ func TestRewrite(t *testing.T) {
 
 	defer cw.Close()
 
-	tocalChunks := 0
+	totalChunks := 0
 	ignoredChunks := 0
 	require.NoError(t, rewrite(log.NewNopLogger(), ir, cr, iw, cw, m, []ignoreFnType{func(mint, maxt int64, prev *chunks.Meta, curr *chunks.Meta) (bool, error) {
-		tocalChunks++
-		if curr.MinTime <= 600 && 600 <= curr.MaxTime {
+		totalChunks++
+		if curr.OverlapsClosedInterval(excludeTime, excludeTime) {
+			// Ignores all chunks that overlap with the excludeTime. excludeTime was randomly selected inside the block.
 			ignoredChunks++
 			return true, nil
 		}
 		return false, nil
 	}}))
 	require.Greater(t, ignoredChunks, 0)           // Sanity check.
-	require.Greater(t, tocalChunks, ignoredChunks) // Sanity check.
+	require.Greater(t, totalChunks, ignoredChunks) // Sanity check.
 
 	require.NoError(t, iw.Close())
 	require.NoError(t, cw.Close())
@@ -83,7 +86,7 @@ func TestRewrite(t *testing.T) {
 	all, err := ir2.Postings(index.AllPostingsKey())
 	require.NoError(t, err)
 
-	rewrittenChunks := 0
+	resultChunks := 0
 	for p := ir2.SortedPostings(all); p.Next(); {
 		var builder labels.ScratchBuilder
 		var chks []chunks.Meta
@@ -93,9 +96,9 @@ func TestRewrite(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, chkMeta.MinTime > 600 || chkMeta.MaxTime < 600)
 		}
-		rewrittenChunks += len(chks)
+		resultChunks += len(chks)
 	}
-	require.Equal(t, tocalChunks-ignoredChunks, rewrittenChunks)
+	require.Equal(t, totalChunks-ignoredChunks, resultChunks)
 }
 
 func ULID(i int) ulid.ULID { return ulid.MustNew(uint64(i), nil) }
