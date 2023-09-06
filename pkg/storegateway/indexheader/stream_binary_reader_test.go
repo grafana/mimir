@@ -96,7 +96,6 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 				t.Parallel()
 				tmpDir := t.TempDir()
 				bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-
 				require.NoError(t, err)
 				t.Cleanup(func() { require.NoError(t, bkt.Close()) })
 
