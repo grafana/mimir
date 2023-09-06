@@ -26,6 +26,7 @@ type RuleGroupMetrics struct {
 	GroupName   string   `json:"name"`
 	Metrics     []string `json:"metrics"`
 	ParseErrors []string `json:"parse_errors"`
+	Queries     []string `json:"queries"`
 }
 
 func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns string) error {

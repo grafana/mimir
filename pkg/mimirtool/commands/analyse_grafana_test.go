@@ -30,9 +30,7 @@ var dashboardMetrics = []string{
 	"workqueue_queue_duration_seconds_bucket",
 }
 
-var expectedParseErrors = []string{
-	"unsupported panel type: \"text\"",
-}
+var expectedParseErrors = []string{}
 
 func TestParseMetricsInBoard(t *testing.T) {
 	var board minisdk.Board
