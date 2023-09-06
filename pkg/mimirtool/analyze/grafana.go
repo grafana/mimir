@@ -135,7 +135,7 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 				log.Debugln("metricsFromTemplating", "Legacy Datasource", templateVar.Datasource.LegacyName, "not matching target ds", datasourceUID)
 				continue
 			} else {
-				if templateVar.Datasource.UID != "" && templateVar.Datasource.UID != datasourceUID {
+				if templateVar.Datasource.UID != datasourceUID {
 					log.Debugln("metricsFromTemplating", "Datasource UID", templateVar.Datasource.UID, "not matching target ds", datasourceUID)
 					continue
 				}
@@ -190,7 +190,7 @@ func getCustomPanelTargets(panel minisdk.Panel, datasourceUID string) *[]minisdk
 			} else {
 				// normal datasource (with type and uid)
 				// we'll filter mixed targets later
-				if panel.Datasource.Type != "datasource" && panel.Datasource.UID != "" && panel.Datasource.UID != datasourceUID {
+				if panel.Datasource.Type != "datasource" && panel.Datasource.UID != datasourceUID {
 					log.Debugln("getCustomPanelTargets", "Datasource UID", panel.Datasource.UID, "not matching target ds", datasourceUID)
 					return nil
 				}
@@ -252,8 +252,7 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}, queries 
 				log.Debugln("metricsFromPanel", "Legacy datasource", target.Datasource.LegacyName, "not matching target ds", datasourceUID)
 				continue
 			} else {
-				// mixed target in normal datasource
-				if target.Datasource.Type == "datasource" && target.Datasource.UID != "" && target.Datasource.UID != datasourceUID {
+				if target.Datasource.UID != datasourceUID {
 					log.Debugln("metricsFromPanel", "Datasource UID", target.Datasource.UID, "not matching target ds", datasourceUID)
 					continue
 				}

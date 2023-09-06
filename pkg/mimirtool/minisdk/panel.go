@@ -122,14 +122,18 @@ func (p *Panel) GetTargets(datasourceUID string) *[]Target {
 	// filtering datasources
 	if datasourceUID != "" {
 		if p.Datasource != nil {
+			log.Debugln("GetTargets", "Incoming panel ID", p.ID, "'", p.Title, "' of type", p.Type)
+			//log.Debugln("GetTargets", "p.Datasource.LegacyName", p.Datasource.LegacyName)
+			//log.Debugln("GetTargets", "p.Datasource.Type", p.Datasource.Type)
+			//log.Debugln("GetTargets", "p.Datasource.UID", p.Datasource.UID)
 			// legacy datasource ("datasource":"xxxxx")
 			if p.Datasource.LegacyName != "" && p.Datasource.LegacyName != datasourceUID {
 				log.Debugln("GetTargets", "Legacy datasource", p.Datasource.LegacyName, "not matching target ds", datasourceUID)
 				return nil
 			} else {
 				// normal datasource (with type and uid)
-				// we'll filter mixed targets later
-				if p.Datasource.Type != "datasource" && p.Datasource.UID != "" && p.Datasource.UID != datasourceUID {
+				// we'll filter mixed targets (p.Datasource.Type  "datasource") later
+				if p.Datasource.Type != "datasource" && p.Datasource.UID != datasourceUID {
 					log.Debugln("GetTargets", "Datasource UID", p.Datasource.UID, "not matching target ds", datasourceUID)
 					return nil
 				}
@@ -139,6 +143,7 @@ func (p *Panel) GetTargets(datasourceUID string) *[]Target {
 			return nil
 		}
 	}
+	log.Debugln("GetTargets", "Filtered panel ID", p.ID, "'", p.Title, "' of type", p.Type)
 	switch p.OfType {
 	case GraphType:
 		return &p.GraphPanel.Targets
