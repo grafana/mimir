@@ -206,7 +206,8 @@ func TestUpload(t *testing.T) {
 		require.Equal(t, 3, len(bkt.Objects()))
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
-		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
+		indexFileSize := getFileSize(t, path.Join(tmpDir, b1.String(), IndexFilename))
+		require.Equal(t, indexFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), IndexFilename)])))
 		require.Equal(t, 568, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
 
 		origMeta, err := ReadMetaFromDir(path.Join(tmpDir, "test", b1.String()))
@@ -218,7 +219,7 @@ func TestUpload(t *testing.T) {
 		files := uploadedMeta.Thanos.Files
 		require.Len(t, files, 3)
 		require.Equal(t, File{RelPath: "chunks/000001", SizeBytes: chunkFileSize}, files[0])
-		require.Equal(t, File{RelPath: "index", SizeBytes: 401}, files[1])
+		require.Equal(t, File{RelPath: "index", SizeBytes: indexFileSize}, files[1])
 		require.Equal(t, File{RelPath: "meta.json", SizeBytes: 0}, files[2]) // meta.json is added to the files without its size.
 
 		// clear files before comparing against original meta.json
@@ -233,7 +234,8 @@ func TestUpload(t *testing.T) {
 		require.Equal(t, 3, len(bkt.Objects()))
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
-		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
+		indexFileSize := getFileSize(t, path.Join(tmpDir, b1.String(), IndexFilename))
+		require.Equal(t, indexFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), IndexFilename)])))
 		require.Equal(t, 568, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
 	})
 
@@ -254,7 +256,8 @@ func TestUpload(t *testing.T) {
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b2.String(), ChunksDirname, "000001"))
 		require.Equal(t, 6, len(bkt.Objects())) // 3 from b1, 3 from b2
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), ChunksDirname, "000001")])))
-		require.Equal(t, 401, len(bkt.Objects()[path.Join(b2.String(), IndexFilename)]))
+		indexFileSize := getFileSize(t, path.Join(tmpDir, b2.String(), IndexFilename))
+		require.Equal(t, indexFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), IndexFilename)])))
 		require.Equal(t, 547, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
 
 		origMeta, err := ReadMetaFromDir(path.Join(tmpDir, b2.String()))
