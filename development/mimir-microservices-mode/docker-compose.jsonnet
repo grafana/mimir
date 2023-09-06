@@ -80,6 +80,14 @@ std.manifestYamlDoc({
       jaegerApp: 'ingester-2',
       extraVolumes: ['.data-ingester-2:/tmp/mimir-tsdb-ingester:delegated'],
     }),
+
+    'ingester-3': mimirService({
+      name: 'ingester-3',
+      target: 'ingester',
+      httpPort: 8004,
+      jaegerApp: 'ingester-3',
+      extraVolumes: ['.data-ingester-3:/tmp/mimir-tsdb-ingester:delegated'],
+    }),
   },
 
   read_components::
@@ -87,7 +95,7 @@ std.manifestYamlDoc({
       querier: mimirService({
         name: 'querier',
         target: 'querier',
-        httpPort: 8004,
+        httpPort: 8005,
         extraArguments:
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
           if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else '',
@@ -365,7 +373,7 @@ std.manifestYamlDoc({
         '--tenants-count=1',
         '--query-enabled=true',
         '--query-interval=1s',
-        '--query-url=http://querier:8004/prometheus',
+        '--query-url=http://querier:8005/prometheus',
         '--server-metrics-port=9900',
       ],
       ports: ['9900:9900'],
