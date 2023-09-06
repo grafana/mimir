@@ -163,9 +163,13 @@ func OTLPHandler(
 }
 
 func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
-	var metadata []*mimirpb.MetricMetadata
-
 	resourceMetricsSlice := md.ResourceMetrics()
+
+	metadataLength := 0
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		metadataLength += resourceMetricsSlice.At(i).ScopeMetrics().Len()
+	}
+	var metadata = make([]*mimirpb.MetricMetadata, metadataLength)
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
