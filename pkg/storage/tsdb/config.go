@@ -59,6 +59,9 @@ const (
 	DeletionMarkCheckInterval = 1 * time.Hour
 
 	// EstimatedMaxChunkSize is average max of chunk size. This can be exceeded though in very rare (valid) cases.
+	// This changed in prometheus as of https://github.com/prometheus/prometheus/commit/8ef7dfdeebf0a7491973303c7fb6b68ec5cc065b
+	// which capped the max XOR and histogram chunk size to 1KiB.
+	// Once block with this limit become more common this constant can be revisited.
 	EstimatedMaxChunkSize = 16000
 
 	// EstimatedSeriesP99Size is the size in bytes of a single series in the TSDB index. This includes the symbol IDs in
