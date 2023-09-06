@@ -136,32 +136,26 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 			return nil, last, err
 		}
 
-		for q.queues.len() == 0 {
-			// there are no user request queues registered, wait for broadcast
-			q.cond.Wait(ctx)
+		queue, userID, idx := q.queues.getNextQueueForQuerier(last.last, querierID)
+		last.last = idx
+		if queue == nil {
+			// no queues for this querier
+			continue
 		}
 
-		for {
-			queue, userID, idx := q.queues.getNextQueueForQuerier(last.last, querierID)
-			last.last = idx
-			if queue == nil {
-				break
-			}
-
-			// wait for next request from the queue
-			request := <-queue
-			if len(queue) == 0 {
-				q.queues.deleteQueue(userID)
-			}
-
-			q.queueLength.WithLabelValues(userID).Dec()
-
-			// tell q.stopping() we have processed a request; when the service is stopping
-			// this fn will continue to be called until queues are cleared
-			q.cond.Broadcast()
-
-			return request, last, nil
+		// wait for next request from the queue
+		request := <-queue
+		if len(queue) == 0 {
+			q.queues.deleteQueue(userID)
 		}
+
+		q.queueLength.WithLabelValues(userID).Dec()
+
+		// tell q.stopping() we have processed a request; when the service is stopping
+		// this fn will continue to be called until queues are cleared
+		q.cond.Broadcast()
+
+		return request, last, nil
 	}
 }
 
