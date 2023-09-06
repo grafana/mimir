@@ -83,7 +83,7 @@ const (
 // Config holds the configuration for an overrides-exporter
 type Config struct {
 	Ring           RingConfig             `yaml:"ring"`
-	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics" category:"experimental"`
+	EnabledMetrics flagext.StringSliceCSV `yaml:"enabled_metrics"`
 
 	// This allows downstream projects to define their own metrics and expose them via the exporter.
 	// Donwstream projects should be responsible for enabling/disabling their own metrics,

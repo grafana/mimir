@@ -16,11 +16,7 @@
 
 ### Mimirtool
 
-* [ENHANCEMENT] Mimirtool uses paging to fetch all dashboards from Grafana when running `mimirtool analyse grafana`. This allows the tool to work correctly when running against Grafana instances with more than a 1000 dashboards. #5825
-* [ENHANCEMENT] Extract metric name from queries that have a `__name__` matcher. #5911
-* [BUGFIX] Mimirtool no longer parses label names as metric names when handling templating variables that are populated using `label_values(<label_name>)` when running `mimirtool analyse grafana`. #5832
 * [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
-* [BUGFIX] Fix panic when analyzing a grafana dashboard with multiline queries. #5911
 
 ### Mimir Continuous Test
 
@@ -29,6 +25,33 @@
 ### Documentation
 
 ### Tools
+
+## 2.10.0-rc.1
+
+### Grafana Mimir
+
+* [FEATURE] The following features are no longer considered experimental. #5872
+  * Ruler storage cache (`-ruler-storage.cache.*`)
+  * Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
+  * Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
+  * Cardinality query result caching (`-query-frontend.results-cache-ttl-for-cardinality-query`)
+  * Label names and values query result caching (`-query-frontend.results-cache-ttl-for-labels-query`)
+  * Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
+  * Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
+  * Configuring enabled metrics in overrides exporter (`-overrides-exporter.enabled-metrics`)
+  * Per-tenant results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
+* [FEATURE] Querier: add experimental CLI flag `-tenant-federation.max-concurrent` to adjust the max number of per-tenant queries that can be run at a time when executing a single multi-tenant query. #5874
+* [FEATURE] Alertmanager: Add Microsoft Teams as a supported integration. #5840
+* [ENHANCEMENT] Alertmanager: update to alertmanager 0.26.0. #5840
+* [BUGFIX] Store-gateway: fix chunks corruption bug introduced in rc.0. #5875
+* [BUGFIX] Update Minio object storage client from 7.0.62 to 7.0.63 to fix auto-detection of AWS GovCloud environments. #5905
+
+### Mimirtool
+
+* [ENHANCEMENT] Mimirtool uses paging to fetch all dashboards from Grafana when running `mimirtool analyse grafana`. This allows the tool to work correctly when running against Grafana instances with more than a 1000 dashboards. #5825
+* [ENHANCEMENT] Extract metric name from queries that have a `__name__` matcher. #5911
+* [BUGFIX] Mimirtool no longer parses label names as metric names when handling templating variables that are populated using `label_values(<label_name>)` when running `mimirtool analyse grafana`. #5832
+* [BUGFIX] Fix panic when analyzing a grafana dashboard with multiline queries in templating variables. #5911
 
 ## 2.10.0-rc.0
 
@@ -51,7 +74,7 @@
   * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` is deprecated, use the new configuration `-blocks-storage.bucket-store.index-header.lazy-loading-enabled`
   * `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` is deprecated, use the new configuration `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout`
   * `-blocks-storage.bucket-store.index-header-lazy-loading-concurrency` is deprecated, use the new configuration `-blocks-storage.bucket-store.index-header.lazy-loading-concurrency`
-* [CHANGE] Store-gateway: remove experimental fine-grained chunks caching. The following experimental configuration parameters have been removed `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`, `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`. #5816
+* [CHANGE] Store-gateway: remove experimental fine-grained chunks caching. The following experimental configuration parameters have been removed `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`, `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`. #5816 #5875
 * [CHANGE] Ingester: remove deprecated `blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`. #5850
 * [FEATURE] Introduced `distributor.service_overload_status_code_on_rate_limit_enabled` flag for configuring status code to 529 instead of 429 upon rate limit exhaustion. #5752
 * [FEATURE] Cardinality API: Add a new `count_method` parameter which enables counting active series #5136

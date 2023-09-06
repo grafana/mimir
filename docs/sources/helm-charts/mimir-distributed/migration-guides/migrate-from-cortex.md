@@ -8,11 +8,11 @@ weight: 10
 # Migrate from Cortex to Grafana Mimir
 
 As an operator, you can migrate a Helm deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
-The overview includes the steps required for any environment. To migrate deployment environments with Helm, see [Migrate to Grafana Mimir using Helm]({{< relref "#migrate-to-grafana-mimir-using-helm" >}}).
+The overview includes the steps required for any environment. To migrate deployment environments with Helm, see [Migrate to Grafana Mimir using Helm](#migrate-to-grafana-mimir-using-helm).
 
 > **Note:** This document was tested with Cortex versions 1.10 and 1.11. It might work with more recent versions of Cortex, but that is not guaranteed.
 
-To migrate a Jsonnet deployment of Cortex refer to [Migrate from Cortex](/docs/mimir/{{< param "mimir_docs_version" >}}/migration-guides/migrate-from-cortex).
+To migrate a Jsonnet deployment of Cortex refer to [Migrate from Cortex].
 
 Grafana Mimir includes significant changes that simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage.
 
@@ -36,8 +36,9 @@ It provides a simple migration by generating Mimir configuration from Cortex con
   Using the monitoring mixin, you need to install both alerting and recording rules in either Prometheus or Cortex. You also need to install dashboards in Grafana.
   To download a prebuilt ZIP file that contains the alerting and recording rules, refer to [Release Cortex-jsonnet 1.11.0](https://github.com/grafana/cortex-jsonnet/releases/download/1.11.0/cortex-mixin.zip).
 
-  To upload rules to the ruler using mimirtool, refer to [mimirtool rules](/docs/mimir/{{< param "mimir_docs_version" >}}/manage/tools/mimirtool/#rules).
-  To import the dashboards into Grafana, refer to [Import dashboard](/docs/grafana/{{< param "mimir_docs_version" >}}/dashboards/export-import/#import-dashboard).
+  To upload rules to the ruler using mimirtool, refer to [mimirtool rules].
+  To import the dashboards into Grafana, refer to [Import dashboard](/docs/grafana/latest/dashboards/export-import/#import-dashboard)
+  .
 
 ## Notable changes
 
@@ -106,7 +107,7 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
 ## Generate the configuration for Grafana Mimir
 
-The [`mimirtool config convert`](/docs/mimir/{{< param "mimir_docs_version" >}}/manage/tools/mimirtool/#convert) command converts Cortex configuration to Mimir configuration. You can use it to update both flags and configuration files.
+The [`mimirtool config convert`] command converts Cortex configuration to Mimir configuration. You can use it to update both flags and configuration files.
 
 ### Install mimirtool
 
@@ -125,7 +126,7 @@ The `mimirtool config convert` command converts Cortex 1.11 configuration files 
 It removes any configuration parameters that are no longer available in Grafana Mimir, and it renames configuration parameters that have a new name.
 If you have explicitly set configuration parameters to a value matching the Cortex default, by default, `mimirtool config convert` doesn't update the value.
 To have `mimirtool config convert` update explicitly set values from the Cortex defaults to the new Grafana Mimir defaults, provide the `--update-defaults` flag.
-Refer to [convert](/docs/mimir/{{< param "mimir_docs_version" >}}/manage/tools/mimirtool/#convert) for more information on using `mimirtool` for configuration conversion.
+Refer to [convert] for more information on using `mimirtool` for configuration conversion.
 
 ## Migrate to Grafana Mimir using Helm
 
@@ -157,7 +158,7 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
    a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
 
    > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
-   > To understand the required metrics sources, refer to [Additional resources metrics](/docs/mimir/{{< param "mimir_docs_version" >}}/manage/monitor-grafana-mimir/requirements/#additional-resources-metrics).
+   > To understand the required metrics sources, refer to [Additional resources metrics].
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
 
@@ -252,4 +253,13 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
    helm upgrade <RELEASE> grafana/mimir-distributed [-n <NAMESPACE>]
    ```
 
-To verify that the cluster is operating correctly, use the [monitoring mixin dashboards](/docs/mimir/{{< param "mimir_docs_version" >}}/manage/monitor-grafana-mimir/dashboards/).
+To verify that the cluster is operating correctly, use the [monitoring mixin dashboards].
+
+{{% docs/reference %}}
+[Migrate from Cortex]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/migrate/migrate-from-cortex"
+[mimirtool_rules]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/tools/mimirtool#rules"
+[`mimirtool config convert`]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/tools/mimirtool#convert"
+[convert]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/tools/mimirtool#convert"
+[Additional resources metrics]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/monitor-grafana-mimir/requirements#additional-resources-metrics"
+[monitoring mixin dashboards]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/monitor-grafana-mimir/dashboards"
+{{% /docs/reference %}}
