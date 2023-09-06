@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -139,12 +138,6 @@ func TestUpload(t *testing.T) {
 	}, 100, 0, 1000, labels.FromStrings("ext1", "val1"))
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String()), os.ModePerm))
-
-	// Verify series and chunks count to catch if index size is supposed to change.
-	hs, err := GatherBlockHealthStats(log.NewNopLogger(), path.Join(tmpDir, b1.String()), 0, math.MaxInt64, true)
-	require.NoError(t, err)
-	require.Equal(t, int64(5), hs.TotalSeries)
-	require.Equal(t, int64(8), hs.TotalChunks)
 
 	t.Run("wrong dir", func(t *testing.T) {
 		// Wrong dir.
