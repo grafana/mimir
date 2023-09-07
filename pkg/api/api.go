@@ -253,11 +253,14 @@ type Ingester interface {
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
 	TenantsHandler(http.ResponseWriter, *http.Request)
 	TenantTSDBHandler(http.ResponseWriter, *http.Request)
+
+	StartPushRequest() error
+	FinishPushRequest()
 }
 
 // RegisterIngester registers the ingester HTTP and gRPC services.
 func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
-	client.RegisterIngesterServer(a.server.GRPC, i)
+	client.RegisterIngesterServerWithLimitsTracking(a.server.GRPC, i)
 
 	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{
 		{Dangerous: true, Desc: "Trigger a flush of data from ingester to storage", Path: "/ingester/flush"},

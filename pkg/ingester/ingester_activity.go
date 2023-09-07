@@ -185,6 +185,14 @@ func (i *ActivityTrackerWrapper) TenantTSDBHandler(w http.ResponseWriter, r *htt
 	i.ing.TenantTSDBHandler(w, r)
 }
 
+func (i *ActivityTrackerWrapper) StartPushRequest() error {
+	return i.ing.StartPushRequest()
+}
+
+func (i *ActivityTrackerWrapper) FinishPushRequest() {
+	i.ing.FinishPushRequest()
+}
+
 func requestActivity(ctx context.Context, name string, req interface{}) string {
 	userID, _ := tenant.TenantID(ctx)
 	traceID, _ := tracing.ExtractSampledTraceID(ctx)
