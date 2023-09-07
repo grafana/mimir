@@ -73,15 +73,24 @@ TODO: keep scraping both
 
 ## Bucket boundary calculation
 
-Native histogram samples have three different kind of buckets, for any observed value `v` the value is counted towards one bucket.
+Native histogram samples have three different kind of buckets, for any observed value the value is counted towards one bucket.
 
 1. Zero bucket, which contains the count of observations whose absolute value is smaller or equal to the zero threshold.
 
-  [//]: # "LaTeX equation source: -ZT <= v <= ZT"
+   [//]: # "LaTeX equation source: -threshold \leq v \leq threshold"
+
    ![Zero threshold definition](zero-threshold-def.svg)
 
 1. Positive buckets, which contain the count of observations with a positive value that is greater or equal to the lower bound and smaller than the upper bound of a bucket.
 
+   [//]: # "LaTeX equation source: 2^{\left( 2^{-schema}\right) index} \leq v < 2^{\left( 2^{-schema}\right) (index+1)}"
+
+   ![Positive bucket definition](pos-bucket-def.svg)
+
 1. Negative buckets, which contain the coint of observations with a negative value that is smaller or equal to the upper bound and larger than the lower bound of a bucket.
+
+   [//]: # "Latex equation source: -2^{\left( 2^{-schema}\right) (index+1)} < v \leq -2^{\left( 2^{-schema}\right) index}"
+
+   ![Negative bucket definition](neg-bucket-def.svg)
 
 ## Limiting the number of buckets
