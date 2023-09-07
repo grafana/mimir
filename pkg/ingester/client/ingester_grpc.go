@@ -13,7 +13,7 @@ type IngesterServerRequestTracking interface {
 	FinishPushRequest()
 }
 
-func RegisterIngesterServerWithLimitsTracking(s *grpc.Server, srv IngesterServerRequestTracking) {
+func RegisterIngesterServerRequestTracking(s *grpc.Server, srv IngesterServerRequestTracking) {
 	var desc grpc.ServiceDesc
 	desc = _Ingester_serviceDesc
 

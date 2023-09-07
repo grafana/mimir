@@ -260,7 +260,7 @@ type Ingester interface {
 
 // RegisterIngester registers the ingester HTTP and gRPC services.
 func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
-	client.RegisterIngesterServerWithLimitsTracking(a.server.GRPC, i)
+	client.RegisterIngesterServerRequestTracking(a.server.GRPC, i)
 
 	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{
 		{Dangerous: true, Desc: "Trigger a flush of data from ingester to storage", Path: "/ingester/flush"},
