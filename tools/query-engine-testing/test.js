@@ -2,9 +2,11 @@ import { check } from 'k6';
 import http from 'k6/http';
 
 const targetAddress = __ENV.TARGET_ADDRESS;
+const targetPath = __ENV.TARGET_PATH;
+const url = `http://${targetAddress}/${targetPath}`;
 
 export default function () {
-    const res = http.get(`http://${targetAddress}/prometheus/api/v1/query_range?query=up{}&start=2023-09-07T05:00:00Z&end=2023-09-07T05:30:00Z&step=15`);
+    const res = http.get(url);
 
     check(res, {
         'is status 200': (r) => r.status === 200,
