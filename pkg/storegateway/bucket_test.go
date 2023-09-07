@@ -2259,9 +2259,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 					if streamingBatchSize == 0 {
 						require.Zero(t, estimatedChunks)
 					} else {
-						promChunks := queryPromSeriesChunkMetas(t, mimirpb.FromLabelAdaptersToLabels(seriesSet[0].Labels), promBlock)
-						promChunks = filterPromChunksByTime(promChunks, testData.reqMinTime, testData.reqMaxTime)
-						require.InDelta(t, len(promChunks), estimatedChunks, 0.1, "number of chunks estimations should be within 10% of the actual number of chunks on disk")
+						require.InDelta(t, len(seriesSet[0].Chunks), estimatedChunks, 0.1, "number of chunks estimations should be within 10% of the actual number of chunks")
 					}
 
 					compareToPromChunks(t, seriesSet[0].Chunks, mimirpb.FromLabelAdaptersToLabels(seriesSet[0].Labels), testData.reqMinTime, testData.reqMaxTime, promBlock)
