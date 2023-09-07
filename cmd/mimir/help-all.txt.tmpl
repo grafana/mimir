@@ -4,7 +4,7 @@ Usage of ./cmd/mimir/mimir:
   -activity-tracker.max-entries int
     	Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored. (default 1024)
   -alertmanager-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -alertmanager-storage.azure.account-name string
     	Azure storage account name
   -alertmanager-storage.azure.container-name string
@@ -14,7 +14,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -alertmanager-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -alertmanager-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
   -alertmanager-storage.filesystem.dir string
@@ -272,7 +272,7 @@ Usage of ./cmd/mimir/mimir:
   -auth.no-auth-tenant string
     	Tenant ID to use when multitenancy is disabled. (default "anonymous")
   -blocks-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -blocks-storage.azure.account-name string
     	Azure storage account name
   -blocks-storage.azure.container-name string
@@ -282,7 +282,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -blocks-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -blocks-storage.bucket-store.batch-series-size int
@@ -788,7 +788,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
   -common.storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
     	Azure storage account name
   -common.storage.azure.container-name string
@@ -798,7 +798,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -common.storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -common.storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -common.storage.filesystem.dir string
@@ -2002,7 +2002,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.service-discovery-mode string
     	[experimental] Service discovery mode that query-frontends and queriers use to find query-scheduler instances. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. Supported values are: dns, ring. (default "dns")
   -ruler-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -ruler-storage.azure.account-name string
     	Azure storage account name
   -ruler-storage.azure.container-name string
@@ -2012,7 +2012,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -ruler-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -ruler-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
   -ruler-storage.cache.backend string

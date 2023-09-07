@@ -4461,7 +4461,8 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # CLI flag: -<prefix>.azure.account-name
 [account_name: <string> | default = ""]
 
-# Azure storage account key
+# Azure storage account key. If unset, Azure managed identities will be used for
+# authentication instead.
 # CLI flag: -<prefix>.azure.account-key
 [account_key: <string> | default = ""]
 
@@ -4479,8 +4480,8 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # CLI flag: -<prefix>.azure.max-retries
 [max_retries: <int> | default = 20]
 
-# (advanced) User assigned identity. If empty, then System assigned identity is
-# used.
+# (advanced) User assigned managed identity. If empty, then System assigned
+# identity is used.
 # CLI flag: -<prefix>.azure.user-assigned-id
 [user_assigned_id: <string> | default = ""]
 ```

@@ -29,9 +29,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 // RegisterFlagsWithPrefix registers the flags for Azure storage
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.StorageAccountName, prefix+"azure.account-name", "", "Azure storage account name")
-	f.Var(&cfg.StorageAccountKey, prefix+"azure.account-key", "Azure storage account key")
+	f.Var(&cfg.StorageAccountKey, prefix+"azure.account-key", "Azure storage account key. If unset, Azure managed identities will be used for authentication instead.")
 	f.StringVar(&cfg.ContainerName, prefix+"azure.container-name", "", "Azure storage container name")
 	f.StringVar(&cfg.Endpoint, prefix+"azure.endpoint-suffix", "", "Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.")
 	f.IntVar(&cfg.MaxRetries, prefix+"azure.max-retries", 20, "Number of retries for recoverable errors")
-	f.StringVar(&cfg.UserAssignedID, prefix+"azure.user-assigned-id", "", "User assigned identity. If empty, then System assigned identity is used.")
+	f.StringVar(&cfg.UserAssignedID, prefix+"azure.user-assigned-id", "", "User assigned managed identity. If empty, then System assigned identity is used.")
 }
