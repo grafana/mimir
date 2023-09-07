@@ -53,7 +53,7 @@ type Config struct {
 	MaxRetries                       int    `yaml:"max_retries" category:"advanced"`
 	ShardedQueries                   bool   `yaml:"parallelize_shardable_queries"`
 	DeprecatedCacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
-	TargetSeriesPerShard             uint64 `yaml:"query_sharding_target_series_per_shard"`
+	TargetSeriesPerShard             uint64 `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.

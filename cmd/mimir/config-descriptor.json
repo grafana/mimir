@@ -3363,8 +3363,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 604800000000000,
           "fieldFlag": "query-frontend.results-cache-ttl",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -3374,8 +3373,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "query-frontend.results-cache-ttl-for-out-of-order-time-window",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -3385,8 +3383,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.results-cache-ttl-for-cardinality-query",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -3396,8 +3393,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.results-cache-ttl-for-labels-query",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -3418,8 +3414,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.max-query-expression-size-bytes",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         },
         {
           "kind": "field",
@@ -3686,7 +3681,7 @@
           "kind": "field",
           "name": "alertmanager_notification_rate_limit_per_integration",
           "required": false,
-          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord.",
+          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams.",
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldFlag": "alertmanager.notification-rate-limit-per-integration",
@@ -5055,7 +5050,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.query-sharding-target-series-per-shard",
-          "fieldType": "int"
+          "fieldType": "int",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -5401,7 +5397,7 @@
               "kind": "field",
               "name": "account_key",
               "required": false,
-              "desc": "Azure storage account key",
+              "desc": "Azure storage account key. If unset, Azure managed identities will be used for authentication instead.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.azure.account-key",
@@ -5442,7 +5438,7 @@
               "kind": "field",
               "name": "user_assigned_id",
               "required": false,
-              "desc": "User assigned identity. If empty, then System assigned identity is used.",
+              "desc": "User assigned managed identity. If empty, then System assigned identity is used.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.azure.user-assigned-id",
@@ -10985,7 +10981,7 @@
               "kind": "field",
               "name": "account_key",
               "required": false,
-              "desc": "Azure storage account key",
+              "desc": "Azure storage account key. If unset, Azure managed identities will be used for authentication instead.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.azure.account-key",
@@ -11026,7 +11022,7 @@
               "kind": "field",
               "name": "user_assigned_id",
               "required": false,
-              "desc": "User assigned identity. If empty, then System assigned identity is used.",
+              "desc": "User assigned managed identity. If empty, then System assigned identity is used.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.azure.user-assigned-id",
@@ -12973,7 +12969,7 @@
               "kind": "field",
               "name": "account_key",
               "required": false,
-              "desc": "Azure storage account key",
+              "desc": "Azure storage account key. If unset, Azure managed identities will be used for authentication instead.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.azure.account-key",
@@ -13014,7 +13010,7 @@
               "kind": "field",
               "name": "user_assigned_id",
               "required": false,
-              "desc": "User assigned identity. If empty, then System assigned identity is used.",
+              "desc": "User assigned managed identity. If empty, then System assigned identity is used.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.azure.user-assigned-id",
@@ -14463,8 +14459,7 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "overrides-exporter.ring.enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldType": "boolean"
             },
             {
               "kind": "block",
@@ -14897,8 +14892,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant",
           "fieldFlag": "overrides-exporter.enabled-metrics",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         }
       ],
       "fieldValue": null,
@@ -15229,7 +15223,7 @@
                   "kind": "field",
                   "name": "account_key",
                   "required": false,
-                  "desc": "Azure storage account key",
+                  "desc": "Azure storage account key. If unset, Azure managed identities will be used for authentication instead.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.azure.account-key",
@@ -15270,7 +15264,7 @@
                   "kind": "field",
                   "name": "user_assigned_id",
                   "required": false,
-                  "desc": "User assigned identity. If empty, then System assigned identity is used.",
+                  "desc": "User assigned managed identity. If empty, then System assigned identity is used.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.azure.user-assigned-id",

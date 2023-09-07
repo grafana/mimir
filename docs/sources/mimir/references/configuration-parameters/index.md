@@ -271,8 +271,8 @@ usage_stats:
 
 overrides_exporter:
   ring:
-    # (experimental) Enable the ring used by override-exporters to deduplicate
-    # exported limit metrics.
+    # Enable the ring used by override-exporters to deduplicate exported limit
+    # metrics.
     # CLI flag: -overrides-exporter.ring.enabled
     [enabled: <boolean> | default = false]
 
@@ -356,14 +356,14 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
-  # (experimental) Comma-separated list of metrics to include in the exporter.
-  # Allowed metric names: ingestion_rate, ingestion_burst_size,
-  # max_global_series_per_user, max_global_series_per_metric,
-  # max_global_exemplars_per_user, max_fetched_chunks_per_query,
-  # max_fetched_series_per_query, max_fetched_chunk_bytes_per_query,
-  # ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant,
-  # max_global_metadata_per_user, max_global_metadata_per_metric, request_rate,
-  # request_burst_size, alertmanager_notification_rate_limit,
+  # Comma-separated list of metrics to include in the exporter. Allowed metric
+  # names: ingestion_rate, ingestion_burst_size, max_global_series_per_user,
+  # max_global_series_per_metric, max_global_exemplars_per_user,
+  # max_fetched_chunks_per_query, max_fetched_series_per_query,
+  # max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group,
+  # ruler_max_rule_groups_per_tenant, max_global_metadata_per_user,
+  # max_global_metadata_per_metric, request_rate, request_burst_size,
+  # alertmanager_notification_rate_limit,
   # alertmanager_max_dispatcher_aggregation_groups,
   # alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.
   # CLI flag: -overrides-exporter.enabled-metrics
@@ -1322,9 +1322,9 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
-# How many series a single sharded partial query should load at most. This is
-# not a strict requirement guaranteed to be honoured by query sharding, but a
-# hint given to the query sharding when the query execution is initially
+# (advanced) How many series a single sharded partial query should load at most.
+# This is not a strict requirement guaranteed to be honoured by query sharding,
+# but a hint given to the query sharding when the query execution is initially
 # planned. 0 to disable cardinality-based hints.
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
@@ -2959,27 +2959,27 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.max-total-query-length
 [max_total_query_length: <duration> | default = 0s]
 
-# (experimental) Time to live duration for cached query results. If query falls
-# into out-of-order time window,
+# Time to live duration for cached query results. If query falls into
+# out-of-order time window,
 # -query-frontend.results-cache-ttl-for-out-of-order-time-window is used
 # instead.
 # CLI flag: -query-frontend.results-cache-ttl
 [results_cache_ttl: <duration> | default = 1w]
 
-# (experimental) Time to live duration for cached query results if query falls
-# into out-of-order time window. This is lower than
-# -query-frontend.results-cache-ttl so that incoming out-of-order samples are
-# returned in the query results sooner.
+# Time to live duration for cached query results if query falls into
+# out-of-order time window. This is lower than -query-frontend.results-cache-ttl
+# so that incoming out-of-order samples are returned in the query results
+# sooner.
 # CLI flag: -query-frontend.results-cache-ttl-for-out-of-order-time-window
 [results_cache_ttl_for_out_of_order_time_window: <duration> | default = 10m]
 
-# (experimental) Time to live duration for cached cardinality query results. The
-# value 0 disables the cache.
+# Time to live duration for cached cardinality query results. The value 0
+# disables the cache.
 # CLI flag: -query-frontend.results-cache-ttl-for-cardinality-query
 [results_cache_ttl_for_cardinality_query: <duration> | default = 0s]
 
-# (experimental) Time to live duration for cached label names and label values
-# query results. The value 0 disables the cache.
+# Time to live duration for cached label names and label values query results.
+# The value 0 disables the cache.
 # CLI flag: -query-frontend.results-cache-ttl-for-labels-query
 [results_cache_ttl_for_labels_query: <duration> | default = 0s]
 
@@ -2987,8 +2987,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
 
-# (experimental) Max size of the raw query, in bytes. 0 to not apply a limit to
-# the size of the query.
+# Max size of the raw query, in bytes. 0 to not apply a limit to the size of the
+# query.
 # CLI flag: -query-frontend.max-query-expression-size-bytes
 [max_query_expression_size_bytes: <int> | default = 0]
 
@@ -3134,7 +3134,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # is given in JSON format. Rate limit has the same meaning as
 # -alertmanager.notification-rate-limit, but only applies for specific
 # integration. Allowed integration names: webhook, email, pagerduty, opsgenie,
-# wechat, slack, victorops, pushover, sns, webex, telegram, discord.
+# wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams.
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
@@ -4461,7 +4461,8 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # CLI flag: -<prefix>.azure.account-name
 [account_name: <string> | default = ""]
 
-# Azure storage account key
+# Azure storage account key. If unset, Azure managed identities will be used for
+# authentication instead.
 # CLI flag: -<prefix>.azure.account-key
 [account_key: <string> | default = ""]
 
@@ -4479,8 +4480,8 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # CLI flag: -<prefix>.azure.max-retries
 [max_retries: <int> | default = 20]
 
-# (advanced) User assigned identity. If empty, then System assigned identity is
-# used.
+# (advanced) User assigned managed identity. If empty, then System assigned
+# identity is used.
 # CLI flag: -<prefix>.azure.user-assigned-id
 [user_assigned_id: <string> | default = ""]
 ```

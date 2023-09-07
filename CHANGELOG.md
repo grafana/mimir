@@ -8,12 +8,18 @@
 * [ENHANCEMENT] Query-frontend: add `cortex_query_frontend_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request when not using the query-scheduler. #5879
 * [ENHANCEMENT] Expose `/sync/mutex/wait/total:seconds` Go runtime metric as `go_sync_mutex_wait_total_seconds_total` from all components. #5879
 * [ENHANCEMENT] Query-scheduler: improve latency with many concurrent queriers. #5880
+* [ENHANCEMENT] Go: updated to 1.21.1. #5955
+* [BUGFIX] Ingester: fix spurious `not found` errors on label values API during head compaction. #5957
 
 ### Mixin
 
 ### Jsonnet
 
+* [ENHANCEMENT] Double the amount of rule groups for each user tier. #5897
+
 ### Mimirtool
+
+* [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
 
 ### Mimir Continuous Test
 
@@ -22,6 +28,33 @@
 ### Documentation
 
 ### Tools
+
+## 2.10.0-rc.1
+
+### Grafana Mimir
+
+* [FEATURE] The following features are no longer considered experimental. #5872
+  * Ruler storage cache (`-ruler-storage.cache.*`)
+  * Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
+  * Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
+  * Cardinality query result caching (`-query-frontend.results-cache-ttl-for-cardinality-query`)
+  * Label names and values query result caching (`-query-frontend.results-cache-ttl-for-labels-query`)
+  * Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
+  * Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
+  * Configuring enabled metrics in overrides exporter (`-overrides-exporter.enabled-metrics`)
+  * Per-tenant results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
+* [FEATURE] Querier: add experimental CLI flag `-tenant-federation.max-concurrent` to adjust the max number of per-tenant queries that can be run at a time when executing a single multi-tenant query. #5874
+* [FEATURE] Alertmanager: Add Microsoft Teams as a supported integration. #5840
+* [ENHANCEMENT] Alertmanager: update to alertmanager 0.26.0. #5840
+* [BUGFIX] Store-gateway: fix chunks corruption bug introduced in rc.0. #5875
+* [BUGFIX] Update Minio object storage client from 7.0.62 to 7.0.63 to fix auto-detection of AWS GovCloud environments. #5905
+
+### Mimirtool
+
+* [ENHANCEMENT] Mimirtool uses paging to fetch all dashboards from Grafana when running `mimirtool analyse grafana`. This allows the tool to work correctly when running against Grafana instances with more than a 1000 dashboards. #5825
+* [ENHANCEMENT] Extract metric name from queries that have a `__name__` matcher. #5911
+* [BUGFIX] Mimirtool no longer parses label names as metric names when handling templating variables that are populated using `label_values(<label_name>)` when running `mimirtool analyse grafana`. #5832
+* [BUGFIX] Fix panic when analyzing a grafana dashboard with multiline queries in templating variables. #5911
 
 ## 2.10.0-rc.0
 
@@ -44,7 +77,7 @@
   * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` is deprecated, use the new configuration `-blocks-storage.bucket-store.index-header.lazy-loading-enabled`
   * `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` is deprecated, use the new configuration `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout`
   * `-blocks-storage.bucket-store.index-header-lazy-loading-concurrency` is deprecated, use the new configuration `-blocks-storage.bucket-store.index-header.lazy-loading-concurrency`
-* [CHANGE] Store-gateway: remove experimental fine-grained chunks caching. The following experimental configuration parameters have been removed `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`, `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`. #5816
+* [CHANGE] Store-gateway: remove experimental fine-grained chunks caching. The following experimental configuration parameters have been removed `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`, `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`. #5816 #5875
 * [CHANGE] Ingester: remove deprecated `blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`. #5850
 * [FEATURE] Introduced `distributor.service_overload_status_code_on_rate_limit_enabled` flag for configuring status code to 529 instead of 429 upon rate limit exhaustion. #5752
 * [FEATURE] Cardinality API: Add a new `count_method` parameter which enables counting active series #5136
@@ -65,6 +98,7 @@
 * [FEATURE] Add experimental CLI flag `-<prefix>.s3.native-aws-auth-enabled` that allows to enable the default credentials provider chain of the AWS SDK. #5636
 * [FEATURE] Distributor: add experimental support for circuit breaking when writing to ingesters via `-ingester.client.circuit-breaker.enabled`, `-ingester.client.circuit-breaker.failure-threshold`, or `-ingester.client.circuit-breaker.cooldown-period` or their corresponding YAML. #5650
 * [FEATURE] Querier: add experimental CLI flag `-tenant-federation.max-concurrent` to adjust the max number of per-tenant queries that can be run at a time when executing a single multi-tenant query. #5874
+* [FEATURE] Alertmanager: Add Microsoft Teams as a supported integration. #5840
 * [ENHANCEMENT] Overrides-exporter: Add new metrics for write path and alertmanager (`max_global_metadata_per_user`, `max_global_metadata_per_metric`, `request_rate`, `request_burst_size`, `alertmanager_notification_rate_limit`, `alertmanager_max_dispatcher_aggregation_groups`, `alertmanager_max_alerts_count`, `alertmanager_max_alerts_size_bytes`) and added flag `-overrides-exporter.enabled-metrics` to explicitly configure desired metrics, e.g. `-overrides-exporter.enabled-metrics=request_rate,ingestion_rate`. Default value for this flag is: `ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant`. #5376
 * [ENHANCEMENT] Cardinality API: When zone aware replication is enabled, the label values cardinality API can now tolerate single zone failure #5178
 * [ENHANCEMENT] Distributor: optimize sending requests to ingesters when incoming requests don't need to be modified. For now this feature can be disabled by setting `-timeseries-unmarshal-caching-optimization-enabled=false`. #5137
@@ -124,6 +158,7 @@
 * [ENHANCEMENT] Store-gateway: wait for query gate after loading blocks. #5507
 * [ENHANCEMENT] Store-gateway: always include `__name__` posting group in selection in order to reduce the number of object storage API calls. #5246
 * [ENHANCEMENT] Ingester: track active series by ref instead of hash/labels to reduce memory usage. #5134 #5193
+* [ENHANCEMENT] Alertmanager: update to alertmanager 0.26.0. #5840
 * [BUGFIX] Ingester: Handle when previous ring state is leaving and the number of tokens has changed. #5204
 * [BUGFIX] Querier: fix issue where queries that use the `timestamp()` function fail with `execution: attempted to read series at index 0 from stream, but the stream has already been exhausted` if streaming chunks from ingesters to queriers is enabled. #5370
 * [BUGFIX] memberlist: bring back `memberlist_client_kv_store_count` metric that used to exist in Cortex, but got lost during dskit updates before Mimir 2.0. #5377
@@ -195,13 +230,6 @@
 * [ENHANCEMENT] Update rollout-operator to `v0.7.0`. #5718
 * [ENHANCEMENT] Increase the default rollout speed for store-gateway when lazy loading is disabled. #5823
 * [BUGFIX] Fix compilation when index, chunks or metadata caches are disabled. #5710
-
-### Mimirtool
-
-* [ENHANCEMENT] Mimirtool uses paging to fetch all dashboards from Grafana when running `mimirtool analyse grafana`. This allows the tool to work correctly when running against Grafana instances with more than a 1000 dashboards. #5825
-* [BUGFIX] Mimirtool no longer parses label names as metric names when handling templating variables that are populated using `label_values(<label_name>)` when running `mimirtool analyse grafana`. #5832
-
-### Mimir Continuous Test
 
 ### Query-tee
 

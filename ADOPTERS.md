@@ -4,3 +4,4 @@ If you’re using Grafana Mimir, feel free to add yourself or your organization.
 - [OVHcloud](https://www.ovhcloud.com)
 - [Chaordic](https://chaordic.io)
 - [SysEleven GmbH](https://www.syseleven.de)
+- [PITS Global Data Recovery Services](https://www.pitsdatarecovery.net/)

@@ -971,7 +971,7 @@ spec:
         - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
-        - -ruler.max-rule-groups-per-tenant=35
+        - -ruler.max-rule-groups-per-tenant=70
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
@@ -1156,7 +1156,7 @@ spec:
         - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
-        - -ruler.max-rule-groups-per-tenant=35
+        - -ruler.max-rule-groups-per-tenant=70
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
@@ -1341,7 +1341,7 @@ spec:
         - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
-        - -ruler.max-rule-groups-per-tenant=35
+        - -ruler.max-rule-groups-per-tenant=70
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
