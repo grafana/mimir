@@ -3,20 +3,28 @@
 package ingester
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func TestNewIngestErrMsgs(t *testing.T) {
-	timestamp := model.Time(1575043969)
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+const (
+	timestamp = model.Time(1575043969)
+)
 
+var (
+	metricLabelAdapters = []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+)
+
+func TestNewIngestErrMsgs(t *testing.T) {
 	tests := map[string]struct {
 		err error
 		msg string
@@ -48,4 +56,14 @@ func TestNewIngestErrMsgs(t *testing.T) {
 			assert.Equal(t, tc.msg, tc.err.Error())
 		})
 	}
+}
+
+func TestValidationError(t *testing.T) {
+	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
+	validationErr := newValidationError(err, http.StatusBadRequest)
+	require.Error(t, validationErr)
+	stat, ok := status.FromError(validationErr)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, int(stat.Code()))
+	require.Errorf(t, err, stat.Message())
 }

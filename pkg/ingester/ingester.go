@@ -26,7 +26,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
@@ -782,7 +781,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	lockState, err := db.acquireAppendLock(req.MinTimestamp())
 	if err != nil {
-		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(err, userID).Error())
+		return &mimirpb.WriteResponse{}, newValidationError(wrapWithUser(err, userID), http.StatusServiceUnavailable)
 	}
 	defer db.releaseAppendLock(lockState)
 
@@ -871,11 +870,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
-		var ve *validationError
+		var ve validationError
 		if errors.As(firstPartialErr, &ve) {
-			code = ve.code
+			code = int(ve.status.Code())
 		}
-		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
+		return &mimirpb.WriteResponse{}, newValidationError(wrapWithUser(firstPartialErr, userID), code)
 	}
 
 	return &mimirpb.WriteResponse{}, nil

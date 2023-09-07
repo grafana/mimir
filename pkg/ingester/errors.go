@@ -14,6 +14,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -28,35 +30,45 @@ var (
 
 type validationError struct {
 	err    error // underlying error
-	code   int
+	status *status.Status
 	labels labels.Labels
 }
 
-func makeLimitError(err error) error {
-	return &validationError{
-		err:  err,
-		code: http.StatusBadRequest,
+func newValidationError(err error, code int) validationError {
+	return validationError{
+		err:    err,
+		status: status.New(codes.Code(code), err.Error()),
 	}
+}
+
+func makeLimitError(err error) error {
+	return newValidationError(err, http.StatusBadRequest)
 }
 
 func makeMetricLimitError(labels labels.Labels, err error) error {
-	return &validationError{
-		err:    err,
-		code:   http.StatusBadRequest,
-		labels: labels,
-	}
+	validationErr := newValidationError(err, http.StatusBadRequest)
+	validationErr.labels = labels
+	return validationErr
 }
 
-func (e *validationError) Error() string {
+func (e validationError) Error() string {
 	if e.labels.IsEmpty() {
 		return e.err.Error()
 	}
 	return fmt.Sprintf("%s This is for series %s", e.err.Error(), e.labels.String())
 }
 
+func (e validationError) Unwrap() error {
+	return e.err
+}
+
+func (e validationError) GRPCStatus() *status.Status {
+	return e.status
+}
+
 // wrapWithUser prepends the user to the error. It does not retain a reference to err.
 func wrapWithUser(err error, userID string) error {
-	return fmt.Errorf("user=%s: %s", userID, err)
+	return fmt.Errorf("user=%s: %w", userID, err)
 }
 
 func newIngestErrSample(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
