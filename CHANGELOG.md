@@ -20,6 +20,7 @@
 ### Mimirtool
 
 * [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
+* [BUGFIX] Fix the issue where `--read-timeout` was applied to the entire `mimirtool analyze grafana` invocation rather than to individual Grafana API calls. #5915
 
 ### Mimir Continuous Test
 
