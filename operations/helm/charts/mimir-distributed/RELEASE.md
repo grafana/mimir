@@ -4,7 +4,7 @@ The release processes that follow apply to the Grafana Mimir Helm chart.
 
 ## Schedule
 
-The release schedule follows the Grafana Mimir and Grafana Enterprise Metrics (GEM) releases so that a new Helm chart release will include both. This usually happens within 2 weeks of the Mimir release. For the Mimir release schedule consult the Mimir [RELEASE.md](https://github.com/grafana/mimir/blob/main/RELEASE.md).
+The release schedule follows the Grafana Mimir and Grafana Enterprise Metrics (GEM) releases so that a new Helm chart release will include both. This usually happens within 2 weeks of the Mimir release. For the Mimir release schedule consult the Mimir [RELEASE.md](../../../../RELEASE.md).
 
 Security updates of Mimir or GEM will also trigger a Helm chart release. The Helm chart can be released independently of Mimir and GEM, but this is only done if
 there's some urgent update needed.
