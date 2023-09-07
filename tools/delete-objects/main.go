@@ -12,8 +12,9 @@ import (
 
 	gokitlog "github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 type config struct {
