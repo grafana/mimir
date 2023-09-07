@@ -120,10 +120,11 @@ const (
 )
 
 var (
-	reasonIngesterMaxIngestionRate        = globalerror.IngesterMaxIngestionRate.LabelValue()
-	reasonIngesterMaxTenants              = globalerror.IngesterMaxTenants.LabelValue()
-	reasonIngesterMaxInMemorySeries       = globalerror.IngesterMaxInMemorySeries.LabelValue()
-	reasonIngesterMaxInflightPushRequests = globalerror.IngesterMaxInflightPushRequests.LabelValue()
+	reasonIngesterMaxIngestionRate             = globalerror.IngesterMaxIngestionRate.LabelValue()
+	reasonIngesterMaxTenants                   = globalerror.IngesterMaxTenants.LabelValue()
+	reasonIngesterMaxInMemorySeries            = globalerror.IngesterMaxInMemorySeries.LabelValue()
+	reasonIngesterMaxInflightPushRequests      = globalerror.IngesterMaxInflightPushRequests.LabelValue()
+	reasonIngesterMaxInflightPushRequestsBytes = globalerror.IngesterMaxInflightPushRequestsBytes.LabelValue()
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -266,8 +267,9 @@ type Ingester struct {
 	usersMetadata    map[string]*userMetricsMetadata
 
 	// Rate of pushed samples. Used to limit global samples push rate.
-	ingestionRate        *util_math.EwmaRate
-	inflightPushRequests atomic.Int64
+	ingestionRate             *util_math.EwmaRate
+	inflightPushRequests      atomic.Int64
+	inflightPushRequestsBytes atomic.Int64
 
 	// Anonymous usage statistics tracked by ingester.
 	memorySeriesStats                  *expvar.Int
@@ -326,7 +328,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		return nil, err
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
-	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
 
 	if registerer != nil {
@@ -385,7 +387,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	if err != nil {
 		return nil, err
 	}
-	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 
 	i.shipperIngesterID = "flusher"
 
@@ -782,6 +784,17 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	req, err := pushReq.WriteRequest()
 	if err != nil {
 		return nil, err
+	}
+
+	requestSize := int64(req.Size()) // This can be expensive call. Check it in profiles.
+	totalRequestSize := i.inflightPushRequestsBytes.Add(requestSize)
+	defer i.inflightPushRequestsBytes.Sub(requestSize)
+
+	if il != nil && il.MaxInflightPushRequestsBytes > 0 {
+		if totalRequestSize > il.MaxInflightPushRequestsBytes {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
+			return nil, errMaxInflightRequestsBytesReached
+		}
 	}
 
 	// Given metadata is a best-effort approach, and we don't halt on errors

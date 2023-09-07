@@ -18,18 +18,20 @@ import (
 )
 
 const (
-	maxIngestionRateFlag        = "ingester.instance-limits.max-ingestion-rate"
-	maxInMemoryTenantsFlag      = "ingester.instance-limits.max-tenants"
-	maxInMemorySeriesFlag       = "ingester.instance-limits.max-series"
-	maxInflightPushRequestsFlag = "ingester.instance-limits.max-inflight-push-requests"
+	maxIngestionRateFlag             = "ingester.instance-limits.max-ingestion-rate"
+	maxInMemoryTenantsFlag           = "ingester.instance-limits.max-tenants"
+	maxInMemorySeriesFlag            = "ingester.instance-limits.max-series"
+	maxInflightPushRequestsFlag      = "ingester.instance-limits.max-inflight-push-requests"
+	maxInflightPushRequestsBytesFlag = "ingester.instance-limits.max-inflight-push-requests-bytes"
 )
 
 // We don't include values in the messages for per-instance limits to avoid leaking Mimir cluster configuration to users.
 var (
-	errMaxIngestionRateReached    = newInstanceLimitError(globalerror.IngesterMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the samples ingestion rate limit", maxIngestionRateFlag))
-	errMaxTenantsReached          = newInstanceLimitError(globalerror.IngesterMaxTenants.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of tenants", maxInMemoryTenantsFlag))
-	errMaxInMemorySeriesReached   = newInstanceLimitError(globalerror.IngesterMaxInMemorySeries.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of in-memory series", maxInMemorySeriesFlag))
-	errMaxInflightRequestsReached = newInstanceLimitError(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
+	errMaxIngestionRateReached         = newInstanceLimitError(globalerror.IngesterMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the samples ingestion rate limit", maxIngestionRateFlag))
+	errMaxTenantsReached               = newInstanceLimitError(globalerror.IngesterMaxTenants.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of tenants", maxInMemoryTenantsFlag))
+	errMaxInMemorySeriesReached        = newInstanceLimitError(globalerror.IngesterMaxInMemorySeries.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of in-memory series", maxInMemorySeriesFlag))
+	errMaxInflightRequestsReached      = newInstanceLimitError(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
+	errMaxInflightRequestsBytesReached = newInstanceLimitError(globalerror.IngesterMaxInflightPushRequestsBytes.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed size of inflight push requests", maxInflightPushRequestsBytesFlag))
 )
 
 type instanceLimitErr struct {
@@ -62,10 +64,11 @@ func (e *instanceLimitErr) Error() string {
 // InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return
 // (internal) error.
 type InstanceLimits struct {
-	MaxIngestionRate        float64 `yaml:"max_ingestion_rate" category:"advanced"`
-	MaxInMemoryTenants      int64   `yaml:"max_tenants" category:"advanced"`
-	MaxInMemorySeries       int64   `yaml:"max_series" category:"advanced"`
-	MaxInflightPushRequests int64   `yaml:"max_inflight_push_requests" category:"advanced"`
+	MaxIngestionRate             float64 `yaml:"max_ingestion_rate" category:"advanced"`
+	MaxInMemoryTenants           int64   `yaml:"max_tenants" category:"advanced"`
+	MaxInMemorySeries            int64   `yaml:"max_series" category:"advanced"`
+	MaxInflightPushRequests      int64   `yaml:"max_inflight_push_requests" category:"advanced"`
+	MaxInflightPushRequestsBytes int64   `yaml:"max_inflight_push_requests_bytes" category:"advanced"`
 }
 
 func (l *InstanceLimits) RegisterFlags(f *flag.FlagSet) {
@@ -73,6 +76,7 @@ func (l *InstanceLimits) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&l.MaxInMemoryTenants, maxInMemoryTenantsFlag, 0, "Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.")
 	f.Int64Var(&l.MaxInMemorySeries, maxInMemorySeriesFlag, 0, "Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.")
 	f.Int64Var(&l.MaxInflightPushRequests, maxInflightPushRequestsFlag, 30000, "Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.")
+	f.Int64Var(&l.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "Max total size of inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.")
 }
 
 // Sets default limit values for unmarshalling.

@@ -65,6 +65,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -1606,7 +1607,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
-				expectedErr := storage.ErrOutOfBounds.Error()
+				expectedErr := globalerror.SampleTimestampTooOld.Error()
 
 				// Push out of bound samples.
 				for n := 0; n < b.N; n++ {
@@ -1633,7 +1634,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				}
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
-				expectedErr := storage.ErrOutOfOrderSample.Error()
+				expectedErr := globalerror.SampleOutOfOrder.Error()
 
 				// Push out-of-order samples.
 				for n := 0; n < b.N; n++ {
@@ -1712,7 +1713,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "push rate limit reached")
+					verifyErrorString(b, err, "ingester exceeded the samples ingestion rate limit")
 				}
 			},
 		},
@@ -1734,7 +1735,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "max tenants limit reached")
+					verifyErrorString(b, err, "ingester exceeded the allowed number of tenants")
 				}
 			},
 		},
@@ -1753,7 +1754,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "max series limit reached")
+					verifyErrorString(b, err, "ingester exceeded the allowed number of in-memory series")
 				}
 			},
 		},
@@ -1771,7 +1772,25 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "too many inflight push requests")
+					verifyErrorString(b, err, "ingester exceeded the allowed number of inflight push requests")
+				}
+			},
+		},
+		"max inflight requests bytes reached": {
+			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
+				if instanceLimits == nil {
+					return false
+				}
+				instanceLimits.MaxInflightPushRequestsBytes = 1
+				return true
+			},
+			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
+				ingester.inflightPushRequestsBytes.Inc()
+			},
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
+				for n := 0; n < b.N; n++ {
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+					verifyErrorString(b, err, "ingester exceeded the allowed size of inflight push requests")
 				}
 			},
 		},
@@ -5886,9 +5905,10 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
 	l := InstanceLimits{
-		MaxIngestionRate:   10,
-		MaxInMemoryTenants: 20,
-		MaxInMemorySeries:  30,
+		MaxIngestionRate:             10,
+		MaxInMemoryTenants:           20,
+		MaxInMemorySeries:            30,
+		MaxInflightPushRequestsBytes: 100,
 	}
 
 	cfg := defaultIngesterTestConfig(t)
@@ -5906,6 +5926,7 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 		cortex_ingester_instance_limits{limit="max_ingestion_rate"} 10
 		cortex_ingester_instance_limits{limit="max_series"} 30
 		cortex_ingester_instance_limits{limit="max_tenants"} 20
+		cortex_ingester_instance_limits{limit="max_inflight_push_requests_bytes"} 100
 	`), "cortex_ingester_instance_limits"))
 
 	l.MaxInMemoryTenants = 1000
@@ -5918,6 +5939,7 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 		cortex_ingester_instance_limits{limit="max_ingestion_rate"} 10
 		cortex_ingester_instance_limits{limit="max_series"} 2000
 		cortex_ingester_instance_limits{limit="max_tenants"} 1000
+		cortex_ingester_instance_limits{limit="max_inflight_push_requests_bytes"} 100
 	`), "cortex_ingester_instance_limits"))
 }
 
@@ -6018,6 +6040,69 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
 	`), "cortex_ingester_instance_rejected_requests_total"))
+}
+
+func TestIngester_inflightPushRequestsBytes(t *testing.T) {
+	req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+	reqClone := cloneRequest(t, req)
+
+	limits := InstanceLimits{MaxInflightPushRequestsBytes: int64(req.Size())}
+
+	// Create a mocked ingester
+	cfg := defaultIngesterTestConfig(t)
+	cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
+
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	// Increase number of inflight request bytes, push should fail.
+	i.inflightPushRequestsBytes.Add(100)
+
+	var optional middleware.OptionalLogging
+
+	_, err = i.Push(ctx, req)
+	require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
+	require.ErrorAs(t, err, &optional)
+	require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
+
+	s, ok := status.FromError(err)
+	require.True(t, ok, "expected to be able to convert to gRPC status")
+	require.Equal(t, codes.Unavailable, s.Code())
+
+	// Now set number of inflight request bytes back to 0. Push should succeed.
+	i.inflightPushRequestsBytes.Sub(100)
+
+	_, err = i.Push(ctx, reqClone)
+	require.NoError(t, err)
+
+	// Ensure the rejected request has been tracked in a metric.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_instance_rejected_requests_total Requests rejected for hitting per-instance limits
+		# TYPE cortex_ingester_instance_rejected_requests_total counter
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 0
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 1
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
+	`), "cortex_ingester_instance_rejected_requests_total"))
+}
+
+func cloneRequest(t *testing.T, req *mimirpb.WriteRequest) *mimirpb.WriteRequest {
+	buf, err := req.Marshal()
+	require.NoError(t, err)
+	res := mimirpb.WriteRequest{}
+	require.NoError(t, res.Unmarshal(buf))
+	return &res
 }
 
 func generateSamplesForLabel(baseLabels labels.Labels, series, samples int) *mimirpb.WriteRequest {
