@@ -33,8 +33,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Sets the `appProtocol` value to `tcp` for the `gossip-ring-svc` service template. This allows memberlist to work with istio protocol selection. #5673
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.8.0`. #5718
 * [ENHANCEMENT] Make store_gateway podManagementPolicy configurable. #5757
-* [BUGFIX] Fix `global.podLabels` causing invalid indentation. #5625
 * [ENHANCEMENT] Nginx: listen on IPv6 addresses. #5948
+* [BUGFIX] Fix `global.podLabels` causing invalid indentation. #5625
 
 ## 5.0.0
 
