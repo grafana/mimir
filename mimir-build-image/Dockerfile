@@ -5,7 +5,7 @@
 
 FROM k8s.gcr.io/kustomize/kustomize:v4.5.5 as kustomize
 FROM alpine/helm:3.11.1 as helm
-FROM golang:1.21.0-bullseye
+FROM golang:1.21.1-bullseye
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.10.0-rc.2
+
+### Grafana Mimir
+
+* [ENHANCEMENT] Go: updated to 1.21.1. #5955
 
 ## 2.10.0-rc.1
 
