@@ -25,11 +25,22 @@ cat objects-to-delete.txt | ./delete-objects -concurrency 64 -backend gcs --gcs.
 
 ### Example S3 Usage
 ```bash
-cat objects-to-delete.txt | ./delete-objects -concurrency 64 -backend s3 -s3.endpoint <S3_ENDPOINT> -s3.bucket-name <S3_BUCKET_NAME> -s3.access-key-id <S3_ACCESS_KEY_ID> -s3.secret-access-key <S3_SECRET_ACCESS_KEY>
+cat objects-to-delete.txt | ./delete-objects \
+    -concurrency 64 \
+    -backend s3 \
+    -s3.endpoint <S3_ENDPOINT> \
+    -s3.bucket-name <S3_BUCKET_NAME> \
+    -s3.access-key-id <S3_ACCESS_KEY_ID> \
+    -s3.secret-access-key <S3_SECRET_ACCESS_KEY>
 ```
 
 
 ### Example Azure Usage
 ```bash
-cat objects-to-delete.txt | ./delete-objects -concurrency 64 -backend azure -azure.container-name <AZURE_CONTAINER_NAME> -azure.account-name <AZURE_ACCOUNT_NAME> -azure.account-key <AZURE_ACCOUNT_KEY>
+cat objects-to-delete.txt | ./delete-objects \
+    -concurrency 64 \
+    -backend azure \
+    -azure.container-name <AZURE_CONTAINER_NAME> \
+    -azure.account-name <AZURE_ACCOUNT_NAME> \
+    -azure.account-key <AZURE_ACCOUNT_KEY>
 ```
