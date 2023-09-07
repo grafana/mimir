@@ -215,20 +215,6 @@
     "ports":
       - "16686:16686"
       - "14268"
-  "load-generator":
-    "command":
-      - "--remote-url=http://distributor-2:8001/api/v1/push"
-      - "--remote-write-concurrency=5"
-      - "--remote-write-interval=10s"
-      - "--series-count=100000"
-      - "--tenants-count=1"
-      - "--query-enabled=true"
-      - "--query-interval=30s"
-      - "--query-url=http://query-tee:8200/prometheus"
-      - "--server-metrics-port=9900"
-    "image": "pracucci/cortex-load-generator:add-query-support-8633d4e"
-    "ports":
-      - "9900:9900"
   "memcached":
     "image": "memcached:1.6.19-alpine"
     "ports":
