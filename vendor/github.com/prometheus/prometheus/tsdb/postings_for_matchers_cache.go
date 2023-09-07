@@ -25,6 +25,8 @@ type IndexPostingsReader interface {
 	// Found IDs are not strictly required to point to a valid Series, e.g.
 	// during background garbage collections. Input values must be sorted.
 	Postings(name string, values ...string) (index.Postings, error)
+
+	PostingsSizeEstimation(name string, values ...string) (int, error)
 }
 
 // NewPostingsForMatchersCache creates a new PostingsForMatchersCache.
@@ -60,10 +62,10 @@ type PostingsForMatchersCache struct {
 	// timeNow is the time.Now that can be replaced for testing purposes
 	timeNow func() time.Time
 	// postingsForMatchers can be replaced for testing purposes
-	postingsForMatchers func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
+	postingsForMatchers func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error)
 }
 
-func (c *PostingsForMatchersCache) PostingsForMatchers(ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (c *PostingsForMatchersCache) PostingsForMatchers(ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error) {
 	if !concurrent && !c.force {
 		return c.postingsForMatchers(ix, ms...)
 	}
@@ -71,33 +73,35 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ix IndexPostingsReader, c
 	return c.postingsForMatchersPromise(ix, ms)()
 }
 
-func (c *PostingsForMatchersCache) postingsForMatchersPromise(ix IndexPostingsReader, ms []*labels.Matcher) func() (index.Postings, error) {
+func (c *PostingsForMatchersCache) postingsForMatchersPromise(ix IndexPostingsReader, ms []*labels.Matcher) func() (index.Postings, []*labels.Matcher, error) {
 	var (
-		wg       sync.WaitGroup
-		cloner   *index.PostingsCloner
-		outerErr error
+		wg              sync.WaitGroup
+		cloner          *index.PostingsCloner
+		outerErr        error
+		pendingMatchers []*labels.Matcher
 	)
 	wg.Add(1)
 
-	promise := func() (index.Postings, error) {
+	promise := func() (index.Postings, []*labels.Matcher, error) {
 		wg.Wait()
 		if outerErr != nil {
-			return nil, outerErr
+			return nil, nil, outerErr
 		}
-		return cloner.Clone(), nil
+		return cloner.Clone(), pendingMatchers, nil
 	}
 
 	key := matchersKey(ms)
 	oldPromise, loaded := c.calls.LoadOrStore(key, promise)
 	if loaded {
-		return oldPromise.(func() (index.Postings, error))
+		return oldPromise.(func() (index.Postings, []*labels.Matcher, error))
 	}
 	defer wg.Done()
 
-	if postings, err := c.postingsForMatchers(ix, ms...); err != nil {
+	if postings, matchers, err := c.postingsForMatchers(ix, ms...); err != nil {
 		outerErr = err
 	} else {
 		cloner = index.NewPostingsCloner(postings)
+		pendingMatchers = matchers
 	}
 
 	c.created(key, c.timeNow())
@@ -198,7 +202,7 @@ type indexReaderWithPostingsForMatchers struct {
 	pfmc *PostingsForMatchersCache
 }
 
-func (ir indexReaderWithPostingsForMatchers) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (ir indexReaderWithPostingsForMatchers) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error) {
 	return ir.pfmc.PostingsForMatchers(ir, concurrent, ms...)
 }
 

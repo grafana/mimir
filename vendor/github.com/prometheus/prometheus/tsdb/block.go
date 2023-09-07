@@ -80,7 +80,8 @@ type IndexReader interface {
 	// The resulting postings are not ordered by series.
 	// If concurrent hint is set to true, call will be optimized for a (most likely) concurrent call with same matchers,
 	// avoiding same calculations twice, however this implementation may lead to a worse performance when called once.
-	PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error)
+	PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error)
+	PostingsSizeEstimation(name string, values ...string) (int, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
@@ -517,8 +518,12 @@ func (r blockIndexReader) Postings(name string, values ...string) (index.Posting
 	return p, nil
 }
 
-func (r blockIndexReader) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (r blockIndexReader) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error) {
 	return r.ir.PostingsForMatchers(concurrent, ms...)
+}
+
+func (r blockIndexReader) PostingsSizeEstimation(name string, values ...string) (int, error) {
+	return r.ir.PostingsSizeEstimation(name, values...)
 }
 
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
@@ -581,7 +586,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 		return ErrClosing
 	}
 
-	p, err := pb.indexr.PostingsForMatchers(false, ms...)
+	p, _, err := pb.indexr.PostingsForMatchers(false, ms...) // TODO dimitarvdimitrov handle pending matchers
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}

@@ -1725,6 +1725,99 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 	return Merge(res...), nil
 }
 
+func (r *Reader) PostingsSizeEstimation(name string, values ...string) (int, error) {
+	if r.version == FormatV1 {
+		e, ok := r.postingsV1[name]
+		if !ok {
+			return 0, nil
+		}
+		total := 0
+		for _, v := range values {
+			postingsOff, ok := e[v]
+			if !ok {
+				continue
+			}
+			// Read from the postings table.
+			d := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
+			total += (d.Len() / 4) // 4 bytes per posting.
+		}
+		return total, nil
+	}
+
+	e, ok := r.postings[name]
+	if !ok {
+		return 0, nil
+	}
+
+	if len(values) == 0 {
+		return 0, nil
+	}
+
+	slices.Sort(values) // Values must be in order so we can step through the table on disk.
+	skip := 0
+	valueIndex := 0
+	for valueIndex < len(values) && values[valueIndex] < e[0].value {
+		// Discard values before the start.
+		valueIndex++
+	}
+	total := (0)
+	for valueIndex < len(values) {
+		value := values[valueIndex]
+
+		i := sort.Search(len(e), func(i int) bool { return e[i].value >= value })
+		if i == len(e) {
+			// We're past the end.
+			break
+		}
+		if i > 0 && e[i].value != value {
+			// Need to look from previous entry.
+			i--
+		}
+		// Don't Crc32 the entire postings offset table, this is very slow
+		// so hope any issues were caught at startup.
+		d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsTable), nil)
+		d.Skip(e[i].off)
+
+		// Iterate on the offset table.
+		var postingsOff uint64 // The offset into the postings table.
+		for d.Err() == nil {
+			if skip == 0 {
+				// These are always the same number of bytes,
+				// and it's faster to skip than parse.
+				skip = d.Len()
+				d.Uvarint()      // Keycount.
+				d.UvarintBytes() // Label name.
+				skip -= d.Len()
+			} else {
+				d.Skip(skip)
+			}
+			v := d.UvarintBytes()       // Label value.
+			postingsOff = d.Uvarint64() // Offset.
+			for string(v) >= value {
+				if string(v) == value {
+					// Read from the postings table.
+					d2 := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
+					total += (d2.Len() / 4) // TODO dimitarvdimitrov simplify so we don't have to load the whole posting list
+				}
+				valueIndex++
+				if valueIndex == len(values) {
+					break
+				}
+				value = values[valueIndex]
+			}
+			if i+1 == len(e) || value >= e[i+1].value || valueIndex == len(values) {
+				// Need to go to a later postings offset entry, if there is one.
+				break
+			}
+		}
+		if d.Err() != nil {
+			return 0, errors.Wrap(d.Err(), "get postings offset entry")
+		}
+	}
+
+	return total, nil
+}
+
 // SortedPostings returns the given postings list reordered so that the backing series
 // are sorted.
 func (r *Reader) SortedPostings(p Postings) Postings {

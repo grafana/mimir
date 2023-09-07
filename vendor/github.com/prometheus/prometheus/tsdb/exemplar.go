@@ -193,16 +193,22 @@ func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*label
 }
 
 func matchesSomeMatcherSet(lbls labels.Labels, matchers [][]*labels.Matcher) bool {
-Outer:
 	for _, ms := range matchers {
-		for _, m := range ms {
-			if !m.Matches(lbls.Get(m.Name)) {
-				continue Outer
-			}
+		if !matchesMatcherSet(lbls, ms) {
+			continue
 		}
 		return true
 	}
 	return false
+}
+
+func matchesMatcherSet(lbls labels.Labels, ms []*labels.Matcher) bool {
+	for _, m := range ms {
+		if !m.Matches(lbls.Get(m.Name)) {
+			return false
+		}
+	}
+	return true
 }
 
 func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.Exemplar) error {

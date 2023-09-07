@@ -199,6 +199,11 @@ func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 		NumLabelPairs:           numLabelPairs,
 	}
 }
+func (p *MemPostings) Count(name, value string) int {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	return len(p.m[name][value])
+}
 
 // Get returns a postings list for the given label pair.
 func (p *MemPostings) Get(name, value string) Postings {

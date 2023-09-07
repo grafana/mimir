@@ -1508,12 +1508,21 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	var postingsForMatchersFn func(ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
 	switch req.GetCountMethod() {
 	case client.IN_MEMORY:
-		postingsForMatchersFn = tsdb.PostingsForMatchers
+		postingsForMatchersFn = func(ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+			p, pendingMatchers, err := tsdb.PostingsForMatchers(ix, ms...)
+			if len(pendingMatchers) > 0 {
+				return nil, errors.New("pending matchers not implemented for LabelValuesCardinality")
+			}
+			return p, err
+		}
 	case client.ACTIVE:
 		postingsForMatchersFn = func(ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
-			postings, err := tsdb.PostingsForMatchers(ix, ms...)
+			postings, pendingMatchers, err := tsdb.PostingsForMatchers(ix, ms...)
 			if err != nil {
 				return nil, err
+			}
+			if len(pendingMatchers) > 0 {
+				return nil, errors.New("pending matchers not implemented for LabelValuesCardinality")
 			}
 			return activeseries.NewPostings(db.activeSeries, postings), nil
 		}
