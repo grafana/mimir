@@ -58,6 +58,8 @@ The following features are currently experimental:
 - Distributor
   - Metrics relabeling
   - OTLP ingestion path
+  - OTLP metadata storage
+    - `-distributor.enable-otlp-metadata-storage`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
     - `distributor.service-overload-status-code-on-rate-limit-enabled`
 - Hash ring
