@@ -83,6 +83,26 @@ func TestHandlerOTLPPush(t *testing.T) {
 		return &mimirpb.WriteResponse{}, nil
 	}
 
+	samplesVerifierFuncDisabledMetadataIngest := func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+		request, err := pushReq.WriteRequest()
+		assert.NoError(t, err)
+
+		series := request.Timeseries
+		assert.Len(t, series, 1)
+
+		samples := series[0].Samples
+		assert.Equal(t, 1, len(samples))
+		assert.Equal(t, float64(1), samples[0].Value)
+		assert.Equal(t, "__name__", series[0].Labels[0].Name)
+		assert.Equal(t, "foo", series[0].Labels[0].Value)
+
+		metadata := request.Metadata
+		assert.Equal(t, []*mimirpb.MetricMetadata(nil), metadata)
+
+		pushReq.CleanUp()
+		return &mimirpb.WriteResponse{}, nil
+	}
+
 	tests := []struct {
 		name     string
 		series   []prompb.TimeSeries
@@ -92,26 +112,38 @@ func TestHandlerOTLPPush(t *testing.T) {
 		encoding    string
 		maxMsgSize  int
 
-		verifyFunc   Func
-		responseCode int
-		errMessage   string
+		verifyFunc                Func
+		responseCode              int
+		errMessage                string
+		enableOtelMetadataStorage bool
 	}{
 		{
-			name:         "Write samples. No compression",
-			maxMsgSize:   100000,
-			verifyFunc:   samplesVerifierFunc,
-			series:       sampleSeries,
-			metadata:     sampleMetadata,
-			responseCode: http.StatusOK,
+			name:                      "Write samples. No compression",
+			maxMsgSize:                100000,
+			verifyFunc:                samplesVerifierFunc,
+			series:                    sampleSeries,
+			metadata:                  sampleMetadata,
+			responseCode:              http.StatusOK,
+			enableOtelMetadataStorage: true,
 		},
 		{
-			name:         "Write samples. With compression",
-			compression:  true,
-			maxMsgSize:   100000,
-			verifyFunc:   samplesVerifierFunc,
-			series:       sampleSeries,
-			metadata:     sampleMetadata,
-			responseCode: http.StatusOK,
+			name:                      "Write samples. Not enabled metadata ingest",
+			maxMsgSize:                100000,
+			verifyFunc:                samplesVerifierFuncDisabledMetadataIngest,
+			series:                    sampleSeries,
+			metadata:                  sampleMetadata,
+			responseCode:              http.StatusOK,
+			enableOtelMetadataStorage: false,
+		},
+		{
+			name:                      "Write samples. With compression",
+			compression:               true,
+			maxMsgSize:                100000,
+			verifyFunc:                samplesVerifierFunc,
+			series:                    sampleSeries,
+			metadata:                  sampleMetadata,
+			responseCode:              http.StatusOK,
+			enableOtelMetadataStorage: true,
 		},
 		{
 			name:        "Write samples. Request too big",
@@ -178,7 +210,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 				pushReq.CleanUp()
 				return &mimirpb.WriteResponse{}, nil
 			},
-			responseCode: http.StatusOK,
+			responseCode:              http.StatusOK,
+			enableOtelMetadataStorage: true,
 		},
 	}
 	for _, tt := range tests {
@@ -189,7 +222,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				req.Header.Set("Content-Encoding", tt.encoding)
 			}
 
-			handler := OTLPHandler(tt.maxMsgSize, nil, false, true, nil, tt.verifyFunc)
+			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, nil, tt.verifyFunc)
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
