@@ -19,6 +19,7 @@ Native histograms are different from classic Prometheus histograms in a number o
 
 1. Native histogram bucket boundaries are calculated with a formula depending on the scale (resolution) of the native histogram and are not user defined. The calculation produces exponentially increasing bucket boundaries. For more detail see [Bucket boundary calculation](#bucket-boundary-calculation).
 1. Native histogram bucket boundaries may change (widen) dynamically if observations result in too many buckets. For more detail see [Limiting the number of buckets](#limiting-the-number-of-buckets).
+1. Native histogram bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only had an upper bound called `le` and counted all observations in the bucket and all lower buckets (cummulative).
 1. An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and count of observations are stored in a single new data type - and not in separate time series using the float data type. Thus there are no `<metric>_bucket`, `<metric>_sum`, `<metric>_count` series, only `<metric>`.
 1. Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. There are also a couple of new [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
 
@@ -42,7 +43,31 @@ This section describes the pros and cons of using native histograms compared to 
 
 ## Use native histograms
 
-### Instrument application
+### Instrument application with Prometheus client libraries
+
+The following example has some reasonable defaults to define a new native histogram metric:
+{{< code >}}
+
+```go
+histogram := prometheus.NewHistogram(
+	prometheus.HistogramOpts{
+		Name: "request_latency_seconds",
+		Help: "Histogram of request response times.",
+		NativeHistogramBucketFactor: 1.1,
+		NativeHistogramMaxBucketNumber: 100,
+      NativeHistogramMinResetDuration: 1*time.Hour,
+	})
+```
+
+```python
+from prometheus_client import Histogram
+h = Histogram('request_latency_seconds', 'Histogram of request response times.')
+
+```
+
+{{< /code >}}
+
+Where `NativeHistogramBucketFactor` sets the maximum expantion rate between neighbouring buckets. The value `1.1` means that buckets grow with at most 10%. For more detailed explanation see [Bucket boundary calculation](#bucket-boundary-calculation)
 
 TODO: should note that one can keep the old histograms
 TODO: add GoLang examples. And maybe Python? Or link to examples.
@@ -73,24 +98,42 @@ TODO: keep scraping both
 
 ## Bucket boundary calculation
 
+Native histogram bucket boundaries are calculated from an exponential formula with a base of 2.
+
 Native histogram samples have three different kind of buckets, for any observed value the value is counted towards one bucket.
 
 1. Zero bucket, which contains the count of observations whose absolute value is smaller or equal to the zero threshold.
 
-   [//]: # "LaTeX equation source: -threshold \leq v \leq threshold"
+   [//]: # "LaTeX equation source: -threshold \\leq v \leq threshold"
 
    ![Zero threshold definition](zero-threshold-def.svg)
 
 1. Positive buckets, which contain the count of observations with a positive value that is greater or equal to the lower bound and smaller than the upper bound of a bucket.
 
-   [//]: # "LaTeX equation source: 2^{\left( 2^{-schema}\right) index} \leq v < 2^{\left( 2^{-schema}\right) (index+1)}"
+   [//]: # "LaTeX equation source: 2^{\\left( 2^{-schema}\right)*index} \leq v < 2^{\left( 2^{-schema}\right)*(index+1)}"
 
    ![Positive bucket definition](pos-bucket-def.svg)
 
+   or simply
+
+   [//]: # "LaTeX equation source: 2^{factor*index} \\leq v < 2^{factor*(index+1)}"
+
+   ![Simple positive bucket definition](simple-pos-bucket-def.svg)
+
 1. Negative buckets, which contain the coint of observations with a negative value that is smaller or equal to the upper bound and larger than the lower bound of a bucket.
 
-   [//]: # "Latex equation source: -2^{\left( 2^{-schema}\right) (index+1)} < v \leq -2^{\left( 2^{-schema}\right) index}"
+   [//]: # "LaTeX equation source: -2^{\\left( 2^{-schema}\right)*(index+1)} < v \leq -2^{\left( 2^{-schema}\right)*index}"
 
    ![Negative bucket definition](neg-bucket-def.svg)
+
+   or simply
+
+   [//]: # "LaTeX equation source: -2^{factor*(index+1)} < v \\leq -2^{factor*index}"
+
+   ![Simple negativ bucket definition](simple-neg-bucket-def.svg)
+
+## Example
+
+Let's suppose you set the native histogram bucket factor to
 
 ## Limiting the number of buckets
