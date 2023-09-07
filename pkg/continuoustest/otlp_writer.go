@@ -26,7 +26,7 @@ type otlpHTTPWriter struct {
 }
 
 func (pw *otlpHTTPWriter) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error) {
-	metricRequest := push.TimeseriesToOTLPRequest(req.Timeseries)
+	metricRequest := push.TimeseriesToOTLPRequest(req.Timeseries, nil)
 	rawBytes, err := metricRequest.MarshalProto()
 	if err != nil {
 		return 0, err

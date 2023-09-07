@@ -336,8 +336,10 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyGauge()
-			metric.SetDescription(metadata[i].GetHelp())
-			metric.SetUnit(metadata[i].GetUnit())
+			if metadata != nil {
+				metric.SetDescription(metadata[i].GetHelp())
+				metric.SetUnit(metadata[i].GetUnit())
+			}
 			for _, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
@@ -350,8 +352,10 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyExponentialHistogram()
-			metric.SetDescription(metadata[i].GetHelp())
-			metric.SetUnit(metadata[i].GetUnit())
+			if metadata != nil {
+				metric.SetDescription(metadata[i].GetHelp())
+				metric.SetUnit(metadata[i].GetUnit())
+			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for _, histogram := range ts.Histograms {
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
