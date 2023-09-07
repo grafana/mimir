@@ -12,40 +12,56 @@ datasources:
     exemplarTraceIdDestinations:
     - name: traceID
       datasourceUid: jaeger
+
 - name: Jaeger
   type: jaeger
   access: proxy
   uid: jaeger
   orgID: 1
   url: http://jaeger:16686/
-- name: Mimir (non-streaming)
+
+- name: Mimir (load testing query path for standard engine)
   type: prometheus
   access: proxy
-  uid: mimir-non-streaming
+  uid: mimir-standard
   orgID: 1
-  url: http://query-frontend:8007/prometheus
+  url: http://query-frontend-standard:8207/prometheus
   jsonData:
     prometheusType: Mimir
     exemplarTraceIdDestinations:
       - name: traceID
         datasourceUid: jaeger
-- name: Mimir (streaming)
+
+- name: Mimir (load testing query path for streaming engine)
   type: prometheus
   access: proxy
   uid: mimir-streaming
   orgID: 1
-  url: http://query-frontend-streaming:8207/prometheus
+  url: http://query-frontend-streaming:8307/prometheus
   jsonData:
     prometheusType: Mimir
     exemplarTraceIdDestinations:
       - name: traceID
         datasourceUid: jaeger
-- name: Mimir querier (streaming)
+
+- name: Mimir querier (load testing query path for standard engine)
+  type: prometheus
+  access: proxy
+  uid: mimir-querier-standard
+  orgID: 1
+  url: http://querier-standard:8204/prometheus
+  jsonData:
+    prometheusType: Mimir
+    exemplarTraceIdDestinations:
+      - name: traceID
+        datasourceUid: jaeger
+
+- name: Mimir querier (load testing query path for streaming engine)
   type: prometheus
   access: proxy
   uid: mimir-querier-streaming
   orgID: 1
-  url: http://querier-streaming:8204/prometheus
+  url: http://querier-streaming:8304/prometheus
   jsonData:
     prometheusType: Mimir
     exemplarTraceIdDestinations:

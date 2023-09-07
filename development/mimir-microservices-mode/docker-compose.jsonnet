@@ -33,8 +33,9 @@ std.manifestYamlDoc({
   services:
     self.distributor +
     self.ingesters +
-    self.read_components(false) +
-    self.read_components(true) +
+    self.read_components() + # Read path for visualisation and monitoring
+    self.read_components(suffix='standard', port_offset=200, use_streaming_engine=false) + # Standard read path for load testing
+    self.read_components(suffix='streaming', port_offset=300, use_streaming_engine=true) + # Streaming read path for load testing
     self.store_gateways +
     self.compactor +
     self.rulers(2) +
@@ -84,42 +85,44 @@ std.manifestYamlDoc({
     }),
   },
 
-  read_components(useStreaming=false)::
-    local suffix = if useStreaming then '-streaming' else '';
-    local querySchedulerAddress = if useStreaming then 'query-scheduler-streaming:9211' else 'query-scheduler:9011';
+  read_components(suffix='', port_offset=0, use_query_scheduler=$._config.use_query_scheduler, use_streaming_engine=false)::
+    local name_suffix = if suffix == '' then '' else '-' + suffix;
+    local query_scheduler_port = 9011 + port_offset;
+    local query_scheduler_address = 'query-scheduler%s:%s' % [name_suffix, query_scheduler_port];
+    local extra_args = '-querier.prefer-streaming-chunks-from-ingesters=true -query-frontend.max-total-query-length=8760h' +
+      if suffix == '' then '' else ' -query-scheduler.ring.prefix=%s/' % suffix +
+      if !use_streaming_engine then '' else ' -querier.use-streaming-promql-engine=true';
 
     {
-      ['querier'+suffix]: mimirService({
-        name: 'querier' + suffix,
+      ['querier'+name_suffix]: mimirService({
+        name: 'querier' + name_suffix,
         target: 'querier',
-        httpPort: 8004 + if useStreaming then 200 else 0,
+        httpPort: 8004 + port_offset,
+        jaegerApp: 'querier' + name_suffix,
         extraArguments:
-          '-querier.prefer-streaming-chunks-from-ingesters=true' +
-          (if useStreaming then ' -querier.use-streaming-promql-engine=true -query-scheduler.ring.prefix=streaming/' else '') +
+          extra_args +
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
-          if $._config.use_query_scheduler then ' -querier.scheduler-address='+querySchedulerAddress+' -querier.frontend-address=' else '',
+          if use_query_scheduler then ' -querier.scheduler-address='+query_scheduler_address+' -querier.frontend-address=' else '',
       }),
 
-      ['query-frontend'+suffix]: mimirService({
-        name: 'query-frontend' + suffix,
+      ['query-frontend'+name_suffix]: mimirService({
+        name: 'query-frontend' + name_suffix,
         target: 'query-frontend',
-        httpPort: 8007 + if useStreaming then 200 else 0,
-        jaegerApp: 'query-frontend' + suffix,
+        httpPort: 8007 + port_offset,
+        jaegerApp: 'query-frontend' + name_suffix,
         extraArguments:
-          '-query-frontend.max-total-query-length=8760h' +
-          (if useStreaming then ' -query-scheduler.ring.prefix=streaming/' else '') +
+          extra_args +
           // Use of scheduler is activated by `-query-frontend.scheduler-address` option.
-          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address='+querySchedulerAddress else ''),
+          (if use_query_scheduler then ' -query-frontend.scheduler-address='+query_scheduler_address else ''),
       }),
     } + (
       if $._config.use_query_scheduler then {
-        ['query-scheduler'+suffix]: mimirService({
-          name: 'query-scheduler' + suffix,
+        ['query-scheduler'+name_suffix]: mimirService({
+          name: 'query-scheduler' + name_suffix,
           target: 'query-scheduler',
-          httpPort: 8011 + if useStreaming then 200 else 0,
-          extraArguments:
-            '-query-frontend.max-total-query-length=8760h' +
-            (if useStreaming then ' -query-scheduler.ring.prefix=streaming/' else ''),
+          httpPort: 8011 + port_offset,
+          jaegerApp: 'query-scheduler' + name_suffix,
+          extraArguments: extra_args
         }),
       } else {}
     ),
@@ -254,7 +257,7 @@ std.manifestYamlDoc({
         'DISTRIBUTOR_HOST=distributor-1:8000',
         'ALERT_MANAGER_HOST=alertmanager-1:8031',
         'RULER_HOST=ruler-1:8021',
-        'QUERY_TEE_HOST=query-tee:8200',
+        'QUERY_FRONTEND_HOST=query-frontend:8007',
         'COMPACTOR_HOST=compactor:8007',
       ],
       ports: ['8080:8080'],
@@ -386,8 +389,8 @@ std.manifestYamlDoc({
     'query-tee': {
       image: 'grafana/query-tee:2.9.0',
       command: [
-        '-backend.endpoints=http://querier:8004,http://querier-streaming:8204',
-        '-backend.preferred=querier',
+        '-backend.endpoints=http://querier-standard:8204,http://querier-streaming:8304',
+        '-backend.preferred=querier-standard',
         '-server.metrics-port=9901',
         '-server.http-service-port=8200',
         '-server.path-prefix=/prometheus',
