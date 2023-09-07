@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.10.0-rc.2
+
+### Grafana Mimir
+
+* [BUGFIX] Ingester: fix spurious `not found` errors on label values API during head compaction. #5957
 
 ## 2.10.0-rc.1
 
