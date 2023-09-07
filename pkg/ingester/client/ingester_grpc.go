@@ -6,14 +6,14 @@ import (
 	"google.golang.org/grpc"
 )
 
-type IngesterServerWithInstanceLimits interface {
+type IngesterServerRequestTracking interface {
 	IngesterServer
 
 	StartPushRequest() error
 	FinishPushRequest()
 }
 
-func RegisterIngesterServerWithLimitsTracking(s *grpc.Server, srv IngesterServerWithInstanceLimits) {
+func RegisterIngesterServerWithLimitsTracking(s *grpc.Server, srv IngesterServerRequestTracking) {
 	var desc grpc.ServiceDesc
 	desc = _Ingester_serviceDesc
 
@@ -27,7 +27,7 @@ func RegisterIngesterServerWithLimitsTracking(s *grpc.Server, srv IngesterServer
 }
 
 func _IngesterPushHandlerWithLimitsTracking(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	srvil := srv.(IngesterServerWithInstanceLimits)
+	srvil := srv.(IngesterServerRequestTracking)
 
 	err := srvil.StartPushRequest()
 	if err != nil {
