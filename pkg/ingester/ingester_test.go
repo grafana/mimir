@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
@@ -429,7 +430,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 10}}},
 			},
@@ -487,7 +488,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -546,7 +547,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -665,7 +666,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
 			},
@@ -724,7 +725,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{
 					{Value: 1, Timestamp: model.Time(now.UnixMilli())},
@@ -780,7 +781,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
 					{Timestamp: model.Time(now.UnixMilli()), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(0))},
@@ -844,7 +845,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), http.StatusBadRequest),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID).Error()),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{
 					Metric: metricLabelSet,
@@ -918,7 +919,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: newErrorWithStatus(annotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), userID).Error()),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -977,7 +978,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:              newErrorWithStatus(annotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), http.StatusBadRequest),
+			expectedErr:              httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID).Error()),
 			expectedIngested:         nil,
 			expectedMetadataIngested: nil,
 			additionalMetrics: []string{
@@ -2596,7 +2597,7 @@ func TestIngester_Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 0)
 
 	res, err := i.Push(ctx, req)
-	assert.EqualError(t, err, annotateWithUser(fmt.Errorf(errTSDBCreateIncompatibleState, "PENDING"), userID).Error())
+	assert.EqualError(t, err, wrapWithUser(fmt.Errorf(errTSDBCreateIncompatibleState, "PENDING"), userID).Error())
 	assert.Nil(t, res)
 
 	// Check if the TSDB has been created
@@ -5651,7 +5652,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = i.Push(ctx, req)
-	require.Equal(t, newErrorWithStatus(annotateWithUser(errTSDBForcedCompaction, userID), http.StatusServiceUnavailable), err)
+	require.Equal(t, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(errTSDBForcedCompaction, userID).Error()), err)
 
 	// Ingestion is successful after a flush.
 	ok, _ = db.changeState(forceCompacting, active)
@@ -6382,10 +6383,10 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 	testLimits := func() {
 		// Append to two series, expect series-exceeded error.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
-		stat, ok := status.FromError(err)
-		require.True(t, ok)
-		assert.Equal(t, http.StatusBadRequest, int(stat.Code()))
-		assert.Equal(t, annotateWithUser(formatMaxSeriesPerUserError(ing.limiter.limits, userID), userID).Error(), stat.Message())
+		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
+		require.True(t, ok, "returned error is not an httpgrpc response")
+		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
+		assert.Equal(t, wrapWithUser(formatMaxSeriesPerUserError(ing.limiter.limits, userID), userID).Error(), string(httpResp.Body))
 
 		// Append two metadata, expect no error since metadata is a best effort approach.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
@@ -6487,10 +6488,10 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	testLimits := func() {
 		// Append two series, expect series-exceeded error.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
-		stat, ok := status.FromError(err)
-		require.True(t, ok)
-		assert.Equal(t, http.StatusBadRequest, int(stat.Code()))
-		assert.Equal(t, annotateWithUser(formatMaxSeriesPerMetricError(ing.limiter.limits, mimirpb.FromLabelAdaptersToLabels(labels3), userID), userID).Error(), stat.Message())
+		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
+		require.True(t, ok, "returned error is not an httpgrpc response")
+		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
+		assert.Equal(t, wrapWithUser(formatMaxSeriesPerMetricError(ing.limiter.limits, mimirpb.FromLabelAdaptersToLabels(labels3), userID), userID).Error(), string(httpResp.Body))
 
 		// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
@@ -7465,7 +7466,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 
-	pushSamples := func(start, end int64, expErr bool, errorContains string) {
+	pushSamples := func(start, end int64, expErr bool) {
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
@@ -7484,7 +7485,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		_, err = i.Push(ctx, wReq)
 		if expErr {
 			require.Error(t, err, "should have failed on push")
-			require.ErrorContains(t, err, errorContains)
+			require.ErrorAs(t, err, &storage.ErrTooOldSample)
 		} else {
 			require.NoError(t, err)
 		}
@@ -7524,11 +7525,11 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	}
 
 	// Push first in-order sample at minute 100.
-	pushSamples(100, 100, false, "")
+	pushSamples(100, 100, false)
 	verifySamples(100, 100)
 
 	// OOO is not enabled. So it errors out. No sample ingested.
-	pushSamples(90, 99, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed")
+	pushSamples(90, 99, true)
 	verifySamples(100, 100)
 
 	i.updateUsageStats()
@@ -7540,15 +7541,15 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
 
 	// Now it works.
-	pushSamples(90, 99, false, "")
+	pushSamples(90, 99, false)
 	verifySamples(90, 100)
 
 	// Gives an error for sample 69 since it's outside time window, but rest is ingested.
-	pushSamples(69, 99, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
+	pushSamples(69, 99, true)
 	verifySamples(70, 100)
 
 	// All beyond the ooo time window. None ingested.
-	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
+	pushSamples(50, 69, true)
 	verifySamples(70, 100)
 
 	i.updateUsageStats()
@@ -7558,7 +7559,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 
 	// Increase the time window again. It works.
 	setOOOTimeWindow(model.Duration(60 * time.Minute))
-	pushSamples(50, 69, false, "")
+	pushSamples(50, 69, false)
 	verifySamples(50, 100)
 
 	i.updateUsageStats()
@@ -7568,7 +7569,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 
 	// Decrease the time window again. Same push should fail.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
-	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
+	pushSamples(50, 69, true)
 	verifySamples(50, 100)
 
 	i.updateUsageStats()
