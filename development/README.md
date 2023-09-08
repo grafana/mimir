@@ -21,6 +21,8 @@ The Minio console is available in most dev environments at [http://localhost:900
 
 By default a Prometheus and Grafana Agent (static mode) is also started. You can override what agent is being started by using profiles.
 
+> **Note**: Agent profiles are only available in `mimir-monolithic-mode` at the moment.
+
 ```bash
 ./compose-up.sh --profile <profile1> --profile <profile2>
 ```
