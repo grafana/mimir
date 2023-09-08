@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -29,10 +30,14 @@ func (t Tracer) Wrap(next http.Handler) http.Handler {
 		// extract relevant span & tag data from request
 		ctx := r.Context()
 		name := makeHTTPOperationNameFunc(t.RouteMatcher)(r)
+
+		// extract span context from request headers
+		ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
 		ctx, sp := otel.Tracer("").Start(ctx, name)
 
 		// add a tag with the client's user agent to the span
 		userAgent := r.Header.Get("User-Agent")
+
 		if userAgent != "" {
 			sp.SetAttributes(attribute.String("http.user_agent", userAgent))
 		}

@@ -13,7 +13,9 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	jaegerpropagator "go.opentelemetry.io/contrib/propagators/jaeger"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
@@ -47,6 +49,14 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 			)
 
 			otel.SetTracerProvider(tp)
+
+			otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator([]propagation.TextMapPropagator{
+				// w3c Propagator is the default propagator for opentelemetry
+				propagation.TraceContext{}, propagation.Baggage{},
+				// jaeger Propagator is for opentracing backwards compatibility
+				jaegerpropagator.Jaeger{},
+			}...))
+
 			defer tp.Shutdown(context.Background())
 
 			observedTraceID := make(chan string, 2)
@@ -55,6 +65,7 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 				observedTraceID <- id
 				tc.handlerAssert(t, r)
 			}))
+
 			srv := httptest.NewServer(handler)
 			defer srv.Close()
 
@@ -62,8 +73,8 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 			defer sp.End()
 
 			traceID, _ := tracing.ExtractOtelSampledTraceID(ctx)
-
 			req, err := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
+
 			require.NoError(t, err)
 			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(ctx, "1"), req))
 
@@ -72,7 +83,6 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 200, resp.StatusCode)
 			defer resp.Body.Close()
-
 			// Query should do one call.
 			assert.Equal(t, traceID, <-observedTraceID)
 		})
