@@ -12,20 +12,7 @@ fi
 TARGET_NAME="$1"
 TARGET_PATH="$2"
 OUTPUT_PATH="$3"
-
-# We use queriers below, rather than query-frontends, to ensure we avoid any caching of queries.
-case $TARGET_NAME in
-standard)
-  TARGET_ADDRESS="localhost:8204" # querier-standard
-  ;;
-streaming)
-  TARGET_ADDRESS="localhost:8304" # querier-streaming
-  ;;
-*)
-  echo "Unknown target '$TARGET_NAME'." >/dev/stderr
-  exit 1
-  ;;
-esac
+TARGET_ADDRESS="$("$SCRIPT_DIR/target-to-url.sh" "$TARGET_NAME")"
 
 VUS=1 # Don't run queries in parallel.
 DURATION=10s # TODO: run for longer once test setup is stable
