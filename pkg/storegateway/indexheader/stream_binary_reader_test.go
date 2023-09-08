@@ -86,11 +86,6 @@ func TestStreamBinaryReader_ShouldBuildNotSparseHeadersFromFileSimple(t *testing
 func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir := filepath.Join(t.TempDir(), "test-sparse index headers")
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
-
 	for _, nameCount := range []int{3, 20, 50} {
 		for _, valueCount := range []int{3, 10, 100, 500} {
 
@@ -99,6 +94,10 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 
 			t.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(t *testing.T) {
 				t.Parallel()
+				tmpDir := t.TempDir()
+				bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, bkt.Close()) })
 
 				blockID, err := block.CreateBlock(ctx, tmpDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 				require.NoError(t, err)

@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/azure"
-	"gopkg.in/yaml.v2"
 )
 
 func TestNewBucketClient(t *testing.T) {
@@ -41,7 +40,7 @@ func TestNewBucketClient(t *testing.T) {
 }
 
 // fakeFactory is a test utility to act as an azure.Bucket factory, but in reality verify the input config.
-func fakeFactory(t *testing.T, cfg Config) func(log.Logger, []byte, string) (*azure.Bucket, error) {
+func fakeFactory(t *testing.T, cfg Config) func(log.Logger, azure.Config, string) (*azure.Bucket, error) {
 	expCfg := azure.DefaultConfig
 	expCfg.StorageAccountName = cfg.StorageAccountName
 	expCfg.StorageAccountKey = cfg.StorageAccountKey.String()
@@ -52,11 +51,9 @@ func fakeFactory(t *testing.T, cfg Config) func(log.Logger, []byte, string) (*az
 		expCfg.Endpoint = cfg.Endpoint
 	}
 
-	return func(_ log.Logger, c []byte, _ string) (*azure.Bucket, error) {
+	return func(_ log.Logger, azCfg azure.Config, _ string) (*azure.Bucket, error) {
 		t.Helper()
 
-		var azCfg azure.Config
-		require.NoError(t, yaml.Unmarshal(c, &azCfg))
 		assert.Equal(t, expCfg, azCfg)
 
 		return &azure.Bucket{}, nil

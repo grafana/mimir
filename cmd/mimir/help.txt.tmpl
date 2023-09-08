@@ -2,7 +2,7 @@ Usage of ./cmd/mimir/mimir:
   -activity-tracker.filepath string
     	File where ongoing activities are stored. If empty, activity tracking is disabled. (default "./metrics-activity.log")
   -alertmanager-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -alertmanager-storage.azure.account-name string
     	Azure storage account name
   -alertmanager-storage.azure.container-name string
@@ -108,7 +108,7 @@ Usage of ./cmd/mimir/mimir:
   -auth.multitenancy-enabled
     	When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead. (default true)
   -blocks-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -blocks-storage.azure.account-name string
     	Azure storage account name
   -blocks-storage.azure.container-name string
@@ -228,7 +228,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.retention-period duration
     	TSDB blocks retention in the ingester before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then its relative to the creation time of the block. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 13h0m0s)
   -common.storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
     	Azure storage account name
   -common.storage.azure.container-name string
@@ -528,7 +528,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -ruler-storage.azure.account-name string
     	Azure storage account name
   -ruler-storage.azure.container-name string

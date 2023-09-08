@@ -46,7 +46,7 @@ require (
 	golang.org/x/sync v0.3.0
 	golang.org/x/time v0.3.0
 	google.golang.org/grpc v1.57.0
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -245,7 +245,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230804094006-002ae0aa1d7e
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230907080713-7c067467a0fd
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
