@@ -20,6 +20,8 @@ services:
       - .data-minio:/data:delegated
 
   prometheus:
+    profiles:
+      - prometheus
     image: prom/prometheus:v2.45.0
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
@@ -40,10 +42,24 @@ services:
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is supported by Prometheus).
   grafana-agent:
+    profiles:
+      - grafana-agent-static
     image: grafana/agent:v0.2.0
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
     volumes:
       - ./config:/etc/agent-config
+    ports:
+      - 9091:9091
+
+  grafana-agent-flow:
+    profiles:
+      - grafana-agent-flow
+    image: grafana/agent:v0.36.0
+    environment:
+      - AGENT_MODE=flow
+    command: ["run", "--server.http.listen-addr=0.0.0.0:9091", "/etc/agent/config.river"]
+    volumes:
+      - ./config/grafana-agent.river:/etc/agent/config.river
     ports:
       - 9091:9091
 
