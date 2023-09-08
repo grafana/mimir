@@ -7,7 +7,6 @@ receivers:
       http:
 
   # Data sources: metrics
-  # NOTE: currently (0.84.0) does not support transforming prometheus metrics to OTLP metrics
   prometheus: # Scrape self
     config:
       scrape_configs:
