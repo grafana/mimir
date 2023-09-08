@@ -1222,19 +1222,6 @@ func TestConfig_ValidateLimits(t *testing.T) {
 	}
 }
 
-type mockQueryableWithFilter struct {
-	useQueryableCalled bool
-}
-
-func (m *mockQueryableWithFilter) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
-	return nil, nil
-}
-
-func (m *mockQueryableWithFilter) UseQueryable(_ time.Time, _, _ int64) bool {
-	m.useQueryableCalled = true
-	return true
-}
-
 func defaultLimitsConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)

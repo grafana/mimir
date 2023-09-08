@@ -162,8 +162,8 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	queryable := NewQueryable(distributorQueryable, stores, iteratorFunc, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
-	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, mint int64, maxt int64) (storage.Querier, error) {
-		querier, err := queryable.Querier(ctx, mint, maxt)
+	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, minT int64, maxT int64) (storage.Querier, error) {
+		querier, err := queryable.Querier(ctx, minT, maxT)
 		if err != nil {
 			return nil, err
 		}
@@ -183,8 +183,8 @@ type sampleAndChunkQueryable struct {
 	storage.Queryable
 }
 
-func (q *sampleAndChunkQueryable) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
-	qr, err := q.Queryable.Querier(ctx, mint, maxt)
+func (q *sampleAndChunkQueryable) ChunkQuerier(ctx context.Context, minT, maxT int64) (storage.ChunkQuerier, error) {
+	qr, err := q.Queryable.Querier(ctx, minT, maxT)
 	if err != nil {
 		return nil, err
 	}
