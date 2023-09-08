@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"path"
 	"sort"
 	"testing"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	promtsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -28,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -1438,48 +1435,6 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 	}
 }
 
-type chunksMetaIterator struct {
-	at     int
-	chunks []chunks.Meta
-}
-
-func newPromIndexSeriesIterator(chunks []chunks.Meta) *chunksMetaIterator {
-	return &chunksMetaIterator{
-		chunks: chunks,
-		at:     -1,
-	}
-}
-
-func (i *chunksMetaIterator) At() chunks.Meta {
-	return i.chunks[i.at]
-}
-
-func (i *chunksMetaIterator) Next() bool {
-	if i.at >= len(i.chunks)-1 {
-		return false
-	}
-	i.at++
-	return true
-}
-
-func lookupSeriesChunkMetas(t testing.TB, series labels.Labels, promReader promtsdb.IndexReader) []chunks.Meta {
-	matchers := make([]*labels.Matcher, 0, series.Len())
-	series.Range(func(l labels.Label) {
-		matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, l.Name, l.Value))
-	})
-	postings, err := promReader.PostingsForMatchers(false, matchers...)
-	require.NoError(t, err)
-
-	require.Truef(t, postings.Next(), "selecting from prometheus returned no series for %s", util.MatchersStringer(matchers))
-
-	var metas []chunks.Meta
-	err = promReader.Series(postings.At(), &labels.ScratchBuilder{}, &metas)
-	require.NoError(t, err)
-
-	require.Falsef(t, postings.Next(), "selecting %s returned more series than expected", util.MatchersStringer(matchers))
-	return metas
-}
-
 func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir string, minT, maxT int64, strategy seriesIteratorStrategy, expected, actual []seriesChunkRefsSet) {
 	t.Helper()
 	if !assert.Len(t, actual, len(expected)) {
@@ -1490,11 +1445,7 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 		minT, maxT = math.MinInt64, math.MaxInt64
 	}
 
-	promBlock, err := promtsdb.OpenBlock(log.NewNopLogger(), path.Join(blockDir, blockID.String()), nil)
-	require.NoError(t, err)
-
-	promIndexReader, err := promBlock.Index()
-	require.NoError(t, err)
+	promBlock := openPromBlocks(t, blockDir)[0]
 
 	for i, actualSet := range actual {
 		expectedSet := expected[i]
@@ -1504,8 +1455,7 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 		for j, actualSeries := range actualSet.series {
 			expectedSeries := expectedSet.series[j]
 			assert.Truef(t, labels.Equal(actualSeries.lset, expectedSeries.lset), "[%d, %d]: expected labels %s got %s", i, j, expectedSeries.lset, actualSeries.lset)
-
-			promChunks := newPromIndexSeriesIterator(lookupSeriesChunkMetas(t, actualSeries.lset, promIndexReader))
+			promChunks := storage.NewListChunkSeriesIterator(filterPromChunksByTime(queryPromSeriesChunkMetas(t, actualSeries.lset, promBlock), minT, maxT)...)
 			prevChunkRef, prevChunkLen := chunks.ChunkRef(0), uint64(0)
 
 			for k, actualChunksRange := range actualSeries.chunksRanges {
@@ -1527,10 +1477,9 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 					prevChunkRef, prevChunkLen = promChunk.Ref, uint64(actualChunk.length)
 				}
 			}
-			for !strategy.isNoChunkRefs() && promChunks.Next() {
-				// There shouldn't be extra chunks returned by prometheus that are inside minT/maxT.
-				c := promChunks.At()
-				assert.False(t, c.OverlapsClosedInterval(minT, maxT))
+			if !strategy.isNoChunkRefs() {
+				// There shouldn't be extra chunks returned by prometheus
+				assert.False(t, promChunks.Next())
 			}
 		}
 	}
@@ -1700,6 +1649,17 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			minT:    500, maxT: 600, // The chunks for this timeseries are between 0 and 99 and 1000 and 1099
 			batchSize:      100,
 			expectedSeries: []seriesChunkRefsSet{},
+		},
+		"doesn't return a series if its chunks are around minT/maxT but not withins it": {
+			matcher: labels.MustNewMatcher(labels.MatchRegexp, "a", "3"),
+			minT:    0, maxT: 600, // The chunks for this timeseries are between 0 and 99 and 1000 and 1099
+			batchSize: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "3", "b", "1")},
+					{lset: labels.FromStrings("a", "3", "b", "2")},
+				}},
+			},
 		},
 	}
 
