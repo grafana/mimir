@@ -27,7 +27,9 @@ spec:
   serviceName: {{ template "mimir.fullname" . }}-ingester{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
   {{- if .Values.ingester.persistentVolume.enabled }}
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1	
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
         {{- if .Values.ingester.persistentVolume.annotations }}
         annotations:
