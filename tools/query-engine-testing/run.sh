@@ -4,7 +4,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
-TARGET_PATH="prometheus/api/v1/query_range?query=up&start=2023-09-08T01:00:00Z&end=2023-09-08T01:30:00Z&step=15"
+QUERY="sum by (group) (test_metric)"
+START="2023-09-08T04:44:00Z"
+END="2023-09-08T05:44:00Z"
+ENCODED_QUERY=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$QUERY'''))")
+TARGET_PATH="prometheus/api/v1/query_range?query=$ENCODED_QUERY&start=$START&end=$END&step=15"
 DURATION="60s"
 
 MONITORING_QUERIER_URL="http://localhost:8004"
