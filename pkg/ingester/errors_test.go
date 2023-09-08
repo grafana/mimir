@@ -67,3 +67,17 @@ func TestValidationError(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, int(stat.Code()))
 	require.Errorf(t, err, stat.Message())
 }
+
+func TestAnnotateWithUser(t *testing.T) {
+	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
+	annotatedErr := annotateWithUser(err, "1")
+	require.Error(t, annotatedErr)
+	require.NotErrorIs(t, annotatedErr, err)
+}
+
+func TestWrapWithUser(t *testing.T) {
+	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
+	annotatedErr := wrapWithUser(err, "1")
+	require.Error(t, annotatedErr)
+	require.ErrorIs(t, annotatedErr, err)
+}

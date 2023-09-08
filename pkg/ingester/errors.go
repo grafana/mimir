@@ -66,7 +66,12 @@ func (e validationError) GRPCStatus() *status.Status {
 	return e.status
 }
 
-// wrapWithUser prepends the user to the error. It does not retain a reference to err.
+// annotateWithUser prepends the user to the error. It does not retain a reference to err.
+func annotateWithUser(err error, userID string) error {
+	return fmt.Errorf("user=%s: %s", userID, err)
+}
+
+// wrapWithUser prepends the user to the error. It retains a reference to err.
 func wrapWithUser(err error, userID string) error {
 	return fmt.Errorf("user=%s: %w", userID, err)
 }
