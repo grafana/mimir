@@ -57,11 +57,11 @@ services:
     image: grafana/agent:v0.36.0
     environment:
       - AGENT_MODE=flow
-    command: ["run", "--server.http.listen-addr=0.0.0.0:9091", "/etc/agent/config.river"]
+    command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "/etc/agent/config.river"]
     volumes:
       - ./config/grafana-agent.river:/etc/agent/config.river
     ports:
-      - 9091:9091
+      - 9092:9092
 
   jaeger:
     image: jaegertracing/all-in-one
