@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [ENHANCEMENT] Go: updated to 1.21.1. #5955
+* [ENHANCEMENT] Go: updated to 1.21.1. #5955 #5960
 
 ## 2.10.0-rc.1
 
