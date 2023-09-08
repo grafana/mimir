@@ -38,6 +38,9 @@ func TestOTLPIngestion(t *testing.T) {
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		map[string]string{
+			"-distributor.enable-otlp-metadata-storage": "true",
+		},
 	)
 
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
