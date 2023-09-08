@@ -29,7 +29,7 @@ function runTests() {
   for target in standard streaming; do
     echo "Running test for $target engine..."
     local start_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    local k6_output_file="k6-result-$target-up-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
+    local k6_output_file="k6-result-$target-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
     "$SCRIPT_DIR/run-one.sh" "$target" "$TARGET_PATH" "$DURATION" "$k6_output_file"
     local end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
