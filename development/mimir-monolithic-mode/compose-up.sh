@@ -17,6 +17,25 @@ docker_compose() {
 
 SCRIPT_DIR=$(cd "$(dirname -- "$0")" && pwd)
 
+PROFILES=()
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        --profile)
+            PROFILES+=("$1")
+            shift
+            PROFILES+=("$1")
+            shift
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+
 CGO_ENABLED=0 GOOS=linux go build -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir && \
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build mimir-1 && \
-docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up "$@"
+docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml "${PROFILES[@]}" up "${ARGS[@]}"

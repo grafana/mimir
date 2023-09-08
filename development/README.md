@@ -19,6 +19,32 @@ This should give you a running Mimir system with Grafana available at [htttp://l
 
 The Minio console is available in most dev environments at [http://localhost:9001](http://localhost:9001), with the credentials defined in [mimir.yaml][minio-creds].
 
+## OTEL collector
+
+Experimental support for running OpenTelemetry collector in the Monolithic mode.
+
+### OTEL collector with Prometheus remote write
+
+Run the following command in `mimir-monolithic-mode/` to start an OpenTelemetry collector in addition to all services.
+The new service will accept OTEL metrics on port 4317 (gRPC) and 4318 (http).
+In addition the collector will scrape its own metrics.
+All received and scraped metrics are sent to Mimir via the Prometheus remote write protocol.
+
+```bash
+./compose-up.sh --profile otel-collector-remote-write
+```
+
+### OTEL collector with OTLP push
+
+Run the following command in `mimir-monolithic-mode/` to start an OpenTelemetry collector in addition to all services.
+The new service will accept OTEL metrics on port 4317 (gRPC) and 4318 (http).
+In addition the collector will scrape its own metrics.
+All received and scraped metrics are sent to Mimir via OTLP, endpoint `/otlp/v1/metrics`.
+
+```bash
+./compose-up.sh --profile otel-collector-otlp-push
+```
+
 ## Configuring Mimir
 
 The Mimir configuration is available in each environment in the `/config` directory, along with configurations for other apps that run in the environment. Some deployment related configurations are also available at the top of each environment's `docker-compose.jsonnet` file.
