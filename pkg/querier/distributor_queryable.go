@@ -40,7 +40,7 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider IQueryIngestersWithin, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
 	return distributorQueryable{
 		logger:       logger,
 		distributor:  distributor,
@@ -50,11 +50,15 @@ func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFu
 	}
 }
 
+type distributorQueryableConfigProvider interface {
+	QueryIngestersWithin(userID string) time.Duration
+}
+
 type distributorQueryable struct {
 	logger       log.Logger
 	distributor  Distributor
 	iteratorFn   chunkIteratorFunc
-	cfgProvider  IQueryIngestersWithin
+	cfgProvider  distributorQueryableConfigProvider
 	queryMetrics *stats.QueryMetrics
 }
 
@@ -64,6 +68,14 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 		return nil, err
 	}
 
+	queryIngestersWithin := d.cfgProvider.QueryIngestersWithin(userID)
+	now := time.Now()
+
+	// Don't create distributorQuerier if maxt is not within QueryIngestersWithin w.r.t. current time.
+	if queryIngestersWithin != 0 && maxt < util.TimeToMillis(now.Add(-queryIngestersWithin)) {
+		return storage.NoopQuerier(), nil
+	}
+
 	return &distributorQuerier{
 		logger:               d.logger,
 		distributor:          d.distributor,
@@ -71,7 +83,7 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 		mint:                 mint,
 		maxt:                 maxt,
 		chunkIterFn:          d.iteratorFn,
-		queryIngestersWithin: d.cfgProvider.QueryIngestersWithin(userID),
+		queryIngestersWithin: queryIngestersWithin,
 		queryMetrics:         d.queryMetrics,
 	}, nil
 }
@@ -97,7 +109,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 		minT, maxT = sp.Start, sp.End
 	}
 
-	// If queryIngestersWithin is enabled, we do manipulate the query minT to query samples up until
+	// If queryIngestersWithin is enabled, we do manipulate the query mint to query samples up until
 	// now - queryIngestersWithin, because older time ranges are covered by the storage. This
 	// optimization is particularly important for the blocks storage where the blocks retention in the
 	// ingesters could be way higher than queryIngestersWithin.

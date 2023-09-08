@@ -856,17 +856,16 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
 					st, ctx := stats.ContextWithEmptyStats(ctx)
 					q := &blocksStoreQuerier{
-						ctx:             ctx,
-						minT:            minT,
-						maxT:            maxT,
-						userID:          "user-1",
-						finder:          finder,
-						stores:          stores,
-						consistency:     NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
-						logger:          log.NewNopLogger(),
-						metrics:         newBlocksStoreQueryableMetrics(reg),
-						limits:          testData.limits,
-						queryStoreAfter: newMockQueryBlockStoreAfter(0),
+						ctx:         ctx,
+						minT:        minT,
+						maxT:        maxT,
+						userID:      "user-1",
+						finder:      finder,
+						stores:      stores,
+						consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+						logger:      log.NewNopLogger(),
+						metrics:     newBlocksStoreQueryableMetrics(reg),
+						limits:      testData.limits,
 					}
 
 					matchers := []*labels.Matcher{
@@ -1010,17 +1009,16 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
 
 			q := &blocksStoreQuerier{
-				ctx:             ctx,
-				minT:            minT,
-				maxT:            maxT,
-				userID:          "user-1",
-				finder:          finder,
-				stores:          stores,
-				consistency:     NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
-				logger:          log.NewNopLogger(),
-				metrics:         newBlocksStoreQueryableMetrics(reg),
-				limits:          &blocksStoreLimitsMock{},
-				queryStoreAfter: newMockQueryBlockStoreAfter(0),
+				ctx:         ctx,
+				minT:        minT,
+				maxT:        maxT,
+				userID:      "user-1",
+				finder:      finder,
+				stores:      stores,
+				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+				logger:      log.NewNopLogger(),
+				metrics:     newBlocksStoreQueryableMetrics(reg),
+				limits:      &blocksStoreLimitsMock{},
 			}
 
 			matchers := []*labels.Matcher{
@@ -1513,17 +1511,16 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
 
 				q := &blocksStoreQuerier{
-					ctx:             ctx,
-					minT:            minT,
-					maxT:            maxT,
-					userID:          "user-1",
-					finder:          finder,
-					stores:          stores,
-					consistency:     NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
-					logger:          log.NewNopLogger(),
-					metrics:         newBlocksStoreQueryableMetrics(reg),
-					limits:          &blocksStoreLimitsMock{},
-					queryStoreAfter: newMockQueryBlockStoreAfter(0),
+					ctx:         ctx,
+					minT:        minT,
+					maxT:        maxT,
+					userID:      "user-1",
+					finder:      finder,
+					stores:      stores,
+					consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+					logger:      log.NewNopLogger(),
+					metrics:     newBlocksStoreQueryableMetrics(reg),
+					limits:      &blocksStoreLimitsMock{},
 				}
 
 				if testFunc == "LabelNames" {
@@ -1587,17 +1584,16 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
 
 				q := &blocksStoreQuerier{
-					ctx:             ctx,
-					minT:            minT,
-					maxT:            maxT,
-					userID:          "user-1",
-					finder:          finder,
-					stores:          stores,
-					consistency:     NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
-					logger:          log.NewNopLogger(),
-					metrics:         newBlocksStoreQueryableMetrics(reg),
-					limits:          &blocksStoreLimitsMock{},
-					queryStoreAfter: newMockQueryBlockStoreAfter(0),
+					ctx:         ctx,
+					minT:        minT,
+					maxT:        maxT,
+					userID:      "user-1",
+					finder:      finder,
+					stores:      stores,
+					consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+					logger:      log.NewNopLogger(),
+					metrics:     newBlocksStoreQueryableMetrics(reg),
+					limits:      &blocksStoreLimitsMock{},
 				}
 
 				var err error
@@ -1671,7 +1667,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 				logger:          log.NewNopLogger(),
 				metrics:         newBlocksStoreQueryableMetrics(nil),
 				limits:          &blocksStoreLimitsMock{},
-				queryStoreAfter: newMockQueryBlockStoreAfter(testData.queryStoreAfter),
+				queryStoreAfter: testData.queryStoreAfter,
 			}
 
 			sp := &storage.SelectHints{
@@ -1748,7 +1744,6 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				limits: &blocksStoreLimitsMock{
 					maxLabelsQueryLength: testData.maxLabelsQueryLength,
 				},
-				queryStoreAfter: newMockQueryBlockStoreAfter(0),
 			}
 
 			_, _, err := q.LabelNames()
@@ -1871,7 +1866,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 					// Instantiate the querier that will be executed to run the query.
 					logger := log.NewNopLogger()
-					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, newMockQueryBlockStoreAfter(0), 0, logger, nil)
+					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
 					require.NoError(t, err)
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
@@ -2322,16 +2317,4 @@ func TestBlocksStoreQueryableErrMsgs(t *testing.T) {
 			assert.Equal(t, tc.msg, tc.err.Error())
 		})
 	}
-}
-
-type mockQueryBlockStoreAfter struct {
-	queryStoreAfter time.Duration
-}
-
-func newMockQueryBlockStoreAfter(duration time.Duration) mockQueryBlockStoreAfter {
-	return mockQueryBlockStoreAfter{queryStoreAfter: duration}
-}
-
-func (p mockQueryBlockStoreAfter) QueryStoreAfter() time.Duration {
-	return p.queryStoreAfter
 }

@@ -147,7 +147,7 @@ type BlocksStoreQueryable struct {
 	finder                   BlocksFinder
 	consistency              *BlocksConsistencyChecker
 	logger                   log.Logger
-	queryStoreAfter          IQueryBlockStoreAfter
+	queryStoreAfter          time.Duration
 	metrics                  *blocksStoreQueryableMetrics
 	limits                   BlocksStoreLimits
 	streamingChunksBatchSize uint64
@@ -162,7 +162,7 @@ func NewBlocksStoreQueryable(
 	finder BlocksFinder,
 	consistency *BlocksConsistencyChecker,
 	limits BlocksStoreLimits,
-	queryStoreAfter IQueryBlockStoreAfter,
+	queryStoreAfter time.Duration,
 	streamingChunksBatchSize uint64,
 	logger log.Logger,
 	reg prometheus.Registerer,
@@ -268,9 +268,8 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	if !querierCfg.PreferStreamingChunksFromStoreGateways {
 		streamingBufferSize = 0
 	}
-	queryStoreAfter := queryBlockStoreAfterFromConfig{config: querierCfg}
 
-	return NewBlocksStoreQueryable(stores, finder, consistency, limits, queryStoreAfter, streamingBufferSize, logger, reg)
+	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
@@ -339,7 +338,7 @@ type blocksStoreQuerier struct {
 
 	// If set, the querier manipulates the max time to not be greater than
 	// "now - queryStoreAfter" so that most recent blocks are not queried.
-	queryStoreAfter IQueryBlockStoreAfter
+	queryStoreAfter time.Duration
 }
 
 // Select implements storage.Querier interface.
@@ -507,14 +506,14 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 
 func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logger log.Logger, minT, maxT int64, shard *sharding.ShardSelector,
 	queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error)) error {
-	// If queryStoreAfter is enabled, we do manipulate the query maxT to query samples up until
+	// If queryStoreAfter is enabled, we do manipulate the query maxt to query samples up until
 	// now - queryStoreAfter, because the most recent time range is covered by ingesters. This
 	// optimization is particularly important for the blocks storage because can be used to skip
 	// querying most recent not-compacted-yet blocks from the storage.
-	if q.queryStoreAfter.QueryStoreAfter() > 0 {
+	if q.queryStoreAfter > 0 {
 		now := time.Now()
 		origMaxT := maxT
-		maxT = math.Min(maxT, util.TimeToMillis(now.Add(-q.queryStoreAfter.QueryStoreAfter())))
+		maxT = math.Min(maxT, util.TimeToMillis(now.Add(-q.queryStoreAfter)))
 
 		if origMaxT != maxT {
 			level.Debug(logger).Log("msg", "the max time of the query to blocks storage has been manipulated", "original", origMaxT, "updated", maxT)

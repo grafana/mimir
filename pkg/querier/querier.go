@@ -133,18 +133,6 @@ type IQueryIngestersWithin interface {
 	QueryIngestersWithin(userID string) time.Duration
 }
 
-func UseIngesterQuerier(
-	cfgProvider IQueryIngestersWithin, userID string, now time.Time, maxQueryT int64,
-) bool {
-	if queryIngestersWithinWindow := cfgProvider.QueryIngestersWithin(userID); queryIngestersWithinWindow != 0 {
-		queryIngestersMinT := util.TimeToMillis(now.Add(-queryIngestersWithinWindow))
-		if maxQueryT < queryIngestersMinT {
-			return false
-		}
-	}
-	return true
-}
-
 // IQueryBlockStoreAfter requires an implementation as querier.Config does not provide methods
 type IQueryBlockStoreAfter interface {
 	QueryStoreAfter() time.Duration
@@ -158,38 +146,28 @@ func (p queryBlockStoreAfterFromConfig) QueryStoreAfter() time.Duration {
 	return p.config.QueryStoreAfter
 }
 
-func QueryBlockStore(
-	cfgProvider IQueryBlockStoreAfter, now time.Time, minQueryT int64,
+func queryIngesters(
+	queryIngestersWithin time.Duration, now time.Time, maxQueryT int64,
 ) bool {
-	if queryStoreAfterWindow := cfgProvider.QueryStoreAfter(); queryStoreAfterWindow != 0 {
-		queryStoreMaxT := util.TimeToMillis(now.Add(-queryStoreAfterWindow))
-		if minQueryT > queryStoreMaxT {
+	if queryIngestersWithin != 0 {
+		queryIngestersMinT := util.TimeToMillis(now.Add(-queryIngestersWithin))
+		if maxQueryT < queryIngestersMinT {
 			return false
 		}
 	}
 	return true
 }
 
-type QueryRoutingConfigProvider interface {
-	IQueryIngestersWithin
-	IQueryBlockStoreAfter
-}
-
-type queryRoutingConfigProvider struct {
-	cfg    Config
-	limits *validation.Overrides
-}
-
-func NewQueryRoutingConfigProvider(cfg Config, limits *validation.Overrides) QueryRoutingConfigProvider {
-	return queryRoutingConfigProvider{cfg, limits}
-}
-
-func (qrcp queryRoutingConfigProvider) QueryIngestersWithin(userID string) time.Duration {
-	return qrcp.limits.QueryIngestersWithin(userID)
-}
-
-func (qrcp queryRoutingConfigProvider) QueryStoreAfter() time.Duration {
-	return qrcp.cfg.QueryStoreAfter
+func queryBlockStore(
+	queryStoreAfter time.Duration, now time.Time, minQueryT int64,
+) bool {
+	if queryStoreAfter != 0 {
+		queryStoreMaxT := util.TimeToMillis(now.Add(-queryStoreAfter))
+		if minQueryT > queryStoreMaxT {
+			return false
+		}
+	}
+	return true
 }
 
 // New builds a queryable and promql engine.
@@ -266,10 +244,9 @@ func NewQueryable(
 			return nil, err
 		}
 
-		queryRoutingCfgProvider := NewQueryRoutingConfigProvider(cfg, limits)
 		var queriers []storage.Querier
 
-		if UseIngesterQuerier(queryRoutingCfgProvider, userID, now, maxT) {
+		if queryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
 			dqr, err := distributor.Querier(ctx, minT, maxT)
 			if err != nil {
 				return nil, err
@@ -277,7 +254,7 @@ func NewQueryable(
 			queriers = append(queriers, dqr)
 		}
 
-		if QueryBlockStore(queryRoutingCfgProvider, now, minT) {
+		if queryBlockStore(cfg.QueryStoreAfter, now, minT) {
 			for _, s := range stores {
 				cqr, err := s.Querier(ctx, minT, maxT)
 				if err != nil {
@@ -293,7 +270,6 @@ func NewQueryable(
 			minT:               minT,
 			maxT:               maxT,
 			chunkIterFn:        chunkIterFn,
-			routingCfgProvider: queryRoutingCfgProvider,
 			maxQueryIntoFuture: cfg.MaxQueryIntoFuture,
 			limits:             limits,
 			logger:             logger,
@@ -310,7 +286,6 @@ type multiComponentQuerier struct {
 	ctx         context.Context
 	minT, maxT  int64
 
-	routingCfgProvider QueryRoutingConfigProvider
 	maxQueryIntoFuture time.Duration
 	limits             *validation.Overrides
 
