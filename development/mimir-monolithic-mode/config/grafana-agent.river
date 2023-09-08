@@ -5,8 +5,8 @@ logging {
 
 prometheus.scrape "mimir" {
   targets    = [
-    {"__address__" = "mimir-1:8001", "instance" = "mimir-1"},
-    {"__address__" = "mimir-2:8002", "instance" = "mimir-2"},
+    {"__address__" = "mimir-1:8001", "instance" = "mimir-1:8001"},
+    {"__address__" = "mimir-2:8002", "instance" = "mimir-2:8001"},
   ]
   forward_to = [prometheus.relabel.mimir.receiver]
 
@@ -19,12 +19,13 @@ prometheus.relabel "mimir" {
 
   rule {
     action       = "replace"
-    replacement  = "grafana-agent"
+    replacement  = "grafana-agent-flow"
     target_label = "scraped_by"
   }
   rule {
     action        = "replace"
     source_labels = ["instance"]
+    regex         = "([^:]+).*"
     target_label  = "container"
   }
 }
