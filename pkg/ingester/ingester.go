@@ -769,7 +769,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	// If we're using grpc handlers, we don't need to start/finish request here.
 	if !i.cfg.LimitInflightRequestsUsingGrpcTapHandle {
 		if err := i.StartPushRequest(); err != nil {
-			return nil, err
+			return nil, util_log.DoNotLogError{Err: err}
 		}
 		defer i.FinishPushRequest()
 	}

@@ -111,7 +111,7 @@ type ingesterServer struct {
 	inflight      atomic.Int64
 }
 
-func (i *ingesterServer) Push(ctx context.Context, request *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+func (i *ingesterServer) Push(_ context.Context, _ *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	<-i.finishRequest
 	return &mimirpb.WriteResponse{}, nil
 }
