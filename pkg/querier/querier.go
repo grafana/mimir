@@ -128,24 +128,6 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 	return mergeChunks
 }
 
-// IQueryIngestersWithin is implemented by limits validation.Overrides
-type IQueryIngestersWithin interface {
-	QueryIngestersWithin(userID string) time.Duration
-}
-
-// IQueryBlockStoreAfter requires an implementation as querier.Config does not provide methods
-type IQueryBlockStoreAfter interface {
-	QueryStoreAfter() time.Duration
-}
-
-type queryBlockStoreAfterFromConfig struct {
-	config Config
-}
-
-func (p queryBlockStoreAfterFromConfig) QueryStoreAfter() time.Duration {
-	return p.config.QueryStoreAfter
-}
-
 func queryIngesters(
 	queryIngestersWithin time.Duration, now time.Time, maxQueryT int64,
 ) bool {
