@@ -221,7 +221,7 @@ func TestQuerier(t *testing.T) {
 				overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 				require.NoError(t, err)
 
-				queryables := []QueryableWithFilter{UseAlwaysQueryable(db)}
+				queryables := []storage.Queryable{db}
 				queryable, _, _ := New(cfg, overrides, distributor, queryables, nil, log.NewNopLogger(), nil)
 				testRangeQuery(t, queryable, through, query)
 			})
@@ -519,7 +519,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 
 			// We don't have to actually query the storage in this test, so we initialize the querier
 			// with no store queryable.
-			var storeQueryables []QueryableWithFilter
+			var storeQueryables []storage.Queryable
 
 			queryable, _, _ := New(cfg, overrides, distributor, storeQueryables, nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
@@ -951,7 +951,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 			require.NoError(t, err)
 
 			// We don't need to query any data for this test, so an empty store is fine.
-			var storeQueryable []QueryableWithFilter
+			var storeQueryable []storage.Queryable
 
 			t.Run("series", func(t *testing.T) {
 				distributor := &mockDistributor{}
@@ -1153,7 +1153,7 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
-			queryable, _, _ := New(cfg, overrides, distributor, []QueryableWithFilter{UseAlwaysQueryable(newMockBlocksStorageQueryable(querier))}, nil, log.NewNopLogger(), nil)
+			queryable, _, _ := New(cfg, overrides, distributor, []storage.Queryable{newMockBlocksStorageQueryable(querier)}, nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
@@ -1181,44 +1181,6 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestUseAlwaysQueryable(t *testing.T) {
-	m := &mockQueryableWithFilter{}
-	qwf := UseAlwaysQueryable(m)
-
-	require.True(t, qwf.UseQueryable(time.Now(), 0, 0))
-	require.False(t, m.useQueryableCalled)
-}
-
-func TestUseBeforeTimestamp(t *testing.T) {
-	m := &mockQueryableWithFilter{}
-	now := time.Now()
-	qwf := UseBeforeTimestampQueryable(m, now.Add(-1*time.Hour))
-
-	require.False(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now)))
-	require.False(t, m.useQueryableCalled)
-
-	require.False(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now)))
-	require.False(t, m.useQueryableCalled)
-
-	require.True(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour).Add(-time.Millisecond)), util.TimeToMillis(now)))
-	require.False(t, m.useQueryableCalled) // UseBeforeTimestampQueryable wraps Queryable, and not QueryableWithFilter.
-}
-
-func TestStoreQueryable(t *testing.T) {
-	m := &mockQueryableWithFilter{}
-	now := time.Now()
-	sq := storeQueryable{m, time.Hour}
-
-	require.False(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now)))
-	require.False(t, m.useQueryableCalled)
-
-	require.False(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour).Add(time.Millisecond)), util.TimeToMillis(now)))
-	require.False(t, m.useQueryableCalled)
-
-	require.True(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now)))
-	require.True(t, m.useQueryableCalled) // storeQueryable wraps QueryableWithFilter, so it must call its UseQueryable method.
 }
 
 func TestConfig_ValidateLimits(t *testing.T) {

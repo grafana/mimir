@@ -529,7 +529,7 @@ func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer); err != nil {
 		return nil, fmt.Errorf("failed to initialize querier: %v", err)
 	} else {
-		t.StoreQueryables = append(t.StoreQueryables, querier.UseAlwaysQueryable(q))
+		t.StoreQueryables = append(t.StoreQueryables, q)
 		servs = append(servs, q)
 	}
 
