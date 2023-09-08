@@ -568,6 +568,7 @@ github.com/gosimple/slug
 github.com/grafana-tools/sdk
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 # github.com/grafana/dskit v0.0.0-20230829141140-06955c011ffd
 =======
 # github.com/grafana/dskit v0.0.0-20230828154006-24b117834dd4
@@ -575,6 +576,9 @@ github.com/grafana-tools/sdk
 =======
 # github.com/grafana/dskit v0.0.0-20230829145542-36fa07affa4d
 >>>>>>> 527070d02 (update to just use opentracing)
+=======
+# github.com/grafana/dskit v0.0.0-20230918192945-7be5a6dda301
+>>>>>>> a41d0d343 (add remote sampling test in local)
 ## explicit; go 1.19
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -627,7 +631,7 @@ github.com/grafana/e2e
 github.com/grafana/e2e/cache
 github.com/grafana/e2e/db
 github.com/grafana/e2e/images
-# github.com/grafana/gomemcache v0.0.0-20230316202710-a081dae0aba9
+# github.com/grafana/gomemcache v0.0.0-20230914135007-70d78eaabfe1
 ## explicit; go 1.18
 github.com/grafana/gomemcache/memcache
 # github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
@@ -1134,6 +1138,10 @@ go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp
 # go.opentelemetry.io/collector/semconv v0.84.0
 ## explicit; go 1.20
 go.opentelemetry.io/collector/semconv/v1.6.1
+# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.42.0
+## explicit; go 1.19
+go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
+go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc/internal
 # go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0
 ## explicit; go 1.19
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp

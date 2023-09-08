@@ -864,6 +864,7 @@ github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9 h1:LQAhgcUPnzdjU
 github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 github.com/grafana/dskit v0.0.0-20230829141140-06955c011ffd h1:RHZuBHWNS2HRJ5XhQK7cKP11EMMJPtJO2xKvQ+ws+PU=
 github.com/grafana/dskit v0.0.0-20230829141140-06955c011ffd/go.mod h1:3u7fr4hmOhuUL9Yc1QP/oa3za73kxvqJnRJH4BA5fOM=
 github.com/grafana/e2e v0.1.1-0.20230828072146-510b1706a292 h1:t+QoVWpA+KIgwMmcNI3TDin2CUWFz3f12GdKWIfB1/g=
@@ -880,6 +881,14 @@ github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b/go.mod h1:3UsooRp7yW
 >>>>>>> cad5a5183 (update dskit in mimir)
 github.com/grafana/gomemcache v0.0.0-20230316202710-a081dae0aba9 h1:WB3bGH2f1UN6jkd6uAEWfHB8OD7dKJ0v2Oo6SNfhpfQ=
 github.com/grafana/gomemcache v0.0.0-20230316202710-a081dae0aba9/go.mod h1:PGk3RjYHpxMM8HFPhKKo+vve3DdlPUELZLSDEFehPuU=
+=======
+github.com/grafana/dskit v0.0.0-20230918192945-7be5a6dda301 h1:Ymzt6UqLDiK/dpL58uqp89E5rhCO7iHNVop9xLF87gU=
+github.com/grafana/dskit v0.0.0-20230918192945-7be5a6dda301/go.mod h1:qKnOlIv6uPZVP20FwMITDwCyd9aBs7FlpcrixZ4jdv4=
+github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b h1:dzle+89/D0hOxscjZlkb6ovYA52t9hl6h/S+hI8ek1Q=
+github.com/grafana/e2e v0.1.1-0.20230221201045-21ebba73580b/go.mod h1:3UsooRp7yW5/NJQBlXcTsAHOoykEhNUYXkQ3r6ehEEY=
+github.com/grafana/gomemcache v0.0.0-20230914135007-70d78eaabfe1 h1:MLYY2R60/74hfYl5vRRmC2VDo0Yuql1QQ1ig8hnvgSI=
+github.com/grafana/gomemcache v0.0.0-20230914135007-70d78eaabfe1/go.mod h1:PGk3RjYHpxMM8HFPhKKo+vve3DdlPUELZLSDEFehPuU=
+>>>>>>> a41d0d343 (add remote sampling test in local)
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe/go.mod h1:MS2lj3INKhZjWNqd3N0m3J+Jxf3DAOnAH9VT3Sh9MUE=
 github.com/grafana/mimir-prometheus v0.0.0-20230907080713-7c067467a0fd h1:UtvS3ax2aL970lCLX3P88zkhjhYfanDfqx/KxPf0Ulo=
@@ -1300,8 +1309,15 @@ go.opentelemetry.io/collector/featuregate v1.0.0-rcv0014 h1:C9o0mbP0MyygqFnKueVQ
 go.opentelemetry.io/collector/featuregate v1.0.0-rcv0014/go.mod h1:0mE3mDLmUrOXVoNsuvj+7dV14h/9HFl/Fy9YTLoLObo=
 go.opentelemetry.io/collector/pdata v1.0.0-rcv0014 h1:iT5qH0NLmkGeIdDtnBogYDx7L58t6CaWGL378DEo2QY=
 go.opentelemetry.io/collector/pdata v1.0.0-rcv0014/go.mod h1:BRvDrx43kiSoUx3mr7SoA7h9B8+OY99mUK+CZSQFWW4=
+<<<<<<< HEAD
 go.opentelemetry.io/collector/semconv v0.84.0 h1:sI1B8ebHhfJPd87iyba66TDnluVFvYu8CEpSjKHqIDc=
 go.opentelemetry.io/collector/semconv v0.84.0/go.mod h1:j/8THcqVxFna1FpvA2zYIsUperEtOaRaqoLYIN4doWw=
+=======
+go.opentelemetry.io/collector/semconv v0.83.0 h1:zfBJaGiC7XI8dLD/8QIyKre98RHcq3DaG1g1B+U/Dow=
+go.opentelemetry.io/collector/semconv v0.83.0/go.mod h1:j/8THcqVxFna1FpvA2zYIsUperEtOaRaqoLYIN4doWw=
+go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.42.0 h1:ZOLJc06r4CB42laIXg/7udr0pbZyuAihN10A/XuiQRY=
+go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.42.0/go.mod h1:5z+/ZWJQKXa9YT34fQNx5K8Hd1EoIhvtUygUQPqEOgQ=
+>>>>>>> a41d0d343 (add remote sampling test in local)
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0 h1:pginetY7+onl4qN1vl0xW/V/v6OBZ0vVdH+esuJgvmM=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0/go.mod h1:XiYsayHc36K3EByOO6nbAXnAWbrUxdjUROCEeeROOH8=
 <<<<<<< HEAD

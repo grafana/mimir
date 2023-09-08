@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go/config"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
@@ -251,7 +252,10 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	}()
 
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())),
+		grpc.ChainStreamInterceptor(
+			otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer()),
+			otelgrpc.StreamServerInterceptor(),
+		),
 	)
 	defer grpcServer.GracefulStop()
 

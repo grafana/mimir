@@ -19,6 +19,7 @@ import (
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/sercand/kuberesolver/v4"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -56,7 +57,6 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 		return nil, err
 	}
 	toHeader(r.Headers, req.Header)
-	ctx = context.WithValue(ctx, middleware.HttpgppcForwardedKey{}, true)
 	req = req.WithContext(ctx)
 	req.RequestURI = r.Url
 	req.ContentLength = int64(len(r.Body))
@@ -139,6 +139,7 @@ func NewClient(address string) (*Client, error) {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(
 			otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+			otelgrpc.UnaryClientInterceptor(),
 			middleware.ClientUserHeaderInterceptor,
 		),
 	}

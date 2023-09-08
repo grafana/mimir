@@ -5,7 +5,6 @@
 package middleware
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 
@@ -18,8 +17,6 @@ import (
 // Dummy dependency to enforce that we have a nethttp version newer
 // than the one which implements Websockets. (No semver on nethttp)
 var _ = nethttp.MWURLTagFunc
-
-type HttpgppcForwardedKey struct{}
 
 // Tracer is a middleware which traces incoming requests.
 type Tracer struct {
@@ -48,8 +45,6 @@ func (t Tracer) Wrap(next http.Handler) http.Handler {
 
 	return nethttp.Middleware(opentracing.GlobalTracer(), next, options...)
 }
-
-const httpGRPCHandleMethod = "/httpgrpc.HTTP/Handle"
 
 // HTTPGRPCTracer is a middleware which traces incoming httpgrpc requests.
 type HTTPGRPCTracer struct {
@@ -87,25 +82,13 @@ func InitHTTPGRPCMiddleware(router *mux.Router) *mux.Router {
 //
 // opentracing-contrib/go-stdlib/nethttp.Middleware could not be used here
 // as it does not expose options to access and tag the incoming parent span.
-//
-// Parent span tagging depends on using a Jaeger tracer for now to check the parent span's
-// OperationName(), which is not available on the generic opentracing Tracer interface.
 func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 	httpOperationNameFunc := makeHTTPOperationNameFunc(hgt.RouteMatcher)
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		tracer := opentracing.GlobalTracer()
 
-		// skip spans which were not forwarded from httpgrpc.HTTP/Handle spans;
-		// standard http spans started directly from the HTTP server are presumed to
-		// already be instrumented by Tracer.Wrap
-		ctxV := ctx.Value(HttpgppcForwardedKey{})
-		if ctxV == nil || !ctxV.(bool) {
-			next.ServeHTTP(w, r)
-			return
-		} else {
-			ctx = context.WithValue(ctx, HttpgppcForwardedKey{}, false)
-		}
+		parentSpan := opentracing.SpanFromContext(ctx)
 
 		// extract relevant span & tag data from request
 		method := r.Method
@@ -113,8 +96,7 @@ func (hgt HTTPGRPCTracer) Wrap(next http.Handler) http.Handler {
 		urlPath := r.URL.Path
 		userAgent := r.Header.Get("User-Agent")
 
-		parentSpan := opentracing.SpanFromContext(ctx)
-		// tag parent httpgrpc.HTTP/Handle server span, if it exists
+		// tag parent httpgrpc.HTTP/Handle server span, if it exist
 		if parentSpan != nil {
 			parentSpan.SetTag(string(ext.HTTPUrl), urlPath)
 			parentSpan.SetTag(string(ext.HTTPMethod), method)

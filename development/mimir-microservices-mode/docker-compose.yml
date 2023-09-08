@@ -12,9 +12,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=alertmanager-1"
     "hostname": "alertmanager-1"
     "image": "mimir"
@@ -37,9 +35,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=alertmanager-2"
     "hostname": "alertmanager-2"
     "image": "mimir"
@@ -62,9 +58,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=alertmanager-3"
     "hostname": "alertmanager-3"
     "image": "mimir"
@@ -87,9 +81,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=compactor"
     "hostname": "compactor"
     "image": "mimir"
@@ -111,9 +103,7 @@
       - "minio"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=distributor"
     "hostname": "distributor-1"
     "image": "mimir"
@@ -135,9 +125,7 @@
       - "minio"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=distributor"
     "hostname": "distributor-2"
     "image": "mimir"
@@ -171,9 +159,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=ingester-1"
     "hostname": "ingester-1"
     "image": "mimir"
@@ -197,9 +183,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=ingester-2"
     "hostname": "ingester-2"
     "image": "mimir"
@@ -248,6 +232,7 @@
       - "14268:14268"
       - "14250:14250"
       - "9411:9411"
+      - "5778:5778"
     "volumes":
       - "./config:/etc/jaeger"
   "load-generator":
@@ -308,7 +293,6 @@
     "image": "otel/opentelemetry-collector-contrib:0.84.0"
     "ports":
       - "8083:8083"
-      - "5778:5778"
     "volumes":
       - "./config:/etc/otel-collector"
       - "./config:/etc/jaeger"
@@ -325,9 +309,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=querier"
     "hostname": "querier"
     "image": "mimir"
@@ -350,9 +332,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=query-frontend"
     "hostname": "query-frontend"
     "image": "mimir"
@@ -375,9 +355,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=query-scheduler"
     "hostname": "query-scheduler"
     "image": "mimir"
@@ -400,9 +378,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=ruler-1"
     "hostname": "ruler-1"
     "image": "mimir"
@@ -425,9 +401,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=ruler-2"
     "hostname": "ruler-2"
     "image": "mimir"
@@ -450,9 +424,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=store-gateway-1"
     "hostname": "store-gateway-1"
     "image": "mimir"
@@ -475,9 +447,7 @@
       - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=otel_collector:5778"
-      - "JAEGER_SAMPLER_TYPE=remote"
+      - "JAEGER_SAMPLER_MANAGER_HOST_PORT=http://jaeger:5778/sampling"
       - "JAEGER_TAGS=app=store-gateway-2"
     "hostname": "store-gateway-2"
     "image": "mimir"

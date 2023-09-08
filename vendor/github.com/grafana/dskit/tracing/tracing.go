@@ -13,7 +13,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
+	"github.com/go-logr/logr"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/uber/jaeger-client-go"
@@ -192,7 +194,8 @@ func (cfg config) initJaegerTracerProvider(serviceName string) (io.Closer, error
 	if err != nil {
 		return nil, err
 	}
-
+	// logger := kitlog.NewJSONLogger(kitlog.NewSyncWriter(os.Stdout))
+	logger := NewTabLogger()
 	// Configure sampling strategy
 	sampler := tracesdk.AlwaysSample()
 	if cfg.samplerType == "const" {
@@ -203,7 +206,8 @@ func (cfg config) initJaegerTracerProvider(serviceName string) (io.Closer, error
 		tracesdk.TraceIDRatioBased(cfg.samplerParam)
 	} else if cfg.samplerType == "remote" {
 		sampler = jaegerremote.New(serviceName, jaegerremote.WithSamplingServerURL(cfg.samplingServerURL),
-			jaegerremote.WithInitialSampler(tracesdk.TraceIDRatioBased(cfg.samplerParam)))
+			jaegerremote.WithInitialSampler(tracesdk.TraceIDRatioBased(cfg.samplerParam)), jaegerremote.WithLogger(logger))
+		logger.WithValues("samplerTypexxxxxxxxxxx", cfg.samplerType, "samplerParam", cfg.samplerParam, "samplingServerURL", cfg.samplingServerURL).Info("Using remote sampler")
 	} else if cfg.samplerType != "" {
 		return nil, errors.Errorf("unknown sampler type %q", cfg.samplerType)
 	}
@@ -274,4 +278,70 @@ func ExtractSampledTraceID(ctx context.Context) (string, bool) {
 	}
 
 	return "", false
+}
+
+type tabLogSink struct {
+	name      string
+	keyValues map[string]any
+	writer    *tabwriter.Writer
+}
+
+var _ logr.LogSink = &tabLogSink{}
+
+// Note that Init usually takes a pointer so it can modify the receiver to save
+// runtime info.
+func (_ *tabLogSink) Init(info logr.RuntimeInfo) {
+}
+
+func (_ tabLogSink) Enabled(level int) bool {
+	return true
+}
+
+func (l tabLogSink) Info(level int, msg string, kvs ...any) {
+	fmt.Fprintf(l.writer, "%s\t%s\t", l.name, msg)
+	for k, v := range l.keyValues {
+		fmt.Fprintf(l.writer, "%s: %+v  ", k, v)
+	}
+	for i := 0; i < len(kvs); i += 2 {
+		fmt.Fprintf(l.writer, "%s: %+v  ", kvs[i], kvs[i+1])
+	}
+	fmt.Fprintf(l.writer, "\n")
+	l.writer.Flush()
+}
+
+func (l tabLogSink) Error(err error, msg string, kvs ...any) {
+	kvs = append(kvs, "error", err)
+	l.Info(0, msg, kvs...)
+}
+
+func (l tabLogSink) WithName(name string) logr.LogSink {
+	return &tabLogSink{
+		name:      l.name + "." + name,
+		keyValues: l.keyValues,
+		writer:    l.writer,
+	}
+}
+
+func (l tabLogSink) WithValues(kvs ...any) logr.LogSink {
+	newMap := make(map[string]any, len(l.keyValues)+len(kvs)/2)
+	for k, v := range l.keyValues {
+		newMap[k] = v
+	}
+	for i := 0; i < len(kvs); i += 2 {
+		newMap[kvs[i].(string)] = kvs[i+1]
+	}
+	return &tabLogSink{
+		name:      l.name,
+		keyValues: newMap,
+		writer:    l.writer,
+	}
+}
+
+// NewTabLogger is the main entry-point to this implementation.  App developers
+// call this somewhere near main() and thenceforth only deal with logr.Logger.
+func NewTabLogger() logr.Logger {
+	sink := &tabLogSink{
+		writer: tabwriter.NewWriter(os.Stdout, 40, 8, 2, '\t', 0),
+	}
+	return logr.New(sink)
 }

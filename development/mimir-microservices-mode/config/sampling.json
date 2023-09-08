@@ -17,7 +17,7 @@
                 "type": "probabilistic"
             }
         ],
-        "param": 0.0001,
+        "param": 0,
         "type": "probabilistic"
     },
     "service_strategies": [

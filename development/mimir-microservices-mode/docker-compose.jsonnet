@@ -187,9 +187,7 @@ std.manifestYamlDoc({
       dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor-1'] else []),
       env: {
         JAEGER_AGENT_HOST: 'jaeger',
-        JAEGER_AGENT_PORT: 6831,
-        JAEGER_SAMPLER_MANAGER_HOST_PORT: 'otel_collector:5778',
-        JAEGER_SAMPLER_TYPE: 'remote',
+        JAEGER_SAMPLER_MANAGER_HOST_PORT: 'http://jaeger:5778/sampling',
         JAEGER_TAGS: 'app=%s' % s.jaegerApp,
       },
       extraVolumes: [],
@@ -349,7 +347,7 @@ std.manifestYamlDoc({
   jaeger:: {
     jaeger: {
       image: 'jaegertracing/all-in-one',
-      ports: ['16686:16686', '5775:5775', '6831:6831', '6832:6832','14268:14268', '14250:14250', '9411:9411'],
+      ports: ['16686:16686', '5775:5775', '6831:6831', '6832:6832','14268:14268', '14250:14250', '9411:9411', '5778:5778'],
       command: ['--sampling.strategies-file=/etc/jaeger/sampling.json'],
       volumes: ['./config:/etc/jaeger'],
     },
@@ -360,7 +358,7 @@ std.manifestYamlDoc({
       image: 'otel/opentelemetry-collector-contrib:0.84.0',
       command: ['--config=/etc/otel-collector/otel-collector.yaml'],
       volumes: ['./config:/etc/otel-collector', './config:/etc/jaeger'],
-      ports: ['8083:8083', '5778:5778'],
+      ports: ['8083:8083'],
     },
   },
 

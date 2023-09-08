@@ -26,6 +26,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -247,6 +248,7 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
 	opts, err := sp.grpcConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+		otelgrpc.UnaryClientInterceptor(),
 		middleware.ClientUserHeaderInterceptor,
 		middleware.UnaryClientInstrumentInterceptor(sp.frontendClientRequestDuration),
 	}, nil)
