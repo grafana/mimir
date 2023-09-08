@@ -129,11 +129,11 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 }
 
 func queryIngesters(
-	queryIngestersWithin time.Duration, now time.Time, maxQueryT int64,
+	queryIngestersWithin time.Duration, now time.Time, queryMaxT int64,
 ) bool {
 	if queryIngestersWithin != 0 {
 		queryIngestersMinT := util.TimeToMillis(now.Add(-queryIngestersWithin))
-		if maxQueryT < queryIngestersMinT {
+		if queryMaxT < queryIngestersMinT {
 			return false
 		}
 	}
@@ -141,11 +141,11 @@ func queryIngesters(
 }
 
 func queryBlockStore(
-	queryStoreAfter time.Duration, now time.Time, minQueryT int64,
+	queryStoreAfter time.Duration, now time.Time, queryMinT int64,
 ) bool {
 	if queryStoreAfter != 0 {
 		queryStoreMaxT := util.TimeToMillis(now.Add(-queryStoreAfter))
-		if minQueryT > queryStoreMaxT {
+		if queryMinT > queryStoreMaxT {
 			return false
 		}
 	}
