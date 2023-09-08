@@ -17,7 +17,9 @@ spec:
   serviceName: {{ template "mimir.fullname" . }}-compactor
   {{- if .Values.compactor.persistentVolume.enabled }}
   volumeClaimTemplates:
-    - metadata:
+      - apiVersion: v1	
+      kind: PersistentVolumeClaim	
+      metadata:
         name: storage
         {{- if .Values.compactor.persistentVolume.annotations }}
         annotations:
