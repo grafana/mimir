@@ -1,0 +1,3675 @@
+{
+    "default_strategy": {
+        "operation_strategies": [
+            {
+                "operation": "CAS",
+                "param": 0,
+                "type": "probabilistic"
+            },
+            {
+                "operation": "HTTP GET - metrics",
+                "param": 0,
+                "type": "probabilistic"
+            },
+            {
+                "operation": "HTTP GET - ready",
+                "param": 0,
+                "type": "probabilistic"
+            }
+        ],
+        "param": 0.0001,
+        "type": "probabilistic"
+    },
+    "service_strategies": [
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.1,
+            "service": "test-exporter",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_v1_push_influx_write",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - gcp_logs_api_v1_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - prometheus_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - api_prom_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - loki_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_label_name_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_labels",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_rules",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_rules",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_rules_namespace_groupname",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_read",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_api_v1_metadata",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - opentelemetry_proto_collector_trace_v1_traceservice_export",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_traces_traceid",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - tempo_api_search",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tags",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tag_tagname_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "cortex-gateway",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_v1_push_influx_write",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - gcp_logs_api_v1_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - prometheus_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - api_prom_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - loki_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_label_name_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_labels",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_rules",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_rules",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_rules_namespace_groupname",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_read",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_api_v1_metadata",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - opentelemetry_proto_collector_trace_v1_traceservice_export",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_traces_traceid",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - tempo_api_search",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tags",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tag_tagname_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "gme-gateway",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.1,
+            "service": "gem-distributor",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "rule",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "notify",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "gme-ruler",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP    GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "gme-query-frontend",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "gme-query-tee",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "mimir-continuous-test",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_v1_push_influx_write",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - gcp_logs_api_v1_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_query",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_query",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_query_range",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query_range",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_api_v1_query_range",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_query_range",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_query",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_api_v1_query",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_query",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_query_range",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - loki_api_v1_query_range",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_query",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - loki_api_v1_query",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_label_name_values",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_labels",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_rules",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_rules",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_rules_namespace_groupname",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_read",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_metadata",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - opentelemetry_proto_collector_trace_v1_traceservice_export",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_traces_traceid",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tags",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tag_tagname_values",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "loki-gateway",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "loki-distributor",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "loki-ingester",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "rule",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "notify",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "loki-ruler",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP    GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "loki-table-manager",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_query",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_query_range",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - loki_api_v1_query_range",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_query_range",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_api_v1_query_range",
+                    "param": 1,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "loki-query-frontend",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "loki-querier",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "cloud-logs-archiver",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_v1_push_influx_write",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - gcp_logs_api_v1_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - prometheus_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - api_prom_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - loki_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_label_name_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_labels",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_rules",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_rules",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_rules_namespace_groupname",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_read",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_api_v1_metadata",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - opentelemetry_proto_collector_trace_v1_traceservice_export",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_traces_traceid",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - tempo_api_search",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tags",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tag_tagname_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "tempo-gateway",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_traces_traceid",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - tempo_api_search_tags",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tag_tagname_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - querier_tempo_api_traces_traceid",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/frontend.Frontend/Process",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "tempo-query-frontend",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_traces_traceid",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - tempo_api_search_tags",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tag_tagname_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - querier_tempo_api_traces_traceid",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/frontend.Frontend/Process",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "tempo-querier",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "tempo-grpc-plugin",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET /metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/hgmetrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "hgapi",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP    GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET /metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/hgmetrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "hgrun",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP    GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET /metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/hgmetrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "hgcontroller",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP    GET /metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/hgmetrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.5,
+            "service": "hggateway",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP    GET /metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/hgmetrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.5,
+            "service": "grafana",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "integrations-api",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP    GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "hosted-exporters-api",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "cloudwatch-exporter",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "confluent-auth-proxy",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "promtail",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_v1_push_influx_write",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - gcp_logs_api_v1_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - prometheus_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - api_prom_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - loki_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_label_name_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_labels",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_rules",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_rules",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_rules_namespace_groupname",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_read",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_api_v1_metadata",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - opentelemetry_proto_collector_trace_v1_traceservice_export",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_traces_traceid",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - tempo_api_search",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tags",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tag_tagname_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "gcp-logs-proxy-gateway",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST render",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET render",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "metrictank",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - graphite_metrics_find",
+                    "param": 1,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.1,
+            "service": "graphite-querier",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.1,
+            "service": "graphite-write-proxy",
+            "type": "probabilistic"
+        },
+        {
+            "param": 10,
+            "service": "datadog-proxy-gateway",
+            "type": "ratelimiting"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP    GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.5,
+            "service": "auth_api",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP    GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_v1_push_influx_write",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - gcp_logs_api_v1_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - api_prom_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - prometheus_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - api_prom_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - prometheus_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - loki_api_v1_query_range",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_series",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - loki_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST    - loki_api_v1_query",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_label_name_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_labels",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_api_v1_rules",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_rules",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - api_prom_rules_namespace_groupname",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - prometheus_api_v1_read",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - api_prom_api_v1_metadata",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - opentelemetry_proto_collector_trace_v1_traceservice_export",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_traces_traceid",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET    - tempo_api_search",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tags",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - tempo_api_search_tag_tagname_values",
+                    "param": 0.15,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0.01,
+            "service": "phlare-gateway",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP Client",
+                    "param": 0.5,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "phlare-distributor",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP Client",
+                    "param": 0.5,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "phlare-ingester",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP Client",
+                    "param": 0.5,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "phlare-querier",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP Client",
+                    "param": 0.5,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "phlare-agent",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP Client",
+                    "param": 0.5,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "phlare-query-frontend",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP Client",
+                    "param": 0.5,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "phlare-query-scheduler",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP Client",
+                    "param": 0.5,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - ingester_v1_ingesterservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergeprofile",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectmergestacktraces",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_selectseries",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_profiletypes",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelnames",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_labelvalues",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - querier_v1_querierservice_series",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - push_v1_pusherservice_push",
+                    "param": 0.0001,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "phlare-store-gateway",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET -    metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - otlp_v1_metrics",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - otlp_v1_traces",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - otlp_v1_logs",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - v1_metrics",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - v1_traces",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - v1_logs",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "otlp-auth-gateway",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - root",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - otlp_v1_metrics",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - otlp_v1_traces",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - otlp_v1_logs",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - v1_metrics",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - v1_traces",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - v1_logs",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "otlp-gateway",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP POST - collect__key__w",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 0,
+            "service": "faro-collector",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP    GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "Remote Send Batch",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "exporter/otlp/traces",
+                    "param": 0.1,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "grafana-agent",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-controller",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-stats",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "incoming-http-request",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stackreconcile-events",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-event",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-create",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-collectstats",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-statusupdate",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-reconcile",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-watcher",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "kafka.consume",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "stack_state_service_apiserver",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-controller",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-stats",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "incoming-http-request",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stackreconcile-events",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-event",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-create",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-collectstats",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-statusupdate",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-reconcile",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-watcher",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "kafka.consume",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "stack_state_service_controller",
+            "type": "probabilistic"
+        },
+        {
+            "operation_strategies": [
+                {
+                    "operation": "HTTP GET - metrics",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "HTTP GET - ready",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "/grpc.health.v1.Health/Check",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "chunksmemcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "frontend.memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "memcache.store",
+                    "param": 0,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-controller",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-stats",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "incoming-http-request",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stackreconcile-events",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-event",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stack-create",
+                    "param": 1,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-collectstats",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-statusupdate",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-reconcile",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "stacktemplate-watcher",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                },
+                {
+                    "operation": "kafka.consume",
+                    "param": 0.01,
+                    "type": "probabilistic"
+                }
+            ],
+            "param": 1,
+            "service": "stack_state_service_templatewatcher",
+            "type": "probabilistic"
+        }
+    ]
+}

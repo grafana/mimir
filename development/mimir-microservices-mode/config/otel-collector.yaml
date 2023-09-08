@@ -93,3 +93,10 @@ service:
       receivers: [prometheus]
       processors: [batch]
       exporters: [otlphttp,prometheus]
+  extensions: [jaegerremotesampling]
+
+extensions:
+  jaegerremotesampling:
+    source:
+      reload_interval: 100s
+      file: /etc/jaeger/sampling.json

@@ -26,7 +26,7 @@ std.manifestYamlDoc({
     // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
     enable_grafana_agent: false,
     enable_prometheus: false,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
-    enable_otel_collector: false,
+    enable_otel_collector: true,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -188,8 +188,8 @@ std.manifestYamlDoc({
       env: {
         JAEGER_AGENT_HOST: 'jaeger',
         JAEGER_AGENT_PORT: 6831,
-        JAEGER_SAMPLER_TYPE: 'const',
-        JAEGER_SAMPLER_PARAM: 1,
+        JAEGER_SAMPLER_MANAGER_HOST_PORT: 'otel_collector:5778',
+        JAEGER_SAMPLER_TYPE: 'remote',
         JAEGER_TAGS: 'app=%s' % s.jaegerApp,
       },
       extraVolumes: [],
@@ -349,16 +349,18 @@ std.manifestYamlDoc({
   jaeger:: {
     jaeger: {
       image: 'jaegertracing/all-in-one',
-      ports: ['16686:16686', '14268'],
+      ports: ['16686:16686', '5775:5775', '6831:6831', '6832:6832','14268:14268', '14250:14250', '9411:9411'],
+      command: ['--sampling.strategies-file=/etc/jaeger/sampling.json'],
+      volumes: ['./config:/etc/jaeger'],
     },
   },
 
   otel_collector:: {
     otel_collector: {
-      image: 'otel/opentelemetry-collector-contrib:0.54.0',
+      image: 'otel/opentelemetry-collector-contrib:0.84.0',
       command: ['--config=/etc/otel-collector/otel-collector.yaml'],
-      volumes: ['./config:/etc/otel-collector'],
-      ports: ['8083:8083'],
+      volumes: ['./config:/etc/otel-collector', './config:/etc/jaeger'],
+      ports: ['8083:8083', '5778:5778'],
     },
   },
 
