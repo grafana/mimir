@@ -89,7 +89,7 @@ std.manifestYamlDoc({
     local name_suffix = if suffix == '' then '' else '-' + suffix;
     local query_scheduler_port = 9011 + port_offset;
     local query_scheduler_address = 'query-scheduler%s:%s' % [name_suffix, query_scheduler_port];
-    local extra_args = '-querier.prefer-streaming-chunks-from-ingesters=true -query-frontend.max-total-query-length=8760h' +
+    local extra_args = '-querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h' +
       if suffix == '' then '' else ' -query-scheduler.ring.prefix=%s/' % suffix +
       if !use_streaming_engine then '' else ' -querier.use-streaming-promql-engine=true';
 
