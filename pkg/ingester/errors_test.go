@@ -73,3 +73,11 @@ func TestAnnotateWithUser(t *testing.T) {
 	require.Error(t, annotatedErr)
 	require.NotErrorIs(t, annotatedErr, err)
 }
+
+func TestWrapWithUser(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
+	annotatedErr := wrapWithUser(err, "1")
+	require.Error(t, annotatedErr)
+	require.ErrorIs(t, annotatedErr, err)
+}
