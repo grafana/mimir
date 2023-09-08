@@ -33,12 +33,6 @@ function runTests() {
     "$SCRIPT_DIR/run-one.sh" "$target" "$TARGET_PATH" "$DURATION" "$k6_output_file"
     local end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    # FIXME: these queries aren't perfect - they may miss the first few seconds of the test and include time after the end of the test.
-    avg_memory=$(metamonitoringQuery "avg_over_time(go_memstats_heap_inuse_bytes{container=\"querier-$target\"}[$DURATION]) / (1024*1024)" "$end_time")
-    peak_memory=$(metamonitoringQuery "max_over_time(go_memstats_heap_inuse_bytes{container=\"querier-$target\"}[$DURATION]) / (1024*1024)" "$end_time")
-    avg_cpu=$(metamonitoringQuery "avg_over_time(rate(process_cpu_seconds_total{container=\"querier-$target\"}[15s])[$DURATION:15s]) * 100" "$end_time")
-    peak_cpu=$(metamonitoringQuery "max_over_time(rate(process_cpu_seconds_total{container=\"querier-$target\"}[15s])[$DURATION:15s]) * 100" "$end_time")
-
     throughput=$(jq -r '.metrics.http_reqs.rate' "$k6_output_file")
     avg_latency=$(jq -r '.metrics.http_req_duration.avg' "$k6_output_file")
     min_latency=$(jq -r '.metrics.http_req_duration.min' "$k6_output_file")
@@ -46,6 +40,12 @@ function runTests() {
     p90_latency=$(jq -r '.metrics.http_req_duration["p(90)"]' "$k6_output_file")
     p95_latency=$(jq -r '.metrics.http_req_duration["p(95)"]' "$k6_output_file")
     max_latency=$(jq -r '.metrics.http_req_duration.max' "$k6_output_file")
+
+    # FIXME: these queries aren't perfect - they may miss the first few seconds of the test and include time after the end of the test.
+    avg_memory=$(metamonitoringQuery "avg_over_time(go_memstats_heap_inuse_bytes{container=\"querier-$target\"}[$DURATION]) / (1024*1024)" "$end_time")
+    peak_memory=$(metamonitoringQuery "max_over_time(go_memstats_heap_inuse_bytes{container=\"querier-$target\"}[$DURATION]) / (1024*1024)" "$end_time")
+    avg_cpu=$(metamonitoringQuery "avg_over_time(rate(process_cpu_seconds_total{container=\"querier-$target\"}[15s])[$DURATION:15s]) * 100" "$end_time")
+    peak_cpu=$(metamonitoringQuery "max_over_time(rate(process_cpu_seconds_total{container=\"querier-$target\"}[15s])[$DURATION:15s]) * 100" "$end_time")
 
     summary_lines+=("Summary of results for $target engine:")
     summary_lines+=(" - Throughput: $throughput req/s")
