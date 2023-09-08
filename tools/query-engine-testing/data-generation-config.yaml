@@ -1,0 +1,19 @@
+interval: 15s
+# With a 15s interval, 1 hour's data is 240 points.
+time_series:
+  - series: test_metric{index="0", group="0"}
+    values: 0+1x240
+  - series: test_metric{index="1", group="0"}
+    values: 1+1x240
+  - series: test_metric{index="2", group="0"}
+    values: 2+1x240
+  - series: test_metric{index="3", group="0"}
+    values: 3+1x240
+  - series: test_metric{index="4", group="1"}
+    values: 0+2x240
+  - series: test_metric{index="5", group="1"}
+    values: 1+2x240
+  - series: test_metric{index="6", group="1"}
+    values: 2+2x240
+  - series: test_metric{index="7", group="1"}
+    values: 3+2x240
