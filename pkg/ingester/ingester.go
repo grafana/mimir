@@ -719,6 +719,44 @@ type pushStats struct {
 	perMetricSeriesLimitCount int
 }
 
+// StartPushRequest checks if ingester can start push request, and increments relevant counters.
+// If new push request cannot be started, errors converible to gRPC status code are returned, and metrics are updated.
+func (i *Ingester) StartPushRequest() error {
+	if err := i.checkRunning(); err != nil {
+		return err
+	}
+
+	inflight := i.inflightPushRequests.Inc()
+	decreaseInflightInDefer := true
+	defer func() {
+		if decreaseInflightInDefer {
+			i.inflightPushRequests.Dec()
+		}
+	}()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightPushRequests > 0 {
+		if inflight > il.MaxInflightPushRequests {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+			return errMaxInflightRequestsReached
+		}
+	}
+
+	if il != nil && il.MaxIngestionRate > 0 {
+		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
+			return errMaxIngestionRateReached
+		}
+	}
+
+	decreaseInflightInDefer = false
+	return nil
+}
+
+func (i *Ingester) FinishPushRequest() {
+	i.inflightPushRequests.Dec()
+}
+
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
 func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
@@ -729,28 +767,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		return nil, util_log.DoNotLogError{Err: err}
 	}
 
-	// We will report *this* request in the error too.
-	inflight := i.inflightPushRequests.Inc()
-	defer i.inflightPushRequests.Dec()
-
-	il := i.getInstanceLimits()
-	if il != nil && il.MaxInflightPushRequests > 0 {
-		if inflight > il.MaxInflightPushRequests {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-			return nil, errMaxInflightRequestsReached
-		}
-	}
-
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	if il != nil && il.MaxIngestionRate > 0 {
-		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-			return nil, errMaxIngestionRateReached
-		}
 	}
 
 	req, err := pushReq.WriteRequest()
