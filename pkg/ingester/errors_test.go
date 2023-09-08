@@ -20,11 +20,8 @@ const (
 	timestamp = model.Time(1575043969)
 )
 
-var (
-	metricLabelAdapters = []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-)
-
 func TestNewIngestErrMsgs(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	tests := map[string]struct {
 		err error
 		msg string
@@ -58,7 +55,8 @@ func TestNewIngestErrMsgs(t *testing.T) {
 	}
 }
 
-func TestValidationError(t *testing.T) {
+func TestErrorWithStatus(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
 	validationErr := newErrorWithStatus(err, http.StatusBadRequest)
 	require.Error(t, validationErr)
@@ -69,6 +67,7 @@ func TestValidationError(t *testing.T) {
 }
 
 func TestAnnotateWithUser(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
 	annotatedErr := annotateWithUser(err, "1")
 	require.Error(t, annotatedErr)
