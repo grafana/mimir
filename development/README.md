@@ -19,6 +19,8 @@ This should give you a running Mimir system with Grafana available at [htttp://l
 
 The Minio console is available in most dev environments at [http://localhost:9001](http://localhost:9001), with the credentials defined in [mimir.yaml][minio-creds].
 
+## Profiles
+
 By default a Prometheus and Grafana Agent (static mode) is also started. You can override what agent is being started by using profiles.
 
 > **Note**: Agent profiles are only available in `mimir-monolithic-mode` at the moment.
