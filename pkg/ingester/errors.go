@@ -28,27 +28,36 @@ var (
 		"the ingester is currently too busy to process queries, try again later")
 )
 
-type validationError struct {
+// errorWithStatus is used for wrapping errors returned by ingester.
+type errorWithStatus struct {
 	err    error // underlying error
 	status *status.Status
-	labels labels.Labels
 }
 
-func newValidationError(err error, code int) validationError {
-	return validationError{
+func newErrorWithStatus(err error, code int) errorWithStatus {
+	return errorWithStatus{
 		err:    err,
 		status: status.New(codes.Code(code), err.Error()),
 	}
 }
 
-func makeLimitError(err error) error {
-	return newValidationError(err, http.StatusBadRequest)
+func (e errorWithStatus) Error() string {
+	return e.status.String()
 }
 
-func makeMetricLimitError(labels labels.Labels, err error) error {
-	validationErr := newValidationError(err, http.StatusBadRequest)
-	validationErr.labels = labels
-	return validationErr
+func (e errorWithStatus) Unwrap() error {
+	return e.err
+}
+
+func (e errorWithStatus) GRPCStatus() *status.Status {
+	return e.status
+}
+
+// validationError is used for wrapping errors returned by limit validations.
+type validationError struct {
+	err    error // underlying error
+	code   int
+	labels labels.Labels
 }
 
 func (e validationError) Error() string {
@@ -58,22 +67,24 @@ func (e validationError) Error() string {
 	return fmt.Sprintf("%s This is for series %s", e.err.Error(), e.labels.String())
 }
 
-func (e validationError) Unwrap() error {
-	return e.err
+func makeLimitError(err error) error {
+	return validationError{
+		err:  err,
+		code: http.StatusBadRequest,
+	}
 }
 
-func (e validationError) GRPCStatus() *status.Status {
-	return e.status
+func makeMetricLimitError(labels labels.Labels, err error) error {
+	return validationError{
+		err:    err,
+		code:   http.StatusBadRequest,
+		labels: labels,
+	}
 }
 
 // annotateWithUser prepends the user to the error. It does not retain a reference to err.
 func annotateWithUser(err error, userID string) error {
 	return fmt.Errorf("user=%s: %s", userID, err)
-}
-
-// wrapWithUser prepends the user to the error. It retains a reference to err.
-func wrapWithUser(err error, userID string) error {
-	return fmt.Errorf("user=%s: %w", userID, err)
 }
 
 func newIngestErrSample(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {

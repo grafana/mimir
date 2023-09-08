@@ -781,7 +781,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	lockState, err := db.acquireAppendLock(req.MinTimestamp())
 	if err != nil {
-		return &mimirpb.WriteResponse{}, newValidationError(annotateWithUser(err, userID), http.StatusServiceUnavailable)
+		return &mimirpb.WriteResponse{}, newErrorWithStatus(annotateWithUser(err, userID), http.StatusServiceUnavailable)
 	}
 	defer db.releaseAppendLock(lockState)
 
@@ -872,9 +872,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		code := http.StatusBadRequest
 		var ve validationError
 		if errors.As(firstPartialErr, &ve) {
-			code = int(ve.status.Code())
+			code = ve.code
 		}
-		return &mimirpb.WriteResponse{}, newValidationError(annotateWithUser(firstPartialErr, userID), code)
+		return &mimirpb.WriteResponse{}, newErrorWithStatus(annotateWithUser(firstPartialErr, userID), code)
 	}
 
 	return &mimirpb.WriteResponse{}, nil
