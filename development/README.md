@@ -19,11 +19,10 @@ This should give you a running Mimir system with Grafana available at [htttp://l
 
 The Minio console is available in most dev environments at [http://localhost:9001](http://localhost:9001), with the credentials defined in [mimir.yaml][minio-creds].
 
-By default a Prometheus and Grafana Agent (static mode) is also started. You can override what agent is being started by using profiles. Remember to use the same profiles when shutting down otherwise not all containers are stopped and you get `Network mimir-monolithic-mode_default      Resource is still in use` error.
+By default a Prometheus and Grafana Agent (static mode) is also started. You can override what agent is being started by using profiles.
 
 ```bash
 ./compose-up.sh --profile <profile1> --profile <profile2>
-./compose-down.sh --profile <profile1> --profile <profile2>
 ```
 
 Available profiles:
@@ -32,6 +31,8 @@ Available profiles:
 1. grafana-agent-flow
 1. otel-collector-remote-write
 1. otel-collector-otlp-push
+
+> **Note**: Compose down will stop all profiles unless specified.
 
 ## OTEL collector
 

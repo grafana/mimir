@@ -33,7 +33,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-DEFAULT_PROFILES=("--profile" "prometheus" "--profile" "grafana-agent-static")
+DEFAULT_PROFILES=(
+    "--profile" "prometheus"
+    "--profile" "grafana-agent-static"
+    "--profile" "grafana-agent-flow"
+    "--profile" "otel-collector-remote-write"
+    "--profile" "otel-collector-otlp-push"
+)
 if [ ${#PROFILES[@]} -eq 0 ]; then
     PROFILES=("${DEFAULT_PROFILES[@]}")
 fi
