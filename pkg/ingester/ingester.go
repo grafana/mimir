@@ -908,6 +908,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		if errors.As(firstPartialErr, &ve) {
 			code = ve.code
 		}
+		var sampledErr util_log.SampledError
+		if errors.As(firstPartialErr, &sampledErr) {
+			return &mimirpb.WriteResponse{}, NewErrorWithStatus(wrapWithUser(firstPartialErr, userID), code)
+		}
 		return &mimirpb.WriteResponse{}, NewErrorWithStatus(annotateWithUser(firstPartialErr, userID), code)
 	}
 
@@ -1049,7 +1053,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				}
 
 				updateFirstPartial(func() error {
-					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+					return i.limiter.samplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels))
 				})
 				continue
 			}
@@ -1064,7 +1068,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				firstTimestamp := ts.Samples[0].TimestampMs
 
 				updateFirstPartial(func() error {
-					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+					return i.limiter.samplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels))
 				})
 				continue
 			}

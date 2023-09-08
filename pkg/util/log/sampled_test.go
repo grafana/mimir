@@ -28,7 +28,7 @@ func TestSampler_Sample(t *testing.T) {
 func TestSampledError_Error(t *testing.T) {
 	sampler := NewSampler(errorSampleRate)
 	err := fmt.Errorf(errorWithIDFormat, 1)
-	sampledErr := sampledError{err: err, sampler: sampler}
+	sampledErr := SampledError{err: err, sampler: sampler}
 
 	require.EqualError(t, sampledErr, fmt.Sprintf("%s (sampled 1/%d)", err.Error(), errorSampleRate))
 }
@@ -36,7 +36,7 @@ func TestSampledError_Error(t *testing.T) {
 func TestSampledError_ShouldLog(t *testing.T) {
 	sampler := NewSampler(errorSampleRate)
 	err := fmt.Errorf(errorWithIDFormat, 1)
-	sampledErr := sampledError{err: err, sampler: sampler}
+	sampledErr := SampledError{err: err, sampler: sampler}
 	ctx := context.Background()
 
 	require.True(t, sampledErr.ShouldLog(ctx, time.Duration(0)))

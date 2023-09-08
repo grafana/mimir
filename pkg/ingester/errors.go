@@ -88,6 +88,11 @@ func annotateWithUser(err error, userID string) error {
 	return fmt.Errorf("user=%s: %s", userID, err)
 }
 
+// wrapWithUser prepends the user to the error. It retains a reference to err.
+func wrapWithUser(err error, userID string) error {
+	return fmt.Errorf("user=%s: %w", userID, err)
+}
+
 func newIngestErrSample(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
 	return fmt.Errorf("%v. The affected sample has timestamp %s and is from series %s", errID.Message(errMsg), timestamp.Time().UTC().Format(time.RFC3339Nano), mimirpb.FromLabelAdaptersToLabels(labels).String())
 }
