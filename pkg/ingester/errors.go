@@ -14,8 +14,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -28,62 +26,36 @@ var (
 		"the ingester is currently too busy to process queries, try again later")
 )
 
-// errorWithStatus is used for wrapping errors returned by ingester.
-type errorWithStatus struct {
-	err    error // underlying error
-	status *status.Status
-}
-
-func newErrorWithStatus(err error, code int) errorWithStatus {
-	return errorWithStatus{
-		err:    err,
-		status: status.New(codes.Code(code), err.Error()),
-	}
-}
-
-func (e errorWithStatus) Error() string {
-	return e.status.String()
-}
-
-func (e errorWithStatus) Unwrap() error {
-	return e.err
-}
-
-func (e errorWithStatus) GRPCStatus() *status.Status {
-	return e.status
-}
-
-// validationError is used for wrapping errors returned by limit validations.
 type validationError struct {
 	err    error // underlying error
 	code   int
 	labels labels.Labels
 }
 
-func (e validationError) Error() string {
-	if e.labels.IsEmpty() {
-		return e.err.Error()
-	}
-	return fmt.Sprintf("%s This is for series %s", e.err.Error(), e.labels.String())
-}
-
 func makeLimitError(err error) error {
-	return validationError{
+	return &validationError{
 		err:  err,
 		code: http.StatusBadRequest,
 	}
 }
 
 func makeMetricLimitError(labels labels.Labels, err error) error {
-	return validationError{
+	return &validationError{
 		err:    err,
 		code:   http.StatusBadRequest,
 		labels: labels,
 	}
 }
 
-// annotateWithUser prepends the user to the error. It does not retain a reference to err.
-func annotateWithUser(err error, userID string) error {
+func (e *validationError) Error() string {
+	if e.labels.IsEmpty() {
+		return e.err.Error()
+	}
+	return fmt.Sprintf("%s This is for series %s", e.err.Error(), e.labels.String())
+}
+
+// wrapWithUser prepends the user to the error. It does not retain a reference to err.
+func wrapWithUser(err error, userID string) error {
 	return fmt.Errorf("user=%s: %s", userID, err)
 }
 
