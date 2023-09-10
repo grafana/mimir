@@ -22,11 +22,11 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 
@@ -87,7 +87,7 @@ func (c *QueryFrontendConfig) Validate() error {
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
 func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
 	opts, err := cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
-		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+		otelgrpc.UnaryClientInterceptor(),
 		middleware.ClientUserHeaderInterceptor,
 	}, nil)
 	if err != nil {

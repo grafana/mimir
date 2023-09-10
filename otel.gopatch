@@ -1,0 +1,162 @@
+@@
+var a expression
+var b expression
+var s identifier
+var t identifier
+@@
+-s, t := opentracing.StartSpanFromContext(a,b)
+-...
+- defer s.Finish()
++import "go.opentelemetry.io/otel"
++t, s := otel.Tracer("").Start(a,b)
++defer s.End()
+
+@@
+var a expression
+var s identifier
+@@
+-s := opentracing.SpanFromContext(a)
++import "go.opentelemetry.io/otel/trace"
++s := trace.SpanFromContext(a)
+
+@@
+var foo,x identifier
+@@
+-import foo "github.com/opentracing/opentracing-go/log"
++import foo "go.opentelemetry.io/otel/attribute"
+foo.x
+
+@@
+@@
+- otlog
++ attribute
+
+@@
+var span identifier
+var x expression
+@@
+- span.LogFields(...)
++import "go.opentelemetry.io/otel/trace"
++ span.AddEvent("", trace.WithAttributes(...))
+
+@@
+var sp identifier
+var a expression
+@@
+-if sp := opentracing.SpanFromContext(a); sp != nil {
+-...
+-}
++import "go.opentelemetry.io/otel/trace"
++sp := trace.SpanFromContext(a)
++...
+
+@@
+var ctx identifier
+var a expression
+var b expression
+@@
+-ctx = opentracing.ContextWithSpan(a, b)
++import "go.opentelemetry.io/otel/trace"
++ctx = trace.ContextWithSpan(a, b)
+
+@@
+var otgrpc identifier
+@@
+-import otgrpc "github.com/opentracing-contrib/go-grpc"
++import "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+
+-otgrpc.OpenTracingClientInterceptor(...)
++otelgrpc.UnaryClientInterceptor()
+
+@@
+var otgrpc identifier
+@@
+-otgrpc.OpenTracingStreamClientInterceptor(...)
++otelgrpc.StreamClientInterceptor()
+
+@@
+var otgrpc identifier
+@@
+-otgrpc.OpenTracingStreamServerInterceptor(...)
++otelgrpc.StreamServerInterceptor()
+
+@@
+@@
+-opentracing.SpanFromContext(...)
++import "go.opentelemetry.io/otel/trace"
++trace.SpanFromContext(...)
+
+@@
+var i identifier
+@@
+-var i opentracing.Span
++import "go.opentelemetry.io/otel/trace"
++var i trace.Span
+
+@@
+var i expression
+var j expression
+@@
+-i, j = opentracing.StartSpanFromContext(...)
++import "go.opentelemetry.io/otel/trace"
++j, i = trace.Tracer("github.com/grafana/mimir").Start(...)
+
+@@
+var i identifier
+var j identifier
+@@
+-i, j = opentracing.StartSpanFromContext(...)
++import "go.opentelemetry.io/otel"
++j, i = otel.Tracer("").Start(...)
+
+@@
+var i identifier
+var j identifier
+@@
+-i, j := opentracing.StartSpanFromContext(...)
++import "go.opentelemetry.io/otel"
++j, i := otel.Tracer("").Start(...)
+
+@@
+@@
+-import "github.com/opentracing/opentracing-go"
+-opentracing.Span
++import "go.opentelemetry.io/otel/trace"
++trace.Span
+
+@@
+@@
+
+-import "github.com/opentracing-contrib/go-stdlib/nethttp"
++import "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+-nethttp.Transport{}
++otelhttp.Transport{}
+
+@@
+@@
+
+-import "github.com/opentracing/opentracing-go"
++import "go.opentelemetry.io/otel"
+
+-opentracing.GlobalTracer()
++otel.Tracer("")
+
+@@
+var foo,x identifier
+@@
+-import foo "github.com/opentracing/opentracing-go"
++import foo "go.opentelemetry.io/otel"
+foo.x
+
+@@
+@@
+-opentracing.Span
++trace.Span
+
+@@
+var foo identifier
+@@
+-foo.LogKV(...)
++"go.opentelemetry.io/otel/attribute"
++foo.SetAttributes(attribute.String(...))

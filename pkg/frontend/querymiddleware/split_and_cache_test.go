@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -1548,9 +1549,8 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	if span := opentracing.SpanFromContext(r.Context()); span != nil {
-		request.LogToSpan(span)
-	}
+	span := trace.SpanFromContext(r.Context())
+	request.LogToSpan(span)
 
 	response, err := q.handler.Do(r.Context(), request)
 	if err != nil {

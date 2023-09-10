@@ -13,6 +13,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // newInstrumentMiddleware can be inserted into the middleware chain to expose timing information.
@@ -30,7 +31,7 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) 
 		return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
 			var resp Response
 			err := instrument.CollectedRequest(ctx, name, durationCol, instrument.ErrorCode, func(ctx context.Context) error {
-				sp := opentracing.SpanFromContext(ctx)
+				sp := trace.SpanFromContext(ctx)
 				if sp != nil {
 					req.LogToSpan(sp)
 				}

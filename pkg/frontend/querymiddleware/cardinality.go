@@ -14,9 +14,10 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	attribute "go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -72,17 +73,17 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	}
 
 	k := generateCardinalityEstimationCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
-	spanLog.LogFields(otlog.String("cache key", k))
+	spanLog.AddEvent("", trace.WithAttributes(attribute.String("cache key", k)))
 
 	estimatedCardinality, estimateAvailable := c.lookupCardinalityForKey(ctx, k)
 	if estimateAvailable {
 		request = request.WithEstimatedSeriesCountHint(estimatedCardinality)
-		spanLog.LogFields(
-			otlog.Bool("estimate available", true),
-			otlog.Uint64("estimated cardinality", estimatedCardinality),
-		)
+		spanLog.AddEvent("", trace.WithAttributes(
+			attribute.Bool("estimate available", true),
+			attribute.Uint64("estimated cardinality", estimatedCardinality)))
+
 	} else {
-		spanLog.LogFields(otlog.Bool("estimate available", false))
+		spanLog.AddEvent("", trace.WithAttributes(attribute.Bool("estimate available", false)))
 	}
 
 	res, err := c.next.Do(ctx, request)
@@ -92,18 +93,18 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 
 	statistics := stats.FromContext(ctx)
 	actualCardinality := statistics.GetFetchedSeriesCount()
-	spanLog.LogFields(otlog.Uint64("actual cardinality", actualCardinality))
+	spanLog.AddEvent("", trace.WithAttributes(attribute.Uint64("actual cardinality", actualCardinality)))
 
 	if !estimateAvailable || !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
 		c.storeCardinalityForKey(k, actualCardinality)
-		spanLog.LogFields(otlog.Bool("cache updated", true))
+		spanLog.AddEvent("", trace.WithAttributes(attribute.Bool("cache updated", true)))
 	}
 
 	if estimateAvailable {
 		estimationError := math.Abs(float64(actualCardinality) - float64(estimatedCardinality))
 		c.estimationError.Observe(estimationError)
 		statistics.AddEstimatedSeriesCount(estimatedCardinality)
-		spanLog.LogFields(otlog.Float64("estimation error", estimationError))
+		spanLog.AddEvent("", trace.WithAttributes(attribute.Float64("estimation error", estimationError)))
 	}
 
 	return res, nil

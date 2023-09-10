@@ -20,6 +20,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/exp/slices"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -54,9 +55,10 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 			return err
 		}
 
-		if s := opentracing.SpanFromContext(ctx); s != nil {
-			s.LogKV("series", len(result.Timeseries))
-		}
+		s := trace.SpanFromContext(ctx)
+		"go.opentelemetry.io/otel/attribute"
+		s.SetAttributes(attribute.String("series", len(result.Timeseries)))
+
 		return nil
 	})
 	return result, err
@@ -85,13 +87,13 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			return err
 		}
 
-		if s := opentracing.SpanFromContext(ctx); s != nil {
-			s.LogKV(
-				"chunk-series", len(result.Chunkseries),
-				"time-series", len(result.Timeseries),
-				"streaming-series", len(result.StreamingSeries),
-			)
-		}
+		s := trace.SpanFromContext(ctx)
+		"go.opentelemetry.io/otel/attribute"
+		s.SetAttributes(attribute.String(
+			"chunk-series", len(result.Chunkseries),
+			"time-series", len(result.Timeseries),
+			"streaming-series", len(result.StreamingSeries)))
+
 		return nil
 	})
 

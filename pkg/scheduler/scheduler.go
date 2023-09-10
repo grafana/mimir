@@ -22,11 +22,11 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
@@ -200,7 +200,7 @@ type schedulerRequest struct {
 
 	ctx       context.Context
 	ctxCancel context.CancelFunc
-	queueSpan opentracing.Span
+	queueSpan trace.Span
 
 	// This is only used for testing.
 	parentSpanContext opentracing.SpanContext
@@ -256,10 +256,12 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			case err == nil:
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			case errors.Is(err, queue.ErrTooManyRequests):
-				enqueueSpan.LogKV("error", err.Error())
+				"go.opentelemetry.io/otel/attribute"
+				enqueueSpan.SetAttributes(attribute.String("error", err.Error()))
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 			default:
-				enqueueSpan.LogKV("error", err.Error())
+				"go.opentelemetry.io/otel/attribute"
+				enqueueSpan.SetAttributes(attribute.String("error", err.Error()))
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 			}
 
@@ -343,8 +345,8 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 
 	now := time.Now()
 
-	req.parentSpanContext = opentracing.SpanFromContext(requestContext).Context()
-	req.queueSpan, req.ctx = opentracing.StartSpanFromContext(ctx, "queued")
+	req.parentSpanContext = trace.SpanFromContext(requestContext).Context()
+	req.ctx, req.queueSpan = trace.Tracer("github.com/grafana/mimir").Start(ctx, "queued")
 	req.enqueueTime = now
 	req.ctxCancel = cancel
 
@@ -491,7 +493,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 
 func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *schedulerRequest, requestErr error) {
 	opts, err := s.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
-		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+		otelgrpc.UnaryClientInterceptor(),
 		middleware.ClientUserHeaderInterceptor},
 		nil)
 	if err != nil {

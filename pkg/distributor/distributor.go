@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -714,7 +715,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = copyString(cluster), copyString(replica)
 
-		span := opentracing.SpanFromContext(ctx)
+		span := trace.SpanFromContext(ctx)
 		if span != nil {
 			span.SetTag("cluster", cluster)
 			span.SetTag("replica", replica)
@@ -1124,7 +1125,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		return &mimirpb.WriteResponse{}, nil
 	}
 
-	span := opentracing.SpanFromContext(ctx)
+	span := trace.SpanFromContext(ctx)
 	if span != nil {
 		span.SetTag("organization", userID)
 	}
@@ -1145,9 +1146,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	// Get clientIP(s) from Context and add it to localCtx
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
 	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
-	if sp := opentracing.SpanFromContext(ctx); sp != nil {
-		localCtx = opentracing.ContextWithSpan(localCtx, sp)
-	}
+	sp := trace.SpanFromContext(ctx)
+	localCtx = trace.ContextWithSpan(localCtx, sp)
 
 	// All tokens, stored in order: series, metadata.
 	keys := make([]uint32, len(seriesKeys)+len(metadataKeys))

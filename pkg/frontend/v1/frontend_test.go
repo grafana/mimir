@@ -24,13 +24,15 @@ import (
 	"github.com/grafana/dskit/user"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/config"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
@@ -76,7 +78,7 @@ func TestFrontendPropagateTrace(t *testing.T) {
 	observedTraceID := make(chan string, 2)
 
 	handler := middleware.Tracer{}.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sp := opentracing.SpanFromContext(r.Context())
+		sp := trace.SpanFromContext(r.Context())
 		defer sp.Finish()
 
 		traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
@@ -87,8 +89,9 @@ func TestFrontendPropagateTrace(t *testing.T) {
 	}))
 
 	test := func(addr string, _ *Frontend) {
-		sp, ctx := opentracing.StartSpanFromContext(context.Background(), "client")
-		defer sp.Finish()
+		ctx, sp := otel.Tracer("").Start(context.Background(), "client")
+		defer sp.End()
+
 		traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
 
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/%s", addr, query), nil)
@@ -97,11 +100,11 @@ func TestFrontendPropagateTrace(t *testing.T) {
 		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(ctx, "1"), req)
 		require.NoError(t, err)
 
-		req, tr := nethttp.TraceRequest(opentracing.GlobalTracer(), req)
+		req, tr := nethttp.TraceRequest(otel.Tracer(""), req)
 		defer tr.Finish()
 
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: &otelhttp.Transport{},
 		}
 		resp, err := client.Do(req)
 		require.NoError(t, err)
@@ -254,7 +257,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	}()
 
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())),
+		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
 	)
 	defer grpcServer.GracefulStop()
 

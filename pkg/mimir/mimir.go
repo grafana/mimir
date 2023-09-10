@@ -32,7 +32,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -747,7 +746,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	}
 
 	mimir.setupObjstoreTracing()
-	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
+	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(otel.Tracer("")))
 
 	mimir.Cfg.Server.Router = mux.NewRouter()
 	middleware.InitHTTPGRPCMiddleware(mimir.Cfg.Server.Router)

@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/binary"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
 	objstoretracing "github.com/thanos-io/objstore/tracing/opentracing"
 	"github.com/uber/jaeger-client-go"
@@ -121,11 +120,11 @@ func (t *OpenTelemetryTracerBridge) Start(ctx context.Context, spanName string, 
 }
 
 type OpenTelemetrySpanBridge struct {
-	span     opentracing.Span
+	span     trace.Span
 	provider trace.TracerProvider
 }
 
-func NewOpenTelemetrySpanBridge(span opentracing.Span, provider trace.TracerProvider) *OpenTelemetrySpanBridge {
+func NewOpenTelemetrySpanBridge(span trace.Span, provider trace.TracerProvider) *OpenTelemetrySpanBridge {
 	return &OpenTelemetrySpanBridge{
 		span:     span,
 		provider: provider,

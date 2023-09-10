@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -161,14 +160,14 @@ func (m *TracingSpanMock) Context() opentracing.SpanContext {
 	return args.Get(0).(opentracing.SpanContext)
 }
 
-func (m *TracingSpanMock) SetOperationName(operationName string) opentracing.Span {
+func (m *TracingSpanMock) SetOperationName(operationName string) trace.Span {
 	args := m.Called(operationName)
-	return args.Get(0).(opentracing.Span)
+	return args.Get(0).(trace.Span)
 }
 
-func (m *TracingSpanMock) SetTag(key string, value interface{}) opentracing.Span {
+func (m *TracingSpanMock) SetTag(key string, value interface{}) trace.Span {
 	args := m.Called(key, value)
-	return args.Get(0).(opentracing.Span)
+	return args.Get(0).(trace.Span)
 }
 
 func (m *TracingSpanMock) LogFields(fields ...log.Field) {
@@ -179,9 +178,9 @@ func (m *TracingSpanMock) LogKV(alternatingKeyValues ...interface{}) {
 	m.Called(alternatingKeyValues)
 }
 
-func (m *TracingSpanMock) SetBaggageItem(restrictedKey, value string) opentracing.Span {
+func (m *TracingSpanMock) SetBaggageItem(restrictedKey, value string) trace.Span {
 	args := m.Called(restrictedKey, value)
-	return args.Get(0).(opentracing.Span)
+	return args.Get(0).(trace.Span)
 }
 
 func (m *TracingSpanMock) BaggageItem(restrictedKey string) string {

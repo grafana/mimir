@@ -5,7 +5,8 @@ package instrumentation
 import (
 	"net/http"
 
-	"github.com/opentracing/opentracing-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // TracerTransport uses opentracing.GlobalTracer() to inject request trace span (if any) to the request headers,
@@ -15,7 +16,7 @@ type TracerTransport struct {
 }
 
 func (t TracerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	tracer, span := opentracing.GlobalTracer(), opentracing.SpanFromContext(req.Context())
+	tracer, span := otel.Tracer(""), trace.SpanFromContext(req.Context())
 	if tracer != nil && span != nil {
 		carrier := opentracing.HTTPHeadersCarrier(req.Header)
 		err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, carrier)

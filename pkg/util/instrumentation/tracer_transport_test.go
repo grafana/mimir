@@ -11,11 +11,12 @@ import (
 
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/config"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestTracerTransportPropagatesTrace(t *testing.T) {
@@ -46,7 +47,7 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 
 			observedTraceID := make(chan string, 2)
 			handler := middleware.Tracer{}.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				sp := opentracing.SpanFromContext(r.Context())
+				sp := trace.SpanFromContext(r.Context())
 				defer sp.Finish()
 
 				observedTraceID <- spanTraceID(sp)
@@ -55,8 +56,9 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 			srv := httptest.NewServer(handler)
 			defer srv.Close()
 
-			sp, ctx := opentracing.StartSpanFromContext(context.Background(), "client")
-			defer sp.Finish()
+			ctx, sp := otel.Tracer("").Start(context.Background(), "client")
+			defer sp.End()
+
 			traceID := spanTraceID(sp)
 
 			req, err := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
@@ -75,7 +77,7 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 	}
 }
 
-func spanTraceID(sp opentracing.Span) string {
+func spanTraceID(sp trace.Span) string {
 	traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
 	return traceID
 }
