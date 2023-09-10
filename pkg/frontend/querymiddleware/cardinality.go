@@ -80,7 +80,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 		request = request.WithEstimatedSeriesCountHint(estimatedCardinality)
 		spanLog.AddEvent("", trace.WithAttributes(
 			attribute.Bool("estimate available", true),
-			attribute.Uint64("estimated cardinality", estimatedCardinality)))
+			attribute.Int64("estimated cardinality", int64(estimatedCardinality))))
 
 	} else {
 		spanLog.AddEvent("", trace.WithAttributes(attribute.Bool("estimate available", false)))
@@ -93,7 +93,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 
 	statistics := stats.FromContext(ctx)
 	actualCardinality := statistics.GetFetchedSeriesCount()
-	spanLog.AddEvent("", trace.WithAttributes(attribute.Uint64("actual cardinality", actualCardinality)))
+	spanLog.AddEvent("", trace.WithAttributes(attribute.Int64("actual cardinality", int64(actualCardinality))))
 
 	if !estimateAvailable || !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
 		c.storeCardinalityForKey(k, actualCardinality)

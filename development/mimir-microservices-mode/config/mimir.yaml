@@ -34,7 +34,6 @@ memberlist:
 
 blocks_storage:
   backend: s3
-
   tsdb:
     dir: /tmp/mimir-tsdb-ingester
     ship_interval: 1m

@@ -280,7 +280,7 @@ type multiQuerier struct {
 // The bool passed is ignored because the series is always sorted.
 func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanLog, ctx := spanlogger.NewWithLogger(mq.ctx, mq.logger, "querier.Select")
-	defer spanLog.Span.Finish()
+	defer spanLog.Span.End()
 
 	if sp == nil {
 		sp = &storage.SelectHints{

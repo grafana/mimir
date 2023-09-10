@@ -187,7 +187,7 @@ func (i *ActivityTrackerWrapper) TenantTSDBHandler(w http.ResponseWriter, r *htt
 
 func requestActivity(ctx context.Context, name string, req interface{}) string {
 	userID, _ := tenant.TenantID(ctx)
-	traceID, _ := tracing.ExtractSampledTraceID(ctx)
+	traceID, _ := tracing.ExtractOtelSampledTraceID(ctx)
 
 	switch r := req.(type) {
 	case *client.QueryRequest:

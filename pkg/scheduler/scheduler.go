@@ -26,6 +26,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
@@ -203,7 +205,7 @@ type schedulerRequest struct {
 	queueSpan trace.Span
 
 	// This is only used for testing.
-	parentSpanContext opentracing.SpanContext
+	parentSpanContext context.Context
 }
 
 // FrontendLoop handles connection from frontend.
@@ -243,29 +245,34 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 		case schedulerpb.ENQUEUE:
 			// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
 			// information, since that is a long-running request.
-			tracer := opentracing.GlobalTracer()
-			parentSpanContext, err := httpgrpcutil.GetParentSpanForRequest(tracer, msg.HttpRequest)
+			parentSpanContext := httpgrpcutil.GetParentSpanForRequest(msg.HttpRequest)
 			if err != nil {
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 				break
 			}
-			enqueueSpan, reqCtx := opentracing.StartSpanFromContextWithTracer(frontendCtx, tracer, "enqueue", opentracing.ChildOf(parentSpanContext))
 
+			// start span from the frontendCtx, then link it to parentSpanContext which comes from the HTTP request headers
+			_, enqueueSpan := otel.Tracer("").Start(
+				parentSpanContext, "enqueue",
+				[]trace.SpanStartOption{
+					trace.WithLinks(trace.LinkFromContext(frontendCtx)),
+				}...)
+
+			reqCtx := trace.ContextWithSpan(frontendCtx, enqueueSpan)
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
 			switch {
 			case err == nil:
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			case errors.Is(err, queue.ErrTooManyRequests):
-				"go.opentelemetry.io/otel/attribute"
 				enqueueSpan.SetAttributes(attribute.String("error", err.Error()))
+				enqueueSpan.RecordError(err)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 			default:
-				"go.opentelemetry.io/otel/attribute"
 				enqueueSpan.SetAttributes(attribute.String("error", err.Error()))
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 			}
 
-			enqueueSpan.Finish()
+			enqueueSpan.End()
 		case schedulerpb.CANCEL:
 			s.cancelRequestAndRemoveFromPending(frontendAddress, msg.QueryID)
 			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
@@ -344,9 +351,9 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	}
 
 	now := time.Now()
+	req.parentSpanContext = requestContext
+	req.ctx, req.queueSpan = otel.Tracer("").Start(ctx, "queued")
 
-	req.parentSpanContext = trace.SpanFromContext(requestContext).Context()
-	req.ctx, req.queueSpan = trace.Tracer("github.com/grafana/mimir").Start(ctx, "queued")
 	req.enqueueTime = now
 	req.ctxCancel = cancel
 
@@ -411,7 +418,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		r := req.(*schedulerRequest)
 
 		s.queueDuration.Observe(time.Since(r.enqueueTime).Seconds())
-		r.queueSpan.Finish()
+		r.queueSpan.End()
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.

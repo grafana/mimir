@@ -19,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
@@ -372,8 +373,8 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
 func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *frontendRequest) error {
 	spanLogger, _ := spanlogger.NewWithLogger(req.ctx, w.log, "frontendSchedulerWorker.enqueueRequest")
-	spanLogger.Span.SetTag("scheduler_address", w.conn.Target())
-	defer spanLogger.Span.Finish()
+	spanLogger.Span.SetAttributes(attribute.String("scheduler_address", w.conn.Target()))
+	defer spanLogger.Span.End()
 
 	// Keep track of how long it takes to enqueue a request end-to-end.
 	durationTimer := prometheus.NewTimer(w.enqueueDuration)

@@ -40,7 +40,7 @@ func (q *queryTracker) Insert(ctx context.Context, query string) (int, error) {
 
 func generateActivityDescription(ctx context.Context, query string) string {
 	buf := bytes.Buffer{}
-	traceID, _ := tracing.ExtractSampledTraceID(ctx)
+	traceID, _ := tracing.ExtractOtelSampledTraceID(ctx)
 
 	sep := ""
 	if traceID != "" {

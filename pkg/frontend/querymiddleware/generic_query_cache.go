@@ -60,7 +60,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 	ctx := req.Context()
 
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, c.logger, "genericQueryCache.RoundTrip")
-	defer spanLog.Finish()
+	defer spanLog.End()
 
 	// Skip the cache if disabled for this request.
 	if decodeCacheDisabledOption(req) {

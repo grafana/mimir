@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
@@ -196,13 +195,9 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
 	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
-	tracer, span := otel.Tracer(""), trace.SpanFromContext(ctx)
-	if tracer != nil && span != nil {
-		carrier := (*httpgrpcutil.HttpgrpcHeadersCarrier)(req)
-		if err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, carrier); err != nil {
-			return nil, err
-		}
-	}
+	propagators := otel.GetTextMapPropagator()
+	carrier := (*httpgrpcutil.HttpgrpcHeadersCarrier)(req)
+	propagators.Inject(ctx, carrier)
 
 	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancel(ctx)

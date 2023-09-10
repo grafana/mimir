@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/instrument"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/otel/trace"
@@ -32,7 +31,7 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) 
 			var resp Response
 			err := instrument.CollectedRequest(ctx, name, durationCol, instrument.ErrorCode, func(ctx context.Context) error {
 				sp := trace.SpanFromContext(ctx)
-				if sp != nil {
+				if sp.SpanContext().IsValid() {
 					req.LogToSpan(sp)
 				}
 

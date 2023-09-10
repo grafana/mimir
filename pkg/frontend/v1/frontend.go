@@ -20,6 +20,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
@@ -163,13 +164,10 @@ func (f *Frontend) cleanupInactiveUserMetrics(user string) {
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
 func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
-	tracer, span := opentracing.GlobalTracer(), trace.SpanFromContext(ctx)
-	if tracer != nil && span != nil {
+	if trace.SpanFromContext(ctx).SpanContext().IsValid() {
+		propagators := otel.GetTextMapPropagator()
 		carrier := (*httpgrpcutil.HttpgrpcHeadersCarrier)(req)
-		err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, carrier)
-		if err != nil {
-			return nil, err
-		}
+		propagators.Inject(ctx, carrier)
 	}
 
 	request := request{
@@ -221,7 +219,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		req := reqWrapper.(*request)
 
 		f.queueDuration.Observe(time.Since(req.enqueueTime).Seconds())
-		req.queueSpan.Finish()
+		req.queueSpan.End()
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.
@@ -326,7 +324,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 
 	now := time.Now()
 	req.enqueueTime = now
-	_, req.queueSpan = trace.Tracer("github.com/grafana/mimir").Start(ctx, "queued")
+	_, req.queueSpan = otel.Tracer("").Start(ctx, "queued")
 
 	// aggregate the max queriers limit in the case of a multi tenant query
 	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, f.limits.MaxQueriersPerUser)

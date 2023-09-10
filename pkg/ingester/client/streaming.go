@@ -84,7 +84,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 			close(s.seriesBatchChan)
 			close(s.errorChan)
-			log.Span.Finish()
+			log.Span.End()
 		}()
 
 		onError := func(err error) {

@@ -127,7 +127,7 @@ type mergeExemplarQuerier struct {
 // instance of an upstream querier.
 func (m *mergeExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	spanlog, ctx := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeExemplarQuerier.Select")
-	defer spanlog.Finish()
+	defer spanlog.End()
 
 	// If we have any matchers that are looking for __tenant_id__, use that to filter down the
 	// original list of tenants given to this querier and then remove those matchers from the list

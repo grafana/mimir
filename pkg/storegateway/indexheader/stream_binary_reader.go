@@ -187,7 +187,7 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(ctx context.Context, logg
 
 	defer func() {
 		level.Info(spanLog).Log("msg", "loaded sparse index-header from disk", "blockID", id, "path", sparseHeadersPath, "elapsed", time.Since(start))
-		spanLog.Span.Finish()
+		spanLog.Span.End()
 	}()
 
 	level.Info(spanLog).Log("msg", "reading from sparse index-header file", "path", sparseHeadersPath)
@@ -229,7 +229,7 @@ func (r *StreamBinaryReader) loadFromIndexHeader(ctx context.Context, logger log
 
 	defer func() {
 		level.Info(spanLog).Log("msg", "constructed sparse index-header", "elapsed", time.Since(start))
-		spanLog.Span.Finish()
+		spanLog.Span.End()
 	}()
 
 	level.Info(spanLog).Log("msg", "constructing sparse index-header")
@@ -254,7 +254,7 @@ func writeSparseHeadersToFile(ctx context.Context, logger log.Logger, id ulid.UL
 
 	defer func() {
 		level.Info(spanLog).Log("msg", "wrote sparse index-header to disk", "blockID", id, "path", sparseHeadersPath, "elapsed", time.Since(start))
-		spanLog.Span.Finish()
+		spanLog.Span.End()
 	}()
 
 	level.Info(spanLog).Log("msg", "writing sparse index-header to disk", "path", sparseHeadersPath)

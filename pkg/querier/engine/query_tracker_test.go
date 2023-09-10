@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
 	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestQueryTrackerUnlimitedMaxConcurrency(t *testing.T) {
@@ -32,9 +32,13 @@ func TestActivityDescription(t *testing.T) {
 	assert.Equal(t, "query=query string", generateActivityDescription(ctx, "query string"))
 	assert.Equal(t, "tenant=user query=query string", generateActivityDescription(user.InjectOrgID(ctx, "user"), "query string"))
 
-	tr, closers := jaeger.NewTracer("test", jaeger.NewConstSampler(true), jaeger.NewNullReporter())
-	defer func() { _ = closers.Close() }()
-	opentracing.SetGlobalTracer(tr)
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+	defer tp.Shutdown(context.Background())
+	otel.SetTracerProvider(tp)
 
 	ctxWithTrace, _ := otel.Tracer("").Start(ctx, "operation")
 	{

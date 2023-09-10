@@ -96,7 +96,7 @@ type distributorQuerier struct {
 // The bool passed is ignored because the series is always sorted.
 func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
-	defer spanLog.Finish()
+	defer spanLog.End()
 
 	minT, maxT := q.mint, q.maxt
 	if sp != nil {
@@ -193,7 +193,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelValues")
-	defer spanLog.Span.Finish()
+	defer spanLog.Span.End()
 
 	if !ShouldQueryIngesters(q.queryIngestersWithin, time.Now(), q.maxt) {
 		level.Debug(spanLog).Log("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
@@ -210,7 +210,7 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 
 func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
-	defer spanLog.Span.Finish()
+	defer spanLog.Span.End()
 
 	if !ShouldQueryIngesters(q.queryIngestersWithin, time.Now(), q.maxt) {
 		level.Debug(spanLog).Log("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
@@ -257,7 +257,7 @@ type distributorExemplarQuerier struct {
 // Select querys for exemplars, prometheus' storage.ExemplarQuerier's Select function takes the time range as two int64 values.
 func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorExemplarQuerier.Select")
-	defer spanlog.Finish()
+	defer spanlog.End()
 
 	level.Debug(spanlog).Log(
 		"start", util.TimeFromMillis(start).UTC().String(),

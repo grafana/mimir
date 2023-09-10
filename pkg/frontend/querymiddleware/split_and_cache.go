@@ -16,12 +16,13 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
@@ -327,7 +328,7 @@ func (s *splitAndCacheMiddleware) splitRequestByInterval(req Request) (splitRequ
 // Extents created from queries that outlived current configured TTL are filtered out.
 func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now time.Time, tenantIDs []string, keys []string) [][]Extent {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, s.logger, "fetchCacheExtents")
-	defer spanLog.Finish()
+	defer spanLog.End()
 
 	// Fast path.
 	if len(keys) == 0 {
@@ -342,8 +343,10 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 		hashedKeys = append(hashedKeys, hashed)
 		hashedKeysIdx[hashed] = idx
 
-		"go.opentelemetry.io/otel/attribute"
-		spanLog.SetAttributes(attribute.String("key", key, "hashedKey", hashed))
+		spanLog.SetAttributes(
+			attribute.String("key", key),
+			attribute.String("hashedKey", hashed),
+		)
 	}
 
 	// Lookup the cache.
@@ -402,11 +405,10 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 		returnedBytes += len(foundData)
 	}
 
-	"go.opentelemetry.io/otel/attribute"
-	spanLog.SetAttributes(attribute.String("requested keys", len(hashedKeys)))
-	spanLog.LogKV("found keys", len(founds))
-	spanLog.LogKV("returned bytes", returnedBytes)
-	spanLog.LogKV("extents filtered out due to ttl", extentsOutOfTTL)
+	spanLog.SetAttributes(attribute.Int("requested keys", len(hashedKeys)))
+	spanLog.SetAttributes(attribute.Int("found keys", len(founds)))
+	spanLog.SetAttributes(attribute.Int("returned bytes", returnedBytes))
+	spanLog.SetAttributes(attribute.Int("extents filtered out due to ttl", extentsOutOfTTL))
 
 	return extents
 }
@@ -576,9 +578,9 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
 			if recordSpan {
 				var span trace.Span
-				childCtx, span = trace.Tracer("github.com/grafana/mimir").Start(childCtx, "doRequests")
+				childCtx, span = otel.Tracer("").Start(childCtx, "doRequests")
 				req.LogToSpan(span)
-				defer span.Finish()
+				defer span.End()
 			}
 
 			resp, err := downstream.Do(childCtx, req)

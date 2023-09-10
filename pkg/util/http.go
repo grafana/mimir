@@ -144,8 +144,8 @@ const (
 // You can pass in and receive back the decompression buffer for pooling, or pass in nil and ignore the return.
 func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, dst []byte, req proto.Message, compression CompressionType) ([]byte, error) {
 	sp := trace.SpanFromContext(ctx)
-	if sp != nil {
-		sp.AddEvent("", trace.WithAttributes(attribute.Event("util.ParseProtoRequest[start reading]")))
+	if sp.SpanContext().IsValid() {
+		sp.AddEvent("util.ParseProtoRequest[start reading]")
 	}
 	body, err := decompressRequest(dst, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
@@ -153,7 +153,7 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 	}
 
 	if sp != nil {
-		sp.AddEvent("", trace.WithAttributes(attribute.Event("util.ParseProtoRequest[unmarshal]"), attribute.Int("size", len(body))))
+		sp.AddEvent("util.ParseProtoRequest[unmarshal]", trace.WithAttributes(attribute.Int("size", len(body))))
 	}
 
 	// We re-implement proto.Unmarshal here as it calls XXX_Unmarshal first,
@@ -166,14 +166,15 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 	}
 	if err != nil {
 		if sp != nil {
-			sp.AddEvent("", trace.WithAttributes(attribute.Event("util.ParseProtoRequest[unmarshal done]"), attribute.Error(err)))
+			sp.RecordError(err)
+			sp.AddEvent("util.ParseProtoRequest[unmarshal done]", trace.WithAttributes(attribute.String("msg", err.Error())))
 		}
 
 		return nil, err
 	}
 
 	if sp != nil {
-		sp.AddEvent("", trace.WithAttributes(attribute.Event("util.ParseProtoRequest[unmarshal done]")))
+		sp.AddEvent("util.ParseProtoRequest[unmarshal done]")
 	}
 
 	return body, nil
@@ -247,7 +248,7 @@ func decompressFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, compres
 		return buffer.Bytes(), nil
 	case RawSnappy:
 		if sp != nil {
-			sp.AddEvent("", trace.WithAttributes(attribute.Event("util.ParseProtoRequest[decompress]"),
+			sp.AddEvent("util.ParseProtoRequest[decompress]", trace.WithAttributes(
 				attribute.Int("size", len(buffer.Bytes()))))
 
 		}

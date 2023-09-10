@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -608,7 +607,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
 	spanCtx, span := otel.Tracer("").Start(ctx, "store_query_gate_ismyturn")
 	err = s.queryGate.Start(spanCtx)
-	span.Finish()
+	span.End()
 	if err != nil {
 		return errors.Wrapf(err, "failed to wait for turn")
 	}

@@ -25,10 +25,9 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"google.golang.org/grpc"
 
@@ -73,13 +72,13 @@ func TestFrontend_RequestHostHeaderWhenDownstreamURLIsConfigured(t *testing.T) {
 		require.NoError(t, err)
 
 		ctx := context.Background()
-		req = req.WithContext(ctx)
 		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(ctx, "1"), req)
 		require.NoError(t, err)
-
 		client := http.Client{
-			Transport: &otelhttp.Transport{},
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		}
+		req = req.WithContext(ctx)
+
 		resp, err := client.Do(req)
 		require.NoError(t, err)
 		require.Equal(t, 200, resp.StatusCode)
@@ -138,7 +137,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 		assert.NoError(t, err)
 
 		client := http.Client{
-			Transport: &otelhttp.Transport{},
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		}
 
 		resp, err := client.Do(req)
@@ -196,7 +195,9 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 		assert.NoError(t, err)
 
 		client := http.Client{
-			Transport: &otelhttp.Transport{},
+			// Here we need to use NewTransport to create a new transport with default http.DefaultTransport.
+			// Otherwise panic will happen.
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		}
 
 		resp, err := client.Do(req)

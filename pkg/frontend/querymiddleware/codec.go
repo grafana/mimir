@@ -112,7 +112,7 @@ type Request interface {
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
 	WithEstimatedSeriesCountHint(uint64) Request
 	proto.Message
-	// LogToSpan writes information about this request to an OpenTracing span
+	// LogToSpan writes information about this request to an otel span
 	LogToSpan(trace.Span)
 }
 

@@ -4,19 +4,20 @@ package instrumentation
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/tracing"
 	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
-	"github.com/uber/jaeger-client-go/config"
+	jaegerpropagator "go.opentelemetry.io/contrib/propagators/jaeger"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestTracerTransportPropagatesTrace(t *testing.T) {
@@ -41,27 +42,39 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			closer, err := config.Configuration{}.InitGlobalTracer("test")
-			require.NoError(t, err)
-			defer closer.Close()
+			exp := tracetest.NewInMemoryExporter()
+			tp := sdktrace.NewTracerProvider(
+				sdktrace.WithBatcher(exp),
+				sdktrace.WithSampler(sdktrace.AlwaysSample()),
+			)
+
+			otel.SetTracerProvider(tp)
+
+			otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator([]propagation.TextMapPropagator{
+				// w3c Propagator is the default propagator for opentelemetry
+				propagation.TraceContext{}, propagation.Baggage{},
+				// jaeger Propagator is for opentracing backwards compatibility
+				jaegerpropagator.Jaeger{},
+			}...))
+
+			defer tp.Shutdown(context.Background())
 
 			observedTraceID := make(chan string, 2)
 			handler := middleware.Tracer{}.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				sp := trace.SpanFromContext(r.Context())
-				defer sp.Finish()
-
-				observedTraceID <- spanTraceID(sp)
+				id, _ := tracing.ExtractOtelSampledTraceID(r.Context())
+				observedTraceID <- id
 				tc.handlerAssert(t, r)
 			}))
+
 			srv := httptest.NewServer(handler)
 			defer srv.Close()
 
 			ctx, sp := otel.Tracer("").Start(context.Background(), "client")
 			defer sp.End()
 
-			traceID := spanTraceID(sp)
-
+			traceID, _ := tracing.ExtractOtelSampledTraceID(ctx)
 			req, err := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
+
 			require.NoError(t, err)
 			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(ctx, "1"), req))
 
@@ -70,16 +83,10 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 200, resp.StatusCode)
 			defer resp.Body.Close()
-
 			// Query should do one call.
 			assert.Equal(t, traceID, <-observedTraceID)
 		})
 	}
-}
-
-func spanTraceID(sp trace.Span) string {
-	traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
-	return traceID
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

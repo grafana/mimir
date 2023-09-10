@@ -21,7 +21,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -87,12 +86,17 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 	)
 	ctx, span := otel.Tracer("").Start(ctx, "ExpandedPostings()")
 	defer func() {
-		"go.opentelemetry.io/otel/attribute"
-		span.SetAttributes(attribute.String("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded, "block_id", r.block.meta.ULID.String()))
+		span.SetAttributes(
+			attribute.Int("returned postings", len(returnRefs)),
+			attribute.Bool("cached", cached),
+			attribute.Bool("promise_loaded", loaded),
+			attribute.String("block_id", r.block.meta.ULID.String()),
+		)
 		if returnErr != nil {
-			span.AddEvent("", trace.WithAttributes(attribute.Error(returnErr)))
+			span.RecordError(returnErr)
+			span.AddEvent("error", trace.WithAttributes(attribute.String("msg", returnErr.Error())))
 		}
-		span.Finish()
+		span.End()
 	}()
 	promise, loaded = r.expandedPostingsPromise(ctx, ms, stats)
 	returnRefs, pendingMatchers, cached, returnErr = promise(ctx)
