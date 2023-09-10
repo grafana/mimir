@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -43,6 +44,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
@@ -4755,6 +4757,64 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 
 	assert.Equal(t, series, totalSeries)
 	assert.Equal(t, series, totalMetadata) // each series has unique metric name, and each metric name gets metadata
+}
+
+func TestHandleIngesterPushError(t *testing.T) {
+	testErrorMsg := "this is a test error message"
+	outputErrorMsgPrefix := "failed pushing to ingester"
+	userID := "test"
+	errWithUserID := fmt.Errorf("user=%s: %s", userID, testErrorMsg)
+	test := map[string]struct {
+		ingesterPushError   error
+		expectedOutputError error
+	}{
+		"no error gives no error": {
+			ingesterPushError:   nil,
+			expectedOutputError: nil,
+		},
+		"an http 400 error gives an http 400 error": {
+			ingesterPushError:   httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg),
+			expectedOutputError: httpgrpc.Errorf(http.StatusBadRequest, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
+		},
+		"an http 500 error gives an http 500 error": {
+			ingesterPushError:   httpgrpc.Errorf(http.StatusInternalServerError, testErrorMsg),
+			expectedOutputError: httpgrpc.Errorf(http.StatusInternalServerError, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
+		},
+		"grpc errMaxInflightRequestsReached error gives a wrapped errMaxInflightRequestsReached error": {
+			ingesterPushError:   errMaxInflightRequestsReached,
+			expectedOutputError: errors.Wrap(errMaxInflightRequestsReached, outputErrorMsgPrefix),
+		},
+		"grpc errMaxIngestionRateReached error gives a wrapped errMaxIngestionRateReached error": {
+			ingesterPushError:   errMaxIngestionRateReached,
+			expectedOutputError: errors.Wrap(errMaxIngestionRateReached, outputErrorMsgPrefix),
+		},
+		"a random ingester error without status gives the same wrapped errpr": {
+			ingesterPushError:   fmt.Errorf(testErrorMsg),
+			expectedOutputError: errors.Wrap(fmt.Errorf(testErrorMsg), outputErrorMsgPrefix),
+		},
+		"an ingester error with status 5xx gives an http 5xx error": {
+			ingesterPushError:   ingester.NewErrorWithStatus(errWithUserID, http.StatusServiceUnavailable),
+			expectedOutputError: httpgrpc.Errorf(http.StatusServiceUnavailable, "%s: %s", outputErrorMsgPrefix, errWithUserID),
+		},
+		"an ingester error with status 4xx gives an http 4xx error": {
+			ingesterPushError:   ingester.NewErrorWithStatus(errWithUserID, http.StatusBadRequest),
+			expectedOutputError: httpgrpc.Errorf(http.StatusBadRequest, "%s: %s", outputErrorMsgPrefix, errWithUserID),
+		},
+		"an ingester error with status different from 2xx, 4xx or 5xx gives an http 500 error": {
+			ingesterPushError:   ingester.NewErrorWithStatus(errWithUserID, int(codes.Unknown)),
+			expectedOutputError: httpgrpc.Errorf(http.StatusInternalServerError, "%s: %s", outputErrorMsgPrefix, errWithUserID),
+		},
+	}
+
+	for testName, testData := range test {
+		fmt.Println(testName)
+		err := handleIngesterPushError(testData.ingesterPushError)
+		if testData.expectedOutputError == nil {
+			require.NoError(t, err)
+		} else {
+			require.ErrorContains(t, err, testData.expectedOutputError.Error())
+		}
+	}
 }
 
 func getIngesterIndexForToken(key uint32, ings []mockIngester) int {

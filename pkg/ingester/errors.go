@@ -28,28 +28,28 @@ var (
 		"the ingester is currently too busy to process queries, try again later")
 )
 
-// errorWithStatus is used for wrapping errors returned by ingester.
-type errorWithStatus struct {
+// ErrorWithStatus is used for wrapping errors returned by ingester.
+type ErrorWithStatus struct {
 	err    error // underlying error
 	status *status.Status
 }
 
-func newErrorWithStatus(err error, code int) errorWithStatus {
-	return errorWithStatus{
+func NewErrorWithStatus(err error, code int) ErrorWithStatus {
+	return ErrorWithStatus{
 		err:    err,
 		status: status.New(codes.Code(code), err.Error()),
 	}
 }
 
-func (e errorWithStatus) Error() string {
+func (e ErrorWithStatus) Error() string {
 	return e.status.String()
 }
 
-func (e errorWithStatus) Unwrap() error {
+func (e ErrorWithStatus) Unwrap() error {
 	return e.err
 }
 
-func (e errorWithStatus) GRPCStatus() *status.Status {
+func (e ErrorWithStatus) GRPCStatus() *status.Status {
 	return e.status
 }
 

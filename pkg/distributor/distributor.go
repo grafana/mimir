@@ -38,6 +38,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -1238,9 +1239,25 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	}
 
 	_, err = c.Push(ctx, &req)
-	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+	return handleIngesterPushError(err)
+}
+
+func handleIngesterPushError(err error) error {
+	if err == nil {
+		return nil
+	}
+	resp, ok := httpgrpc.HTTPResponseFromError(err)
+	if ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
+	}
+	stat, ok := status.FromError(err)
+	if ok {
+		statusCode := int(stat.Code())
+		if statusCode/100 != 2 && statusCode/100 != 4 && statusCode/100 != 5 {
+			statusCode = http.StatusInternalServerError
+		}
+		return httpgrpc.Errorf(statusCode, "failed pushing to ingester: %s", stat.Message())
 	}
 	return errors.Wrap(err, "failed pushing to ingester")
 }
