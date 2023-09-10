@@ -20,6 +20,9 @@ spec:
       app.kubernetes.io/instance: test-enterprise-values
       app.kubernetes.io/component: query-frontend
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
