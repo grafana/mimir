@@ -32,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/metricmetadataoptions"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -712,8 +711,8 @@ func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to 
 	return args.Get(0).([]labels.Labels), args.Error(1)
 }
 
-func (m *mockDistributor) MetricsMetadata(ctx context.Context, opt metricmetadataoptions.MetricMetadataOptions) ([]scrape.MetricMetadata, error) {
-	args := m.Called(ctx, opt)
+func (m *mockDistributor) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
+	args := m.Called(ctx, req)
 	return args.Get(0).([]scrape.MetricMetadata), args.Error(1)
 }
 

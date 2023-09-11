@@ -54,7 +54,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/metricmetadataoptions"
 	"github.com/grafana/mimir/pkg/util/push"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -2107,7 +2106,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
 
 			// Assert on metric metadata
-			metadata, err := ds[0].MetricsMetadata(ctx, metricmetadataoptions.DefaultMetricMetadataOptions())
+			metadata, err := ds[0].MetricsMetadata(ctx, client.DefaultMetricsMetadataRequest())
 			require.NoError(t, err)
 
 			expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))

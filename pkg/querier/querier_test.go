@@ -31,7 +31,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/metricmetadataoptions"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1044,7 +1043,7 @@ func (m *errDistributor) MetricsForLabelMatchers(context.Context, model.Time, mo
 	return nil, errDistributorError
 }
 
-func (m *errDistributor) MetricsMetadata(context.Context, metricmetadataoptions.MetricMetadataOptions) ([]scrape.MetricMetadata, error) {
+func (m *errDistributor) MetricsMetadata(context.Context, *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
 	return nil, errDistributorError
 }
 
@@ -1078,7 +1077,7 @@ func (d *emptyDistributor) MetricsForLabelMatchers(context.Context, model.Time, 
 	return nil, nil
 }
 
-func (d *emptyDistributor) MetricsMetadata(context.Context, metricmetadataoptions.MetricMetadataOptions) ([]scrape.MetricMetadata, error) {
+func (d *emptyDistributor) MetricsMetadata(context.Context, *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
 	return nil, nil
 }
 
