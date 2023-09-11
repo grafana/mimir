@@ -1254,7 +1254,7 @@ func TestIngester_Push(t *testing.T) {
 			assert.Equal(t, testData.expectedExemplarsIngested, exemplarRes.Timeseries)
 
 			// Read back metadata to see what has been really ingested.
-			mres, err := i.MetricsMetadata(ctx, &client.MetricsMetadataRequest{})
+			mres, err := i.MetricsMetadata(ctx, &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""})
 
 			require.NoError(t, err)
 			require.NotNil(t, mres)

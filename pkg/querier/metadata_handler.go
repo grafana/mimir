@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/metricmetadataoptions"
 )
 
 const (
@@ -24,7 +25,7 @@ const (
 // exists to allow us to wrap the default implementation (the distributor embedded
 // in a querier) with logic for handling tenant federated metadata requests.
 type MetadataSupplier interface {
-	MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error)
+	MetricsMetadata(ctx context.Context, opt metricmetadataoptions.MetricMetadataOptions) ([]scrape.MetricMetadata, error)
 }
 
 type metricMetadata struct {
@@ -65,15 +66,19 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 				return
 			}
 		}
+		metric := r.FormValue("metric")
+		opt := metricmetadataoptions.MetricMetadataOptions{
+			Limit:          int32(limit),
+			LimitPerMetric: int32(limitPerMetric),
+			Metric:         metric,
+		}
 
-		resp, err := m.MetricsMetadata(r.Context())
+		resp, err := m.MetricsMetadata(r.Context(), opt)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: err.Error()})
 			return
 		}
-
-		metric := r.FormValue("metric")
 
 		// Put all the elements of the pseudo-set into a map of slices for marshalling.
 		metrics := map[string][]metricMetadata{}

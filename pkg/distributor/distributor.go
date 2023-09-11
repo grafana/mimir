@@ -46,6 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/metricmetadataoptions"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -1707,13 +1708,13 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 }
 
 // MetricsMetadata returns all metric metadata of a user.
-func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
+func (d *Distributor) MetricsMetadata(ctx context.Context, opt metricmetadataoptions.MetricMetadataOptions) ([]scrape.MetricMetadata, error) {
 	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req := &ingester_client.MetricsMetadataRequest{}
+	req := &ingester_client.MetricsMetadataRequest{Limit: opt.Limit, LimitPerMetric: opt.LimitPerMetric, Metric: opt.Metric}
 	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
 		return client.MetricsMetadata(ctx, req)
 	})

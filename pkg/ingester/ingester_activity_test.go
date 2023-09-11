@@ -24,8 +24,8 @@ func TestRequestActivity(t *testing.T) {
 			expected: "test: user=\"\" trace=\"\" request=<nil>",
 		},
 		{
-			request:  &client.MetricsMetadataRequest{},
-			expected: "test: user=\"\" trace=\"\" request=&MetricsMetadataRequest{}",
+			request:  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""},
+			expected: "test: user=\"\" trace=\"\" request=&MetricsMetadataRequest{Limit:-1,LimitPerMetric:-1,Metric:,}",
 		},
 		{
 			request:  &client.LabelValuesCardinalityRequest{LabelNames: []string{"hello", "world"}, Matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "test", Value: "value"}}, CountMethod: client.IN_MEMORY},
