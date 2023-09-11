@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 
+set -euo pipefail
+
 # Check for mandatory env vars
 if [[ -z "${VERSION}" ]]; then
     echo "VERSION is not set"
@@ -30,14 +32,15 @@ for name in metaconvert mimir-continuous-test mimir mimirtool query-tee ; do
             # Generate package dependencies using envsubst
             mkdir "${pkg_dependencies_path}"
 
-            if [ -d "packaging/nfpm/${name}" ]; then
-              for dependencie in $(ls packaging/nfpm/${name}); do
+            if [ -d packaging/nfpm/"${name}" ]; then
+              for dependency_path in packaging/nfpm/"${name}"/*; do
+                  dependency=$(basename "${dependency_path}")
                   docker run --rm \
                     -v "$(pwd)/packaging/nfpm/${name}:/work" \
                     -v "$(pwd)/${pkg_dependencies_path}:/processed" \
                     -e "OS_ENV_DIR=${os_env_dir}" \
                     -it 'bhgedigital/envsubst' \
-                    sh -c "envsubst '\${OS_ENV_DIR}' < /work/${dependencie} > /processed/${dependencie}"
+                    sh -c "envsubst '\${OS_ENV_DIR}' < /work/${dependency} > /processed/${dependency}"
               done
             fi
 
@@ -51,8 +54,7 @@ for name in metaconvert mimir-continuous-test mimir mimirtool query-tee ; do
               --packager ${packager} \
               --target /work/dist/
 
-            # Rename mimir packages as we want to keep the same standard as
-            # the one builded by FPM
+            # Rename mimir packages as we want to keep the same standard as the one built by FPM
             if [ "${name}" == 'mimir' ] && [ "${packager}" == 'deb' ] && [ "${arch}" == 'amd64' ]; then
               mv -f "dist/mimir_${VERSION}_amd64.deb" "dist/mimir-${VERSION}_amd64.deb"
             fi
