@@ -24,7 +24,7 @@ func TestRequestActivity(t *testing.T) {
 			expected: "test: user=\"\" trace=\"\" request=<nil>",
 		},
 		{
-			request:  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""},
+			request:  client.DefaultMetricsMetadataRequest(),
 			expected: "test: user=\"\" trace=\"\" request=&MetricsMetadataRequest{Limit:-1,LimitPerMetric:-1,Metric:,}",
 		},
 		{

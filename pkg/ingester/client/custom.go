@@ -59,3 +59,7 @@ func ChunkFromMeta(meta chunks.Meta) (Chunk, error) {
 
 	return ch, nil
 }
+
+func DefaultMetricsMetadataRequest() *MetricsMetadataRequest {
+	return &MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""}
+}

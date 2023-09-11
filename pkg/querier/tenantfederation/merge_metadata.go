@@ -71,7 +71,9 @@ func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context, opt metricm
 	}
 
 	// Deduplicate results across tenants since the contract for the metadata endpoint
-	// requires that each returned metric metadata is unique.
+	// requires that each returned metric metadata is unique. We do not apply the requested
+	// limits from opt on the merged results here as we will do this later right before
+	// returning the API response.
 	var out []scrape.MetricMetadata
 	unique := make(map[scrape.MetricMetadata]struct{})
 	for _, metadata := range results {

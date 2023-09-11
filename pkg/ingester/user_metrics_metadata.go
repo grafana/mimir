@@ -90,10 +90,11 @@ func (mm *userMetricsMetadata) purge(deadline time.Time) {
 func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataRequest) []*mimirpb.MetricMetadata {
 	mm.mtx.RLock()
 	defer mm.mtx.RUnlock()
-	if req == nil {
-		req = &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""}
+	rCap := int32(len(mm.metricToMetadata))
+	if req.Limit >= 0 && req.Limit < rCap {
+		rCap = req.Limit
 	}
-	r := make([]*mimirpb.MetricMetadata, 0, len(mm.metricToMetadata))
+	r := make([]*mimirpb.MetricMetadata, 0, rCap)
 	var numMetrics int32
 	for metric, set := range mm.metricToMetadata {
 		if req.Limit >= 0 && numMetrics >= req.Limit {

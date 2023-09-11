@@ -108,22 +108,28 @@ func TestUserMetricsMetadata(t *testing.T) {
 			}
 
 			// Verify expected elements are stored
-			clientMeta := mm.toClientMetadata(nil)
+			req := client.DefaultMetricsMetadataRequest()
+			clientMeta := mm.toClientMetadata(req)
 			assert.ElementsMatch(t, testData.expectedMetadata, clientMeta)
 
 			// Purge all metadata
 			mm.purge(time.Time{})
 
 			// Verify all metadata purged
-			clientMeta = mm.toClientMetadata(nil)
+			clientMeta = mm.toClientMetadata(req)
 			assert.Empty(t, clientMeta)
 		})
 	}
 }
 
-type dummytest struct{}
+// noopTestingT is used so we can run assert.ElementsMatch without failing the test.
+// Since the underlying structure is a map, the order of the metadata is non-deterministic
+// so we need to use ElementsMatch. However, for the same reason the combination of the
+// metadata is also non-deterministic, so we need to go through a set of possible
+// combinations, and only fail the test if none of them match.
+type noopTestingT struct{}
 
-func (t dummytest) Errorf(string, ...interface{}) {}
+func (t noopTestingT) Errorf(string, ...interface{}) {}
 
 func TestUserMetricsMetadataOptions(t *testing.T) {
 	// Mock the ring
@@ -165,7 +171,7 @@ func TestUserMetricsMetadataOptions(t *testing.T) {
 		possibleExpectedMetadata [][]*mimirpb.MetricMetadata // since it uses a map, what it includes is non-deterministic
 	}{
 		"no config": {
-			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""},
+			request: client.DefaultMetricsMetadataRequest(),
 			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
 				{
 					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
@@ -220,7 +226,7 @@ func TestUserMetricsMetadataOptions(t *testing.T) {
 		},
 	}
 
-	dummyt := dummytest{}
+	dummyT := noopTestingT{}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -228,7 +234,7 @@ func TestUserMetricsMetadataOptions(t *testing.T) {
 			clientMeta := mm.toClientMetadata(testData.request)
 			var pass bool
 			for _, expectedMetadata := range testData.possibleExpectedMetadata {
-				if assert.ElementsMatch(dummyt, expectedMetadata, clientMeta) {
+				if assert.ElementsMatch(dummyT, expectedMetadata, clientMeta) {
 					pass = true
 					break
 				}

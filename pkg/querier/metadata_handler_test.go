@@ -157,7 +157,7 @@ func TestMetadataHandler_Success(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			d := &mockDistributor{}
-			d.On("MetricsMetadata", mock.Anything).Return(
+			d.On("MetricsMetadata", mock.Anything, mock.Anything).Return(
 				[]scrape.MetricMetadata{
 					{Metric: "alertmanager_dispatcher_aggregation_groups", Help: "Number of active aggregation groups", Type: "gauge", Unit: ""},
 					{Metric: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles", Type: "summary", Unit: ""},
@@ -185,7 +185,7 @@ func TestMetadataHandler_Success(t *testing.T) {
 
 func TestMetadataHandler_Empty(t *testing.T) {
 	d := &mockDistributor{}
-	d.On("MetricsMetadata", mock.Anything).Return(
+	d.On("MetricsMetadata", mock.Anything, mock.Anything).Return(
 		[]scrape.MetricMetadata{},
 		nil)
 
@@ -213,7 +213,7 @@ func TestMetadataHandler_Empty(t *testing.T) {
 
 func TestMetadataHandler_Error(t *testing.T) {
 	d := &mockDistributor{}
-	d.On("MetricsMetadata", mock.Anything).Return([]scrape.MetricMetadata{}, fmt.Errorf("no user id"))
+	d.On("MetricsMetadata", mock.Anything, mock.Anything).Return([]scrape.MetricMetadata{}, fmt.Errorf("no user id"))
 
 	handler := NewMetadataHandler(d)
 
