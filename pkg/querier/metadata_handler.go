@@ -8,6 +8,7 @@ package querier
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/prometheus/prometheus/scrape"
 
@@ -46,6 +47,25 @@ type metadataErrorResult struct {
 // Mimir for a given tenant. It is kept and returned as a set.
 func NewMetadataHandler(m MetadataSupplier) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit := -1
+		if s := r.FormValue("limit"); s != "" {
+			var err error
+			if limit, err = strconv.Atoi(s); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: "limit must be a number"})
+				return
+			}
+		}
+		limitPerMetric := -1
+		if s := r.FormValue("limit_per_metric"); s != "" {
+			var err error
+			if limitPerMetric, err = strconv.Atoi(s); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: "limit_per_metric must be a number"})
+				return
+			}
+		}
+
 		resp, err := m.MetricsMetadata(r.Context())
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -53,10 +73,21 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 			return
 		}
 
+		metric := r.FormValue("metric")
+
 		// Put all the elements of the pseudo-set into a map of slices for marshalling.
 		metrics := map[string][]metricMetadata{}
 		for _, m := range resp {
+			if limit >= 0 && len(metrics) >= limit {
+				break
+			}
+			if metric != "" && m.Metric != metric {
+				continue
+			}
 			ms, ok := metrics[m.Metric]
+			if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+				continue
+			}
 			if !ok {
 				// Most metrics will only hold 1 copy of the same metadata.
 				ms = make([]metricMetadata, 0, 1)
