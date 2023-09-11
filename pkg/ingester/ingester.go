@@ -754,6 +754,13 @@ func (i *Ingester) StartPushRequest() error {
 		}
 	}
 
+	if il != nil && il.MaxInflightPushRequestsBytes > 0 {
+		if i.inflightPushRequestsBytes.Load() >= il.MaxInflightPushRequestsBytes {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
+			return errMaxInflightRequestsBytesReached
+		}
+	}
+
 	decreaseInflightInDefer = false
 	return nil
 }
@@ -787,15 +794,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	}
 
 	requestSize := int64(req.Size()) // This can be expensive call. Check it in profiles.
-	totalRequestSize := i.inflightPushRequestsBytes.Add(requestSize)
+	i.inflightPushRequestsBytes.Add(requestSize)
 	defer i.inflightPushRequestsBytes.Sub(requestSize)
-
-	if il != nil && il.MaxInflightPushRequestsBytes > 0 {
-		if totalRequestSize > il.MaxInflightPushRequestsBytes {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
-			return nil, errMaxInflightRequestsBytesReached
-		}
-	}
 
 	// Given metadata is a best-effort approach, and we don't halt on errors
 	// process it before samples. Otherwise, we risk returning an error before ingestion.
