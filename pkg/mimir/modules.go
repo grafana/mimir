@@ -391,7 +391,9 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	querierRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, t.Registerer)
 
 	// Create a querier queryable and PromQL engine
-	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, querierRegisterer, util_log.Logger, t.ActivityTracker)
+	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(
+		t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, querierRegisterer, util_log.Logger, t.ActivityTracker,
+	)
 
 	// Use the distributor to return metric metadata by default
 	t.MetadataSupplier = t.Distributor
@@ -522,29 +524,15 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, t.Registerer)
 }
 
-func (t *Mimir) initStoreQueryables() (services.Service, error) {
-	var servs []services.Service
-
-	//nolint:revive // I prefer this form over removing 'else', because it allows q to have smaller scope.
-	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer); err != nil {
-		return nil, fmt.Errorf("failed to initialize querier: %v", err)
-	} else {
-		t.StoreQueryables = append(t.StoreQueryables, q)
-		servs = append(servs, q)
+func (t *Mimir) initStoreQueryable() (services.Service, error) {
+	q, err := querier.NewBlocksStoreQueryableFromConfig(
+		t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
 	}
-
-	// Return service, if any.
-	switch len(servs) {
-	case 0:
-		return nil, nil
-	case 1:
-		return servs[0], nil
-	default:
-		// No need to support this case yet, since chunk store is not a service.
-		// When we get there, we will need a wrapper service, that starts all subservices, and will also monitor them for failures.
-		// Not difficult, but also not necessary right now.
-		return nil, fmt.Errorf("too many services")
-	}
+	t.StoreQueryable = q
+	return q, nil
 }
 
 func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
@@ -723,7 +711,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, t.Registerer)
 
-		queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+		queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
 
 		if t.Cfg.Ruler.TenantFederation.Enabled {
@@ -935,7 +923,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Flusher, t.initFlusher)
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(Querier, t.initQuerier)
-	mm.RegisterModule(StoreQueryable, t.initStoreQueryables, modules.UserInvisibleModule)
+	mm.RegisterModule(StoreQueryable, t.initStoreQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)

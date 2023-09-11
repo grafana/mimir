@@ -221,8 +221,7 @@ func TestQuerier(t *testing.T) {
 				overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 				require.NoError(t, err)
 
-				queryables := []storage.Queryable{db}
-				queryable, _, _ := New(cfg, overrides, distributor, queryables, nil, log.NewNopLogger(), nil)
+				queryable, _, _ := New(cfg, overrides, distributor, db, nil, log.NewNopLogger(), nil)
 				testRangeQuery(t, queryable, through, query)
 			})
 		}
@@ -517,11 +516,10 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			// We don't have to actually query the storage in this test, so we initialize the querier
-			// with no store queryable.
-			var storeQueryables []storage.Queryable
+			// block storage will not be hit; provide nil querier
+			var storeQueryable storage.Queryable
 
-			queryable, _, _ := New(cfg, overrides, distributor, storeQueryables, nil, log.NewNopLogger(), nil)
+			queryable, _, _ := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
@@ -950,8 +948,8 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			// We don't need to query any data for this test, so an empty store is fine.
-			var storeQueryable []storage.Queryable
+			// block storage will not be hit; provide nil querier
+			var storeQueryable storage.Queryable
 
 			t.Run("series", func(t *testing.T) {
 				distributor := &mockDistributor{}
@@ -1153,7 +1151,7 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
-			queryable, _, _ := New(cfg, overrides, distributor, []storage.Queryable{newMockBlocksStorageQueryable(querier)}, nil, log.NewNopLogger(), nil)
+			queryable, _, _ := New(cfg, overrides, distributor, newMockBlocksStorageQueryable(querier), nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)

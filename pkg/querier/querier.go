@@ -149,13 +149,13 @@ func queryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 	queryMetrics := stats.NewQueryMetrics(reg)
 
 	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, queryMetrics, logger)
 
-	queryable := NewQueryable(distributorQueryable, stores, iteratorFunc, cfg, limits, queryMetrics, logger)
+	queryable := NewQueryable(distributorQueryable, storeQueryable, iteratorFunc, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, minT int64, maxT int64) (storage.Querier, error) {
@@ -198,7 +198,7 @@ func (q *chunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 // NewQueryable creates a new Queryable for Mimir.
 func NewQueryable(
 	distributor storage.Queryable,
-	stores []storage.Queryable,
+	store storage.Queryable,
 	chunkIterFn chunkIteratorFunc,
 	cfg Config,
 	limits *validation.Overrides,
@@ -224,22 +224,20 @@ func NewQueryable(
 
 		var queriers []storage.Querier
 
-		if queryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
-			dqr, err := distributor.Querier(ctx, minT, maxT)
+		if distributor != nil && queryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
+			q, err := distributor.Querier(ctx, minT, maxT)
 			if err != nil {
 				return nil, err
 			}
-			queriers = append(queriers, dqr)
+			queriers = append(queriers, q)
 		}
 
-		if queryBlockStore(cfg.QueryStoreAfter, now, minT) {
-			for _, s := range stores {
-				cqr, err := s.Querier(ctx, minT, maxT)
-				if err != nil {
-					return nil, err
-				}
-				queriers = append(queriers, cqr)
+		if store != nil && queryBlockStore(cfg.QueryStoreAfter, now, minT) {
+			q, err := store.Querier(ctx, minT, maxT)
+			if err != nil {
+				return nil, err
 			}
+			queriers = append(queriers, q)
 		}
 
 		return multiQuerier{
