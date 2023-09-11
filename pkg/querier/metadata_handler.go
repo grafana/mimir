@@ -78,9 +78,6 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 		// Put all the elements of the pseudo-set into a map of slices for marshalling.
 		metrics := map[string][]metricMetadata{}
 		for _, m := range resp {
-			if limit >= 0 && len(metrics) >= limit {
-				break
-			}
 			if metric != "" && m.Metric != metric {
 				continue
 			}
@@ -89,6 +86,9 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 				continue
 			}
 			if !ok {
+				if limit >= 0 && len(metrics) >= limit {
+					break
+				}
 				// Most metrics will only hold 1 copy of the same metadata.
 				ms = make([]metricMetadata, 0, 1)
 				metrics[m.Metric] = ms

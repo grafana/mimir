@@ -52,7 +52,7 @@ func TestMetadataHandler_Success(t *testing.T) {
 				}
 			`,
 		},
-		"limit": {
+		"limit=1": {
 			queryParams: url.Values{
 				"limit": {"1"},
 			},
@@ -64,6 +64,37 @@ func TestMetadataHandler_Success(t *testing.T) {
 							{
 								"help": "Number of active aggregation groups",
 								"type": "gauge",
+								"unit": ""
+							}
+						]
+					}
+				}
+			`,
+		},
+		"limit=2": {
+			queryParams: url.Values{
+				"limit": {"2"},
+			},
+			expectedJSON: `
+				{
+					"status": "success",
+					"data": {
+						"alertmanager_dispatcher_aggregation_groups": [
+							{
+								"help": "Number of active aggregation groups",
+								"type": "gauge",
+								"unit": ""
+							}
+						],
+						"go_gc_duration_seconds": [
+							{
+								"help": "A summary of the pause duration of garbage collection cycles",
+								"type": "summary",
+								"unit": ""
+							},
+							{
+								"help": "A summary of the pause duration of garbage collection cycles 2",
+								"type": "summary",
 								"unit": ""
 							}
 						]
