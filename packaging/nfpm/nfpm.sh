@@ -29,14 +29,17 @@ for name in metaconvert mimir-continuous-test mimir mimirtool query-tee ; do
 
             # Generate package dependencies using envsubst
             mkdir "${pkg_dependencies_path}"
-            for dependencie in $(ls packaging/nfpm/${name}); do
-                docker run --rm \
-                  -v "$(pwd)/packaging/nfpm/${name}:/work" \
-                  -v "$(pwd)/${pkg_dependencies_path}:/processed" \
-                  -e "OS_ENV_DIR=${os_env_dir}" \
-                  -it 'bhgedigital/envsubst' \
-                  sh -c "envsubst '\${OS_ENV_DIR}' < /work/${dependencie} > /processed/${dependencie}"
-            done
+
+            if [ -d "packaging/nfpm/${name}" ]; then
+              for dependencie in $(ls packaging/nfpm/${name}); do
+                  docker run --rm \
+                    -v "$(pwd)/packaging/nfpm/${name}:/work" \
+                    -v "$(pwd)/${pkg_dependencies_path}:/processed" \
+                    -e "OS_ENV_DIR=${os_env_dir}" \
+                    -it 'bhgedigital/envsubst' \
+                    sh -c "envsubst '\${OS_ENV_DIR}' < /work/${dependencie} > /processed/${dependencie}"
+              done
+            fi
 
             docker run --rm \
               -v  "$(pwd):/work:delegated,z" \
