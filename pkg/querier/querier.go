@@ -198,7 +198,7 @@ func (q *chunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 // NewQueryable creates a new Queryable for Mimir.
 func NewQueryable(
 	distributor storage.Queryable,
-	store storage.Queryable,
+	blockStore storage.Queryable,
 	chunkIterFn chunkIteratorFunc,
 	cfg Config,
 	limits *validation.Overrides,
@@ -223,6 +223,11 @@ func NewQueryable(
 		}
 
 		var queriers []storage.Querier
+		// distributor or blockStore queryables passed into NewQueryable should only be nil in tests;
+		// the decision of whether to construct the ingesters or block store queryables
+		// should be made here, not by the caller of NewQueryable
+		//
+		// queriers may further apply stricter internal logic and decide no-op for a given query
 
 		if distributor != nil && queryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
 			q, err := distributor.Querier(ctx, minT, maxT)
@@ -232,8 +237,8 @@ func NewQueryable(
 			queriers = append(queriers, q)
 		}
 
-		if store != nil && queryBlockStore(cfg.QueryStoreAfter, now, minT) {
-			q, err := store.Querier(ctx, minT, maxT)
+		if blockStore != nil && queryBlockStore(cfg.QueryStoreAfter, now, minT) {
+			q, err := blockStore.Querier(ctx, minT, maxT)
 			if err != nil {
 				return nil, err
 			}

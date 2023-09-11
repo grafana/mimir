@@ -69,12 +69,6 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 	}
 
 	queryIngestersWithin := d.cfgProvider.QueryIngestersWithin(userID)
-	now := time.Now()
-
-	// Don't create distributorQuerier if maxt is not within QueryIngestersWithin w.r.t. current time.
-	if queryIngestersWithin != 0 && maxt < util.TimeToMillis(now.Add(-queryIngestersWithin)) {
-		return storage.NoopQuerier(), nil
-	}
 
 	return &distributorQuerier{
 		logger:               d.logger,
