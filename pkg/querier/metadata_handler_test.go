@@ -19,183 +19,137 @@ import (
 )
 
 func TestMetadataHandler_Success(t *testing.T) {
-	d := &mockDistributor{}
-	d.On("MetricsMetadata", mock.Anything).Return(
-		[]scrape.MetricMetadata{
-			{Metric: "alertmanager_dispatcher_aggregation_groups", Help: "Number of active aggregation groups", Type: "gauge", Unit: ""},
-			{Metric: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles", Type: "summary", Unit: ""},
+	testCases := map[string]struct {
+		queryParams  url.Values
+		expectedJSON string
+	}{
+		"no params": {
+			queryParams: url.Values{},
+			expectedJSON: `
+				{
+					"status": "success",
+					"data": {
+						"alertmanager_dispatcher_aggregation_groups": [
+							{
+								"help": "Number of active aggregation groups",
+								"type": "gauge",
+								"unit": ""
+							}
+						],
+						"go_gc_duration_seconds": [
+							{
+								"help": "A summary of the pause duration of garbage collection cycles",
+								"type": "summary",
+								"unit": ""
+							},
+							{
+								"help": "A summary of the pause duration of garbage collection cycles 2",
+								"type": "summary",
+								"unit": ""
+							}
+						]
+					}
+				}
+			`,
 		},
-		nil)
-
-	handler := NewMetadataHandler(d)
-
-	request, err := http.NewRequest("GET", "/metadata", nil)
-	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
-
-	require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
-	responseBody, err := io.ReadAll(recorder.Result().Body)
-	require.NoError(t, err)
-
-	expectedJSON := `
-	{
-		"status": "success",
-		"data": {
-			"alertmanager_dispatcher_aggregation_groups": [
+		"limit": {
+			queryParams: url.Values{
+				"limit": {"1"},
+			},
+			expectedJSON: `
 				{
-					"help": "Number of active aggregation groups",
-					"type": "gauge",
-					"unit": ""
+					"status": "success",
+					"data": {
+						"alertmanager_dispatcher_aggregation_groups": [
+							{
+								"help": "Number of active aggregation groups",
+								"type": "gauge",
+								"unit": ""
+							}
+						]
+					}
 				}
-			],
-			"go_gc_duration_seconds": [
-				{
-					"help": "A summary of the pause duration of garbage collection cycles",
-					"type": "summary",
-					"unit": ""
-				}
-			]
-		}
-	}
-	`
-
-	require.JSONEq(t, expectedJSON, string(responseBody))
-}
-
-func TestMetadataHandler_Success_Limit(t *testing.T) {
-	d := &mockDistributor{}
-	d.On("MetricsMetadata", mock.Anything).Return(
-		[]scrape.MetricMetadata{
-			{Metric: "alertmanager_dispatcher_aggregation_groups", Help: "Number of active aggregation groups", Type: "gauge", Unit: ""},
-			{Metric: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles", Type: "summary", Unit: ""},
+			`,
 		},
-		nil)
-
-	handler := NewMetadataHandler(d)
-
-	request, err := http.NewRequest("GET", "/metadata", nil)
-	request.URL.RawQuery = url.Values{
-		"limit": {"1"},
-	}.Encode()
-	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
-
-	require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
-	responseBody, err := io.ReadAll(recorder.Result().Body)
-	require.NoError(t, err)
-
-	expectedJSON := `
-	{
-		"status": "success",
-		"data": {
-			"alertmanager_dispatcher_aggregation_groups": [
+		"limit per metric": {
+			queryParams: url.Values{
+				"limit_per_metric": {"1"},
+			},
+			expectedJSON: `
 				{
-					"help": "Number of active aggregation groups",
-					"type": "gauge",
-					"unit": ""
+					"status": "success",
+					"data": {
+						"alertmanager_dispatcher_aggregation_groups": [
+							{
+								"help": "Number of active aggregation groups",
+								"type": "gauge",
+								"unit": ""
+							}
+						],
+						"go_gc_duration_seconds": [
+							{
+								"help": "A summary of the pause duration of garbage collection cycles",
+								"type": "summary",
+								"unit": ""
+							}
+						]
+					}
 				}
-			]
-		}
-	}
-	`
-
-	require.JSONEq(t, expectedJSON, string(responseBody))
-}
-
-func TestMetadataHandler_Success_LimitPerMetric(t *testing.T) {
-	d := &mockDistributor{}
-	d.On("MetricsMetadata", mock.Anything).Return(
-		[]scrape.MetricMetadata{
-			{Metric: "alertmanager_dispatcher_aggregation_groups", Help: "Number of active aggregation groups", Type: "gauge", Unit: ""},
-			{Metric: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles", Type: "summary", Unit: ""},
-			{Metric: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles 2", Type: "summary", Unit: ""},
+			`,
 		},
-		nil)
-
-	handler := NewMetadataHandler(d)
-
-	request, err := http.NewRequest("GET", "/metadata", nil)
-	request.URL.RawQuery = url.Values{
-		"limit_per_metric": {"1"},
-	}.Encode()
-	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
-
-	require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
-	responseBody, err := io.ReadAll(recorder.Result().Body)
-	require.NoError(t, err)
-
-	expectedJSON := `
-	{
-		"status": "success",
-		"data": {
-			"alertmanager_dispatcher_aggregation_groups": [
+		"metric": {
+			queryParams: url.Values{
+				"metric": {"go_gc_duration_seconds"},
+			},
+			expectedJSON: `
 				{
-					"help": "Number of active aggregation groups",
-					"type": "gauge",
-					"unit": ""
+					"status": "success",
+					"data": {
+						"go_gc_duration_seconds": [
+							{
+								"help": "A summary of the pause duration of garbage collection cycles",
+								"type": "summary",
+								"unit": ""
+							},
+							{
+								"help": "A summary of the pause duration of garbage collection cycles 2",
+								"type": "summary",
+								"unit": ""
+							}
+						]
+					}
 				}
-			],
-			"go_gc_duration_seconds": [
-				{
-					"help": "A summary of the pause duration of garbage collection cycles",
-					"type": "summary",
-					"unit": ""
-				}
-			]
-		}
-	}
-	`
-
-	require.JSONEq(t, expectedJSON, string(responseBody))
-}
-
-func TestMetadataHandler_Success_Metric(t *testing.T) {
-	d := &mockDistributor{}
-	d.On("MetricsMetadata", mock.Anything).Return(
-		[]scrape.MetricMetadata{
-			{Metric: "alertmanager_dispatcher_aggregation_groups", Help: "Number of active aggregation groups", Type: "gauge", Unit: ""},
-			{Metric: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles", Type: "summary", Unit: ""},
+			`,
 		},
-		nil)
-
-	handler := NewMetadataHandler(d)
-
-	request, err := http.NewRequest("GET", "/metadata", nil)
-	request.URL.RawQuery = url.Values{
-		"metric": {"go_gc_duration_seconds"},
-	}.Encode()
-	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
-
-	require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
-	responseBody, err := io.ReadAll(recorder.Result().Body)
-	require.NoError(t, err)
-
-	expectedJSON := `
-	{
-		"status": "success",
-		"data": {
-			"go_gc_duration_seconds": [
-				{
-					"help": "A summary of the pause duration of garbage collection cycles",
-					"type": "summary",
-					"unit": ""
-				}
-			]
-		}
 	}
-	`
 
-	require.JSONEq(t, expectedJSON, string(responseBody))
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			d := &mockDistributor{}
+			d.On("MetricsMetadata", mock.Anything).Return(
+				[]scrape.MetricMetadata{
+					{Metric: "alertmanager_dispatcher_aggregation_groups", Help: "Number of active aggregation groups", Type: "gauge", Unit: ""},
+					{Metric: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles", Type: "summary", Unit: ""},
+					{Metric: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles 2", Type: "summary", Unit: ""},
+				},
+				nil)
+
+			handler := NewMetadataHandler(d)
+
+			request, err := http.NewRequest("GET", "/metadata", nil)
+			request.URL.RawQuery = tc.queryParams.Encode()
+			require.NoError(t, err)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+			responseBody, err := io.ReadAll(recorder.Result().Body)
+			require.NoError(t, err)
+
+			require.JSONEq(t, tc.expectedJSON, string(responseBody))
+		})
+	}
 }
 
 func TestMetadataHandler_Empty(t *testing.T) {
