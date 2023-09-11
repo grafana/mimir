@@ -8517,7 +8517,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	// We push series hitting the max series limit too old samples than 2 times more than errorSampleRate.
 	for i := 0; i < 2*errorSampleRate; i++ {
 		// Append 2 series first, expect max-series-per-user error.
-		res, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
+		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		require.Error(t, err)
 		status, ok := status.FromError(err)
 		require.True(t, ok)
@@ -8604,7 +8604,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	// We push series hitting the max series limit too old samples than 2 times more than errorSampleRate.
 	for i := 0; i < 2*errorSampleRate; i++ {
 		// Append 2 series first, expect max-series-per-user error.
-		res, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
+		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		require.Error(t, err)
 		status, ok := status.FromError(err)
 		require.True(t, ok)
