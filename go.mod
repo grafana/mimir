@@ -56,7 +56,6 @@ require (
 	github.com/alecthomas/kingpin/v2 v2.3.2
 	github.com/aws/aws-sdk-go v1.45.6
 	github.com/dennwc/varint v1.0.0
-	github.com/efficientgo/core v1.0.0-rc.0.0.20221201130417-ba593f67d2a4
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.5.9
 	github.com/google/go-github/v32 v32.1.0
@@ -130,6 +129,7 @@ require (
 	github.com/dlclark/regexp2 v1.4.0 // indirect
 	github.com/docker/go-connections v0.4.1-0.20210727194412-58542c764a11 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
+	github.com/efficientgo/core v1.0.0-rc.0.0.20221201130417-ba593f67d2a4 // indirect
 	github.com/efficientgo/e2e v0.13.1-0.20220923082810-8fa9daa8af8a // indirect
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb // indirect
 	github.com/fatih/color v1.15.0 // indirect

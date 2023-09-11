@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -32,6 +31,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -4780,34 +4780,29 @@ func TestHandleIngesterPushError(t *testing.T) {
 			ingesterPushError:   httpgrpc.Errorf(http.StatusInternalServerError, testErrorMsg),
 			expectedOutputError: httpgrpc.Errorf(http.StatusInternalServerError, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
 		},
-		"grpc errMaxInflightRequestsReached error gives a wrapped errMaxInflightRequestsReached error": {
-			ingesterPushError:   errMaxInflightRequestsReached,
-			expectedOutputError: errors.Wrap(errMaxInflightRequestsReached, outputErrorMsgPrefix),
-		},
-		"grpc errMaxIngestionRateReached error gives a wrapped errMaxIngestionRateReached error": {
-			ingesterPushError:   errMaxIngestionRateReached,
-			expectedOutputError: errors.Wrap(errMaxIngestionRateReached, outputErrorMsgPrefix),
-		},
-		"a random ingester error without status gives the same wrapped errpr": {
-			ingesterPushError:   fmt.Errorf(testErrorMsg),
-			expectedOutputError: errors.Wrap(fmt.Errorf(testErrorMsg), outputErrorMsgPrefix),
+		"a random ingester error without status gives the same wrapped error": {
+			ingesterPushError:   errWithUserID,
+			expectedOutputError: errors.Wrap(errWithUserID, outputErrorMsgPrefix),
 		},
 		"an ingester error with status 5xx gives an http 5xx error": {
-			ingesterPushError:   ingester.NewErrorWithStatus(errWithUserID, http.StatusServiceUnavailable),
-			expectedOutputError: httpgrpc.Errorf(http.StatusServiceUnavailable, "%s: %s", outputErrorMsgPrefix, errWithUserID),
+			ingesterPushError:   newGRPCError(http.StatusServiceUnavailable, errWithUserID.Error()),
+			expectedOutputError: httpgrpc.Errorf(http.StatusServiceUnavailable, "%s: %s", outputErrorMsgPrefix, errWithUserID.Error()),
 		},
 		"an ingester error with status 4xx gives an http 4xx error": {
-			ingesterPushError:   ingester.NewErrorWithStatus(errWithUserID, http.StatusBadRequest),
-			expectedOutputError: httpgrpc.Errorf(http.StatusBadRequest, "%s: %s", outputErrorMsgPrefix, errWithUserID),
+			ingesterPushError:   newGRPCError(http.StatusBadRequest, errWithUserID.Error()),
+			expectedOutputError: httpgrpc.Errorf(http.StatusBadRequest, "%s: %s", outputErrorMsgPrefix, errWithUserID.Error()),
 		},
-		"an ingester error with status different from 2xx, 4xx or 5xx gives an http 500 error": {
-			ingesterPushError:   ingester.NewErrorWithStatus(errWithUserID, int(codes.Unknown)),
-			expectedOutputError: httpgrpc.Errorf(http.StatusInternalServerError, "%s: %s", outputErrorMsgPrefix, errWithUserID),
+		"a gRPC unavailable error gives the same wrapped error": {
+			ingesterPushError:   newGRPCError(int(codes.Unavailable), errWithUserID.Error()),
+			expectedOutputError: errors.Wrap(newGRPCError(int(codes.Unavailable), errWithUserID.Error()), outputErrorMsgPrefix),
+		},
+		"a context cancel error gives the same wrapped error": {
+			ingesterPushError:   context.Canceled,
+			expectedOutputError: errors.Wrap(context.Canceled, outputErrorMsgPrefix),
 		},
 	}
 
-	for testName, testData := range test {
-		fmt.Println(testName)
+	for _, testData := range test {
 		err := handleIngesterPushError(testData.ingesterPushError)
 		if testData.expectedOutputError == nil {
 			require.NoError(t, err)
@@ -4815,6 +4810,11 @@ func TestHandleIngesterPushError(t *testing.T) {
 			require.ErrorContains(t, err, testData.expectedOutputError.Error())
 		}
 	}
+}
+
+func newGRPCError(statusCode int, msg string) error {
+	stat := status.New(codes.Code(statusCode), msg)
+	return stat.Err()
 }
 
 func getIngesterIndexForToken(key uint32, ings []mockIngester) int {
