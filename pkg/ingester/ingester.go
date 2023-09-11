@@ -171,6 +171,8 @@ type Config struct {
 	ReadPathCPUUtilizationLimit          float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
 	ReadPathMemoryUtilizationLimit       uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
 	LogUtilizationBasedLimiterCPUSamples bool    `yaml:"log_utilization_based_limiter_cpu_samples" category:"experimental"`
+
+	LimitInflightRequestsUsingGrpcTapHandle bool `yaml:"limit_inflight_requests_using_grpc_tap_handle" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -187,6 +189,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
+	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcTapHandle, "ingester.limit-inflight-requests-using-grpc-handlers", false, "Use experimental method of limiting push requests")
 }
 
 func (cfg *Config) Validate() error {
@@ -719,38 +722,61 @@ type pushStats struct {
 	perMetricSeriesLimitCount int
 }
 
+// StartPushRequest checks if ingester can start push request, and increments relevant counters.
+// If new push request cannot be started, errors converible to gRPC status code are returned, and metrics are updated.
+func (i *Ingester) StartPushRequest() error {
+	if err := i.checkRunning(); err != nil {
+		return err
+	}
+
+	inflight := i.inflightPushRequests.Inc()
+	decreaseInflightInDefer := true
+	defer func() {
+		if decreaseInflightInDefer {
+			i.inflightPushRequests.Dec()
+		}
+	}()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightPushRequests > 0 {
+		if inflight > il.MaxInflightPushRequests {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+			return errMaxInflightRequestsReached
+		}
+	}
+
+	if il != nil && il.MaxIngestionRate > 0 {
+		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
+			return errMaxIngestionRateReached
+		}
+	}
+
+	decreaseInflightInDefer = false
+	return nil
+}
+
+func (i *Ingester) FinishPushRequest() {
+	i.inflightPushRequests.Dec()
+}
+
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
 func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer pushReq.CleanUp()
 
-	if err := i.checkRunning(); err != nil {
-		return nil, util_log.DoNotLogError{Err: err}
-	}
-
-	// We will report *this* request in the error too.
-	inflight := i.inflightPushRequests.Inc()
-	defer i.inflightPushRequests.Dec()
-
-	il := i.getInstanceLimits()
-	if il != nil && il.MaxInflightPushRequests > 0 {
-		if inflight > il.MaxInflightPushRequests {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-			return nil, errMaxInflightRequestsReached
+	// If we're using grpc handlers, we don't need to start/finish request here.
+	if !i.cfg.LimitInflightRequestsUsingGrpcTapHandle {
+		if err := i.StartPushRequest(); err != nil {
+			return nil, util_log.DoNotLogError{Err: err}
 		}
+		defer i.FinishPushRequest()
 	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	if il != nil && il.MaxIngestionRate > 0 {
-		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-			return nil, errMaxIngestionRateReached
-		}
 	}
 
 	req, err := pushReq.WriteRequest()

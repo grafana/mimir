@@ -1033,6 +1033,10 @@ instance_limits:
 # (experimental) Enable logging of utilization based limiter CPU samples.
 # CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
 [log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
+
+# (experimental) Use experimental method of limiting push requests
+# CLI flag: -ingester.limit-inflight-requests-using-grpc-handlers
+[limit_inflight_requests_using_grpc_tap_handle: <boolean> | default = false]
 ```
 
 ### querier

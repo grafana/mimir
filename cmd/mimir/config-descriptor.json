@@ -2859,6 +2859,17 @@
           "fieldFlag": "ingester.log-utilization-based-limiter-cpu-samples",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "limit_inflight_requests_using_grpc_tap_handle",
+          "required": false,
+          "desc": "Use experimental method of limiting push requests",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.limit-inflight-requests-using-grpc-handlers",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
