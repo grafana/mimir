@@ -17,6 +17,9 @@ standard)
 streaming)
   echo "localhost:8304" # querier-streaming
   ;;
+thanos)
+  echo "localhost:8404" # querier-thanos
+  ;;
 *)
   echo "Unknown target '$TARGET_NAME'." >/dev/stderr
   exit 1

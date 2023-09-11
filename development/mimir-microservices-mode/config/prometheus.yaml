@@ -28,6 +28,9 @@ scrape_configs:
           - 'querier-streaming:8304'
           - 'query-frontend-streaming:8307'
           - 'query-scheduler-streaming:8311'
+          - 'querier-thanos:8404'
+          - 'query-frontend-thanos:8407'
+          - 'query-scheduler-thanos:8411'
         labels:
           cluster: 'docker-compose'
           namespace: 'mimir-microservices-mode'

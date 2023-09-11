@@ -23,14 +23,16 @@ function main() {
 function checkQueriesProduceSameResult() {
   standard_result=$(curl --fail-with-body --show-error --silent "$("$SCRIPT_DIR/target-to-url.sh" "standard")/$TARGET_PATH")
   streaming_result=$(curl --fail-with-body --show-error --silent "$("$SCRIPT_DIR/target-to-url.sh" "streaming")/$TARGET_PATH")
+  thanos_result=$(curl --fail-with-body --show-error --silent "$("$SCRIPT_DIR/target-to-url.sh" "thanos")/$TARGET_PATH")
 
   diff --color --unified --label "standard" --label "streaming" <(echo "$standard_result" | jq --sort-keys .) <(echo "$streaming_result" | jq --sort-keys .)
+  diff --color --unified --label "standard" --label "thanos" <(echo "$standard_result" | jq --sort-keys .) <(echo "$thanos_result" | jq --sort-keys .)
 }
 
 function runTests() {
   local summary_lines=()
 
-  for target in standard streaming; do
+  for target in standard streaming thanos; do
     echo "Running test for $target engine..."
     local start_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     local k6_output_file="k6-result-$target-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"

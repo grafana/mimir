@@ -272,7 +272,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/activity/querier-8004 -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address= -memberlist.nodename=querier -memberlist.bind-port=10004 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/activity/querier-8004 -query-frontend.max-total-query-length=8760h -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address= -memberlist.nodename=querier -memberlist.bind-port=10004 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -297,7 +297,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8204 -server.grpc-listen-port=9204 -activity-tracker.filepath=/activity/querier-8204 -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h -query-scheduler.ring.prefix=standard/ -querier.promql-engine=standard -querier.scheduler-address=query-scheduler-standard:9211 -querier.frontend-address= -memberlist.nodename=querier-standard -memberlist.bind-port=10204 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8204 -server.grpc-listen-port=9204 -activity-tracker.filepath=/activity/querier-8204 -query-frontend.max-total-query-length=8760h -querier.promql-engine=standard -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-scheduler.ring.prefix=standard/ -querier.scheduler-address=query-scheduler-standard:9211 -querier.frontend-address= -memberlist.nodename=querier-standard -memberlist.bind-port=10204 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -322,7 +322,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8304 -server.grpc-listen-port=9304 -activity-tracker.filepath=/activity/querier-8304 -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h -query-scheduler.ring.prefix=streaming/ -querier.promql-engine=streaming -querier.scheduler-address=query-scheduler-streaming:9311 -querier.frontend-address= -memberlist.nodename=querier-streaming -memberlist.bind-port=10304 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8304 -server.grpc-listen-port=9304 -activity-tracker.filepath=/activity/querier-8304 -query-frontend.max-total-query-length=8760h -querier.promql-engine=streaming -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-scheduler.ring.prefix=streaming/ -querier.scheduler-address=query-scheduler-streaming:9311 -querier.frontend-address= -memberlist.nodename=querier-streaming -memberlist.bind-port=10304 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -340,6 +340,31 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+  "querier-thanos":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8404 -server.grpc-listen-port=9404 -activity-tracker.filepath=/activity/querier-8404 -query-frontend.max-total-query-length=8760h -querier.promql-engine=thanos -querier.scheduler-address=query-scheduler-thanos:9411 -querier.frontend-address= -memberlist.nodename=querier-thanos -memberlist.bind-port=10404 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=querier-thanos"
+    "hostname": "querier-thanos"
+    "image": "mimir"
+    "ports":
+      - "8404:8404"
+      - "10404:10404"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "query-frontend":
     "build":
       "context": "."
@@ -347,7 +372,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filepath=/activity/query-frontend-8007 -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h -query-frontend.scheduler-address=query-scheduler:9011 -memberlist.nodename=query-frontend -memberlist.bind-port=10007 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filepath=/activity/query-frontend-8007 -query-frontend.max-total-query-length=8760h -query-frontend.scheduler-address=query-scheduler:9011 -memberlist.nodename=query-frontend -memberlist.bind-port=10007 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -372,7 +397,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8207 -server.grpc-listen-port=9207 -activity-tracker.filepath=/activity/query-frontend-8207 -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h -query-scheduler.ring.prefix=standard/ -querier.promql-engine=standard -query-frontend.scheduler-address=query-scheduler-standard:9211 -memberlist.nodename=query-frontend-standard -memberlist.bind-port=10207 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8207 -server.grpc-listen-port=9207 -activity-tracker.filepath=/activity/query-frontend-8207 -query-frontend.max-total-query-length=8760h -querier.promql-engine=standard -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-scheduler.ring.prefix=standard/ -query-frontend.scheduler-address=query-scheduler-standard:9211 -memberlist.nodename=query-frontend-standard -memberlist.bind-port=10207 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -397,7 +422,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8307 -server.grpc-listen-port=9307 -activity-tracker.filepath=/activity/query-frontend-8307 -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h -query-scheduler.ring.prefix=streaming/ -querier.promql-engine=streaming -query-frontend.scheduler-address=query-scheduler-streaming:9311 -memberlist.nodename=query-frontend-streaming -memberlist.bind-port=10307 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8307 -server.grpc-listen-port=9307 -activity-tracker.filepath=/activity/query-frontend-8307 -query-frontend.max-total-query-length=8760h -querier.promql-engine=streaming -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-scheduler.ring.prefix=streaming/ -query-frontend.scheduler-address=query-scheduler-streaming:9311 -memberlist.nodename=query-frontend-streaming -memberlist.bind-port=10307 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -415,6 +440,31 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+  "query-frontend-thanos":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8407 -server.grpc-listen-port=9407 -activity-tracker.filepath=/activity/query-frontend-8407 -query-frontend.max-total-query-length=8760h -querier.promql-engine=thanos -query-frontend.scheduler-address=query-scheduler-thanos:9411 -memberlist.nodename=query-frontend-thanos -memberlist.bind-port=10407 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=query-frontend-thanos"
+    "hostname": "query-frontend-thanos"
+    "image": "mimir"
+    "ports":
+      - "8407:8407"
+      - "10407:10407"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "query-scheduler":
     "build":
       "context": "."
@@ -422,7 +472,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/activity/query-scheduler-8011 -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h -memberlist.nodename=query-scheduler -memberlist.bind-port=10011 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/activity/query-scheduler-8011 -query-frontend.max-total-query-length=8760h -memberlist.nodename=query-scheduler -memberlist.bind-port=10011 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -447,7 +497,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8211 -server.grpc-listen-port=9211 -activity-tracker.filepath=/activity/query-scheduler-8211 -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h -query-scheduler.ring.prefix=standard/ -querier.promql-engine=standard -memberlist.nodename=query-scheduler-standard -memberlist.bind-port=10211 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8211 -server.grpc-listen-port=9211 -activity-tracker.filepath=/activity/query-scheduler-8211 -query-frontend.max-total-query-length=8760h -querier.promql-engine=standard -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-scheduler.ring.prefix=standard/ -memberlist.nodename=query-scheduler-standard -memberlist.bind-port=10211 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -472,7 +522,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8311 -server.grpc-listen-port=9311 -activity-tracker.filepath=/activity/query-scheduler-8311 -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h -query-scheduler.ring.prefix=streaming/ -querier.promql-engine=streaming -memberlist.nodename=query-scheduler-streaming -memberlist.bind-port=10311 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8311 -server.grpc-listen-port=9311 -activity-tracker.filepath=/activity/query-scheduler-8311 -query-frontend.max-total-query-length=8760h -querier.promql-engine=streaming -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-scheduler.ring.prefix=streaming/ -memberlist.nodename=query-scheduler-streaming -memberlist.bind-port=10311 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -487,6 +537,31 @@
     "ports":
       - "8311:8311"
       - "10311:10311"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "query-scheduler-thanos":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8411 -server.grpc-listen-port=9411 -activity-tracker.filepath=/activity/query-scheduler-8411 -query-frontend.max-total-query-length=8760h -querier.promql-engine=thanos -memberlist.nodename=query-scheduler-thanos -memberlist.bind-port=10411 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=query-scheduler-thanos"
+    "hostname": "query-scheduler-thanos"
+    "image": "mimir"
+    "ports":
+      - "8411:8411"
+      - "10411:10411"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"

@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/streaming"
 	"github.com/prometheus/prometheus/storage"
+	thanosengine "github.com/thanos-io/promql-engine/engine"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/querier/batch"
@@ -72,6 +73,7 @@ const (
 
 	standardPromQLEngine  = "standard"
 	streamingPromQLEngine = "streaming"
+	thanosPromQLEngine    = "thanos"
 )
 
 var (
@@ -113,7 +115,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *Config) Validate() error {
-	if cfg.PromQLEngine != standardPromQLEngine && cfg.PromQLEngine != streamingPromQLEngine {
+	if cfg.PromQLEngine != standardPromQLEngine && cfg.PromQLEngine != streamingPromQLEngine && cfg.PromQLEngine != thanosPromQLEngine {
 		return fmt.Errorf("unknown PromQL engine '%s'", cfg.PromQLEngine)
 	}
 
@@ -173,6 +175,12 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		eng = promql.NewEngine(opts)
 	case streamingPromQLEngine:
 		eng = streaming.NewEngine(opts)
+	case thanosPromQLEngine:
+		thanosOptions := thanosengine.Opts{
+			EngineOpts:      opts,
+			DisableFallback: true, // We don't want to unintentionally fall back to Prometheus' engine while we're running benchmarks.
+		}
+		eng = thanosengine.New(thanosOptions)
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.PromQLEngine))
 	}

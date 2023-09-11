@@ -36,6 +36,7 @@ std.manifestYamlDoc({
     self.read_components() + # Read path for visualisation and monitoring
     self.read_components(suffix='standard', port_offset=200, promql_engine='standard') + # Standard read path for load testing
     self.read_components(suffix='streaming', port_offset=300, promql_engine='streaming') + # Streaming read path for load testing
+    self.read_components(suffix='thanos', port_offset=400, promql_engine='thanos') + # Thanos read path for load testing
     self.store_gateways +
     self.compactor +
     self.rulers(2) +
@@ -89,9 +90,11 @@ std.manifestYamlDoc({
     local name_suffix = if suffix == '' then '' else '-' + suffix;
     local query_scheduler_port = 9011 + port_offset;
     local query_scheduler_address = 'query-scheduler%s:%s' % [name_suffix, query_scheduler_port];
-    local extra_args = '-querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h' +
-      if suffix == '' then '' else ' -query-scheduler.ring.prefix=%s/' % suffix +
-      if promql_engine == '' then '' else ' -querier.promql-engine=%s' % promql_engine;
+    local extra_args = '-query-frontend.max-total-query-length=8760h' +
+      if promql_engine == '' then '' else ' -querier.promql-engine=%s' % promql_engine +
+      # Thanos' engine doesn't support streaming chunks.
+      if promql_engine == 'thanos' then '' else ' -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true' +
+      if suffix == '' then '' else ' -query-scheduler.ring.prefix=%s/' % suffix;
 
     {
       ['querier'+name_suffix]: mimirService({
