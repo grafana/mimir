@@ -58,7 +58,7 @@ type Config struct {
 	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"experimental"`
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"experimental"`
 
-	UseStreamingPromQLEngine bool `yaml:"use_streaming_prom_ql_engine" category:"experimental"`
+	PromQLEngine string `yaml:"promql_engine" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -69,6 +69,9 @@ const (
 
 	// DefaultQuerierCfgQueryIngestersWithin is the default value for the deprecated querier config QueryIngestersWithin (it has been moved to a per-tenant limit instead)
 	DefaultQuerierCfgQueryIngestersWithin = 13 * time.Hour
+
+	standardPromQLEngine  = "standard"
+	streamingPromQLEngine = "streaming"
 )
 
 var (
@@ -99,7 +102,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
-	f.BoolVar(&cfg.UseStreamingPromQLEngine, "querier.use-streaming-promql-engine", false, "Use streaming PromQL engine")
+	f.StringVar(&cfg.PromQLEngine, "querier.promql-engine", standardPromQLEngine, "PromQL engine to use")
 
 	// The querier.query-ingesters-within flag has been moved to the limits.go file
 	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.11.0
@@ -110,6 +113,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *Config) Validate() error {
+	if cfg.PromQLEngine != standardPromQLEngine && cfg.PromQLEngine != streamingPromQLEngine {
+		return fmt.Errorf("unknown PromQL engine '%s'", cfg.PromQLEngine)
+	}
+
 	return nil
 }
 
@@ -161,10 +168,13 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	var eng promql.QueryEngine
 	opts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
-	if cfg.UseStreamingPromQLEngine {
-		eng = streaming.NewEngine(opts)
-	} else {
+	switch cfg.PromQLEngine {
+	case standardPromQLEngine:
 		eng = promql.NewEngine(opts)
+	case streamingPromQLEngine:
+		eng = streaming.NewEngine(opts)
+	default:
+		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.PromQLEngine))
 	}
 
 	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng

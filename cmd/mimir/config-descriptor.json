@@ -1708,13 +1708,13 @@
         },
         {
           "kind": "field",
-          "name": "use_streaming_prom_ql_engine",
+          "name": "promql_engine",
           "required": false,
-          "desc": "Use streaming PromQL engine",
+          "desc": "PromQL engine to use",
           "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "querier.use-streaming-promql-engine",
-          "fieldType": "boolean",
+          "fieldDefaultValue": "standard",
+          "fieldFlag": "querier.promql-engine",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {

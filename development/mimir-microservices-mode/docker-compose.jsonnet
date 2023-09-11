@@ -34,8 +34,8 @@ std.manifestYamlDoc({
     self.distributor +
     self.ingesters +
     self.read_components() + # Read path for visualisation and monitoring
-    self.read_components(suffix='standard', port_offset=200, use_streaming_engine=false) + # Standard read path for load testing
-    self.read_components(suffix='streaming', port_offset=300, use_streaming_engine=true) + # Streaming read path for load testing
+    self.read_components(suffix='standard', port_offset=200, promql_engine='standard') + # Standard read path for load testing
+    self.read_components(suffix='streaming', port_offset=300, promql_engine='streaming') + # Streaming read path for load testing
     self.store_gateways +
     self.compactor +
     self.rulers(2) +
@@ -85,13 +85,13 @@ std.manifestYamlDoc({
     }),
   },
 
-  read_components(suffix='', port_offset=0, use_query_scheduler=$._config.use_query_scheduler, use_streaming_engine=false)::
+  read_components(suffix='', port_offset=0, use_query_scheduler=$._config.use_query_scheduler, promql_engine='')::
     local name_suffix = if suffix == '' then '' else '-' + suffix;
     local query_scheduler_port = 9011 + port_offset;
     local query_scheduler_address = 'query-scheduler%s:%s' % [name_suffix, query_scheduler_port];
     local extra_args = '-querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true -query-frontend.max-total-query-length=8760h' +
       if suffix == '' then '' else ' -query-scheduler.ring.prefix=%s/' % suffix +
-      if !use_streaming_engine then '' else ' -querier.use-streaming-promql-engine=true';
+      if promql_engine == '' then '' else ' -querier.promql-engine=%s' % promql_engine;
 
     {
       ['querier'+name_suffix]: mimirService({

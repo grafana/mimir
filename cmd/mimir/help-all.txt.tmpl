@@ -1629,6 +1629,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.
   -querier.prefer-streaming-chunks-from-store-gateways
     	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
+  -querier.promql-engine string
+    	[experimental] PromQL engine to use (default "standard")
   -querier.query-ingesters-within duration
     	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h)
   -querier.query-store-after duration
@@ -1659,8 +1661,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
-  -querier.use-streaming-promql-engine
-    	[experimental] Use streaming PromQL engine
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step.
   -query-frontend.cache-results

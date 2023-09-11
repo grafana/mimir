@@ -1141,9 +1141,9 @@ store_gateway_client:
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
-# (experimental) Use streaming PromQL engine
-# CLI flag: -querier.use-streaming-promql-engine
-[use_streaming_prom_ql_engine: <boolean> | default = false]
+# (experimental) PromQL engine to use
+# CLI flag: -querier.promql-engine
+[promql_engine: <string> | default = "standard"]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
