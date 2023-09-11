@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] Go: updated to 1.21.1. #5955 #5960
 * [BUGFIX] Ingester: fix spurious `not found` errors on label values API during head compaction. #5957
 
 ## 2.10.0-rc.1
