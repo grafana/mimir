@@ -76,7 +76,6 @@ func TestUserMetricsMetadata(t *testing.T) {
 			ring.On("InstancesCount").Return(1)
 			ring.On("ZonesCount").Return(1)
 
-			// Mock limiter
 			limits, err := validation.NewOverrides(validation.Limits{
 				MaxGlobalMetricsWithMetadataPerUser: testData.maxMetadataPerUser,
 				MaxGlobalMetadataPerMetric:          testData.maxMetadataPerMetric,
@@ -84,7 +83,6 @@ func TestUserMetricsMetadata(t *testing.T) {
 			require.NoError(t, err)
 			limiter := NewLimiter(limits, ring, 1, false)
 
-			// Mock metrics
 			metrics := newIngesterMetrics(
 				prometheus.NewPedanticRegistry(),
 				true,
@@ -137,12 +135,10 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 	ring.On("InstancesCount").Return(1)
 	ring.On("ZonesCount").Return(1)
 
-	// Mock limiter
 	limits, err := validation.NewOverrides(validation.Limits{}, nil)
 	require.NoError(t, err)
 	limiter := NewLimiter(limits, ring, 1, false)
 
-	// Mock metrics
 	metrics := newIngesterMetrics(
 		prometheus.NewPedanticRegistry(),
 		true,
