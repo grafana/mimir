@@ -60,6 +60,8 @@ func ChunkFromMeta(meta chunks.Meta) (Chunk, error) {
 	return ch, nil
 }
 
+// DefaultMetricsMetadataRequest initialises MetricsMetadataRequest with default values
+// equivalent to no limits and no filtering.
 func DefaultMetricsMetadataRequest() *MetricsMetadataRequest {
 	return &MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""}
 }

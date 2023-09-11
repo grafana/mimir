@@ -19,36 +19,54 @@ import (
 )
 
 func TestMetadataHandler_Success(t *testing.T) {
+	fullJSON := `
+		{
+			"status": "success",
+			"data": {
+				"alertmanager_dispatcher_aggregation_groups": [
+					{
+						"help": "Number of active aggregation groups",
+						"type": "gauge",
+						"unit": ""
+					}
+				],
+				"go_gc_duration_seconds": [
+					{
+						"help": "A summary of the pause duration of garbage collection cycles",
+						"type": "summary",
+						"unit": ""
+					},
+					{
+						"help": "A summary of the pause duration of garbage collection cycles 2",
+						"type": "summary",
+						"unit": ""
+					}
+				]
+			}
+		}
+	`
 	testCases := map[string]struct {
 		queryParams  url.Values
 		expectedJSON string
 	}{
 		"no params": {
-			queryParams: url.Values{},
+			queryParams:  url.Values{},
+			expectedJSON: fullJSON,
+		},
+		"limit=-1": {
+			queryParams: url.Values{
+				"limit": {"-1"},
+			},
+			expectedJSON: fullJSON,
+		},
+		"limit=0": {
+			queryParams: url.Values{
+				"limit": {"0"},
+			},
 			expectedJSON: `
 				{
 					"status": "success",
-					"data": {
-						"alertmanager_dispatcher_aggregation_groups": [
-							{
-								"help": "Number of active aggregation groups",
-								"type": "gauge",
-								"unit": ""
-							}
-						],
-						"go_gc_duration_seconds": [
-							{
-								"help": "A summary of the pause duration of garbage collection cycles",
-								"type": "summary",
-								"unit": ""
-							},
-							{
-								"help": "A summary of the pause duration of garbage collection cycles 2",
-								"type": "summary",
-								"unit": ""
-							}
-						]
-					}
+					"data": {}
 				}
 			`,
 		},
@@ -102,7 +120,19 @@ func TestMetadataHandler_Success(t *testing.T) {
 				}
 			`,
 		},
-		"limit per metric": {
+		"limit_per_metric=-1": {
+			queryParams: url.Values{
+				"limit_per_metric": {"-1"},
+			},
+			expectedJSON: fullJSON,
+		},
+		"limit_per_metric=0": {
+			queryParams: url.Values{
+				"limit_per_metric": {"0"},
+			},
+			expectedJSON: fullJSON,
+		},
+		"limit_per_metric=1": {
 			queryParams: url.Values{
 				"limit_per_metric": {"1"},
 			},

@@ -131,7 +131,7 @@ type noopTestingT struct{}
 
 func (t noopTestingT) Errorf(string, ...interface{}) {}
 
-func TestUserMetricsMetadataOptions(t *testing.T) {
+func TestUserMetricsMetadataRequest(t *testing.T) {
 	// Mock the ring
 	ring := &ringCountMock{}
 	ring.On("InstancesCount").Return(1)
@@ -166,22 +166,34 @@ func TestUserMetricsMetadataOptions(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	fullMetadata := [][]*mimirpb.MetricMetadata{
+		{
+			{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
+			{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"},
+			{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"},
+			{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"},
+		},
+	}
+
 	tests := map[string]struct {
 		request                  *client.MetricsMetadataRequest
 		possibleExpectedMetadata [][]*mimirpb.MetricMetadata // since it uses a map, what it includes is non-deterministic
 	}{
 		"no config": {
-			request: client.DefaultMetricsMetadataRequest(),
+			request:                  client.DefaultMetricsMetadataRequest(),
+			possibleExpectedMetadata: fullMetadata,
+		},
+		"limit=-1": {
+			request:                  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""},
+			possibleExpectedMetadata: fullMetadata,
+		},
+		"limit=0": {
+			request: &client.MetricsMetadataRequest{Limit: 0, LimitPerMetric: -1, Metric: ""},
 			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
-				{
-					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
-					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"},
-					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"},
-					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"},
-				},
+				{},
 			},
 		},
-		"limit": {
+		"limit=1": {
 			request: &client.MetricsMetadataRequest{Limit: 1, LimitPerMetric: -1, Metric: ""},
 			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
 				{
@@ -194,7 +206,15 @@ func TestUserMetricsMetadataOptions(t *testing.T) {
 				},
 			},
 		},
-		"limit per metric": {
+		"limit_per_metric=-1": {
+			request:                  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""},
+			possibleExpectedMetadata: fullMetadata,
+		},
+		"limit_per_metric=0": {
+			request:                  &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: 0, Metric: ""},
+			possibleExpectedMetadata: fullMetadata,
+		},
+		"limit_per_metric=1": {
 			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: 1, Metric: ""},
 			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
 				{
