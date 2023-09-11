@@ -22,6 +22,12 @@ updates:
     schedule:
       interval: "daily"
       time: "06:04"
+    groups:
+      mimir-build-image-update: 
+        update-types: 
+        - "minor"
+        - "patch"
+        - "major"
   - package-ecosystem: docker
     directory: /cmd/metaconvert/
     schedule:
