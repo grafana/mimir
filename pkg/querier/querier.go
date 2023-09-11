@@ -128,9 +128,7 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 	return mergeChunks
 }
 
-func queryIngesters(
-	queryIngestersWithin time.Duration, now time.Time, queryMaxT int64,
-) bool {
+func queryIngesters(queryIngestersWithin time.Duration, now time.Time, queryMaxT int64) bool {
 	if queryIngestersWithin != 0 {
 		queryIngestersMinT := util.TimeToMillis(now.Add(-queryIngestersWithin))
 		if queryMaxT < queryIngestersMinT {
@@ -140,9 +138,7 @@ func queryIngesters(
 	return true
 }
 
-func queryBlockStore(
-	queryStoreAfter time.Duration, now time.Time, queryMinT int64,
-) bool {
+func queryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int64) bool {
 	if queryStoreAfter != 0 {
 		queryStoreMaxT := util.TimeToMillis(now.Add(-queryStoreAfter))
 		if queryMinT > queryStoreMaxT {
@@ -246,7 +242,7 @@ func NewQueryable(
 			}
 		}
 
-		return multiComponentQuerier{
+		return multiQuerier{
 			queriers:           queriers,
 			ctx:                ctx,
 			minT:               minT,
@@ -260,8 +256,8 @@ func NewQueryable(
 	})
 }
 
-// multiComponentQuerier implements storage.Querier, orchestrating requests across a set of queriers.
-type multiComponentQuerier struct {
+// multiQuerier implements storage.Querier, orchestrating requests across a set of queriers.
+type multiQuerier struct {
 	queriers []storage.Querier
 
 	chunkIterFn chunkIteratorFunc
@@ -276,14 +272,14 @@ type multiComponentQuerier struct {
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
-func (mcq multiComponentQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, ctx := spanlogger.NewWithLogger(mcq.ctx, mcq.logger, "querier.Select")
+func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	log, ctx := spanlogger.NewWithLogger(mq.ctx, mq.logger, "querier.Select")
 	defer log.Span.Finish()
 
 	if sp == nil {
 		sp = &storage.SelectHints{
-			Start: mcq.minT,
-			End:   mcq.maxT,
+			Start: mq.minT,
+			End:   mq.maxT,
 		}
 	} else {
 		// Make a copy, to avoid changing shared SelectHints.
@@ -302,14 +298,14 @@ func (mcq multiComponentQuerier) Select(_ bool, sp *storage.SelectHints, matcher
 	// Validate query time range. Even if the time range has already been validated when we created
 	// the querier, we need to check it again here because the time range specified in hints may be
 	// different.
-	startMs, endMs, err := validateQueryTimeRange(ctx, userID, sp.Start, sp.End, mcq.limits, mcq.maxQueryIntoFuture, mcq.logger)
+	startMs, endMs, err := validateQueryTimeRange(ctx, userID, sp.Start, sp.End, mq.limits, mq.maxQueryIntoFuture, mq.logger)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.NoopSeriesSet()
 	} else if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 	if sp.Func == "series" { // Clamp max time range for series-only queries, before we check max length.
-		maxQueryLength := mcq.limits.MaxLabelsQueryLength(userID)
+		maxQueryLength := mq.limits.MaxLabelsQueryLength(userID)
 		startMs = int64(clampTime(ctx, model.Time(startMs), maxQueryLength, model.Time(endMs).Add(-maxQueryLength), true, "start", "max label query length", log))
 	}
 
@@ -322,23 +318,23 @@ func (mcq multiComponentQuerier) Select(_ bool, sp *storage.SelectHints, matcher
 	endTime := model.Time(endMs)
 
 	// Validate query time range.
-	if maxQueryLength := mcq.limits.MaxPartialQueryLength(userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
+	if maxQueryLength := mq.limits.MaxPartialQueryLength(userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
 		return storage.ErrSeriesSet(validation.NewMaxQueryLengthError(endTime.Sub(startTime), maxQueryLength))
 	}
 
-	if len(mcq.queriers) == 1 {
-		return mcq.queriers[0].Select(true, sp, matchers...)
+	if len(mq.queriers) == 1 {
+		return mq.queriers[0].Select(true, sp, matchers...)
 	}
 
-	sets := make(chan storage.SeriesSet, len(mcq.queriers))
-	for _, querier := range mcq.queriers {
+	sets := make(chan storage.SeriesSet, len(mq.queriers))
+	for _, querier := range mq.queriers {
 		go func(querier storage.Querier) {
 			sets <- querier.Select(true, sp, matchers...)
 		}(querier)
 	}
 
 	var result []storage.SeriesSet
-	for range mcq.queriers {
+	for range mq.queriers {
 		select {
 		case set := <-sets:
 			result = append(result, set)
@@ -350,24 +346,24 @@ func (mcq multiComponentQuerier) Select(_ bool, sp *storage.SelectHints, matcher
 	// we have all the sets from different sources (chunk from store, chunks from ingesters,
 	// time series from store and time series from ingesters).
 	// mergeSeriesSets will return sorted set.
-	return mcq.mergeSeriesSets(result)
+	return mq.mergeSeriesSets(result)
 }
 
 // LabelValues implements storage.Querier.
-func (mcq multiComponentQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	if len(mcq.queriers) == 1 {
-		return mcq.queriers[0].LabelValues(name, matchers...)
+func (mq multiQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	if len(mq.queriers) == 1 {
+		return mq.queriers[0].LabelValues(name, matchers...)
 	}
 
 	var (
-		g, _     = errgroup.WithContext(mcq.ctx)
+		g, _     = errgroup.WithContext(mq.ctx)
 		sets     = [][]string{}
 		warnings = storage.Warnings(nil)
 
 		resMtx sync.Mutex
 	)
 
-	for _, querier := range mcq.queriers {
+	for _, querier := range mq.queriers {
 		// Need to reassign as the original variable will change and can't be relied on in a goroutine.
 		querier := querier
 		g.Go(func() error {
@@ -394,20 +390,20 @@ func (mcq multiComponentQuerier) LabelValues(name string, matchers ...*labels.Ma
 	return util.MergeSlices(sets...), warnings, nil
 }
 
-func (mcq multiComponentQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	if len(mcq.queriers) == 1 {
-		return mcq.queriers[0].LabelNames(matchers...)
+func (mq multiQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	if len(mq.queriers) == 1 {
+		return mq.queriers[0].LabelNames(matchers...)
 	}
 
 	var (
-		g, _     = errgroup.WithContext(mcq.ctx)
+		g, _     = errgroup.WithContext(mq.ctx)
 		sets     = [][]string{}
 		warnings = storage.Warnings(nil)
 
 		resMtx sync.Mutex
 	)
 
-	for _, querier := range mcq.queriers {
+	for _, querier := range mq.queriers {
 		// Need to reassign as the original variable will change and can't be relied on in a goroutine.
 		querier := querier
 		g.Go(func() error {
@@ -434,11 +430,11 @@ func (mcq multiComponentQuerier) LabelNames(matchers ...*labels.Matcher) ([]stri
 	return util.MergeSlices(sets...), warnings, nil
 }
 
-func (multiComponentQuerier) Close() error {
+func (multiQuerier) Close() error {
 	return nil
 }
 
-func (mcq multiComponentQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesSet {
+func (mq multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesSet {
 	// Here we deal with sets that are based on chunks and build single set from them.
 	// Remaining sets are merged with chunks-based one using storage.NewMergeSeriesSet
 
@@ -471,7 +467,7 @@ func (mcq multiComponentQuerier) mergeSeriesSets(sets []storage.SeriesSet) stora
 	}
 
 	// partitionChunks returns set with sorted series, so it can be used by NewMergeSeriesSet
-	chunksSet := partitionChunks(chunks, mcq.minT, mcq.maxT, mcq.chunkIterFn)
+	chunksSet := partitionChunks(chunks, mq.minT, mq.maxT, mq.chunkIterFn)
 
 	if len(otherSets) == 0 {
 		return chunksSet
