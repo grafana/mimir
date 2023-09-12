@@ -519,11 +519,11 @@ func TestQuerier_QueryIngestersVsQueryIngestersClamped(t *testing.T) {
 
 			clampedMinT, queryIngestersClampedResult := queryIngestersClampMinT(
 				context.Background(),
+				log.NewNopLogger(),
 				testCase.queryIngestersWithin,
 				now,
 				testCase.minT.UnixMilli(),
 				testCase.maxT.UnixMilli(),
-				log.NewNopLogger(),
 			)
 
 			// check we get the correct answer from both QueryIngesters and queryIngestersClampMinT

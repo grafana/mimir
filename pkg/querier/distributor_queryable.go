@@ -95,8 +95,8 @@ type distributorQuerier struct {
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
-	defer spanLog.Finish()
+	spanLogger, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
+	defer spanLogger.Finish()
 
 	minT, maxT := q.mint, q.maxt
 	if sp != nil {
@@ -104,10 +104,10 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	}
 
 	clampedMinT, queryIngesters := queryIngestersClampMinT(
-		q.ctx, q.queryIngestersWithin, time.Now(), minT, maxT, spanLog,
+		q.ctx, spanLogger, q.queryIngestersWithin, time.Now(), minT, maxT,
 	)
 	if !queryIngesters {
-		level.Debug(spanLog).Log("msg", "empty query time range after min time manipulation")
+		level.Debug(spanLogger).Log("msg", "empty query time range after min time manipulation")
 		return storage.EmptySeriesSet()
 	}
 
@@ -192,14 +192,14 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 }
 
 func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	logger, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelValues")
-	defer logger.Span.Finish()
+	spanLogger, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelValues")
+	defer spanLogger.Span.Finish()
 
 	clampedMinT, queryIngesters := queryIngestersClampMinT(
-		ctx, q.queryIngestersWithin, time.Now(), q.mint, q.maxt, q.logger,
+		ctx, spanLogger, q.queryIngestersWithin, time.Now(), q.mint, q.maxt,
 	)
 	if !queryIngesters {
-		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
+		level.Debug(spanLogger).Log("msg", "empty time range after min time manipulation")
 		return nil, nil, nil
 	}
 
@@ -209,14 +209,14 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 }
 
 func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	logger, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
-	defer logger.Span.Finish()
+	spanLogger, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
+	defer spanLogger.Span.Finish()
 
 	clampedMinT, queryIngesters := queryIngestersClampMinT(
-		ctx, q.queryIngestersWithin, time.Now(), q.mint, q.maxt, q.logger,
+		ctx, spanLogger, q.queryIngestersWithin, time.Now(), q.mint, q.maxt,
 	)
 	if !queryIngesters {
-		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
+		level.Debug(spanLogger).Log("msg", "empty time range after min time manipulation")
 		return nil, nil, nil
 	}
 

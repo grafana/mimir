@@ -147,29 +147,22 @@ func QueryIngesters(queryIngestersWithin time.Duration, now time.Time, queryMaxT
 // queryIngestersClampMinT clamps the min query time against the query-ingesters-within setting
 // and checks whether the query is a no-op for the distributor querier.
 //
-// This function is a private extensions of QueryIngesters, as we want to discourage any external
+// This function is a private extension of QueryIngesters, as we want to discourage any external
 // application of query time range clamping before the values are passed into the actual queriers.
-//
-// Tests ensure equal output of QueryIngesters and queryIngestersClampMinT.
 func queryIngestersClampMinT(
-	ctx context.Context, queryIngestersWithin time.Duration, now time.Time, queryMinT, queryMaxT int64, logger log.Logger,
+	ctx context.Context, logger log.Logger, queryIngestersWithin time.Duration, now time.Time, queryMinT, queryMaxT int64,
 ) (int64, bool) {
-	if queryIngestersWithin == 0 {
-		// short-circuit before we do any math
-		return queryMinT, true
-	}
+	queryIngesters := QueryIngesters(queryIngestersWithin, now, queryMaxT)
+	clampedQueryMinT := clampMinQueryT(ctx, logger, queryMinT, now, queryIngestersWithin)
+	return clampedQueryMinT, queryIngesters
+}
 
-	queryIngestersMinT := util.TimeToMillis(now.Add(-queryIngestersWithin))
-	clampedQueryMinT := math.Max(queryMinT, queryIngestersMinT)
+func clampMinQueryT(ctx context.Context, logger log.Logger, queryMinT int64, now time.Time, limit time.Duration) int64 {
+	clampedQueryMinT := math.Max(queryMinT, util.TimeToMillis(now.Add(-limit)))
 	if clampedQueryMinT > queryMinT {
 		logClampEvent(ctx, queryMinT, clampedQueryMinT, "min", "query ingesters within", logger)
 	}
-
-	if clampedQueryMinT >= queryMaxT {
-		// query is a no-op for ingesters; caller decides how to handle
-		return clampedQueryMinT, false
-	}
-	return clampedQueryMinT, true
+	return clampedQueryMinT
 }
 
 func queryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int64) bool {
