@@ -14,6 +14,20 @@ receivers:
           scrape_interval: 5s
           static_configs:
             - targets: [localhost:8888]
+              labels:
+                scraped_by: otel-collector-otlp-push
+        - job_name: mimir-1
+          static_configs:
+            - targets: ['mimir-1:8001']
+              labels:
+                container: 'mimir-1'
+                scraped_by: otel-collector-otlp-push
+        - job_name: mimir-2
+          static_configs:
+            - targets: ['mimir-2:8002']
+              labels:
+                container: 'mimir-2'
+                scraped_by: otel-collector-otlp-push
 
 processors:
   batch:

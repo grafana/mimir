@@ -35,6 +35,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+DEFAULT_PROFILES=("--profile" "prometheus" "--profile" "grafana-agent-static")
+if [ ${#PROFILES[@]} -eq 0 ]; then
+    PROFILES=("${DEFAULT_PROFILES[@]}")
+fi
 
 CGO_ENABLED=0 GOOS=linux go build -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir && \
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build mimir-1 && \

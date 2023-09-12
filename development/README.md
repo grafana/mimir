@@ -19,6 +19,26 @@ This should give you a running Mimir system with Grafana available at [htttp://l
 
 The Minio console is available in most dev environments at [http://localhost:9001](http://localhost:9001), with the credentials defined in [mimir.yaml][minio-creds].
 
+## Profiles
+
+By default a Prometheus and Grafana Agent (static mode) is also started. You can override what agent is being started by using profiles.
+
+> **Note**: Agent profiles are only available in `mimir-monolithic-mode` at the moment.
+
+```bash
+./compose-up.sh --profile <profile1> --profile <profile2>
+```
+
+Available profiles:
+
+1. grafana-agent-static (started by default)
+1. prometheus (started by default)
+1. grafana-agent-flow
+1. otel-collector-remote-write (don't use with the other otel collector, both use the default ports for clients)
+1. otel-collector-otlp-push (don't use with the other otel collector, both use the default ports for clients)
+
+> **Note**: Compose down will stop all profiles unless specified.
+
 ## OTEL collector
 
 Experimental support for running OpenTelemetry collector in the Monolithic mode.
