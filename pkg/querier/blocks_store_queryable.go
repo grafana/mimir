@@ -354,13 +354,11 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
 		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
 
-	// Clamp minT; do this before passing to queryWithConsistencyCheck as not all callers need to clamp minT
+	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
 	clampedMinT := minT
 	if maxQueryLength != 0 {
-		clampedMinT = clampTime(
-			spanLog, minT, maxT, maxQueryLength, "max label query length", false, true,
-		)
+		clampedMinT = clampTime(spanLog, minT, maxT, -maxQueryLength, "max label query length", false)
 	}
 
 	var (
@@ -398,13 +396,11 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
 		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
 
-	// Clamp minT; do this before passing to queryWithConsistencyCheck as not all callers need to clamp minT
+	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
 	clampedMinT := minT
 	if maxQueryLength != 0 {
-		clampedMinT = clampTime(
-			spanLog, minT, maxT, maxQueryLength, "max label query length", false, true,
-		)
+		clampedMinT = clampTime(spanLog, minT, maxT, -maxQueryLength, "max label query length", false)
 	}
 
 	var (
@@ -519,9 +515,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	}
 
 	now := time.Now().UnixMilli()
-	clampedMaxT := clampTime(
-		logger, maxT, now, q.queryStoreAfter, "query store after", true, false,
-	)
+	clampedMaxT := clampTime(logger, maxT, now, -q.queryStoreAfter, "query store after", true)
 
 	// Find the list of blocks we need to query given the time range.
 	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, q.userID, minT, clampedMaxT)

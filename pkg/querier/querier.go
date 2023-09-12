@@ -320,9 +320,7 @@ func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labe
 	}
 	if sp.Func == "series" { // Clamp max time range for series-only queries, before we check max length.
 		maxQueryLength := mq.limits.MaxLabelsQueryLength(userID)
-		startMs = clampTime(
-			spanLog, startMs, endMs, maxQueryLength, "max label query length", false, true,
-		)
+		startMs = clampTime(spanLog, startMs, endMs, -maxQueryLength, "max label query length", false)
 	}
 
 	// The time range may have been manipulated during the validation,
@@ -520,14 +518,10 @@ func (s *sliceSeriesSet) Warnings() storage.Warnings {
 
 func validateQueryTimeRange(userID string, startMs, endMs int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, logger log.Logger) (int64, int64, error) {
 	now := time.Now().UnixMilli()
-	endMs = clampTime(
-		logger, endMs, now, maxQueryIntoFuture, "max query into future", true, true,
-	)
+	endMs = clampTime(logger, endMs, now, maxQueryIntoFuture, "max query into future", true)
 
 	maxQueryLookback := limits.MaxQueryLookback(userID)
-	startMs = clampTime(
-		logger, startMs, now, maxQueryLookback, "max query lookback", false, true,
-	)
+	startMs = clampTime(logger, startMs, now, -maxQueryLookback, "max query lookback", false)
 
 	if endMs < startMs {
 		return 0, 0, errEmptyTimeRange
@@ -536,45 +530,52 @@ func validateQueryTimeRange(userID string, startMs, endMs int64, limits *validat
 	return startMs, endMs, nil
 }
 
+// clampTime allows for time-limiting query minT and maxT based on configured limits.
+//
+// origT is the original timestamp to be clamped based on other supplied parameters.
+//
+// refT is the reference time from which to apply limitDelta; generally now() or query maxT because
+// when we truncate on the basis of overall query length, we leave maxT as-is and bring minT forward.
+//
+// clampDelta should be negative if the limit is looking back in time from the reference time;
+// this most common, as we mostly truncate a minT forward or a maxT backward by applying
+// a limit looking backwards from a reference time of now() or query maxT, as in:
+//   - max-query-lookback: (refTime: now)
+//   - query-ingesters-within (refTime: now)
+//   - query-store-after (refTime: now)
+//   - max-labels-query-length (refTime: maxT)
+//
+// An example exception is max-query-into-future, where the maxT is truncated by applying
+// the limit max-query-into-future forward in time from the reference time of now().
 func clampTime(
-	logger log.Logger,
-	originalT int64,
-	referenceT int64,
-	limit time.Duration,
-	limitName string,
-	clampMax bool,
-	clampForward bool,
+	ll log.Logger, origT int64, refT int64, limitDelta time.Duration, limitName string, clampMax bool,
 ) int64 {
-	if limit == 0 {
-		return originalT
+	if limitDelta == 0 {
+		// limits equal to 0 are considered to not be enabled
+		return origT
 	}
+	allowedT := refT + limitDelta.Milliseconds()
 
-	if !clampForward {
-		limit = -limit
+	clampedT := origT
+	if allowedT < origT && clampMax {
+		// moving a max time window backwards
+		clampedT = math.Min(origT, allowedT)
+		logClampEvent(ll, origT, clampedT, "max", limitName)
+	} else if allowedT > origT && !clampMax {
+		// moving a min time window forward
+		clampedT = math.Max(origT, allowedT)
+		logClampEvent(ll, origT, clampedT, "min", limitName)
 	}
-
-	if clampMax {
-		clampedMaxT := math.Min(originalT, referenceT+limit.Milliseconds())
-		if clampedMaxT < originalT {
-			logClampEvent(logger, originalT, clampedMaxT, "max", limitName)
-		}
-		return clampedMaxT
-	}
-
-	// else clamp minT
-	clampedMinT := math.Max(originalT, referenceT-limit.Milliseconds())
-	if clampedMinT > originalT {
-		logClampEvent(logger, originalT, clampedMinT, "min", limitName)
-	}
-	return clampedMinT
+	// all other scenarios are no-op; moving min backwards or max forwards is not clamping
+	return clampedT
 }
 
-func logClampEvent(spanLog log.Logger, originalT, clampedT int64, minOrMax, settingName string) {
+func logClampEvent(ll log.Logger, originalT, clampedT int64, minOrMax, settingName string) {
 	msg := fmt.Sprintf(
 		"the %s time of the query has been manipulated because of the '%s' setting",
 		minOrMax, settingName,
 	)
-	level.Debug(spanLog).Log(
+	level.Debug(ll).Log(
 		"msg", msg,
 		"original", util.TimeFromMillis(originalT).String(),
 		"updated", util.TimeFromMillis(clampedT).String(),
