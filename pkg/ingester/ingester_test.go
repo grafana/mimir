@@ -8046,27 +8046,21 @@ func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 
 func TestIngester_PushWithSampledErrors(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
 	metricNames := []string{
 		"cortex_discarded_samples_total",
 	}
-	userID := "test"
 	errorSampleRate := 5
 	now := time.Now()
 
+	users := []string{"test", "tset"}
+
 	tests := map[string]struct {
-		reqs                      []*mimirpb.WriteRequest
-		expectedErr               error
-		expectedIngested          model.Matrix
-		expectedMetadataIngested  []*mimirpb.MetricMetadata
-		expectedExemplarsIngested []mimirpb.TimeSeries
-		expectedMetrics           string
-		disableActiveSeries       bool
-		maxExemplars              int
-		maxMetadataPerUser        int
-		maxMetadataPerMetric      int
-		nativeHistograms          bool
-		expectedSampling          bool
+		reqs             []*mimirpb.WriteRequest
+		expectedErrs     []errorWithStatus
+		expectedMetrics  string
+		expectedSampling bool
+		maxExemplars     int
+		nativeHistograms bool
 	}{
 		"should soft fail on sample out-of-order": {
 			reqs: []*mimirpb.WriteRequest{
@@ -8085,15 +8079,16 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), userID), http.StatusBadRequest),
-			expectedSampling: true,
-			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 10}}},
+			expectedErrs: []errorWithStatus{
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
+			expectedSampling: true,
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 10
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 4
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="tset"} 1
 			`,
 		},
 		"should soft fail on all samples out of bound in a write request": {
@@ -8117,16 +8112,16 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
-			expectedSampling: true,
-			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
+			expectedErrs: []errorWithStatus{
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
+			expectedSampling: true,
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 20
-				# HELP cortex_ingester_active_series Number of currently active series per user.
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 8
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 2
 			`,
 		},
 		"should soft fail on all samples with histograms out of bound in a write request": {
@@ -8151,15 +8146,16 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
-			expectedSampling: true,
-			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
+			expectedErrs: []errorWithStatus{
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
+			expectedSampling: true,
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 30
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 12
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 3
 			`,
 			nativeHistograms: true,
 		},
@@ -8187,15 +8183,16 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
-			expectedSampling: true,
-			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
+			expectedErrs: []errorWithStatus{
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
+			expectedSampling: true,
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 20
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 8
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 2
 			`,
 		},
 		"should soft fail on some samples with timestamp too far in future in a write request": {
@@ -8220,18 +8217,16 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
-			expectedSampling: true,
-			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{
-					{Value: 1, Timestamp: model.Time(now.UnixMilli())},
-					{Value: 3, Timestamp: model.Time(now.UnixMilli() + 1)},
-				}},
+			expectedErrs: []errorWithStatus{
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
+			expectedSampling: true,
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 10
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 4
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="tset"} 1
 			`,
 		},
 		"should soft fail on some histograms with timestamp too far in future in a write request": {
@@ -8250,17 +8245,16 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
-			expectedSampling: true,
-			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
-					{Timestamp: model.Time(now.UnixMilli()), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(0))},
-				}},
+			expectedErrs: []errorWithStatus{
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
+			expectedSampling: true,
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 10
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 4
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="tset"} 1
 			`,
 		},
 		"should soft fail on some exemplars with timestamp too far in future in a write request": {
@@ -8282,24 +8276,11 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), http.StatusBadRequest),
+			expectedErrs: []errorWithStatus{
+				newErrorWithStatus(annotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), http.StatusBadRequest),
+				newErrorWithStatus(annotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), http.StatusBadRequest),
+			},
 			expectedSampling: false,
-			expectedIngested: model.Matrix{
-				&model.SampleStream{
-					Metric: metricLabelSet,
-					Values: []model.SamplePair{
-						{Value: 1, Timestamp: model.Time(now.UnixMilli())},
-					},
-				},
-			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
-				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, TimestampMs: now.UnixMilli(), Value: 1},
-					},
-				},
-			},
 		},
 		"should soft fail on two different sample values at the same timestamp": {
 			reqs: []*mimirpb.WriteRequest{
@@ -8318,15 +8299,16 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr:      newErrorWithStatus(annotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), userID), http.StatusBadRequest),
-			expectedSampling: true,
-			expectedIngested: model.Matrix{
-				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
+			expectedErrs: []errorWithStatus{
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithStatus(annotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
+			expectedSampling: true,
 			expectedMetrics: `
-                # HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 10
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 4
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="tset"} 1
 			`,
 		},
 		"should soft fail on exemplar with unknown series": {
@@ -8351,10 +8333,11 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:              newErrorWithStatus(annotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), http.StatusBadRequest),
-			expectedSampling:         false,
-			expectedIngested:         nil,
-			expectedMetadataIngested: nil,
+			expectedErrs: []errorWithStatus{
+				newErrorWithStatus(annotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), http.StatusBadRequest),
+				newErrorWithStatus(annotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), http.StatusBadRequest),
+			},
+			expectedSampling: false,
 		},
 	}
 
@@ -8367,8 +8350,6 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
-			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
-			limits.MaxGlobalMetadataPerMetric = testData.maxMetadataPerMetric
 			limits.NativeHistogramsIngestionEnabled = testData.nativeHistograms
 
 			i, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, "", registry)
@@ -8405,7 +8386,10 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			require.NoError(t, err)
 			defer client.Close()
 
-			ctx := user.InjectOrgID(context.Background(), userID)
+			ctxs := make([]context.Context, 0, len(users))
+			for _, userID := range users {
+				ctxs = append(ctxs, user.InjectOrgID(context.Background(), userID))
+			}
 
 			// Push timeseries
 
@@ -8413,26 +8397,43 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				// We expect no error on any request except the last one
 				// which may error (and in that case we assert on it)
 				if idx < len(testData.reqs)-1 {
-					_, err := client.Push(ctx, req)
-					assert.NoError(t, err)
+					for i := 0; i < len(users); i++ {
+						_, err := client.Push(ctxs[i], req)
+						assert.NoError(t, err)
+					}
 				} else {
-					// We push 2 times more samples than errorSampleRate causing the expected error.
-					for i := 0; i < 2*errorSampleRate; i++ {
-						_, err = client.Push(ctx, req)
+					// We push additional series causing the expected error type in the following way:
+					// - we push additional (errorSampleRate - 1) series related to users[0].
+					// - we push 1 additional series related to users[1].
+					// The expected result is that only 1 sampled error related to users[0] will be logged,
+					// but the cortex_discarded_samples_total counter will contain:
+					// - (errorSampleRate - 1) samples for users[0] and
+					// - 1 sample for users[1].
+					for i := 0; i < errorSampleRate-1; i++ {
+						_, err = client.Push(ctxs[0], req)
 						require.Error(t, err)
 						status, ok := status.FromError(err)
 						require.True(t, ok)
-						require.Errorf(t, testData.expectedErr, status.Message())
+						require.ErrorContains(t, status.Err(), testData.expectedErrs[0].err.Error())
 					}
+					_, err = client.Push(ctxs[1], req)
+					require.Error(t, err)
+					status, ok := status.FromError(err)
+					require.True(t, ok)
+					require.ErrorContains(t, status.Err(), testData.expectedErrs[1].err.Error())
 				}
 			}
 
 			if testData.expectedSampling {
-				// If sampling is expected, we expect to see only 2 log entries realted to the expected error.
-				require.Equal(t, 2, logger.count(testData.expectedErr.Error()))
+				// If sampling is expected, we expect to see:
+				// - only 1 log entry related to the expected error for users[0].
+				// - no log entry related to the expected error fro users[1].
+				require.Equal(t, 1, logger.count(testData.expectedErrs[0].Error()))
+				require.Equal(t, 0, logger.count(testData.expectedErrs[1].Error()))
 			} else {
 				// Otherwise we expect to see all log entries.
-				require.Equal(t, 2*errorSampleRate, logger.count(testData.expectedErr.Error()))
+				require.Equal(t, errorSampleRate-1, logger.count(testData.expectedErrs[0].Error()))
+				require.Equal(t, 1, logger.count(testData.expectedErrs[1].Error()))
 			}
 
 			// Check tracked Prometheus metrics
