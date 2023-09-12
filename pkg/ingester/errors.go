@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc/codes"
@@ -28,6 +27,20 @@ var (
 	tooBusyError = httpgrpc.Errorf(http.StatusServiceUnavailable,
 		"the ingester is currently too busy to process queries, try again later")
 )
+
+type safeToWrap interface {
+	safeToWrap()
+}
+
+type safeToWrapError struct {
+	err error
+}
+
+func (s safeToWrapError) safeToWrap() {}
+
+func (s safeToWrapError) Error() string {
+	return s.err.Error()
+}
 
 // errorWithStatus is used for wrapping errors returned by ingester.
 type errorWithStatus struct {
@@ -54,33 +67,12 @@ func (e errorWithStatus) GRPCStatus() *status.Status {
 	return e.status
 }
 
-// validationError is used for wrapping errors returned by limit validations.
-type validationError struct {
-	err    error // underlying error
-	code   int
-	labels labels.Labels
+func makeLimitError(msg string) error {
+	return safeToWrapError{fmt.Errorf(msg)}
 }
 
-func (e validationError) Error() string {
-	if e.labels.IsEmpty() {
-		return e.err.Error()
-	}
-	return fmt.Sprintf("%s This is for series %s", e.err.Error(), e.labels.String())
-}
-
-func makeLimitError(err error) error {
-	return validationError{
-		err:  err,
-		code: http.StatusBadRequest,
-	}
-}
-
-func makeMetricLimitError(labels labels.Labels, err error) error {
-	return validationError{
-		err:    err,
-		code:   http.StatusBadRequest,
-		labels: labels,
-	}
+func makeMetricLimitError(labels labels.Labels, msg string) error {
+	return safeToWrapError{fmt.Errorf("%s This is for series %s", msg, labels.String())}
 }
 
 // annotateWithUser prepends the user to the error. It does not retain a reference to err.
@@ -94,7 +86,9 @@ func wrapWithUser(err error, userID string) error {
 }
 
 func newIngestErrSample(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return fmt.Errorf("%v. The affected sample has timestamp %s and is from series %s", errID.Message(errMsg), timestamp.Time().UTC().Format(time.RFC3339Nano), mimirpb.FromLabelAdaptersToLabels(labels).String())
+	return safeToWrapError{
+		fmt.Errorf("%v. The affected sample has timestamp %s and is from series %s", errID.Message(errMsg), timestamp.Time().UTC().Format(time.RFC3339Nano), mimirpb.FromLabelAdaptersToLabels(labels).String()),
+	}
 }
 
 func newIngestErrSampleTimestampTooOld(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
@@ -118,12 +112,13 @@ func newIngestErrSampleDuplicateTimestamp(timestamp model.Time, labels []mimirpb
 }
 
 func newIngestErrExemplar(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
-	return fmt.Errorf("%v. The affected exemplar is %s with timestamp %s for series %s",
-		errID.Message(errMsg),
-		mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
-		timestamp.Time().UTC().Format(time.RFC3339Nano),
-		mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
-	)
+	return safeToWrapError{
+		fmt.Errorf("%v. The affected exemplar is %s with timestamp %s for series %s",
+			errID.Message(errMsg),
+			mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
+			timestamp.Time().UTC().Format(time.RFC3339Nano),
+			mimirpb.FromLabelAdaptersToLabels(seriesLabels).String()),
+	}
 }
 
 func newIngestErrExemplarMissingSeries(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
@@ -136,38 +131,46 @@ func newIngestErrExemplarTimestampTooFarInFuture(timestamp model.Time, seriesLab
 
 func formatMaxSeriesPerUserError(limits *validation.Overrides, userID string) error {
 	globalLimit := limits.MaxGlobalSeriesPerUser(userID)
-	err := errors.New(globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
-		validation.MaxSeriesPerUserFlag,
-	))
-	return makeLimitError(err)
+	return makeLimitError(
+		globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
+			fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
+			validation.MaxSeriesPerUserFlag,
+		),
+	)
 }
 
 func formatMaxSeriesPerMetricError(limits *validation.Overrides, labels labels.Labels, userID string) error {
 	globalLimit := limits.MaxGlobalSeriesPerMetric(userID)
-	err := errors.New(globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
-		validation.MaxSeriesPerMetricFlag,
-	))
-	return makeMetricLimitError(labels, err)
+	return safeToWrapError{
+		fmt.Errorf("%s This is for series %s",
+			globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
+				fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
+				validation.MaxSeriesPerMetricFlag,
+			),
+			labels.String(),
+		),
+	}
 }
 
 func formatMaxMetadataPerUserError(limits *validation.Overrides, userID string) error {
 	globalLimit := limits.MaxGlobalMetricsWithMetadataPerUser(userID)
-	err := errors.New(globalerror.MaxMetadataPerUser.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
-		validation.MaxMetadataPerUserFlag,
-	))
-	return makeLimitError(err)
+	return makeLimitError(
+		globalerror.MaxMetadataPerUser.MessageWithPerTenantLimitConfig(
+			fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
+			validation.MaxMetadataPerUserFlag,
+		),
+	)
 }
 
 func formatMaxMetadataPerMetricError(limits *validation.Overrides, labels labels.Labels, userID string) error {
 	globalLimit := limits.MaxGlobalMetadataPerMetric(userID)
-	err := errors.New(globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
-		validation.MaxMetadataPerMetricFlag,
-	))
-	return makeMetricLimitError(labels, err)
+	return makeMetricLimitError(
+		labels,
+		globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
+			fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
+			validation.MaxMetadataPerMetricFlag,
+		),
+	)
 }
 
 type ingesterErrSamplers struct {

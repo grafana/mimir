@@ -904,12 +904,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
-		var ve validationError
-		if errors.As(firstPartialErr, &ve) {
-			code = ve.code
-		}
-		var sampledErr util_log.SampledError
-		if errors.As(firstPartialErr, &sampledErr) {
+		var safe safeToWrap
+		if errors.As(firstPartialErr, &safe) {
 			return &mimirpb.WriteResponse{}, newErrorWithStatus(wrapWithUser(firstPartialErr, userID), code)
 		}
 		return &mimirpb.WriteResponse{}, newErrorWithStatus(annotateWithUser(firstPartialErr, userID), code)

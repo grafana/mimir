@@ -51,6 +51,8 @@ func TestNewIngestErrMsgs(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, tc.msg, tc.err.Error())
+			var safe safeToWrap
+			assert.ErrorAs(t, tc.err, &safe)
 		})
 	}
 }
