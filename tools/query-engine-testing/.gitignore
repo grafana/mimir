@@ -1,2 +1,3 @@
+data-generation-config-*.yaml
 k6-result-*.json
 .tools/

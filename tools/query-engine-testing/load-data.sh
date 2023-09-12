@@ -4,6 +4,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
+if [ "$#" -ne 1 ]; then
+  echo "Please provide the path to the data generation config file." >/dev/stderr
+  exit 1
+fi
+
+CONFIG_FILE="$1"
+
 TOOLBOX_REPO="github.com/charleskorn/prometheus-toolbox"
 TOOLBOX_VERSION="4a0171338197be37d3e527eb3bdaa493458dce36"
 
@@ -38,4 +45,4 @@ if [ -d "$ROOT_DATA_DIR/.data-minio/mimir-tsdb/anonymous" ]; then
 fi
 
 # Port 8000 is distributor-1
-"$TOOLBOX_BINARY" --prometheus.url="http://localhost:8000" --prometheus.url.suffix="/api/v1/push" --config.file="$SCRIPT_DIR/data-generation-config.yaml"
+"$TOOLBOX_BINARY" --prometheus.url="http://localhost:8000" --prometheus.url.suffix="/api/v1/push" --config.file="$CONFIG_FILE"

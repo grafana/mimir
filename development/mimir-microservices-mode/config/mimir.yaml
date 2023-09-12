@@ -161,6 +161,7 @@ limits:
   query_sharding_max_sharded_queries: 32
   ingestion_rate: 50000
   native_histograms_ingestion_enabled: true
+  out_of_order_time_window: 2h # To make it easier to load an hour of data for testing.
 
 runtime_config:
   file: ./config/runtime.yaml
