@@ -8516,7 +8516,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
-	expectedError := wrapWithUser(ing.limiter.samplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerUserError(ing.limiter.limits, userID)), userID)
+	expectedError := wrapWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerUserError(ing.limiter.limits, userID)), userID)
 	require.Error(t, expectedError)
 
 	// We push series hitting the max series limit too old samples than 2 times more than errorSampleRate.
@@ -8603,7 +8603,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
-	expectedError := wrapWithUser(ing.limiter.samplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerMetricError(ing.limiter.limits, mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters2), userID)), userID)
+	expectedError := wrapWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerMetricError(ing.limiter.limits, mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters2), userID)), userID)
 	require.Error(t, expectedError)
 
 	// We push series hitting the max series limit too old samples than 2 times more than errorSampleRate.

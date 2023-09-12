@@ -20,6 +20,8 @@ func TestUserMetricsMetadata(t *testing.T) {
 		errContains string
 	}
 
+	errorSamplers := newIngesterErrSamplers(0)
+
 	tests := map[string]struct {
 		maxMetadataPerUser   int
 		maxMetadataPerMetric int
@@ -81,7 +83,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 				MaxGlobalMetadataPerMetric:          testData.maxMetadataPerMetric,
 			}, nil)
 			require.NoError(t, err)
-			limiter := NewLimiter(limits, ring, 1, false, 0)
+			limiter := NewLimiter(limits, ring, 1, false)
 
 			// Mock metrics
 			metrics := newIngesterMetrics(
@@ -92,7 +94,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 				nil,
 			)
 
-			mm := newMetadataMap(limiter, metrics, "test")
+			mm := newMetadataMap(limiter, metrics, errorSamplers, "test")
 
 			// Attempt to add all metadata
 			for _, i := range testData.inputMetadata {

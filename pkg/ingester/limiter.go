@@ -36,7 +36,6 @@ type Limiter struct {
 	ring                 RingCount
 	replicationFactor    int
 	zoneAwarenessEnabled bool
-	samplers             ingesterErrSamplers
 }
 
 // NewLimiter makes a new in-memory series limiter
@@ -45,14 +44,12 @@ func NewLimiter(
 	ring RingCount,
 	replicationFactor int,
 	zoneAwarenessEnabled bool,
-	errorSampleRate int64,
 ) *Limiter {
 	return &Limiter{
 		limits:               limits,
 		ring:                 ring,
 		replicationFactor:    replicationFactor,
 		zoneAwarenessEnabled: zoneAwarenessEnabled,
-		samplers:             newIngesterErrSamplers(errorSampleRate),
 	}
 }
 
