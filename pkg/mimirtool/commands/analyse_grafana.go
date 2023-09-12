@@ -70,7 +70,7 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	output, err := AnalyzeGrafana(ctx, c, cmd.folders, cmd.readTimeout)
+	output, err := AnalyzeGrafana(context.Background(), c, cmd.folders, cmd.readTimeout, cmd.folderIDs, cmd.datasourceUID)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeGrafana analyze grafana's dashboards and return the list metrics used in them.
-func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTimeout time.Duration) (*analyze.MetricsInGrafana, error) {
+func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTimeout time.Duration, folderIDs []string, datasourceUID string) (*analyze.MetricsInGrafana, error) {
 
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
@@ -100,7 +100,9 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTi
 		if filterOnFolders && !slices.Contains(folders, link.FolderTitle) {
 			continue
 		}
-
+		if filterOnFolderIDs && !slices.Contains(folderIDs, link.FolderUID) {
+			continue
+		}
 		err := processDashboard(ctx, c, link, output, readTimeout, datasourceUID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
