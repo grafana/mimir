@@ -45,4 +45,4 @@ if [ -d "$ROOT_DATA_DIR/.data-minio/mimir-tsdb/anonymous" ]; then
 fi
 
 # Port 8000 is distributor-1
-"$TOOLBOX_BINARY" --prometheus.url="http://localhost:8000" --prometheus.url.suffix="/api/v1/push" --config.file="$CONFIG_FILE"
+"$TOOLBOX_BINARY" --prometheus.url="http://localhost:8000" --prometheus.url.suffix="/api/v1/push" --config.file="$CONFIG_FILE" --batch.size 100000
