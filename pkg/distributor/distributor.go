@@ -999,6 +999,13 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 			numExemplars += len(ts.Exemplars)
 		}
 
+		span := opentracing.SpanFromContext(ctx)
+		if span != nil {
+			span.SetTag("write.samples", numSamples)
+			span.SetTag("write.exemplars", numExemplars)
+			span.SetTag("write.metadata", len(req.Metadata))
+		}
+
 		d.incomingRequests.WithLabelValues(userID).Inc()
 		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
 		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
@@ -1056,6 +1063,9 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 			}
 			return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
 		}
+
+		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
+		// before we know how many samples/exemplars/metadata we'll actually be writing.
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
