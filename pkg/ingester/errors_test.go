@@ -57,6 +57,13 @@ func TestNewIngestErrMsgs(t *testing.T) {
 	}
 }
 
+func TestSafeToWrapError(t *testing.T) {
+	err := safeToWrapError("this is a safe to wrap error")
+	require.Error(t, err)
+	var safe safeToWrap
+	require.ErrorAs(t, err, &safe)
+}
+
 func TestErrorWithStatus(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)

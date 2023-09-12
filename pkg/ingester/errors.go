@@ -32,14 +32,12 @@ type safeToWrap interface {
 	safeToWrap()
 }
 
-type safeToWrapError struct {
-	err error
-}
+type safeToWrapError string
 
 func (s safeToWrapError) safeToWrap() {}
 
 func (s safeToWrapError) Error() string {
-	return s.err.Error()
+	return string(s)
 }
 
 // errorWithStatus is used for wrapping errors returned by ingester.
@@ -67,14 +65,6 @@ func (e errorWithStatus) GRPCStatus() *status.Status {
 	return e.status
 }
 
-func makeLimitError(msg string) error {
-	return safeToWrapError{fmt.Errorf(msg)}
-}
-
-func makeMetricLimitError(labels labels.Labels, msg string) error {
-	return safeToWrapError{fmt.Errorf("%s This is for series %s", msg, labels.String())}
-}
-
 // annotateWithUser prepends the user to the error. It does not retain a reference to err.
 func annotateWithUser(err error, userID string) error {
 	return fmt.Errorf("user=%s: %s", userID, err)
@@ -86,9 +76,13 @@ func wrapWithUser(err error, userID string) error {
 }
 
 func newIngestErrSample(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return safeToWrapError{
-		fmt.Errorf("%v. The affected sample has timestamp %s and is from series %s", errID.Message(errMsg), timestamp.Time().UTC().Format(time.RFC3339Nano), mimirpb.FromLabelAdaptersToLabels(labels).String()),
-	}
+	return safeToWrapError(
+		fmt.Sprintf("%v. The affected sample has timestamp %s and is from series %s",
+			errID.Message(errMsg),
+			timestamp.Time().UTC().Format(time.RFC3339Nano),
+			mimirpb.FromLabelAdaptersToLabels(labels).String(),
+		),
+	)
 }
 
 func newIngestErrSampleTimestampTooOld(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
@@ -112,13 +106,14 @@ func newIngestErrSampleDuplicateTimestamp(timestamp model.Time, labels []mimirpb
 }
 
 func newIngestErrExemplar(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
-	return safeToWrapError{
-		fmt.Errorf("%v. The affected exemplar is %s with timestamp %s for series %s",
+	return safeToWrapError(
+		fmt.Sprintf("%v. The affected exemplar is %s with timestamp %s for series %s",
 			errID.Message(errMsg),
 			mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
 			timestamp.Time().UTC().Format(time.RFC3339Nano),
-			mimirpb.FromLabelAdaptersToLabels(seriesLabels).String()),
-	}
+			mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
+		),
+	)
 }
 
 func newIngestErrExemplarMissingSeries(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
@@ -131,7 +126,7 @@ func newIngestErrExemplarTimestampTooFarInFuture(timestamp model.Time, seriesLab
 
 func formatMaxSeriesPerUserError(limits *validation.Overrides, userID string) error {
 	globalLimit := limits.MaxGlobalSeriesPerUser(userID)
-	return makeLimitError(
+	return safeToWrapError(
 		globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
 			fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
 			validation.MaxSeriesPerUserFlag,
@@ -141,20 +136,20 @@ func formatMaxSeriesPerUserError(limits *validation.Overrides, userID string) er
 
 func formatMaxSeriesPerMetricError(limits *validation.Overrides, labels labels.Labels, userID string) error {
 	globalLimit := limits.MaxGlobalSeriesPerMetric(userID)
-	return safeToWrapError{
-		fmt.Errorf("%s This is for series %s",
+	return safeToWrapError(
+		fmt.Sprintf("%s This is for series %s",
 			globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
 				fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
 				validation.MaxSeriesPerMetricFlag,
 			),
 			labels.String(),
 		),
-	}
+	)
 }
 
 func formatMaxMetadataPerUserError(limits *validation.Overrides, userID string) error {
 	globalLimit := limits.MaxGlobalMetricsWithMetadataPerUser(userID)
-	return makeLimitError(
+	return safeToWrapError(
 		globalerror.MaxMetadataPerUser.MessageWithPerTenantLimitConfig(
 			fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
 			validation.MaxMetadataPerUserFlag,
@@ -164,11 +159,13 @@ func formatMaxMetadataPerUserError(limits *validation.Overrides, userID string) 
 
 func formatMaxMetadataPerMetricError(limits *validation.Overrides, labels labels.Labels, userID string) error {
 	globalLimit := limits.MaxGlobalMetadataPerMetric(userID)
-	return makeMetricLimitError(
-		labels,
-		globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
-			fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
-			validation.MaxMetadataPerMetricFlag,
+	return safeToWrapError(
+		fmt.Sprintf("%s This is for series %s",
+			globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
+				fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
+				validation.MaxMetadataPerMetricFlag,
+			),
+			labels.String(),
 		),
 	)
 }
