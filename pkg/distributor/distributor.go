@@ -1000,9 +1000,9 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 
 		span := opentracing.SpanFromContext(ctx)
 		if span != nil {
-			span.SetTag("number_samples", numSamples)
-			span.SetTag("number_exemplars", numExemplars)
-			span.SetTag("number_metadata", len(req.Metadata))
+			span.SetTag("write.samples", numSamples)
+			span.SetTag("write.exemplars", numExemplars)
+			span.SetTag("write.metadata", len(req.Metadata))
 		}
 
 		d.incomingRequests.WithLabelValues(userID).Inc()
