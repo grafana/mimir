@@ -1033,6 +1033,10 @@ instance_limits:
 # (experimental) Enable logging of utilization based limiter CPU samples.
 # CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
 [log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
+
+# (experimental) Use experimental method of limiting push requests
+# CLI flag: -ingester.limit-inflight-requests-using-grpc-handlers
+[limit_inflight_requests_using_grpc_tap_handle: <boolean> | default = false]
 ```
 
 ### querier
@@ -4461,7 +4465,8 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # CLI flag: -<prefix>.azure.account-name
 [account_name: <string> | default = ""]
 
-# Azure storage account key
+# Azure storage account key. If unset, Azure managed identities will be used for
+# authentication instead.
 # CLI flag: -<prefix>.azure.account-key
 [account_key: <string> | default = ""]
 
@@ -4479,8 +4484,8 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # CLI flag: -<prefix>.azure.max-retries
 [max_retries: <int> | default = 20]
 
-# (advanced) User assigned identity. If empty, then System assigned identity is
-# used.
+# (advanced) User assigned managed identity. If empty, then System assigned
+# identity is used.
 # CLI flag: -<prefix>.azure.user-assigned-id
 [user_assigned_id: <string> | default = ""]
 ```

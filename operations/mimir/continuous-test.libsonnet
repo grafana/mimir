@@ -31,7 +31,10 @@ local k = import 'ksonnet-util/kausal.libsonnet';
     $.jaeger_mixin,
 
   continuous_test_deployment: if !$._config.continuous_test_enabled then null else
-    deployment.new('continuous-test', 1, [$.continuous_test_container]),
+    deployment.new('continuous-test', 1, [$.continuous_test_container]) +
+    // It doesn't make sense to run multiple continuous-test instances at the same time.
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 
   continuous_test_pdb: if !$._config.continuous_test_enabled then null else
     $.newMimirPdb('continuous-test'),

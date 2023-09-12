@@ -65,15 +65,12 @@ func (f folderTitles) IsCumulative() bool {
 }
 
 func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
-	defer cancel()
-
 	c, err := sdk.NewClient(cmd.address, cmd.apiKey, sdk.DefaultHTTPClient)
 	if err != nil {
 		return err
 	}
 
-	output, err := AnalyzeGrafana(ctx, c, cmd.folders, cmd.folderIDs, cmd.datasourceUID)
+	output, err := AnalyzeGrafana(ctx, c, cmd.folders, cmd.readTimeout)
 	if err != nil {
 		return err
 	}
@@ -86,7 +83,7 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeGrafana analyze grafana's dashboards and return the list metrics used in them.
-func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, folderIDs []string, datasourceUID string) (*analyze.MetricsInGrafana, error) {
+func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTimeout time.Duration) (*analyze.MetricsInGrafana, error) {
 
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
@@ -103,20 +100,11 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, folder
 		if filterOnFolders && !slices.Contains(folders, link.FolderTitle) {
 			continue
 		}
-		if filterOnFolderIDs && !slices.Contains(folderIDs, link.FolderUID) {
-			continue
-		}
-		data, _, err := c.GetRawDashboardByUID(ctx, link.UID)
+
+		err := processDashboard(ctx, c, link, output, readTimeout, datasourceUID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
-			continue
 		}
-		board, err := unmarshalDashboard(data, link)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
-			continue
-		}
-		analyze.ParseMetricsInBoard(output, board, datasourceUID)
 	}
 
 	var metricsUsed model.LabelValues
@@ -127,6 +115,25 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, folder
 	output.MetricsUsed = metricsUsed
 
 	return output, nil
+}
+
+// processDashboard fetches and processes a single Grafana dashboard.
+func processDashboard(ctx context.Context, c *sdk.Client, link sdk.FoundBoard, output *analyze.MetricsInGrafana, readTimeout time.Duration, datasourceUID string) error {
+	fetchCtx, cancel := context.WithTimeout(ctx, readTimeout)
+	defer cancel()
+
+	data, _, err := c.GetRawDashboardByUID(fetchCtx, link.UID)
+	if err != nil {
+		return err
+	}
+
+	board, err := unmarshalDashboard(data, link)
+	if err != nil {
+		return err
+	}
+
+	analyze.ParseMetricsInBoard(output, board, datasourceUID)
+	return nil
 }
 
 func getAllDashboards(ctx context.Context, c *sdk.Client) ([]sdk.FoundBoard, error) {

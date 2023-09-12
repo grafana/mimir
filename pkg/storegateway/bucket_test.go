@@ -1944,7 +1944,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 			},
 		},
 		selectAllStrategy{},
-		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
+		newStaticChunksLimiterFactory(100),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		hashcache.NewSeriesHashCache(1024*1024),
@@ -2002,7 +2002,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 			},
 		},
 		selectAllStrategy{},
-		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
+		newStaticChunksLimiterFactory(100),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		hashcache.NewSeriesHashCache(1024*1024),
@@ -2068,7 +2068,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 			},
 		},
 		selectAllStrategy{},
-		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
+		newStaticChunksLimiterFactory(100),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		hashcache.NewSeriesHashCache(1024*1024),
@@ -2151,6 +2151,8 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	blk := createBlockFromHead(t, headOpts.ChunkDirRoot, h)
 
+	promBlock := openPromBlocks(t, headOpts.ChunkDirRoot)[0]
+
 	thanosMeta := block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
@@ -2193,7 +2195,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 			},
 		},
 		selectAllStrategy{},
-		newStaticChunksLimiterFactory(100000/MaxSamplesPerChunk),
+		newStaticChunksLimiterFactory(1000),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		hashcache.NewSeriesHashCache(1024*1024),
@@ -2207,34 +2209,24 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	srv := newBucketStoreTestServer(t, store)
 
 	tests := map[string]struct {
-		reqMinTime             int64
-		reqMaxTime             int64
-		expectedSamples        int
-		expectedChunksEstimate uint64
+		reqMinTime int64
+		reqMaxTime int64
 	}{
 		"query the entire block": {
-			reqMinTime:             math.MinInt64,
-			reqMaxTime:             math.MaxInt64,
-			expectedSamples:        10000,
-			expectedChunksEstimate: uint64(math.Ceil(10000.0 / MaxSamplesPerChunk)),
+			reqMinTime: math.MinInt64,
+			reqMaxTime: math.MaxInt64,
 		},
 		"query the beginning of the block": {
-			reqMinTime:             0,
-			reqMaxTime:             100,
-			expectedSamples:        MaxSamplesPerChunk,
-			expectedChunksEstimate: 1,
+			reqMinTime: 0,
+			reqMaxTime: 100,
 		},
 		"query the middle of the block": {
-			reqMinTime:             4000,
-			reqMaxTime:             4050,
-			expectedSamples:        MaxSamplesPerChunk,
-			expectedChunksEstimate: 1,
+			reqMinTime: 4000,
+			reqMaxTime: 4050,
 		},
 		"query the end of the block": {
-			reqMinTime:             9800,
-			reqMaxTime:             10000,
-			expectedSamples:        (MaxSamplesPerChunk * 2) + (10000 % MaxSamplesPerChunk),
-			expectedChunksEstimate: 3,
+			reqMinTime: 9800,
+			reqMaxTime: 10000,
 		},
 	}
 
@@ -2267,10 +2259,10 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 					if streamingBatchSize == 0 {
 						require.Zero(t, estimatedChunks)
 					} else {
-						require.Equal(t, testData.expectedChunksEstimate, estimatedChunks)
+						require.InDelta(t, len(seriesSet[0].Chunks), estimatedChunks, 0.1, "number of chunks estimations should be within 10% of the actual number of chunks")
 					}
 
-					assert.True(t, testData.expectedSamples == numSamples, "expected: %d, actual: %d", testData.expectedSamples, numSamples)
+					compareToPromChunks(t, seriesSet[0].Chunks, mimirpb.FromLabelAdaptersToLabels(seriesSet[0].Labels), testData.reqMinTime, testData.reqMaxTime, promBlock)
 				})
 			}
 		})
@@ -2488,7 +2480,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 			},
 		},
 		selectAllStrategy{},
-		newStaticChunksLimiterFactory(10000/MaxSamplesPerChunk),
+		newStaticChunksLimiterFactory(100),
 		newStaticSeriesLimiterFactory(0),
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		hashcache.NewSeriesHashCache(1024*1024),

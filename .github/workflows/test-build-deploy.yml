@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
@@ -34,7 +34,7 @@ jobs:
     container: 
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Get Go Version
@@ -51,7 +51,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -107,7 +107,7 @@ jobs:
       image: grafana/doc-validator:v3.0.0
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Run doc-validator tool (mimir)
@@ -146,7 +146,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -176,7 +176,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -207,7 +207,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
@@ -239,7 +239,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
@@ -303,7 +303,7 @@ jobs:
           go-version: ${{ needs.goversion.outputs.version }}
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
@@ -366,7 +366,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client

@@ -42,8 +42,8 @@
     $.mimirVolumeMounts +
     $.newMimirSpreadTopology(name, $._config.query_frontend_topology_spread_max_skew) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   query_frontend_deployment: if !$._config.is_microservices_deployment_mode then null else
     self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container),

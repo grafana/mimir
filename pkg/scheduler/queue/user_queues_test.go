@@ -6,6 +6,7 @@
 package queue
 
 import (
+	"container/list"
 	"fmt"
 	"math"
 	"math/rand"
@@ -36,7 +37,7 @@ func TestQueues(t *testing.T) {
 
 	// [one two]
 	qTwo := getOrAdd(t, uq, "two", 0)
-	assert.NotEqual(t, qOne, qTwo)
+	assert.NotSame(t, qOne, qTwo)
 
 	lastUserIndex = confirmOrderForQuerier(t, uq, "querier-1", lastUserIndex, qTwo, qOne, qTwo, qOne)
 	confirmOrderForQuerier(t, uq, "querier-2", -1, qOne, qTwo, qOne)
@@ -398,7 +399,7 @@ func generateQuerier(r *rand.Rand) string {
 	return fmt.Sprint("querier-", r.Int()%5)
 }
 
-func getOrAdd(t *testing.T, uq *queues, tenant string, maxQueriers int) chan Request {
+func getOrAdd(t *testing.T, uq *queues, tenant string, maxQueriers int) *list.List {
 	q := uq.getOrAddQueue(tenant, maxQueriers)
 	assert.NotNil(t, q)
 	assert.NoError(t, isConsistent(uq))
@@ -406,8 +407,8 @@ func getOrAdd(t *testing.T, uq *queues, tenant string, maxQueriers int) chan Req
 	return q
 }
 
-func confirmOrderForQuerier(t *testing.T, uq *queues, querier string, lastUserIndex int, qs ...chan Request) int {
-	var n chan Request
+func confirmOrderForQuerier(t *testing.T, uq *queues, querier string, lastUserIndex int, qs ...*list.List) int {
+	var n *list.List
 	for _, q := range qs {
 		n, _, lastUserIndex = uq.getNextQueueForQuerier(lastUserIndex, querier)
 		assert.Equal(t, q, n)
