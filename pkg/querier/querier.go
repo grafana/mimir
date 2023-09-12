@@ -153,19 +153,37 @@ func queryIngestersClampMinT(
 	ctx context.Context, logger log.Logger, queryIngestersWithin time.Duration, now time.Time, queryMinT, queryMaxT int64,
 ) (int64, bool) {
 	queryIngesters := QueryIngesters(queryIngestersWithin, now, queryMaxT)
-	clampedQueryMinT := clampMinQueryT(ctx, logger, queryMinT, now, queryIngestersWithin)
-	return clampedQueryMinT, queryIngesters
-}
 
-func clampMinQueryT(ctx context.Context, logger log.Logger, queryMinT int64, now time.Time, limit time.Duration) int64 {
-	clampedQueryMinT := math.Max(queryMinT, util.TimeToMillis(now.Add(-limit)))
-	if clampedQueryMinT > queryMinT {
-		logClampEvent(ctx, queryMinT, clampedQueryMinT, "min", "query ingesters within", logger)
+	clampedMinQueryT := queryMinT
+	if queryIngestersWithin != 0 {
+		clampedMinQueryT = clampMinQueryT(ctx, logger, queryMinT, now.UnixMilli(), queryIngestersWithin, "query ingesters within")
 	}
-	return clampedQueryMinT
+
+	return clampedMinQueryT, queryIngesters
 }
 
-func queryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int64) bool {
+func clampMinQueryT(ctx context.Context, logger log.Logger, queryMinT, referenceT int64, durationLimit time.Duration, settingName string) int64 {
+	clampedMinQueryT := math.Max(queryMinT, referenceT-durationLimit.Milliseconds())
+	if clampedMinQueryT > queryMinT {
+		logClampEvent(ctx, logger, queryMinT, clampedMinQueryT, "min", settingName)
+	}
+	return clampedMinQueryT
+}
+
+//func clampMaxQueryT(ctx context.Context, logger log.Logger, queryMaxT int64, now time.Time, limit time.Duration, settingName string) int64 {
+//	clampedQueryMaxT := math.Min(queryMaxT, util.TimeToMillis(now.Add(-limit)))
+//	if clampedQueryMaxT < queryMaxT {
+//		logClampEvent(ctx, logger, queryMaxT, clampedQueryMaxT, "max", settingName)
+//	}
+//	return clampedQueryMaxT
+//}
+
+// QueryBlockStore provides a check for whether the block store will be used for a given query.
+//
+// QueryBlockStore is exposed for use before the constructing the block store querier for a query,
+// in order to decide how to route queries or whether to construct a block store querier at all;
+// queryBlockStoreClampMaxT should be used for in-query logic.
+func QueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int64) bool {
 	if queryStoreAfter != 0 {
 		queryStoreMaxT := util.TimeToMillis(now.Add(-queryStoreAfter))
 		if queryMinT > queryStoreMaxT {
@@ -264,7 +282,7 @@ func NewQueryable(
 			queriers = append(queriers, q)
 		}
 
-		if blockStore != nil && queryBlockStore(cfg.QueryStoreAfter, now, minT) {
+		if blockStore != nil && QueryBlockStore(cfg.QueryStoreAfter, now, minT) {
 			q, err := blockStore.Querier(ctx, minT, maxT)
 			if err != nil {
 				return nil, err
@@ -552,13 +570,13 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 // Ensure a time is within bounds, and log in traces to ease debugging.
 func clampTime(ctx context.Context, t model.Time, limit time.Duration, clamp model.Time, before bool, kind, name string, logger log.Logger) model.Time {
 	if limit > 0 && ((before && t.Before(clamp)) || (!before && t.After(clamp))) {
-		logClampEvent(ctx, t.Unix(), clamp.Unix(), kind, name, logger)
+		logClampEvent(ctx, logger, t.Unix(), clamp.Unix(), kind, name)
 		t = clamp
 	}
 	return t
 }
 
-func logClampEvent(ctx context.Context, originalT, clampedT int64, minOrMax, settingName string, logger log.Logger) {
+func logClampEvent(ctx context.Context, logger log.Logger, originalT, clampedT int64, minOrMax, settingName string) {
 	msg := fmt.Sprintf(
 		"the %s time of the query has been manipulated because of the '%s' setting",
 		minOrMax, settingName,

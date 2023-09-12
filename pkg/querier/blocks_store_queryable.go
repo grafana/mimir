@@ -25,7 +25,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/objstore"
@@ -356,11 +355,11 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
 		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
 
-	{
-		// Clamp max time range.
-		startTime, endTime := model.Time(minT), model.Time(maxT)
-		maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
-		minT = int64(clampTime(spanCtx, startTime, maxQueryLength, endTime.Add(-maxQueryLength), true, "start", "max label query length", spanLog))
+	// Clamp minT; do this before passing to queryWithConsistencyCheck as not all callers need to clamp minT
+	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
+	clampedMinT := minT
+	if maxQueryLength != 0 {
+		clampedMinT = clampMinQueryT(spanCtx, spanLog, minT, maxT, maxQueryLength, "max label query length")
 	}
 
 	var (
@@ -381,7 +380,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, nil, queryFunc)
+	err := q.queryWithConsistencyCheck(spanCtx, spanLog, clampedMinT, maxT, nil, queryFunc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -390,19 +389,19 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 }
 
 func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.LabelValues")
-	defer spanLog.Span.Finish()
+	spanLogger, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.LabelValues")
+	defer spanLogger.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT
 
-	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
+	level.Debug(spanLogger).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
 		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
 
-	{
-		// Clamp max time range.
-		startTime, endTime := model.Time(minT), model.Time(maxT)
-		maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
-		minT = int64(clampTime(spanCtx, startTime, maxQueryLength, endTime.Add(-maxQueryLength), true, "start", "max label query length", spanLog))
+	// Clamp minT; do this before passing to queryWithConsistencyCheck as not all callers need to clamp minT
+	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
+	clampedMinT := minT
+	if maxQueryLength != 0 {
+		clampedMinT = clampMinQueryT(spanCtx, spanLogger, minT, maxT, maxQueryLength, "max label query length")
 	}
 
 	var (
@@ -422,7 +421,7 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, nil, queryFunc)
+	err := q.queryWithConsistencyCheck(spanCtx, spanLogger, clampedMinT, maxT, nil, queryFunc)
 	if err != nil {
 		return nil, nil, err
 	}
