@@ -8,6 +8,7 @@ metadata:
     {{- toYaml .Values.compactor.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  podManagementPolicy: {{ .Values.compactor.podManagementPolicy }}
   replicas: {{ .Values.compactor.replicas }}
   selector:
     matchLabels:
