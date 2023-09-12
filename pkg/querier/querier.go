@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -128,14 +129,47 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 	return mergeChunks
 }
 
-func queryIngesters(queryIngestersWithin time.Duration, now time.Time, queryMaxT int64) bool {
+// QueryIngesters provides a check for whether the ingesters will be used for a given query.
+//
+// QueryIngesters is exposed for use before the constructing the distributor querier for a query,
+// in order to decide how to route queries or whether to construct a distributor querier at all;
+// queryIngestersClampMinT should be used for in-query logic.
+func QueryIngesters(queryIngestersWithin time.Duration, now time.Time, queryMaxT int64) bool {
 	if queryIngestersWithin != 0 {
 		queryIngestersMinT := util.TimeToMillis(now.Add(-queryIngestersWithin))
-		if queryMaxT < queryIngestersMinT {
+		if queryIngestersMinT >= queryMaxT {
 			return false
 		}
 	}
 	return true
+}
+
+// queryIngestersClampMinT clamps the min query time against the query-ingesters-within setting
+// and checks whether the query is a no-op for the distributor querier.
+//
+// This function is a private extensions of QueryIngesters, as we want to discourage any external
+// application of query time range clamping before the values are passed into the actual queriers.
+//
+// Tests ensure equal output of QueryIngesters and queryIngestersClampMinT.
+func queryIngestersClampMinT(
+	ctx context.Context, queryIngestersWithin time.Duration, now time.Time, queryMinT, queryMaxT int64, logger log.Logger,
+) (int64, bool) {
+	if queryIngestersWithin == 0 {
+		// short-circuit before we do any math
+		return queryMinT, true
+	}
+
+	queryIngestersMinT := util.TimeToMillis(now.Add(-queryIngestersWithin))
+	clampedQueryMinT := math.Max(queryMinT, queryIngestersMinT)
+	if clampedQueryMinT > queryMinT {
+		logClampEvent(ctx, queryMinT, clampedQueryMinT, "min", "query ingesters within", logger)
+	}
+
+	if clampedQueryMinT >= queryMaxT {
+		// query is a no-op for ingesters; caller decides how to handle
+		return clampedQueryMinT, false
+	}
+	return clampedQueryMinT, true
 }
 
 func queryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int64) bool {
@@ -229,7 +263,7 @@ func NewQueryable(
 		//
 		// queriers may further apply stricter internal logic and decide no-op for a given query
 
-		if distributor != nil && queryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
+		if distributor != nil && QueryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
 			q, err := distributor.Querier(ctx, minT, maxT)
 			if err != nil {
 				return nil, err
@@ -525,11 +559,21 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 // Ensure a time is within bounds, and log in traces to ease debugging.
 func clampTime(ctx context.Context, t model.Time, limit time.Duration, clamp model.Time, before bool, kind, name string, logger log.Logger) model.Time {
 	if limit > 0 && ((before && t.Before(clamp)) || (!before && t.After(clamp))) {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log(
-			"msg", "the "+kind+" time of the query has been manipulated because of the '"+name+"' setting",
-			"original", util.FormatTimeModel(t),
-			"updated", util.FormatTimeModel(clamp))
+		logClampEvent(ctx, t.Unix(), clamp.Unix(), kind, name, logger)
 		t = clamp
 	}
 	return t
+}
+
+func logClampEvent(ctx context.Context, originalT, clampedT int64, minOrMax, settingName string, logger log.Logger) {
+	msg := fmt.Sprintf(
+		"the %s time of the query has been manipulated because of the '%s' setting",
+		minOrMax, settingName,
+	)
+	level.Debug(
+		spanlogger.FromContext(ctx, logger)).Log(
+		"msg", msg,
+		"original", util.TimeFromMillis(originalT).String(),
+		"updated", util.TimeFromMillis(clampedT).String(),
+	)
 }
