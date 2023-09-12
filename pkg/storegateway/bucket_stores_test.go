@@ -120,6 +120,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
 			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="index_header"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
 		"cortex_bucket_store_block_loads_total",
@@ -253,6 +254,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
 			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="index_header"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
 		"cortex_bucket_store_block_loads_total",
