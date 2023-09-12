@@ -2870,6 +2870,17 @@
           "fieldFlag": "ingester.limit-inflight-requests-using-grpc-handlers",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "error_sample_rate",
+          "required": false,
+          "desc": "Each error will be logged once in this many times. Use 0 to log all of them.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.error-sample-rate",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

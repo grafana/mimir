@@ -51,8 +51,17 @@ func TestNewIngestErrMsgs(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, tc.msg, tc.err.Error())
+			var safe safeToWrap
+			assert.ErrorAs(t, tc.err, &safe)
 		})
 	}
+}
+
+func TestSafeToWrapError(t *testing.T) {
+	err := safeToWrapError("this is a safe to wrap error")
+	require.Error(t, err)
+	var safe safeToWrap
+	require.ErrorAs(t, err, &safe)
 }
 
 func TestErrorWithStatus(t *testing.T) {
@@ -72,4 +81,12 @@ func TestAnnotateWithUser(t *testing.T) {
 	annotatedErr := annotateWithUser(err, "1")
 	require.Error(t, annotatedErr)
 	require.NotErrorIs(t, annotatedErr, err)
+}
+
+func TestWrapWithUser(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
+	annotatedErr := wrapWithUser(err, "1")
+	require.Error(t, annotatedErr)
+	require.ErrorIs(t, annotatedErr, err)
 }

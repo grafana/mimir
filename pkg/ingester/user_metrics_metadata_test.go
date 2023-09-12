@@ -81,7 +81,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 				MaxGlobalMetadataPerMetric:          testData.maxMetadataPerMetric,
 			}, nil)
 			require.NoError(t, err)
-			limiter := NewLimiter(limits, ring, 1, false)
+			limiter := NewLimiter(limits, ring, 1, false, 0)
 
 			// Mock metrics
 			metrics := newIngesterMetrics(

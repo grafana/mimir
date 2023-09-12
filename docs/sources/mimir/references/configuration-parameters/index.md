@@ -1037,6 +1037,11 @@ instance_limits:
 # (experimental) Use experimental method of limiting push requests
 # CLI flag: -ingester.limit-inflight-requests-using-grpc-handlers
 [limit_inflight_requests_using_grpc_tap_handle: <boolean> | default = false]
+
+# (experimental) Each error will be logged once in this many times. Use 0 to log
+# all of them.
+# CLI flag: -ingester.error-sample-rate
+[error_sample_rate: <int> | default = 0]
 ```
 
 ### querier
