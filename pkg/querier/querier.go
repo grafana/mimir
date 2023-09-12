@@ -147,8 +147,8 @@ func QueryIngesters(queryIngestersWithin time.Duration, now time.Time, queryMaxT
 // queryIngestersClampMinT clamps the min query time against the query-ingesters-within setting
 // and checks whether the query is a no-op for the distributor querier.
 //
-// This function is a private extension of QueryIngesters, as we want to discourage any external
-// application of query time range clamping before the values are passed into the actual queriers.
+// This is a private extension of QueryIngesters, as we want to discourage any external
+// usage of query time range clamping before the values are passed into the actual queriers.
 func queryIngestersClampMinT(
 	ctx context.Context, logger log.Logger, queryIngestersWithin time.Duration, now time.Time, queryMinT, queryMaxT int64,
 ) (int64, bool) {
@@ -156,27 +156,27 @@ func queryIngestersClampMinT(
 
 	clampedMinQueryT := queryMinT
 	if queryIngestersWithin != 0 {
-		clampedMinQueryT = clampMinQueryT(ctx, logger, queryMinT, now.UnixMilli(), queryIngestersWithin, "query ingesters within")
+		clampedMinQueryT = clampQueryMinT(ctx, logger, queryMinT, now.UnixMilli(), queryIngestersWithin, "query ingesters within")
 	}
 
 	return clampedMinQueryT, queryIngesters
 }
 
-func clampMinQueryT(ctx context.Context, logger log.Logger, queryMinT, referenceT int64, durationLimit time.Duration, settingName string) int64 {
-	clampedMinQueryT := math.Max(queryMinT, referenceT-durationLimit.Milliseconds())
-	if clampedMinQueryT > queryMinT {
-		logClampEvent(ctx, logger, queryMinT, clampedMinQueryT, "min", settingName)
+func clampQueryMinT(ctx context.Context, logger log.Logger, queryMinT, referenceT int64, durationLimit time.Duration, settingName string) int64 {
+	clampedMinT := math.Max(queryMinT, referenceT-durationLimit.Milliseconds())
+	if clampedMinT > queryMinT {
+		logClampEvent(ctx, logger, queryMinT, clampedMinT, "min", settingName)
 	}
-	return clampedMinQueryT
+	return clampedMinT
 }
 
-//func clampMaxQueryT(ctx context.Context, logger log.Logger, queryMaxT int64, now time.Time, limit time.Duration, settingName string) int64 {
-//	clampedQueryMaxT := math.Min(queryMaxT, util.TimeToMillis(now.Add(-limit)))
-//	if clampedQueryMaxT < queryMaxT {
-//		logClampEvent(ctx, logger, queryMaxT, clampedQueryMaxT, "max", settingName)
-//	}
-//	return clampedQueryMaxT
-//}
+func clampQueryMaxT(ctx context.Context, logger log.Logger, queryMaxT, referenceT int64, durationLimit time.Duration, settingName string) int64 {
+	clampedQueryMaxT := math.Min(queryMaxT, referenceT-durationLimit.Milliseconds())
+	if clampedQueryMaxT < queryMaxT {
+		logClampEvent(ctx, logger, queryMaxT, clampedQueryMaxT, "max", settingName)
+	}
+	return clampedQueryMaxT
+}
 
 // QueryBlockStore provides a check for whether the block store will be used for a given query.
 //
@@ -191,6 +191,26 @@ func QueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int
 		}
 	}
 	return true
+}
+
+// queryBlockStoreClampMaxT clamps the max query time against the query-store-after setting
+// and checks whether the query is a no-op for the block store querier.
+//
+// This function is a private extension of QueryBlockStore, as we want to discourage any external
+// usage of query time range clamping before the values are passed into the actual queriers.
+func queryBlockStoreClampMaxT(
+	ctx context.Context, logger log.Logger, queryStoreAfter time.Duration, now time.Time, queryMinT, queryMaxT int64,
+) (int64, bool) {
+	queryBlockStore := QueryBlockStore(queryStoreAfter, now, queryMinT)
+
+	clampedMaxT := queryMaxT
+	if queryStoreAfter != 0 {
+		clampedMaxT = clampQueryMaxT(
+			ctx, logger, queryMaxT, now.UnixMilli(), queryStoreAfter, "query store after",
+		)
+	}
+
+	return clampedMaxT, queryBlockStore
 }
 
 // New builds a queryable and promql engine.

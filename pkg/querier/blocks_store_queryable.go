@@ -48,7 +48,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -359,7 +358,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
 	clampedMinT := minT
 	if maxQueryLength != 0 {
-		clampedMinT = clampMinQueryT(spanCtx, spanLog, minT, maxT, maxQueryLength, "max label query length")
+		clampedMinT = clampQueryMinT(spanCtx, spanLog, minT, maxT, maxQueryLength, "max label query length")
 	}
 
 	var (
@@ -401,7 +400,7 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
 	clampedMinT := minT
 	if maxQueryLength != 0 {
-		clampedMinT = clampMinQueryT(spanCtx, spanLogger, minT, maxT, maxQueryLength, "max label query length")
+		clampedMinT = clampQueryMinT(spanCtx, spanLogger, minT, maxT, maxQueryLength, "max label query length")
 	}
 
 	var (
@@ -503,30 +502,23 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		resWarnings)
 }
 
-func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logger log.Logger, minT, maxT int64, shard *sharding.ShardSelector,
-	queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error)) error {
-	// If queryStoreAfter is enabled, we do manipulate the query maxT to query samples up until
-	// now - queryStoreAfter, because the most recent time range is covered by ingesters. This
-	// optimization is particularly important for the blocks storage because can be used to skip
-	// querying most recent not-compacted-yet blocks from the storage.
-	if q.queryStoreAfter > 0 {
-		now := time.Now()
-		origMaxT := maxT
-		maxT = math.Min(maxT, util.TimeToMillis(now.Add(-q.queryStoreAfter)))
+type _queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error)
 
-		if origMaxT != maxT {
-			level.Debug(logger).Log("msg", "the max time of the query to blocks storage has been manipulated", "original", origMaxT, "updated", maxT)
-		}
+func (q *blocksStoreQuerier) queryWithConsistencyCheck(
+	ctx context.Context, logger log.Logger, minT, maxT int64, shard *sharding.ShardSelector, queryFunc _queryFunc,
+) error {
 
-		if maxT < minT {
-			q.metrics.storesHit.Observe(0)
-			level.Debug(logger).Log("msg", "empty query time range after max time manipulation")
-			return nil
-		}
+	clampedMaxT, queryBlockStore := queryBlockStoreClampMaxT(
+		ctx, logger, q.queryStoreAfter, time.Now(), minT, maxT,
+	)
+	if !queryBlockStore {
+		q.metrics.storesHit.Observe(0)
+		level.Debug(logger).Log("msg", "empty query time range after max time manipulation")
+		return nil
 	}
 
 	// Find the list of blocks we need to query given the time range.
-	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, q.userID, minT, maxT)
+	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, q.userID, minT, clampedMaxT)
 	if err != nil {
 		return err
 	}
@@ -581,7 +573,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 
 		// Fetch series from stores. If an error occur we do not retry because retries
 		// are only meant to cover missing blocks.
-		queriedBlocks, err := queryFunc(clients, minT, maxT)
+		queriedBlocks, err := queryFunc(clients, minT, clampedMaxT)
 		if err != nil {
 			return err
 		}
