@@ -72,8 +72,10 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 		StringVar(&gaCmd.datasourceUID)
 	grafanaAnalyzeCmd.Flag("folder-title", "Limit dashboards analysis for unused metrics based on their exact folder title. When repeated any of the matching folders will be analyzed.").
 		SetValue(&gaCmd.folders)
-	grafanaAnalyzeCmd.Flag("folder-id", "Limit dashboards analysis for unused metrics based on their folder id. When repeated any of the matching folders will be analyzed.").
-		SetValue(&gaCmd.folderIDs)
+	grafanaAnalyzeCmd.Flag("folder-uid", "Limit dashboards analysis for unused metrics based on their folder uid. When repeated any of the matching folders will be analyzed.").
+		SetValue(&gaCmd.folderUIDs)
+	grafanaAnalyzeCmd.Flag("dashboard-id", "Limit dashboards analysis for unused metrics based on their dashboard id. When repeated any of the matching dashboards will be analyzed.").
+		SetValue(&gaCmd.dashboardIDs)
 
 	raCmd := &RulerAnalyzeCommand{}
 	rulerAnalyzeCmd := analyzeCmd.Command("ruler", "Analyze and extract the metrics that are used in Grafana Mimir rules").
