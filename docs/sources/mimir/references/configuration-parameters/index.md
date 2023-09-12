@@ -3493,7 +3493,7 @@ bucket_store:
     # the index-header to disk on construction and load sparse index-headers
     # from disk instead of the whole index-header.
     # CLI flag: -blocks-storage.bucket-store.index-header.sparse-persistence-enabled
-    [sparse_persistence_enabled: <boolean> | default = false]
+    [sparse_persistence_enabled: <boolean> | default = true]
 
     # (advanced) If true, verify the checksum of index headers upon loading them
     # (either on startup or lazily when lazy loading is enabled). Setting to
