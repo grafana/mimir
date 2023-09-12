@@ -40,7 +40,7 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
 	return distributorQueryable{
 		logger:       logger,
 		distributor:  distributor,
@@ -69,12 +69,6 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 	}
 
 	queryIngestersWithin := d.cfgProvider.QueryIngestersWithin(userID)
-	now := time.Now()
-
-	// Don't create distributorQuerier if maxt is not within QueryIngestersWithin w.r.t. current time.
-	if queryIngestersWithin != 0 && maxt < util.TimeToMillis(now.Add(-queryIngestersWithin)) {
-		return storage.NoopQuerier(), nil
-	}
 
 	return &distributorQuerier{
 		logger:               d.logger,
@@ -86,14 +80,6 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 		queryIngestersWithin: queryIngestersWithin,
 		queryMetrics:         d.queryMetrics,
 	}, nil
-}
-
-func (d distributorQueryable) UseQueryable(_ time.Time, _, _ int64) bool {
-	// Always returns true. The proper check is done in `distributorQueryable.Querier()` - if the time range being
-	// queried doesn't overlap with queryIngestersWithin, a noopQuerier will be returned instead.
-	// This code could be simplified and `UseQueryable()` removed, see
-	// https://github.com/grafana/mimir/pull/4287#discussion_r1132488638
-	return true
 }
 
 type distributorQuerier struct {
