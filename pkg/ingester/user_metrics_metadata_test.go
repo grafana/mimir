@@ -84,14 +84,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 			limiter := NewLimiter(limits, ring, 1, false)
 
 			// Mock metrics
-			metrics := newIngesterMetrics(
-				prometheus.NewPedanticRegistry(),
-				true,
-				func() *InstanceLimits { return nil },
-				nil,
-				nil,
-				nil,
-			)
+			metrics := newIngesterMetrics(prometheus.NewPedanticRegistry(), true, func() *InstanceLimits { return nil }, nil, nil, nil, nil)
 
 			mm := newMetadataMap(limiter, metrics, "test")
 

@@ -117,6 +117,10 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
+
+	requestSizeTrackerInterval = 5 * time.Second // How often we update dynamic inflight limit based on average request size.
+	requestSizeTrackerWindow   = 2 * time.Minute // How big window we consider when computing average request size.
+	requestSizeTrackerCounters = int(requestSizeTrackerWindow / requestSizeTrackerInterval)
 )
 
 var (
@@ -267,9 +271,11 @@ type Ingester struct {
 	usersMetadata    map[string]*userMetricsMetadata
 
 	// Rate of pushed samples. Used to limit global samples push rate.
-	ingestionRate             *util_math.EwmaRate
-	inflightPushRequests      atomic.Int64
-	inflightPushRequestsBytes atomic.Int64
+	ingestionRate               *util_math.EwmaRate
+	inflightPushRequests        atomic.Int64 // Number of inflight requests
+	inflightPushRequestsBytes   atomic.Int64 // Total size of inflight requests (once they reach Push method)
+	requestSizeTracker          *requestSizeTracker
+	dynamicInflightRequestLimit atomic.Int64 // Dynamic inflight request limit based on average request size.
 
 	// Anonymous usage statistics tracked by ingester.
 	memorySeriesStats                  *expvar.Int
@@ -318,6 +324,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		tenantsWithOutOfOrderEnabledStat:   usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName),
 		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
 		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
+
+		requestSizeTracker: newRequestSizeTracker(requestSizeTrackerCounters),
 	}, nil
 }
 
@@ -328,7 +336,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		return nil, err
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
-	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
+	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes, &i.dynamicInflightRequestLimit)
 	i.activeGroups = activeGroupsCleanupService
 
 	if registerer != nil {
@@ -387,7 +395,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	if err != nil {
 		return nil, err
 	}
-	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
+	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes, nil)
 
 	i.shipperIngesterID = "flusher"
 
@@ -507,6 +515,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
 
+	requestSizeTrackerTicker := time.NewTicker(requestSizeTrackerInterval)
+	defer requestSizeTrackerTicker.Stop()
+
 	tsdbUpdateTicker := time.NewTicker(i.cfg.TSDBConfigUpdatePeriod)
 	defer tsdbUpdateTicker.Stop()
 
@@ -530,6 +541,8 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.purgeUserMetricsMetadata()
 		case <-ingestionRateTicker.C:
 			i.ingestionRate.Tick()
+		case <-requestSizeTrackerTicker.C:
+			i.updateDynamicInflightRequestsLimit()
 		case <-rateUpdateTicker.C:
 			i.tsdbsMtx.RLock()
 			for _, db := range i.tsdbs {
@@ -724,6 +737,28 @@ type pushStats struct {
 	perMetricSeriesLimitCount int
 }
 
+func (i *Ingester) updateDynamicInflightRequestsLimit() {
+	size, requests := i.requestSizeTracker.switchCounterAndReturnStats()
+	i.metrics.requestSizeTrackerSize.Set(float64(size))
+	i.metrics.requestSizeTrackerRequests.Set(float64(requests))
+
+	il := i.getInstanceLimits()
+	if il == nil || il.MaxInflightPushRequestsBytes <= 0 {
+		i.dynamicInflightRequestLimit.Store(0)
+		return
+	}
+
+	// Compute how many average requests we can keep in memory at once, and update the limit.
+	// If we haven't seen at least 5 requests recently, assume 1 MiB request size.
+	avgSize := uint64(1024 * 1024)
+	if requests >= 5 {
+		avgSize = size / requests
+	}
+
+	maxRequests := il.MaxInflightPushRequestsBytes / int64(avgSize)
+	i.dynamicInflightRequestLimit.Store(maxRequests)
+}
+
 // StartPushRequest checks if ingester can start push request, and increments relevant counters.
 // If new push request cannot be started, errors converible to gRPC status code are returned, and metrics are updated.
 func (i *Ingester) StartPushRequest() error {
@@ -747,17 +782,17 @@ func (i *Ingester) StartPushRequest() error {
 		}
 	}
 
+	if dynamicLimit := i.dynamicInflightRequestLimit.Load(); dynamicLimit > 0 {
+		if inflight > dynamicLimit {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
+			return errMaxInflightRequestsBytesReached
+		}
+	}
+
 	if il != nil && il.MaxIngestionRate > 0 {
 		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
 			return errMaxIngestionRateReached
-		}
-	}
-
-	if il != nil && il.MaxInflightPushRequestsBytes > 0 {
-		if i.inflightPushRequestsBytes.Load() >= il.MaxInflightPushRequestsBytes {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
-			return errMaxInflightRequestsBytesReached
 		}
 	}
 
@@ -793,9 +828,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		return nil, err
 	}
 
-	requestSize := int64(req.Size()) // This can be expensive call. Check it in profiles.
+	requestSize := int64(req.Size())
 	i.inflightPushRequestsBytes.Add(requestSize)
 	defer i.inflightPushRequestsBytes.Sub(requestSize)
+
+	// Track request size for updating dynamic inflight requests limit.
+	i.requestSizeTracker.addRequestSize(uint64(requestSize))
 
 	// Given metadata is a best-effort approach, and we don't halt on errors
 	// process it before samples. Otherwise, we risk returning an error before ingestion.
@@ -3331,4 +3369,44 @@ type utilizationBasedLimiter interface {
 	services.Service
 
 	LimitingReason() string
+}
+
+// requestSizeTracker tracks average request size
+type requestSizeTracker struct {
+	current  atomic.Int64
+	counters []requestSizeTrackerCounter
+}
+
+func newRequestSizeTracker(counters int) *requestSizeTracker {
+	return &requestSizeTracker{
+		counters: make([]requestSizeTrackerCounter, counters),
+	}
+}
+
+type requestSizeTrackerCounter struct {
+	size     atomic.Uint64
+	requests atomic.Uint64
+}
+
+func (rst *requestSizeTracker) addRequestSize(requestSize uint64) {
+	ix := rst.current.Load()
+	rst.counters[ix].requests.Inc()
+	rst.counters[ix].size.Add(requestSize)
+}
+
+func (rst *requestSizeTracker) switchCounterAndReturnStats() (size, requests uint64) {
+	next := int(rst.current.Load())
+	next = (next + 1) % len(rst.counters)
+	// reset this counter, before we start using it.
+	rst.counters[next].requests.Store(0)
+	rst.counters[next].size.Store(0)
+	rst.current.Store(int64(next))
+
+	// We can now sum all other counters, ignoring one we just started to use.
+	for ix := (next + 1) % len(rst.counters); ix != next; ix = (ix + 1) % len(rst.counters) {
+		size += rst.counters[ix].size.Load()
+		requests += rst.counters[ix].requests.Load()
+	}
+
+	return size, requests
 }

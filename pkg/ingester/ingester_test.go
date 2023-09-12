@@ -1776,24 +1776,6 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				}
 			},
 		},
-		"max inflight requests bytes reached": {
-			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
-				if instanceLimits == nil {
-					return false
-				}
-				instanceLimits.MaxInflightPushRequestsBytes = 1
-				return true
-			},
-			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
-				ingester.inflightPushRequestsBytes.Inc()
-			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
-				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "ingester exceeded the allowed size of inflight push requests")
-				}
-			},
-		},
 	}
 
 	for testName, testData := range tests {
@@ -8204,4 +8186,51 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 
 	// Verify that maxTime of TSDB is actually our future sample.
 	require.Equal(t, futureTS, db.db.Head().MaxTime())
+}
+
+func TestRequestSizeTracker(t *testing.T) {
+	rst := newRequestSizeTracker(3)
+
+	// add 3 requests to first counter
+	rst.addRequestSize(100)
+	rst.addRequestSize(300)
+	rst.addRequestSize(500)
+
+	s, r := rst.switchCounterAndReturnStats()
+	require.Equal(t, uint64(900), s)
+	require.Equal(t, uint64(3), r)
+
+	// add 2 requests to second counter
+	rst.addRequestSize(400)
+	rst.addRequestSize(200)
+
+	s, r = rst.switchCounterAndReturnStats()
+	require.Equal(t, uint64(1500), s)
+	require.Equal(t, uint64(5), r)
+
+	// 1 more request to third counter.
+	rst.addRequestSize(700)
+
+	s, r = rst.switchCounterAndReturnStats() // this will clear stats from first counter with 3 requests
+	require.Equal(t, uint64(1300), s)        // 1500 (previous size) + 700 (new request) - 900 (total size in first counter)
+	require.Equal(t, uint64(3), r)
+
+	// back to first counter, add 3 requests.
+	rst.addRequestSize(500)
+	rst.addRequestSize(900)
+	rst.addRequestSize(1500)
+
+	s, r = rst.switchCounterAndReturnStats() // this will clear stats from second counter with 2 requests
+	require.Equal(t, uint64(3600), s)        // 1300 (previous size) + 500+900+1500 (new requests) -400-200 (previous requests in second counter)
+	require.Equal(t, uint64(4), r)           // 3 (previous requests) + 3 (new requests) - 2 (requests in second counter)
+
+	// no requests to second counter, switch to third.
+	s, r = rst.switchCounterAndReturnStats()
+	require.Equal(t, uint64(2900), s) // 3600 (previous size) - 700
+	require.Equal(t, uint64(3), r)    // 4 (previous requests) -1 (request in third counter)
+
+	// no requests left after next switch.
+	s, r = rst.switchCounterAndReturnStats()
+	require.Equal(t, uint64(0), s)
+	require.Equal(t, uint64(0), r)
 }

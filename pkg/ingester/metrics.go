@@ -51,6 +51,7 @@ type ingesterMetrics struct {
 	inflightRequests             prometheus.GaugeFunc
 	inflightRequestsBytes        prometheus.GaugeFunc
 	maxInflightPushRequestsBytes prometheus.GaugeFunc
+	dynamicInflightRequestsLimit prometheus.GaugeFunc
 
 	// Head compactions metrics.
 	compactionsTriggered   prometheus.Counter
@@ -74,6 +75,10 @@ type ingesterMetrics struct {
 
 	// Count number of requests rejected due to utilization based limiting.
 	utilizationLimitedRequests *prometheus.CounterVec
+
+	// Metrics used by request size tracker
+	requestSizeTrackerSize     prometheus.Gauge
+	requestSizeTrackerRequests prometheus.Gauge
 }
 
 func newIngesterMetrics(
@@ -83,6 +88,7 @@ func newIngesterMetrics(
 	ingestionRate *util_math.EwmaRate,
 	inflightRequests *atomic.Int64,
 	inflightRequestsBytes *atomic.Int64,
+	dynamicInflightRequestLimit *atomic.Int64,
 ) *ingesterMetrics {
 	const (
 		instanceLimits     = "cortex_ingester_instance_limits"
@@ -235,6 +241,17 @@ func newIngesterMetrics(
 			return 0
 		}),
 
+		dynamicInflightRequestsLimit: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        instanceLimits,
+			Help:        instanceLimitsHelp,
+			ConstLabels: map[string]string{limitLabel: "dynamic_max_inflight_push_requests"},
+		}, func() float64 {
+			if dynamicInflightRequestLimit != nil {
+				return float64(dynamicInflightRequestLimit.Load())
+			}
+			return 0
+		}),
+
 		ingestionRate: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_ingestion_rate_samples_per_second",
 			Help: "Current ingestion rate in samples/sec that ingester is using to limit access.",
@@ -346,6 +363,17 @@ func newIngesterMetrics(
 		shutdownMarker: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_prepare_shutdown_requested",
 			Help: "If the ingester has been requested to prepare for shutdown via endpoint or marker file.",
+		}),
+
+		requestSizeTrackerSize: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name:        "cortex_ingester_push_request_size_tracker_size",
+			Help:        "Total size of received requests in latest time window",
+			ConstLabels: map[string]string{"window": requestSizeTrackerWindow.String(), "update_interval": requestSizeTrackerInterval.String()},
+		}),
+		requestSizeTrackerRequests: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name:        "cortex_ingester_push_request_size_tracker_requests",
+			Help:        "Number of received push requests in latest time window",
+			ConstLabels: map[string]string{"window": requestSizeTrackerWindow.String(), "update_interval": requestSizeTrackerInterval.String()},
 		}),
 	}
 
