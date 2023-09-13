@@ -149,7 +149,7 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 		nil,
 	)
 
-	mm := newMetadataMap(limiter, metrics, "test")
+	mm := newMetadataMap(limiter, metrics, newIngesterErrSamplers(0), "test")
 
 	inputMetadata := []mimirpb.MetricMetadata{
 		{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
