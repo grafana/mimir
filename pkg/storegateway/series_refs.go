@@ -484,7 +484,7 @@ Outer:
 				break Outer
 			}
 
-			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) < 0 {
+			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) > 0 {
 				toReturn.refs = append(toReturn.refs, chksA[aChunksOffset])
 				break
 			}
