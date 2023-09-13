@@ -1220,98 +1220,130 @@ func TestConfig_ValidateLimits(t *testing.T) {
 	}
 }
 
-func TestClampTime(t *testing.T) {
+func TestClampMaxTime(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	now := time.Now()
 
-	tests := []struct {
+	testCases := []struct {
 		testName            string
-		originalT           int64
+		originalMaxT        int64
 		referenceT          int64
-		limit               time.Duration
-		clampMax            bool
-		clampForward        bool
-		expectedClampedTime int64
+		limitDelta          time.Duration
+		expectedClampedMaxT int64
 	}{
 		{
-			// scenario:
-			// * limit set to truncate any query if the query minT is older than 24 hours
-			// * originalT is the original query minT, now - 48 hours
-			// * referenceT is now
-			// * since the query minT can never be older than 24 hours,
-			// the original minT will be clamped forwards in time to now - 24 hours
-			testName:            "clamp minT due to max query lookback",
-			originalT:           now.Add(-48 * time.Hour).UnixMilli(),
+			testName:            "no clamp for maxT in past when a limit is disabled by setting to 0",
+			originalMaxT:        now.Add(-2 * time.Hour).UnixMilli(),
 			referenceT:          now.UnixMilli(),
-			limit:               -24 * time.Hour,
-			clampMax:            false,
-			expectedClampedTime: now.Add(-24 * time.Hour).UnixMilli(),
+			limitDelta:          0,
+			expectedClampedMaxT: now.Add(-2 * time.Hour).UnixMilli(),
+		},
+		{
+			testName:            "no clamp for maxT in the future when a limit is disabled by setting to 0",
+			originalMaxT:        now.Add(2 * time.Hour).UnixMilli(),
+			referenceT:          now.UnixMilli(),
+			limitDelta:          0,
+			expectedClampedMaxT: now.Add(2 * time.Hour).UnixMilli(),
 		},
 		{
 			// scenario:
 			// * limit set to truncate any query if the query maxT more than 1 hour into the future
-			// * originalT is the original query maxT, now + 2 hours
+			// * originalMinT is the original query maxT, now + 2 hours
 			// * referenceT is now
 			// * since the query maxT can never be more than 1 hour into the future,
 			// the original maxT will be clamped backwards in time to now + 1 hour
 			testName:            "clamp maxT due to max query into future",
-			originalT:           now.Add(2 * time.Hour).UnixMilli(),
+			originalMaxT:        now.Add(2 * time.Hour).UnixMilli(),
 			referenceT:          now.UnixMilli(),
-			limit:               1 * time.Hour,
-			clampMax:            true,
-			expectedClampedTime: now.Add(1 * time.Hour).UnixMilli(),
-		},
-		{
-			// scenario:
-			// * limit set to truncate the label query range if the query range is longer than 6 hours
-			// * originalT is the original query minT, now - 12 hours
-			// * referenceT is the query maxT, now - 3 hours
-			// * since the entire label query range cannot be longer than 6 hours
-			// the original minT will be clamped forwards in time to query maxT - 6 hours
-			testName:            "clamp minT due to max label query length",
-			originalT:           now.Add(-12 * time.Hour).UnixMilli(),
-			referenceT:          now.Add(-3 * time.Hour).UnixMilli(),
-			limit:               -6 * time.Hour,
-			clampMax:            false,
-			expectedClampedTime: now.Add(-9 * time.Hour).UnixMilli(),
+			limitDelta:          1 * time.Hour,
+			expectedClampedMaxT: now.Add(1 * time.Hour).UnixMilli(),
 		},
 		{
 			// scenario:
 			// * limit set to only query the block store if the query range is previous to the last 4 hours
-			// * originalT is the original query maxT, now - 3 hours, sent to the block store querier
+			// * originalMinT is the original query maxT, now - 3 hours, sent to the block store querier
 			// * since the block store querier should only be queried for data older than the last 4 hours,
 			// the original maxT will be clamped backwards in time to now - 4 hours
 			testName:            "clamp maxT due to query store after",
-			originalT:           now.Add(-3 * time.Hour).UnixMilli(),
+			originalMaxT:        now.Add(-3 * time.Hour).UnixMilli(),
 			referenceT:          now.UnixMilli(),
-			limit:               -4 * time.Hour,
-			clampMax:            true,
-			expectedClampedTime: now.Add(-4 * time.Hour).UnixMilli(),
+			limitDelta:          -4 * time.Hour,
+			expectedClampedMaxT: now.Add(-4 * time.Hour).UnixMilli(),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.testName, func(t *testing.T) {
+			clampedMaxT := clampMaxTime(logger, testCase.originalMaxT, testCase.referenceT, testCase.limitDelta, "")
+			assert.Equal(t, testCase.expectedClampedMaxT, clampedMaxT)
+		})
+	}
+}
+
+func TestClampMinTime(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	now := time.Now()
+
+	testCases := []struct {
+		testName            string
+		originalMinT        int64
+		referenceT          int64
+		limitDelta          time.Duration
+		expectedClampedMinT int64
+	}{
+		{
+			testName:            "no clamp for minT when a limit is disabled by setting to 0",
+			originalMinT:        now.Add(-2 * time.Hour).UnixMilli(),
+			referenceT:          now.UnixMilli(),
+			limitDelta:          0,
+			expectedClampedMinT: now.Add(-2 * time.Hour).UnixMilli(),
+		},
+		{
+			// scenario:
+			// * limit set to truncate any query if the query minT is older than 24 hours
+			// * originalMinT is the original query minT, now - 48 hours
+			// * referenceT is now
+			// * since the query minT can never be older than 24 hours,
+			// the original minT will be clamped forwards in time to now - 24 hours
+			testName:            "clamp minT due to max query lookback",
+			originalMinT:        now.Add(-48 * time.Hour).UnixMilli(),
+			referenceT:          now.UnixMilli(),
+			limitDelta:          -24 * time.Hour,
+			expectedClampedMinT: now.Add(-24 * time.Hour).UnixMilli(),
+		},
+		{
+			// scenario:
+			// * limit set to truncate the label query range if the query range is longer than 6 hours
+			// * originalMinT is the original query minT, now - 12 hours
+			// * referenceT is the query maxT, now - 3 hours
+			// * since the entire label query range cannot be longer than 6 hours
+			// the original minT will be clamped forwards in time to query maxT - 6 hours
+			testName:            "clamp minT due to max label query length",
+			originalMinT:        now.Add(-12 * time.Hour).UnixMilli(),
+			referenceT:          now.Add(-3 * time.Hour).UnixMilli(),
+			limitDelta:          -6 * time.Hour,
+			expectedClampedMinT: now.Add(-9 * time.Hour).UnixMilli(),
 		},
 		{
 			// scenario:
 			// * limit set to only query the ingesters if the query range is within the last 6 hours
-			// * originalT is the original query minT, now - 9 hours, sent to the ingester querier
+			// * originalMinT is the original query minT, now - 9 hours, sent to the ingester querier
 			// * since the ingester querier should only be queried for data within than the last 6 hours,
 			// the original minT will be clamped forwards in time to now - 6 hours
 			testName:            "clamp minT due to query ingesters within",
-			originalT:           now.Add(-9 * time.Hour).UnixMilli(),
+			originalMinT:        now.Add(-9 * time.Hour).UnixMilli(),
 			referenceT:          now.UnixMilli(),
-			limit:               -6 * time.Hour,
-			clampMax:            false,
-			expectedClampedTime: now.Add(-6 * time.Hour).UnixMilli(),
+			limitDelta:          -6 * time.Hour,
+			expectedClampedMinT: now.Add(-6 * time.Hour).UnixMilli(),
 		},
 	}
 
-	for _, test := range tests {
-		t.Run(test.testName, func(t *testing.T) {
-			if test.clampMax {
-				clampedTime := clampMaxTime(
-					logger, test.originalT, test.referenceT, test.limit, "",
-				)
-				assert.Equal(t, test.expectedClampedTime, clampedTime)
-			}
+	for _, testCase := range testCases {
+		t.Run(testCase.testName, func(t *testing.T) {
+			clampedMaxT := clampMinTime(logger, testCase.originalMinT, testCase.referenceT, testCase.limitDelta, "")
+			assert.Equal(t, testCase.expectedClampedMinT, clampedMaxT)
 		})
 	}
 }
