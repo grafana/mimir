@@ -456,22 +456,6 @@ type testBlockSeries struct {
 	chks []storepb.AggrChunk
 }
 
-func (b testBlock) toSeriesChunksOverlapping(seriesIdx int, minT, maxT int64) seriesChunks {
-	s := b.series[seriesIdx]
-	var filtered []storepb.AggrChunk
-	for _, c := range s.chks {
-		if c.MinTime > maxT || c.MaxTime < minT {
-			continue
-		}
-		filtered = append(filtered, c)
-	}
-
-	return seriesChunks{
-		lset: s.lset,
-		chks: filtered,
-	}
-}
-
 func (b testBlock) seriesChunks(seriesIdx int) seriesChunks {
 	return seriesChunks{
 		lset: b.series[seriesIdx].lset,
