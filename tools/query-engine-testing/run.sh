@@ -4,7 +4,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
-
 QUERY="sum by (group) (test_metric)"
 TIME="2023-09-13T00:33:00Z"
 ENCODED_QUERY=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$QUERY'''))")
@@ -14,6 +13,7 @@ DURATION="5m"
 MONITORING_QUERIER_URL="http://localhost:8004"
 
 function main() {
+  echo "Running load test for $TARGET_PATH continuously over $DURATION."
   echo "Checking both engines produce the same result..."
   checkQueriesProduceSameResult
   echo "No differences, starting tests..."
