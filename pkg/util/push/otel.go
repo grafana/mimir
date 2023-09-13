@@ -165,21 +165,21 @@ func OTLPHandler(
 func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMetadata_MetricType {
 	switch otelMetric.Type() {
 	case pmetric.MetricTypeGauge:
-		return mimirpb.MetricMetadata_MetricType(2)
+		return mimirpb.GAUGE
 	case pmetric.MetricTypeSum:
-		metricType := mimirpb.MetricMetadata_MetricType(2)
+		metricType := mimirpb.GAUGE
 		if otelMetric.Sum().IsMonotonic() {
-			metricType = mimirpb.MetricMetadata_MetricType(1)
+			metricType = mimirpb.COUNTER
 		}
 		return metricType
 	case pmetric.MetricTypeHistogram:
-		return mimirpb.MetricMetadata_MetricType(3)
+		return mimirpb.HISTOGRAM
 	case pmetric.MetricTypeSummary:
-		return mimirpb.MetricMetadata_MetricType(5)
+		return mimirpb.SUMMARY
 	case pmetric.MetricTypeExponentialHistogram:
-		return mimirpb.MetricMetadata_MetricType(3)
+		return mimirpb.HISTOGRAM
 	}
-	return mimirpb.MetricMetadata_MetricType(0)
+	return mimirpb.UNKNOWN
 }
 
 func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
