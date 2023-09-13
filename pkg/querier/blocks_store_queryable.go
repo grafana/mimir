@@ -356,9 +356,8 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
-	clampedMinT := minT
 	if maxQueryLength != 0 {
-		clampedMinT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
+		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
 	}
 
 	var (
@@ -379,7 +378,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(ctx, spanLog, clampedMinT, maxT, nil, queryF)
+	err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, nil, queryF)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -398,9 +397,8 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
-	clampedMinT := minT
 	if maxQueryLength != 0 {
-		clampedMinT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
+		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
 	}
 
 	var (
@@ -420,7 +418,7 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(ctx, spanLog, clampedMinT, maxT, nil, queryF)
+	err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, nil, queryF)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -515,10 +513,10 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		return nil
 	}
 
-	clampedMaxT := clampMaxTime(logger, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
+	maxT = clampMaxTime(logger, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
-	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, q.userID, minT, clampedMaxT)
+	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, q.userID, minT, maxT)
 	if err != nil {
 		return err
 	}
@@ -573,7 +571,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 
 		// Fetch series from stores. If an error occur we do not retry because retries
 		// are only meant to cover missing blocks.
-		queriedBlocks, err := queryF(clients, minT, clampedMaxT)
+		queriedBlocks, err := queryF(clients, minT, maxT)
 		if err != nil {
 			return err
 		}
