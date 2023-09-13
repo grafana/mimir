@@ -3,20 +3,25 @@
 package ingester
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func TestNewIngestErrMsgs(t *testing.T) {
-	timestamp := model.Time(1575043969)
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+const (
+	timestamp = model.Time(1575043969)
+)
 
+func TestNewIngestErrMsgs(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	tests := map[string]struct {
 		err error
 		msg string
@@ -46,6 +51,42 @@ func TestNewIngestErrMsgs(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, tc.msg, tc.err.Error())
+			var safe safeToWrap
+			assert.ErrorAs(t, tc.err, &safe)
 		})
 	}
+}
+
+func TestSafeToWrapError(t *testing.T) {
+	err := safeToWrapError("this is a safe to wrap error")
+	require.Error(t, err)
+	var safe safeToWrap
+	require.ErrorAs(t, err, &safe)
+}
+
+func TestErrorWithStatus(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
+	validationErr := newErrorWithStatus(err, http.StatusBadRequest)
+	require.Error(t, validationErr)
+	stat, ok := status.FromError(validationErr)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, int(stat.Code()))
+	require.Errorf(t, err, stat.Message())
+}
+
+func TestAnnotateWithUser(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
+	annotatedErr := annotateWithUser(err, "1")
+	require.Error(t, annotatedErr)
+	require.NotErrorIs(t, annotatedErr, err)
+}
+
+func TestWrapWithUser(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
+	annotatedErr := wrapWithUser(err, "1")
+	require.Error(t, annotatedErr)
+	require.ErrorIs(t, annotatedErr, err)
 }

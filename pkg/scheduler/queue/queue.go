@@ -6,8 +6,9 @@
 package queue
 
 import (
+	"container/list"
 	"context"
-	"sync"
+	"fmt"
 	"time"
 
 	"github.com/grafana/dskit/services"
@@ -54,12 +55,16 @@ type Request interface{}
 type RequestQueue struct {
 	services.Service
 
+	maxOutstandingPerTenant int
+	forgetDelay             time.Duration
+
 	connectedQuerierWorkers *atomic.Int32
 
-	mtx     sync.Mutex
-	cond    contextCond // Notified when request is enqueued or dequeued, or querier is disconnected.
-	queues  *queues
-	stopped bool
+	stopRequested               chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
+	stopCompleted               chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
+	querierOperations           chan querierOperation
+	enqueueRequests             chan enqueueRequest
+	availableQuerierConnections chan *querierConnection
 
 	queueLength       *prometheus.GaugeVec   // Per user and reason.
 	discardedRequests *prometheus.CounterVec // Per user.
@@ -67,57 +72,220 @@ type RequestQueue struct {
 	enqueueDuration prometheus.Histogram
 }
 
+type querierOperation struct {
+	querierID string
+	operation querierOperationType
+}
+
+type querierOperationType int
+
+const (
+	registerConnection querierOperationType = iota
+	unregisterConnection
+	notifyShutdown
+	forgetDisconnected
+)
+
+type enqueueRequest struct {
+	userID      string
+	req         Request
+	maxQueriers int
+	successFn   func()
+	processed   chan error
+}
+
 func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, queueLength *prometheus.GaugeVec, discardedRequests *prometheus.CounterVec, enqueueDuration prometheus.Histogram) *RequestQueue {
 	q := &RequestQueue{
-		queues:                  newUserQueues(maxOutstandingPerTenant, forgetDelay),
+		maxOutstandingPerTenant: maxOutstandingPerTenant,
+		forgetDelay:             forgetDelay,
 		connectedQuerierWorkers: atomic.NewInt32(0),
 		queueLength:             queueLength,
 		discardedRequests:       discardedRequests,
 		enqueueDuration:         enqueueDuration,
+
+		stopRequested: make(chan struct{}),
+		stopCompleted: make(chan struct{}),
+
+		// These channels must not be buffered so that we can detect when dispatcherLoop() has finished.
+		querierOperations:           make(chan querierOperation),
+		enqueueRequests:             make(chan enqueueRequest),
+		availableQuerierConnections: make(chan *querierConnection),
 	}
 
-	q.cond = contextCond{Cond: sync.NewCond(&q.mtx)}
-	q.Service = services.NewTimerService(forgetCheckPeriod, nil, q.forgetDisconnectedQueriers, q.stopping).WithName("request queue")
+	q.Service = services.NewTimerService(forgetCheckPeriod, q.starting, q.forgetDisconnectedQueriers, q.stop).WithName("request queue")
 
 	return q
 }
 
-// EnqueueRequest puts the request into the queue. MaxQueries is user-specific value that specifies how many queriers can
+func (q *RequestQueue) starting(_ context.Context) error {
+
+	go q.dispatcherLoop()
+
+	return nil
+}
+
+func (q *RequestQueue) dispatcherLoop() {
+	stopping := false
+	queues := newUserQueues(q.maxOutstandingPerTenant, q.forgetDelay)
+	waitingQuerierConnections := list.New()
+
+	for {
+		needToDispatchQueries := false
+
+		select {
+		case <-q.stopRequested:
+			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
+			stopping = true
+		case qe := <-q.querierOperations:
+			// These operations may cause a resharding, so we should always try to dispatch queries afterwards.
+			// In the future, we could make this smarter: detect when a resharding actually happened and only trigger dispatching queries in those cases.
+			switch qe.operation {
+			case registerConnection:
+				q.connectedQuerierWorkers.Inc()
+				queues.addQuerierConnection(qe.querierID)
+				needToDispatchQueries = true
+			case unregisterConnection:
+				q.connectedQuerierWorkers.Dec()
+				queues.removeQuerierConnection(qe.querierID, time.Now())
+				needToDispatchQueries = true
+			case notifyShutdown:
+				queues.notifyQuerierShutdown(qe.querierID)
+				needToDispatchQueries = true
+			case forgetDisconnected:
+				if queues.forgetDisconnectedQueriers(time.Now()) > 0 {
+					// Removing some queriers may have caused a resharding.
+					needToDispatchQueries = true
+				}
+			default:
+				panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
+			}
+		case r := <-q.enqueueRequests:
+			err := q.handleEnqueueRequest(queues, r)
+			r.processed <- err
+
+			if err == nil {
+				needToDispatchQueries = true
+			}
+		case querierConn := <-q.availableQuerierConnections:
+			if !q.dispatchRequestToQuerier(queues, querierConn) {
+				// No requests available for this querier connection right now. Add it to the list to try later.
+				querierConn.element = waitingQuerierConnections.PushBack(querierConn)
+			}
+		}
+
+		if needToDispatchQueries {
+			currentElement := waitingQuerierConnections.Front()
+
+			for currentElement != nil && queues.len() > 0 {
+				querierConn := currentElement.Value.(*querierConnection)
+				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
+
+				if q.dispatchRequestToQuerier(queues, querierConn) {
+					waitingQuerierConnections.Remove(currentElement)
+				}
+
+				currentElement = nextElement
+			}
+		}
+
+		if stopping && (queues.len() == 0 || q.connectedQuerierWorkers.Load() == 0) {
+			// Tell any waiting GetNextRequestForQuerier calls that nothing is coming.
+			currentElement := waitingQuerierConnections.Front()
+
+			for currentElement != nil {
+				querierConn := currentElement.Value.(*querierConnection)
+				_ = querierConn.send(nextRequestForQuerier{err: ErrStopped}) // If GetNextRequestForQuerier is already gone, we don't care, so ignore the result.
+				currentElement = currentElement.Next()
+			}
+
+			// We are done.
+			close(q.stopCompleted)
+			return
+		}
+	}
+}
+
+func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) error {
+	queue := queues.getOrAddQueue(r.userID, r.maxQueriers)
+	if queue == nil {
+		// This can only happen if userID is "".
+		return errors.New("no queue found")
+	}
+
+	if queue.Len()+1 > queues.maxUserQueueSize {
+		q.discardedRequests.WithLabelValues(r.userID).Inc()
+		return ErrTooManyRequests
+	}
+
+	queue.PushBack(r.req)
+	q.queueLength.WithLabelValues(r.userID).Inc()
+
+	// Call the successFn here to ensure we call it before sending this request to a waiting querier.
+	if r.successFn != nil {
+		r.successFn()
+	}
+
+	return nil
+}
+
+// dispatchRequestToQuerier finds and forwards a request to a querier, if a suitable request is available.
+// Returns true if this querier should be removed from the list of waiting queriers (eg. because a request has been forwarded to it), false otherwise.
+func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querierConn *querierConnection) bool {
+	queue, userID, idx := queues.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
+	querierConn.lastUserIndex.last = idx
+	if queue == nil {
+		// Nothing available for this querier, try again next time.
+		return false
+	}
+
+	// Pick next request from the queue. The queue is guaranteed not to be empty because we remove empty queues.
+	queueElement := queue.Front()
+
+	requestSent := querierConn.send(nextRequestForQuerier{
+		req:           queueElement.Value,
+		lastUserIndex: querierConn.lastUserIndex,
+		err:           nil,
+	})
+
+	if requestSent {
+		// If GetNextRequestForQuerier received the request, remove it from the queue.
+		// (GetNextRequestForQuerier might have already returned if its context was cancelled.)
+		queue.Remove(queueElement)
+
+		if queue.Len() == 0 {
+			queues.deleteQueue(userID)
+		}
+
+		q.queueLength.WithLabelValues(userID).Dec()
+	}
+
+	return true
+}
+
+// EnqueueRequest puts the request into the queue. maxQueries is user-specific value that specifies how many queriers can
 // this user use (zero or negative = all queriers). It is passed to each EnqueueRequest, because it can change
 // between calls.
 //
-// If request is successfully enqueued, successFn is called with the lock held, before any querier can receive the request.
+// If request is successfully enqueued, successFn is called before any querier can receive the request.
 func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers int, successFn func()) error {
 	start := time.Now()
 	defer func() {
 		q.enqueueDuration.Observe(time.Since(start).Seconds())
 	}()
 
-	q.mtx.Lock()
-	defer q.mtx.Unlock()
-
-	if q.stopped {
-		return ErrStopped
-	}
-
-	queue := q.queues.getOrAddQueue(userID, maxQueriers)
-	if queue == nil {
-		// This can only happen if userID is "".
-		return errors.New("no queue found")
+	r := enqueueRequest{
+		userID:      userID,
+		req:         req,
+		maxQueriers: maxQueriers,
+		successFn:   successFn,
+		processed:   make(chan error),
 	}
 
 	select {
-	case queue <- req:
-		q.queueLength.WithLabelValues(userID).Inc()
-		q.cond.Broadcast()
-		// Call this function while holding a lock. This guarantees that no querier can fetch the request before function returns.
-		if successFn != nil {
-			successFn()
-		}
-		return nil
-	default:
-		q.discardedRequests.WithLabelValues(userID).Inc()
-		return ErrTooManyRequests
+	case q.enqueueRequests <- r:
+		return <-r.processed
+	case <-q.stopCompleted:
+		return ErrStopped
 	}
 }
 
@@ -125,166 +293,103 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 // By passing user index from previous call of this method, querier guarantees that it iterates over all users fairly.
 // If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
 func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
-	q.mtx.Lock()
-	defer q.mtx.Unlock()
-
-	querierWait := false
-
-FindQueue:
-	// We need to wait if there are no users, or no pending requests for given querier.
-	for (q.queues.len() == 0 || querierWait) && ctx.Err() == nil && !q.stopped {
-		querierWait = false
-		q.cond.Wait(ctx)
+	querierConn := &querierConnection{
+		ctx:           ctx,
+		querierID:     querierID,
+		lastUserIndex: last,
+		processed:     make(chan nextRequestForQuerier),
 	}
 
-	if q.stopped {
+	select {
+	case q.availableQuerierConnections <- querierConn:
+		// The dispatcher now knows we're waiting. Either we'll get a request to send to a querier, or we'll cancel.
+		select {
+		case result := <-querierConn.processed:
+			return result.req, result.lastUserIndex, result.err
+		case <-ctx.Done():
+			return nil, last, ctx.Err()
+		}
+	case <-ctx.Done():
+		return nil, last, ctx.Err()
+	case <-q.stopCompleted:
 		return nil, last, ErrStopped
 	}
+}
 
-	if err := ctx.Err(); err != nil {
-		return nil, last, err
-	}
+func (q *RequestQueue) stop(_ error) error {
+	q.stopRequested <- struct{}{} // Why not close the channel? We only want to trigger dispatcherLoop() once.
+	<-q.stopCompleted
 
-	for {
-		queue, userID, idx := q.queues.getNextQueueForQuerier(last.last, querierID)
-		last.last = idx
-		if queue == nil {
-			break
-		}
-
-		// Pick next request from the queue.
-		for {
-			request := <-queue
-			if len(queue) == 0 {
-				q.queues.deleteQueue(userID)
-			}
-
-			q.queueLength.WithLabelValues(userID).Dec()
-
-			// Tell close() we've processed a request.
-			q.cond.Broadcast()
-
-			return request, last, nil
-		}
-	}
-
-	// There are no unexpired requests, so we can get back
-	// and wait for more requests.
-	querierWait = true
-	goto FindQueue
+	return nil
 }
 
 func (q *RequestQueue) forgetDisconnectedQueriers(_ context.Context) error {
-	q.mtx.Lock()
-	defer q.mtx.Unlock()
-
-	if q.queues.forgetDisconnectedQueriers(time.Now()) > 0 {
-		// We need to notify goroutines cause having removed some queriers
-		// may have caused a resharding.
-		q.cond.Broadcast()
-	}
+	q.runQuerierOperation("", forgetDisconnected)
 
 	return nil
 }
 
-func (q *RequestQueue) stopping(_ error) error {
-	q.mtx.Lock()
-	defer q.mtx.Unlock()
-
-	for q.queues.len() > 0 && q.connectedQuerierWorkers.Load() > 0 {
-		q.cond.Wait(context.Background())
-	}
-
-	// Only stop after dispatching enqueued requests.
-	q.stopped = true
-
-	// If there are still goroutines in GetNextRequestForQuerier method, they get notified.
-	q.cond.Broadcast()
-
-	return nil
+func (q *RequestQueue) RegisterQuerierConnection(querierID string) {
+	q.runQuerierOperation(querierID, registerConnection)
 }
 
-func (q *RequestQueue) RegisterQuerierConnection(querier string) {
-	q.connectedQuerierWorkers.Inc()
-
-	q.mtx.Lock()
-	defer q.mtx.Unlock()
-	q.queues.addQuerierConnection(querier)
-}
-
-func (q *RequestQueue) UnregisterQuerierConnection(querier string) {
-	q.connectedQuerierWorkers.Dec()
-
-	q.mtx.Lock()
-	defer q.mtx.Unlock()
-	q.queues.removeQuerierConnection(querier, time.Now())
+func (q *RequestQueue) UnregisterQuerierConnection(querierID string) {
+	q.runQuerierOperation(querierID, unregisterConnection)
 }
 
 func (q *RequestQueue) NotifyQuerierShutdown(querierID string) {
-	q.mtx.Lock()
-	defer q.mtx.Unlock()
-	q.queues.notifyQuerierShutdown(querierID)
+	q.runQuerierOperation(querierID, notifyShutdown)
+}
+
+func (q *RequestQueue) runQuerierOperation(querierID string, operation querierOperationType) {
+	op := querierOperation{
+		querierID: querierID,
+		operation: operation,
+	}
+
+	select {
+	case q.querierOperations <- op:
+		// The dispatcher has received the operation. There's nothing more to do.
+	case <-q.stopCompleted:
+		// The dispatcher stopped before it could process the operation. There's nothing more to do.
+	}
 }
 
 func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 	return float64(q.connectedQuerierWorkers.Load())
 }
 
-// contextCond is a *sync.Cond with Wait() method overridden to support context-based waiting.
-type contextCond struct {
-	*sync.Cond
+type querierConnection struct {
+	ctx           context.Context
+	querierID     string
+	lastUserIndex UserIndex
+	processed     chan nextRequestForQuerier
 
-	// testHookBeforeWaiting is called before calling Cond.Wait() if it's not nil.
-	// Yes, it's ugly, but the http package settled jurisprudence:
-	// https://github.com/golang/go/blob/6178d25fc0b28724b1b5aec2b1b74fc06d9294c7/src/net/http/client.go#L596-L601
-	testHookBeforeWaiting func()
+	haveUsed bool // Must be set to true after sending a message to processed, to ensure we only ever try to send one message to processed.
+	element  *list.Element
 }
 
-// Wait does c.cond.Wait() but will also return if the context provided is done.
-// All the documentation of sync.Cond.Wait() applies, but it's especially important to remember that the mutex of
-// the cond should be held while Wait() is called (and mutex will be held once it returns)
-func (c contextCond) Wait(ctx context.Context) {
-	// "condWait" goroutine does q.cond.Wait() and signals through condWait channel.
-	condWait := make(chan struct{})
-	go func() {
-		if c.testHookBeforeWaiting != nil {
-			c.testHookBeforeWaiting()
-		}
-		c.Cond.Wait()
-		close(condWait)
-	}()
+// send sends req to the GetNextRequestForQuerier call that is waiting for a new query.
+// Returns true if sending succeeds, or false otherwise (eg. because the GetNextRequestForQuerier call has already returned due to a context
+// cancellation).
+func (q *querierConnection) send(req nextRequestForQuerier) bool {
+	if q.haveUsed {
+		panic("bug: should not try to send multiple messages to a querier")
+	}
 
-	// "waiting" goroutine: signals that the condWait goroutine has started waiting.
-	// Notice that a closed waiting channel implies that the goroutine above has started waiting
-	// (because it has unlocked the mutex), but the other way is not true:
-	// - condWait it may have unlocked and is waiting, but someone else locked the mutex faster than us:
-	//   in this case that caller will eventually unlock, and we'll be able to enter here.
-	// - condWait called Wait(), unlocked, received a broadcast and locked again faster than we were able to lock here:
-	//   in this case condWait channel will be closed, and this goroutine will be waiting until we unlock.
-	waiting := make(chan struct{})
-	go func() {
-		c.L.Lock()
-		close(waiting)
-		c.L.Unlock()
-	}()
+	q.haveUsed = true
+	defer close(q.processed)
 
 	select {
-	case <-condWait:
-		// We don't know whether the waiting goroutine is done or not, but we don't care:
-		// it will be done once nobody is fighting for the mutex anymore.
-	case <-ctx.Done():
-		// In order to avoid leaking the condWait goroutine, we can send a broadcast.
-		// Before sending the broadcast we need to make sure that condWait goroutine is already waiting (or has already waited).
-		select {
-		case <-condWait:
-			// No need to broadcast as q.cond.Wait() has returned already.
-			return
-		case <-waiting:
-			// q.cond.Wait() might be still waiting (or maybe not!), so we'll poke it just in case.
-			c.Broadcast()
-		}
-
-		// Make sure we are not waiting anymore, we need to do that before returning as the caller will need to unlock the mutex.
-		<-condWait
+	case q.processed <- req:
+		return true
+	case <-q.ctx.Done():
+		return false
 	}
+}
+
+type nextRequestForQuerier struct {
+	req           Request
+	lastUserIndex UserIndex
+	err           error
 }

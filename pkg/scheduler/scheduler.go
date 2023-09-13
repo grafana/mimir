@@ -420,7 +420,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		  n_active_tenants * n_expired_requests_at_front_of_queue requests being processed
 		  before an active request was handled for the tenant in question.
 		  If this tenant meanwhile continued to queue requests,
-		  it's possible that it's own queue would perpetually contain only expired requests.
+		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
 
 		if r.ctx.Err() != nil {
@@ -447,11 +447,11 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 }
 
 func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *schedulerRequest) error {
-	// Make sure to cancel request at the end to cleanup resources.
+	// Make sure to cancel request at the end to clean up resources.
 	defer s.cancelRequestAndRemoveFromPending(req.frontendAddress, req.queryID)
 
 	// Handle the stream sending & receiving on a goroutine so we can
-	// monitoring the contexts in a select and cancel things appropriately.
+	// monitor the contexts in a select and cancel things appropriately.
 	errCh := make(chan error, 1)
 	go func() {
 		err := querier.Send(&schedulerpb.SchedulerToQuerier{

@@ -1038,6 +1038,15 @@ instance_limits:
 # (experimental) Enable logging of utilization based limiter CPU samples.
 # CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
 [log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
+
+# (experimental) Use experimental method of limiting push requests
+# CLI flag: -ingester.limit-inflight-requests-using-grpc-handlers
+[limit_inflight_requests_using_grpc_tap_handle: <boolean> | default = false]
+
+# (experimental) Each error will be logged once in this many times. Use 0 to log
+# all of them.
+# CLI flag: -ingester.error-sample-rate
+[error_sample_rate: <int> | default = 0]
 ```
 
 ### querier
@@ -2148,15 +2157,25 @@ circuit_breaker:
   # CLI flag: -ingester.client.circuit-breaker.enabled
   [enabled: <boolean> | default = false]
 
-  # (experimental) Max number of requests that can fail in a row before the
-  # circuit breaker opens
+  # (experimental) Max percentage of requests that can fail over period before
+  # the circuit breaker opens
   # CLI flag: -ingester.client.circuit-breaker.failure-threshold
   [failure_threshold: <int> | default = 10]
+
+  # (experimental) How many requests must have been executed in period for the
+  # circuit breaker to be eligible to open for the rate of failures
+  # CLI flag: -ingester.client.circuit-breaker.failure-execution-threshold
+  [failure_execution_threshold: <int> | default = 100]
+
+  # (experimental) Moving window of time that the percentage of failed requests
+  # is computed over
+  # CLI flag: -ingester.client.circuit-breaker.thresholding-period
+  [thresholding_period: <duration> | default = 1m]
 
   # (experimental) How long the circuit breaker will stay in the open state
   # before allowing some requests
   # CLI flag: -ingester.client.circuit-breaker.cooldown-period
-  [cooldown_period: <duration> | default = 10s]
+  [cooldown_period: <duration> | default = 1m]
 ```
 
 ### grpc_client
@@ -3488,13 +3507,13 @@ bucket_store:
     # (experimental) Maximum number of concurrent index header loads across all
     # tenants. If set to 0, concurrency is unlimited.
     # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency
-    [lazy_loading_concurrency: <int> | default = 0]
+    [lazy_loading_concurrency: <int> | default = 4]
 
     # (experimental) If enabled, store-gateway will persist a sparse version of
     # the index-header to disk on construction and load sparse index-headers
     # from disk instead of the whole index-header.
     # CLI flag: -blocks-storage.bucket-store.index-header.sparse-persistence-enabled
-    [sparse_persistence_enabled: <boolean> | default = false]
+    [sparse_persistence_enabled: <boolean> | default = true]
 
     # (advanced) If true, verify the checksum of index headers upon loading them
     # (either on startup or lazily when lazy loading is enabled). Setting to

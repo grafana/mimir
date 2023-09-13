@@ -15,4 +15,33 @@ docker_compose() {
 
 SCRIPT_DIR=$(cd "$(dirname -- "$0")" && pwd)
 
-docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml down
+PROFILES=()
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        --profile)
+            PROFILES+=("$1")
+            shift
+            PROFILES+=("$1")
+            shift
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+DEFAULT_PROFILES=(
+    "--profile" "prometheus"
+    "--profile" "grafana-agent-static"
+    "--profile" "grafana-agent-flow"
+    "--profile" "otel-collector-remote-write"
+    "--profile" "otel-collector-otlp-push"
+)
+if [ ${#PROFILES[@]} -eq 0 ]; then
+    PROFILES=("${DEFAULT_PROFILES[@]}")
+fi
+
+docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml "${PROFILES[@]}" down "${ARGS[@]}"

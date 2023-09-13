@@ -105,6 +105,8 @@ The following features are currently experimental:
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
     - `-ingester.client.circuit-breaker.failure-threshold`
+    - `-ingester.client.circuit-breaker.failure-execution-threshold`
+    - `-ingester.client.circuit-breaker.period`
     - `-ingester.client.circuit-breaker.cooldown-period`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)

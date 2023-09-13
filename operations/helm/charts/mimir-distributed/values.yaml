@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r254-e1731c5
+  tag: r255-ee2eddf
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -757,6 +757,9 @@ distributor:
 
   strategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   terminationGracePeriodSeconds: 60
 
@@ -988,6 +991,9 @@ overrides_exporter:
 
   strategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   podLabels: {}
   podAnnotations: {}
@@ -1181,6 +1187,9 @@ querier:
 
   strategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   terminationGracePeriodSeconds: 180
 
@@ -1252,6 +1261,9 @@ query_frontend:
 
   strategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   terminationGracePeriodSeconds: 180
 
@@ -1325,8 +1337,8 @@ query_scheduler:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxUnavailable: 0
+      maxSurge: 1
 
   terminationGracePeriodSeconds: 180
 
@@ -1562,6 +1574,8 @@ compactor:
   # Pod Disruption Budget
   podDisruptionBudget:
     maxUnavailable: 1
+
+  podManagementPolicy: OrderedReady
 
   # -- The name of the PriorityClass for compactor pods
   priorityClassName: null
@@ -2134,6 +2148,9 @@ nginx:
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
   deploymentStrategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
   image:
     # -- The Docker registry for nginx image
     registry: docker.io
@@ -2455,9 +2472,9 @@ gateway:
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
   strategy:
     type: RollingUpdate
-    # rollingUpdate:
-    #   maxSurge: 25%
-    #   maxUnavailable: 25%
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   # -- The name of the PriorityClass
   priorityClassName: null
@@ -3044,7 +3061,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r254-70c22df4
+    tag: r255-de5fb83d
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3093,6 +3110,9 @@ admin_api:
 
   strategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   podLabels: {}
   podAnnotations: {}
@@ -3300,6 +3320,9 @@ graphite:
 
     strategy:
       type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 0
+        maxSurge: 15%
 
     terminationGracePeriodSeconds: 180
 
@@ -3376,6 +3399,9 @@ graphite:
 
     strategy:
       type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 0
+        maxSurge: 15%
 
     # -- Grace period to allow the graphite-write-proxy to shutdown before it is killed
     terminationGracePeriodSeconds: 180
@@ -3520,7 +3546,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r254-e1731c5
+    tag: r255-ee2eddf
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3540,7 +3566,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r254-e1731c5
+    tag: r255-ee2eddf
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

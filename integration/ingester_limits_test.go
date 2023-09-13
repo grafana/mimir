@@ -101,8 +101,11 @@ func TestIngesterGlobalLimits(t *testing.T) {
 				if res.StatusCode == 200 {
 					numSeriesTotal++
 					numSeriesWithSameMetricName++
-				} else if errs++; errs >= maxErrorsBeforeStop {
-					break
+				} else {
+					require.Equal(t, 400, res.StatusCode)
+					if errs++; errs >= maxErrorsBeforeStop {
+						break
+					}
 				}
 			}
 
@@ -114,8 +117,11 @@ func TestIngesterGlobalLimits(t *testing.T) {
 
 				if res.StatusCode == 200 {
 					numSeriesTotal++
-				} else if errs++; errs >= maxErrorsBeforeStop {
-					break
+				} else {
+					require.Equal(t, 400, res.StatusCode)
+					if errs++; errs >= maxErrorsBeforeStop {
+						break
+					}
 				}
 			}
 
@@ -222,8 +228,11 @@ overrides:
 					if res.StatusCode == 200 {
 						numSeriesTotal += 10
 						numSeriesWithSameMetricName += 10
-					} else if errs++; errs >= maxErrorsBeforeStop {
-						break
+					} else {
+						require.Equal(t, 400, res.StatusCode)
+						if errs++; errs >= maxErrorsBeforeStop {
+							break
+						}
 					}
 				}
 
@@ -235,8 +244,11 @@ overrides:
 
 					if res.StatusCode == 200 {
 						numSeriesTotal += 10
-					} else if errs++; errs >= maxErrorsBeforeStop {
-						break
+					} else {
+						require.Equal(t, 400, res.StatusCode)
+						if errs++; errs >= maxErrorsBeforeStop {
+							break
+						}
 					}
 				}
 

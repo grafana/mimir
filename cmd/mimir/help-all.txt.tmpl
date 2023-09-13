@@ -502,7 +502,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
     	[experimental] If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
-    	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.
+    	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout duration
@@ -510,7 +510,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.max-idle-file-handles uint
     	Maximum number of idle file handles the store-gateway keeps open for each index-header file. (default 1)
   -blocks-storage.bucket-store.index-header.sparse-persistence-enabled
-    	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.
+    	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header. (default true)
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.max-chunk-pool-bytes uint
@@ -1222,11 +1222,15 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -ingester.client.circuit-breaker.cooldown-period duration
-    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
+    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 1m0s)
   -ingester.client.circuit-breaker.enabled
     	[experimental] Enable circuit breaking when making requests to ingesters
+  -ingester.client.circuit-breaker.failure-execution-threshold uint
+    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
   -ingester.client.circuit-breaker.failure-threshold uint
-    	[experimental] Max number of requests that can fail in a row before the circuit breaker opens (default 10)
+    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
+  -ingester.client.circuit-breaker.thresholding-period duration
+    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ingester.client.connect-backoff-max-delay duration
@@ -1263,6 +1267,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.error-sample-rate int
+    	[experimental] Each error will be logged once in this many times. Use 0 to log all of them.
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
@@ -1273,6 +1279,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.limit-inflight-requests-using-grpc-handlers
+    	[experimental] Use experimental method of limiting push requests
   -ingester.log-utilization-based-limiter-cpu-samples
     	[experimental] Enable logging of utilization based limiter CPU samples.
   -ingester.max-global-exemplars-per-user int

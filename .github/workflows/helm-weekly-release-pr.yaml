@@ -10,7 +10,7 @@ jobs:
   weekly-release-pr:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: imjasonh/setup-crane@v0.1
 
       - name: Update/regenerate files

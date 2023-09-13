@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -43,6 +44,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
@@ -2106,7 +2108,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
 
 			// Assert on metric metadata
-			metadata, err := ds[0].MetricsMetadata(ctx)
+			metadata, err := ds[0].MetricsMetadata(ctx, client.DefaultMetricsMetadataRequest())
 			require.NoError(t, err)
 
 			expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
@@ -4755,6 +4757,64 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 
 	assert.Equal(t, series, totalSeries)
 	assert.Equal(t, series, totalMetadata) // each series has unique metric name, and each metric name gets metadata
+}
+
+func TestHandleIngesterPushError(t *testing.T) {
+	testErrorMsg := "this is a test error message"
+	outputErrorMsgPrefix := "failed pushing to ingester"
+	userID := "test"
+	errWithUserID := fmt.Errorf("user=%s: %s", userID, testErrorMsg)
+	test := map[string]struct {
+		ingesterPushError   error
+		expectedOutputError error
+	}{
+		"no error gives no error": {
+			ingesterPushError:   nil,
+			expectedOutputError: nil,
+		},
+		"an http 400 error gives an http 400 error": {
+			ingesterPushError:   httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg),
+			expectedOutputError: httpgrpc.Errorf(http.StatusBadRequest, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
+		},
+		"an http 500 error gives an http 500 error": {
+			ingesterPushError:   httpgrpc.Errorf(http.StatusInternalServerError, testErrorMsg),
+			expectedOutputError: httpgrpc.Errorf(http.StatusInternalServerError, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
+		},
+		"a random ingester error without status gives the same wrapped error": {
+			ingesterPushError:   errWithUserID,
+			expectedOutputError: errors.Wrap(errWithUserID, outputErrorMsgPrefix),
+		},
+		"an ingester error with status 5xx gives an http 5xx error": {
+			ingesterPushError:   newGRPCError(http.StatusServiceUnavailable, errWithUserID.Error()),
+			expectedOutputError: httpgrpc.Errorf(http.StatusServiceUnavailable, "%s: %s", outputErrorMsgPrefix, errWithUserID.Error()),
+		},
+		"an ingester error with status 4xx gives an http 4xx error": {
+			ingesterPushError:   newGRPCError(http.StatusBadRequest, errWithUserID.Error()),
+			expectedOutputError: httpgrpc.Errorf(http.StatusBadRequest, "%s: %s", outputErrorMsgPrefix, errWithUserID.Error()),
+		},
+		"a gRPC unavailable error gives the same wrapped error": {
+			ingesterPushError:   newGRPCError(int(codes.Unavailable), errWithUserID.Error()),
+			expectedOutputError: errors.Wrap(newGRPCError(int(codes.Unavailable), errWithUserID.Error()), outputErrorMsgPrefix),
+		},
+		"a context cancel error gives the same wrapped error": {
+			ingesterPushError:   context.Canceled,
+			expectedOutputError: errors.Wrap(context.Canceled, outputErrorMsgPrefix),
+		},
+	}
+
+	for _, testData := range test {
+		err := handleIngesterPushError(testData.ingesterPushError)
+		if testData.expectedOutputError == nil {
+			require.NoError(t, err)
+		} else {
+			require.ErrorContains(t, err, testData.expectedOutputError.Error())
+		}
+	}
+}
+
+func newGRPCError(statusCode int, msg string) error {
+	stat := status.New(codes.Code(statusCode), msg)
+	return stat.Err()
 }
 
 func getIngesterIndexForToken(key uint32, ings []mockIngester) int {
