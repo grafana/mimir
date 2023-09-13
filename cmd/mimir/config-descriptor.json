@@ -2116,7 +2116,7 @@
               "kind": "field",
               "name": "failure_threshold",
               "required": false,
-              "desc": "Max number of requests that can fail in a row before the circuit breaker opens",
+              "desc": "Max percentage of requests that can fail over period before the circuit breaker opens",
               "fieldValue": null,
               "fieldDefaultValue": 10,
               "fieldFlag": "ingester.client.circuit-breaker.failure-threshold",
@@ -2125,11 +2125,33 @@
             },
             {
               "kind": "field",
+              "name": "failure_execution_threshold",
+              "required": false,
+              "desc": "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures",
+              "fieldValue": null,
+              "fieldDefaultValue": 100,
+              "fieldFlag": "ingester.client.circuit-breaker.failure-execution-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "thresholding_period",
+              "required": false,
+              "desc": "Moving window of time that the percentage of failed requests is computed over",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "ingester.client.circuit-breaker.thresholding-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "cooldown_period",
               "required": false,
               "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
               "fieldValue": null,
-              "fieldDefaultValue": 10000000000,
+              "fieldDefaultValue": 60000000000,
               "fieldFlag": "ingester.client.circuit-breaker.cooldown-period",
               "fieldType": "duration",
               "fieldCategory": "experimental"
