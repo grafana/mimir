@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
-QUERY="sum(test_metric)"
+QUERY="sum by (group) (test_metric)"
 START="2023-09-13T00:03:00Z"
 END="2023-09-13T01:03:00Z"
 ENCODED_QUERY=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$QUERY'''))")
