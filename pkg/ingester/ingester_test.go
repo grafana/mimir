@@ -8453,12 +8453,13 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 
 	// create a data dir that survives an ingester restart
 	dataDir := t.TempDir()
+	registry := prometheus.NewRegistry()
 
 	errorSampleRate := 5
 	ingesterCfg := defaultIngesterTestConfig(t)
 	ingesterCfg.IngesterRing.ReplicationFactor = 1
 	ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
-	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, dataDir, nil)
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, dataDir, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -8519,7 +8520,10 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	expectedError := wrapWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerUserError(ing.limiter.limits, userID)), userID)
 	require.Error(t, expectedError)
 
-	// We push series hitting the max series limit too old samples than 2 times more than errorSampleRate.
+	// We push 2 times more than errorSampleRate series hitting the max-series-per-user limit, i.e., 10 series in total.
+	// As a result we expect to see:
+	// - only 2 related log entries,
+	// - all 10 samples as discarded.
 	for i := 0; i < 2*errorSampleRate; i++ {
 		// Append 2 series first, expect max-series-per-user error.
 		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
@@ -8529,8 +8533,20 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 		require.Errorf(t, expectedError, status.Message())
 	}
 
-	// We expect to see 2 log entries realted to err-mimir-sample-timestamp-too-old
+	// We expect to see 2 log entries related to max-series-per-user error.
 	require.Equal(t, 2, logger.count(expectedError.Error()))
+
+	// We expect to see all 10 samples causing max-series-per-user error as discarded.
+	metricNames := []string{
+		"cortex_discarded_samples_total",
+	}
+	expectedMetrics := `
+		# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+		# TYPE cortex_discarded_samples_total counter
+		cortex_discarded_samples_total{group="",reason="per_user_series_limit",user="1"} 10
+	`
+	err = testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...)
+	assert.NoError(t, err)
 }
 
 func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
@@ -8540,12 +8556,13 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 
 	// create a data dir that survives an ingester restart
 	dataDir := t.TempDir()
+	registry := prometheus.NewRegistry()
 
 	errorSampleRate := 5
 	ingesterCfg := defaultIngesterTestConfig(t)
 	ingesterCfg.IngesterRing.ReplicationFactor = 1
 	ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
-	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, dataDir, nil)
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limits, dataDir, registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
@@ -8606,7 +8623,10 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	expectedError := wrapWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerMetricError(ing.limiter.limits, mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters2), userID)), userID)
 	require.Error(t, expectedError)
 
-	// We push series hitting the max series limit too old samples than 2 times more than errorSampleRate.
+	// We push 2 times more than errorSampleRate series hitting the max-series-per-metric, i.e., 10 series in total.
+	// As a result we expect to see:
+	// - only 2 related log entries,
+	// - all 10 samples as discarded.
 	for i := 0; i < 2*errorSampleRate; i++ {
 		// Append 2 series first, expect max-series-per-user error.
 		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
@@ -8616,8 +8636,20 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 		require.Errorf(t, expectedError, status.Message())
 	}
 
-	// We expect to see 2 log entries realted to err-mimir-sample-timestamp-too-old
+	// We expect to see 2 log entries related to max-series-per-metric error.
 	require.Equal(t, 2, logger.count(expectedError.Error()))
+
+	// We expect to see all 10 samples causing max-series-per-metric error as discarded.
+	metricNames := []string{
+		"cortex_discarded_samples_total",
+	}
+	expectedMetrics := `
+		# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+		# TYPE cortex_discarded_samples_total counter
+		cortex_discarded_samples_total{group="",reason="per_metric_series_limit",user="1"} 10
+	`
+	err = testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...)
+	assert.NoError(t, err)
 }
 
 type loggerWithBuffer struct {
