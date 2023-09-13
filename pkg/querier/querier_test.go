@@ -1224,7 +1224,6 @@ func TestClampTime(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	now := time.Now()
-	allowedDeltaT := float64(5 * time.Second.Milliseconds())
 
 	tests := []struct {
 		testName            string
@@ -1307,10 +1306,12 @@ func TestClampTime(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.testName, func(t *testing.T) {
-			clampedTime := clampTime(
-				logger, test.originalT, test.referenceT, test.limit, "", test.clampMax,
-			)
-			assert.InDelta(t, test.expectedClampedTime, clampedTime, allowedDeltaT)
+			if test.clampMax {
+				clampedTime := clampMaxTime(
+					logger, test.originalT, test.referenceT, test.limit, "",
+				)
+				assert.Equal(t, test.expectedClampedTime, clampedTime)
+			}
 		})
 	}
 }

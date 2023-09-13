@@ -226,7 +226,7 @@ func NewQueryable(
 
 		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID), limits.MaxEstimatedChunksPerQuery(userID), queryMetrics))
 
-		minT, maxT, err = validateQueryTimeRange(userID, minT, maxT, limits, cfg.MaxQueryIntoFuture, logger)
+		minT, maxT, err = validateQueryTimeRange(userID, minT, maxT, now.UnixMilli(), limits, cfg.MaxQueryIntoFuture, logger)
 		if errors.Is(err, errEmptyTimeRange) {
 			return storage.NoopQuerier(), nil
 		} else if err != nil {
@@ -300,6 +300,7 @@ func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labe
 		scp := *sp
 		sp = &scp
 	}
+	now := time.Now()
 
 	level.Debug(spanLog).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
 		util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
@@ -312,7 +313,7 @@ func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labe
 	// Validate query time range. Even if the time range has already been validated when we created
 	// the querier, we need to check it again here because the time range specified in hints may be
 	// different.
-	startMs, endMs, err := validateQueryTimeRange(userID, sp.Start, sp.End, mq.limits, mq.maxQueryIntoFuture, mq.logger)
+	startMs, endMs, err := validateQueryTimeRange(userID, sp.Start, sp.End, now.UnixMilli(), mq.limits, mq.maxQueryIntoFuture, mq.logger)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.NoopSeriesSet()
 	} else if err != nil {
@@ -320,7 +321,7 @@ func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labe
 	}
 	if sp.Func == "series" { // Clamp max time range for series-only queries, before we check max length.
 		maxQueryLength := mq.limits.MaxLabelsQueryLength(userID)
-		startMs = clampTime(spanLog, startMs, endMs, -maxQueryLength, "max label query length", false)
+		startMs = clampMinTime(spanLog, startMs, endMs, -maxQueryLength, "max label query length")
 	}
 
 	// The time range may have been manipulated during the validation,
@@ -516,12 +517,11 @@ func (s *sliceSeriesSet) Warnings() storage.Warnings {
 	return nil
 }
 
-func validateQueryTimeRange(userID string, startMs, endMs int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, logger log.Logger) (int64, int64, error) {
-	now := time.Now().UnixMilli()
-	endMs = clampTime(logger, endMs, now, maxQueryIntoFuture, "max query into future", true)
+func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, logger log.Logger) (int64, int64, error) {
+	endMs = clampMaxTime(logger, endMs, now, maxQueryIntoFuture, "max query into future")
 
 	maxQueryLookback := limits.MaxQueryLookback(userID)
-	startMs = clampTime(logger, startMs, now, -maxQueryLookback, "max query lookback", false)
+	startMs = clampMinTime(logger, startMs, now, -maxQueryLookback, "max query lookback")
 
 	if endMs < startMs {
 		return 0, 0, errEmptyTimeRange
@@ -530,43 +530,46 @@ func validateQueryTimeRange(userID string, startMs, endMs int64, limits *validat
 	return startMs, endMs, nil
 }
 
-// clampTime allows for time-limiting query minT and maxT based on configured limits.
+// clampMaxTime allows for time-limiting query minT and maxT based on configured limits.
 //
-// origT is the original timestamp to be clamped based on other supplied parameters.
+// maxT is the original timestamp to be clamped based on other supplied parameters.
+//
+// refT is the reference time from which to apply limitDelta; generally now() for clamping maxT
+//
+// limitDelta should be negative if the limit is looking back in time from the reference time;
+// Ex:
+//   - query-store-after: refT is now(), limitDelta is negative. maxT is now or in the past,
+//     and may need to be clamped further into the past
+//   - max-query-into-future: refT is now(), limitDelta is positive. maxT is now or in the future,
+//     and may need to be clamped to be less far into the future
+func clampMaxTime(ll log.Logger, maxT int64, refT int64, limitDelta time.Duration, limitName string) int64 {
+	if limitDelta == 0 {
+		// limits equal to 0 are considered to not be enabled
+		return maxT
+	}
+	clampedT := math.Min(maxT, refT+limitDelta.Milliseconds())
+
+	logClampEvent(ll, maxT, clampedT, "max", limitName)
+	return clampedT
+}
+
+// clampMinTime allows for time-limiting query minT based on configured limits.
+//
+// minT is the original timestamp to be clamped based on other supplied parameters.
 //
 // refT is the reference time from which to apply limitDelta; generally now() or query maxT because
 // when we truncate on the basis of overall query length, we leave maxT as-is and bring minT forward.
 //
-// clampDelta should be negative if the limit is looking back in time from the reference time;
-// this most common, as we mostly truncate a minT forward or a maxT backward by applying
-// a limit looking backwards from a reference time of now() or query maxT, as in:
-//   - max-query-lookback: (refTime: now)
-//   - query-ingesters-within (refTime: now)
-//   - query-store-after (refTime: now)
-//   - max-labels-query-length (refTime: maxT)
-//
-// An example exception is max-query-into-future, where the maxT is truncated by applying
-// the limit max-query-into-future forward in time from the reference time of now().
-func clampTime(
-	ll log.Logger, origT int64, refT int64, limitDelta time.Duration, limitName string, clampMax bool,
-) int64 {
+// limitDelta should be negative for all existing use cases for clamping minT,
+// as we look backwards from the reference time to apply the limit.
+func clampMinTime(ll log.Logger, minT int64, refT int64, limitDelta time.Duration, limitName string) int64 {
 	if limitDelta == 0 {
 		// limits equal to 0 are considered to not be enabled
-		return origT
+		return minT
 	}
-	allowedT := refT + limitDelta.Milliseconds()
+	clampedT := math.Max(minT, refT+limitDelta.Milliseconds())
 
-	clampedT := origT
-	if allowedT < origT && clampMax {
-		// moving a max time window backwards
-		clampedT = math.Min(origT, allowedT)
-		logClampEvent(ll, origT, clampedT, "max", limitName)
-	} else if allowedT > origT && !clampMax {
-		// moving a min time window forward
-		clampedT = math.Max(origT, allowedT)
-		logClampEvent(ll, origT, clampedT, "min", limitName)
-	}
-	// all other scenarios are no-op; moving min backwards or max forwards is not clamping
+	logClampEvent(ll, minT, clampedT, "min", limitName)
 	return clampedT
 }
 

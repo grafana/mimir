@@ -110,7 +110,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	}
 
 	now := time.Now().UnixMilli()
-	clampedMinT := clampTime(spanLog, minT, now, -q.queryIngestersWithin, "query ingesters within", false)
+	clampedMinT := clampMinTime(spanLog, minT, now, -q.queryIngestersWithin, "query ingesters within")
 
 	if sp != nil && sp.Func == "series" {
 		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(clampedMinT), model.Time(maxT), matchers...)
@@ -203,7 +203,7 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 	}
 
 	now := time.Now().UnixMilli()
-	clampedMinT := clampTime(spanLog, q.mint, now, -q.queryIngestersWithin, "query ingesters within", false)
+	clampedMinT := clampMinTime(spanLog, q.mint, now, -q.queryIngestersWithin, "query ingesters within")
 
 	lvs, err := q.distributor.LabelValuesForLabelName(ctx, model.Time(clampedMinT), model.Time(q.maxt), model.LabelName(name), matchers...)
 
@@ -221,7 +221,7 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	}
 
 	now := time.Now().UnixMilli()
-	clampedMinT := clampTime(spanLog, q.mint, now, -q.queryIngestersWithin, "query ingesters within", false)
+	clampedMinT := clampMinTime(spanLog, q.mint, now, -q.queryIngestersWithin, "query ingesters within")
 
 	ln, err := q.distributor.LabelNames(ctx, model.Time(clampedMinT), model.Time(q.maxt), matchers...)
 	return ln, nil, err
