@@ -509,7 +509,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 
 	if !ShouldQueryBlockStore(q.queryStoreAfter, now, minT) {
 		q.metrics.storesHit.Observe(0)
-		level.Debug(logger).Log("msg", "empty query time range after max time manipulation")
+		level.Debug(logger).Log("msg", "not querying block store; query time range begins after the query-store-after limit")
 		return nil
 	}
 

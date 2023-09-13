@@ -103,9 +103,8 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 		minT, maxT = sp.Start, sp.End
 	}
 
-	queryIngesters := ShouldQueryIngesters(q.queryIngestersWithin, time.Now(), q.maxt)
-	if !queryIngesters {
-		level.Debug(spanLog).Log("msg", "empty query time range after min time manipulation")
+	if !ShouldQueryIngesters(q.queryIngestersWithin, time.Now(), q.maxt) {
+		level.Debug(spanLog).Log("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
 		return storage.EmptySeriesSet()
 	}
 
@@ -196,9 +195,8 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelValues")
 	defer spanLog.Span.Finish()
 
-	queryIngesters := ShouldQueryIngesters(q.queryIngestersWithin, time.Now(), q.maxt)
-	if !queryIngesters {
-		level.Debug(spanLog).Log("msg", "empty time range after min time manipulation")
+	if !ShouldQueryIngesters(q.queryIngestersWithin, time.Now(), q.maxt) {
+		level.Debug(spanLog).Log("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
 		return nil, nil, nil
 	}
 
@@ -214,9 +212,8 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
-	queryIngesters := ShouldQueryIngesters(q.queryIngestersWithin, time.Now(), q.maxt)
-	if !queryIngesters {
-		level.Debug(spanLog).Log("msg", "empty time range after min time manipulation")
+	if !ShouldQueryIngesters(q.queryIngestersWithin, time.Now(), q.maxt) {
+		level.Debug(spanLog).Log("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
 		return nil, nil, nil
 	}
 
