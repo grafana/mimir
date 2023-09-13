@@ -1988,7 +1988,7 @@ type symbolizedLabel struct {
 
 // decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
 // If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if there is at least a single chunk.
-// decodeSeries returns false, when there are no series data for given time range.
+// decodeSeries returns false, when there are no chunks for the series.
 func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, skipChunks bool) (ok bool, lset []symbolizedLabel, err error) {
 
 	*chks = (*chks)[:0]
