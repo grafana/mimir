@@ -507,15 +507,15 @@ type queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64)
 func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	ctx context.Context, logger log.Logger, minT, maxT int64, shard *sharding.ShardSelector, queryF queryFunc,
 ) error {
+	now := time.Now()
 
-	if !QueryBlockStore(q.queryStoreAfter, time.Now(), minT) {
+	if !ShouldQueryBlockStore(q.queryStoreAfter, now, minT) {
 		q.metrics.storesHit.Observe(0)
 		level.Debug(logger).Log("msg", "empty query time range after max time manipulation")
 		return nil
 	}
 
-	now := time.Now().UnixMilli()
-	clampedMaxT := clampMaxTime(logger, maxT, now, -q.queryStoreAfter, "query store after")
+	clampedMaxT := clampMaxTime(logger, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
 	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, q.userID, minT, clampedMaxT)

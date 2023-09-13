@@ -129,12 +129,8 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 	return mergeChunks
 }
 
-// QueryIngesters provides a check for whether the ingesters will be used for a given query.
-//
-// QueryIngesters is exposed for use before the constructing the distributor querier for a query,
-// in order to decide how to route queries or whether to construct a distributor querier at all;
-// queryIngestersClampMinT should be used for in-query logic.
-func QueryIngesters(queryIngestersWithin time.Duration, now time.Time, queryMaxT int64) bool {
+// ShouldQueryIngesters provides a check for whether the ingesters will be used for a given query.
+func ShouldQueryIngesters(queryIngestersWithin time.Duration, now time.Time, queryMaxT int64) bool {
 	if queryIngestersWithin != 0 {
 		queryIngestersMinT := util.TimeToMillis(now.Add(-queryIngestersWithin))
 		if queryIngestersMinT >= queryMaxT {
@@ -144,12 +140,8 @@ func QueryIngesters(queryIngestersWithin time.Duration, now time.Time, queryMaxT
 	return true
 }
 
-// QueryBlockStore provides a check for whether the block store will be used for a given query.
-//
-// QueryBlockStore is exposed for use before the constructing the block store querier for a query,
-// in order to decide how to route queries or whether to construct a block store querier at all;
-// queryBlockStoreClampMaxT should be used for in-query logic.
-func QueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int64) bool {
+// ShouldQueryBlockStore provides a check for whether the block store will be used for a given query.
+func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int64) bool {
 	if queryStoreAfter != 0 {
 		queryStoreMaxT := util.TimeToMillis(now.Add(-queryStoreAfter))
 		if queryMinT > queryStoreMaxT {
@@ -240,7 +232,7 @@ func NewQueryable(
 		//
 		// queriers may further apply stricter internal logic and decide no-op for a given query
 
-		if distributor != nil && QueryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
+		if distributor != nil && ShouldQueryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
 			q, err := distributor.Querier(ctx, minT, maxT)
 			if err != nil {
 				return nil, err
@@ -248,7 +240,7 @@ func NewQueryable(
 			queriers = append(queriers, q)
 		}
 
-		if blockStore != nil && QueryBlockStore(cfg.QueryStoreAfter, now, minT) {
+		if blockStore != nil && ShouldQueryBlockStore(cfg.QueryStoreAfter, now, minT) {
 			q, err := blockStore.Querier(ctx, minT, maxT)
 			if err != nil {
 				return nil, err
