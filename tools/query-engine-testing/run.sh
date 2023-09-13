@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
-QUERY="test_metric{index=~\"1\\\\\\d\\\\\\d\\\\\\d\"}" # Select all series with index 1000-1999 (ie. 1000 series)
+QUERY="test_metric{index=~\"1\\\\\\d\\\\\\d\\\\\\d\\\\\\d\"}" # Select all series with index 10000-19999 (ie. 10000 series)
 START="2023-09-13T00:03:00Z"
 END="2023-09-13T01:03:00Z"
 ENCODED_QUERY=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$QUERY'''))")
