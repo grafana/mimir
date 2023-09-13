@@ -1041,7 +1041,7 @@ func (m *errDistributor) MetricsForLabelMatchers(context.Context, model.Time, mo
 	return nil, errDistributorError
 }
 
-func (m *errDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMetadata, error) {
+func (m *errDistributor) MetricsMetadata(context.Context, *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
 	return nil, errDistributorError
 }
 
@@ -1075,7 +1075,7 @@ func (d *emptyDistributor) MetricsForLabelMatchers(context.Context, model.Time, 
 	return nil, nil
 }
 
-func (d *emptyDistributor) MetricsMetadata(context.Context) ([]scrape.MetricMetadata, error) {
+func (d *emptyDistributor) MetricsMetadata(context.Context, *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
 	return nil, nil
 }
 

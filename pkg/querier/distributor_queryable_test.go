@@ -694,8 +694,8 @@ func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to 
 	return args.Get(0).([]labels.Labels), args.Error(1)
 }
 
-func (m *mockDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
-	args := m.Called(ctx)
+func (m *mockDistributor) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
+	args := m.Called(ctx, req)
 	return args.Get(0).([]scrape.MetricMetadata), args.Error(1)
 }
 

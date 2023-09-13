@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -89,15 +90,32 @@ func (mm *userMetricsMetadata) purge(deadline time.Time) {
 	mm.metrics.memMetadataRemovedTotal.WithLabelValues(mm.userID).Add(float64(deleted))
 }
 
-func (mm *userMetricsMetadata) toClientMetadata() []*mimirpb.MetricMetadata {
+func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataRequest) []*mimirpb.MetricMetadata {
 	mm.mtx.RLock()
 	defer mm.mtx.RUnlock()
-	r := make([]*mimirpb.MetricMetadata, 0, len(mm.metricToMetadata))
-	for _, set := range mm.metricToMetadata {
+	rCap := int32(len(mm.metricToMetadata))
+	if req.Limit >= 0 && req.Limit < rCap {
+		rCap = req.Limit
+	}
+	r := make([]*mimirpb.MetricMetadata, 0, rCap)
+	var numMetrics int32
+	for metric, set := range mm.metricToMetadata {
+		if req.Limit >= 0 && numMetrics >= req.Limit {
+			break
+		}
+		if req.Metric != "" && metric != req.Metric {
+			continue
+		}
+		var lengthPerMetric int32
 		for m := range set {
+			if req.LimitPerMetric > 0 && lengthPerMetric >= req.LimitPerMetric {
+				continue
+			}
 			m := m
 			r = append(r, &m)
+			lengthPerMetric++
 		}
+		numMetrics++
 	}
 	return r
 }

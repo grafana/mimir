@@ -2108,7 +2108,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
 
 			// Assert on metric metadata
-			metadata, err := ds[0].MetricsMetadata(ctx)
+			metadata, err := ds[0].MetricsMetadata(ctx, client.DefaultMetricsMetadataRequest())
 			require.NoError(t, err)
 
 			expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
