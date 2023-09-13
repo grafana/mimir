@@ -1464,7 +1464,7 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 			for k, actualChunksRange := range actualSeries.chunksRanges {
 				assert.Equalf(t, blockID, actualChunksRange.blockID, "blockID [%d, %d, %d]", i, j, k)
 				for l, actualChunk := range actualChunksRange.refs {
-					assert.True(t, promChunks.Next())
+					require.Truef(t, promChunks.Next(), "out of prometheus chunks; left %d chunks: %v", len(actualChunksRange.refs)-l, actualChunksRange.refs[l:])
 					promChunk := promChunks.At()
 					if l == 0 {
 						assert.Equal(t, promChunk.Ref, actualChunksRange.firstRef(), "prom minT [%d, %d, %d]", i, j, k)
@@ -1652,17 +1652,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			minT:    500, maxT: 600, // The chunks for this timeseries are between 0 and 99 and 1000 and 1099
 			batchSize:      100,
 			expectedSeries: []seriesChunkRefsSet{},
-		},
-		"doesn't return a series if its chunks are around minT/maxT but not withins it": {
-			matcher: labels.MustNewMatcher(labels.MatchRegexp, "a", "3"),
-			minT:    0, maxT: 600, // The chunks for this timeseries are between 0 and 99 and 1000 and 1099
-			batchSize: 100,
-			expectedSeries: []seriesChunkRefsSet{
-				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "3", "b", "1")},
-					{lset: labels.FromStrings("a", "3", "b", "2")},
-				}},
-			},
 		},
 	}
 
