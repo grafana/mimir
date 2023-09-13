@@ -28,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.9.0`. #6022
+
 ## 5.1.0
 
 * [ENHANCEMENT] Make compactor podManagementPolicy configurable. #5902
