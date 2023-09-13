@@ -988,7 +988,7 @@ func (s *BucketStore) nonStreamingSeriesSetForBlocks(
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	stats *safeQueryStats,
 ) (storepb.SeriesSet, error) {
-	var strategy seriesIteratorStrategy
+	strategy := defaultStrategy
 	if req.SkipChunks {
 		strategy = noChunkRefs
 	}
