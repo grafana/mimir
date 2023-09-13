@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"net/url"
-	reflect "reflect"
 	"strings"
 	"sync"
 
@@ -163,7 +162,7 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 
 	// Whether to use TLS or not.
 	if rulerConfig.Notifier.TLSEnabled {
-		if rulerConfig.Notifier.TLS.Reader == nil || reflect.ValueOf(rulerConfig.Notifier.TLS.Reader).IsNil() {
+		if rulerConfig.Notifier.TLS.Reader == nil {
 			amConfig.HTTPClientConfig.TLSConfig = config_util.TLSConfig{
 				CAFile:             rulerConfig.Notifier.TLS.CAPath,
 				CertFile:           rulerConfig.Notifier.TLS.CertPath,
