@@ -96,7 +96,7 @@ func TestOTLPIngestion(t *testing.T) {
 	   "data":{
 		  "series_1":[
 			 {
-				"type":"counter",
+				"type":"gauge",
 				"help":"foo",
 				"unit":"foo"
 			 }
@@ -130,14 +130,14 @@ func TestOTLPIngestion(t *testing.T) {
 		   "data":{
 			  "series":[
 				 {
-					"type":"gaugehistogram",
+					"type":"histogram",
 					"help":"foo",
 					"unit":"foo"
 				 }
 			  ],
 			  "series_1":[
 				 {
-					"type":"counter",
+					"type":"gauge",
 					"help":"foo",
 					"unit":"foo"
 				 }
