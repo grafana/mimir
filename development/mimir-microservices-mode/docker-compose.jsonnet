@@ -91,10 +91,10 @@ std.manifestYamlDoc({
     local query_scheduler_port = 9011 + port_offset;
     local query_scheduler_address = 'query-scheduler%s:%s' % [name_suffix, query_scheduler_port];
     local extra_args = '-query-frontend.max-total-query-length=8760h' +
-      if promql_engine == '' then '' else ' -querier.promql-engine=%s' % promql_engine +
+      (if promql_engine == '' then '' else ' -querier.promql-engine=%s' % promql_engine) +
       # Thanos' engine doesn't support streaming chunks.
-      if promql_engine == 'thanos' then '' else ' -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true' +
-      if suffix == '' then '' else ' -query-scheduler.ring.prefix=%s/' % suffix;
+      (if promql_engine == 'thanos' then '' else ' -querier.prefer-streaming-chunks-from-ingesters=true -querier.prefer-streaming-chunks-from-store-gateways=true') +
+      (if suffix == '' then '' else ' -query-scheduler.ring.prefix=%s/' % suffix);
 
     {
       ['querier'+name_suffix]: mimirService({
