@@ -144,7 +144,7 @@ func ShouldQueryIngesters(queryIngestersWithin time.Duration, now time.Time, que
 func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int64) bool {
 	if queryStoreAfter != 0 {
 		queryStoreMaxT := util.TimeToMillis(now.Add(-queryStoreAfter))
-		if queryMinT > queryStoreMaxT {
+		if queryMinT >= queryStoreMaxT {
 			return false
 		}
 	}

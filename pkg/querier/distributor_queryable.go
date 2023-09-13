@@ -109,17 +109,17 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	}
 
 	now := time.Now().UnixMilli()
-	clampedMinT := clampMinTime(spanLog, minT, now, -q.queryIngestersWithin, "query ingesters within")
+	minT = clampMinTime(spanLog, minT, now, -q.queryIngestersWithin, "query ingesters within")
 
 	if sp != nil && sp.Func == "series" {
-		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(clampedMinT), model.Time(maxT), matchers...)
+		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(minT), model.Time(maxT), matchers...)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
 		return series.LabelsToSeriesSet(ms)
 	}
 
-	return q.streamingSelect(ctx, clampedMinT, maxT, matchers)
+	return q.streamingSelect(ctx, minT, maxT, matchers)
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
@@ -201,9 +201,9 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 	}
 
 	now := time.Now().UnixMilli()
-	clampedMinT := clampMinTime(spanLog, q.mint, now, -q.queryIngestersWithin, "query ingesters within")
+	q.mint = clampMinTime(spanLog, q.mint, now, -q.queryIngestersWithin, "query ingesters within")
 
-	lvs, err := q.distributor.LabelValuesForLabelName(ctx, model.Time(clampedMinT), model.Time(q.maxt), model.LabelName(name), matchers...)
+	lvs, err := q.distributor.LabelValuesForLabelName(ctx, model.Time(q.mint), model.Time(q.maxt), model.LabelName(name), matchers...)
 
 	return lvs, nil, err
 }
@@ -218,9 +218,9 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	}
 
 	now := time.Now().UnixMilli()
-	clampedMinT := clampMinTime(spanLog, q.mint, now, -q.queryIngestersWithin, "query ingesters within")
+	q.mint = clampMinTime(spanLog, q.mint, now, -q.queryIngestersWithin, "query ingesters within")
 
-	ln, err := q.distributor.LabelNames(ctx, model.Time(clampedMinT), model.Time(q.maxt), matchers...)
+	ln, err := q.distributor.LabelNames(ctx, model.Time(q.mint), model.Time(q.maxt), matchers...)
 	return ln, nil, err
 }
 
