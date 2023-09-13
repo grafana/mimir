@@ -75,10 +75,9 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 			for sIdx, seriesRef := range seriesRefs {
 				loadedChunksCorrectLen[sIdx].chks = append(loadedChunksCorrectLen[sIdx].chks, make([]storepb.AggrChunk, len(seriesRef.refs))...)
 				loadedChunksModifiedLen[sIdx].chks = append(loadedChunksModifiedLen[sIdx].chks, make([]storepb.AggrChunk, len(seriesRef.refs))...)
-				for _, r := range seriesRef.refs {
-					existingChunksNum := len(loadedChunksCorrectLen[sIdx].chks)
-					assert.NoError(t, chunkrCorrectLen.addLoad(r.storageRef(), sIdx, existingChunksNum, r.length))
-					assert.NoError(t, chunkrModifiedLen.addLoad(r.storageRef(), sIdx, existingChunksNum, skewChunkLen(r.length)))
+				for cIdx, r := range seriesRef.refs {
+					assert.NoError(t, chunkrCorrectLen.addLoad(r.ref(), sIdx, cIdx, r.length))
+					assert.NoError(t, chunkrModifiedLen.addLoad(r.ref(), sIdx, cIdx, skewChunkLen(r.length)))
 				}
 			}
 

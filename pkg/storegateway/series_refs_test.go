@@ -1429,9 +1429,8 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 			for k, actualChunk := range actualSeries.refs {
 				require.Truef(t, promChunks.Next(), "out of prometheus chunks; left %d chunks: %v", len(actualSeries.refs)-k, actualSeries.refs[k:])
 				promChunk := promChunks.At()
-				assert.Equal(t, promChunk.Ref, actualChunk.storageRef(), "prom chunk ref [%d, %d, %d]", i, j, k)
 				assert.Equalf(t, blockID, actualChunk.blockID, "blockID [%d, %d, %d]", i, j, k)
-				assert.Equalf(t, promChunk.Ref, chunkRef(actualChunk.segmentFile, actualChunk.segFileOffset), "ref [%d, %d, %d]", i, j, k)
+				assert.Equalf(t, promChunk.Ref, actualChunk.ref(), "ref [%d, %d, %d]", i, j, k)
 				assert.Equalf(t, promChunk.MinTime, actualChunk.minTime, "minT [%d, %d, %d]", i, j, k)
 				assert.Equalf(t, promChunk.MaxTime, actualChunk.maxTime, "maxT [%d, %d, %d]", i, j, k)
 				assert.LessOrEqualf(t, uint64(prevChunkRef)+prevChunkLen, uint64(promChunk.Ref),

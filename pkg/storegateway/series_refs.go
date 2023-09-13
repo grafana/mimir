@@ -200,7 +200,7 @@ func (r seriesChunkRef) Compare(other seriesChunkRef) int {
 	return 0
 }
 
-func (r seriesChunkRef) storageRef() chunks.ChunkRef {
+func (r seriesChunkRef) ref() chunks.ChunkRef {
 	return chunkRef(r.segmentFile, r.segFileOffset)
 }
 
