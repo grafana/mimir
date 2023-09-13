@@ -1037,6 +1037,11 @@ instance_limits:
 # (experimental) Use experimental method of limiting push requests
 # CLI flag: -ingester.limit-inflight-requests-using-grpc-handlers
 [limit_inflight_requests_using_grpc_tap_handle: <boolean> | default = false]
+
+# (experimental) Each error will be logged once in this many times. Use 0 to log
+# all of them.
+# CLI flag: -ingester.error-sample-rate
+[error_sample_rate: <int> | default = 0]
 ```
 
 ### querier
@@ -3487,7 +3492,7 @@ bucket_store:
     # (experimental) Maximum number of concurrent index header loads across all
     # tenants. If set to 0, concurrency is unlimited.
     # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency
-    [lazy_loading_concurrency: <int> | default = 0]
+    [lazy_loading_concurrency: <int> | default = 4]
 
     # (experimental) If enabled, store-gateway will persist a sparse version of
     # the index-header to disk on construction and load sparse index-headers

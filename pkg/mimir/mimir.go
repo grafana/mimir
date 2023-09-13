@@ -698,14 +698,12 @@ type Mimir struct {
 	Alertmanager             *alertmanager.MultitenantAlertmanager
 	Compactor                *compactor.MultitenantCompactor
 	StoreGateway             *storegateway.StoreGateway
+	StoreQueryable           prom_storage.Queryable
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
 	Vault                    *vault.Vault
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
-
-	// Queryables that the querier should use to query the long term storage.
-	StoreQueryables []querier.QueryableWithFilter
 }
 
 // New makes a new Mimir.

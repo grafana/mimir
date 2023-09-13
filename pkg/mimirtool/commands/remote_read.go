@@ -188,10 +188,12 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 		return nil, err
 	}
 
-	addressURL.Path = filepath.Join(
-		addressURL.Path,
-		c.remoteReadPath,
-	)
+	remoteReadPathURL, err := url.Parse(c.remoteReadPath)
+	if err != nil {
+		return nil, err
+	}
+
+	addressURL = addressURL.ResolveReference(remoteReadPathURL)
 
 	// build client
 	readClient, err := remote.NewReadClient("remote-read", &remote.ClientConfig{

@@ -78,6 +78,7 @@ local overrides = {
   arch: arch,
   platform: 'linux',
   version: '${VERSION}',
+  version_schema: 'none',  // Don't parse our version, as nfpm decides to issue x.y.z-rc.0 as x.y.z~rc.0 and we have to mangle the version. Just trust the version we want to issue.
   section: 'default',
   provides: [name],
   maintainer: 'Grafana Labs <contact@grafana.com>',

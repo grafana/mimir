@@ -124,23 +124,6 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 	}
 }
 
-func TestDistributorQueryable_UseQueryable_AlwaysReturnsTrue(t *testing.T) {
-	d := &mockDistributor{}
-	dq := newDistributorQueryable(d, nil, newMockConfigProvider(1*time.Hour), nil, log.NewNopLogger())
-
-	now := time.Now()
-
-	queryMinT := util.TimeToMillis(now.Add(-5 * time.Minute))
-	queryMaxT := util.TimeToMillis(now)
-
-	require.True(t, dq.UseQueryable(now, queryMinT, queryMaxT))
-	require.True(t, dq.UseQueryable(now.Add(time.Hour), queryMinT, queryMaxT))
-
-	// Same query, hour+1ms later
-	// While this query is outside the time range, true is still returned - see comment in distributorQueryable.UseQueryable() function
-	require.True(t, dq.UseQueryable(now.Add(time.Hour).Add(1*time.Millisecond), queryMinT, queryMaxT))
-}
-
 func TestDistributorQuerier_Select(t *testing.T) {
 	const mint, maxt = 0, 10
 
