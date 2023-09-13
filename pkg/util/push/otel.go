@@ -162,6 +162,26 @@ func OTLPHandler(
 	})
 }
 
+func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMetadata_MetricType {
+	switch otelMetric.Type() {
+	case pmetric.MetricTypeGauge:
+		return mimirpb.MetricMetadata_MetricType(2)
+	case pmetric.MetricTypeSum:
+		metricType := mimirpb.MetricMetadata_MetricType(2)
+		if otelMetric.Sum().IsMonotonic() {
+			metricType = mimirpb.MetricMetadata_MetricType(1)
+		}
+		return metricType
+	case pmetric.MetricTypeHistogram:
+		return mimirpb.MetricMetadata_MetricType(3)
+	case pmetric.MetricTypeSummary:
+		return mimirpb.MetricMetadata_MetricType(5)
+	case pmetric.MetricTypeExponentialHistogram:
+		return mimirpb.MetricMetadata_MetricType(3)
+	}
+	return mimirpb.MetricMetadata_MetricType(0)
+}
+
 func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 	resourceMetricsSlice := md.ResourceMetrics()
 
@@ -180,7 +200,7 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
 				metric := scopeMetrics.Metrics().At(k)
 				entry := mimirpb.MetricMetadata{
-					Type:             mimirpb.MetricMetadata_MetricType(metric.Type()),
+					Type:             otelMetricTypeToMimirMetricType(metric),
 					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", true), // TODO expose addMetricSuffixes in configuration (https://github.com/grafana/mimir/issues/5967)
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
