@@ -4,9 +4,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
-QUERY="sum by (group) (test_metric{index=~\"[1-5]\\\\\\d\\\\\\d\\\\\\d\\\\\\d\"})" # Select all series with index 10000-59099 (ie. 50000 series)
-START="2023-09-13T00:03:00Z"
-END="2023-09-13T01:03:00Z"
+QUERY="sum by (group) (test_metric)"
+START="2023-09-13T03:48:00Z"
+END="2023-09-13T15:48:00Z"
 ENCODED_QUERY=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$QUERY'''))")
 TARGET_PATH="prometheus/api/v1/query_range?query=$ENCODED_QUERY&start=$START&end=$END&step=15"
 DURATION="5m"

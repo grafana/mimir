@@ -36,7 +36,7 @@ function generate() {
 
     cat <<EOF
 interval: 15s
-# With a 15s interval, 1 hour's data is 240 points.
+# With a 15s interval, 12 hours' data is 2880 points.
 time_series:
 EOF
 
@@ -45,7 +45,7 @@ EOF
 
         cat <<EOF
   - series: test_metric{index="$series_index", group="$group_index"}
-    values: $group_index+${series_index}x240
+    values: $group_index+${series_index}x2880
 EOF
     done
 }
