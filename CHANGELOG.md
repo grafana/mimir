@@ -13,6 +13,7 @@
 * [ENHANCEMENT] Implement support for `limit`, `limit_per_metric` and `metric` parameters for `<Prometheus HTTP prefix>/api/v1/metadata` endpoint. #5890
 * [ENHANCEMENT] Go: updated to 1.21.1. #5955
 * [ENHANCEMENT] Ingester: added support for sampling errors, which can be enabled by setting `-ingester.error-sample-rate`. This way each error will be logged once in the configured number of times. All the discarded samples will still be tracked by the `cortex_discarded_samples_total` metric. #5584 #6014
+* [ENHANCEMENT] Ruler: Fetch secrets used to configure TLS on the Alertmanager client from Vault when `-vault.enabled` is true. #5239
 * [BUGFIX] Ingester: fix spurious `not found` errors on label values API during head compaction. #5957
 
 ### Mixin
