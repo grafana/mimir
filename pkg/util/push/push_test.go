@@ -74,7 +74,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		assert.Equal(t, "foo", series[0].Labels[0].Value)
 
 		metadata := request.Metadata
-		assert.Equal(t, mimirpb.MetricMetadata_MetricType(2), metadata[0].GetType())
+		assert.Equal(t, mimirpb.GAUGE, metadata[0].GetType())
 		assert.Equal(t, "foo", metadata[0].GetMetricFamilyName())
 		assert.Equal(t, "metric_help", metadata[0].GetHelp())
 		assert.Equal(t, "metric_unit", metadata[0].GetUnit())
@@ -202,7 +202,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				assert.Equal(t, 1, int(histograms[0].Schema))
 
 				metadata := request.Metadata
-				assert.Equal(t, mimirpb.MetricMetadata_MetricType(3), metadata[0].GetType())
+				assert.Equal(t, mimirpb.HISTOGRAM, metadata[0].GetType())
 				assert.Equal(t, "foo", metadata[0].GetMetricFamilyName())
 				assert.Equal(t, "metric_help", metadata[0].GetHelp())
 				assert.Equal(t, "metric_unit", metadata[0].GetUnit())
