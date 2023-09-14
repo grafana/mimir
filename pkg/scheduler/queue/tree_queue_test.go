@@ -100,7 +100,7 @@ func TestTreeQueue(t *testing.T) {
 		"root:2:val0", // root:2:localQueue is done
 		"root:1:0:val0",
 		"root:2:0:val0",
-		"root:1:val1",
+		"root:1:val1", // root:1:localQueue is done
 		"root:2:1:val0",
 		"root:1:0:val1", // root:1:0:localQueue is done; no other queues in root:1, so root:1 is done as well
 		"root:2:0:val1", // root:2:0 :localQueue is done
