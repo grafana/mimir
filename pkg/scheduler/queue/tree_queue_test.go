@@ -10,61 +10,52 @@ import (
 func TestTreeQueue(t *testing.T) {
 
 	expectedTreeQueue := &TreeQueue{
-		name:       "root",
-		localQueue: list.New(),
-		currentIdx: -1,
-		childQueueIndices: map[string]int{
-			"0": 0,
-			"1": 1,
-			"2": 2,
-		},
-		childQueues: []*TreeQueue{
-			{
-				name:              "0",
-				localQueue:        list.New(),
-				currentIdx:        -1,
-				childQueueIndices: map[string]int{},
-				childQueues:       []*TreeQueue{},
+		name:            "root",
+		localQueue:      list.New(),
+		index:           -1,
+		childQueueOrder: []string{"0", "1", "2"},
+		childQueueMap: map[string]*TreeQueue{
+			"0": {
+				name:            "0",
+				localQueue:      list.New(),
+				index:           -1,
+				childQueueOrder: nil,
+				childQueueMap:   map[string]*TreeQueue{},
 			},
-			{
-				name:       "1",
-				localQueue: list.New(),
-				currentIdx: -1,
-				childQueueIndices: map[string]int{
-					"0": 0,
-				},
-				childQueues: []*TreeQueue{
-					{
-						name:              "0",
-						localQueue:        list.New(),
-						currentIdx:        -1,
-						childQueueIndices: map[string]int{},
-						childQueues:       []*TreeQueue{},
+			"1": {
+				name:            "1",
+				localQueue:      list.New(),
+				index:           -1,
+				childQueueOrder: []string{"0"},
+				childQueueMap: map[string]*TreeQueue{
+					"0": {
+						name:            "0",
+						localQueue:      list.New(),
+						index:           -1,
+						childQueueOrder: nil,
+						childQueueMap:   map[string]*TreeQueue{},
 					},
 				},
 			},
-			{
-				name:       "2",
-				localQueue: list.New(),
-				currentIdx: -1,
-				childQueueIndices: map[string]int{
-					"0": 0,
-					"1": 1,
-				},
-				childQueues: []*TreeQueue{
-					{
-						name:              "0",
-						localQueue:        list.New(),
-						currentIdx:        -1,
-						childQueueIndices: map[string]int{},
-						childQueues:       []*TreeQueue{},
+			"2": {
+				name:            "2",
+				localQueue:      list.New(),
+				index:           -1,
+				childQueueOrder: []string{"0", "1"},
+				childQueueMap: map[string]*TreeQueue{
+					"0": {
+						name:            "0",
+						localQueue:      list.New(),
+						index:           -1,
+						childQueueOrder: nil,
+						childQueueMap:   map[string]*TreeQueue{},
 					},
-					{
-						name:              "1",
-						localQueue:        list.New(),
-						currentIdx:        -1,
-						childQueueIndices: map[string]int{},
-						childQueues:       []*TreeQueue{},
+					"1": {
+						name:            "1",
+						localQueue:      list.New(),
+						index:           -1,
+						childQueueOrder: nil,
+						childQueueMap:   map[string]*TreeQueue{},
 					},
 				},
 			},
@@ -107,7 +98,7 @@ func TestTreeQueue(t *testing.T) {
 		"root:2:0:val1", // root:2:0 :localQueue is done
 		"root:2:1:val1",
 		"root:2:1:val2", // root:2:1:localQueue is done; no other queues in root:2, so root:2 is done as well
-		// back up to root; its local queue is done and all childQueues are done, so the full tree is done
+		// back up to root; its local queue is done and all childQueueOrder are done, so the full tree is done
 	}
 
 	var queueOutput []any
