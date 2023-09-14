@@ -59,15 +59,19 @@ histogram := prometheus.NewHistogram(
 })
 ```
 
-```python
-from prometheus_client import Histogram
-h = Histogram('request_latency_seconds', 'Histogram of request response times.')
-
+```java
+static final Histogram requestLatency = Histogram.build()
+     .name("requests_latency_seconds")
+     .help("Histogram of request latency in seconds.")
+     .withNativeInitialSchema(3)
+     .withNativeMaxNumberOfBuckets(100)
+     .withNativeResetDuration(1, TimeUnit.HOURS)
+     .register();
 ```
 
 {{< /code >}}
 
-The `NativeHistogramBucketFactor` option sets the maximum expantion rate between neighbouring buckets. The value `1.1` means that buckets grow with at most 10%. The currently supported values range from `1.0027` or 0.27% up to 65536 or 655%. For more detailed explanation see [Bucket boundary calculation](#bucket-boundary-calculation).
+The `NativeHistogramBucketFactor` option sets the maximum expansion rate between neighbouring buckets. The value `1.1` means that buckets grow with at most 10%. The currently supported values range from `1.0027` or 0.27% up to 65536 or 655%. For more detailed explanation see [Bucket boundary calculation](#bucket-boundary-calculation).
 
 Some of the resulting buckets for factor `1.1` rounded to two decimal places are:
 
