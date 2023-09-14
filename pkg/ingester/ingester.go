@@ -809,10 +809,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	db, err := i.getOrCreateTSDB(userID, false)
 	if err != nil {
-		// Check for a particular per-instance limit and return that error directly
-		// since it contains extra information for gRPC and our logging middleware.
-		if errors.Is(err, errMaxTenantsReached) {
-			return nil, err
+		// If this is a safe error, we wrap it with userID and return it, because
+		// it might contain extra information for gRPC and our logging middleware.
+		var safe safeToWrap
+		if errors.As(err, &safe) {
+			return nil, wrapWithUser(err, userID)
 		}
 		return nil, annotateWithUser(err, userID)
 	}
@@ -859,10 +860,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
 
-		// Check for a particular per-instance limit and return that error directly
-		// since it contains extra information for gRPC and our logging middleware.
-		if errors.Is(err, errMaxInMemorySeriesReached) {
-			return nil, err
+		// If this is a safe error, we wrap it with userID and return it, because
+		// it might contain extra information for gRPC and our logging middleware.
+		var safe safeToWrap
+		if errors.As(err, &safe) {
+			return nil, wrapWithUser(err, userID)
 		}
 		return nil, annotateWithUser(err, userID)
 	}

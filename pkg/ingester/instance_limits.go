@@ -10,9 +10,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/util/log"
-
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
