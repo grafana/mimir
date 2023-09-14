@@ -58,6 +58,8 @@ The following features are currently experimental:
 - Distributor
   - Metrics relabeling
   - OTLP ingestion path
+  - OTLP metadata storage
+    - `-distributor.enable-otlp-metadata-storage`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
     - `distributor.service-overload-status-code-on-rate-limit-enabled`
 - Hash ring
@@ -103,6 +105,8 @@ The following features are currently experimental:
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
     - `-ingester.client.circuit-breaker.failure-threshold`
+    - `-ingester.client.circuit-breaker.failure-execution-threshold`
+    - `-ingester.client.circuit-breaker.period`
     - `-ingester.client.circuit-breaker.cooldown-period`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)

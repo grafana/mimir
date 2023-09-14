@@ -26,7 +26,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
@@ -171,6 +170,10 @@ type Config struct {
 	ReadPathCPUUtilizationLimit          float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
 	ReadPathMemoryUtilizationLimit       uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
 	LogUtilizationBasedLimiterCPUSamples bool    `yaml:"log_utilization_based_limiter_cpu_samples" category:"experimental"`
+
+	LimitInflightRequestsUsingGrpcTapHandle bool `yaml:"limit_inflight_requests_using_grpc_tap_handle" category:"experimental"`
+
+	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -187,9 +190,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
+	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcTapHandle, "ingester.limit-inflight-requests-using-grpc-handlers", false, "Use experimental method of limiting push requests")
+	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
 }
 
 func (cfg *Config) Validate() error {
+	if cfg.ErrorSampleRate < 0 {
+		return fmt.Errorf("error sample rate cannot be a negative number")
+	}
+
 	return cfg.IngesterRing.Validate()
 }
 
@@ -276,6 +285,8 @@ type Ingester struct {
 	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
 
 	utilizationBasedLimiter utilizationBasedLimiter
+
+	errorSamplers ingesterErrSamplers
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -313,6 +324,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		tenantsWithOutOfOrderEnabledStat:   usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName),
 		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
 		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
+
+		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
 }
 
@@ -355,7 +368,8 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		limits,
 		i.lifecycler,
 		cfg.IngesterRing.ReplicationFactor,
-		cfg.IngesterRing.ZoneAwarenessEnabled)
+		cfg.IngesterRing.ZoneAwarenessEnabled,
+	)
 
 	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
 		i.utilizationBasedLimiter = limiter.NewUtilizationBasedLimiter(cfg.ReadPathCPUUtilizationLimit,
@@ -719,38 +733,61 @@ type pushStats struct {
 	perMetricSeriesLimitCount int
 }
 
+// StartPushRequest checks if ingester can start push request, and increments relevant counters.
+// If new push request cannot be started, errors converible to gRPC status code are returned, and metrics are updated.
+func (i *Ingester) StartPushRequest() error {
+	if err := i.checkRunning(); err != nil {
+		return err
+	}
+
+	inflight := i.inflightPushRequests.Inc()
+	decreaseInflightInDefer := true
+	defer func() {
+		if decreaseInflightInDefer {
+			i.inflightPushRequests.Dec()
+		}
+	}()
+
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxInflightPushRequests > 0 {
+		if inflight > il.MaxInflightPushRequests {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+			return errMaxInflightRequestsReached
+		}
+	}
+
+	if il != nil && il.MaxIngestionRate > 0 {
+		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
+			return errMaxIngestionRateReached
+		}
+	}
+
+	decreaseInflightInDefer = false
+	return nil
+}
+
+func (i *Ingester) FinishPushRequest() {
+	i.inflightPushRequests.Dec()
+}
+
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
 func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer pushReq.CleanUp()
 
-	if err := i.checkRunning(); err != nil {
-		return nil, util_log.DoNotLogError{Err: err}
-	}
-
-	// We will report *this* request in the error too.
-	inflight := i.inflightPushRequests.Inc()
-	defer i.inflightPushRequests.Dec()
-
-	il := i.getInstanceLimits()
-	if il != nil && il.MaxInflightPushRequests > 0 {
-		if inflight > il.MaxInflightPushRequests {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-			return nil, errMaxInflightRequestsReached
+	// If we're using grpc handlers, we don't need to start/finish request here.
+	if !i.cfg.LimitInflightRequestsUsingGrpcTapHandle {
+		if err := i.StartPushRequest(); err != nil {
+			return nil, util_log.DoNotLogError{Err: err}
 		}
+		defer i.FinishPushRequest()
 	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	if il != nil && il.MaxIngestionRate > 0 {
-		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-			return nil, errMaxIngestionRateReached
-		}
 	}
 
 	req, err := pushReq.WriteRequest()
@@ -777,12 +814,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		if errors.Is(err, errMaxTenantsReached) {
 			return nil, err
 		}
-		return nil, wrapWithUser(err, userID)
+		return nil, annotateWithUser(err, userID)
 	}
 
 	lockState, err := db.acquireAppendLock(req.MinTimestamp())
 	if err != nil {
-		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(err, userID).Error())
+		return &mimirpb.WriteResponse{}, newErrorWithStatus(annotateWithUser(err, userID), http.StatusServiceUnavailable)
 	}
 	defer db.releaseAppendLock(lockState)
 
@@ -827,7 +864,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		if errors.Is(err, errMaxInMemorySeriesReached) {
 			return nil, err
 		}
-		return nil, wrapWithUser(err, userID)
+		return nil, annotateWithUser(err, userID)
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
@@ -843,7 +880,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
-		return nil, wrapWithUser(err, userID)
+		return nil, annotateWithUser(err, userID)
 	}
 
 	commitDuration := time.Since(startCommit)
@@ -871,11 +908,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
-		var ve *validationError
-		if errors.As(firstPartialErr, &ve) {
-			code = ve.code
+		var safe safeToWrap
+		if errors.As(firstPartialErr, &safe) {
+			return &mimirpb.WriteResponse{}, newErrorWithStatus(wrapWithUser(firstPartialErr, userID), code)
 		}
-		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
+		return &mimirpb.WriteResponse{}, newErrorWithStatus(annotateWithUser(firstPartialErr, userID), code)
 	}
 
 	return &mimirpb.WriteResponse{}, nil
@@ -933,49 +970,49 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		case storage.ErrOutOfBounds:
 			stats.sampleOutOfBoundsCount++
 			updateFirstPartial(func() error {
-				return newIngestErrSampleTimestampTooOld(model.Time(timestamp), labels)
+				return i.errorSamplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(timestamp), labels))
 			})
 			return true
 
 		case storage.ErrOutOfOrderSample:
 			stats.sampleOutOfOrderCount++
 			updateFirstPartial(func() error {
-				return newIngestErrSampleOutOfOrder(model.Time(timestamp), labels)
+				return i.errorSamplers.sampleOutOfOrder.WrapError(newIngestErrSampleOutOfOrder(model.Time(timestamp), labels))
 			})
 			return true
 
 		case storage.ErrTooOldSample:
 			stats.sampleTooOldCount++
 			updateFirstPartial(func() error {
-				return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow)
+				return i.errorSamplers.sampleTimestampTooOldOOOEnabled.WrapError(newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow))
 			})
 			return true
 
 		case globalerror.SampleTooFarInFuture:
 			stats.sampleTooFarInFutureCount++
 			updateFirstPartial(func() error {
-				return newIngestErrSampleTimestampTooFarInFuture(model.Time(timestamp), labels)
+				return i.errorSamplers.sampleTimestampTooFarInFuture.WrapError(newIngestErrSampleTimestampTooFarInFuture(model.Time(timestamp), labels))
 			})
 			return true
 
 		case storage.ErrDuplicateSampleForTimestamp:
 			stats.newValueForTimestampCount++
 			updateFirstPartial(func() error {
-				return newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels)
+				return i.errorSamplers.sampleDuplicateTimestamp.WrapError(newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels))
 			})
 			return true
 
 		case errMaxSeriesPerUserLimitExceeded:
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(func() error {
-				return formatMaxSeriesPerUserError(i.limiter.limits, userID)
+				return i.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerUserError(i.limiter.limits, userID))
 			})
 			return true
 
 		case errMaxSeriesPerMetricLimitExceeded:
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(func() error {
-				return formatMaxSeriesPerMetricError(i.limiter.limits, mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), userID)
+				return i.errorSamplers.maxSeriesPerMetricLimitExceeded.WrapError(formatMaxSeriesPerMetricError(i.limiter.limits, mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), userID))
 			})
 			return true
 		}
@@ -1016,7 +1053,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				}
 
 				updateFirstPartial(func() error {
-					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+					return i.errorSamplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels))
 				})
 				continue
 			}
@@ -1031,7 +1068,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				firstTimestamp := ts.Samples[0].TimestampMs
 
 				updateFirstPartial(func() error {
-					return newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels)
+					return i.errorSamplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels))
 				})
 				continue
 			}
@@ -3129,7 +3166,7 @@ func (i *Ingester) getOrCreateUserMetadata(userID string) *userMetricsMetadata {
 	// Ensure it was not created between switching locks.
 	userMetadata, ok := i.usersMetadata[userID]
 	if !ok {
-		userMetadata = newMetadataMap(i.limiter, i.metrics, userID)
+		userMetadata = newMetadataMap(i.limiter, i.metrics, i.errorSamplers, userID)
 		i.usersMetadata[userID] = userMetadata
 	}
 	return userMetadata
@@ -3180,7 +3217,7 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 }
 
 // MetricsMetadata returns all the metrics metadata of a user.
-func (i *Ingester) MetricsMetadata(ctx context.Context, _ *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
+func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
@@ -3196,7 +3233,7 @@ func (i *Ingester) MetricsMetadata(ctx context.Context, _ *client.MetricsMetadat
 		return &client.MetricsMetadataResponse{}, nil
 	}
 
-	return &client.MetricsMetadataResponse{Metadata: userMetadata.toClientMetadata()}, nil
+	return &client.MetricsMetadataResponse{Metadata: userMetadata.toClientMetadata(req)}, nil
 }
 
 // CheckReady is the readiness handler used to indicate to k8s when the ingesters

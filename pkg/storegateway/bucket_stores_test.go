@@ -116,10 +116,12 @@ func TestBucketStores_InitialSync(t *testing.T) {
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 4
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
 			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="index_header"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
 		"cortex_bucket_store_block_loads_total",
@@ -249,10 +251,12 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 4
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
 			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="index_header"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
 		"cortex_bucket_store_block_loads_total",
@@ -411,6 +415,8 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	// Generate a single block with 1 series and a lot of samples.
 	generateStorageBlock(t, storageDir, userID, metricName, 0, 10000, 1)
 
+	promBlock := openPromBlocks(t, filepath.Join(storageDir, userID))[0]
+
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
@@ -421,29 +427,24 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	require.NoError(t, stores.InitialSync(ctx))
 
 	tests := map[string]struct {
-		reqMinTime      int64
-		reqMaxTime      int64
-		expectedSamples int
+		reqMinTime int64
+		reqMaxTime int64
 	}{
 		"query the entire block": {
-			reqMinTime:      math.MinInt64,
-			reqMaxTime:      math.MaxInt64,
-			expectedSamples: 10000,
+			reqMinTime: math.MinInt64,
+			reqMaxTime: math.MaxInt64,
 		},
 		"query the beginning of the block": {
-			reqMinTime:      0,
-			reqMaxTime:      100,
-			expectedSamples: MaxSamplesPerChunk,
+			reqMinTime: 0,
+			reqMaxTime: 100,
 		},
 		"query the middle of the block": {
-			reqMinTime:      4000,
-			reqMaxTime:      4050,
-			expectedSamples: MaxSamplesPerChunk,
+			reqMinTime: 4000,
+			reqMaxTime: 4050,
 		},
 		"query the end of the block": {
-			reqMinTime:      9800,
-			reqMaxTime:      10000,
-			expectedSamples: (MaxSamplesPerChunk * 2) + (10000 % MaxSamplesPerChunk),
+			reqMinTime: 9800,
+			reqMaxTime: 10000,
 		},
 	}
 
@@ -455,10 +456,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 			assert.Empty(t, warnings)
 			assert.Len(t, seriesSet, 1)
 
-			// Count returned samples.
-			samples, err := readSamplesFromChunks(seriesSet[0].Chunks)
-			require.NoError(t, err)
-			assert.Equal(t, testData.expectedSamples, len(samples))
+			compareToPromChunks(t, seriesSet[0].Chunks, mimirpb.FromLabelAdaptersToLabels(seriesSet[0].Labels), testData.reqMinTime, testData.reqMaxTime, promBlock)
 		})
 	}
 }

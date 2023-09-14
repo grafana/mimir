@@ -21,6 +21,9 @@ spec:
       app.kubernetes.io/instance: gateway-enterprise-values
       app.kubernetes.io/component: distributor
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:

@@ -19,8 +19,8 @@ spec:
       release: test-enterprise-legacy-label-values
   strategy:
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:

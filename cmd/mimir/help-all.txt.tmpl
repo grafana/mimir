@@ -4,7 +4,7 @@ Usage of ./cmd/mimir/mimir:
   -activity-tracker.max-entries int
     	Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored. (default 1024)
   -alertmanager-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -alertmanager-storage.azure.account-name string
     	Azure storage account name
   -alertmanager-storage.azure.container-name string
@@ -14,7 +14,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -alertmanager-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -alertmanager-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
   -alertmanager-storage.filesystem.dir string
@@ -272,7 +272,7 @@ Usage of ./cmd/mimir/mimir:
   -auth.no-auth-tenant string
     	Tenant ID to use when multitenancy is disabled. (default "anonymous")
   -blocks-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -blocks-storage.azure.account-name string
     	Azure storage account name
   -blocks-storage.azure.container-name string
@@ -282,7 +282,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -blocks-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -blocks-storage.bucket-store.batch-series-size int
@@ -502,7 +502,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
     	[experimental] If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
-    	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.
+    	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout duration
@@ -510,7 +510,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.max-idle-file-handles uint
     	Maximum number of idle file handles the store-gateway keeps open for each index-header file. (default 1)
   -blocks-storage.bucket-store.index-header.sparse-persistence-enabled
-    	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header.
+    	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header. (default true)
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.max-chunk-pool-bytes uint
@@ -788,7 +788,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
   -common.storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
     	Azure storage account name
   -common.storage.azure.container-name string
@@ -798,7 +798,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -common.storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -common.storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -common.storage.filesystem.dir string
@@ -1029,6 +1029,8 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
+  -distributor.enable-otlp-metadata-storage
+    	[experimental] If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
@@ -1220,11 +1222,15 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -ingester.client.circuit-breaker.cooldown-period duration
-    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
+    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 1m0s)
   -ingester.client.circuit-breaker.enabled
     	[experimental] Enable circuit breaking when making requests to ingesters
+  -ingester.client.circuit-breaker.failure-execution-threshold uint
+    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
   -ingester.client.circuit-breaker.failure-threshold uint
-    	[experimental] Max number of requests that can fail in a row before the circuit breaker opens (default 10)
+    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
+  -ingester.client.circuit-breaker.thresholding-period duration
+    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ingester.client.connect-backoff-max-delay duration
@@ -1261,6 +1267,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.error-sample-rate int
+    	[experimental] Each error will be logged once in this many times. Use 0 to log all of them.
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
@@ -1271,6 +1279,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.limit-inflight-requests-using-grpc-handlers
+    	[experimental] Use experimental method of limiting push requests
   -ingester.log-utilization-based-limiter-cpu-samples
     	[experimental] Enable logging of utilization based limiter CPU samples.
   -ingester.max-global-exemplars-per-user int
@@ -2002,7 +2012,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.service-discovery-mode string
     	[experimental] Service discovery mode that query-frontends and queriers use to find query-scheduler instances. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. Supported values are: dns, ring. (default "dns")
   -ruler-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -ruler-storage.azure.account-name string
     	Azure storage account name
   -ruler-storage.azure.container-name string
@@ -2012,7 +2022,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -ruler-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -ruler-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
   -ruler-storage.cache.backend string

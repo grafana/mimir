@@ -912,6 +912,10 @@ spec:
   selector:
     matchLabels:
       name: consul
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
   template:
     metadata:
       annotations:
@@ -1127,8 +1131,8 @@ spec:
       name: querier
   strategy:
     rollingUpdate:
-      maxSurge: 5
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -1221,8 +1225,8 @@ spec:
       name: query-frontend
   strategy:
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -1295,8 +1299,8 @@ spec:
       name: query-scheduler
   strategy:
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:

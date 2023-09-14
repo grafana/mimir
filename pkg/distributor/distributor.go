@@ -38,6 +38,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -998,6 +999,13 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 			numExemplars += len(ts.Exemplars)
 		}
 
+		span := opentracing.SpanFromContext(ctx)
+		if span != nil {
+			span.SetTag("write.samples", numSamples)
+			span.SetTag("write.exemplars", numExemplars)
+			span.SetTag("write.metadata", len(req.Metadata))
+		}
+
 		d.incomingRequests.WithLabelValues(userID).Inc()
 		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
 		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
@@ -1055,6 +1063,9 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 			}
 			return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
 		}
+
+		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
+		// before we know how many samples/exemplars/metadata we'll actually be writing.
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -1238,9 +1249,24 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	}
 
 	_, err = c.Push(ctx, &req)
-	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+	return handleIngesterPushError(err)
+}
+
+func handleIngesterPushError(err error) error {
+	if err == nil {
+		return nil
+	}
+	resp, ok := httpgrpc.HTTPResponseFromError(err)
+	if ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
+	}
+	stat, ok := status.FromError(err)
+	if ok {
+		statusCode := int(stat.Code())
+		if statusCode/100 == 2 || statusCode/100 == 4 || statusCode/100 == 5 {
+			return httpgrpc.Errorf(statusCode, "failed pushing to ingester: %s", stat.Message())
+		}
 	}
 	return errors.Wrap(err, "failed pushing to ingester")
 }
@@ -1707,13 +1733,12 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 }
 
 // MetricsMetadata returns all metric metadata of a user.
-func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
+func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
 	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req := &ingester_client.MetricsMetadataRequest{}
 	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
 		return client.MetricsMetadata(ctx, req)
 	})

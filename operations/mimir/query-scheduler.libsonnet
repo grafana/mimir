@@ -42,8 +42,8 @@
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     $.util.antiAffinity +
     // Do not run more query-schedulers than expected.
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   query_scheduler_deployment: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then {} else
     self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container),

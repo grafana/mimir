@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/scrape"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -37,7 +38,7 @@ type mergeMetadataSupplier struct {
 	logger         log.Logger
 }
 
-func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
+func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeMetadataSupplier.MetricsMetadata")
 	defer spanlog.Finish()
 
@@ -48,13 +49,13 @@ func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context) ([]scrape.M
 
 	if len(tenantIDs) == 1 {
 		level.Debug(spanlog).Log("msg", "only a single tenant, bypassing federated metadata supplier")
-		return m.next.MetricsMetadata(ctx)
+		return m.next.MetricsMetadata(ctx, req)
 	}
 
 	results := make([][]scrape.MetricMetadata, len(tenantIDs))
 	run := func(jobCtx context.Context, idx int) error {
 		tenantID := tenantIDs[idx]
-		res, err := m.next.MetricsMetadata(user.InjectOrgID(jobCtx, tenantID))
+		res, err := m.next.MetricsMetadata(user.InjectOrgID(jobCtx, tenantID), req)
 		if err != nil {
 			return fmt.Errorf("unable to run federated metadata request for %s: %w", tenantID, err)
 		}
@@ -70,7 +71,9 @@ func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context) ([]scrape.M
 	}
 
 	// Deduplicate results across tenants since the contract for the metadata endpoint
-	// requires that each returned metric metadata is unique.
+	// requires that each returned metric metadata is unique. We do not apply the requested
+	// limits from opt on the merged results here as we will do this later right before
+	// returning the API response.
 	var out []scrape.MetricMetadata
 	unique := make(map[scrape.MetricMetadata]struct{})
 	for _, metadata := range results {

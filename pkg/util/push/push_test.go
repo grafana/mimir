@@ -53,6 +53,13 @@ func TestHandlerOTLPPush(t *testing.T) {
 				},
 			},
 		}
+	// Sample Metadata needs to contain metadata for every series in the sampleSeries
+	sampleMetadata := []mimirpb.MetricMetadata{
+		{
+			Help: "metric_help",
+			Unit: "metric_unit",
+		},
+	}
 	samplesVerifierFunc := func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
@@ -66,54 +73,97 @@ func TestHandlerOTLPPush(t *testing.T) {
 		assert.Equal(t, "__name__", series[0].Labels[0].Name)
 		assert.Equal(t, "foo", series[0].Labels[0].Value)
 
+		metadata := request.Metadata
+		assert.Equal(t, mimirpb.GAUGE, metadata[0].GetType())
+		assert.Equal(t, "foo", metadata[0].GetMetricFamilyName())
+		assert.Equal(t, "metric_help", metadata[0].GetHelp())
+		assert.Equal(t, "metric_unit", metadata[0].GetUnit())
+
+		pushReq.CleanUp()
+		return &mimirpb.WriteResponse{}, nil
+	}
+
+	samplesVerifierFuncDisabledMetadataIngest := func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+		request, err := pushReq.WriteRequest()
+		assert.NoError(t, err)
+
+		series := request.Timeseries
+		assert.Len(t, series, 1)
+
+		samples := series[0].Samples
+		assert.Equal(t, 1, len(samples))
+		assert.Equal(t, float64(1), samples[0].Value)
+		assert.Equal(t, "__name__", series[0].Labels[0].Name)
+		assert.Equal(t, "foo", series[0].Labels[0].Value)
+
+		metadata := request.Metadata
+		assert.Equal(t, []*mimirpb.MetricMetadata(nil), metadata)
+
 		pushReq.CleanUp()
 		return &mimirpb.WriteResponse{}, nil
 	}
 
 	tests := []struct {
-		name   string
-		series []prompb.TimeSeries
+		name     string
+		series   []prompb.TimeSeries
+		metadata []mimirpb.MetricMetadata
 
 		compression bool
 		encoding    string
 		maxMsgSize  int
 
-		verifyFunc   Func
-		responseCode int
-		errMessage   string
+		verifyFunc                Func
+		responseCode              int
+		errMessage                string
+		enableOtelMetadataStorage bool
 	}{
 		{
-			name:         "Write samples. No compression",
-			maxMsgSize:   100000,
-			verifyFunc:   samplesVerifierFunc,
-			series:       sampleSeries,
-			responseCode: http.StatusOK,
+			name:                      "Write samples. No compression",
+			maxMsgSize:                100000,
+			verifyFunc:                samplesVerifierFunc,
+			series:                    sampleSeries,
+			metadata:                  sampleMetadata,
+			responseCode:              http.StatusOK,
+			enableOtelMetadataStorage: true,
 		},
 		{
-			name:         "Write samples. With compression",
-			compression:  true,
-			maxMsgSize:   100000,
-			verifyFunc:   samplesVerifierFunc,
-			series:       sampleSeries,
-			responseCode: http.StatusOK,
+			name:                      "Write samples. Not enabled metadata ingest",
+			maxMsgSize:                100000,
+			verifyFunc:                samplesVerifierFuncDisabledMetadataIngest,
+			series:                    sampleSeries,
+			metadata:                  sampleMetadata,
+			responseCode:              http.StatusOK,
+			enableOtelMetadataStorage: false,
+		},
+		{
+			name:                      "Write samples. With compression",
+			compression:               true,
+			maxMsgSize:                100000,
+			verifyFunc:                samplesVerifierFunc,
+			series:                    sampleSeries,
+			metadata:                  sampleMetadata,
+			responseCode:              http.StatusOK,
+			enableOtelMetadataStorage: true,
 		},
 		{
 			name:        "Write samples. Request too big",
 			compression: false,
 			maxMsgSize:  30,
 			series:      sampleSeries,
+			metadata:    sampleMetadata,
 			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 				_, err = pushReq.WriteRequest()
 				return &mimirpb.WriteResponse{}, err
 			},
 			responseCode: http.StatusRequestEntityTooLarge,
-			errMessage:   "the incoming push request has been rejected because its message size of 37 bytes is larger",
+			errMessage:   "the incoming push request has been rejected because its message size of 63 bytes is larger",
 		},
 		{
 			name:       "Write samples. Unsupported compression",
 			encoding:   "snappy",
 			maxMsgSize: 100000,
 			series:     sampleSeries,
+			metadata:   sampleMetadata,
 			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 				_, err = pushReq.WriteRequest()
 				return &mimirpb.WriteResponse{}, err
@@ -134,6 +184,12 @@ func TestHandlerOTLPPush(t *testing.T) {
 					},
 				},
 			},
+			metadata: []mimirpb.MetricMetadata{
+				{
+					Help: "metric_help",
+					Unit: "metric_unit",
+				},
+			},
 			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
@@ -145,21 +201,28 @@ func TestHandlerOTLPPush(t *testing.T) {
 				assert.Equal(t, 1, len(histograms))
 				assert.Equal(t, 1, int(histograms[0].Schema))
 
+				metadata := request.Metadata
+				assert.Equal(t, mimirpb.HISTOGRAM, metadata[0].GetType())
+				assert.Equal(t, "foo", metadata[0].GetMetricFamilyName())
+				assert.Equal(t, "metric_help", metadata[0].GetHelp())
+				assert.Equal(t, "metric_unit", metadata[0].GetUnit())
+
 				pushReq.CleanUp()
 				return &mimirpb.WriteResponse{}, nil
 			},
-			responseCode: http.StatusOK,
+			responseCode:              http.StatusOK,
+			enableOtelMetadataStorage: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			exportReq := TimeseriesToOTLPRequest(tt.series)
+			exportReq := TimeseriesToOTLPRequest(tt.series, tt.metadata)
 			req := createOTLPRequest(t, exportReq, tt.compression)
 			if tt.encoding != "" {
 				req.Header.Set("Content-Encoding", tt.encoding)
 			}
 
-			handler := OTLPHandler(tt.maxMsgSize, nil, false, nil, tt.verifyFunc)
+			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, nil, tt.verifyFunc)
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -214,7 +277,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	handler := OTLPHandler(100000, nil, false, true, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
@@ -254,7 +317,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	handler := OTLPHandler(100000, nil, false, true, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 2)
@@ -280,7 +343,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	handler = OTLPHandler(100000, nil, false, true, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 10) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
@@ -309,7 +372,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, false, nil, readBodyPushFunc(t))
+	handler := OTLPHandler(140, nil, false, true, nil, readBodyPushFunc(t))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)

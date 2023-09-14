@@ -6,6 +6,7 @@
 package queue
 
 import (
+	"container/list"
 	"math/rand"
 	"sort"
 	"time"
@@ -51,7 +52,7 @@ type queues struct {
 }
 
 type userQueue struct {
-	ch chan Request
+	requests *list.List
 
 	// If not nil, only these queriers can handle user requests. If nil, all queriers can.
 	// We set this to nil if number of available queriers <= maxQueriers.
@@ -100,7 +101,7 @@ func (q *queues) deleteQueue(userID string) {
 // MaxQueriers is used to compute which queriers should handle requests for this user.
 // If maxQueriers is <= 0, all queriers can handle this user's requests.
 // If maxQueriers has changed since the last call, queriers for this are recomputed.
-func (q *queues) getOrAddQueue(userID string, maxQueriers int) chan Request {
+func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 	// Empty user is not allowed, as that would break our users list ("" is used for free spot).
 	if userID == "" {
 		return nil
@@ -114,9 +115,9 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) chan Request {
 
 	if uq == nil {
 		uq = &userQueue{
-			ch:    make(chan Request, q.maxUserQueueSize),
-			seed:  util.ShuffleShardSeed(userID, ""),
-			index: -1,
+			requests: list.New(),
+			seed:     util.ShuffleShardSeed(userID, ""),
+			index:    -1,
 		}
 		q.userQueues[userID] = uq
 
@@ -141,13 +142,13 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) chan Request {
 		uq.queriers = shuffleQueriersForUser(uq.seed, maxQueriers, q.sortedQueriers, nil)
 	}
 
-	return uq.ch
+	return uq.requests
 }
 
 // Finds next queue for the querier. To support fair scheduling between users, client is expected
 // to pass last user index returned by this function as argument. Is there was no previous
 // last user index, use -1.
-func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (chan Request, string, int) {
+func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*list.List, string, int) {
 	uid := lastUserIndex
 
 	// Ensure the querier is not shutting down. If the querier is shutting down, we shouldn't forward
@@ -170,16 +171,16 @@ func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (ch
 			continue
 		}
 
-		q := q.userQueues[u]
+		userQueue := q.userQueues[u]
 
-		if q.queriers != nil {
-			if _, ok := q.queriers[querierID]; !ok {
+		if userQueue.queriers != nil {
+			if _, ok := userQueue.queriers[querierID]; !ok {
 				// This querier is not handling the user.
 				continue
 			}
 		}
 
-		return q.ch, u, uid
+		return userQueue.requests, u, uid
 	}
 	return nil, "", uid
 }
@@ -284,9 +285,15 @@ func (q *queues) forgetDisconnectedQueriers(now time.Time) int {
 }
 
 func (q *queues) recomputeUserQueriers() {
-	scratchpad := make([]string, 0, len(q.sortedQueriers))
+	// Only allocate the scratchpad the first time we need it.
+	// If shuffle-sharding is disabled, we never need this.
+	var scratchpad []string
 
 	for _, uq := range q.userQueues {
+		if uq.maxQueriers > 0 && uq.maxQueriers < len(q.sortedQueriers) && scratchpad == nil {
+			scratchpad = make([]string, 0, len(q.sortedQueriers))
+		}
+
 		uq.queriers = shuffleQueriersForUser(uq.seed, uq.maxQueriers, q.sortedQueriers, scratchpad)
 	}
 }

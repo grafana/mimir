@@ -8,7 +8,7 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
     - name: "Check out code"
-      uses: "actions/checkout@v3"
+      uses: "actions/checkout@v4"
     - name: Run Git Config
       run: git config --global --add safe.directory '*'
     - name: Build website to test Mimir documentation
@@ -37,7 +37,7 @@ jobs:
             echo "branch=release-${MIMIR_VERSION_WITHOUT_PREFIX%.x}" | tee "${GITHUB_OUTPUT}"
         fi
     - name: Check out ${{ steps.mimir_version.outputs.branch }} documentation
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         path: ${{ steps.mimir_branch.outputs.branch }}
         ref: ${{ steps.mimir_branch.outputs.branch }}

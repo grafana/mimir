@@ -28,11 +28,16 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 5.1.0
+
+* [ENHANCEMENT] Make compactor podManagementPolicy configurable. #5902
 * [ENHANCEMENT] Distributor: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce distributor CPU utilization, assuming the CPU request is set to a value close to the actual utilization. #5588
 * [ENHANCEMENT] Querier: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce noisy neighbour issues created by the querier, whose CPU utilization could eventually saturate the Kubernetes node if unbounded. #5646
 * [ENHANCEMENT] Sets the `appProtocol` value to `tcp` for the `gossip-ring-svc` service template. This allows memberlist to work with istio protocol selection. #5673
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.8.0`. #5718
 * [ENHANCEMENT] Make store_gateway podManagementPolicy configurable. #5757
+* [ENHANCEMENT] Set `maxUnavailable` to 0 for `distributor`, `overrides-exporter`, `querier`, `query-frontend`, `query-scheduler`, `ruler-querier`, `ruler-query-frontend`, `ruler-query-scheduler`, `nginx`, `gateway`, `admin-api`, `graphite-querier` and `graphite-write-proxy` deployments, to ensure they don't become completely unavailable during a rollout. #5924
+* [ENHANCEMENT] Nginx: listen on IPv6 addresses. #5948
 * [BUGFIX] Fix `global.podLabels` causing invalid indentation. #5625
 
 ## 5.0.0
