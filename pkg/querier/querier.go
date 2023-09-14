@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -128,20 +129,22 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 	return mergeChunks
 }
 
-func queryIngesters(queryIngestersWithin time.Duration, now time.Time, queryMaxT int64) bool {
+// ShouldQueryIngesters provides a check for whether the ingesters will be used for a given query.
+func ShouldQueryIngesters(queryIngestersWithin time.Duration, now time.Time, queryMaxT int64) bool {
 	if queryIngestersWithin != 0 {
 		queryIngestersMinT := util.TimeToMillis(now.Add(-queryIngestersWithin))
-		if queryMaxT < queryIngestersMinT {
+		if queryIngestersMinT >= queryMaxT {
 			return false
 		}
 	}
 	return true
 }
 
-func queryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int64) bool {
+// ShouldQueryBlockStore provides a check for whether the block store will be used for a given query.
+func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMinT int64) bool {
 	if queryStoreAfter != 0 {
 		queryStoreMaxT := util.TimeToMillis(now.Add(-queryStoreAfter))
-		if queryMinT > queryStoreMaxT {
+		if queryMinT >= queryStoreMaxT {
 			return false
 		}
 	}
@@ -215,7 +218,7 @@ func NewQueryable(
 
 		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID), limits.MaxEstimatedChunksPerQuery(userID), queryMetrics))
 
-		minT, maxT, err = validateQueryTimeRange(ctx, userID, minT, maxT, limits, cfg.MaxQueryIntoFuture, logger)
+		minT, maxT, err = validateQueryTimeRange(userID, minT, maxT, now.UnixMilli(), limits, cfg.MaxQueryIntoFuture, logger)
 		if errors.Is(err, errEmptyTimeRange) {
 			return storage.NoopQuerier(), nil
 		} else if err != nil {
@@ -229,7 +232,7 @@ func NewQueryable(
 		//
 		// queriers may further apply stricter internal logic and decide no-op for a given query
 
-		if distributor != nil && queryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
+		if distributor != nil && ShouldQueryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
 			q, err := distributor.Querier(ctx, minT, maxT)
 			if err != nil {
 				return nil, err
@@ -237,7 +240,7 @@ func NewQueryable(
 			queriers = append(queriers, q)
 		}
 
-		if blockStore != nil && queryBlockStore(cfg.QueryStoreAfter, now, minT) {
+		if blockStore != nil && ShouldQueryBlockStore(cfg.QueryStoreAfter, now, minT) {
 			q, err := blockStore.Querier(ctx, minT, maxT)
 			if err != nil {
 				return nil, err
@@ -276,8 +279,8 @@ type multiQuerier struct {
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, ctx := spanlogger.NewWithLogger(mq.ctx, mq.logger, "querier.Select")
-	defer log.Span.Finish()
+	spanLog, ctx := spanlogger.NewWithLogger(mq.ctx, mq.logger, "querier.Select")
+	defer spanLog.Span.Finish()
 
 	if sp == nil {
 		sp = &storage.SelectHints{
@@ -289,8 +292,9 @@ func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labe
 		scp := *sp
 		sp = &scp
 	}
+	now := time.Now()
 
-	level.Debug(log).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
+	level.Debug(spanLog).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
 		util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
 
 	userID, err := tenant.TenantID(ctx)
@@ -301,7 +305,7 @@ func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labe
 	// Validate query time range. Even if the time range has already been validated when we created
 	// the querier, we need to check it again here because the time range specified in hints may be
 	// different.
-	startMs, endMs, err := validateQueryTimeRange(ctx, userID, sp.Start, sp.End, mq.limits, mq.maxQueryIntoFuture, mq.logger)
+	startMs, endMs, err := validateQueryTimeRange(userID, sp.Start, sp.End, now.UnixMilli(), mq.limits, mq.maxQueryIntoFuture, mq.logger)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.NoopSeriesSet()
 	} else if err != nil {
@@ -309,7 +313,7 @@ func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labe
 	}
 	if sp.Func == "series" { // Clamp max time range for series-only queries, before we check max length.
 		maxQueryLength := mq.limits.MaxLabelsQueryLength(userID)
-		startMs = int64(clampTime(ctx, model.Time(startMs), maxQueryLength, model.Time(endMs).Add(-maxQueryLength), true, "start", "max label query length", log))
+		startMs = clampMinTime(spanLog, startMs, endMs, -maxQueryLength, "max label query length")
 	}
 
 	// The time range may have been manipulated during the validation,
@@ -505,31 +509,70 @@ func (s *sliceSeriesSet) Warnings() storage.Warnings {
 	return nil
 }
 
-func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, logger log.Logger) (int64, int64, error) {
-	now := model.Now()
-	startTime := model.Time(startMs)
-	endTime := model.Time(endMs)
-
-	endTime = clampTime(ctx, endTime, maxQueryIntoFuture, now.Add(maxQueryIntoFuture), false, "end", "max query into future", logger)
+func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, logger log.Logger) (int64, int64, error) {
+	endMs = clampMaxTime(logger, endMs, now, maxQueryIntoFuture, "max query into future")
 
 	maxQueryLookback := limits.MaxQueryLookback(userID)
-	startTime = clampTime(ctx, startTime, maxQueryLookback, now.Add(-maxQueryLookback), true, "start", "max query lookback", logger)
+	startMs = clampMinTime(logger, startMs, now, -maxQueryLookback, "max query lookback")
 
-	if endTime.Before(startTime) {
+	if endMs < startMs {
 		return 0, 0, errEmptyTimeRange
 	}
 
-	return int64(startTime), int64(endTime), nil
+	return startMs, endMs, nil
 }
 
-// Ensure a time is within bounds, and log in traces to ease debugging.
-func clampTime(ctx context.Context, t model.Time, limit time.Duration, clamp model.Time, before bool, kind, name string, logger log.Logger) model.Time {
-	if limit > 0 && ((before && t.Before(clamp)) || (!before && t.After(clamp))) {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log(
-			"msg", "the "+kind+" time of the query has been manipulated because of the '"+name+"' setting",
-			"original", util.FormatTimeModel(t),
-			"updated", util.FormatTimeModel(clamp))
-		t = clamp
+// clampMaxTime allows for time-limiting query minT and maxT based on configured limits.
+//
+// maxT is the original timestamp to be clamped based on other supplied parameters.
+//
+// refT is the reference time from which to apply limitDelta; generally now() for clamping maxT
+//
+// limitDelta should be negative if the limit is looking back in time from the reference time;
+// Ex:
+//   - query-store-after: refT is now(), limitDelta is negative. maxT is now or in the past,
+//     and may need to be clamped further into the past
+//   - max-query-into-future: refT is now(), limitDelta is positive. maxT is now or in the future,
+//     and may need to be clamped to be less far into the future
+func clampMaxTime(ll log.Logger, maxT int64, refT int64, limitDelta time.Duration, limitName string) int64 {
+	if limitDelta == 0 {
+		// limits equal to 0 are considered to not be enabled
+		return maxT
 	}
-	return t
+	clampedT := math.Min(maxT, refT+limitDelta.Milliseconds())
+
+	logClampEvent(ll, maxT, clampedT, "max", limitName)
+	return clampedT
+}
+
+// clampMinTime allows for time-limiting query minT based on configured limits.
+//
+// minT is the original timestamp to be clamped based on other supplied parameters.
+//
+// refT is the reference time from which to apply limitDelta; generally now() or query maxT because
+// when we truncate on the basis of overall query length, we leave maxT as-is and bring minT forward.
+//
+// limitDelta should be negative for all existing use cases for clamping minT,
+// as we look backwards from the reference time to apply the limit.
+func clampMinTime(ll log.Logger, minT int64, refT int64, limitDelta time.Duration, limitName string) int64 {
+	if limitDelta == 0 {
+		// limits equal to 0 are considered to not be enabled
+		return minT
+	}
+	clampedT := math.Max(minT, refT+limitDelta.Milliseconds())
+
+	logClampEvent(ll, minT, clampedT, "min", limitName)
+	return clampedT
+}
+
+func logClampEvent(ll log.Logger, originalT, clampedT int64, minOrMax, settingName string) {
+	msg := fmt.Sprintf(
+		"the %s time of the query has been manipulated because of the '%s' setting",
+		minOrMax, settingName,
+	)
+	level.Debug(ll).Log(
+		"msg", msg,
+		"original", util.TimeFromMillis(originalT).String(),
+		"updated", util.TimeFromMillis(clampedT).String(),
+	)
 }
