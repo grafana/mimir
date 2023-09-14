@@ -140,6 +140,11 @@ api:
   # CLI flag: -api.skip-label-name-validation-header-enabled
   [skip_label_name_validation_header_enabled: <boolean> | default = false]
 
+  # (experimental) If true, store metadata when ingesting metrics via OTLP. This
+  # makes metric descriptions and types available for metrics ingested via OTLP.
+  # CLI flag: -distributor.enable-otlp-metadata-storage
+  [enable_otel_metadata_translation: <boolean> | default = false]
+
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
   # CLI flag: -http.alertmanager-http-prefix

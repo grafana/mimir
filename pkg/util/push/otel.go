@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
+	prometheustranslator "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -43,6 +44,7 @@ func OTLPHandler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	enableOtelMetadataStorage bool,
 	reg prometheus.Registerer,
 	push Func,
 ) http.Handler {
@@ -150,8 +152,67 @@ func OTLPHandler(
 		)
 
 		req.Timeseries = metrics
+
+		if enableOtelMetadataStorage {
+			metadata := otelMetricsToMetadata(otlpReq.Metrics())
+			req.Metadata = metadata
+		}
+
 		return body, nil
 	})
+}
+
+func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMetadata_MetricType {
+	switch otelMetric.Type() {
+	case pmetric.MetricTypeGauge:
+		return mimirpb.GAUGE
+	case pmetric.MetricTypeSum:
+		metricType := mimirpb.GAUGE
+		if otelMetric.Sum().IsMonotonic() {
+			metricType = mimirpb.COUNTER
+		}
+		return metricType
+	case pmetric.MetricTypeHistogram:
+		return mimirpb.HISTOGRAM
+	case pmetric.MetricTypeSummary:
+		return mimirpb.SUMMARY
+	case pmetric.MetricTypeExponentialHistogram:
+		return mimirpb.HISTOGRAM
+	}
+	return mimirpb.UNKNOWN
+}
+
+func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
+	resourceMetricsSlice := md.ResourceMetrics()
+
+	metadataLength := 0
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		metadataLength += resourceMetricsSlice.At(i).ScopeMetrics().Len()
+	}
+	var metadata = make([]*mimirpb.MetricMetadata, metadataLength)
+	var metaDataPos = 0
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		resourceMetrics := resourceMetricsSlice.At(i)
+		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
+
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			scopeMetrics := scopeMetricsSlice.At(j)
+			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
+				metric := scopeMetrics.Metrics().At(k)
+				entry := mimirpb.MetricMetadata{
+					Type:             otelMetricTypeToMimirMetricType(metric),
+					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", true), // TODO expose addMetricSuffixes in configuration (https://github.com/grafana/mimir/issues/5967)
+					Help:             metric.Description(),
+					Unit:             metric.Unit(),
+				}
+				metadata[metaDataPos] = &entry
+				metaDataPos++
+			}
+		}
+	}
+
+	return metadata
+
 }
 
 func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
@@ -272,10 +333,10 @@ func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 }
 
 // TimeseriesToOTLPRequest is used in tests.
-func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportRequest {
+func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
-	for _, ts := range timeseries {
+	for i, ts := range timeseries {
 		name := ""
 		attributes := pcommon.NewMap()
 
@@ -295,6 +356,10 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyGauge()
+			if metadata != nil {
+				metric.SetDescription(metadata[i].GetHelp())
+				metric.SetUnit(metadata[i].GetUnit())
+			}
 			for _, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
@@ -307,6 +372,10 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyExponentialHistogram()
+			if metadata != nil {
+				metric.SetDescription(metadata[i].GetHelp())
+				metric.SetUnit(metadata[i].GetUnit())
+			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for _, histogram := range ts.Histograms {
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()

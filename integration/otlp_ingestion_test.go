@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"io"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestOTLPIngestion(t *testing.T) {
@@ -36,6 +38,9 @@ func TestOTLPIngestion(t *testing.T) {
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		map[string]string{
+			"-distributor.enable-otlp-metadata-storage": "true",
+		},
 	)
 
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
@@ -47,8 +52,14 @@ func TestOTLPIngestion(t *testing.T) {
 	// Push some series to Mimir.
 	now := time.Now()
 	series, expectedVector, expectedMatrix := generateFloatSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	metadata := []mimirpb.MetricMetadata{
+		{
+			Help: "foo",
+			Unit: "foo",
+		},
+	}
 
-	res, err := c.PushOTLP(series)
+	res, err := c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
@@ -71,9 +82,34 @@ func TestOTLPIngestion(t *testing.T) {
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
+	// Query the metadata
+	metadataResult, err := c.GetPrometheusMetadata()
+	require.NoError(t, err)
+	require.Equal(t, 200, metadataResult.StatusCode)
+
+	metadataResponseBody, err := io.ReadAll(metadataResult.Body)
+	require.NoError(t, err)
+
+	expectedJSON := `
+	{
+	   "status":"success",
+	   "data":{
+		  "series_1":[
+			 {
+				"type":"gauge",
+				"help":"foo",
+				"unit":"foo"
+			 }
+		  ]
+	   }
+	}
+	`
+
+	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
+
 	// Push series with histograms to Mimir
 	series, expectedVector, _ = generateHistogramSeries("series", now)
-	res, err = c.PushOTLP(series)
+	res, err = c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
@@ -87,4 +123,34 @@ func TestOTLPIngestion(t *testing.T) {
 	// it is not possible to assert with assert.ElementsMatch(t, expectedVector, result.(model.Vector))
 	// till https://github.com/open-telemetry/opentelemetry-proto/pull/441 is released. That is only
 	// to test setup logic
+
+	expectedJSON = `
+		{
+		   "status":"success",
+		   "data":{
+			  "series":[
+				 {
+					"type":"histogram",
+					"help":"foo",
+					"unit":"foo"
+				 }
+			  ],
+			  "series_1":[
+				 {
+					"type":"gauge",
+					"help":"foo",
+					"unit":"foo"
+				 }
+			  ]
+		   }
+		}
+	`
+
+	metadataResult, err = c.GetPrometheusMetadata()
+	require.NoError(t, err)
+	require.Equal(t, 200, metadataResult.StatusCode)
+
+	metadataResponseBody, err = io.ReadAll(metadataResult.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
 }

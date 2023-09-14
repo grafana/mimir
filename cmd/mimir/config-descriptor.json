@@ -87,6 +87,17 @@
         },
         {
           "kind": "field",
+          "name": "enable_otel_metadata_translation",
+          "required": false,
+          "desc": "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.enable-otlp-metadata-storage",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_http_prefix",
           "required": false,
           "desc": "HTTP URL path under which the Alertmanager ui and api will be served.",

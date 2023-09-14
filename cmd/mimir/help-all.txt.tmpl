@@ -1029,6 +1029,8 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
+  -distributor.enable-otlp-metadata-storage
+    	[experimental] If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string

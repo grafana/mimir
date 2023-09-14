@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/push"
 )
 
@@ -138,9 +139,9 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 }
 
 // PushOTLP the input timeseries to the remote endpoint in OTLP format
-func (c *Client) PushOTLP(timeseries []prompb.TimeSeries) (*http.Response, error) {
+func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) (*http.Response, error) {
 	// Create write request
-	otlpRequest := push.TimeseriesToOTLPRequest(timeseries)
+	otlpRequest := push.TimeseriesToOTLPRequest(timeseries, metadata)
 
 	data, err := otlpRequest.MarshalProto()
 	if err != nil {
@@ -306,6 +307,21 @@ func (c *Client) LabelValuesCardinality(labelNames []string, selector string, li
 	defer cancel()
 
 	// Execute HTTP request
+	return c.httpClient.Do(req.WithContext(ctx))
+}
+
+// GetPrometheusMetadata fetches the metadata from the Prometheus endpoint /api/v1/metadata.
+func (c *Client) GetPrometheusMetadata() (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/prometheus/api/v1/metadata", c.querierAddress), nil)
+
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
 	return c.httpClient.Do(req.WithContext(ctx))
 }
 
